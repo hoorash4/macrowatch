@@ -1,6 +1,12 @@
 name: Refresh U.S. credit stress
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - backend/financial_stress_pipeline.py
+      - supabase/migrations/**
+      - .github/workflows/financial-stress.yml
   schedule:
     # 06:10 KST: update the in-progress month's averages every day.
     - cron: "10 21 * * *"
