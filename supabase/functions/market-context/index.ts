@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { calculateMarketContext, type MarketCandle } from "../_shared/market-indicators.ts";
 
 const API_URL = "https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getStockMarketIndex";
-const BOOTSTRAP_DAYS = 180, REFRESH_DAYS = 10, CONCURRENCY = 8;
+const BOOTSTRAP_DAYS = 140, REFRESH_DAYS = 10, CONCURRENCY = 1, REQUEST_INTERVAL_MS = 250;
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
 function dateKey(date: Date) { return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`; }
@@ -22,7 +22,7 @@ async function fetchCandle(key: string, date: Date): Promise<MarketCandle | null
   const dateValue = String(item.basDt);
   return { date: `${dateValue.slice(0, 4)}-${dateValue.slice(4, 6)}-${dateValue.slice(6, 8)}`, open, high, low, close, volume: toNumber(item.trqu) };
 }
-async function mapConcurrent<T, R>(items: T[], mapper: (item: T) => Promise<R>) { const results: R[] = []; let cursor = 0; await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => { while (cursor < items.length) { const item = items[cursor++]; results.push(await mapper(item)); } })); return results; }
+async function mapConcurrent<T, R>(items: T[], mapper: (item: T) => Promise<R>) { const results: R[] = []; let cursor = 0; await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => { while (cursor < items.length) { const item = items[cursor++]; results.push(await mapper(item)); if (cursor < items.length) await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS)); } })); return results; }
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
