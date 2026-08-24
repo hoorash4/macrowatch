@@ -176,10 +176,16 @@ function renderCreditStressDashboard(rows) {
   const width = 920;
   const height = 250;
   const padding = { top: 20, right: 24, bottom: 32, left: 52 };
-  const maximumScore = Math.max(...data.map((row) => Number(row.stress_index)), 100);
-  const axisMaximum = Math.ceil(maximumScore / 20) * 20;
+  const scores = data.map((row) => Number(row.stress_index));
+  const minimumScore = Math.min(...scores);
+  const maximumScore = Math.max(...scores);
+  const scoreRange = Math.max(maximumScore - minimumScore, Math.max(maximumScore * 0.1, 1));
+  const gridStep = [0.5, 1, 2, 5, 10, 20, 50, 100].find((step) => step >= scoreRange / 4) || 100;
+  const axisMinimum = Math.max(0, Math.floor((minimumScore - scoreRange * 0.15) / gridStep) * gridStep);
+  const axisMaximum = Math.ceil((maximumScore + scoreRange * 0.15) / gridStep) * gridStep;
+  const axisRange = axisMaximum - axisMinimum || gridStep;
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
-  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - score)) / axisMaximum;
+  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - score)) / axisRange;
   const labels = data.map((row, index) => {
     const month = String(row.month || '');
     if (!month.endsWith('-01') || (index !== 0 && !month.endsWith('-01-01'))) return '';
@@ -195,8 +201,8 @@ function renderCreditStressDashboard(rows) {
     const detail = `${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${provisional ? ' (잠정치)' : ' (확정치)'}`;
     return `<circle cx="${x(index)}" cy="${y(Number(row.stress_index))}" r="3.75" fill="#b7791f"${provisional ? ' fill-opacity="0.35" stroke="#b7791f" stroke-width="1.5"' : ''} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const grid = Array.from({ length: axisMaximum / 20 + 1 }, (_, index) => index * 20)
-    .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${score}</text>`).join('');
+  const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
+    .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
   chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>확정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>잠정치</span></div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${lines}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다. 점선 구간은 잠정치이며, 지수를 구성하는 전체 지표가 업데이트되면 확정값으로 전환됩니다.</p>`;
 }
 
