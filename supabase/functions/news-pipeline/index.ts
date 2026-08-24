@@ -62,15 +62,34 @@ function isMarketRelevant(text: string) {
   return CATEGORY_TERMS.some((term) => normalized.includes(term));
 }
 
+function xmlText(value: string) {
+  return normalizeText(value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'"));
+}
+
+function xmlTag(block: string, names: string[]) {
+  const match = block.match(new RegExp(`<(${names.join("|")})\\b[^>]*>([\\s\\S]*?)<\\/\\1>`, "i"));
+  return match ? xmlText(match[2]) : null;
+}
+
+function xmlLink(block: string) {
+  const content = xmlTag(block, ["link"]);
+  if (content) return content;
+  const href = block.match(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*\/?>(?:<\/link>)?/i);
+  return href ? href[1] : null;
+}
+
 function xmlItems(xml: string) {
-  const document = new DOMParser().parseFromString(xml, "application/xml");
-  if (!document) throw new Error("RSS XML을 읽지 못했습니다.");
-  return [...document.querySelectorAll("item")].map((item) => ({
-    text: normalizeText(item.querySelector("title")?.textContent || ""),
-    url: item.querySelector("link")?.textContent?.trim() || null,
-    publishedAt: parseDate(
-      item.querySelector("pubDate")?.textContent || item.querySelector("date")?.textContent || null,
-    ),
+  const entries = xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi) || [];
+  return entries.map((entry) => ({
+    text: xmlTag(entry, ["title"]) || "",
+    url: xmlLink(entry),
+    publishedAt: parseDate(xmlTag(entry, ["pubDate", "published", "updated", "date"])),
   }));
 }
 
@@ -86,6 +105,16 @@ async function fetchRss(source: Exclude<SourceName, "gdelt">, lookbackHours: num
   return candidates;
 }
 
+async function fetchGdeltResponse(url: URL) {
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await fetch(url, { headers: { "User-Agent": "MacroWatch/1.0" } });
+    if (response.status !== 429 || attempt === 2) return response;
+    await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 750));
+  }
+  return response!;
+}
+
 async function fetchGdelt(lookbackHours: number): Promise<Candidate[]> {
   const url = new URL(SOURCE_FEEDS.gdelt);
   url.search = new URLSearchParams({
@@ -96,7 +125,7 @@ async function fetchGdelt(lookbackHours: number): Promise<Candidate[]> {
     sort: "datedesc",
     timespan: `${lookbackHours}h`,
   }).toString();
-  const response = await fetch(url);
+  const response = await fetchGdeltResponse(url);
   if (!response.ok) throw new Error(`GDELT 오류 (${response.status})`);
   const data = await response.json();
   const candidates: Candidate[] = [];

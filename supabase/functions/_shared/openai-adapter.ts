@@ -74,7 +74,10 @@ async function requestAnalysis(model: string, candidates: Candidate[]) {
   });
   if (!response.ok) throw new Error(`OpenAI 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();
-  const outputText = payload.output_text;
+  const outputText = typeof payload.output_text === "string"
+    ? payload.output_text
+    : payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || [])
+      .find((item: { type?: string }) => item.type === "output_text")?.text;
   if (typeof outputText !== "string") throw new Error("OpenAI 응답에 output_text가 없습니다.");
   const parsed = JSON.parse(outputText) as { events: Array<Record<string, unknown>> };
   return {
