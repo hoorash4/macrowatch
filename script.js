@@ -25,6 +25,7 @@ let pointerDragState = createPointerDragState();
 let pendingToggleId = null;
 
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
+const CREDIT_STRESS_HISTORY_MONTHS = 60;
 const NEWS_SENTIMENT_VIEWS = {
   recent: {
     days: 3,
@@ -156,6 +157,88 @@ async function loadNewsSentimentDashboard() {
 }
 
 window.loadNewsSentimentDashboard = loadNewsSentimentDashboard;
+
+function formatCreditStressValue(value, digits = 2) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(digits) : '—';
+}
+
+function buildStressScores(rows, key) {
+  const values = rows.map((row) => Number(row[key])).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!values.length) return new Map();
+  const lower = values[Math.floor((values.length - 1) * 0.05)];
+  const upper = values[Math.ceil((values.length - 1) * 0.95)];
+  const range = upper - lower || 1;
+  return new Map(rows.map((row) => {
+    const value = Number(row[key]);
+    return [row.month, Number.isFinite(value) ? Math.max(0, Math.min(100, ((value - lower) / range) * 100)) : null];
+  }));
+}
+
+function renderCreditStressDashboard(rows) {
+  const chart = document.getElementById('credit-stress-chart');
+  if (!chart) return;
+  if (!rows.length) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 수집 후 장기 신용위험 추이가 표시됩니다.</div>';
+    return;
+  }
+
+  const data = [...rows].sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const series = [
+    { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
+    { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b7791f', digits: 3, suffix: '' },
+    { key: 'business_bankruptcy_filings', label: '기업 파산보호 신청', color: '#285e8e', digits: 0, suffix: '건' },
+  ].map((item) => ({ ...item, scores: buildStressScores(data, item.key) }));
+  const width = 920;
+  const height = 250;
+  const padding = { top: 20, right: 24, bottom: 32, left: 24 };
+  const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
+  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
+  const pathFor = (item) => {
+    let drawing = '';
+    let connected = false;
+    data.forEach((row, index) => {
+      const score = item.scores.get(row.month);
+      if (score == null) {
+        connected = false;
+        return;
+      }
+      drawing += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${y(score).toFixed(1)}`;
+      connected = true;
+    });
+    return drawing;
+  };
+  const labels = data.map((row, index) => {
+    const month = String(row.month || '');
+    if (!month.endsWith('-01') || (index !== 0 && !month.endsWith('-01-01'))) return '';
+    return `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${month.slice(0, 4)}</text>`;
+  }).join('');
+  const dots = series.flatMap((item) => data.map((row, index) => {
+    const score = item.scores.get(row.month);
+    if (score == null) return '';
+    const detail = `${row.month}\n${item.label}: ${formatCreditStressValue(row[item.key], item.digits)}${item.suffix}`;
+    return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
+  })).join('');
+  const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
+  chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">서로 단위가 다른 세 지표를 추세 비교용 상대 척도로 표시합니다. 점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
+}
+
+async function loadCreditStressDashboard() {
+  const chart = document.getElementById('credit-stress-chart');
+  if (!chart || !supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from('us_credit_stress_monthly')
+      .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
+      .order('month', { ascending: false })
+      .limit(CREDIT_STRESS_HISTORY_MONTHS);
+    if (error) throw error;
+    renderCreditStressDashboard(data || []);
+  } catch (error) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
+  }
+}
+
+window.loadCreditStressDashboard = loadCreditStressDashboard;
 
 // 알림 조건에 따라 설정값 입력칸을 활성화하거나 비활성화합니다.
 function toggleTargetValueInput(conditionId, valueId) {
