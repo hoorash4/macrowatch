@@ -26,6 +26,7 @@ let pendingToggleId = null;
 
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 const CREDIT_STRESS_HISTORY_MONTHS = 36;
+const CREDIT_STRESS_CHART_HEIGHT = 375;
 const NEWS_SENTIMENT_VIEWS = {
   recent: {
     days: 3,
@@ -174,7 +175,7 @@ function renderCreditStressDashboard(rows) {
     return;
   }
   const width = 920;
-  const height = 250;
+  const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 24, bottom: 32, left: 52 };
   const scores = data.map((row) => Number(row.stress_index));
   const minimumScore = Math.min(...scores);
@@ -203,7 +204,7 @@ function renderCreditStressDashboard(rows) {
   }).join('');
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${lines}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>확정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>잠정치</span></div><span>월 단위로 업데이트됩니다.</span></div>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${lines}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>확정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>잠정치</span></div><span>월 단위로 업데이트됩니다.</span></div>`;
 }
 
 async function loadCreditStressDashboard() {
@@ -256,7 +257,7 @@ function renderCreditStressComponents(rows) {
     { key: 'business_bankruptcy_filings', label: '기업 파산보호 신청', color: '#285e8e', digits: 0, suffix: '건' },
   ].map((item) => ({ ...item, scores: buildCreditStressScores(data, item.key) }));
   const width = 920;
-  const height = 250;
+  const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 24, bottom: 32, left: 24 };
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
   const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
@@ -280,7 +281,7 @@ function renderCreditStressComponents(rows) {
     return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
   })).join('');
   const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-[11px] text-slate-500">점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-[11px] text-slate-500">점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
 }
 
 async function loadCreditStressComponentsDashboard() {
