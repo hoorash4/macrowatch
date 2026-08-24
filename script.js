@@ -286,7 +286,7 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI, MSI Lead 및 S&P 500 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${rightAxis}${monthlySegments}<path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#6d4b91" stroke-width="2.5"/><path d="${path(monthly, 'sp500_month_end_close', sy, 'month')}" fill="none" stroke="#285e8e" stroke-width="2.25"/>${monthlyDots}${sp500Dots}${years}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI (월간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>MSI Lead (주간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span></div>`;
 }
 
-function renderCreditStressMomentum(rows) {
+function renderCreditStressMomentum(rows, monthlyRows = []) {
   const chart = document.getElementById('credit-stress-momentum-chart');
   if (!chart) return;
   const monthlyData = [...rows]
@@ -305,22 +305,23 @@ function renderCreditStressMomentum(rows) {
     return;
   }
   const width = 920;
-  const height = 250;
-  const padding = { top: 18, right: 24, bottom: 32, left: 46 };
+  const height = 190;
+  const padding = { top: 18, right: 52, bottom: 20, left: 52 };
   const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 1);
   const step = [1, 2, 5, 10, 20, 50, 100].find((value) => value >= extent / 2) || 100;
   const axisMaximum = Math.ceil(extent / step) * step;
-  const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
+  const dates = [...data.map((row) => row.month), ...monthlyRows.map((row) => row.month)].map((value) => new Date(value).getTime());
+  const start = Math.min(...dates), end = Math.max(...dates);
+  const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#94a3b8' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value > 0 ? '+' : ''}${value}</text>`).join('');
-  const lines = data.slice(1).map((row, index) => `<line x1="${x(index)}" y1="${y(data[index].value)}" x2="${x(index + 1)}" y2="${y(row.value)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
+  const lines = data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
   const averageLines = data.slice(1).map((row, index) => {
     const previous = data[index];
     if (!Number.isFinite(previous.average) || !Number.isFinite(row.average)) return '';
-    return `<line x1="${x(index)}" y1="${y(previous.average)}" x2="${x(index + 1)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
+    return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
-  const labels = data.map((row, index) => String(row.month).endsWith('-01-01') || index === 0 ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 스트레스 변화 추이">${grid}${lines}${averageLines}${labels}</svg></div><div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-red-900"></i>스트레스 확대</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-900"></i>스트레스 완화</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>4주 평균</span></div>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 스트레스 변화 추이">${grid}${lines}${averageLines}</svg></div><div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-red-900"></i>스트레스 확대</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-900"></i>스트레스 완화</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>4주 평균</span></div>`;
 }
 
 async function loadWeeklyStressLead(monthlyRows = []) {
@@ -331,7 +332,7 @@ async function loadWeeklyStressLead(monthlyRows = []) {
   ]);
   if (weeklyResponse.error || monthlyResponse.error) return;
   renderCreditStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
-  renderCreditStressMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })));
+  renderCreditStressMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })), monthlyRows.length ? monthlyRows : monthlyResponse.data || []);
 }
 
 async function loadCreditStressDashboard() {
