@@ -318,17 +318,23 @@ function initializeDashboardNavigation() {
   const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
   if (!buttons.length || !panels.length) return;
 
-  const selectView = (view) => {
+  const hashByView = { overview: '#news', credit: '#credit', tracker: '#tracker' };
+  const viewByHash = Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view]));
+
+  const selectView = (view, updateHash = false) => {
+    const selectedView = hashByView[view] ? view : 'overview';
     buttons.forEach((button) => {
-      const active = button.dataset.dashboardView === view;
+      const active = button.dataset.dashboardView === selectedView;
       button.classList.toggle('is-active', active);
       button.toggleAttribute('aria-current', active);
     });
-    panels.forEach((panel) => panel.classList.toggle('dashboard-panel-hidden', panel.dataset.dashboardPanel !== view));
+    panels.forEach((panel) => panel.classList.toggle('dashboard-panel-hidden', panel.dataset.dashboardPanel !== selectedView));
+    if (updateHash && location.hash !== hashByView[selectedView]) location.hash = hashByView[selectedView];
   };
 
-  buttons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.dashboardView)));
-  selectView(buttons.find((button) => button.classList.contains('is-active'))?.dataset.dashboardView || buttons[0].dataset.dashboardView);
+  buttons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.dashboardView, true)));
+  window.addEventListener('hashchange', () => selectView(viewByHash[location.hash]));
+  selectView(viewByHash[location.hash] || buttons.find((button) => button.classList.contains('is-active'))?.dataset.dashboardView || buttons[0].dataset.dashboardView);
 }
 
 function initializeDashboardScrollState() {
