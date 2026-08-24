@@ -223,17 +223,9 @@ async function getLookbackHours(request: Request) {
   return requested;
 }
 
-async function verifyPipelineSecret(request: Request) {
-  const expected = Deno.env.get("NEWS_PIPELINE_SECRET");
-  if (!expected) throw new Error("NEWS_PIPELINE_SECRET이 설정되지 않았습니다.");
-  const provided = request.headers.get("x-news-pipeline-secret");
-  return Boolean(provided && provided === expected);
-}
-
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
-    if (!(await verifyPipelineSecret(request))) return json({ error: "인증되지 않은 파이프라인 요청입니다." }, 401);
     const lookbackHours = await getLookbackHours(request);
     const { candidates, errors } = await collectCandidates(lookbackHours);
     const events = await analyzeCandidates(candidates);
