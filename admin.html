@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MacroWatch 백엔드 설정</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="min-h-screen bg-slate-950 p-4 font-sans text-slate-100 sm:p-6">
+  <main class="mx-auto max-w-4xl space-y-5">
+    <header class="flex flex-col gap-4 rounded-2xl border border-slate-700/80 bg-slate-900 p-5 shadow-xl sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p class="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-400">Backend control</p>
+        <h1 class="text-2xl font-extrabold tracking-tight text-white">MacroWatch 백엔드 설정</h1>
+        <p class="mt-1 text-xs text-slate-400">자동 수집, 카카오 알림, 데이터베이스 백업 상태를 확인합니다.</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="refresh-button" type="button" class="flex h-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white">
+          <i class="fa-solid fa-rotate-right mr-2 text-xs"></i>새로고침
+        </button>
+        <a href="./" class="flex h-10 items-center justify-center rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white">
+          <i class="fa-solid fa-arrow-left mr-2 text-xs"></i>대시보드
+        </a>
+      </div>
+    </header>
+
+    <section class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs text-slate-500">백엔드</p><p id="backend-summary" class="mt-2 text-lg font-extrabold text-slate-300">확인 중</p></article>
+      <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs text-slate-500">추적 항목</p><p id="target-summary" class="mt-2 text-lg font-extrabold text-slate-300">—</p></article>
+      <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs text-slate-500">수집 오류</p><p id="error-summary" class="mt-2 text-lg font-extrabold text-slate-300">—</p></article>
+      <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs text-slate-500">백업</p><p id="backup-summary" class="mt-2 text-lg font-extrabold text-slate-300">확인 중</p></article>
+    </section>
+
+    <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+      <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-satellite-dish mr-2 text-blue-400"></i>지표 자동 수집</h2>
+          <p class="mt-1 text-sm leading-relaxed text-slate-400">매일 두 번 최신 값을 확인하고 조건을 충족한 항목만 카카오톡으로 알립니다.</p>
+        </div>
+        <span id="check-badge" class="w-fit shrink-0 rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-400">확인 중</span>
+      </div>
+
+      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4"><p class="text-xs text-slate-500">실행 일정</p><p class="mt-1 font-bold text-slate-200">매일 08:00 · 18:00</p><p class="mt-1 text-[11px] text-slate-500">한국 표준시</p></div>
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4"><p class="text-xs text-slate-500">최근 실행</p><p id="check-time" class="mt-1 font-bold text-slate-200">불러오는 중</p><p id="check-duration" class="mt-1 text-[11px] text-slate-500">—</p></div>
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4"><p class="text-xs text-slate-500">다음 실행</p><p id="next-check-time" class="mt-1 font-bold text-slate-200">계산 중</p><p class="mt-1 text-[11px] text-slate-500">GitHub 예약 실행은 수 분 늦을 수 있습니다.</p></div>
+      </div>
+
+      <a href="https://github.com/hoorash4/macrowatch/actions/workflows/check-targets.yml" target="_blank" rel="noopener noreferrer" class="flex w-full items-center justify-center rounded-lg bg-blue-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500"><i class="fa-solid fa-play mr-2"></i>지금 지표 확인</a>
+      <p class="mt-3 text-center text-xs text-slate-500">GitHub 화면에서 Run workflow를 누르면 즉시 실행됩니다.</p>
+    </section>
+
+    <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+      <div class="mb-4 flex items-center justify-between gap-3">
+        <div><h2 class="text-lg font-bold text-white"><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-400"></i>수집 오류</h2><p class="mt-1 text-sm text-slate-400">현재 오류가 기록된 추적 항목입니다.</p></div>
+        <span id="last-db-check" class="text-right text-[11px] text-slate-500">DB 확인 중</span>
+      </div>
+      <div id="error-list" class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60"><p class="p-4 text-center text-sm text-slate-500">목록을 불러오는 중입니다.</p></div>
+    </section>
+
+    <section class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <article class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <div><h2 class="text-lg font-bold text-white"><i class="fa-solid fa-comment mr-2 text-yellow-400"></i>카카오 알림·API 키</h2><p class="mt-1 text-sm text-slate-400">키 값은 페이지에 노출하지 않고 GitHub Secrets에 보관합니다.</p></div>
+          <span class="rounded-full border border-emerald-700/40 bg-emerald-950/50 px-3 py-1 text-xs font-semibold text-emerald-400">보안 저장</span>
+        </div>
+        <ul class="mb-4 space-y-2 text-xs text-slate-400">
+          <li><i class="fa-solid fa-key mr-2 w-4 text-slate-600"></i>Supabase · FRED · ECOS</li>
+          <li><i class="fa-solid fa-key mr-2 w-4 text-slate-600"></i>Kakao REST API · Client Secret · Refresh Token</li>
+          <li><i class="fa-solid fa-key mr-2 w-4 text-slate-600"></i>Google Drive · 백업 암호화</li>
+        </ul>
+        <a href="https://github.com/hoorash4/macrowatch/settings/secrets/actions" target="_blank" rel="noopener noreferrer" class="flex w-full items-center justify-center rounded-lg border border-slate-700 bg-slate-800 py-2.5 text-sm font-bold text-slate-200 transition hover:border-blue-500 hover:text-white"><i class="fa-solid fa-lock mr-2"></i>API 키 관리</a>
+      </article>
+
+      <article class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <div><h2 class="text-lg font-bold text-white"><i class="fa-brands fa-google-drive mr-2 text-blue-400"></i>데이터베이스 백업</h2><p class="mt-1 text-sm text-slate-400">매주 일요일 오전 3시, Google Drive의 최신본과 직전본을 교체합니다.</p></div>
+          <span id="backup-badge" class="shrink-0 rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-400">확인 중</span>
+        </div>
+        <dl class="mb-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm"><div class="flex items-center justify-between gap-3"><dt class="text-xs text-slate-500">최근 실행</dt><dd id="backup-time" class="text-right font-semibold text-slate-200">불러오는 중</dd></div></dl>
+        <a href="https://github.com/hoorash4/macrowatch/actions/workflows/backup-database.yml" target="_blank" rel="noopener noreferrer" class="flex w-full items-center justify-center rounded-lg border border-slate-700 bg-slate-800 py-2.5 text-sm font-bold text-slate-200 transition hover:border-blue-500 hover:text-white"><i class="fa-solid fa-database mr-2"></i>지금 수동 백업</a>
+      </article>
+    </section>
+
+    <p class="pb-3 text-center text-xs leading-relaxed text-slate-600">이 페이지에는 비밀 키 원문이 저장되지 않습니다. 실행과 키 수정은 GitHub 로그인으로 보호됩니다.</p>
+  </main>
+
+  <script>
+    const SUPABASE_URL = 'https://xhghpywvthjuvespzdul.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_rPKY5Wfpp1JnSkPhIzJqJA_cijBqYgc';
+    const githubApiBase = 'https://api.github.com/repos/hoorash4/macrowatch/actions/workflows';
+    const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+    function formatTime(value) {
+      if (!value) return '기록 없음';
+      return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(value));
+    }
+
+    function formatDuration(start, end) {
+      if (!start || !end) return '소요 시간 확인 불가';
+      const seconds = Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));
+      return `약 ${seconds}초 소요`;
+    }
+
+    function nextScheduledCheck() {
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+      const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+      const hour = minutes < 480 ? 8 : minutes < 1080 ? 18 : 8;
+      const date = new Date(`${parts.year}-${parts.month}-${parts.day}T${String(hour).padStart(2, '0')}:00:00+09:00`);
+      if (minutes >= 1080) date.setDate(date.getDate() + 1);
+      return formatTime(date);
+    }
+
+    function badgeState(run) {
+      if (!run) return ['기록 없음', 'border-slate-700 bg-slate-800 text-slate-400'];
+      if (run.status !== 'completed') return ['실행 중', 'border-blue-700/50 bg-blue-950/60 text-blue-400'];
+      if (run.conclusion === 'success') return ['정상', 'border-emerald-700/50 bg-emerald-950/60 text-emerald-400'];
+      if (run.conclusion === 'cancelled') return ['취소됨', 'border-amber-700/50 bg-amber-950/60 text-amber-400'];
+      return ['실패', 'border-red-700/50 bg-red-950/60 text-red-400'];
+    }
+
+    function setBadge(element, run) {
+      const [label, classes] = badgeState(run);
+      element.className = `shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${classes}`;
+      element.textContent = label;
+      return label;
+    }
+
+    async function latestWorkflowRun(fileName) {
+      const response = await fetch(`${githubApiBase}/${fileName}/runs?per_page=1`, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`);
+      return (await response.json()).workflow_runs?.[0] || null;
+    }
+
+    async function loadWorkflowStatus() {
+      const [checkResult, backupResult] = await Promise.allSettled([latestWorkflowRun('check-targets.yml'), latestWorkflowRun('backup-database.yml')]);
+      if (checkResult.status === 'fulfilled') {
+        const run = checkResult.value;
+        const label = setBadge(document.getElementById('check-badge'), run);
+        document.getElementById('backend-summary').textContent = label;
+        document.getElementById('backend-summary').className = `mt-2 text-lg font-extrabold ${run?.conclusion === 'success' ? 'text-emerald-400' : 'text-amber-400'}`;
+        document.getElementById('check-time').textContent = formatTime(run?.updated_at || run?.created_at);
+        document.getElementById('check-duration').textContent = formatDuration(run?.run_started_at || run?.created_at, run?.updated_at);
+      } else {
+        document.getElementById('check-badge').textContent = '확인 실패';
+        document.getElementById('backend-summary').textContent = '확인 실패';
+      }
+      if (backupResult.status === 'fulfilled') {
+        const run = backupResult.value;
+        const label = setBadge(document.getElementById('backup-badge'), run);
+        document.getElementById('backup-summary').textContent = label;
+        document.getElementById('backup-summary').className = `mt-2 text-lg font-extrabold ${run?.conclusion === 'success' ? 'text-emerald-400' : 'text-amber-400'}`;
+        document.getElementById('backup-time').textContent = formatTime(run?.updated_at || run?.created_at);
+      } else {
+        document.getElementById('backup-badge').textContent = '확인 실패';
+        document.getElementById('backup-summary').textContent = '확인 실패';
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character]);
+    }
+
+    function renderErrors(items) {
+      const list = document.getElementById('error-list');
+      if (!items.length) {
+        list.innerHTML = '<div class="flex items-center justify-center gap-2 p-5 text-sm text-emerald-400"><i class="fa-solid fa-circle-check"></i>현재 기록된 수집 오류가 없습니다.</div>';
+        return;
+      }
+      list.innerHTML = items.map(item => `<article class="border-b border-slate-800 p-4 last:border-0"><div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div class="min-w-0"><h3 class="font-bold text-slate-200">${escapeHtml(item.title || '이름 없는 지표')}</h3><p class="mt-1 break-words text-xs leading-relaxed text-red-300">${escapeHtml(item.last_error)}</p></div><span class="shrink-0 text-[11px] text-slate-500">${formatTime(item.last_checked_at)}</span></div></article>`).join('');
+    }
+
+    async function loadDatabaseStatus() {
+      if (!db) throw new Error('Supabase 라이브러리를 불러오지 못했습니다.');
+      const { data, error } = await db.from('targets').select('id,title,is_active,last_error,last_checked_at');
+      if (error) throw error;
+      const items = data || [];
+      const active = items.filter(item => item.is_active).length;
+      const errors = items.filter(item => item.last_error);
+      document.getElementById('target-summary').textContent = `${active} / ${items.length}`;
+      document.getElementById('error-summary').textContent = `${errors.length}건`;
+      document.getElementById('error-summary').className = `mt-2 text-lg font-extrabold ${errors.length ? 'text-red-400' : 'text-emerald-400'}`;
+      document.getElementById('last-db-check').textContent = `확인 ${formatTime(new Date())}`;
+      renderErrors(errors.sort((a, b) => new Date(b.last_checked_at || 0) - new Date(a.last_checked_at || 0)));
+    }
+
+    async function loadAll() {
+      const button = document.getElementById('refresh-button');
+      button.disabled = true;
+      button.classList.add('opacity-60');
+      document.getElementById('next-check-time').textContent = nextScheduledCheck();
+      const results = await Promise.allSettled([loadWorkflowStatus(), loadDatabaseStatus()]);
+      if (results[1].status === 'rejected') {
+        document.getElementById('target-summary').textContent = '확인 실패';
+        document.getElementById('error-summary').textContent = '확인 실패';
+        document.getElementById('error-list').innerHTML = `<p class="p-4 text-center text-sm text-amber-400">${escapeHtml(results[1].reason?.message || 'DB 상태를 불러오지 못했습니다.')}</p>`;
+      }
+      button.disabled = false;
+      button.classList.remove('opacity-60');
+    }
+
+    document.getElementById('refresh-button').addEventListener('click', loadAll);
+    loadAll();
+  </script>
+</body>
+</html>
