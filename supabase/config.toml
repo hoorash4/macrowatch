@@ -1,0 +1,4 @@
+project_id = "xhghpywvthjuvespzdul"
+
+[functions.news-pipeline]
+verify_jwt = false
