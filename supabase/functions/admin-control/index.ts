@@ -114,6 +114,26 @@ async function refreshArticleSentiment(admin: ReturnType<typeof createClient>, a
   if (upsertError) throw upsertError;
 }
 
+async function excludeUncertainArticle(admin: ReturnType<typeof createClient>, id: string) {
+  const { data, error } = await admin.from("news_article_sentiments")
+    .delete()
+    .eq("id", id).eq("ai_sentiment", "uncertain").is("admin_sentiment", null)
+    .select("article_date").maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("이미 처리되었거나 존재하지 않는 항목입니다.");
+
+  const { data: daily, error: dailyError } = await admin.from("news_daily_article_sentiment")
+    .select("excluded_count").eq("article_date", data.article_date).maybeSingle();
+  if (dailyError) throw dailyError;
+
+  await refreshArticleSentiment(admin, data.article_date);
+  const { error: excludedError } = await admin.from("news_daily_article_sentiment").update({
+    excluded_count: (daily?.excluded_count || 0) + 1,
+    generated_at: new Date().toISOString(),
+  }).eq("article_date", data.article_date);
+  if (excludedError) throw excludedError;
+}
+
 async function updateWorkflowSchedule(times: string[], token: string) {
   const path = "/contents/.github/workflows/check-targets.yml";
   const file = await githubRequest(`${path}?ref=${BRANCH}`, token);
@@ -272,6 +292,13 @@ export default {
         if (!data) return json({ error: "이미 처리되었거나 존재하지 않는 항목입니다." }, 409, origin);
         await refreshArticleSentiment(admin, data.article_date);
         return json({ resolved: true }, 200, origin);
+      }
+
+      if (action === "exclude_uncertain_news") {
+        const id = String(body?.article_id || "");
+        if (!id) return json({ error: "기사 식별자가 필요합니다." }, 400, origin);
+        await excludeUncertainArticle(admin, id);
+        return json({ excluded: true }, 200, origin);
       }
 
       return json({ error: "지원하지 않는 요청입니다." }, 400, origin);
