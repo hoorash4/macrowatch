@@ -249,12 +249,15 @@ content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
   color: #64748b;
   margin: 0 auto;
 }/* ===== 대시보드 화면 ===== */
+body:has(#app-shell:not(.hidden)) { background: #f4f7fb; }
+
 #app-shell {
-  --dashboard-inner-pad: clamp(1rem, 3vw, 2.5rem);
-  width: min(100%, 1440px);
-  margin: 0 auto;
+  --dashboard-inner-pad: clamp(1.25rem, 3.2vw, 4rem);
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 1.5rem var(--dashboard-inner-pad) 0;
-  background: transparent;
+  color: #172033;
 }
 
 #app-shell > * { min-width: 0; }
@@ -264,186 +267,129 @@ content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1.25rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid #1f2937;
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, .82);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, .16);
+  margin-bottom: 1.5rem;
+  padding: 1.1rem 1.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.1rem;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .05);
 }
 
-.dashboard-brand { gap: .6rem; }
-.dashboard-logo {
-  width: 38px;
-  height: 38px;
-  flex: none;
-  background: url("./images/logo.png") center / contain no-repeat;
-}
-.dashboard-header h1 { font-size: 1.05rem; letter-spacing: -.02em; }
-.dashboard-header p { color: #7c8aa0 !important; }
-.dashboard-actions { gap: .45rem !important; }
+.dashboard-brand { gap: .7rem; }
+.dashboard-logo { width: 40px; height: 40px; flex: none; background: url("./images/logo.png") center / contain no-repeat; }
+.dashboard-header h1 { color: #12213a !important; font-size: 1.08rem; letter-spacing: -.03em; }
+.dashboard-header p { color: #7a8799 !important; }
+.dashboard-actions { gap: .5rem !important; }
 .dashboard-actions button,
 .dashboard-actions a {
-  width: 2.2rem !important;
-  height: 2.2rem !important;
-  border-color: #273449 !important;
-  background: #111b2b !important;
-  color: #9aa9bc !important;
+  width: 2.3rem !important;
+  height: 2.3rem !important;
+  border-color: #e2e8f0 !important;
+  background: #fff !important;
+  color: #64748b !important;
 }
+.dashboard-actions button:hover,
+.dashboard-actions a:hover { border-color: #bfdbfe !important; background: #eff6ff !important; color: #2563eb !important; }
 #db-status { display: none !important; }
 
-.dashboard-workspace {
-  display: grid;
-  grid-template-columns: 11.5rem minmax(0, 1fr);
-  gap: 1.25rem;
-  align-items: start;
-}
-
+.dashboard-workspace { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 .dashboard-nav {
   position: sticky;
   top: 1.5rem;
   display: grid;
-  gap: .3rem;
-  padding: .8rem;
-  border: 1px solid #1f2937;
+  gap: .35rem;
+  padding: .9rem;
+  border: 1px solid #e2e8f0;
   border-radius: 1rem;
-  background: #0d1625;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .04);
 }
-
-.dashboard-nav-label {
-  margin: .2rem .55rem .55rem;
-  color: #617088;
-  font-size: .62rem;
-  font-weight: 700;
-  letter-spacing: .15em;
-}
-
+.dashboard-nav-label { margin: .25rem .6rem .6rem; color: #94a3b8; font-size: .62rem; font-weight: 800; letter-spacing: .16em; }
 .dashboard-nav-item {
   display: flex;
   align-items: center;
-  gap: .7rem;
+  gap: .75rem;
   width: 100%;
-  padding: .7rem .75rem;
-  border-radius: .65rem;
-  color: #94a3b8;
-  font-size: .78rem;
-  font-weight: 700;
+  padding: .78rem .8rem;
+  border-radius: .7rem;
+  color: #64748b;
+  font-size: .8rem;
+  font-weight: 750;
   text-align: left;
   transition: background .16s ease, color .16s ease;
 }
-
-.dashboard-nav-item:hover { background: #152238; color: #e5edf7; }
-.dashboard-nav-item.is-active { background: #1d4ed8; color: #fff; }
+.dashboard-nav-item:hover { background: #f1f5f9; color: #1e3a8a; }
+.dashboard-nav-item.is-active { background: #eaf2ff; color: #1d4ed8; }
 .dashboard-nav-item i { width: 1rem; text-align: center; }
 .dashboard-main { min-width: 0; }
 .dashboard-panel-hidden { display: none !important; }
 
-.market-overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(320px, 5fr);
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
+.market-overview-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(360px, .85fr); gap: 1.25rem; margin-bottom: 1.25rem; }
 #news-sentiment-dashboard,
 #credit-stress-dashboard,
 #credit-stress-components-dashboard,
 #tab-content-tracker > div:first-child,
 #tab-content-tracker > div:nth-child(2) {
-  border-color: #202d40 !important;
-  border-radius: 1rem !important;
-  background: linear-gradient(145deg, #111c2e, #0d1625) !important;
-  box-shadow: none !important;
+  border-color: #e2e8f0 !important;
+  border-radius: 1.1rem !important;
+  background: #fff !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .045) !important;
 }
-
-#credit-stress-components-dashboard { grid-column: 1 / -1; }
-#credit-stress-components-dashboard { margin-bottom: 1rem; }
-.market-overview-grid > section > div:first-child { border-color: #202d40 !important; }
-.market-overview-grid h2 { font-size: 1rem !important; }
-.market-overview-grid p { color: #8190a5 !important; }
+#credit-stress-components-dashboard { margin-bottom: 1.25rem; }
+.market-overview-grid > section > div:first-child,
+#credit-stress-components-dashboard > div:first-child { border-color: #edf1f6 !important; }
+.market-overview-grid h2,
+#credit-stress-components-dashboard h2 { color: #172033 !important; font-size: 1.05rem !important; }
+.market-overview-grid p,
+#credit-stress-components-dashboard p { color: #718096 !important; }
 .market-overview-grid [class*="bg-sky"],
 .market-overview-grid [class*="bg-amber"],
-.market-overview-grid [class*="bg-blue"] { background: #17243a !important; }
+.market-overview-grid [class*="bg-blue"],
+#credit-stress-components-dashboard [class*="bg-blue"] { background: #eff6ff !important; }
 
-#app-shell .text-white { color: #f3f7fb; }
-#app-shell .text-slate-400 { color: #9aa9bc; }
-#app-shell .text-slate-500 { color: #74839a; }
-
+#app-shell .text-white { color: #172033; }
+#app-shell .text-slate-400 { color: #718096; }
+#app-shell .text-slate-500 { color: #8793a5; }
+#app-shell [class*="bg-slate-950"] { background: #f8fafc !important; }
 .compact-mobile-summary { display: none !important; }
 
-#tab-content-tracker {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 1rem;
-  align-items: start;
-  margin-bottom: 1rem;
-}
-
-#tab-content-tracker > div:first-child {
-  grid-column: 2;
-  grid-row: 1;
-  padding: 1.25rem !important;
-}
-
-#tab-content-tracker > div:nth-child(2) {
-  grid-column: 1;
-  grid-row: 1;
-  padding: 1.25rem !important;
-}
-
+#tab-content-tracker { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 1.25rem; align-items: start; margin-bottom: 1.25rem; }
+#tab-content-tracker > div:first-child { grid-column: 2; grid-row: 1; padding: 1.35rem !important; }
+#tab-content-tracker > div:nth-child(2) { grid-column: 1; grid-row: 1; padding: 1.35rem !important; }
+#tab-content-tracker > div:first-child h2,
+#tab-content-tracker > div:nth-child(2) h2 { color: #172033 !important; }
 #tab-content-tracker > div:first-child input,
 #tab-content-tracker > div:first-child select {
-  border-color: #2b3b52 !important;
-  background: #0a1220 !important;
-  color: #e8eef6 !important;
-  -webkit-text-fill-color: #e8eef6;
+  border-color: #dbe3ee !important;
+  background: #fff !important;
+  color: #172033 !important;
+  -webkit-text-fill-color: #172033;
 }
-#tab-content-tracker > div:first-child input::placeholder {
-  color: #65748a;
-  -webkit-text-fill-color: #65748a;
-}
-#tab-content-tracker > div:first-child select option { background: #0a1220; color: #e8eef6; }
+#tab-content-tracker > div:first-child input::placeholder { color: #94a3b8; -webkit-text-fill-color: #94a3b8; }
+#tab-content-tracker > div:first-child select option { background: #fff; color: #172033; }
 #tab-content-tracker > div:first-child button[type="submit"] { background: #2563eb; }
-#tab-content-tracker > div:first-child button[type="submit"]:hover { background: #3b82f6; }
-#tab-content-tracker > div:first-child [class*="bg-slate-50"] {
-  border-color: #273449 !important;
-  background: #111b2b !important;
-}
-#tab-content-tracker > div:first-child [class*="text-slate-7"] { color: #d5dfeb !important; }
+#tab-content-tracker > div:first-child button[type="submit"]:hover { background: #1d4ed8; }
+#tab-content-tracker > div:first-child [class*="bg-slate-50"] { border-color: #e2e8f0 !important; background: #f8fafc !important; }
+#tab-content-tracker > div:first-child [class*="text-slate-7"] { color: #334155 !important; }
 
 #target-list { min-height: 34rem; }
-#target-list > div[data-target-container] {
-  border-color: #202d40 !important;
-}
+#target-list > div[data-target-container] { border-color: #edf1f5 !important; }
+#target-list [data-target-row]:hover { background: #f8fafc !important; }
+#target-list .text-white { color: #172033 !important; }
+#target-list .text-slate-300 { color: #475569 !important; }
+#target-list .bg-slate-950 { border-color: #e2e8f0 !important; background: #f8fafc !important; }
 
-#tab-content-tracker > .sheet-tabs {
-  grid-column: 1;
-  grid-row: 2;
-  width: 100%;
-  height: 38px;
-  padding: 0;
-}
-
-#app-shell > .dashboard-copyright {
-  margin: 0 calc(var(--dashboard-inner-pad) * -1);
-  padding: 1.25rem var(--dashboard-inner-pad);
-  border-color: #1d2939;
-  color: #526176;
-}
+#tab-content-tracker > .sheet-tabs { grid-column: 1; grid-row: 2; width: 100%; height: 38px; padding: 0; }
+#app-shell > .dashboard-copyright { margin: 0 calc(var(--dashboard-inner-pad) * -1); padding: 1.4rem var(--dashboard-inner-pad); border-color: #e2e8f0; color: #94a3b8; }
 
 @media (max-width: 1023px) {
   .dashboard-workspace { grid-template-columns: 1fr; }
-  .dashboard-nav {
-    position: static;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: .4rem;
-  }
+  .dashboard-nav { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
   .dashboard-nav-label { display: none; }
-  .dashboard-nav-item { justify-content: center; padding: .7rem .4rem; }
+  .dashboard-nav-item { justify-content: center; padding: .75rem .4rem; }
   .dashboard-nav-item span { display: none; }
   .market-overview-grid,
   #tab-content-tracker { grid-template-columns: 1fr; }
-  #credit-stress-components-dashboard,
   #tab-content-tracker > div:first-child,
   #tab-content-tracker > div:nth-child(2),
   #tab-content-tracker > .sheet-tabs { grid-column: 1; grid-row: auto; }
@@ -452,7 +398,7 @@ content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
 
 @media (max-width: 640px) {
   #app-shell { padding-top: .75rem; }
-  .dashboard-header { padding: .8rem; }
+  .dashboard-header { padding: .85rem; }
   .dashboard-header p { display: none; }
 }
 
