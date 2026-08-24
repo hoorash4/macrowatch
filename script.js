@@ -302,6 +302,18 @@ function buildCreditStressScores(rows, key) {
   }));
 }
 
+function addBankruptcyTrailingAverage(rows) {
+  const filings = [];
+  return rows.map((row) => {
+    const value = toCreditStressNumber(row.business_bankruptcy_filings);
+    if (Number.isFinite(value) && value > 0) filings.push(value);
+    const average = filings.length
+      ? filings.slice(-3).reduce((sum, filing) => sum + filing, 0) / Math.min(3, filings.length)
+      : null;
+    return { ...row, business_bankruptcy_filings_3m_average: average };
+  });
+}
+
 function renderCreditStressComponents(rows) {
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart) return;
@@ -309,11 +321,13 @@ function renderCreditStressComponents(rows) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 수집 후 장기 신용위험 추이가 표시됩니다.</div>';
     return;
   }
-  const data = [...rows].sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const data = addBankruptcyTrailingAverage(
+    [...rows].sort((a, b) => String(a.month).localeCompare(String(b.month))),
+  ).slice(-CREDIT_STRESS_HISTORY_MONTHS);
   const series = [
     { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
     { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b7791f', digits: 3, suffix: '' },
-    { key: 'business_bankruptcy_filings', label: '기업 파산보호 신청', color: '#285e8e', digits: 0, suffix: '건' },
+    { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' },
   ].map((item) => ({ ...item, scores: buildCreditStressScores(data, item.key) }));
   const width = 920;
   const height = CREDIT_STRESS_CHART_HEIGHT;
@@ -340,7 +354,7 @@ function renderCreditStressComponents(rows) {
     return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
   })).join('');
   const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-right text-[11px] text-slate-500">점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-right text-[11px] text-slate-500">점에 마우스를 올리면 표시 수치를 확인할 수 있습니다.</p>`;
 }
 
 async function loadCreditStressComponentsDashboard() {
@@ -350,7 +364,7 @@ async function loadCreditStressComponentsDashboard() {
     const { data, error } = await supabaseClient.from('us_credit_stress_monthly')
       .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
       .order('month', { ascending: false })
-      .limit(CREDIT_STRESS_HISTORY_MONTHS);
+      .limit(CREDIT_STRESS_HISTORY_MONTHS + 2);
     if (error) throw error;
     renderCreditStressComponents(data || []);
   } catch (error) {
