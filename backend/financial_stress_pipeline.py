@@ -540,7 +540,8 @@ def main() -> None:
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
         f"nfci={len(financial_conditions)} sp500={len(sp500_month_end)} "
-        f"short_funding_spread={len(short_term_funding_spread)}"
+        f"short_funding_spread={len(short_term_funding_spread)} "
+        f"weekly_leverage={len(weekly_leverage)}"
     )
 
 
