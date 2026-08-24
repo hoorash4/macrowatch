@@ -61,19 +61,19 @@ async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, 
 async function resetExcludedCount(supabase: ReturnType<typeof createClient>, articleDate: string) { const { error } = await supabase.from("news_daily_article_sentiment").update({ excluded_count: 0, generated_at: new Date().toISOString() }).eq("article_date", articleDate); if (error) throw error; }
 async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidate[], articleDate: string, resetExcluded = false) {
   const candidatesByHash = new Map(candidates.map((candidate) => [candidate.itemHash, candidate])), includedOutputs = outputs.filter((output) => !output.excludeFromIndex);
-  const dates = new Set<string>([articleDate]), now = new Date().toISOString();
+  const now = new Date().toISOString();
   const supabase = serverClient();
   if (resetExcluded) await resetExcludedCount(supabase, articleDate);
   const hashes = includedOutputs.map((output) => output.itemHash);
   const { data: existingRows, error: existingError } = hashes.length ? await supabase.from("news_article_sentiments").select("article_hash,article_date,ai_sentiment,admin_sentiment,derived_keywords,uncertain_summary").in("article_hash", hashes) : { data: [], error: null };
   if (existingError) throw existingError;
   const existingByHash = new Map((existingRows || []).map((row) => [row.article_hash, row]));
-  for (const existing of existingRows || []) if (existing.article_date) dates.add(existing.article_date);
-  const rows = includedOutputs.map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
+  // article_date is the collection day used for graph aggregation; published_at remains untouched.
+  const rows = includedOutputs.filter((output) => { const existing = existingByHash.get(output.itemHash); return !existing || existing.article_date === articleDate; }).map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, collected_at: now, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
   if (rows.length) { const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" }); if (error) throw error; }
   const excludedCount = outputs.filter((item) => item.excludeFromIndex).length;
-  for (const date of dates) await refreshDailySentiment(supabase, date, date === articleDate ? excludedCount : 0);
-  return { articles: rows.length, excluded_articles: outputs.length - rows.length, dates: [...dates].sort() };
+  await refreshDailySentiment(supabase, articleDate, excludedCount);
+  return { articles: rows.length, excluded_articles: excludedCount, dates: [articleDate] };
 }
 async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const lookbackHours = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS), offset = Number(body.offset ?? 0), limit = Number(body.limit ?? DEFAULT_BATCH_SIZE); if (!Number.isInteger(lookbackHours) || lookbackHours < 1 || lookbackHours > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_BATCH_SIZE) throw new Error(`offset은 0 이상의 정수이고 limit은 1에서 ${MAX_BATCH_SIZE} 사이여야 합니다.`); return { lookbackHours, offset, limit, dryRun: body.dry_run === true, markComplete: body.mark_complete === true }; }
 Deno.serve(async (request) => {
