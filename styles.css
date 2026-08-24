@@ -275,10 +275,10 @@ body:has(#app-shell:not(.hidden)) {
 #db-status { display:none !important; }
 .dashboard-main { min-width:0; }.dashboard-panel-hidden { display:none !important; }
 
-.market-overview { margin-bottom:2rem; }.market-overview-intro { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:1.5rem; align-items:end; min-height:clamp(22rem, 35vw, 33rem); padding:clamp(1.7rem, 4vw, 4rem); background:#161616; color:#fff; }
-.market-overview-kicker { grid-column:1 / -1; align-self:start; margin:0; color:#b4b4b1; font-size:.6rem; font-weight:800; letter-spacing:.19em; }.market-overview-intro h2 { margin:0; color:#fff; font-size:clamp(3.1rem, 7.2vw, 8.6rem); font-weight:500; letter-spacing:-.09em; line-height:.78; }.market-overview-intro h2 em { color:#ed4a3d; font-style:normal; }.market-overview-intro p { max-width:23rem; margin:1.6rem 0 0; color:#c5c5c2; font-size:.86rem; line-height:1.65; }.market-overview-date { align-self:end; color:#b4b4b1; font-size:.56rem; font-weight:750; letter-spacing:.15em; line-height:1.6; text-align:right; }
-.market-overview-grid { display:grid; grid-template-columns:minmax(0, 1.45fr) minmax(280px, .72fr); gap:clamp(1.5rem, 3.4vw, 4rem); padding-top:3rem; }
+.market-overview { margin-bottom:2rem; }
+.market-overview-grid { display:grid; grid-template-columns:minmax(0, 1fr); padding-top:1.5rem; }
 #news-sentiment-dashboard, #credit-stress-dashboard, #credit-stress-components-dashboard, #tab-content-tracker > div:first-child, #tab-content-tracker > div:nth-child(2) { border:0 !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; }
+#credit-stress-dashboard { margin-bottom:4rem; }
 #credit-stress-components-dashboard { margin-bottom:2rem; }.market-overview-grid > section > div:first-child, #credit-stress-components-dashboard > div:first-child { padding:0 0 1.2rem !important; border-color:#161616 !important; }
 .market-overview-grid h2, #credit-stress-components-dashboard h2 { color:#161616 !important; font-size:1.15rem !important; }.market-overview-grid p, #credit-stress-components-dashboard p { color:#737069 !important; }
 .market-overview-grid [class*="bg-sky"], .market-overview-grid [class*="bg-amber"], .market-overview-grid [class*="bg-blue"], #credit-stress-components-dashboard [class*="bg-blue"] { border:1px solid #dedede; background:#f3f3f1 !important; color:#282724 !important; }
@@ -291,8 +291,8 @@ body:has(#app-shell:not(.hidden)) {
 #tab-content-tracker > .sheet-tabs { grid-column:1; grid-row:2; width:100%; height:38px; padding:0; }
 #app-shell > .dashboard-copyright { margin:4rem calc(var(--dashboard-pad) * -1) 0; padding:1.3rem var(--dashboard-pad); border-top:1px solid rgba(20,36,51,.18) !important; border-color:rgba(20,36,51,.18) !important; background:transparent !important; color:#6e7f8d; }
 
-@media (max-width:1023px) { #app-shell { padding-top:0; }.dashboard-workspace { gap:2rem; }.dashboard-nav { gap:1.2rem; overflow:auto; }.dashboard-wordmark { flex:none; margin:0 1rem 0 0; }.dashboard-nav-actions { display:none; }.dashboard-nav-item { width:auto; flex:none; }.market-overview-grid,#tab-content-tracker { grid-template-columns:1fr; gap:2rem; }#tab-content-tracker > div:first-child,#tab-content-tracker > div:nth-child(2),#tab-content-tracker > .sheet-tabs { grid-column:1; grid-row:auto; }#tab-content-tracker > div:first-child { order:2; padding:2rem 0 0 !important; border-top:1px solid #dedede !important; border-left:0 !important; }.market-overview-intro { min-height:22rem; padding-bottom:1.7rem; }.market-overview-kicker { margin-bottom:1.5rem; } }
-@media (max-width:640px) { .market-overview-date { display:none; }.market-overview-intro h2 { font-size:3.2rem; }.market-overview-grid { padding-top:1.5rem; } }
+@media (max-width:1023px) { #app-shell { padding-top:0; }.dashboard-workspace { gap:2rem; }.dashboard-nav { gap:1.2rem; overflow:auto; }.dashboard-wordmark { flex:none; margin:0 1rem 0 0; }.dashboard-nav-actions { display:none; }.dashboard-nav-item { width:auto; flex:none; }.market-overview-grid,#tab-content-tracker { grid-template-columns:1fr; gap:2rem; }#tab-content-tracker > div:first-child,#tab-content-tracker > div:nth-child(2),#tab-content-tracker > .sheet-tabs { grid-column:1; grid-row:auto; }#tab-content-tracker > div:first-child { order:2; padding:2rem 0 0 !important; border-top:1px solid #dedede !important; border-left:0 !important; } }
+@media (max-width:640px) { .market-overview-grid { padding-top:1.5rem; } }
 
 @keyframes dashboardSpin {to {
 transform: rotate(360deg);

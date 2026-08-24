@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -128,14 +128,6 @@
       </nav>
       <div class="dashboard-main">
     <div class="market-overview" data-dashboard-panel="overview">
-      <header class="market-overview-intro">
-        <p class="market-overview-kicker">MACROWATCH / DAILY BRIEF</p>
-        <div>
-          <h2>시장에 남는<br><em>신호만</em> 읽습니다.</h2>
-          <p>24시간 뉴스 흐름과 미국 신용시장의 변화를 한 화면에서 확인하세요.</p>
-        </div>
-        <span class="market-overview-date" aria-hidden="true">MARKET<br>OBSERVATORY</span>
-      </header>
     <div class="market-overview-grid">
     <!-- 최근 뉴스의 한국 주가지수 영향 분포를 가장 먼저 보여줍니다. -->
     <section id="news-sentiment-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="news-sentiment-title">
@@ -160,7 +152,10 @@
       </div>
     </section>
 
-    <section id="credit-stress-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="credit-stress-title">
+    </div>
+    </div>
+
+    <section id="credit-stress-dashboard" data-dashboard-panel="credit" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="credit-stress-title">
       <div class="border-b border-slate-800 px-5 py-5">
         <div class="flex items-center gap-2">
           <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
@@ -175,8 +170,6 @@
         <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
       </div>
     </section>
-    </div>
-    </div>
 
     <section id="credit-stress-components-dashboard" data-dashboard-panel="credit" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="credit-stress-components-title">
       <div class="border-b border-slate-800 px-5 py-5">
