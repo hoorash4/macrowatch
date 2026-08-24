@@ -291,24 +291,34 @@ function renderCreditStressMomentum(rows) {
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 스트레스 변화 추이">${grid}${lines}${averageLines}${dots}${averageDots}${labels}</svg></div><div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>스트레스 확대</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>스트레스 완화</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>4주 평균</span></div>`;
 }
 
-function renderWeeklyLead(rows) {
+function renderWeeklyLead(rows, monthlyRows) {
   const chart = document.getElementById('credit-stress-weekly-lead-chart');
   if (!chart) return;
   const data = [...rows].filter((row) => Number.isFinite(toCreditStressNumber(row.lead_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!data.length) { chart.innerHTML = '<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 주간 선행 지표가 표시됩니다.</div>'; return; }
+  const monthly = [...monthlyRows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  let monthlyIndex = 0, currentMsi = null;
+  const msi = data.map((row) => {
+    while (monthlyIndex < monthly.length && String(monthly[monthlyIndex].month) <= String(row.week)) currentMsi = Number(monthly[monthlyIndex++].stress_index);
+    return currentMsi;
+  });
   const width = 920, height = 250, padding = { top: 18, right: 24, bottom: 32, left: 46 };
-  const values = data.map((row) => Number(row.lead_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1), y = (value) => padding.top + ((height - padding.top - padding.bottom) * (maximum + range * .1 - value)) / (range * 1.2);
+  const values = [...data.map((row) => Number(row.lead_index)), ...msi.filter(Number.isFinite)], minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1), y = (value) => padding.top + ((height - padding.top - padding.bottom) * (maximum + range * .1 - value)) / (range * 1.2);
   const lines = data.slice(1).map((row, index) => `<line x1="${x(index)}" y1="${y(Number(data[index].lead_index))}" x2="${x(index + 1)}" y2="${y(Number(row.lead_index))}" stroke="#6d4b91" stroke-width="2.5" stroke-linecap="round"/>`).join('');
+  const msiSteps = data.slice(1).map((_row, index) => Number.isFinite(msi[index]) && Number.isFinite(msi[index + 1]) ? `<path d="M${x(index)},${y(msi[index])}H${x(index + 1)}V${y(msi[index + 1])}" fill="none" stroke="#b7791f" stroke-width="2.25" stroke-dasharray="5 5"/>` : '').join('');
   const labels = data.map((row, index) => (index === 0 || String(row.week).endsWith('-01-01')) ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>` : '').join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 선행 지표">${lines}${labels}</svg></div>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 선행 지표와 월간 US-MSI">${msiSteps}${lines}${labels}</svg></div><div class="mt-3 flex gap-5 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>MSI Lead (주간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI (월간)</span></div>`;
 }
 
 async function loadWeeklyStressLead() {
   if (!supabaseClient) return;
-  const { data, error } = await supabaseClient.from('us_market_stress_lead_weekly').select('week,lead_index,lead_momentum').order('week', { ascending: false }).limit(160);
-  if (error) return;
-  renderWeeklyLead(data || []);
-  renderCreditStressMomentum((data || []).map((row) => ({ ...row, month: row.week })));
+  const [weeklyResponse, monthlyResponse] = await Promise.all([
+    supabaseClient.from('us_market_stress_lead_weekly').select('week,lead_index,lead_momentum').order('week', { ascending: false }).limit(160),
+    supabaseClient.from('us_market_stress_index_monthly').select('month,stress_index').order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
+  ]);
+  if (weeklyResponse.error || monthlyResponse.error) return;
+  renderWeeklyLead(weeklyResponse.data || [], monthlyResponse.data || []);
+  renderCreditStressMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })));
 }
 
 async function loadCreditStressDashboard() {
