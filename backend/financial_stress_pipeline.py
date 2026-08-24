@@ -30,6 +30,14 @@ STRESS_COMPONENTS = (
     ("financial_conditions_credit_index", 0.30),
     ("business_bankruptcy_filings", 0.20),
 )
+# Fixed 0-to-100 reference ranges. These never roll with incoming data; values
+# above the reference range deliberately remain above 100 to preserve stress
+# severity during future extremes.
+FIXED_COMPONENT_SCALES = {
+    "high_yield_oas_pct": (2.0, 20.0),
+    "financial_conditions_credit_index": (-0.5, 2.0),
+    "business_bankruptcy_filings": (1000.0, 5000.0),
+}
 
 
 def month_start(value: date) -> str:
@@ -160,25 +168,9 @@ def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_k
     response.raise_for_status()
 
 
-def percentile(sorted_values: list[float], ratio: float) -> float:
-    if not sorted_values:
-        raise ValueError("백분위 계산에 사용할 값이 없습니다.")
-    position = (len(sorted_values) - 1) * ratio
-    lower = int(position)
-    upper = min(lower + 1, len(sorted_values) - 1)
-    fraction = position - lower
-    return sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * fraction
-
-
-def normalized_scores(values: dict[str, float]) -> dict[str, float]:
-    ordered = sorted(values.values())
-    lower = percentile(ordered, 0.05)
-    upper = percentile(ordered, 0.95)
-    spread = upper - lower or 1.0
-    return {
-        month: round(max(0.0, min(100.0, ((value - lower) / spread) * 100.0)), 4)
-        for month, value in values.items()
-    }
+def fixed_stress_score(value: float, key: str) -> float:
+    floor, reference = FIXED_COMPONENT_SCALES[key]
+    return max(0.0, ((value - floor) / (reference - floor)) * 100.0)
 
 
 def smoothed_filings(rows: list[dict[str, object]]) -> tuple[dict[str, float], set[str]]:
@@ -216,7 +208,7 @@ def build_market_stress_index(rows: list[dict[str, object]], today: date) -> lis
             if isinstance(row.get(key), (int, float))
         }
     component_scores = {
-        key: normalized_scores(values)
+        key: {month: fixed_stress_score(value, key) for month, value in values.items()}
         for key, values in component_values.items()
         if values
     }

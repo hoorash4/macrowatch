@@ -176,8 +176,10 @@ function renderCreditStressDashboard(rows) {
   const width = 920;
   const height = 250;
   const padding = { top: 20, right: 24, bottom: 32, left: 52 };
+  const maximumScore = Math.max(...data.map((row) => Number(row.stress_index)), 100);
+  const axisMaximum = Math.ceil(maximumScore / 20) * 20;
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
-  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
+  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - score)) / axisMaximum;
   const labels = data.map((row, index) => {
     const month = String(row.month || '');
     if (!month.endsWith('-01') || (index !== 0 && !month.endsWith('-01-01'))) return '';
@@ -193,7 +195,8 @@ function renderCreditStressDashboard(rows) {
     const detail = `${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${provisional ? ' (잠정치)' : ' (확정치)'}`;
     return `<circle cx="${x(index)}" cy="${y(Number(row.stress_index))}" r="3.75" fill="#b7791f"${provisional ? ' fill-opacity="0.35" stroke="#b7791f" stroke-width="1.5"' : ''} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const grid = [0, 20, 40, 60, 80, 100].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${score}</text>`).join('');
+  const grid = Array.from({ length: axisMaximum / 20 + 1 }, (_, index) => index * 20)
+    .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${score}</text>`).join('');
   chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>확정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>잠정치</span></div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${lines}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다. 점선 구간은 잠정치이며, 지수를 구성하는 전체 지표가 업데이트되면 확정값으로 전환됩니다.</p>`;
 }
 
@@ -271,7 +274,7 @@ function renderCreditStressComponents(rows) {
     return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
   })).join('');
   const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">서로 단위가 다른 세 지표를 추세 비교용 상대 척도로 표시합니다. 점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
+  chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">서로 단위가 다른 세 지표의 추세를 함께 비교합니다. 점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
 }
 
 async function loadCreditStressComponentsDashboard() {
