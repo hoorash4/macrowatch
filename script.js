@@ -164,14 +164,15 @@ function formatCreditStressValue(value, digits = 2) {
 }
 
 function buildStressScores(rows, key) {
-  const values = rows.map((row) => Number(row[key])).filter(Number.isFinite).sort((a, b) => a - b);
+  const isAvailable = (value) => Number.isFinite(value) && (key !== 'business_bankruptcy_filings' || value !== 0);
+  const values = rows.map((row) => Number(row[key])).filter(isAvailable).sort((a, b) => a - b);
   if (!values.length) return new Map();
   const lower = values[Math.floor((values.length - 1) * 0.05)];
   const upper = values[Math.ceil((values.length - 1) * 0.95)];
   const range = upper - lower || 1;
   return new Map(rows.map((row) => {
     const value = Number(row[key]);
-    return [row.month, Number.isFinite(value) ? Math.max(0, Math.min(100, ((value - lower) / range) * 100)) : null];
+    return [row.month, isAvailable(value) ? Math.max(0, Math.min(100, ((value - lower) / range) * 100)) : null];
   }));
 }
 
