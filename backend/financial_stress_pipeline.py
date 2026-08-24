@@ -22,6 +22,7 @@ COURTS_URLS = (
 )
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
+SP500_SERIES = "SP500"
 MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 TIMEOUT_SECONDS = 45
 INDEX_HISTORY_YEARS = 3
@@ -86,6 +87,37 @@ def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> 
         except (KeyError, TypeError, ValueError):
             continue
     return {month: sum(rows) / len(rows) for month, rows in values.items() if rows}
+
+
+def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
+    """Return the final available daily observation for each calendar month."""
+    response = requests.get(
+        FRED_URL,
+        params={
+            "series_id": series_id,
+            "api_key": api_key,
+            "file_type": "json",
+            "observation_start": start.isoformat(),
+            "observation_end": end.isoformat(),
+            "limit": "100000",
+        },
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    month_end: dict[str, tuple[str, float]] = {}
+    for observation in response.json().get("observations", []):
+        raw_value = observation.get("value")
+        observed_on = observation.get("date")
+        if raw_value in (None, ".") or not isinstance(observed_on, str):
+            continue
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        month = observed_on[:7] + "-01"
+        if month not in month_end or observed_on > month_end[month][0]:
+            month_end[month] = (observed_on, value)
+    return {month: value for month, (_observed_on, value) in month_end.items()}
 
 
 def fetch_court_workbook(year: int, month: int, day: int) -> bytes:
@@ -192,7 +224,11 @@ def smoothed_filings(rows: list[dict[str, object]]) -> tuple[dict[str, float], s
     return values, confirmed
 
 
-def build_market_stress_index(rows: list[dict[str, object]], today: date) -> list[dict[str, object]]:
+def build_market_stress_index(
+    rows: list[dict[str, object]],
+    today: date,
+    sp500_month_end: dict[str, float],
+) -> list[dict[str, object]]:
     index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
     filings, confirmed_filings = smoothed_filings(recent_rows)
@@ -223,6 +259,7 @@ def build_market_stress_index(rows: list[dict[str, object]], today: date) -> lis
                 "month": month,
                 "stress_index": round(score, 2),
                 "is_provisional": month not in confirmed_filings,
+                "sp500_month_end_close": sp500_month_end.get(month),
             }
         )
     return index_rows
@@ -261,6 +298,7 @@ def main() -> None:
 
     high_yield = fetch_fred_monthly(HIGH_YIELD_SERIES, fred_api_key, start, end)
     financial_conditions = fetch_fred_monthly(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, end)
+    sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
     business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
     months = sorted(set(high_yield) | set(financial_conditions) | set(business_filings))
     rows = [
@@ -275,11 +313,12 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 월별 신용 스트레스 데이터가 없습니다.")
     upsert_rows(rows, supabase_url, service_role_key)
-    index_rows = build_market_stress_index(rows, today)
+    index_rows = build_market_stress_index(rows, today, sp500_month_end)
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     print(
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
-        f"business_filings={len(business_filings)} high_yield={len(high_yield)} nfci={len(financial_conditions)}"
+        f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
+        f"nfci={len(financial_conditions)} sp500={len(sp500_month_end)}"
     )
 
 
