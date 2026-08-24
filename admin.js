@@ -163,6 +163,25 @@
     ).join('');
   }
 
+  function renderUncertainNews(items) {
+    const list = document.getElementById('uncertain-news-list');
+    if (!items.length) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-emerald-400">검토할 불명확 뉴스가 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-4 last:border-0"><div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div class="min-w-0"><p class="text-xs text-slate-500">${escapeHtml(formatTime(item.published_at))} · ${escapeHtml(item.source_name)}</p><p class="mt-2 text-sm leading-relaxed text-slate-200">${escapeHtml(item.uncertain_summary || '시장 방향을 판단하기 어렵습니다.')}</p><div class="mt-2 flex flex-wrap gap-1">${(item.derived_keywords || []).map((keyword) => `<span class="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400">${escapeHtml(keyword)}</span>`).join('')}</div></div><div class="flex shrink-0 gap-2"><button data-article-id="${escapeHtml(item.id)}" data-sentiment="positive" class="resolve-news rounded-lg border border-emerald-700/60 px-2 py-1 text-xs font-bold text-emerald-300">긍정</button><button data-article-id="${escapeHtml(item.id)}" data-sentiment="negative" class="resolve-news rounded-lg border border-red-700/60 px-2 py-1 text-xs font-bold text-red-300">부정</button><button data-article-id="${escapeHtml(item.id)}" data-sentiment="neutral" class="resolve-news rounded-lg border border-slate-600 px-2 py-1 text-xs font-bold text-slate-300">중립</button></div></div></article>`).join('');
+    list.querySelectorAll('.resolve-news').forEach((button) => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try { await invokeAdmin('resolve_uncertain_news', { article_id: button.dataset.articleId, sentiment: button.dataset.sentiment }); await loadUncertainNews(); }
+      catch (error) { showNotice('분류 저장 실패', error.message || '처리하지 못했습니다.', true); button.disabled = false; }
+    }));
+  }
+
+  async function loadUncertainNews() {
+    try { renderUncertainNews((await invokeAdmin('list_uncertain_news')).items || []); }
+    catch (error) { document.getElementById('uncertain-news-list').innerHTML = '<p class="p-4 text-center text-sm text-red-300">목록을 불러오지 못했습니다.</p>'; }
+  }
+
   async function loadAll() {
     const button = document.getElementById('refresh-button');
     button.disabled = true;
@@ -170,6 +189,7 @@
     try {
       const status = await invokeAdmin('status');
       applyStatus(status);
+      await loadUncertainNews();
     } catch (error) {
       showNotice('불러오기 실패', error.message || '상태를 확인하지 못했습니다.', true);
     } finally {
@@ -279,6 +299,7 @@
     document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));
     document.getElementById('run-news-button').addEventListener('click', () => runWorkflow('news'));
     document.getElementById('save-schedule-button').addEventListener('click', saveSchedule);
+    document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
     document.getElementById('operation-modal').addEventListener('click', (event) => {
       if (event.target === event.currentTarget) hideNotice();

@@ -1,278 +1,74 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { AI_POLICY } from "../_shared/ai-policy.ts";
 import { analyzeCandidates } from "../_shared/openai-adapter.ts";
-import type { AnalyzedEvent, Candidate, SourceName } from "../_shared/news-types.ts";
+import type { ArticleSentiment, Candidate, SourceName } from "../_shared/news-types.ts";
 
 const DEFAULT_LOOKBACK_HOURS = 24;
 const MAX_LOOKBACK_HOURS = 15 * 24;
-
-const SOURCE_FEEDS: Record<SourceName, string> = {
-  yonhap: "https://www.yna.co.kr/rss/news.xml",
-  hankyung: "https://www.hankyung.com/feed/economy",
-  gdelt: "https://api.gdeltproject.org/api/v2/doc/doc",
+const MAX_CANDIDATE_TEXT_CHARS = 1_000;
+const SOURCE_FETCH_TIMEOUT_MS = 30_000;
+const RSS_FEEDS: Record<SourceName, string[]> = {
+  yonhap: ["https://www.yna.co.kr/rss/economy.xml", "https://www.yna.co.kr/rss/international.xml"],
+  maekyung: ["https://www.mk.co.kr/rss/30100041/", "https://www.mk.co.kr/rss/30300018/", "https://www.mk.co.kr/rss/50200011/"],
 };
 
-const CATEGORY_TERMS = [
-  "금리", "물가", "인플레이션", "고용", "성장", "경기", "관세", "무역",
-  "제재", "원유", "유가", "가스", "원자재", "환율", "채권", "증시",
-  "주가", "금융", "은행", "기업", "반도체", "ai", "인공지능", "전쟁",
-  "분쟁", "선거", "규제", "공급망", "fed", "fomc", "tariff", "rate",
-  "inflation", "employment", "oil", "sanction", "market", "stock",
-];
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
-}
-
-function normalizeText(value: string) {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function parseDate(value: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function parseGdeltDate(value: string | null) {
-  if (!value) return null;
-  const match = value.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
-  if (!match) return parseDate(value);
-  return parseDate(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`);
-}
-
-async function hashText(value: string) {
-  const bytes = new TextEncoder().encode(value.toLowerCase().replace(/\W+/g, " ").trim());
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function withinLookbackWindow(date: string | null, lookbackHours: number, now = Date.now()) {
-  if (!date) return true;
-  const timestamp = Date.parse(date);
-  return timestamp >= now - lookbackHours * 60 * 60 * 1000 && timestamp <= now + 5 * 60 * 1000;
-}
-
-function isMarketRelevant(text: string) {
-  const normalized = text.toLowerCase();
-  return CATEGORY_TERMS.some((term) => normalized.includes(term));
-}
-
-function xmlText(value: string) {
-  return normalizeText(value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'"));
-}
-
-function xmlTag(block: string, names: string[]) {
-  const match = block.match(new RegExp(`<(${names.join("|")})\\b[^>]*>([\\s\\S]*?)<\\/\\1>`, "i"));
-  return match ? xmlText(match[2]) : null;
-}
-
-function xmlLink(block: string) {
-  const content = xmlTag(block, ["link"]);
-  if (content) return content;
-  const href = block.match(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*\/?>(?:<\/link>)?/i);
-  return href ? href[1] : null;
-}
-
-function xmlItems(xml: string) {
-  const entries = xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi) || [];
-  return entries.map((entry) => ({
-    text: xmlTag(entry, ["title"]) || "",
-    url: xmlLink(entry),
-    publishedAt: parseDate(xmlTag(entry, ["pubDate", "published", "updated", "date"])),
+function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
+function normalizeText(value: string) { return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); }
+function parseDate(value: string | null) { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null; }
+async function hashText(value: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value.toLowerCase().replace(/\W+/g, " ").trim())); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
+function withinLookbackWindow(date: string | null, lookbackHours: number, now = Date.now()) { const timestamp = date ? Date.parse(date) : NaN; return Number.isFinite(timestamp) && timestamp >= now - lookbackHours * 3_600_000 && timestamp <= now + 300_000; }
+function candidateText(title: string, summary: string) { return normalizeText(`${title} ${summary}`).slice(0, MAX_CANDIDATE_TEXT_CHARS); }
+function xmlText(value: string) { return normalizeText(value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'")); }
+function xmlTag(block: string, names: string[]) { const match = block.match(new RegExp(`<(${names.join("|")})\\b[^>]*>([\\s\\S]*?)<\\/\\1>`, "i")); return match ? xmlText(match[2]) : null; }
+function xmlLink(block: string) { const content = xmlTag(block, ["link"]); const href = block.match(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*\/?>(?:<\/link>)?/i); return content || (href ? href[1] : null); }
+function xmlItems(xml: string) { return (xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi) || []).map((entry) => { const title = xmlTag(entry, ["title"]) || ""; const summary = xmlTag(entry, ["description", "summary", "content"]) || ""; return { text: candidateText(title, summary), hasSummary: Boolean(summary), url: xmlLink(entry), publishedAt: parseDate(xmlTag(entry, ["pubDate", "published", "updated", "date"])) }; }); }
+async function fetchRss(source: SourceName, lookbackHours: number): Promise<Candidate[]> {
+  const results = await Promise.allSettled(RSS_FEEDS[source].map(async (feed) => {
+    const response = await fetch(feed, { headers: { "User-Agent": "MacroWatch/1.0" }, signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS) });
+    if (!response.ok) throw new Error(`${source} RSS 오류 (${response.status})`);
+    const candidates: Candidate[] = [];
+    for (const item of xmlItems(await response.text())) if (item.text && item.hasSummary && withinLookbackWindow(item.publishedAt, lookbackHours)) candidates.push({ source, itemHash: await hashText(item.text), ...item });
+    return candidates;
   }));
+  return results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
 }
-
-async function fetchRss(source: Exclude<SourceName, "gdelt">, lookbackHours: number): Promise<Candidate[]> {
-  const response = await fetch(SOURCE_FEEDS[source], { headers: { "User-Agent": "MacroWatch/1.0" } });
-  if (!response.ok) throw new Error(`${source} RSS 오류 (${response.status})`);
-  const items = xmlItems(await response.text());
-  const candidates: Candidate[] = [];
-  for (const item of items) {
-    if (!item.text || !withinLookbackWindow(item.publishedAt, lookbackHours) || !isMarketRelevant(item.text)) continue;
-    candidates.push({ source, itemHash: await hashText(item.text), ...item });
-  }
-  return candidates;
-}
-
-async function fetchGdeltResponse(url: URL) {
-  let response: Response | undefined;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    response = await fetch(url, { headers: { "User-Agent": "MacroWatch/1.0" } });
-    if (response.status !== 429 || attempt === 2) return response;
-    await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 750));
-  }
-  return response!;
-}
-
-async function fetchGdelt(lookbackHours: number): Promise<Candidate[]> {
-  const url = new URL(SOURCE_FEEDS.gdelt);
-  url.search = new URLSearchParams({
-    query: "(economy OR finance OR stocks OR market OR tariff OR inflation OR interest rate)",
-    mode: "artlist",
-    format: "json",
-    maxrecords: "250",
-    sort: "datedesc",
-    timespan: `${lookbackHours}h`,
-  }).toString();
-  const response = await fetchGdeltResponse(url);
-  if (!response.ok) throw new Error(`GDELT 오류 (${response.status})`);
-  const data = await response.json();
-  const candidates: Candidate[] = [];
-  for (const item of data.articles || []) {
-    const text = normalizeText(`${item.title || ""} ${item.domain || ""}`);
-    const publishedAt = parseGdeltDate(item.seendate || null);
-    if (!text || !withinLookbackWindow(publishedAt, lookbackHours) || !isMarketRelevant(text)) continue;
-    candidates.push({
-      source: "gdelt",
-      itemHash: await hashText(text),
-      publishedAt,
-      text,
-      url: item.url || null,
-    });
-  }
-  return candidates;
-}
-
-function deduplicate(candidates: Candidate[]) {
-  const seen = new Set<string>();
-  return candidates.filter((candidate) => {
-    if (seen.has(candidate.itemHash)) return false;
-    seen.add(candidate.itemHash);
-    return true;
-  });
-}
-
+function deduplicate(candidates: Candidate[]) { const seen = new Set<string>(); return candidates.filter((candidate) => !seen.has(candidate.itemHash) && Boolean(seen.add(candidate.itemHash))); }
 async function collectCandidates(lookbackHours: number) {
-  const results = await Promise.allSettled([
-    fetchRss("yonhap", lookbackHours),
-    fetchRss("hankyung", lookbackHours),
-    fetchGdelt(lookbackHours),
-  ]);
-  const candidates = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-  const errors = results.flatMap((result, index) => result.status === "rejected" ? [{ source: ["yonhap", "hankyung", "gdelt"][index], error: String(result.reason) }] : []);
-  return { candidates: deduplicate(candidates), errors };
+  const sources: SourceName[] = ["yonhap", "maekyung"];
+  const results = await Promise.allSettled(sources.map((source) => fetchRss(source, lookbackHours)));
+  return { candidates: deduplicate(results.flatMap((result) => result.status === "fulfilled" ? result.value : [])), errors: results.flatMap((result, index) => result.status === "rejected" ? [{ source: sources[index], error: String(result.reason) }] : []) };
 }
-
-async function persistAnalysis(events: AnalyzedEvent[], candidates: Candidate[]) {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
-  const candidatesByHash = new Map(candidates.map((candidate) => [candidate.itemHash, candidate]));
-  const dates = new Set<string>();
-
-  for (const event of events) {
-    const sourceItemHashes = [...new Set(event.sourceItemHashes)].filter((hash) => candidatesByHash.has(hash));
-    if (!sourceItemHashes.length) continue;
-    const eventKey = `${event.eventDate}:${sourceItemHashes.slice().sort().join(":")}`;
-    const sourceCount = new Set(sourceItemHashes.map((hash) => candidatesByHash.get(hash)?.source)).size;
-    const { data, error } = await supabase.from("news_events").upsert({
-      event_key: eventKey,
-      event_date: event.eventDate,
-      event_at: event.eventAt,
-      summary: event.summary,
-      category: event.category,
-      impact_scope: event.impactScope,
-      transmission_channels: event.transmissionChannels,
-      market_relevance: event.marketRelevance,
-      short_term_impact: event.shortTermImpact,
-      five_day_impact: event.fiveDayImpact,
-      confidence: event.confidence,
-      source_count: sourceCount,
-      analysis_version: AI_POLICY.promptVersion,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "event_key" }).select("id").single();
-    if (error) throw error;
-
-    const sourceRows = sourceItemHashes.map((hash) => {
-      const candidate = candidatesByHash.get(hash)!;
-      return {
-        event_id: data.id,
-        source_name: candidate.source,
-        source_item_hash: candidate.itemHash,
-        published_at: candidate.publishedAt,
-      };
-    });
-    const { error: sourceError } = await supabase.from("news_event_sources").upsert(sourceRows, {
-      onConflict: "source_name,source_item_hash",
-    });
-    if (sourceError) throw sourceError;
-    dates.add(event.eventDate);
-  }
-
-  for (const eventDate of dates) await refreshDailySentiment(supabase, eventDate);
-  return { events: events.length, dates: [...dates].sort() };
-}
-
-async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, eventDate: string) {
-  const { data, error } = await supabase.from("news_events")
-    .select("short_term_impact, market_relevance")
-    .eq("event_date", eventDate);
+function kstDate(iso: string) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso)); }
+async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, articleDate: string) {
+  const { data, error } = await supabase.from("news_article_sentiments").select("ai_sentiment,admin_sentiment").eq("article_date", articleDate);
   if (error) throw error;
   const counts = { positive: 0, neutral: 0, negative: 0, uncertain: 0 };
-  const weighted = { positive: 0, neutral: 0, negative: 0 };
-  for (const event of data || []) {
-    counts[event.short_term_impact as keyof typeof counts] += 1;
-    if (event.short_term_impact !== "uncertain") {
-      weighted[event.short_term_impact as keyof typeof weighted] += Number(event.market_relevance || 0);
-    }
-  }
-  const { error: upsertError } = await supabase.from("news_daily_sentiment").upsert({
-    event_date: eventDate,
-    positive_count: counts.positive,
-    neutral_count: counts.neutral,
-    negative_count: counts.negative,
-    uncertain_count: counts.uncertain,
-    included_event_count: counts.positive + counts.neutral + counts.negative,
-    weighted_positive: weighted.positive,
-    weighted_neutral: weighted.neutral,
-    weighted_negative: weighted.negative,
-    generated_at: new Date().toISOString(),
-  });
+  for (const row of data || []) counts[(row.admin_sentiment || row.ai_sentiment) as keyof typeof counts] += 1;
+  const { error: upsertError } = await supabase.from("news_daily_article_sentiment").upsert({ article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative, neutral_count: counts.neutral, uncertain_count: counts.uncertain, analyzed_article_count: (data || []).length, generated_at: new Date().toISOString() });
   if (upsertError) throw upsertError;
 }
-
-async function getRunOptions(request: Request) {
-  const body = await request.json().catch(() => ({}));
-  const requested = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS);
-  if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOKBACK_HOURS) {
-    throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`);
-  }
-  return { lookbackHours: requested, dryRun: body.dry_run === true };
+async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidate[]) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
+  const candidatesByHash = new Map(candidates.map((candidate) => [candidate.itemHash, candidate]));
+  const dates = new Set<string>(), now = new Date().toISOString();
+  const rows = outputs.map((output) => { const candidate = candidatesByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const articleDate = kstDate(candidate.publishedAt); dates.add(articleDate); return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, article_date: articleDate, ai_sentiment: output.sentiment, derived_keywords: output.keywords, uncertain_summary: output.uncertainSummary, updated_at: now }; });
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" });
+  if (error) throw error;
+  for (const date of dates) await refreshDailySentiment(supabase, date);
+  return { articles: rows.length, dates: [...dates].sort() };
 }
-
+async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const requested = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS); if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); return { lookbackHours: requested, dryRun: body.dry_run === true }; }
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
+  let stage = "요청 검증";
   try {
-    const { lookbackHours, dryRun } = await getRunOptions(request);
-    const { candidates, errors } = await collectCandidates(lookbackHours);
-    const events = await analyzeCandidates(candidates);
-    const persisted = dryRun ? { events: 0, dates: [] } : await persistAnalysis(events, candidates);
-    return json({
-      collected: candidates.length,
-      lookback_hours: lookbackHours,
-      dry_run: dryRun,
-      analyzed: events.length,
-      persisted,
-      sources: candidates.reduce<Record<string, number>>((counts, item) => {
-        counts[item.source] = (counts[item.source] || 0) + 1;
-        return counts;
-      }, {}),
-      errors,
-      next_step: dryRun ? "테스트 완료 (저장 없음)" : "분석 결과 저장 완료",
-    });
-  } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "뉴스 수집에 실패했습니다." }, 500);
-  }
+    const { lookbackHours, dryRun } = await getRunOptions(request); stage = "뉴스 수집";
+    const { candidates, errors } = await collectCandidates(lookbackHours); stage = "AI 분석";
+    const outputs = await analyzeCandidates(candidates); stage = "결과 저장";
+    const persisted = dryRun ? { articles: 0, dates: [] } : await persistAnalysis(outputs, candidates);
+    const sentiments = outputs.reduce<Record<string, number>>((counts, output) => ({ ...counts, [output.sentiment]: (counts[output.sentiment] || 0) + 1 }), { positive: 0, negative: 0, neutral: 0, uncertain: 0 });
+    return json({ collected: candidates.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, dry_run: dryRun, persisted, sources: candidates.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
+  } catch (error) { return json({ error: `${stage}: ${error instanceof Error ? error.message : String(error)}`, stage }, 500); }
 });

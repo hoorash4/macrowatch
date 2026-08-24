@@ -1,5 +1,7 @@
-import type { AnalyzedEvent, Candidate } from "./news-types.ts";
-import { AI_POLICY, selectedModel } from "./ai-policy.ts";
+import type { ArticleSentiment, Candidate } from "./news-types.ts";
+import { AI_POLICY } from "./ai-policy.ts";
+
+const ARTICLE_SCHEMA = { type: "object", additionalProperties: false, properties: { outputs: { type: "array", items: { type: "object", additionalProperties: false, properties: { item_hash: { type: "string" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] }, keywords: { type: "array", items: { type: "string" } }, uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] } }, required: ["item_hash", "sentiment", "keywords", "uncertain_summary"] } } }, required: ["outputs"] };
 
 function systemPrompt() {
   const prompt = Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT");
@@ -7,110 +9,31 @@ function systemPrompt() {
   return prompt.replace(/\{\{news_candidates\}\}/g, "").trim();
 }
 
-const EVENT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    events: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          event_date: { type: "string" },
-          event_at: { anyOf: [{ type: "string" }, { type: "null" }] },
-          summary: { type: "string" },
-          category: { type: "string", enum: ["macro", "finance", "international"] },
-          impact_scope: { type: "string", enum: ["company", "industry", "market", "systemic"] },
-          transmission_channels: { type: "array", items: { type: "string" } },
-          market_relevance: { type: "number", minimum: 0, maximum: 1 },
-          short_term_impact: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] },
-          five_day_impact: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] },
-          confidence: { type: "number", minimum: 0, maximum: 1 },
-          source_item_hashes: { type: "array", items: { type: "string" } },
-        },
-        required: [
-          "event_date", "event_at", "summary", "category", "impact_scope",
-          "transmission_channels", "market_relevance", "short_term_impact",
-          "five_day_impact", "confidence", "source_item_hashes",
-        ],
-      },
-    },
-  },
-  required: ["events"],
-};
-
 function candidatePrompt(candidates: Candidate[]) {
-  return JSON.stringify(candidates.map(({ source, itemHash, publishedAt, text }) => ({
-    source,
-    item_hash: itemHash,
-    published_at: publishedAt,
-    text,
-  })));
+  return JSON.stringify(candidates.map(({ source, itemHash, publishedAt, text }) => ({ source, item_hash: itemHash, published_at: publishedAt, text })));
 }
 
 async function requestAnalysis(model: string, candidates: Candidate[]) {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
-
   const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      prompt_cache_key: "macrowatch-news-analysis-v1",
-      input: [
-        { role: "system", content: [{ type: "input_text", text: systemPrompt() }] },
-        {
-          role: "user",
-          content: [{ type: "input_text", text: candidatePrompt(candidates) }],
-        },
-      ],
-      text: { format: { type: "json_schema", name: "news_event_analysis", strict: true, schema: EVENT_SCHEMA } },
-    }),
+    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, prompt_cache_key: "macrowatch-article-sentiment-v1", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates) }] }], text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();
-  const outputText = typeof payload.output_text === "string"
-    ? payload.output_text
-    : payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || [])
-      .find((item: { type?: string }) => item.type === "output_text")?.text;
+  const outputText = typeof payload.output_text === "string" ? payload.output_text : payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || []).find((item: { type?: string }) => item.type === "output_text")?.text;
   if (typeof outputText !== "string") throw new Error("OpenAI 응답에 output_text가 없습니다.");
-  const parsed = JSON.parse(outputText) as { events: Array<Record<string, unknown>> };
-  return {
-    events: parsed.events.map((event) => ({
-      eventDate: String(event.event_date),
-      eventAt: event.event_at === null ? null : String(event.event_at),
-      summary: String(event.summary),
-      category: event.category as AnalyzedEvent["category"],
-      impactScope: event.impact_scope as AnalyzedEvent["impactScope"],
-      transmissionChannels: Array.isArray(event.transmission_channels)
-        ? event.transmission_channels.map(String)
-        : [],
-      marketRelevance: Number(event.market_relevance),
-      shortTermImpact: event.short_term_impact as AnalyzedEvent["shortTermImpact"],
-      fiveDayImpact: event.five_day_impact as AnalyzedEvent["fiveDayImpact"],
-      confidence: Number(event.confidence),
-      sourceItemHashes: Array.isArray(event.source_item_hashes)
-        ? event.source_item_hashes.map(String)
-        : [],
-    })),
-  };
+  const parsed = JSON.parse(outputText) as { outputs: Array<Record<string, unknown>> };
+  return parsed.outputs.map((item): ArticleSentiment => ({ itemHash: String(item.item_hash), sentiment: item.sentiment as ArticleSentiment["sentiment"], keywords: Array.isArray(item.keywords) ? item.keywords.map(String).slice(0, 3) : [], uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary) }));
 }
 
 export async function analyzeCandidates(candidates: Candidate[]) {
   if (!candidates.length) return [];
-  const firstPass = await requestAnalysis(AI_POLICY.standardModel, candidates);
-  const needsReview = firstPass.events.some((event) => selectedModel({
-    confidence: event.confidence,
-    marketRelevance: event.market_relevance,
-    impactScope: event.impact_scope,
-    shortTermImpact: event.short_term_impact,
-    fiveDayImpact: event.five_day_impact,
-  }) === AI_POLICY.reviewModel);
-  if (!needsReview) return firstPass.events;
-  return (await requestAnalysis(AI_POLICY.reviewModel, candidates)).events;
+  const outputs = await requestAnalysis(AI_POLICY.standardModel, candidates);
+  const expected = new Set(candidates.map((candidate) => candidate.itemHash));
+  const received = outputs.map((item) => item.itemHash);
+  const uniqueReceived = new Set(received);
+  if (received.length !== uniqueReceived.size || uniqueReceived.size !== expected.size || [...uniqueReceived].some((hash) => !expected.has(hash))) throw new Error("AI 분석 결과에 누락되거나 중복된 뉴스 후보가 있습니다.");
+  return outputs.map((item) => item.sentiment === "uncertain" ? item : { ...item, keywords: [], uncertainSummary: null });
 }

@@ -59,6 +59,14 @@
     </section>
 
     <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+      <div class="mb-4 flex items-start justify-between gap-3">
+        <div><h2 class="text-lg font-bold text-white"><i class="fa-solid fa-circle-question mr-2 text-amber-400"></i>불명확 뉴스 검토</h2><p class="mt-1 text-sm text-slate-400">기사 원문·제목·링크는 저장하거나 표시하지 않습니다. 키워드와 파생 요약만 보고 분류합니다.</p></div>
+        <button id="refresh-uncertain-button" type="button" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:border-blue-500">새로고침</button>
+      </div>
+      <div id="uncertain-news-list" class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60"><p class="p-4 text-center text-sm text-slate-500">목록을 불러오는 중입니다.</p></div>
+    </section>
+
+    <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
       <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-satellite-dish mr-2 text-blue-400"></i>지표 자동 수집</h2>

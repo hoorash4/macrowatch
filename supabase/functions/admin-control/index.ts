@@ -100,6 +100,20 @@ function encodeBase64(value: string) {
   return btoa(binary);
 }
 
+async function refreshArticleSentiment(admin: ReturnType<typeof createClient>, articleDate: string) {
+  const { data, error } = await admin.from("news_article_sentiments")
+    .select("ai_sentiment,admin_sentiment").eq("article_date", articleDate);
+  if (error) throw error;
+  const counts = { positive: 0, negative: 0, neutral: 0, uncertain: 0 };
+  for (const row of data || []) counts[(row.admin_sentiment || row.ai_sentiment) as keyof typeof counts] += 1;
+  const { error: upsertError } = await admin.from("news_daily_article_sentiment").upsert({
+    article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative,
+    neutral_count: counts.neutral, uncertain_count: counts.uncertain,
+    analyzed_article_count: (data || []).length, generated_at: new Date().toISOString(),
+  });
+  if (upsertError) throw upsertError;
+}
+
 async function updateWorkflowSchedule(times: string[], token: string) {
   const path = "/contents/.github/workflows/check-targets.yml";
   const file = await githubRequest(`${path}?ref=${BRANCH}`, token);
@@ -233,6 +247,31 @@ export default {
         });
         if (error) throw error;
         return json({ schedule: { times, timezone: "Asia/Seoul" } }, 200, origin);
+      }
+
+      if (action === "list_uncertain_news") {
+        const { data, error } = await admin.from("news_article_sentiments")
+          .select("id,published_at,source_name,derived_keywords,uncertain_summary")
+          .eq("ai_sentiment", "uncertain").is("admin_sentiment", null)
+          .order("published_at", { ascending: false }).limit(100);
+        if (error) throw error;
+        return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "resolve_uncertain_news") {
+        const id = String(body?.article_id || "");
+        const sentiment = String(body?.sentiment || "");
+        if (!id || !["positive", "negative", "neutral"].includes(sentiment)) {
+          return json({ error: "분류값이 올바르지 않습니다." }, 400, origin);
+        }
+        const { data, error } = await admin.from("news_article_sentiments")
+          .update({ admin_sentiment: sentiment, admin_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq("id", id).eq("ai_sentiment", "uncertain").is("admin_sentiment", null)
+          .select("article_date").maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "이미 처리되었거나 존재하지 않는 항목입니다." }, 409, origin);
+        await refreshArticleSentiment(admin, data.article_date);
+        return json({ resolved: true }, 200, origin);
       }
 
       return json({ error: "지원하지 않는 요청입니다." }, 400, origin);
