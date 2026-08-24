@@ -35,9 +35,10 @@ STRESS_COMPONENTS = (
     ("business_bankruptcy_filings", 0.20),
 )
 LEAD_COMPONENT_WEIGHTS = {
-    "high_yield": 1 / 3,
-    "financial_conditions": 1 / 3,
-    "short_term_funding_spread": 1 / 3,
+    "high_yield": 0.25,
+    "financial_conditions": 0.25,
+    "short_term_funding_spread": 0.25,
+    "nonfinancial_leverage": 0.25,
 }
 SHORT_TERM_FUNDING_FLOOR = 0.10
 SHORT_TERM_FUNDING_REFERENCE = 0.60
@@ -206,11 +207,13 @@ def build_weekly_lead(
             fixed_stress_score(float(hy), "high_yield_oas_pct") * LEAD_COMPONENT_WEIGHTS["high_yield"]
             + fixed_stress_score(float(condition), "financial_conditions_credit_index") * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
             + positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
+            + fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index") * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
         )
         momentum = None if previous is None else (
             signed_score(float(hy) - previous[0], 1.0) * LEAD_COMPONENT_WEIGHTS["high_yield"]
             + signed_score(float(condition) - previous[1], 0.5) * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
             + signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
+            + signed_score(float(leverage_value) - previous[3], 0.5) * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
         )
         rows.append({
             "week": week,
@@ -218,7 +221,7 @@ def build_weekly_lead(
             "lead_momentum": None if momentum is None else round(momentum, 2),
             "leverage_signal": round(fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index"), 2),
         })
-        previous = (float(hy), float(condition), float(spread))
+        previous = (float(hy), float(condition), float(spread), float(leverage_value))
     return rows
 
 

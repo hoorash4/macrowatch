@@ -287,7 +287,7 @@ body:has(#app-shell:not(.hidden)) {
 .market-overview-grid { display:grid; grid-template-columns:minmax(0, 1fr); padding-top:1.5rem; }
 #news-sentiment-dashboard, #credit-stress-dashboard, #credit-stress-components-dashboard { border:0 !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; }
 #credit-stress-dashboard { margin-bottom:4rem; }
-#credit-stress-components-dashboard { margin-bottom:0; }.market-overview-grid > section > div:first-child, #credit-stress-components-dashboard > div:first-child { padding:0 0 1.2rem !important; border-color:#161616 !important; }
+#credit-stress-components-dashboard { margin-bottom:0; }.market-overview-grid > section > div:first-child { padding:0 0 1.2rem !important; border-color:#161616 !important; }
 .market-overview-grid h2, #credit-stress-components-dashboard h2 { color:#161616 !important; font-size:1.15rem !important; }.market-overview-grid p, #credit-stress-components-dashboard p { color:#737069 !important; }
 #news-sentiment-dashboard > div:first-child [class*="bg-sky"], #credit-stress-dashboard > div:first-child [class*="bg-amber"], #credit-stress-components-dashboard > div:first-child [class*="bg-blue"] { border:1px solid #dedede; background:#f3f3f1 !important; color:#282724 !important; }
 #news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart { padding:1.6rem 0 0 !important; }.market-overview-grid [class*="border-dashed"], #credit-stress-components-dashboard [class*="border-dashed"] { border-color:#dedede !important; border-radius:0 !important; background:transparent !important; }
