@@ -78,7 +78,7 @@ function renderNewsSentiment(rows) {
     const directionalCount = Number(item.positive_count || 0) + Number(item.negative_count || 0);
     const positive = directionalCount ? (Number(item.positive_count || 0) / directionalCount) * 100 : 0;
     const negative = directionalCount ? (Number(item.negative_count || 0) / directionalCount) * 100 : 0;
-    const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 중립 ${item.neutral_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
+    const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
     const bar = directionalCount
       ? `${renderSentimentSegment(positive, 'bg-emerald-500 transition group-hover:bg-emerald-400')}${renderSentimentSegment(negative, 'bg-rose-500 transition group-hover:bg-rose-400')}`
       : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
