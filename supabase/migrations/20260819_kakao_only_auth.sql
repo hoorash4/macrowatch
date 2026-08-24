@@ -15,3 +15,4 @@ create policy "Users can read their own account"
 
 create index if not exists user_accounts_kakao_user_id_idx
   on public.user_accounts (kakao_user_id);
+

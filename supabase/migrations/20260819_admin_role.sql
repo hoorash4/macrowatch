@@ -11,3 +11,4 @@ where user_id = (
   limit 1
 )
 and (select count(*) from public.user_accounts) = 1;
+

@@ -11,12 +11,9 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
-from bs4 import BeautifulSoup
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import sync_playwright
 
 
-HTTP_TIMEOUT = 15
+HTTP_TIMEOUT = 30
 KST = timezone(timedelta(hours=9))
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -114,22 +111,6 @@ def parse_decimal(value: Any) -> Decimal:
         raise CollectionError(f"수치 변환에 실패했습니다: {text[:120]}") from exc
 
 
-def nested_value(payload: Any, path: str) -> Any:
-    current = payload
-    for part in filter(None, path.split(".")):
-        list_match = re.fullmatch(r"([^\[]*)\[(\d+)]", part)
-        if list_match:
-            key, index_text = list_match.groups()
-            if key:
-                current = current[key]
-            current = current[int(index_text)]
-        elif isinstance(current, list) and part.isdigit():
-            current = current[int(part)]
-        else:
-            current = current[part]
-    return current
-
-
 def fetch_fred(config: dict[str, Any]) -> Decimal:
     series_id = str(config.get("series_id", "")).strip().upper()
     if not series_id:
@@ -174,8 +155,8 @@ def fetch_ecos(config: dict[str, Any]) -> Decimal:
     stat_code = str(config.get("stat_code", "")).strip().upper()
     item_code = str(config.get("item_code", "")).strip()
     cycle = str(config.get("data_cycle", "D")).strip().upper()
-    if not stat_code or not item_code:
-        raise CollectionError("ECOS 통계표 코드 또는 항목 코드가 없습니다.")
+    if not stat_code:
+        raise CollectionError("ECOS 통계표 코드가 없습니다.")
 
     start_time, end_time = ecos_date_range(cycle)
     parts = [
@@ -189,8 +170,9 @@ def fetch_ecos(config: dict[str, Any]) -> Decimal:
         quote(cycle, safe=""),
         quote(start_time, safe=""),
         quote(end_time, safe=""),
-        quote(item_code, safe=""),
     ]
+    if item_code:
+        parts.append(quote(item_code, safe=""))
     response = requests.get("/".join(parts), headers=request_headers(), timeout=HTTP_TIMEOUT)
     response.raise_for_status()
     payload = response.json()
@@ -202,117 +184,14 @@ def fetch_ecos(config: dict[str, Any]) -> Decimal:
     raise CollectionError(f"ECOS 최신값이 없습니다: {error}")
 
 
-def fetch_json_api(target: dict[str, Any], config: dict[str, Any]) -> Decimal:
-    response = requests.get(
-        target["url"],
-        headers=request_headers({"Accept": "application/json"}),
-        timeout=HTTP_TIMEOUT,
-    )
-    response.raise_for_status()
-    path = str(config.get("json_path", "")).strip()
-    if not path and str(target.get("css_selector", "")).startswith("API:"):
-        path = str(target["css_selector"])[4:]
-    if not path:
-        raise CollectionError("JSON 추출 경로가 없습니다.")
-    return parse_decimal(nested_value(response.json(), path))
-
-
-def fetch_static_html(url: str, selector: str, config: dict[str, Any]) -> Decimal:
-    response = requests.get(
-        url,
-        headers=request_headers(config.get("headers") if isinstance(config.get("headers"), dict) else None),
-        timeout=HTTP_TIMEOUT,
-    )
-    response.raise_for_status()
-    element = BeautifulSoup(response.text, "html.parser").select_one(selector)
-    if element is None:
-        raise CollectionError("일반 HTML 응답에서 CSS 선택자를 찾지 못했습니다.")
-    attribute = str(config.get("attribute", "")).strip()
-    return parse_decimal(element.get(attribute) if attribute else element.get_text(" ", strip=True))
-
-
-class BrowserCollector:
-    def __init__(self) -> None:
-        self.playwright = None
-        self.browser = None
-        self.context = None
-
-    def __enter__(self) -> "BrowserCollector":
-        return self
-
-    def __exit__(self, *_: object) -> None:
-        if self.context:
-            self.context.close()
-        if self.browser:
-            self.browser.close()
-        if self.playwright:
-            self.playwright.stop()
-
-    def _ensure_context(self) -> None:
-        if self.context:
-            return
-        self.playwright = sync_playwright().start()
-        # GitHub's Ubuntu runner already includes Chrome, so no browser download is needed.
-        self.browser = self.playwright.chromium.launch(
-            channel="chrome",
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        self.context = self.browser.new_context(
-            user_agent=USER_AGENT,
-            locale="ko-KR",
-            timezone_id="Asia/Seoul",
-            viewport={"width": 1440, "height": 1000},
-        )
-
-    def fetch(self, url: str, selector: str, config: dict[str, Any]) -> Decimal:
-        self._ensure_context()
-        timeout_ms = min(max(int(config.get("timeout_ms", 12000)), 3000), 15000)
-        page = self.context.new_page()
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-            page.locator(selector).first.wait_for(state="attached", timeout=timeout_ms)
-            attribute = str(config.get("attribute", "")).strip()
-            locator = page.locator(selector).first
-            raw_value = locator.get_attribute(attribute) if attribute else locator.inner_text(timeout=timeout_ms)
-            return parse_decimal(raw_value)
-        except PlaywrightTimeoutError as exc:
-            title = page.title()[:100]
-            raise CollectionError(f"브라우저 렌더링 후에도 값을 찾지 못했습니다: {title}") from exc
-        finally:
-            page.close()
-
-
-def fetch_web(
-    target: dict[str, Any], config: dict[str, Any], browser: BrowserCollector
-) -> Decimal:
-    url = str(target.get("url", "")).strip()
-    selector = str(config.get("selector") or target.get("css_selector") or "").strip()
-    if not url or not selector:
-        raise CollectionError("웹페이지 URL 또는 CSS 선택자가 없습니다.")
-    try:
-        return fetch_static_html(url, selector, config)
-    except Exception as static_error:
-        try:
-            return browser.fetch(url, selector, config)
-        except Exception as rendered_error:
-            raise CollectionError(
-                f"일반 요청 실패: {static_error}; 브라우저 요청 실패: {rendered_error}"
-            ) from rendered_error
-
-
-def collect_value(target: dict[str, Any], browser: BrowserCollector) -> Decimal:
-    source_type = str(target.get("source_type") or "web").lower()
+def collect_value(target: dict[str, Any]) -> Decimal:
+    source_type = str(target.get("source_type") or "").lower()
     config = target.get("source_config") if isinstance(target.get("source_config"), dict) else {}
     if source_type == "fred":
         return fetch_fred(config)
     if source_type == "ecos":
         return fetch_ecos(config)
-    if source_type == "json_api":
-        return fetch_json_api(target, config)
-    if source_type == "web":
-        return fetch_web(target, config, browser)
-    raise CollectionError(f"아직 지원하지 않는 source_type입니다: {source_type}")
+    raise CollectionError(f"지원하지 않는 데이터 소스입니다: {source_type}")
 
 
 def condition_met(target: dict[str, Any], previous: Decimal | None, current: Decimal) -> bool:
@@ -451,39 +330,42 @@ def main() -> int:
     alerts: list[CheckResult] = []
     failures = 0
 
-    with BrowserCollector() as browser:
-        for target in targets:
-            target_id = target["id"]
-            try:
-                previous = parse_decimal(target["last_value"]) if target.get("last_value") not in (None, "") else None
-                current = collect_value(target, browser)
-                result = CheckResult(target, previous, current, condition_met(target, previous, current))
+    for target in targets:
+        target_id = target["id"]
+        try:
+            previous = (
+                parse_decimal(target["last_value"])
+                if target.get("last_value") not in (None, "")
+                else None
+            )
+            current = collect_value(target)
+            result = CheckResult(target, previous, current, condition_met(target, previous, current))
 
-                db.request(
-                    "PATCH",
-                    "targets",
-                    params={"id": f"eq.{target_id}"},
-                    body={
-                        "last_value": json_number(current),
-                        "last_checked_at": now_iso,
-                        "last_error": None,
-                    },
-                    prefer="return=minimal",
-                )
-                if result.should_alert:
-                    alerts.append(result)
-                print(f"OK {target_id}: {target.get('title')} = {format_number(current)}")
-            except Exception as exc:
-                failures += 1
-                message = str(exc)[:1000]
-                print(f"ERROR {target_id}: {target.get('title')}: {message}", file=sys.stderr)
-                db.request(
-                    "PATCH",
-                    "targets",
-                    params={"id": f"eq.{target_id}"},
-                    body={"last_checked_at": now_iso, "last_error": message},
-                    prefer="return=minimal",
-                )
+            db.request(
+                "PATCH",
+                "targets",
+                params={"id": f"eq.{target_id}"},
+                body={
+                    "last_value": json_number(current),
+                    "last_checked_at": now_iso,
+                    "last_error": None,
+                },
+                prefer="return=minimal",
+            )
+            if result.should_alert:
+                alerts.append(result)
+            print(f"OK {target_id}: {target.get('title')} = {format_number(current)}")
+        except Exception as exc:
+            failures += 1
+            message = str(exc)[:1000]
+            print(f"ERROR {target_id}: {target.get('title')}: {message}", file=sys.stderr)
+            db.request(
+                "PATCH",
+                "targets",
+                params={"id": f"eq.{target_id}"},
+                body={"last_checked_at": now_iso, "last_error": message},
+                prefer="return=minimal",
+            )
 
     if alerts:
         access_token = refresh_kakao_access_token()
@@ -509,3 +391,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

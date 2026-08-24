@@ -10,3 +10,4 @@ alter table public.history
 
 create index if not exists history_target_recorded_at_idx
   on public.history (target_id, recorded_at desc);
+

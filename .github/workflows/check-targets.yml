@@ -2,9 +2,9 @@ name: Check macro targets
 
 on:
   schedule:
-    # GitHub Actions cron uses UTC: 23:00 = 08:00 KST, 09:00 = 18:00 KST.
+    # GitHub Actions cron uses UTC. Managed from MacroWatch admin.
     - cron: "0 23 * * *"
-    - cron: "0 9 * * *"
+    - cron: "0 11 * * *"
   workflow_dispatch:
 
 permissions:
@@ -40,3 +40,4 @@ jobs:
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
         run: python backend/check_targets.py
+

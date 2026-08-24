@@ -58,3 +58,4 @@ jobs:
           GOOGLE_DRIVE_LATEST_FILE_ID: ${{ secrets.GOOGLE_DRIVE_LATEST_FILE_ID }}
           GOOGLE_DRIVE_PREVIOUS_FILE_ID: ${{ secrets.GOOGLE_DRIVE_PREVIOUS_FILE_ID }}
         run: python backend/upload_drive_backup.py macrowatch-backup.tar.gz.gpg
+

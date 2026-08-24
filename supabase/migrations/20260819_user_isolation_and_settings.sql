@@ -59,3 +59,4 @@ alter table public.app_settings enable row level security;
 insert into public.app_settings (key, value)
 values ('target_check_schedule', '{"times":["08:00","18:00"],"timezone":"Asia/Seoul"}'::jsonb)
 on conflict (key) do nothing;
+

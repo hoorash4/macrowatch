@@ -48,3 +48,4 @@ alter table public.alert_events enable row level security;
 alter table public.notification_channels enable row level security;
 alter table public.device_tokens enable row level security;
 
+

@@ -192,60 +192,12 @@ display: block;
   color: #8c8a84;
   white-space: nowrap;
 }#auth-screen .grid.flex-1 {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
 padding-left: clamp(2.5rem,11vw,11rem);
   padding-right: clamp(2.5rem,11vw,11rem);
   column-gap: clamp(2rem,7vw,7rem);
   background-image: radial-gradient(rgba(247,245,240,.14) 1px,transparent 1px);
   background-size: 36px 36px;
-}
-
-/* 로그인 메인 배경의 얇은 샴페인 물결입니다. 콘텐츠보다 뒤에만 표시됩니다. */
-#auth-screen .grid.flex-1::before,
-#auth-screen .grid.flex-1::after {
-  content: "";
-  position: absolute;
-  inset: -12% -8%;
-  z-index: 0;
-  pointer-events: none;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  opacity: .28;
-  transform: translate3d(-2%, 0, 0);
-  animation: authWaveDrift 22s ease-in-out infinite alternate;
-}
-
-#auth-screen .grid.flex-1::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900'%3E%3Cpath d='M-80 570 C 180 440 340 700 610 550 S 1050 380 1680 530' fill='none' stroke='%23d9b878' stroke-opacity='.58' stroke-width='1.4'/%3E%3Cpath d='M-100 610 C 220 500 360 760 670 610 S 1110 430 1700 590' fill='none' stroke='%23f1d7a1' stroke-opacity='.32' stroke-width='1'/%3E%3C/svg%3E");
-}
-
-#auth-screen .grid.flex-1 > * {
-  position: relative;
-  z-index: 1;
-}
-
-#auth-screen .grid.flex-1::after {
-  opacity: .16;
-  transform: translate3d(3%, 1%, 0) scale(1.04);
-  animation-duration: 30s;
-  animation-direction: alternate-reverse;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900'%3E%3Cpath d='M-120 300 C 190 180 420 430 720 300 S 1190 100 1720 260' fill='none' stroke='%23cda35e' stroke-opacity='.48' stroke-width='1'/%3E%3C/svg%3E");
-}
-
-@keyframes authWaveDrift {
-  from { transform: translate3d(-2%, 0, 0); }
-  to { transform: translate3d(2%, -1.5%, 0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #auth-screen .grid.flex-1::before,
-  #auth-screen .grid.flex-1::after { animation: none; }
-}
-
-/* 메인 타이틀 두 줄의 굵기를 각각 조절합니다. */
+}/* 메인 타이틀 두 줄의 굵기를 각각 조절합니다. */
 #auth-screen {
   --title-evolving-weight: 100;
   --title-insight-weight: 600;
@@ -872,6 +824,8 @@ border-color: rgba(209,165,93,.75);
     border-radius: 0 0 1rem 1rem;
     overflow: visible;
   }
+
+
 }
 
 @media (max-width:767px) {
