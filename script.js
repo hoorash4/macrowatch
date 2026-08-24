@@ -115,7 +115,7 @@ function renderNewsSentiment(rows) {
       ? '<button type="button" data-news-sentiment-view="expanded" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">더보기</button>'
       : '',
     newsSentimentView === 'expanded' && data.length > NEWS_SENTIMENT_VIEWS.expanded.days
-      ? '<button type="button" data-news-sentiment-view="all" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">최근 60개 보기</button>'
+      ? '<button type="button" data-news-sentiment-view="all" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">30일치 더 보기</button>'
       : '',
     newsSentimentView !== 'recent'
       ? '<button type="button" data-news-sentiment-view="recent" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">돌아가기</button>'
