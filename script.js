@@ -189,7 +189,8 @@ function renderCreditStressDashboard(rows) {
   const width = 920;
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 52, bottom: 32, left: 52 };
-  const leadValues = data.map((row) => Number(row.lead_index)).filter(Number.isFinite);
+  const leadValue = (row) => toCreditStressNumber(row.lead_index);
+  const leadValues = data.map(leadValue).filter(Number.isFinite);
   const hasLead = leadValues.length > 1;
   const scores = [...data.map((row) => Number(row.stress_index)), ...leadValues];
   const sp500Values = data.map((row) => Number(row.sp500_month_end_close)).filter(Number.isFinite);
@@ -228,13 +229,13 @@ function renderCreditStressDashboard(rows) {
   }).join('');
   const leadLines = data.slice(1).map((row, index) => {
     const previous = data[index];
-    const previousValue = Number(previous.lead_index);
-    const currentValue = Number(row.lead_index);
+    const previousValue = leadValue(previous);
+    const currentValue = leadValue(row);
     if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
     return `<line x1="${x(index)}" y1="${y(previousValue)}" x2="${x(index + 1)}" y2="${y(currentValue)}" stroke="#6d4b91" stroke-width="2.25" stroke-linecap="round"/>`;
   }).join('');
   const leadDots = data.map((row, index) => {
-    const value = Number(row.lead_index);
+    const value = leadValue(row);
     if (!Number.isFinite(value)) return '';
     return `<circle cx="${x(index)}" cy="${y(value)}" r="3.25" fill="#6d4b91" tabindex="0"><title>${row.month}\nMSI Lead: ${value.toFixed(1)}</title></circle>`;
   }).join('');
@@ -259,7 +260,7 @@ function renderCreditStressDashboard(rows) {
     .filter(([stress, sp500]) => Number.isFinite(stress) && Number.isFinite(sp500));
   const correlation = calculateCorrelation(correlationPairs);
   const leadCorrelation = calculateCorrelation(data
-    .map((row) => [Number(row.lead_index), Number(row.sp500_month_end_close)])
+    .map((row) => [leadValue(row), Number(row.sp500_month_end_close)])
     .filter(([lead, sp500]) => Number.isFinite(lead) && Number.isFinite(sp500)));
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
