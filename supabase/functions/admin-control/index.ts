@@ -48,10 +48,12 @@ async function githubRequest(path: string, token: string, init: RequestInit = {}
 
 async function latestRun(workflow: string, token: string) {
   const data = await githubRequest(
-    `/actions/workflows/${workflow}/runs?per_page=1`,
+    `/actions/workflows/${workflow}/runs?per_page=20`,
     token,
   );
-  const run = data?.workflow_runs?.[0];
+  // Ordinary site pushes intentionally skip this workflow. They are not failed
+  // news runs and must not replace the latest dispatched or scheduled result.
+  const run = data?.workflow_runs?.find((item: { conclusion?: string | null }) => item.conclusion !== "skipped");
   if (!run) return null;
   return {
     id: run.id,
