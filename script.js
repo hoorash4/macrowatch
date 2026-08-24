@@ -171,7 +171,8 @@ function calculateCorrelation(pairs) {
   return denominator ? numerator / denominator : null;
 }
 
-function renderCreditStressDashboard(rows) {
+function renderCreditStressDashboard(rows, weeklyRows = []) {
+  if (weeklyRows.length) return renderCombinedStressChart(rows, weeklyRows);
   const chart = document.getElementById('credit-stress-chart');
   if (!chart) return;
   if (!rows.length) {
@@ -249,6 +250,20 @@ function renderCreditStressDashboard(rows) {
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
 }
 
+function renderCombinedStressChart(monthlyRows, weeklyRows) {
+  const chart = document.getElementById('credit-stress-chart');
+  const monthly = [...monthlyRows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.lead_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  if (!chart || !monthly.length || !weekly.length) return;
+  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
+  const start = new Date(weekly[0].week).getTime(), end = new Date(weekly.at(-1).week).getTime(), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
+  const left = [...monthly.map((row) => Number(row.stress_index)), ...weekly.map((row) => Number(row.lead_index))], leftMin = Math.min(...left), leftMax = Math.max(...left), leftRange = Math.max(leftMax - leftMin, 1), y = (value) => padding.top + ((height - padding.top - padding.bottom) * (leftMax + leftRange * .1 - value)) / (leftRange * 1.2);
+  const sp500 = monthly.map((row) => Number(row.sp500_month_end_close)).filter(Number.isFinite), rightMin = Math.min(...sp500), rightMax = Math.max(...sp500), rightRange = Math.max(rightMax - rightMin, 1), sy = (value) => padding.top + ((height - padding.top - padding.bottom) * (rightMax + rightRange * .1 - value)) / (rightRange * 1.2);
+  const path = (rows, key, yFn, dateKey) => rows.filter((row) => Number.isFinite(Number(row[key]))).map((row, index) => `${index ? 'L' : 'M'}${x(row[dateKey]).toFixed(1)},${yFn(Number(row[key])).toFixed(1)}`).join('');
+  const years = weekly.filter((row, index) => index === 0 || String(row.week).endsWith('-01-01')).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI, MSI Lead 및 S&P 500 추이"><path d="${path(monthly, 'stress_index', y, 'month')}" fill="none" stroke="#b7791f" stroke-width="2.75"/><path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#6d4b91" stroke-width="2.5"/><path d="${path(monthly, 'sp500_month_end_close', sy, 'month')}" fill="none" stroke="#285e8e" stroke-width="2.25"/>${years}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI (월간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>MSI Lead (주간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span></div>`;
+}
+
 function renderCreditStressMomentum(rows) {
   const chart = document.getElementById('credit-stress-momentum-chart');
   if (!chart) return;
@@ -310,13 +325,14 @@ function renderWeeklyLead(rows, monthlyRows) {
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 선행 지표와 월간 US-MSI">${msiSteps}${lines}${labels}</svg></div><div class="mt-3 flex gap-5 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>MSI Lead (주간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI (월간)</span></div>`;
 }
 
-async function loadWeeklyStressLead() {
+async function loadWeeklyStressLead(monthlyRows = []) {
   if (!supabaseClient) return;
   const [weeklyResponse, monthlyResponse] = await Promise.all([
     supabaseClient.from('us_market_stress_lead_weekly').select('week,lead_index,lead_momentum').order('week', { ascending: false }).limit(160),
     supabaseClient.from('us_market_stress_index_monthly').select('month,stress_index').order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
   ]);
   if (weeklyResponse.error || monthlyResponse.error) return;
+  renderCreditStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
   renderWeeklyLead(weeklyResponse.data || [], monthlyResponse.data || []);
   renderCreditStressMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })));
 }
@@ -331,7 +347,7 @@ async function loadCreditStressDashboard() {
       .limit(CREDIT_STRESS_HISTORY_MONTHS);
     if (error) throw error;
     renderCreditStressDashboard(data || []);
-    loadWeeklyStressLead();
+    loadWeeklyStressLead(data || []);
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">시장 스트레스 지수를 불러오지 못했습니다.</div>';
   }
