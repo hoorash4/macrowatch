@@ -508,8 +508,24 @@ def main() -> None:
     ]
     if not rows:
         raise RuntimeError("저장할 월별 신용 스트레스 데이터가 없습니다.")
+    latest_start = today - timedelta(days=60)
+    latest_high_yield = fetch_fred_latest(HIGH_YIELD_SERIES, fred_api_key, latest_start, today)
+    latest_conditions = fetch_fred_latest(FINANCIAL_CONDITIONS_SERIES, fred_api_key, latest_start, today)
+    latest_dates = [source[0] for source in (latest_high_yield, latest_conditions) if source is not None]
+    latest_month = month_start(max(latest_dates)) if latest_dates else None
+    index_rows_input = rows
+    if latest_month and latest_month not in {str(row["month"]) for row in rows} and latest_high_yield and latest_conditions:
+        index_rows_input = [
+            *rows,
+            {
+                "month": latest_month,
+                "high_yield_oas_pct": latest_high_yield[1],
+                "financial_conditions_credit_index": latest_conditions[1],
+                "business_bankruptcy_filings": None,
+            },
+        ]
     upsert_rows(rows, supabase_url, service_role_key)
-    index_rows = build_market_stress_index(rows, today, sp500_month_end, short_term_funding_spread)
+    index_rows = build_market_stress_index(index_rows_input, today, sp500_month_end, short_term_funding_spread)
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
     weekly_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
@@ -525,10 +541,6 @@ def main() -> None:
         {week: value for week, value in weekly_leverage.items() if week <= completed_week},
     )
     upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
-    latest_start = today - timedelta(days=60)
-    latest_high_yield = fetch_fred_latest(HIGH_YIELD_SERIES, fred_api_key, latest_start, today)
-    latest_conditions = fetch_fred_latest(FINANCIAL_CONDITIONS_SERIES, fred_api_key, latest_start, today)
-    latest_dates = [source[0] for source in (latest_high_yield, latest_conditions) if source is not None]
     if latest_dates:
         upsert_latest_credit_stress({
             "singleton": True,
