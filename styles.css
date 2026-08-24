@@ -281,6 +281,7 @@ body:has(#app-shell:not(.hidden)) {
 .dashboard-nav-actions { display:flex; gap:.15rem; margin:0 0 0 auto; }.dashboard-nav-actions button,.dashboard-nav-actions a { display:grid; width:2rem; height:2rem; place-items:center; border-radius:50%; color:#777; font-size:.75rem; }.dashboard-nav-actions button:hover,.dashboard-nav-actions a:hover { background:#161616; color:#fff; }
 #db-status { display:none !important; }
 .dashboard-main { display:grid; gap:1.5rem; width:min(calc(100% - 2rem), 64rem); min-width:0; margin:var(--dashboard-section-gap) auto 0; }.dashboard-view-card,.dashboard-tracker-card { padding:clamp(1.1rem, 2.2vw, 2rem); border:1px solid rgba(64,83,97,.14); border-radius:1.25rem; background:rgba(246,250,252,.68); box-shadow:0 18px 45px rgba(47,66,80,.08); }.dashboard-panel-hidden { display:none !important; }
+.dashboard-tracker-heading { display:flex; align-items:center; gap:.65rem; margin:0 0 1.5rem; padding:0 0 1.2rem; border-bottom:1px solid rgba(20,36,51,.16); color:#161616; }.dashboard-tracker-heading span { display:grid; width:2rem; height:2rem; place-items:center; border:1px solid #dedede; border-radius:.6rem; background:#f3f3f1; color:#282724; font-size:.8rem; }.dashboard-tracker-heading h2 { margin:0; font-size:1.15rem; font-weight:750; letter-spacing:-.03em; }
 
 .market-overview { margin-bottom:0; }
 .market-overview-grid { display:grid; grid-template-columns:minmax(0, 1fr); padding-top:1.5rem; }
