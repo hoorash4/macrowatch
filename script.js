@@ -332,7 +332,10 @@ function initializeDashboardNavigation() {
       button.toggleAttribute('aria-current', active);
     });
     panels.forEach((panel) => panel.classList.toggle('dashboard-panel-hidden', panel.dataset.dashboardPanel !== selectedView));
-    if (updateHash && location.hash !== hashByView[selectedView]) location.hash = hashByView[selectedView];
+    if (updateHash) {
+      window.scrollTo(0, 0);
+      if (location.hash !== hashByView[selectedView]) location.hash = hashByView[selectedView];
+    }
   };
 
   buttons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.dashboardView, true)));
