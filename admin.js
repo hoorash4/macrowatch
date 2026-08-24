@@ -128,6 +128,8 @@
     document.getElementById('backup-summary').className =
       `mt-2 text-lg font-extrabold ${data.backup?.conclusion === 'success' ? 'text-emerald-400' : data.backup?.status !== 'completed' ? 'text-blue-400' : 'text-amber-400'}`;
     document.getElementById('backup-time').textContent = formatTime(data.backup?.updated_at || data.backup?.created_at);
+    setBadge(document.getElementById('news-badge'), data.news);
+    document.getElementById('news-time').textContent = formatTime(data.news?.updated_at || data.news?.created_at);
 
     scheduleTimes = Array.isArray(data.schedule?.times) ? data.schedule.times : ['08:00', '18:00'];
     document.getElementById('schedule-time-1').value = scheduleTimes[0] || '08:00';
@@ -181,7 +183,7 @@
     for (let attempt = 0; attempt < 120; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       const { run } = await invokeAdmin('workflow_status', { kind });
-      setBadge(document.getElementById(kind === 'check' ? 'check-badge' : 'backup-badge'), run);
+      setBadge(document.getElementById(kind === 'check' ? 'check-badge' : kind === 'backup' ? 'backup-badge' : 'news-badge'), run);
       if (run && new Date(run.created_at).getTime() >= requested && run.status === 'completed') {
         return run;
       }
@@ -190,19 +192,19 @@
   }
 
   async function runWorkflow(kind) {
-    const button = document.getElementById(kind === 'check' ? 'run-check-button' : 'run-backup-button');
+    const button = document.getElementById(kind === 'check' ? 'run-check-button' : kind === 'backup' ? 'run-backup-button' : 'run-news-button');
     const label = button.querySelector('span');
-    const idleLabel = kind === 'check' ? '지금 지표 확인' : '지금 수동 백업';
+    const idleLabel = kind === 'check' ? '지금 지표 확인' : kind === 'backup' ? '지금 수동 백업' : '지금 뉴스 분석';
     button.disabled = true;
     label.textContent = '진행 중';
-    setBadge(document.getElementById(kind === 'check' ? 'check-badge' : 'backup-badge'), {
+      setBadge(document.getElementById(kind === 'check' ? 'check-badge' : kind === 'backup' ? 'backup-badge' : 'news-badge'), {
       status: 'queued'
     });
     try {
-      const result = await invokeAdmin(kind === 'check' ? 'run_check' : 'run_backup');
+      const result = await invokeAdmin(kind === 'check' ? 'run_check' : kind === 'backup' ? 'run_backup' : 'run_news');
       const run = await waitForCompletion(kind, result.requested_at);
       if (run.conclusion === 'success') {
-        showNotice('실행 완료', kind === 'check' ? '지표 확인이 완료되었습니다.' : '수동 백업이 완료되었습니다.');
+        showNotice('실행 완료', kind === 'check' ? '지표 확인이 완료되었습니다.' : kind === 'backup' ? '수동 백업이 완료되었습니다.' : '뉴스 분석이 완료되었습니다.');
       } else {
         showNotice('실행 실패', `작업이 ${run.conclusion || '실패'} 상태로 종료되었습니다.`, true);
       }
@@ -275,6 +277,7 @@
     document.getElementById('refresh-button').addEventListener('click', loadAll);
     document.getElementById('run-check-button').addEventListener('click', () => runWorkflow('check'));
     document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));
+    document.getElementById('run-news-button').addEventListener('click', () => runWorkflow('news'));
     document.getElementById('save-schedule-button').addEventListener('click', saveSchedule);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
     document.getElementById('operation-modal').addEventListener('click', (event) => {

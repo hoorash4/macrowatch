@@ -1,0 +1,31 @@
+name: Analyze daily news
+
+on:
+  schedule:
+    # 20:30 UTC = 05:30 KST
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-news-pipeline
+  cancel-in-progress: false
+
+jobs:
+  analyze-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Run news pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl --fail-with-body --retry 2 --max-time 900 \
+            --request POST "$SUPABASE_URL/functions/v1/news-pipeline" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{"lookback_hours":24}'

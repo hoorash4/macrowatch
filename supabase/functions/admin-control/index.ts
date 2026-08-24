@@ -6,6 +6,7 @@ const REPOSITORY = "hoorash4/macrowatch";
 const BRANCH = "main";
 const CHECK_WORKFLOW = "check-targets.yml";
 const BACKUP_WORKFLOW = "backup-database.yml";
+const NEWS_WORKFLOW = "news-pipeline.yml";
 
 function corsHeaders(origin: string | null) {
   return {
@@ -159,10 +160,10 @@ export default {
 
       if (action === "workflow_status") {
         const kind = String(body?.kind || "");
-        if (kind !== "check" && kind !== "backup") {
+        if (kind !== "check" && kind !== "backup" && kind !== "news") {
           return json({ error: "확인할 작업 종류가 올바르지 않습니다." }, 400, origin);
         }
-        const workflow = kind === "check" ? CHECK_WORKFLOW : BACKUP_WORKFLOW;
+        const workflow = kind === "check" ? CHECK_WORKFLOW : kind === "backup" ? BACKUP_WORKFLOW : NEWS_WORKFLOW;
         return json({ run: await latestRun(workflow, githubToken) }, 200, origin);
       }
 
@@ -171,6 +172,7 @@ export default {
           { data: settings },
           check,
           backup,
+          news: await latestRun(NEWS_WORKFLOW, githubToken),
           { count: total, error: totalError },
           { count: active, error: activeError },
           { count: errorCount, error: errorCountError },
@@ -205,8 +207,8 @@ export default {
         }, 200, origin);
       }
 
-      if (action === "run_check" || action === "run_backup") {
-        const workflow = action === "run_check" ? CHECK_WORKFLOW : BACKUP_WORKFLOW;
+      if (action === "run_check" || action === "run_backup" || action === "run_news") {
+        const workflow = action === "run_check" ? CHECK_WORKFLOW : action === "run_backup" ? BACKUP_WORKFLOW : NEWS_WORKFLOW;
         const requestedAt = new Date().toISOString();
         await githubRequest(`/actions/workflows/${workflow}/dispatches`, githubToken, {
           method: "POST",
