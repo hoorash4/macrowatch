@@ -18,6 +18,7 @@ FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 COURTS_URLS = (
     "https://www.uscourts.gov/sites/default/files/document/bf_f2.1_{period}.xlsx",
     "https://www.uscourts.gov/sites/default/files/data_tables/bf_f2.1_{period}.xlsx",
+    "https://www.uscourts.gov/sites/default/files/{publication_year}-{publication_month:02d}/bf_f2.1_{period}.xlsx",
 )
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
@@ -75,8 +76,18 @@ def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> 
 
 def fetch_court_workbook(year: int, month: int, day: int) -> bytes:
     period = f"{month:02d}{day:02d}.{year}"
+    publication_year, publication_month = year, month + 1
+    if publication_month == 13:
+        publication_year, publication_month = year + 1, 1
     for template in COURTS_URLS:
-        response = requests.get(template.format(period=period), timeout=TIMEOUT_SECONDS)
+        response = requests.get(
+            template.format(
+                period=period,
+                publication_year=publication_year,
+                publication_month=publication_month,
+            ),
+            timeout=TIMEOUT_SECONDS,
+        )
         if response.ok:
             return response.content
     raise RuntimeError(f"법원 F-2 월간 XLSX를 찾지 못했습니다: {year}-{month:02d}")
