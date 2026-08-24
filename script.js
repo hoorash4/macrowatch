@@ -28,13 +28,13 @@ const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 const NEWS_SENTIMENT_VIEWS = {
   recent: {
     days: 3,
-    barWidthClass: 'min-w-14 max-w-14',
-    gapClass: 'gap-4',
+    layout: 'horizontal',
     showNumbers: true,
     showDates: true,
   },
   expanded: {
     days: 30,
+    layout: 'vertical',
     barWidthClass: 'min-w-6 max-w-6',
     gapClass: 'gap-1 sm:gap-2',
     showNumbers: true,
@@ -42,6 +42,7 @@ const NEWS_SENTIMENT_VIEWS = {
   },
   all: {
     days: 60,
+    layout: 'vertical',
     barWidthClass: 'min-w-3 max-w-3',
     gapClass: 'gap-px',
     showNumbers: false,
@@ -62,6 +63,28 @@ function renderSentimentSegment(percent, colorClass, showLabel) {
   return `<span class="flex items-center justify-center ${colorClass}" style="height:${percent}%">${label}</span>`;
 }
 
+function renderHorizontalSentimentSegment(percent, colorClass, showLabel) {
+  if (!percent) return '';
+  const label = showLabel && percent >= 12 ? `<span class="text-[10px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
+  return `<span class="flex h-full items-center justify-center ${colorClass}" style="width:${percent}%">${label}</span>`;
+}
+
+function renderHorizontalSentimentBar(item, positive, negative, directionalCount, view, title) {
+  const bar = directionalCount
+    ? `${renderHorizontalSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderHorizontalSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
+    : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
+  const date = view.showDates ? `<span class="w-10 shrink-0 text-right text-xs font-semibold text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
+  return `<div class="group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="flex h-12 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
+}
+
+function renderVerticalSentimentBar(item, positive, negative, directionalCount, view, title) {
+  const bar = directionalCount
+    ? `${renderSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
+    : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
+  const date = view.showDates ? `<span class="whitespace-nowrap text-[10px] text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
+  return `<div class="group flex ${view.barWidthClass} flex-1 flex-col items-center gap-2"${title ? ` title="${title}"` : ''}><div class="flex h-44 w-full flex-col overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div>${date}</div>`;
+}
+
 function renderNewsSentiment(rows) {
   const chart = document.getElementById('news-sentiment-chart');
   if (!chart) return;
@@ -75,16 +98,15 @@ function renderNewsSentiment(rows) {
   const view = NEWS_SENTIMENT_VIEWS[newsSentimentView];
   const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>부정</span></div>';
   const visibleRows = data.slice(-view.days);
-  const bars = visibleRows.map((item) => {
+  const displayRows = view.layout === 'horizontal' ? [...visibleRows].reverse() : visibleRows;
+  const bars = displayRows.map((item) => {
     const directionalCount = Number(item.positive_count || 0) + Number(item.negative_count || 0);
     const positive = directionalCount ? (Number(item.positive_count || 0) / directionalCount) * 100 : 0;
     const negative = directionalCount ? (Number(item.negative_count || 0) / directionalCount) * 100 : 0;
     const title = view.showNumbers ? `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}` : '';
-    const bar = directionalCount
-      ? `${renderSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
-      : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
-    const date = view.showDates ? `<span class="whitespace-nowrap text-[10px] text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
-    return `<div class="group flex ${view.barWidthClass} flex-1 flex-col items-center gap-2"${title ? ` title="${title}"` : ''}><div class="flex h-44 w-full flex-col overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div>${date}</div>`;
+    return view.layout === 'horizontal'
+      ? renderHorizontalSentimentBar(item, positive, negative, directionalCount, view, title)
+      : renderVerticalSentimentBar(item, positive, negative, directionalCount, view, title);
   }).join('');
   const controls = [
     newsSentimentView === 'recent' && data.length > NEWS_SENTIMENT_VIEWS.recent.days
@@ -97,7 +119,10 @@ function renderNewsSentiment(rows) {
       ? '<button type="button" data-news-sentiment-view="recent" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">돌아가기</button>'
       : '',
   ].join('');
-  chart.innerHTML = `${legend}<div class="flex min-w-0 items-end ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
+  const graphClass = view.layout === 'horizontal'
+    ? 'flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4'
+    : `flex min-w-0 items-end ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
+  chart.innerHTML = `${legend}<div class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
   chart.querySelectorAll('[data-news-sentiment-view]').forEach((button) => {
     button.addEventListener('click', () => {
       newsSentimentView = button.dataset.newsSentimentView;
