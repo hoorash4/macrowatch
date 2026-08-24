@@ -390,13 +390,17 @@ function renderCreditStressComponents(rows) {
   const series = [
     { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
     { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b7791f', digits: 3, suffix: '' },
-    { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' },
   ].map((item) => ({ ...item, scores: buildCreditStressScores(data, item.key) }));
+  const bankruptcy = { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' };
   const width = 920;
   const height = CREDIT_STRESS_CHART_HEIGHT;
-  const padding = { top: 20, right: 24, bottom: 32, left: 24 };
+  const padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
   const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
+  const bankruptcyValues = data.map((row) => toCreditStressNumber(row[bankruptcy.key])).filter(Number.isFinite);
+  const bankruptcyMinimum = Math.min(...bankruptcyValues), bankruptcyMaximum = Math.max(...bankruptcyValues), bankruptcyRange = Math.max(bankruptcyMaximum - bankruptcyMinimum, 1);
+  const bankruptcyLower = Math.max(0, bankruptcyMinimum - bankruptcyRange * .1), bankruptcyUpper = bankruptcyMaximum + bankruptcyRange * .1;
+  const bankruptcyY = (value) => padding.top + ((height - padding.top - padding.bottom) * (bankruptcyUpper - value)) / (bankruptcyUpper - bankruptcyLower);
   const pathFor = (item) => {
     let path = '';
     let connected = false;
@@ -408,7 +412,17 @@ function renderCreditStressComponents(rows) {
     });
     return path;
   };
-  const labels = data.map((row, index) => String(row.month || '').endsWith('-01') && (index === 0 || String(row.month).endsWith('-01-01')) ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
+  const bankruptcyPath = (() => {
+    let path = '', connected = false;
+    data.forEach((row, index) => {
+      const value = toCreditStressNumber(row[bankruptcy.key]);
+      if (!Number.isFinite(value)) { connected = false; return; }
+      path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${bankruptcyY(value).toFixed(1)}`;
+      connected = true;
+    });
+    return path;
+  })();
+  const labels = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
   const dots = series.flatMap((item) => data.map((row, index) => {
     const score = item.scores.get(row.month);
     if (score == null) return '';
@@ -416,8 +430,14 @@ function renderCreditStressComponents(rows) {
     const detail = `${row.month}\n${item.label}: ${value.toFixed(item.digits)}${item.suffix}`;
     return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
   })).join('');
-  const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-right text-[11px] text-slate-500">점에 마우스를 올리면 표시 수치를 확인할 수 있습니다.</p>`;
+  const bankruptcyDots = data.map((row, index) => {
+    const value = toCreditStressNumber(row[bankruptcy.key]);
+    return Number.isFinite(value) ? `<circle cx="${x(index)}" cy="${bankruptcyY(value)}" r="3.5" fill="${bankruptcy.color}" tabindex="0"><title>${row.month}\n${bankruptcy.label}: ${value.toFixed(bankruptcy.digits)}${bankruptcy.suffix}</title></circle>` : '';
+  }).join('');
+  const grid = [0, 25, 50, 75, 100].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed"${score === 0 || score === 100 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${score}</text>`).join('');
+  const bankruptcyAxis = Array.from({ length: 5 }, (_, index) => bankruptcyUpper - ((bankruptcyUpper - bankruptcyLower) * index) / 4).map((value) => `<text x="${width - padding.right + 9}" y="${bankruptcyY(value) + 3}" fill="#285e8e" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('');
+  const legend = [...series, bankruptcy].map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${bankruptcyAxis}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}<path d="${bankruptcyPath}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}${bankruptcyDots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-right text-[11px] text-slate-500">점에 마우스를 올리면 표시 수치를 확인할 수 있습니다.</p>`;
 }
 
 async function loadCreditStressComponentsDashboard() {
