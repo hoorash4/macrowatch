@@ -34,9 +34,9 @@ STRESS_COMPONENTS = (
     ("business_bankruptcy_filings", 0.20),
 )
 LEAD_COMPONENT_WEIGHTS = {
-    "high_yield": 1 / 3,
-    "financial_conditions": 1 / 3,
-    "short_term_funding_spread": 1 / 3,
+    "high_yield": 0.40,
+    "financial_conditions": 0.30,
+    "short_term_funding_spread": 0.30,
 }
 SHORT_TERM_FUNDING_FLOOR = 0.10
 SHORT_TERM_FUNDING_REFERENCE = 0.60
@@ -165,8 +165,16 @@ def build_weekly_lead(high_yield: dict[str, float], conditions: dict[str, float]
     for week in weeks:
         hy, condition, spread = high_yield.get(week), conditions.get(week), funding.get(week)
         if not all(isinstance(value, (int, float)) for value in (hy, condition, spread)): continue
-        level = sum((fixed_stress_score(float(hy), "high_yield_oas_pct"), fixed_stress_score(float(condition), "financial_conditions_credit_index"), positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE))) / 3
-        momentum = None if previous is None else sum((signed_score(float(hy) - previous[0], 1.0), signed_score(float(condition) - previous[1], 0.5), signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE))) / 3
+        level = (
+            fixed_stress_score(float(hy), "high_yield_oas_pct") * LEAD_COMPONENT_WEIGHTS["high_yield"]
+            + fixed_stress_score(float(condition), "financial_conditions_credit_index") * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
+            + positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
+        )
+        momentum = None if previous is None else (
+            signed_score(float(hy) - previous[0], 1.0) * LEAD_COMPONENT_WEIGHTS["high_yield"]
+            + signed_score(float(condition) - previous[1], 0.5) * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
+            + signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
+        )
         rows.append({"week": week, "lead_index": round(level, 2), "lead_momentum": None if momentum is None else round(momentum, 2)})
         previous = (float(hy), float(condition), float(spread))
     return rows
