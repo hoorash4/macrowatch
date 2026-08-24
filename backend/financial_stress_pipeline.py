@@ -34,10 +34,15 @@ STRESS_COMPONENTS = (
     ("business_bankruptcy_filings", 0.20),
 )
 LEAD_COMPONENT_WEIGHTS = {
-    "high_yield_acceleration": 1 / 3,
-    "financial_conditions_acceleration": 1 / 3,
+    "high_yield": 1 / 3,
+    "financial_conditions": 1 / 3,
     "short_term_funding_spread": 1 / 3,
 }
+LEAD_LEVEL_WEIGHT = 0.50
+LEAD_CHANGE_WEIGHT = 0.50
+SHORT_TERM_FUNDING_FLOOR = 0.10
+SHORT_TERM_FUNDING_REFERENCE = 0.60
+SHORT_TERM_FUNDING_CHANGE_REFERENCE = 0.30
 # Fixed 0-to-100 reference ranges. These never roll with incoming data; values
 # above the reference range deliberately remain above 100 to preserve stress
 # severity during future extremes.
@@ -235,6 +240,10 @@ def positive_score(value: float, reference: float) -> float:
     return max(0.0, value / reference * 100.0)
 
 
+def blend_level_and_change(level: float, change: float) -> float:
+    return level * LEAD_LEVEL_WEIGHT + change * LEAD_CHANGE_WEIGHT
+
+
 def build_market_stress_lead(
     rows: list[dict[str, object]],
     short_term_funding_spread: dict[str, float],
@@ -251,12 +260,22 @@ def build_market_stress_lead(
             high_yield_change = float(row["high_yield_oas_pct"]) - float(previous["high_yield_oas_pct"])
             conditions_change = float(row["financial_conditions_credit_index"]) - float(previous["financial_conditions_credit_index"])
             funding_spread = float(short_term_funding_spread[month])
+            previous_funding_spread = float(short_term_funding_spread[str(previous["month"])])
         except (KeyError, TypeError, ValueError):
             continue
         component_scores = {
-            "high_yield_acceleration": positive_score(high_yield_change, 1.0),
-            "financial_conditions_acceleration": positive_score(conditions_change, 0.5),
-            "short_term_funding_spread": positive_score(funding_spread - 0.10, 0.60),
+            "high_yield": blend_level_and_change(
+                fixed_stress_score(float(row["high_yield_oas_pct"]), "high_yield_oas_pct"),
+                positive_score(high_yield_change, 1.0),
+            ),
+            "financial_conditions": blend_level_and_change(
+                fixed_stress_score(float(row["financial_conditions_credit_index"]), "financial_conditions_credit_index"),
+                positive_score(conditions_change, 0.5),
+            ),
+            "short_term_funding_spread": blend_level_and_change(
+                positive_score(funding_spread - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE),
+                positive_score(funding_spread - previous_funding_spread, SHORT_TERM_FUNDING_CHANGE_REFERENCE),
+            ),
         }
         lead_scores[month] = round(
             sum(component_scores[key] * weight for key, weight in LEAD_COMPONENT_WEIGHTS.items()),
