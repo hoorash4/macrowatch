@@ -175,7 +175,7 @@ function renderCreditStressDashboard(rows) {
   }
   const width = 920;
   const height = 250;
-  const padding = { top: 20, right: 24, bottom: 32, left: 24 };
+  const padding = { top: 20, right: 24, bottom: 32, left: 52 };
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
   const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
   const labels = data.map((row, index) => {
@@ -193,7 +193,8 @@ function renderCreditStressDashboard(rows) {
     const detail = `${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${provisional ? ' (잠정치)' : ' (확정치)'}`;
     return `<circle cx="${x(index)}" cy="${y(Number(row.stress_index))}" r="3.75" fill="#b7791f"${provisional ? ' fill-opacity="0.35" stroke="#b7791f" stroke-width="1.5"' : ''} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>확정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>잠정치</span></div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${lines}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다. 점선 구간은 잠정치이며, 지수를 구성하는 전체 지표가 업데이트되면 확정값으로 전환됩니다.</p>`;
+  const grid = [0, 20, 40, 60, 80, 100].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${score}</text>`).join('');
+  chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>확정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>잠정치</span></div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${lines}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다. 점선 구간은 잠정치이며, 지수를 구성하는 전체 지표가 업데이트되면 확정값으로 전환됩니다.</p>`;
 }
 
 async function loadCreditStressDashboard() {
@@ -212,6 +213,83 @@ async function loadCreditStressDashboard() {
 }
 
 window.loadCreditStressDashboard = loadCreditStressDashboard;
+
+function toCreditStressNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function buildCreditStressScores(rows, key) {
+  const available = (value) => Number.isFinite(value) && (key !== 'business_bankruptcy_filings' || value > 0);
+  const values = rows.map((row) => toCreditStressNumber(row[key])).filter(available).sort((a, b) => a - b);
+  if (!values.length) return new Map();
+  const lower = values[Math.floor((values.length - 1) * 0.05)];
+  const upper = values[Math.ceil((values.length - 1) * 0.95)];
+  const spread = upper - lower || 1;
+  return new Map(rows.map((row) => {
+    const value = toCreditStressNumber(row[key]);
+    return [row.month, available(value) ? Math.max(0, Math.min(100, ((value - lower) / spread) * 100)) : null];
+  }));
+}
+
+function renderCreditStressComponents(rows) {
+  const chart = document.getElementById('credit-stress-components-chart');
+  if (!chart) return;
+  if (!rows.length) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 수집 후 장기 신용위험 추이가 표시됩니다.</div>';
+    return;
+  }
+  const data = [...rows].sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const series = [
+    { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
+    { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b7791f', digits: 3, suffix: '' },
+    { key: 'business_bankruptcy_filings', label: '기업 파산보호 신청', color: '#285e8e', digits: 0, suffix: '건' },
+  ].map((item) => ({ ...item, scores: buildCreditStressScores(data, item.key) }));
+  const width = 920;
+  const height = 250;
+  const padding = { top: 20, right: 24, bottom: 32, left: 24 };
+  const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
+  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
+  const pathFor = (item) => {
+    let path = '';
+    let connected = false;
+    data.forEach((row, index) => {
+      const score = item.scores.get(row.month);
+      if (score == null) { connected = false; return; }
+      path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${y(score).toFixed(1)}`;
+      connected = true;
+    });
+    return path;
+  };
+  const labels = data.map((row, index) => String(row.month || '').endsWith('-01') && (index === 0 || String(row.month).endsWith('-01-01')) ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
+  const dots = series.flatMap((item) => data.map((row, index) => {
+    const score = item.scores.get(row.month);
+    if (score == null) return '';
+    const value = toCreditStressNumber(row[item.key]);
+    const detail = `${row.month}\n${item.label}: ${value.toFixed(item.digits)}${item.suffix}`;
+    return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
+  })).join('');
+  const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
+  chart.innerHTML = `<div class="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="h-60 w-full" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${[25, 50, 75].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('')}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}${dots}${labels}</svg></div><p class="mt-3 text-[11px] text-slate-500">서로 단위가 다른 세 지표를 추세 비교용 상대 척도로 표시합니다. 점에 마우스를 올리면 원 수치를 확인할 수 있습니다.</p>`;
+}
+
+async function loadCreditStressComponentsDashboard() {
+  const chart = document.getElementById('credit-stress-components-chart');
+  if (!chart || !supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from('us_credit_stress_monthly')
+      .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
+      .order('month', { ascending: false })
+      .limit(CREDIT_STRESS_HISTORY_MONTHS);
+    if (error) throw error;
+    renderCreditStressComponents(data || []);
+  } catch (error) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
+  }
+}
+
+window.loadCreditStressComponentsDashboard = loadCreditStressComponentsDashboard;
 
 // 알림 조건에 따라 설정값 입력칸을 활성화하거나 비활성화합니다.
 function toggleTargetValueInput(conditionId, valueId) {
