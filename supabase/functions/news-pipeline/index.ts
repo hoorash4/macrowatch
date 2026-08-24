@@ -248,7 +248,7 @@ Deno.serve(async (request) => {
         return counts;
       }, {}),
       errors,
-      next_step: "AI 사건 그룹화 및 분석",
+      next_step: "분석 결과 저장 완료",
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "뉴스 수집에 실패했습니다." }, 500);
