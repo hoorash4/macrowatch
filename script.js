@@ -24,20 +24,41 @@ let noticeCloseAction = null;
 let pointerDragState = createPointerDragState();
 let pendingToggleId = null;
 
-const NEWS_SENTIMENT_INITIAL_DAYS = 50;
-const NEWS_SENTIMENT_PAGE_SIZE = 10;
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
+const NEWS_SENTIMENT_VIEWS = {
+  recent: {
+    days: 3,
+    barWidthClass: 'min-w-14 max-w-14',
+    gapClass: 'gap-4',
+    showNumbers: true,
+    showDates: true,
+  },
+  expanded: {
+    days: 30,
+    barWidthClass: 'min-w-6 max-w-6',
+    gapClass: 'gap-1 sm:gap-2',
+    showNumbers: true,
+    showDates: true,
+  },
+  all: {
+    days: 60,
+    barWidthClass: 'min-w-3 max-w-3',
+    gapClass: 'gap-px',
+    showNumbers: false,
+    showDates: false,
+  },
+};
 let newsSentimentRows = [];
-let visibleNewsSentimentDays = NEWS_SENTIMENT_INITIAL_DAYS;
+let newsSentimentView = 'recent';
 
 function formatNewsDate(value) {
   const [year, month, day] = String(value || '').split('-');
   return month && day ? `${Number(month)}/${Number(day)}` : '—';
 }
 
-function renderSentimentSegment(percent, colorClass) {
+function renderSentimentSegment(percent, colorClass, showLabel) {
   if (!percent) return '';
-  const label = percent >= 16 ? `<span class="text-[9px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
+  const label = showLabel && percent >= 16 ? `<span class="text-[9px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
   return `<span class="flex items-center justify-center ${colorClass}" style="height:${percent}%">${label}</span>`;
 }
 
@@ -47,29 +68,41 @@ function renderNewsSentiment(rows) {
 
   const data = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date)));
   if (!data.length) {
-    chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">다음 뉴스 분석 후 최근 10일 추이가 표시됩니다.</div>';
+    chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">다음 뉴스 분석 후 최근 3일 추이가 표시됩니다.</div>';
     return;
   }
 
+  const view = NEWS_SENTIMENT_VIEWS[newsSentimentView];
   const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>부정</span></div>';
-  const visibleRows = data.slice(-visibleNewsSentimentDays);
+  const visibleRows = data.slice(-view.days);
   const bars = visibleRows.map((item) => {
     const directionalCount = Number(item.positive_count || 0) + Number(item.negative_count || 0);
     const positive = directionalCount ? (Number(item.positive_count || 0) / directionalCount) * 100 : 0;
     const negative = directionalCount ? (Number(item.negative_count || 0) / directionalCount) * 100 : 0;
-    const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
+    const title = view.showNumbers ? `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}` : '';
     const bar = directionalCount
-      ? `${renderSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800')}${renderSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800')}`
+      ? `${renderSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
       : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
-    return `<div class="group flex min-w-6 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-6 flex-col overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${bar}</div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
+    const date = view.showDates ? `<span class="whitespace-nowrap text-[10px] text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
+    return `<div class="group flex ${view.barWidthClass} flex-1 flex-col items-center gap-2"${title ? ` title="${title}"` : ''}><div class="flex h-44 w-full flex-col overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div>${date}</div>`;
   }).join('');
-  const moreButton = data.length > visibleRows.length
-    ? `<button id="news-sentiment-more" type="button" class="col-span-full justify-self-center rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">이전 10일 더보기</button>`
-    : '';
-  chart.innerHTML = `${legend}<div class="flex min-w-0 items-end gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/30 px-4 py-4 sm:gap-2">${bars}</div>${moreButton}`;
-  document.getElementById('news-sentiment-more')?.addEventListener('click', () => {
-    visibleNewsSentimentDays += NEWS_SENTIMENT_PAGE_SIZE;
-    renderNewsSentiment(newsSentimentRows);
+  const controls = [
+    newsSentimentView === 'recent' && data.length > NEWS_SENTIMENT_VIEWS.recent.days
+      ? '<button type="button" data-news-sentiment-view="expanded" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">더보기</button>'
+      : '',
+    newsSentimentView === 'expanded' && data.length > NEWS_SENTIMENT_VIEWS.expanded.days
+      ? '<button type="button" data-news-sentiment-view="all" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">최근 60개 보기</button>'
+      : '',
+    newsSentimentView !== 'recent'
+      ? '<button type="button" data-news-sentiment-view="recent" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">돌아가기</button>'
+      : '',
+  ].join('');
+  chart.innerHTML = `${legend}<div class="flex min-w-0 items-end ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
+  chart.querySelectorAll('[data-news-sentiment-view]').forEach((button) => {
+    button.addEventListener('click', () => {
+      newsSentimentView = button.dataset.newsSentimentView;
+      renderNewsSentiment(newsSentimentRows);
+    });
   });
 }
 
@@ -83,7 +116,7 @@ async function loadNewsSentimentDashboard() {
       .limit(NEWS_SENTIMENT_HISTORY_DAYS);
     if (error) throw error;
     newsSentimentRows = data || [];
-    visibleNewsSentimentDays = NEWS_SENTIMENT_INITIAL_DAYS;
+    newsSentimentView = 'recent';
     renderNewsSentiment(newsSentimentRows);
   } catch (error) {
     chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">잠시 후 다시 시도해 주세요.</div>';
