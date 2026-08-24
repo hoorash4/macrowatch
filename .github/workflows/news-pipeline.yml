@@ -4,8 +4,10 @@ on:
   push:
     branches: [main]
   schedule:
-    # 20:30 UTC = 05:30 KST
+    # 05:30 KST, with two fallbacks if GitHub delays or drops the first scheduled run.
     - cron: "30 20 * * *"
+    - cron: "40 20 * * *"
+    - cron: "50 20 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -33,15 +35,36 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
+          request_batch() {
+            local payload="$1" attempt=1 max_attempts=4 response status
+            while [ "$attempt" -le "$max_attempts" ]; do
+              response=$(mktemp)
+              status=$(curl --silent --show-error --output "$response" --write-out "%{http_code}" --max-time 120 \
+                --request POST "$SUPABASE_URL/functions/v1/news-pipeline" \
+                --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+                --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+                --header "Content-Type: application/json" \
+                --data "$payload") || status=000
+              if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+                cat "$response"
+                rm "$response"
+                return 0
+              fi
+              cat "$response" >&2
+              rm "$response"
+              if [ "$attempt" -eq "$max_attempts" ]; then
+                echo "news-pipeline request failed with HTTP $status" >&2
+                return 1
+              fi
+              sleep $((attempt * 15))
+              attempt=$((attempt + 1))
+            done
+          }
           offset=0
           while true; do
-            response=$(curl --fail-with-body --retry 2 --max-time 120 \
-              --request POST "$SUPABASE_URL/functions/v1/news-pipeline" \
-              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-              --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-              --header "Content-Type: application/json" \
-              --data "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":10,\"dry_run\":$DRY_RUN}")
+            response=$(request_batch "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":10,\"dry_run\":$DRY_RUN,\"mark_complete\":true}")
             echo "$response"
+            [ "$(jq -r '.already_completed // false' <<< "$response")" = "true" ] && break
             [ "$(jq -r '.has_more' <<< "$response")" = "true" ] || break
             offset=$(jq -r '.next_offset' <<< "$response")
           done

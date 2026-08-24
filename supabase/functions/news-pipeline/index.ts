@@ -42,6 +42,11 @@ async function collectCandidates(lookbackHours: number) {
   return { candidates: deduplicate(results.flatMap((result) => result.status === "fulfilled" ? result.value : [])), errors: results.flatMap((result, index) => result.status === "rejected" ? [{ source: sources[index], error: String(result.reason) }] : []) };
 }
 function kstDate(iso: string) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso)); }
+function serverClient() {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, articleDate: string, excludedIncrement = 0) {
   const { data, error } = await supabase.from("news_article_sentiments").select("ai_sentiment,admin_sentiment").eq("article_date", articleDate);
   if (error) throw error;
@@ -54,29 +59,39 @@ async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, 
 }
 async function resetExcludedCounts(supabase: ReturnType<typeof createClient>, candidates: Candidate[]) { const dates = [...new Set(candidates.flatMap((candidate) => candidate.publishedAt ? [kstDate(candidate.publishedAt)] : []))]; for (const articleDate of dates) { const { error } = await supabase.from("news_daily_article_sentiment").update({ excluded_count: 0, generated_at: new Date().toISOString() }).eq("article_date", articleDate); if (error) throw error; } }
 async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidate[], resetExcluded = false) {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
   const candidatesByHash = new Map(candidates.map((candidate) => [candidate.itemHash, candidate])), includedOutputs = outputs.filter((output) => !output.excludeFromIndex);
   const dates = new Set<string>(), now = new Date().toISOString();
   const rows = includedOutputs.map((output) => { const candidate = candidatesByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const articleDate = kstDate(candidate.publishedAt); dates.add(articleDate); return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, article_date: articleDate, ai_sentiment: output.sentiment, derived_keywords: output.keywords, uncertain_summary: output.uncertainSummary, updated_at: now }; });
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const supabase = serverClient();
   if (resetExcluded) await resetExcludedCounts(supabase, candidates);
   if (rows.length) { const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" }); if (error) throw error; }
   const excludedByDate = new Map<string, number>(); for (const output of outputs.filter((item) => item.excludeFromIndex)) { const candidate = candidatesByHash.get(output.itemHash); if (candidate?.publishedAt) { const date = kstDate(candidate.publishedAt); dates.add(date); excludedByDate.set(date, (excludedByDate.get(date) || 0) + 1); } }
   for (const date of dates) await refreshDailySentiment(supabase, date, excludedByDate.get(date) || 0);
   return { articles: rows.length, excluded_articles: outputs.length - rows.length, dates: [...dates].sort() };
 }
-async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const lookbackHours = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS), offset = Number(body.offset ?? 0), limit = Number(body.limit ?? DEFAULT_BATCH_SIZE); if (!Number.isInteger(lookbackHours) || lookbackHours < 1 || lookbackHours > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_BATCH_SIZE) throw new Error(`offset은 0 이상의 정수이고 limit은 1에서 ${MAX_BATCH_SIZE} 사이여야 합니다.`); return { lookbackHours, offset, limit, dryRun: body.dry_run === true }; }
+async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const lookbackHours = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS), offset = Number(body.offset ?? 0), limit = Number(body.limit ?? DEFAULT_BATCH_SIZE); if (!Number.isInteger(lookbackHours) || lookbackHours < 1 || lookbackHours > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_BATCH_SIZE) throw new Error(`offset은 0 이상의 정수이고 limit은 1에서 ${MAX_BATCH_SIZE} 사이여야 합니다.`); return { lookbackHours, offset, limit, dryRun: body.dry_run === true, markComplete: body.mark_complete === true }; }
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   let stage = "요청 검증";
   try {
-    const { lookbackHours, offset, limit, dryRun } = await getRunOptions(request); stage = "뉴스 수집";
+    const { lookbackHours, offset, limit, dryRun, markComplete } = await getRunOptions(request);
+    const runDate = kstDate(new Date().toISOString());
+    if (markComplete && !dryRun && offset === 0) {
+      const { data, error } = await serverClient().from("news_pipeline_runs").select("run_date").eq("run_date", runDate).maybeSingle();
+      if (error) throw error;
+      if (data) return json({ already_completed: true, run_date: runDate, has_more: false, next_step: "오늘의 뉴스 분석은 이미 완료되었습니다." });
+    }
+    stage = "뉴스 수집";
     const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "시장 맥락 조회";
     const { context: marketContext, warning: marketContextWarning } = await loadMarketContext(); stage = "AI 분석";
     const outputs = await analyzeCandidates(batch, marketContext); stage = "결과 저장";
+    const hasMore = offset + batch.length < candidates.length;
     const persisted = dryRun ? { articles: 0, excluded_articles: 0, dates: [] } : await persistAnalysis(outputs, batch, offset === 0);
+    if (markComplete && !dryRun && !hasMore) {
+      const { error } = await serverClient().from("news_pipeline_runs").upsert({ run_date: runDate, completed_at: new Date().toISOString() });
+      if (error) throw error;
+    }
     const sentiments = outputs.reduce<Record<string, number>>((counts, output) => ({ ...counts, [output.sentiment]: (counts[output.sentiment] || 0) + 1 }), { positive: 0, negative: 0, neutral: 0, uncertain: 0 });
-    return json({ collected: candidates.length, processed: batch.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, offset, limit, has_more: offset + batch.length < candidates.length, next_offset: offset + batch.length, dry_run: dryRun, persisted, sources: batch.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), market_context: marketContext, market_context_warning: marketContextWarning, errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
+    return json({ collected: candidates.length, processed: batch.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, offset, limit, has_more: hasMore, next_offset: offset + batch.length, dry_run: dryRun, persisted, sources: batch.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), market_context: marketContext, market_context_warning: marketContextWarning, errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
   } catch (error) { return json({ error: `${stage}: ${error instanceof Error ? error.message : String(error)}`, stage }, 500); }
 });
