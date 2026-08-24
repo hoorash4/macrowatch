@@ -1,6 +1,8 @@
 name: Analyze daily news
 
 on:
+  push:
+    branches: [main]
   schedule:
     # 20:30 UTC = 05:30 KST
     - cron: "30 20 * * *"
@@ -21,6 +23,7 @@ concurrency:
 
 jobs:
   analyze-news:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[run-news]')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
