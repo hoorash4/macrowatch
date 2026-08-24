@@ -110,14 +110,14 @@ def parse_business_filings(workbook_bytes: bytes) -> dict[str, int]:
 
 def collect_business_filings(start: date, end: date) -> dict[str, int]:
     filings: dict[str, int] = {}
-    quarters = list(quarter_ends(start.year, start.month, end.year, end.month))
-    for index, (year, month, day) in enumerate(quarters):
+    for year, month, day in quarter_ends(start.year, start.month, end.year, end.month):
         try:
             workbook = fetch_court_workbook(year, month, day)
-        except RuntimeError:
-            if index == len(quarters) - 1:
-                continue
-            raise
+        except RuntimeError as error:
+            # The court publishes each three-month report after its period ends.
+            # Keep the available history intact while a newly expected report is pending.
+            print(f"skipped_court_report={year}-{month:02d} reason={error}")
+            continue
         for month_key, value in parse_business_filings(workbook).items():
             if start.isoformat()[:7] <= month_key[:7] <= end.isoformat()[:7]:
                 filings[month_key] = value
