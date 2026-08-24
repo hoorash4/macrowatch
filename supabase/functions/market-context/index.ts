@@ -10,7 +10,9 @@ function dateKey(date: Date) { return `${date.getUTCFullYear()}${String(date.get
 function toNumber(value: unknown) { const parsed = Number(String(value ?? "").replaceAll(",", "")); return Number.isFinite(parsed) ? parsed : null; }
 function readItems(payload: Record<string, unknown>) { const body = payload.response && typeof payload.response === "object" ? (payload.response as Record<string, unknown>).body : null; const items = body && typeof body === "object" ? (body as Record<string, unknown>).items : null; const item = items && typeof items === "object" ? (items as Record<string, unknown>).item : []; return Array.isArray(item) ? item : item ? [item] : []; }
 async function fetchCandle(key: string, date: Date): Promise<MarketCandle | null> {
-  const params = new URLSearchParams({ serviceKey: key, resultType: "json", pageNo: "1", numOfRows: "10", basDt: dateKey(date), idxNm: "코스피" });
+  // The portal commonly issues an already URL-encoded key. Normalize it before
+  // URLSearchParams encodes it once for the outgoing request.
+  const params = new URLSearchParams({ serviceKey: decodeURIComponent(key), resultType: "json", pageNo: "1", numOfRows: "10", basDt: dateKey(date), idxNm: "코스피" });
   const response = await fetch(`${API_URL}?${params}`, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`공공데이터 API 오류 (${response.status})`);
   const item = readItems(await response.json() as Record<string, unknown>).find((row) => String((row as Record<string, unknown>).idxNm).includes("코스피")) as Record<string, unknown> | undefined;
