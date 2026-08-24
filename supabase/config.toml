@@ -1,4 +1,4 @@
 project_id = "xhghpywvthjuvespzdul"
 
 [functions.news-pipeline]
-verify_jwt = true
+verify_jwt = false

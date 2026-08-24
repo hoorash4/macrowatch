@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
   schedule:
-    # 05:30 KST, with two fallbacks if GitHub delays or drops the first scheduled run.
-    - cron: "30 20 * * *"
-    - cron: "40 20 * * *"
-    - cron: "50 20 * * *"
+    # 23:30 KST, with two fallbacks inside the requested 23:30-00:00 window.
+    - cron: "30 14 * * *"
+    - cron: "40 14 * * *"
+    - cron: "50 14 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -27,38 +27,28 @@ jobs:
   analyze-news:
     if: github.event_name != 'push' || contains(github.event.head_commit.message, '[run-news]')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - name: Run news pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEWS_PIPELINE_SECRET: ${{ secrets.NEWS_PIPELINE_TRIGGER_SECRET }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           request_batch() {
-            local payload="$1" attempt=1 max_attempts=2 response status
-            while [ "$attempt" -le "$max_attempts" ]; do
-              response=$(mktemp)
-              status=$(curl --silent --show-error --output "$response" --write-out "%{http_code}" --max-time 120 \
-                --request POST "$SUPABASE_URL/functions/v1/news-pipeline" \
-                --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-                --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-                --header "Content-Type: application/json" \
-                --data "$payload") || status=000
-              if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
-                cat "$response"
-                rm "$response"
-                return 0
-              fi
-              cat "$response" >&2
-              rm "$response"
-              if [ "$attempt" -eq "$max_attempts" ]; then
-                echo "news-pipeline request failed with HTTP $status" >&2
-                return 1
-              fi
-              sleep $((attempt * 15))
-              attempt=$((attempt + 1))
-            done
+            local payload="$1" response status
+            response=$(mktemp)
+            status=$(curl --silent --show-error --output "$response" --write-out "%{http_code}" --max-time 300 \
+              --request POST "$SUPABASE_URL/functions/v1/news-pipeline" \
+              --header "x-news-pipeline-secret: $NEWS_PIPELINE_SECRET" \
+              --header "Content-Type: application/json" \
+              --data "$payload") || status=000
+            cat "$response"
+            rm "$response"
+            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+              echo "news-pipeline request failed with HTTP $status" >&2
+              return 1
+            fi
           }
           offset=0
           while true; do
