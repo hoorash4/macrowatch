@@ -450,7 +450,14 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
 
 
 def upsert_weekly_lead(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
-    response = requests.post(f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_lead_weekly?on_conflict=week", headers={"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}, json=rows, timeout=TIMEOUT_SECONDS)
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_lead_weekly?on_conflict=week"
+    headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}
+    response = requests.post(endpoint, headers=headers, json=rows, timeout=TIMEOUT_SECONDS)
+    if response.status_code == 400 and "leverage_signal" in response.text:
+        # Keep the established lead series updating while the additive database
+        # migration is still being applied by the production integration.
+        legacy_rows = [{key: value for key, value in row.items() if key != "leverage_signal"} for row in rows]
+        response = requests.post(endpoint, headers=headers, json=legacy_rows, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
 
 
