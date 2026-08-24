@@ -8,7 +8,7 @@ import io
 import os
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 import openpyxl
 import requests
@@ -130,6 +130,21 @@ def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -
     return {month: value for month, (_observed_on, value) in month_end.items()}
 
 
+def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
+    """Return the final available observation for each Friday-ended week."""
+    response = requests.get(FRED_URL, params={"series_id": series_id, "api_key": api_key, "file_type": "json", "observation_start": start.isoformat(), "observation_end": end.isoformat(), "limit": "100000"}, timeout=TIMEOUT_SECONDS)
+    response.raise_for_status()
+    values: dict[str, tuple[str, float]] = {}
+    for observation in response.json().get("observations", []):
+        raw_value, observed_on = observation.get("value"), observation.get("date")
+        if raw_value in (None, ".") or not isinstance(observed_on, str): continue
+        try: observed_date, value = date.fromisoformat(observed_on), float(raw_value)
+        except (TypeError, ValueError): continue
+        week = (observed_date + timedelta(days=4 - observed_date.weekday())).isoformat()
+        if week not in values or observed_on > values[week][0]: values[week] = (observed_on, value)
+    return {week: value for week, (_observed_on, value) in values.items()}
+
+
 def carry_forward_monthly(values: dict[str, float], months: list[str]) -> dict[str, float]:
     """Keep a continuous monthly series when a source omits an otherwise ordinary month."""
     carried: dict[str, float] = {}
@@ -141,6 +156,20 @@ def carry_forward_monthly(values: dict[str, float], months: list[str]) -> dict[s
         if previous is not None:
             carried[month] = previous
     return carried
+
+
+def build_weekly_lead(high_yield: dict[str, float], conditions: dict[str, float], funding: dict[str, float]) -> list[dict[str, object]]:
+    weeks = sorted(set(high_yield) | set(conditions) | set(funding))
+    high_yield, conditions, funding = (carry_forward_monthly(values, weeks) for values in (high_yield, conditions, funding))
+    rows, previous = [], None
+    for week in weeks:
+        hy, condition, spread = high_yield.get(week), conditions.get(week), funding.get(week)
+        if not all(isinstance(value, (int, float)) for value in (hy, condition, spread)): continue
+        level = sum((fixed_stress_score(float(hy), "high_yield_oas_pct"), fixed_stress_score(float(condition), "financial_conditions_credit_index"), positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE))) / 3
+        momentum = None if previous is None else sum((signed_score(float(hy) - previous[0], 1.0), signed_score(float(condition) - previous[1], 0.5), signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE))) / 3
+        rows.append({"week": week, "lead_index": round(level, 2), "lead_momentum": None if momentum is None else round(momentum, 2)})
+        previous = (float(hy), float(condition), float(spread))
+    return rows
 
 
 def fetch_court_workbook(year: int, month: int, day: int) -> bytes:
@@ -370,6 +399,11 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
     response.raise_for_status()
 
 
+def upsert_weekly_lead(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
+    response = requests.post(f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_lead_weekly?on_conflict=week", headers={"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}, json=rows, timeout=TIMEOUT_SECONDS)
+    response.raise_for_status()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=3)
@@ -410,6 +444,14 @@ def main() -> None:
     upsert_rows(rows, supabase_url, service_role_key)
     index_rows = build_market_stress_index(rows, today, sp500_month_end, short_term_funding_spread)
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
+    weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
+    weekly_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
+    weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, start, today)
+    weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, today)
+    completed_week = (today - timedelta(days=((today.weekday() - 4) % 7 or 7))).isoformat()
+    weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys() if week <= completed_week}
+    weekly_rows = build_weekly_lead({week: value for week, value in weekly_high_yield.items() if week <= completed_week}, {week: value for week, value in weekly_conditions.items() if week <= completed_week}, weekly_funding)
+    upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
     print(
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "

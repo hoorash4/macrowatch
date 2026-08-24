@@ -179,9 +179,15 @@
         <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
       </div>
       <div class="border-t border-slate-800 px-5 pb-5 pt-5">
-        <p class="text-[10px] font-bold tracking-[.16em] text-violet-300">MONTHLY STRESS CHANGE</p>
-        <h3 class="mt-0.5 text-base font-bold tracking-tight text-white">월간 스트레스 변화</h3>
-        <p class="mt-4 text-[11px] text-slate-500">세 지표의 전월 대비 변화를 동일 가중치로 합산합니다.</p>
+        <p class="text-[10px] font-bold tracking-[.16em] text-violet-300">WEEKLY MARKET STRESS LEAD</p>
+        <h3 class="mt-0.5 text-base font-bold tracking-tight text-white">주간 시장 스트레스 선행 지표</h3>
+        <p class="mt-4 text-[11px] text-slate-500">세 지표의 절대 위험 수준을 동일 가중치로 합산합니다.</p>
+        <div id="credit-stress-weekly-lead-chart" class="min-h-52 pt-4"></div>
+      </div>
+      <div class="border-t border-slate-800 px-5 pb-5 pt-5">
+        <p class="text-[10px] font-bold tracking-[.16em] text-violet-300">WEEKLY STRESS CHANGE</p>
+        <h3 class="mt-0.5 text-base font-bold tracking-tight text-white">주간 스트레스 변화</h3>
+        <p class="mt-4 text-[11px] text-slate-500">세 지표의 직전 1주 대비 변화를 동일 가중치로 합산합니다.</p>
         <div id="credit-stress-momentum-chart" class="min-h-52 pt-4">
           <div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">월간 변화 데이터를 불러오는 중입니다.</div>
         </div>
@@ -528,6 +534,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=99"></script>
+  <script src="script.js?v=100"></script>
 </body>
 </html>
