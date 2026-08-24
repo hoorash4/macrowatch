@@ -35,6 +35,21 @@ export async function analyzeCandidates(candidates: Candidate[], marketContext: 
   const expected = new Set(candidates.map((candidate) => candidate.itemHash));
   const received = outputs.map((item) => item.itemHash);
   const uniqueReceived = new Set(received);
-  if (received.length !== uniqueReceived.size || uniqueReceived.size !== expected.size || [...uniqueReceived].some((hash) => !expected.has(hash))) throw new Error("AI 분석 결과에 누락되거나 중복된 뉴스 후보가 있습니다.");
-  return outputs.map((item) => item.excludeFromIndex || item.sentiment === "uncertain" ? item : { ...item, keywords: [], uncertainSummary: null });
+  if (received.length !== uniqueReceived.size || [...uniqueReceived].some((hash) => !expected.has(hash))) {
+    throw new Error("AI 분석 결과의 뉴스 식별자가 올바르지 않습니다.");
+  }
+  const missing = candidates.filter((candidate) => !uniqueReceived.has(candidate.itemHash));
+  if (missing.length) {
+    const recovered = await Promise.all(missing.map(async (candidate) => {
+      const single = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext);
+      if (single.length !== 1 || single[0].itemHash !== candidate.itemHash) throw new Error("누락 뉴스 재분석 결과의 식별자가 올바르지 않습니다.");
+      return single[0];
+    }));
+    outputs.push(...recovered);
+  }
+  return candidates.map((candidate) => {
+    const output = outputs.find((item) => item.itemHash === candidate.itemHash);
+    if (!output) throw new Error("뉴스 분석 결과가 누락되었습니다.");
+    return output.excludeFromIndex || output.sentiment === "uncertain" ? output : { ...output, keywords: [], uncertainSummary: null };
+  });
 }
