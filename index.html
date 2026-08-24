@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=36">
+  <link rel="stylesheet" href="styles.css?v=37">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -131,6 +131,7 @@
         </div>
       </nav>
       <div class="dashboard-main">
+    <div class="dashboard-view-card">
     <div class="market-overview" data-dashboard-panel="overview">
     <div class="market-overview-grid">
     <!-- 최근 뉴스의 한국 주가지수 영향 분포를 가장 먼저 보여줍니다. -->
@@ -190,6 +191,9 @@
         <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
       </div>
     </section>
+
+    </div>
+    <div class="dashboard-tracker-card">
 
     <!-- ===== 경제지표 추적 화면 시작 ===== -->
     <div id="tab-content-tracker" aria-label="지표 추적">
@@ -322,6 +326,8 @@
             <button type="button" class="sheet-tab is-active" role="tab" aria-selected="true">Tab 01</button>
             <button type="button" class="sheet-tab sheet-tab-add" role="tab" aria-selected="false">+ Tab</button>
           </div>
+
+    </div>
 
     </div>
 
