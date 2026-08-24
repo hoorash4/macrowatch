@@ -360,7 +360,7 @@ function addBankruptcyTrailingAverage(rows) {
     const average = filings.length
       ? filings.slice(-3).reduce((sum, filing) => sum + filing, 0) / Math.min(3, filings.length)
       : null;
-    return { ...row, business_bankruptcy_filings_3m_average: average };
+    return { ...row, business_bankruptcy_filings_3m_average: row.is_latest ? null : average };
   });
 }
 
@@ -424,12 +424,20 @@ async function loadCreditStressComponentsDashboard() {
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from('us_credit_stress_monthly')
-      .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
-      .order('month', { ascending: false })
-      .limit(CREDIT_STRESS_HISTORY_MONTHS + 2);
+    const [monthlyResponse, latestResponse] = await Promise.all([
+      supabaseClient.from('us_credit_stress_monthly')
+        .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
+        .order('month', { ascending: false })
+        .limit(CREDIT_STRESS_HISTORY_MONTHS + 2),
+      supabaseClient.from('us_credit_stress_latest')
+        .select('as_of,high_yield_oas_pct,financial_conditions_credit_index')
+        .eq('singleton', true)
+        .maybeSingle(),
+    ]);
+    const { data, error } = monthlyResponse;
     if (error) throw error;
-    renderCreditStressComponents(data || []);
+    const latest = latestResponse.error || !latestResponse.data ? [] : [{ ...latestResponse.data, month: latestResponse.data.as_of, is_latest: true }];
+    renderCreditStressComponents([...(data || []), ...latest]);
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
   }

@@ -130,6 +130,27 @@ def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -
     return {month: value for month, (_observed_on, value) in month_end.items()}
 
 
+def fetch_fred_latest(series_id: str, api_key: str, start: date, end: date) -> tuple[date, float] | None:
+    response = requests.get(
+        FRED_URL,
+        params={"series_id": series_id, "api_key": api_key, "file_type": "json", "observation_start": start.isoformat(), "observation_end": end.isoformat(), "limit": "100000"},
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    latest: tuple[date, float] | None = None
+    for observation in response.json().get("observations", []):
+        raw_value, observed_on = observation.get("value"), observation.get("date")
+        if raw_value in (None, ".") or not isinstance(observed_on, str):
+            continue
+        try:
+            candidate = (date.fromisoformat(observed_on), float(raw_value))
+        except (TypeError, ValueError):
+            continue
+        if latest is None or candidate[0] > latest[0]:
+            latest = candidate
+    return latest
+
+
 def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
     """Return the final available observation for each Friday-ended week."""
     response = requests.get(FRED_URL, params={"series_id": series_id, "api_key": api_key, "file_type": "json", "observation_start": start.isoformat(), "observation_end": end.isoformat(), "limit": "100000"}, timeout=TIMEOUT_SECONDS)
@@ -412,6 +433,16 @@ def upsert_weekly_lead(rows: list[dict[str, object]], supabase_url: str, service
     response.raise_for_status()
 
 
+def upsert_latest_credit_stress(row: dict[str, object], supabase_url: str, service_role_key: str) -> None:
+    response = requests.post(
+        f"{supabase_url.rstrip('/')}/rest/v1/us_credit_stress_latest?on_conflict=singleton",
+        headers={"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"},
+        json=row,
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=3)
@@ -460,6 +491,17 @@ def main() -> None:
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys() if week <= completed_week}
     weekly_rows = build_weekly_lead({week: value for week, value in weekly_high_yield.items() if week <= completed_week}, {week: value for week, value in weekly_conditions.items() if week <= completed_week}, weekly_funding)
     upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
+    latest_start = today - timedelta(days=60)
+    latest_high_yield = fetch_fred_latest(HIGH_YIELD_SERIES, fred_api_key, latest_start, today)
+    latest_conditions = fetch_fred_latest(FINANCIAL_CONDITIONS_SERIES, fred_api_key, latest_start, today)
+    latest_dates = [source[0] for source in (latest_high_yield, latest_conditions) if source is not None]
+    if latest_dates:
+        upsert_latest_credit_stress({
+            "singleton": True,
+            "as_of": max(latest_dates).isoformat(),
+            "high_yield_oas_pct": latest_high_yield[1] if latest_high_yield else None,
+            "financial_conditions_credit_index": latest_conditions[1] if latest_conditions else None,
+        }, supabase_url, service_role_key)
     print(
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
