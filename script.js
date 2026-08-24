@@ -440,12 +440,25 @@ async function loadCreditStressComponentsDashboard() {
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from('us_credit_stress_monthly')
-      .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
-      .order('month', { ascending: false })
-      .limit(CREDIT_STRESS_HISTORY_MONTHS + 2);
-    if (error) throw error;
-    renderCreditStressComponents(data || []);
+    const [monthlyResponse, latestResponse] = await Promise.all([
+      supabaseClient.from('us_credit_stress_monthly')
+        .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
+        .order('month', { ascending: false })
+        .limit(CREDIT_STRESS_HISTORY_MONTHS + 2),
+      supabaseClient.from('us_credit_stress_latest')
+        .select('as_of,high_yield_oas_pct,financial_conditions_credit_index')
+        .eq('singleton', true)
+        .maybeSingle(),
+    ]);
+    if (monthlyResponse.error) throw monthlyResponse.error;
+    if (latestResponse.error) throw latestResponse.error;
+    const rows = monthlyResponse.data || [];
+    const latest = latestResponse.data;
+    const latestMonth = latest?.as_of ? `${String(latest.as_of).slice(0, 7)}-01` : null;
+    if (latestMonth && !rows.some((row) => row.month === latestMonth)) {
+      rows.push({ ...latest, month: latestMonth, business_bankruptcy_filings: null, is_latest: true });
+    }
+    renderCreditStressComponents(rows);
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
   }
