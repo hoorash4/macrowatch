@@ -82,7 +82,7 @@ function renderVerticalSentimentBar(item, positive, negative, directionalCount, 
     ? `${renderSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
     : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
   const date = view.showDates ? `<span class="whitespace-nowrap text-[10px] text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
-  return `<div class="group flex ${view.barWidthClass} flex-1 flex-col items-center gap-2"${title ? ` title="${title}"` : ''}><div class="flex h-44 w-full flex-col overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div>${date}</div>`;
+  return `<div class="group flex ${view.barWidthClass} flex-none flex-col items-center gap-2"${title ? ` title="${title}"` : ''}><div class="flex h-44 w-full flex-col overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div>${date}</div>`;
 }
 
 function renderNewsSentiment(rows) {
@@ -123,7 +123,7 @@ function renderNewsSentiment(rows) {
   ].join('');
   const graphClass = view.layout === 'horizontal'
     ? 'flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4'
-    : `flex min-w-0 items-end ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
+    : `flex min-w-0 items-end justify-between ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
   chart.innerHTML = `${legend}<div class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
   chart.querySelectorAll('[data-news-sentiment-view]').forEach((button) => {
     button.addEventListener('click', () => {
