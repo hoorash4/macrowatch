@@ -1,7 +1,7 @@
 import type { ArticleSentiment, Candidate } from "./news-types.ts";
 import { AI_POLICY } from "./ai-policy.ts";
 
-const ARTICLE_SCHEMA = { type: "object", additionalProperties: false, properties: { outputs: { type: "array", items: { type: "object", additionalProperties: false, properties: { item_hash: { type: "string" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] }, keywords: { type: "array", items: { type: "string" } }, uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] } }, required: ["item_hash", "sentiment", "keywords", "uncertain_summary"] } } }, required: ["outputs"] };
+const ARTICLE_SCHEMA = { type: "object", additionalProperties: false, properties: { outputs: { type: "array", items: { type: "object", additionalProperties: false, properties: { item_hash: { type: "string" }, exclude_from_index: { type: "boolean" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] }, keywords: { type: "array", items: { type: "string" } }, uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] } }, required: ["item_hash", "exclude_from_index", "sentiment", "keywords", "uncertain_summary"] } } }, required: ["outputs"] };
 
 function systemPrompt() {
   const prompt = Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT");
@@ -25,7 +25,7 @@ async function requestAnalysis(model: string, candidates: Candidate[]) {
   const outputText = typeof payload.output_text === "string" ? payload.output_text : payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || []).find((item: { type?: string }) => item.type === "output_text")?.text;
   if (typeof outputText !== "string") throw new Error("OpenAI 응답에 output_text가 없습니다.");
   const parsed = JSON.parse(outputText) as { outputs: Array<Record<string, unknown>> };
-  return parsed.outputs.map((item): ArticleSentiment => ({ itemHash: String(item.item_hash), sentiment: item.sentiment as ArticleSentiment["sentiment"], keywords: Array.isArray(item.keywords) ? item.keywords.map(String).slice(0, 3) : [], uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary) }));
+  return parsed.outputs.map((item): ArticleSentiment => ({ itemHash: String(item.item_hash), excludeFromIndex: item.exclude_from_index === true, sentiment: item.sentiment as ArticleSentiment["sentiment"], keywords: Array.isArray(item.keywords) ? item.keywords.map(String).slice(0, 3) : [], uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary) }));
 }
 
 export async function analyzeCandidates(candidates: Candidate[]) {
@@ -35,5 +35,5 @@ export async function analyzeCandidates(candidates: Candidate[]) {
   const received = outputs.map((item) => item.itemHash);
   const uniqueReceived = new Set(received);
   if (received.length !== uniqueReceived.size || uniqueReceived.size !== expected.size || [...uniqueReceived].some((hash) => !expected.has(hash))) throw new Error("AI 분석 결과에 누락되거나 중복된 뉴스 후보가 있습니다.");
-  return outputs.map((item) => item.sentiment === "uncertain" ? item : { ...item, keywords: [], uncertainSummary: null });
+  return outputs.map((item) => item.excludeFromIndex || item.sentiment === "uncertain" ? item : { ...item, keywords: [], uncertainSummary: null });
 }

@@ -10,6 +10,7 @@ export type Candidate = {
 
 export type ArticleSentiment = {
   itemHash: string;
+  excludeFromIndex: boolean;
   sentiment: "positive" | "neutral" | "negative" | "uncertain";
   keywords: string[];
   uncertainSummary: string | null;
