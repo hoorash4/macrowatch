@@ -43,10 +43,10 @@ const NEWS_SENTIMENT_VIEWS = {
   all: {
     days: 60,
     layout: 'vertical',
-    barWidthClass: 'min-w-3 max-w-3',
-    gapClass: 'gap-0',
-    showNumbers: false,
-    showDates: false,
+    barWidthClass: 'min-w-6 max-w-6',
+    gapClass: 'gap-3',
+    showNumbers: true,
+    showDates: true,
   },
 };
 let newsSentimentRows = [];
@@ -124,7 +124,12 @@ function renderNewsSentiment(rows) {
   const graphClass = view.layout === 'horizontal'
     ? 'flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4'
     : `flex min-w-0 items-end justify-between ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
-  chart.innerHTML = `${legend}<div class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
+  const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
+  chart.innerHTML = `${legend}<div${graphId} class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
+  if (newsSentimentView === 'all') {
+    const historyChart = document.getElementById('news-sentiment-history-scroll');
+    if (historyChart) historyChart.scrollLeft = historyChart.scrollWidth;
+  }
   chart.querySelectorAll('[data-news-sentiment-view]').forEach((button) => {
     button.addEventListener('click', () => {
       newsSentimentView = button.dataset.newsSentimentView;
