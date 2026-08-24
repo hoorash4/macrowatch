@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -109,47 +109,22 @@
     id="app-shell"
     class="hidden max-w-3xl mx-auto"
   >
-
-    <!-- 대시보드 상단: 제목 / 설정 / 로그아웃 -->
-    <div class="dashboard-header bg-slate-900 border border-slate-700/80 rounded-xl p-5 mb-6 shadow-xl">
-      <!-- 왼쪽: 로고와 MacroWatch 제목을 하나의 영역으로 묶습니다. -->
-      <div class="dashboard-brand flex items-center gap-2.5">    
-        <!-- Evotive 로고 이미지 -->
-        <div class="dashboard-logo" aria-hidden="true"></div>    
-        <!-- 서비스 이름과 설명 -->
-        <div>
-          <h1 class="text-2xl font-extrabold text-white tracking-tight">
-            MacroWatch
-          </h1>    
-          <p class="text-xs text-slate-400 mt-0.5">
-            경제지표 변동 추적 및 알림 도구.
-          </p>
-        </div>    
-      </div>
-      <div class="dashboard-actions flex items-center gap-2">
-        <div id="db-status" class="px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800/80 text-slate-400 border border-slate-700/60 flex items-center gap-2 shadow-inner">
-          <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span> DB 연결 확인 중...
-        </div>
-        <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 transition hover:border-yellow-500 hover:text-yellow-400">
-          <i class="fa-solid fa-user text-xs"></i>
-        </button>
-        <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" class="hidden flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 transition hover:border-blue-500 hover:text-blue-400">
-          <i class="fa-solid fa-gear text-xs"></i>
-        </a>
-        <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 transition hover:border-red-500 hover:text-red-400">
-          <i class="fa-solid fa-right-from-bracket text-xs"></i>
-        </button>
-      </div>
-    </div>
-
-    <!-- 탭 메뉴 -->
-
     <div class="dashboard-workspace">
       <nav class="dashboard-nav" aria-label="대시보드 메뉴">
+        <a class="dashboard-wordmark" href="#" aria-label="MacroWatch 시장 개요">
+          <span class="dashboard-logo" aria-hidden="true"></span>
+          <span>MACROWATCH</span>
+        </a>
         <p class="dashboard-nav-label">WORKSPACE</p>
         <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>시장 개요</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>신용 스트레스</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적</span></button>
+        <div class="dashboard-nav-actions">
+          <div id="db-status" class="hidden">DB 연결 확인 중...</div>
+          <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
+          <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" class="hidden"><i class="fa-solid fa-gear"></i></a>
+          <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃"><i class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
       </nav>
       <div class="dashboard-main">
     <div class="market-overview" data-dashboard-panel="overview">
