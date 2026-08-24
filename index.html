@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -144,7 +144,15 @@
 
     <!-- 탭 메뉴 -->
 
-    <div class="market-overview-grid">
+    <div class="dashboard-workspace">
+      <nav class="dashboard-nav" aria-label="대시보드 메뉴">
+        <p class="dashboard-nav-label">WORKSPACE</p>
+        <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>시장 개요</span></button>
+        <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>신용 스트레스</span></button>
+        <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적</span></button>
+      </nav>
+      <div class="dashboard-main">
+    <div class="market-overview-grid" data-dashboard-panel="overview">
     <!-- 최근 뉴스의 한국 주가지수 영향 분포를 가장 먼저 보여줍니다. -->
     <section id="news-sentiment-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="news-sentiment-title">
       <div class="border-b border-slate-800 px-5 py-5">
@@ -183,8 +191,9 @@
         <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
       </div>
     </section>
+    </div>
 
-    <section id="credit-stress-components-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="credit-stress-components-title">
+    <section id="credit-stress-components-dashboard" data-dashboard-panel="credit" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="credit-stress-components-title">
       <div class="border-b border-slate-800 px-5 py-5">
         <div class="flex items-center gap-2">
           <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-400/10 text-blue-300"><i class="fa-solid fa-chart-line text-sm"></i></span>
@@ -199,10 +208,9 @@
         <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
       </div>
     </section>
-    </div>
 
     <!-- ===== 경제지표 추적 화면 시작 ===== -->
-    <div id="tab-content-tracker" class="space-y-6">
+    <div id="tab-content-tracker" data-dashboard-panel="tracker" class="space-y-6">
       
       <!-- 오른쪽: 경제지표 신규 등록 입력폼 -->
       
@@ -341,6 +349,8 @@
         <i class="fa-solid fa-newspaper text-2xl text-slate-600"></i>
         <h2 class="mt-3 text-base font-bold text-slate-200">뉴스 기능 준비 중</h2>
         <p class="mt-2 text-sm text-slate-500">맞춤형 뉴스 수집과 요약 기능은 추후 제공할 예정입니다.</p>
+      </div>
+    </div>
       </div>
     </div>
 
@@ -510,6 +520,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=78"></script>
+  <script src="script.js?v=79"></script>
 </body>
 </html>

@@ -313,10 +313,30 @@ function toggleTargetValueInput(conditionId, valueId) {
   valueInput.classList.toggle('opacity-50', isChanged);
 }
 
+function initializeDashboardNavigation() {
+  const buttons = [...document.querySelectorAll('[data-dashboard-view]')];
+  const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
+  if (!buttons.length || !panels.length) return;
+
+  const selectView = (view) => {
+    buttons.forEach((button) => {
+      const active = button.dataset.dashboardView === view;
+      button.classList.toggle('is-active', active);
+      button.toggleAttribute('aria-current', active);
+    });
+    panels.forEach((panel) => panel.classList.toggle('dashboard-panel-hidden', panel.dataset.dashboardPanel !== view));
+  };
+
+  buttons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.dashboardView)));
+  selectView(buttons.find((button) => button.classList.contains('is-active'))?.dataset.dashboardView || buttons[0].dataset.dashboardView);
+}
+
 // ===== 페이지 초기화 =====
 // 페이지의 HTML이 모두 만들어진 뒤 한 번만 실행되는 초기 설정입니다.
 // 입력폼 초기 상태, 안내 모달 닫기 버튼, Drag & Drop 도움말을 여기서 연결합니다.
 document.addEventListener('DOMContentLoaded', () => {
+  initializeDashboardNavigation();
+
   // 신규 등록폼은 공식 API 직접 입력으로 시작합니다.
   toggleTypeFields();
 

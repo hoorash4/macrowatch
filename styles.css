@@ -292,6 +292,52 @@ content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
 }
 #db-status { display: none !important; }
 
+.dashboard-workspace {
+  display: grid;
+  grid-template-columns: 11.5rem minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.dashboard-nav {
+  position: sticky;
+  top: 1.5rem;
+  display: grid;
+  gap: .3rem;
+  padding: .8rem;
+  border: 1px solid #1f2937;
+  border-radius: 1rem;
+  background: #0d1625;
+}
+
+.dashboard-nav-label {
+  margin: .2rem .55rem .55rem;
+  color: #617088;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .15em;
+}
+
+.dashboard-nav-item {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  width: 100%;
+  padding: .7rem .75rem;
+  border-radius: .65rem;
+  color: #94a3b8;
+  font-size: .78rem;
+  font-weight: 700;
+  text-align: left;
+  transition: background .16s ease, color .16s ease;
+}
+
+.dashboard-nav-item:hover { background: #152238; color: #e5edf7; }
+.dashboard-nav-item.is-active { background: #1d4ed8; color: #fff; }
+.dashboard-nav-item i { width: 1rem; text-align: center; }
+.dashboard-main { min-width: 0; }
+.dashboard-panel-hidden { display: none !important; }
+
 .market-overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(320px, 5fr);
@@ -311,6 +357,7 @@ content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
 }
 
 #credit-stress-components-dashboard { grid-column: 1 / -1; }
+#credit-stress-components-dashboard { margin-bottom: 1rem; }
 .market-overview-grid > section > div:first-child { border-color: #202d40 !important; }
 .market-overview-grid h2 { font-size: 1rem !important; }
 .market-overview-grid p { color: #8190a5 !important; }
@@ -385,6 +432,15 @@ content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
 }
 
 @media (max-width: 1023px) {
+  .dashboard-workspace { grid-template-columns: 1fr; }
+  .dashboard-nav {
+    position: static;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .4rem;
+  }
+  .dashboard-nav-label { display: none; }
+  .dashboard-nav-item { justify-content: center; padding: .7rem .4rem; }
+  .dashboard-nav-item span { display: none; }
   .market-overview-grid,
   #tab-content-tracker { grid-template-columns: 1fr; }
   #credit-stress-components-dashboard,
