@@ -248,201 +248,156 @@ justify-content: center;
 content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
   color: #64748b;
   margin: 0 auto;
-}/* ===== 대시보드 화면 =====
-   로그인 후 보이는 MacroWatch 본 화면의 카드, 입력폼, 추적 리스트 기본 디자인입니다.
-*/
+}/* ===== 대시보드 화면 ===== */
 #app-shell {
-  --dashboard-inner-pad: 1.5rem;
-border: 1px solid rgba(255,255,255,.1);
-  box-shadow: 0 24px 70px rgba(0,0,0,.3);
-  position: relative;
-  width: 100%;
-  max-width: 1180px;
+  --dashboard-inner-pad: clamp(1rem, 3vw, 2.5rem);
+  width: min(100%, 1440px);
   margin: 0 auto;
-  padding: 0 var(--dashboard-inner-pad);
-  border-radius: 1.75rem;
-  background: #071b42;
-  overflow: hidden;
-  min-height: 0;
-  height: auto;
-}#app-shell > * {
-position: relative;
-  z-index: 1;
+  padding: 1.5rem var(--dashboard-inner-pad) 0;
+  background: transparent;
 }
 
-  
-  /* 대시보드 상단에 Evotive 로고 이미지를 표시합니다. */
-.dashboard-brand {
-  gap: .22rem;
-}
+#app-shell > * { min-width: 0; }
 
-.dashboard-logo {
-  width: 52px;
-  height: 52px;
-  flex: none;
-  margin-right: -.1rem;
-
-  background:
-    transparent
-    url("./images/logo.png")
-    center / contain
-    no-repeat;
-}
-  
-  
-  /* 대시보드 상단은 브랜드와 액션 사이에 가변 공간을 둔 3열 구조로 배치합니다. */
 .dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #1f2937;
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, .82);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .16);
+}
+
+.dashboard-brand { gap: .6rem; }
+.dashboard-logo {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  background: url("./images/logo.png") center / contain no-repeat;
+}
+.dashboard-header h1 { font-size: 1.05rem; letter-spacing: -.02em; }
+.dashboard-header p { color: #7c8aa0 !important; }
+.dashboard-actions { gap: .45rem !important; }
+.dashboard-actions button,
+.dashboard-actions a {
+  width: 2.2rem !important;
+  height: 2.2rem !important;
+  border-color: #273449 !important;
+  background: #111b2b !important;
+  color: #9aa9bc !important;
+}
+#db-status { display: none !important; }
+
+.market-overview-grid {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 1rem;
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 5fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
 }
 
-.dashboard-brand,
-.dashboard-actions {
-  min-width: 0;
+#news-sentiment-dashboard,
+#credit-stress-dashboard,
+#credit-stress-components-dashboard,
+#tab-content-tracker > div:first-child,
+#tab-content-tracker > div:nth-child(2) {
+  border-color: #202d40 !important;
+  border-radius: 1rem !important;
+  background: linear-gradient(145deg, #111c2e, #0d1625) !important;
+  box-shadow: none !important;
 }
 
-.dashboard-actions {
-  justify-self: end;
-  width: max-content;
-  gap: 0 !important;
-  align-items: center;
-  transform-origin: right center;
-}
+#credit-stress-components-dashboard { grid-column: 1 / -1; }
+.market-overview-grid > section > div:first-child { border-color: #202d40 !important; }
+.market-overview-grid h2 { font-size: 1rem !important; }
+.market-overview-grid p { color: #8190a5 !important; }
+.market-overview-grid [class*="bg-sky"],
+.market-overview-grid [class*="bg-amber"],
+.market-overview-grid [class*="bg-blue"] { background: #17243a !important; }
 
-#app-shell > .bg-slate-900:first-child {
-border-color: #d9d4ca;
-  background: #f7f5f0;
-  margin: 0 calc(var(--dashboard-inner-pad) * -1);
-  border-radius: 1.75rem 1.75rem 0 0;
-  padding: 1.25rem .5rem 1.25rem 1.5rem;
-  box-shadow: none;
-}#app-shell > .bg-slate-900:first-child h1 {
-color: #071b42;
-}#app-shell > .bg-slate-900:first-child p {
-color: #64748b;
-}#app-shell > .bg-slate-900:first-child button,
-#app-shell > .bg-slate-900:first-child a {
-background: #fff;
-  border-color: #d9d4ca;
-  color: #64748b;
-}#app-shell > .bg-slate-900:first-child #db-status {
-display: none;
-}#app-shell .text-white {
-color: #f7f5f0;
-}#app-shell .text-slate-400 {
-color: #aeb8c8;
-}#app-shell .text-slate-500 {
-color: #8794a8;
-}#app-shell .bg-slate-900:not(:first-child) {
-background: #0d2a55;
-  border-color: rgba(255,255,255,.12);
-}#app-shell > #tab-content-tracker,
-#app-shell > #tab-content-news {
-position: relative;
-  z-index: 1;
-  margin-left: calc(var(--dashboard-inner-pad) * -1);
-  margin-right: calc(var(--dashboard-inner-pad) * -1);
-  padding: 1.5rem var(--dashboard-inner-pad);
-  background-image: radial-gradient(rgba(247,245,240,.1) 1px,transparent 1px);
-  background-size: 36px 36px;
-}/* 넓은 화면은 오른쪽 현재값을 사용하고, 425px 이하에서는 타이틀 아래로 이동합니다. */
-.compact-mobile-summary {
-  display: none !important;
-}
+#app-shell .text-white { color: #f3f7fb; }
+#app-shell .text-slate-400 { color: #9aa9bc; }
+#app-shell .text-slate-500 { color: #74839a; }
 
-@media (max-width:425px) {
-  .target-condition-summary {
-    display: none !important;
-  }
-
-  .compact-mobile-summary {
-    display: block !important;
-  }
-}
-
-/* 추적 메인 영역이 좁은 화면에서 콘텐츠의 고정 최소 폭을 만들지 않게 합니다. */
-#app-shell,
-#tab-content-tracker,
-#tab-content-tracker > div,
-#tab-content-tracker > .sheet-tabs,
-#target-list,
-#target-list > div[data-target-container],
-#tab-content-tracker input,
-#tab-content-tracker select {
-  min-width: 0;
-}
+.compact-mobile-summary { display: none !important; }
 
 #tab-content-tracker {
-display: grid;
-  grid-template-columns: minmax(0,1fr) 360px;
-  gap: 1.25rem;
-  row-gap: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 1rem;
   align-items: start;
-}#tab-content-tracker > div:first-child {
-grid-column: 2;
-  grid-row: 1;
-  align-self: start;
-  margin-top: 0;
+  margin-bottom: 1rem;
+}
 
-  background: #fff;
-  border-color: #d9d4ca;
-  color: #071b42;
-  box-shadow: 0 14px 30px rgba(7,27,66,.08);
-}#tab-content-tracker > div:first-child h2,
-#tab-content-tracker > div:first-child label,
-#tab-content-tracker > div:first-child p,
-#tab-content-tracker > div:first-child span {
-color: #071b42;
-}#tab-content-tracker > div:first-child input,
+#tab-content-tracker > div:first-child {
+  grid-column: 2;
+  grid-row: 1;
+  padding: 1.25rem !important;
+}
+
+#tab-content-tracker > div:nth-child(2) {
+  grid-column: 1;
+  grid-row: 1;
+  padding: 1.25rem !important;
+}
+
+#tab-content-tracker > div:first-child input,
 #tab-content-tracker > div:first-child select {
-background: #fff;
-  border-color: #d9d4ca;
-  color: #071b42;
-  -webkit-text-fill-color: #071b42;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-right: .3rem;
-  padding-left: .3rem;
-}#tab-content-tracker > div:first-child input::placeholder {
-color: #94a3b8;
-  -webkit-text-fill-color: #94a3b8;
-  opacity: 1;
-}#tab-content-tracker > div:first-child select option {
-color: #071b42;
-  background: #fff;
-  white-space: normal;
-}#tab-content-tracker > div:first-child button[type="submit"] {
-color: #f7f5f0;
-  background: #071b42;
-}#tab-content-tracker > div:first-child button[type="submit"]:hover {
-color: #fff;
-  background: #12366f;
-}#tab-content-tracker > div:nth-child(2) {
-grid-column: 1;
-  grid-row: 1;
-  align-self: start;
-  margin-top: 0;
-  margin-bottom: 0;
+  border-color: #2b3b52 !important;
+  background: #0a1220 !important;
+  color: #e8eef6 !important;
+  -webkit-text-fill-color: #e8eef6;
+}
+#tab-content-tracker > div:first-child input::placeholder {
+  color: #65748a;
+  -webkit-text-fill-color: #65748a;
+}
+#tab-content-tracker > div:first-child select option { background: #0a1220; color: #e8eef6; }
+#tab-content-tracker > div:first-child button[type="submit"] { background: #2563eb; }
+#tab-content-tracker > div:first-child button[type="submit"]:hover { background: #3b82f6; }
+#tab-content-tracker > div:first-child [class*="bg-slate-50"] {
+  border-color: #273449 !important;
+  background: #111b2b !important;
+}
+#tab-content-tracker > div:first-child [class*="text-slate-7"] { color: #d5dfeb !important; }
 
-  background: #0d2a55;
-  color: #f7f5f0;
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 1.25rem 1.25rem 1.25rem 0;
-  box-shadow: 0 14px 30px rgba(7,27,66,.08);
-}#tab-content-tracker > div:nth-child(2) h2,
-#tab-content-tracker > div:nth-child(2) .text-white {
-color: #f7f5f0;
-}#tab-content-tracker > div:nth-child(2) .text-slate-400,
-#tab-content-tracker > div:nth-child(2) .text-slate-500 {
-color: #aeb8c8;
-}#target-list {
-min-height: 45rem;
-}#target-list > div[data-target-container] {
-border-top-color: rgba(100,116,139,.12);
-  border-bottom-color: rgba(100,116,139,.12);
+#target-list { min-height: 34rem; }
+#target-list > div[data-target-container] {
+  border-color: #202d40 !important;
+}
+
+#tab-content-tracker > .sheet-tabs {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  height: 38px;
+  padding: 0;
+}
+
+#app-shell > .dashboard-copyright {
+  margin: 0 calc(var(--dashboard-inner-pad) * -1);
+  padding: 1.25rem var(--dashboard-inner-pad);
+  border-color: #1d2939;
+  color: #526176;
+}
+
+@media (max-width: 1023px) {
+  .market-overview-grid,
+  #tab-content-tracker { grid-template-columns: 1fr; }
+  #credit-stress-components-dashboard,
+  #tab-content-tracker > div:first-child,
+  #tab-content-tracker > div:nth-child(2),
+  #tab-content-tracker > .sheet-tabs { grid-column: 1; grid-row: auto; }
+  #tab-content-tracker > div:first-child { order: 2; }
+}
+
+@media (max-width: 640px) {
+  #app-shell { padding-top: .75rem; }
+  .dashboard-header { padding: .8rem; }
+  .dashboard-header p { display: none; }
 }
 
 @keyframes dashboardSpin {to {
@@ -777,32 +732,6 @@ border-color: rgba(209,165,93,.75);
   }
 }
 
-@media (max-width:1023px) {
-  #tab-content-tracker { grid-template-columns: 1fr; }
-
-  #tab-content-tracker > div:first-child,
-  #tab-content-tracker > div:nth-child(2) {
-    grid-column: 1;
-    grid-row: auto;
-  }
-
-  #tab-content-tracker > div:first-child {
-    order: 2;
-    margin-top: 1.25rem;
-  }
-
-  #tab-content-tracker > div:nth-child(2) { border-radius: 1rem 1rem 1rem 0; }
-
-  #tab-content-tracker > .sheet-tabs {
-    grid-column: 1;
-    grid-row: auto;
-    border-radius: 0 0 1rem 1rem;
-    overflow: visible;
-  }
-
-
-}
-
 @media (max-width:767px) {
   /* 767px 이하에서만 로고 블럭 크기를 화면 폭에 맞춰 줄입니다. */
   #auth-screen > div > header > div:first-child {
@@ -826,37 +755,14 @@ border-color: rgba(209,165,93,.75);
     height: auto;
   }
 
-  /* 767px 이하에서 헤더의 양쪽 블록을 함께 축소합니다. */
-  .dashboard-actions {
-    transform: scale(clamp(.7, calc(100vw / 767px), 1));
-    transform-origin: right center;
-  }
-
-  .dashboard-brand {
-    transform: scale(clamp(.7, calc(100vw / 767px), 1));
-    transform-origin: left center;
-  }
 }
 
 
-
-/* 갤럭시 Z Fold6 펼침 세로 화면 기준(약 670px)부터 내부 좌우 패딩을 줄입니다. */
-@media (max-width:670px) {
-  #app-shell {
-    --dashboard-inner-pad: clamp(0px, calc(9.8vw - 41.6px), 1.5rem);
-  }
-  body {
-    padding: clamp(0px, calc(9.8vw - 41.6px), 1.5rem);
-  }
-}
 
 /* 425px 이하에서는 화면 가장자리에 맞춰 최외곽 라운드만 제거합니다. */
 @media (max-width:425px) {
   #auth-screen,
-  .auth-canvas,
-  #app-shell,
-  #app-shell > .dashboard-header,
-  #app-shell > .bg-slate-900:first-child {
+  .auth-canvas {
     border-radius: 0 !important;
   }
 }
