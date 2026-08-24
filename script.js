@@ -391,14 +391,17 @@ function renderCreditStressComponents(rows) {
     [...rows].sort((a, b) => String(a.month).localeCompare(String(b.month))),
   ).slice(-CREDIT_STRESS_HISTORY_MONTHS);
   const series = [
-    { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
-    { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#0f766e', digits: 3, suffix: '' },
-    { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' },
+    { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#2563eb', digits: 2, suffix: '%p' },
+    { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b91c1c', digits: 3, suffix: '' },
+    { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#b7791f', digits: 0, suffix: '건' },
   ];
   const width = 920;
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 112, bottom: 32, left: 52 };
-  const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
+  const dates = data.map((row) => new Date(row.month).getTime());
+  const firstDate = Math.min(...dates);
+  const lastDate = Math.max(...dates);
+  const x = (index) => padding.left + ((dates[index] - firstDate) / Math.max(1, lastDate - firstDate)) * (width - padding.left - padding.right);
   const scaleFor = (item, clampAtZero = false) => {
     const values = data.map((row) => toCreditStressNumber(row[item.key])).filter(Number.isFinite);
     const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 0.01);
@@ -410,10 +413,11 @@ function renderCreditStressComponents(rows) {
   const highYieldScale = scaleFor(highYield);
   const conditionsScale = scaleFor(conditions);
   const bankruptcyScale = scaleFor(bankruptcy, true);
-  const pathFor = (item, scale) => {
+  const pathFor = (item, scale, includeLatest = true) => {
     let path = '';
     let connected = false;
     data.forEach((row, index) => {
+      if (row.is_latest && !includeLatest) return;
       const value = toCreditStressNumber(row[item.key]);
       if (!Number.isFinite(value)) { connected = false; return; }
       path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${scale.y(value).toFixed(1)}`;
@@ -421,19 +425,28 @@ function renderCreditStressComponents(rows) {
     });
     return path;
   };
+  const latestSegmentFor = (item, scale) => {
+    const index = data.findIndex((row) => row.is_latest);
+    if (index < 1) return '';
+    const previous = toCreditStressNumber(data[index - 1][item.key]);
+    const current = toCreditStressNumber(data[index][item.key]);
+    if (!Number.isFinite(previous) || !Number.isFinite(current)) return '';
+    return `<line x1="${x(index - 1).toFixed(1)}" y1="${scale.y(previous).toFixed(1)}" x2="${x(index).toFixed(1)}" y2="${scale.y(current).toFixed(1)}" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 4"/>`;
+  };
   const labels = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
   const yearGuides = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<line x1="${x(index)}" x2="${x(index)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>` : '').join('');
   const dotsFor = (item, scale) => data.map((row, index) => {
     const value = toCreditStressNumber(row[item.key]);
     if (!Number.isFinite(value)) return '';
-    const detail = `${row.month}\n${item.label}: ${value.toFixed(item.digits)}${item.suffix}`;
-    return `<circle cx="${x(index)}" cy="${scale.y(value)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
+    const detail = `${row.month}\n${item.label}: ${value.toFixed(item.digits)}${item.suffix}${row.is_latest ? ' (잠정치)' : ''}`;
+    const latestMarker = row.is_latest ? ` fill-opacity="0.25" stroke="${item.color}" stroke-width="1.5"` : '';
+    return `<circle cx="${x(index)}" cy="${scale.y(value)}" r="3.5" fill="${item.color}"${latestMarker} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
   const ticksFor = (scale, formatter, color, axisX, withGrid = false) => Array.from({ length: 5 }, (_, index) => scale.upper - ((scale.upper - scale.lower) * index) / 4).map((value, index) => `${withGrid ? `<line x1="${padding.left}" x2="${width - padding.right}" y1="${scale.y(value)}" y2="${scale.y(value)}" stroke="#dbe3ed"${index === 0 || index === 4 ? '' : ' stroke-dasharray="3 4"'}/>` : ''}<text x="${axisX}" y="${scale.y(value) + 3}"${axisX === padding.left - 9 ? ' text-anchor="end"' : ''} fill="${color}" font-size="10">${formatter(value)}</text>`).join('');
   const bankruptcyAxisX = width - 52;
   const axes = `<line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${bankruptcyAxisX}" x2="${bankruptcyAxisX}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>`;
   const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${axes}${ticksFor(highYieldScale, (value) => value.toFixed(1), '#9f3030', padding.left - 9, true)}${yearGuides}${ticksFor(bankruptcyScale, (value) => Math.round(value).toLocaleString('en-US'), '#285e8e', bankruptcyAxisX + 8)}<path d="${pathFor(highYield, highYieldScale)}" fill="none" stroke="${highYield.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(conditions, conditionsScale)}" fill="none" stroke="${conditions.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(bankruptcy, bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round"/>${dotsFor(highYield, highYieldScale)}${dotsFor(bankruptcy, bankruptcyScale)}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${axes}${ticksFor(highYieldScale, (value) => value.toFixed(1), highYield.color, padding.left - 9, true)}${yearGuides}${ticksFor(bankruptcyScale, (value) => Math.round(value).toLocaleString('en-US'), bankruptcy.color, bankruptcyAxisX + 8)}<path d="${pathFor(highYield, highYieldScale, false)}" fill="none" stroke="${highYield.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(conditions, conditionsScale, false)}" fill="none" stroke="${conditions.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(bankruptcy, bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round"/>${latestSegmentFor(highYield, highYieldScale)}${latestSegmentFor(conditions, conditionsScale)}${dotsFor(highYield, highYieldScale)}${dotsFor(bankruptcy, bankruptcyScale)}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`;
 }
 
 async function loadCreditStressComponentsDashboard() {
@@ -454,9 +467,9 @@ async function loadCreditStressComponentsDashboard() {
     if (latestResponse.error) throw latestResponse.error;
     const rows = monthlyResponse.data || [];
     const latest = latestResponse.data;
-    const latestMonth = latest?.as_of ? `${String(latest.as_of).slice(0, 7)}-01` : null;
-    if (latestMonth && !rows.some((row) => row.month === latestMonth)) {
-      rows.push({ ...latest, month: latestMonth, business_bankruptcy_filings: null, is_latest: true });
+    const latestDate = latest?.as_of ? String(latest.as_of) : null;
+    if (latestDate && !rows.some((row) => row.month === latestDate)) {
+      rows.push({ ...latest, month: latestDate, business_bankruptcy_filings: null, is_latest: true });
     }
     renderCreditStressComponents(rows);
   } catch (error) {
