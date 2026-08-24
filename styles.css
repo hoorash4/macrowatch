@@ -263,7 +263,9 @@ body:has(#app-shell:not(.hidden)) {
 }
 #app-shell > * { min-width: 0; }
 .dashboard-workspace { display:grid; grid-template-columns:minmax(0, 1fr); gap:3.5rem; align-items:start; }
-.dashboard-nav { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:clamp(1rem, 3vw, 3rem); padding:1.2rem 0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.dashboard-nav { position:sticky; top:0; z-index:20; display:flex; isolation:isolate; align-items:center; gap:clamp(1rem, 3vw, 3rem); padding:1.2rem 0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.dashboard-nav::before { position:absolute; z-index:-1; top:0; bottom:0; left:calc(var(--dashboard-pad) * -1); width:100vw; content:""; opacity:0; background:rgba(225, 233, 238, .9); box-shadow:0 1px 0 rgba(20,36,51,.12); backdrop-filter:blur(12px); transition:opacity .2s ease; }
+.dashboard-is-scrolled .dashboard-nav::before { opacity:1; }
 .dashboard-wordmark { display:flex; align-items:center; gap:.55rem; margin:0 clamp(1rem, 3vw, 3rem) 0 0; color:#161616; font-size:.7rem; font-weight:850; letter-spacing:.09em; }
 .dashboard-logo { width:25px; height:25px; flex:none; background:url("./images/logo.png") center / contain no-repeat; }
 .dashboard-nav-label { display:none; }

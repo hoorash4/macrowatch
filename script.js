@@ -331,11 +331,24 @@ function initializeDashboardNavigation() {
   selectView(buttons.find((button) => button.classList.contains('is-active'))?.dataset.dashboardView || buttons[0].dataset.dashboardView);
 }
 
+function initializeDashboardScrollState() {
+  const navigation = document.querySelector('.dashboard-nav');
+  if (!navigation) return;
+
+  const updateScrollState = () => {
+    document.body.classList.toggle('dashboard-is-scrolled', window.scrollY > 12);
+  };
+
+  window.addEventListener('scroll', updateScrollState, { passive: true });
+  updateScrollState();
+}
+
 // ===== 페이지 초기화 =====
 // 페이지의 HTML이 모두 만들어진 뒤 한 번만 실행되는 초기 설정입니다.
 // 입력폼 초기 상태, 안내 모달 닫기 버튼, Drag & Drop 도움말을 여기서 연결합니다.
 document.addEventListener('DOMContentLoaded', () => {
   initializeDashboardNavigation();
+  initializeDashboardScrollState();
 
   // 신규 등록폼은 공식 API 직접 입력으로 시작합니다.
   toggleTypeFields();
