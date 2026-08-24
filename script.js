@@ -25,7 +25,7 @@ let pointerDragState = createPointerDragState();
 let pendingToggleId = null;
 
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
-const CREDIT_STRESS_HISTORY_MONTHS = 60;
+const CREDIT_STRESS_HISTORY_MONTHS = 36;
 const NEWS_SENTIMENT_VIEWS = {
   recent: {
     days: 3,

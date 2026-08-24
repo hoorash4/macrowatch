@@ -9,7 +9,7 @@ on:
       years:
         description: "Backfill window in years (1-10)"
         required: false
-        default: "5"
+        default: "3"
         type: string
 
 permissions:
@@ -39,5 +39,5 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             python backend/financial_stress_pipeline.py --years 3
           else
-            python backend/financial_stress_pipeline.py --years "${{ inputs.years || '5' }}"
+            python backend/financial_stress_pipeline.py --years "${{ inputs.years || '3' }}"
           fi

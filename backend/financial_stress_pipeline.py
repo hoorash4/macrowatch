@@ -247,7 +247,7 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=5)
+    parser.add_argument("--years", type=int, default=3)
     args = parser.parse_args()
     if args.years < 1 or args.years > 10:
         raise SystemExit("--years 값은 1~10 사이여야 합니다.")
