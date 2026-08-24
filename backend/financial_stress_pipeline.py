@@ -34,9 +34,9 @@ STRESS_COMPONENTS = (
     ("business_bankruptcy_filings", 0.20),
 )
 LEAD_COMPONENT_WEIGHTS = {
-    "high_yield": 0.40,
-    "financial_conditions": 0.30,
-    "short_term_funding_spread": 0.30,
+    "high_yield": 1 / 3,
+    "financial_conditions": 1 / 3,
+    "short_term_funding_spread": 1 / 3,
 }
 SHORT_TERM_FUNDING_FLOOR = 0.10
 SHORT_TERM_FUNDING_REFERENCE = 0.60
