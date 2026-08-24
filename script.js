@@ -189,10 +189,7 @@ function renderCreditStressDashboard(rows) {
   const width = 920;
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 52, bottom: 32, left: 52 };
-  const leadValue = (row) => toCreditStressNumber(row.lead_index);
-  const leadValues = data.map(leadValue).filter(Number.isFinite);
-  const hasLead = leadValues.length > 1;
-  const scores = [...data.map((row) => Number(row.stress_index)), ...leadValues];
+  const scores = data.map((row) => Number(row.stress_index));
   const sp500Values = data.map((row) => Number(row.sp500_month_end_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
   const minimumScore = Math.min(...scores);
@@ -227,18 +224,6 @@ function renderCreditStressDashboard(rows) {
     const detail = `${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${provisional ? ' (잠정치)' : ' (확정치)'}`;
     return `<circle cx="${x(index)}" cy="${y(Number(row.stress_index))}" r="3.75" fill="#b7791f"${provisional ? ' fill-opacity="0.35" stroke="#b7791f" stroke-width="1.5"' : ''} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const leadLines = data.slice(1).map((row, index) => {
-    const previous = data[index];
-    const previousValue = leadValue(previous);
-    const currentValue = leadValue(row);
-    if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
-    return `<line x1="${x(index)}" y1="${y(previousValue)}" x2="${x(index + 1)}" y2="${y(currentValue)}" stroke="#6d4b91" stroke-width="2.25" stroke-linecap="round"/>`;
-  }).join('');
-  const leadDots = data.map((row, index) => {
-    const value = leadValue(row);
-    if (!Number.isFinite(value)) return '';
-    return `<circle cx="${x(index)}" cy="${y(value)}" r="3.25" fill="#6d4b91" tabindex="0"><title>${row.month}\nMSI Lead: ${value.toFixed(1)}</title></circle>`;
-  }).join('');
   const sp500Lines = data.slice(1).map((row, index) => {
     const previous = data[index];
     const previousValue = Number(previous.sp500_month_end_close);
@@ -259,12 +244,9 @@ function renderCreditStressDashboard(rows) {
     .map((row) => [Number(row.stress_index), Number(row.sp500_month_end_close)])
     .filter(([stress, sp500]) => Number.isFinite(stress) && Number.isFinite(sp500));
   const correlation = calculateCorrelation(correlationPairs);
-  const leadCorrelation = calculateCorrelation(data
-    .map((row) => [leadValue(row), Number(row.sp500_month_end_close)])
-    .filter(([lead, sp500]) => Number.isFinite(lead) && Number.isFinite(sp500)));
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수, MSI Lead 및 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${leadLines}${sp500Lines}${dots}${leadDots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasLead ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>MSI Lead</span>' : ''}${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null && leadCorrelation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">${correlation == null ? '' : `US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}`}${correlation != null && leadCorrelation != null ? '<br>' : ''}${leadCorrelation == null ? '' : `MSI Lead·S&P 500 동일 월 상관계수: r = ${leadCorrelation.toFixed(2)}`}</p>`}`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
 }
 
 function renderCreditStressMomentum(rows) {
