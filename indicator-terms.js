@@ -1,0 +1,43 @@
+/**
+ * MacroWatch FRED 검색어 사전
+ * 한국어 표현을 FRED 공식 검색에 쓸 영어 후보로 연결합니다.
+ * 새 표현은 이 파일에만 추가하면 됩니다.
+ */
+window.MACROWATCH_FRED_TERMS = Object.freeze([
+  { terms: ["미국 10년물 국채금리", "미국 10년물 금리"], queries: ["10-Year Treasury Constant Maturity Rate", "10-Year Treasury Rate", "10-Year Treasury Yield"] },
+  { terms: ["미국 2년물 국채금리", "미국 2년물 금리"], queries: ["2-Year Treasury Constant Maturity Rate", "2-Year Treasury Rate", "2-Year Treasury Yield"] },
+  { terms: ["신규 실업수당 청구건수", "신규실업수당청구건수", "신규 실업 청구"], queries: ["Initial Claims", "Initial Unemployment Insurance Claims"] },
+  { terms: ["계속 실업수당 청구건수", "계속실업수당청구건수", "연속 실업수당 청구"], queries: ["Continued Claims", "Continued Unemployment Insurance Claims"] },
+  { terms: ["실업률", "실업율", "미국 실업률", "미국 실업율"], queries: ["Unemployment Rate", "Civilian Unemployment Rate"] },
+  { terms: ["고용률", "고용율", "미국 고용률", "미국 고용율"], queries: ["Employment-Population Ratio", "Employment to Population Ratio"] },
+  { terms: ["구직자 수", "구직자수", "실업자 수", "실업자수"], queries: ["Unemployed Persons", "Unemployment Level"] },
+  { terms: ["구인 건수", "구인건수", "일자리 수", "일자리수"], queries: ["Job Openings", "JOLTS Job Openings"] },
+  { terms: ["실업수당 청구건수", "실업수당청구건수"], queries: ["Unemployment Insurance Claims", "Initial Claims"] },
+  { terms: ["하이일드 스프레드", "하이일드스프레드"], queries: ["High Yield Spread", "ICE BofA US High Yield Index Option-Adjusted Spread"] },
+  { terms: ["장단기 금리차", "장단기금리차"], queries: ["Treasury Yield Spread", "10-Year Treasury Constant Maturity Minus 2-Year Treasury Constant Maturity"] },
+  { terms: ["소비자물가", "소비자 물가", "cpi"], queries: ["Consumer Price Index", "CPI"] },
+  { terms: ["생산자물가", "생산자 물가", "ppi"], queries: ["Producer Price Index", "PPI"] },
+  { terms: ["개인소비지출", "개인 소비 지출", "pce"], queries: ["Personal Consumption Expenditures", "PCE Price Index"] },
+  { terms: ["비농업고용", "비농업 고용", "비농업부문 고용"], queries: ["All Employees Total Nonfarm", "Nonfarm Payrolls"] },
+  { terms: ["신용카드 연체율", "신용카드연체율"], queries: ["Credit Card Delinquency Rate"] },
+  { terms: ["모기지 연체율", "모기지연체율"], queries: ["Mortgage Delinquency Rate"] },
+  { terms: ["상업용 부동산 연체율", "상업용부동산 연체율"], queries: ["Commercial Real Estate Loan Delinquency Rate"] },
+  { terms: ["기업연체율", "기업 연체율"], queries: ["Business Delinquency Rate", "Delinquency Rate on Business Loans"] },
+  { terms: ["연체율"], queries: ["Delinquency Rate"] },
+  { terms: ["주택착공", "주택 착공"], queries: ["Housing Starts"] },
+  { terms: ["소매판매", "소매 판매"], queries: ["Retail Sales"] },
+  { terms: ["산업생산", "산업 생산"], queries: ["Industrial Production"] },
+  { terms: ["통화량"], queries: ["Money Stock", "Money Supply"] },
+  { terms: ["달러인덱스", "달러 인덱스"], queries: ["Trade Weighted U.S. Dollar Index"] },
+  { terms: ["기준금리"], queries: ["Federal Funds Effective Rate", "Federal Funds Target Range"] },
+  { terms: ["모기지 금리", "모기지금리"], queries: ["Mortgage Rate"] },
+  { terms: ["국채금리", "국채 금리"], queries: ["Treasury Rate", "Treasury Yield"] },
+  { terms: ["채권 수익률", "채권수익률"], queries: ["Bond Yield"] },
+  { terms: ["배당수익률", "배당 수익률"], queries: ["Dividend Yield"] },
+  { terms: ["실질수익률", "실질 수익률"], queries: ["Real Yield"] },
+  { terms: ["국내총생산", "gdp"], queries: ["Gross Domestic Product", "GDP"] },
+  { terms: ["고용"], queries: ["Employment"] },
+  { terms: ["인플레이션", "물가"], queries: ["Inflation"] },
+  { terms: ["수익률"], queries: ["Yield"] },
+  { terms: ["금리"], queries: ["Interest Rate"] },
+]);
