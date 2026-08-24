@@ -61,12 +61,12 @@ function renderNewsSentiment(rows) {
     const bar = directionalCount
       ? `${renderSentimentSegment(positive, 'bg-emerald-600 transition group-hover:bg-emerald-500')}${renderSentimentSegment(negative, 'bg-red-800 transition group-hover:bg-red-700')}`
       : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
-    return `<div class="group flex min-w-11 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-12 flex-col overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${bar}</div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
+    return `<div class="group flex min-w-6 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-6 flex-col overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${bar}</div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
   }).join('');
   const moreButton = data.length > visibleRows.length
     ? `<button id="news-sentiment-more" type="button" class="col-span-full justify-self-center rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">이전 10일 더보기</button>`
     : '';
-  chart.innerHTML = `${legend}<div class="flex min-w-0 items-end gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/30 px-4 py-4 sm:gap-3">${bars}</div>${moreButton}`;
+  chart.innerHTML = `${legend}<div class="flex min-w-0 items-end gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/30 px-4 py-4 sm:gap-2">${bars}</div>${moreButton}`;
   document.getElementById('news-sentiment-more')?.addEventListener('click', () => {
     visibleNewsSentimentDays += NEWS_SENTIMENT_PAGE_SIZE;
     renderNewsSentiment(newsSentimentRows);
