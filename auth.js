@@ -99,7 +99,10 @@
     elements.authScreen.classList.add('hidden');
     elements.appShell.classList.remove('hidden');
     await updateAdminLink();
-    await window.fetchTargets?.();
+    await Promise.all([
+      window.fetchTargets?.(),
+      window.loadNewsSentimentDashboard?.(),
+    ]);
   }
 
   function showLogin(message = '') {

@@ -24,6 +24,81 @@ let noticeCloseAction = null;
 let pointerDragState = createPointerDragState();
 let pendingToggleId = null;
 
+const NEWS_SENTIMENT_WINDOW_DAYS = 10;
+
+function formatNewsDate(value) {
+  const [year, month, day] = String(value || '').split('-');
+  return month && day ? `${Number(month)}/${Number(day)}` : '—';
+}
+
+function getEffectiveArticleTotal(item) {
+  return Number(item.positive_count || 0) + Number(item.negative_count || 0) + Number(item.neutral_count || 0);
+}
+
+function getLatestSentimentLabel(item) {
+  const total = getEffectiveArticleTotal(item);
+  if (!total) return { label: '집계 대기', className: 'text-slate-300' };
+  const entries = [
+    ['positive', Number(item.positive_count || 0), '긍정', 'text-emerald-300'],
+    ['negative', Number(item.negative_count || 0), '부정', 'text-rose-300'],
+    ['neutral', Number(item.neutral_count || 0), '중립', 'text-slate-300'],
+  ].sort((a, b) => b[1] - a[1]);
+  const [, count, label, className] = entries[0];
+  return { label: `${label} ${Math.round((count / total) * 100)}%`, className };
+}
+
+function renderNewsSentiment(rows) {
+  const chart = document.getElementById('news-sentiment-chart');
+  const description = document.getElementById('news-sentiment-description');
+  const latest = document.getElementById('news-sentiment-latest');
+  if (!chart || !description || !latest) return;
+
+  const data = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date)));
+  if (!data.length) {
+    description.textContent = '아직 표시할 뉴스 분석 결과가 없습니다.';
+    latest.innerHTML = '<p class="text-[10px] font-semibold tracking-[.12em] text-slate-500">LATEST</p><p class="mt-1 text-sm font-bold text-slate-300">집계 대기</p>';
+    chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">다음 뉴스 분석 후 최근 10일 추이가 표시됩니다.</div>';
+    return;
+  }
+
+  const latestRow = data[data.length - 1];
+  const latestSignal = getLatestSentimentLabel(latestRow);
+  const total = getEffectiveArticleTotal(latestRow);
+  const uncertain = Number(latestRow.uncertain_count || 0);
+  description.textContent = `${formatNewsDate(latestRow.article_date)} 기준 ${total}건 분석${uncertain ? ` · 판단 보류 ${uncertain}건` : ''}`;
+  latest.innerHTML = `<p class="text-[10px] font-semibold tracking-[.12em] text-slate-500">LATEST</p><p class="mt-1 text-sm font-bold ${latestSignal.className}">${latestSignal.label}</p>`;
+
+  const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-emerald-400"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-slate-400"></i>중립</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-rose-400"></i>부정</span></div>';
+  const bars = data.map((item) => {
+    const articleTotal = getEffectiveArticleTotal(item);
+    const positive = articleTotal ? (Number(item.positive_count || 0) / articleTotal) * 100 : 0;
+    const neutral = articleTotal ? (Number(item.neutral_count || 0) / articleTotal) * 100 : 0;
+    const negative = articleTotal ? (Number(item.negative_count || 0) / articleTotal) * 100 : 0;
+    const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 중립 ${item.neutral_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
+    return `<div class="group flex min-w-9 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-28 w-full max-w-10 flex-col-reverse overflow-hidden rounded-md bg-slate-800/80 ring-1 ring-inset ring-white/5"><span class="bg-emerald-400/90 transition group-hover:bg-emerald-300" style="height:${positive}%"></span><span class="bg-slate-400/90 transition group-hover:bg-slate-300" style="height:${neutral}%"></span><span class="bg-rose-400/90 transition group-hover:bg-rose-300" style="height:${negative}%"></span></div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
+  }).join('');
+  chart.innerHTML = `${legend}<div class="flex min-w-0 items-end gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/30 px-4 py-4 sm:gap-3">${bars}</div>`;
+}
+
+async function loadNewsSentimentDashboard() {
+  const chart = document.getElementById('news-sentiment-chart');
+  if (!chart || !supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from('news_daily_article_sentiment')
+      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count')
+      .order('article_date', { ascending: false })
+      .limit(NEWS_SENTIMENT_WINDOW_DAYS);
+    if (error) throw error;
+    renderNewsSentiment(data || []);
+  } catch (error) {
+    const description = document.getElementById('news-sentiment-description');
+    if (description) description.textContent = '뉴스 분석 결과를 불러오지 못했습니다.';
+    chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">잠시 후 다시 시도해 주세요.</div>';
+  }
+}
+
+window.loadNewsSentimentDashboard = loadNewsSentimentDashboard;
+
 // 알림 조건에 따라 설정값 입력칸을 활성화하거나 비활성화합니다.
 function toggleTargetValueInput(conditionId, valueId) {
   const condition = document.getElementById(conditionId);
