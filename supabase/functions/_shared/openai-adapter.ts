@@ -2,7 +2,6 @@ import type { ArticleSentiment, Candidate } from "./news-types.ts";
 import { AI_POLICY } from "./ai-policy.ts";
 
 const ARTICLE_SCHEMA = { type: "object", additionalProperties: false, properties: { outputs: { type: "array", items: { type: "object", additionalProperties: false, properties: { item_hash: { type: "string" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] }, keywords: { type: "array", items: { type: "string" } }, uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] } }, required: ["item_hash", "sentiment", "keywords", "uncertain_summary"] } } }, required: ["outputs"] };
-const MAX_CANDIDATES_PER_REQUEST = 60;
 
 function systemPrompt() {
   const prompt = Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT");
@@ -31,8 +30,7 @@ async function requestAnalysis(model: string, candidates: Candidate[]) {
 
 export async function analyzeCandidates(candidates: Candidate[]) {
   if (!candidates.length) return [];
-  const batches = Array.from({ length: Math.ceil(candidates.length / MAX_CANDIDATES_PER_REQUEST) }, (_, index) => candidates.slice(index * MAX_CANDIDATES_PER_REQUEST, (index + 1) * MAX_CANDIDATES_PER_REQUEST));
-  const outputs = (await Promise.all(batches.map((batch) => requestAnalysis(AI_POLICY.standardModel, batch)))).flat();
+  const outputs = await requestAnalysis(AI_POLICY.standardModel, candidates);
   const expected = new Set(candidates.map((candidate) => candidate.itemHash));
   const received = outputs.map((item) => item.itemHash);
   const uniqueReceived = new Set(received);

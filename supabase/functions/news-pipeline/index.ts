@@ -5,6 +5,8 @@ import type { ArticleSentiment, Candidate, SourceName } from "../_shared/news-ty
 
 const DEFAULT_LOOKBACK_HOURS = 24;
 const MAX_LOOKBACK_HOURS = 15 * 24;
+const DEFAULT_BATCH_SIZE = 25;
+const MAX_BATCH_SIZE = 25;
 const MAX_CANDIDATE_TEXT_CHARS = 1_000;
 const SOURCE_FETCH_TIMEOUT_MS = 30_000;
 const RSS_FEEDS: Record<SourceName, string[]> = {
@@ -59,16 +61,16 @@ async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidat
   for (const date of dates) await refreshDailySentiment(supabase, date);
   return { articles: rows.length, dates: [...dates].sort() };
 }
-async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const requested = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS); if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); return { lookbackHours: requested, dryRun: body.dry_run === true }; }
+async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const lookbackHours = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS), offset = Number(body.offset ?? 0), limit = Number(body.limit ?? DEFAULT_BATCH_SIZE); if (!Number.isInteger(lookbackHours) || lookbackHours < 1 || lookbackHours > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_BATCH_SIZE) throw new Error(`offset은 0 이상의 정수이고 limit은 1에서 ${MAX_BATCH_SIZE} 사이여야 합니다.`); return { lookbackHours, offset, limit, dryRun: body.dry_run === true }; }
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   let stage = "요청 검증";
   try {
-    const { lookbackHours, dryRun } = await getRunOptions(request); stage = "뉴스 수집";
-    const { candidates, errors } = await collectCandidates(lookbackHours); stage = "AI 분석";
-    const outputs = await analyzeCandidates(candidates); stage = "결과 저장";
-    const persisted = dryRun ? { articles: 0, dates: [] } : await persistAnalysis(outputs, candidates);
+    const { lookbackHours, offset, limit, dryRun } = await getRunOptions(request); stage = "뉴스 수집";
+    const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "AI 분석";
+    const outputs = await analyzeCandidates(batch); stage = "결과 저장";
+    const persisted = dryRun ? { articles: 0, dates: [] } : await persistAnalysis(outputs, batch);
     const sentiments = outputs.reduce<Record<string, number>>((counts, output) => ({ ...counts, [output.sentiment]: (counts[output.sentiment] || 0) + 1 }), { positive: 0, negative: 0, neutral: 0, uncertain: 0 });
-    return json({ collected: candidates.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, dry_run: dryRun, persisted, sources: candidates.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
+    return json({ collected: candidates.length, processed: batch.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, offset, limit, has_more: offset + batch.length < candidates.length, next_offset: offset + batch.length, dry_run: dryRun, persisted, sources: batch.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
   } catch (error) { return json({ error: `${stage}: ${error instanceof Error ? error.message : String(error)}`, stage }, 500); }
 });
