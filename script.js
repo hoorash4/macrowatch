@@ -392,7 +392,7 @@ function renderCreditStressComponents(rows) {
   ).slice(-CREDIT_STRESS_HISTORY_MONTHS);
   const series = [
     { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
-    { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b7791f', digits: 3, suffix: '' },
+    { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#0f766e', digits: 3, suffix: '' },
     { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' },
   ];
   const width = 920;
