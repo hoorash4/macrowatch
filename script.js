@@ -318,8 +318,11 @@ function initializeDashboardNavigation() {
   const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
   if (!buttons.length || !panels.length) return;
 
-  const hashByView = { overview: '#news', credit: '#credit', tracker: '#tracker' };
-  const viewByHash = Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view]));
+  const hashByView = { overview: '#news', credit: '#credit' };
+  const viewByHash = {
+    ...Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view])),
+    '#tracker': 'overview',
+  };
 
   const selectView = (view, updateHash = false) => {
     const selectedView = hashByView[view] ? view : 'overview';
