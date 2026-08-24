@@ -263,14 +263,14 @@ body:has(#app-shell:not(.hidden)) {
 }
 #app-shell > * { min-width: 0; }
 .dashboard-workspace { display:grid; grid-template-columns:minmax(0, 1fr); gap:0; align-items:start; }
-.dashboard-nav { position:sticky; top:0; z-index:20; display:flex; isolation:isolate; align-items:center; gap:clamp(1rem, 3vw, 3rem); padding:1.2rem 0; border:0; border-radius:0; background:transparent; box-shadow:none; }
-.dashboard-nav::before { position:absolute; z-index:-1; top:0; bottom:0; left:calc(var(--dashboard-pad) * -1); width:100vw; content:""; opacity:0; background:rgba(225, 233, 238, .9); box-shadow:0 1px 0 rgba(20,36,51,.12); backdrop-filter:blur(12px); transition:opacity .2s ease; }
+.dashboard-nav { position:sticky; top:0; z-index:20; display:flex; isolation:isolate; align-items:center; gap:clamp(1rem, 3vw, 3rem); margin:0 calc(var(--dashboard-pad) * -1); padding:1.2rem clamp(1rem, 2.2vw, 2.5rem); border:0; border-radius:0; background:transparent; box-shadow:none; }
+.dashboard-nav::before { position:absolute; z-index:-1; top:0; right:0; bottom:0; left:0; content:""; opacity:0; background:rgba(225, 233, 238, .9); box-shadow:0 1px 0 rgba(20,36,51,.12); backdrop-filter:blur(12px); transition:opacity .2s ease; }
 .dashboard-is-scrolled .dashboard-nav::before { opacity:1; }
 .dashboard-wordmark { display:flex; align-items:center; gap:.75rem; margin:0 clamp(1rem, 3vw, 3rem) 0 0; color:#161616; }
 .dashboard-logo { width:38px; height:38px; flex:none; background:url("./images/logo.png") center / contain no-repeat; }
 .dashboard-wordmark-copy { display:grid; gap:.12rem; line-height:1; }
-.dashboard-wordmark-copy strong { font-size:1.3rem; font-weight:850; letter-spacing:-.065em; }
-.dashboard-wordmark-copy small { color:#72808b; font-size:.58rem; font-weight:650; letter-spacing:.01em; }
+.dashboard-wordmark-copy strong { font-size:1.55rem; font-weight:850; letter-spacing:-.07em; }
+.dashboard-wordmark-copy small { color:#72808b; font-size:.7rem; font-weight:650; letter-spacing:.01em; }
 .dashboard-nav-label { display:none; }
 .dashboard-nav-item { position:relative; display:flex; align-items:center; gap:.45rem; width:auto; padding:.42rem 0; border-radius:0; color:#8a8a8a; font-size:.8rem; font-weight:650; text-align:left; }
 .dashboard-nav-item::after { position:absolute; right:0; bottom:-.5rem; left:0; height:1px; content:""; background:#161616; transform:scaleX(0); transform-origin:center; transition:transform .16s ease; }
