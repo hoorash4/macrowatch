@@ -163,15 +163,21 @@ function formatCreditStressValue(value, digits = 2) {
   return Number.isFinite(number) ? number.toFixed(digits) : '—';
 }
 
+function toCreditStressNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function buildStressScores(rows, key) {
   const isAvailable = (value) => Number.isFinite(value) && (key !== 'business_bankruptcy_filings' || value !== 0);
-  const values = rows.map((row) => Number(row[key])).filter(isAvailable).sort((a, b) => a - b);
+  const values = rows.map((row) => toCreditStressNumber(row[key])).filter(isAvailable).sort((a, b) => a - b);
   if (!values.length) return new Map();
   const lower = values[Math.floor((values.length - 1) * 0.05)];
   const upper = values[Math.ceil((values.length - 1) * 0.95)];
   const range = upper - lower || 1;
   return new Map(rows.map((row) => {
-    const value = Number(row[key]);
+    const value = toCreditStressNumber(row[key]);
     return [row.month, isAvailable(value) ? Math.max(0, Math.min(100, ((value - lower) / range) * 100)) : null];
   }));
 }
