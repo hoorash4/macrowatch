@@ -9,6 +9,7 @@ const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 10;
 const MAX_CANDIDATE_TEXT_CHARS = 1_000;
 const SOURCE_FETCH_TIMEOUT_MS = 30_000;
+const RSS_REQUEST_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; MacroWatch/1.0)", Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8", "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8" };
 const RSS_FEEDS: Record<SourceName, string[]> = {
   yonhap: ["https://www.yna.co.kr/rss/economy.xml", "https://www.yna.co.kr/rss/international.xml"],
   maekyung: ["https://www.mk.co.kr/rss/30100041/", "https://www.mk.co.kr/rss/30300018/", "https://www.mk.co.kr/rss/50200011/"],
@@ -26,7 +27,7 @@ function xmlLink(block: string) { const content = xmlTag(block, ["link"]); const
 function xmlItems(xml: string) { return (xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi) || []).map((entry) => { const title = xmlTag(entry, ["title"]) || ""; const summary = xmlTag(entry, ["description", "summary", "content"]) || ""; return { text: candidateText(title, summary), hasSummary: Boolean(summary), url: xmlLink(entry), publishedAt: parseDate(xmlTag(entry, ["pubDate", "published", "updated", "date"])) }; }); }
 async function fetchRss(source: SourceName, lookbackHours: number): Promise<Candidate[]> {
   const results = await Promise.allSettled(RSS_FEEDS[source].map(async (feed) => {
-    const response = await fetch(feed, { headers: { "User-Agent": "MacroWatch/1.0" }, signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS) });
+    const response = await fetch(feed, { headers: RSS_REQUEST_HEADERS, signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`${source} RSS 오류 (${response.status})`);
     const candidates: Candidate[] = [];
     for (const item of xmlItems(await response.text())) if (item.text && item.hasSummary && withinLookbackWindow(item.publishedAt, lookbackHours)) candidates.push({ source, itemHash: await hashText(item.text), ...item });
