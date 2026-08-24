@@ -23,6 +23,8 @@ COURTS_URLS = (
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
 SP500_SERIES = "SP500"
+COMMERCIAL_PAPER_SERIES = "DCPN3M"
+THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 TIMEOUT_SECONDS = 45
 INDEX_HISTORY_YEARS = 3
@@ -31,6 +33,11 @@ STRESS_COMPONENTS = (
     ("financial_conditions_credit_index", 0.30),
     ("business_bankruptcy_filings", 0.20),
 )
+LEAD_COMPONENT_WEIGHTS = {
+    "high_yield_acceleration": 1 / 3,
+    "financial_conditions_acceleration": 1 / 3,
+    "short_term_funding_spread": 1 / 3,
+}
 # Fixed 0-to-100 reference ranges. These never roll with incoming data; values
 # above the reference range deliberately remain above 100 to preserve stress
 # severity during future extremes.
@@ -224,14 +231,50 @@ def smoothed_filings(rows: list[dict[str, object]]) -> tuple[dict[str, float], s
     return values, confirmed
 
 
+def positive_score(value: float, reference: float) -> float:
+    return max(0.0, value / reference * 100.0)
+
+
+def build_market_stress_lead(
+    rows: list[dict[str, object]],
+    short_term_funding_spread: dict[str, float],
+) -> dict[str, float]:
+    """Use market-priced deterioration, not lagging default data, for the lead signal."""
+    ordered_rows = sorted(rows, key=lambda row: str(row["month"]))
+    lead_scores: dict[str, float] = {}
+    for index, row in enumerate(ordered_rows):
+        if index < 3:
+            continue
+        previous = ordered_rows[index - 3]
+        month = str(row["month"])
+        try:
+            high_yield_change = float(row["high_yield_oas_pct"]) - float(previous["high_yield_oas_pct"])
+            conditions_change = float(row["financial_conditions_credit_index"]) - float(previous["financial_conditions_credit_index"])
+            funding_spread = float(short_term_funding_spread[month])
+        except (KeyError, TypeError, ValueError):
+            continue
+        component_scores = {
+            "high_yield_acceleration": positive_score(high_yield_change, 1.0),
+            "financial_conditions_acceleration": positive_score(conditions_change, 0.5),
+            "short_term_funding_spread": positive_score(funding_spread - 0.10, 0.60),
+        }
+        lead_scores[month] = round(
+            sum(component_scores[key] * weight for key, weight in LEAD_COMPONENT_WEIGHTS.items()),
+            2,
+        )
+    return lead_scores
+
+
 def build_market_stress_index(
     rows: list[dict[str, object]],
     today: date,
     sp500_month_end: dict[str, float],
+    short_term_funding_spread: dict[str, float],
 ) -> list[dict[str, object]]:
     index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
     filings, confirmed_filings = smoothed_filings(recent_rows)
+    lead_scores = build_market_stress_lead(recent_rows, short_term_funding_spread)
     component_values: dict[str, dict[str, float]] = {
         "business_bankruptcy_filings": filings,
     }
@@ -260,6 +303,7 @@ def build_market_stress_index(
                 "stress_index": round(score, 2),
                 "is_provisional": month not in confirmed_filings,
                 "sp500_month_end_close": sp500_month_end.get(month),
+                "lead_index": lead_scores.get(month),
             }
         )
     return index_rows
@@ -299,6 +343,12 @@ def main() -> None:
     high_yield = fetch_fred_monthly(HIGH_YIELD_SERIES, fred_api_key, start, end)
     financial_conditions = fetch_fred_monthly(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, end)
     sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
+    commercial_paper = fetch_fred_monthly(COMMERCIAL_PAPER_SERIES, fred_api_key, start, end)
+    three_month_treasury = fetch_fred_monthly(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, end)
+    short_term_funding_spread = {
+        month: commercial_paper[month] - three_month_treasury[month]
+        for month in commercial_paper.keys() & three_month_treasury.keys()
+    }
     business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
     months = sorted(set(high_yield) | set(financial_conditions) | set(business_filings))
     rows = [
@@ -313,12 +363,13 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 월별 신용 스트레스 데이터가 없습니다.")
     upsert_rows(rows, supabase_url, service_role_key)
-    index_rows = build_market_stress_index(rows, today, sp500_month_end)
+    index_rows = build_market_stress_index(rows, today, sp500_month_end, short_term_funding_spread)
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     print(
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
-        f"nfci={len(financial_conditions)} sp500={len(sp500_month_end)}"
+        f"nfci={len(financial_conditions)} sp500={len(sp500_month_end)} "
+        f"short_funding_spread={len(short_term_funding_spread)}"
     )
 
 
