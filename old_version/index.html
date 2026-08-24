@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MacroWatch</title>
+  <!-- 화면 스타일에 사용하는 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 화면 아이콘에 사용하는 Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 로그인과 데이터 저장에 사용하는 Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+            <!-- 화면에서 사용하는 웹폰트 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  
+  <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <!-- ===== 로그인 화면 시작 ===== -->
+
+
+  <main
+    id="auth-screen"
+    class="auth-canvas hidden min-h-[calc(100vh-2rem)] overflow-hidden"
+  >
+  <div class="relative flex min-h-[calc(100vh-2rem)] flex-col bg-[#071b42] text-white">
+    <header class="flex items-center justify-between py-5">
+      <div class="flex items-center gap-3">
+        <div class="evotive-source-logo h-12 shrink-0"></div>
+        <div>
+          <p class="font-cinzel text-lg font-bold tracking-[.12em]">EVOTIVE RESEARCH</p>
+          <p class="mt-1 text-[9px] font-semibold tracking-[.28em] text-[#d1a55d]">INDEPENDENT MACRO ADVISOR</p>
+        </div>
+      </div>
+      
+          <span class="header-product-label">Macro Tracking &amp; Alerts</span>
+</header>
+    <div class="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[minmax(0,350px)_420px] lg:justify-center lg:gap-12">
+      <section class="max-w-2xl">
+        
+        <h1 class="font-pretendard">
+          <span class="main-title-line"><span class="main-title-word title-evolving">Evolving</span> <span class="main-title-word title-insight">Insight</span></span><span class="main-title-line text-[#d1a55d]"><span class="main-title-word title-adaptive">Adaptive</span> <span class="main-title-word title-shift">Shift</span></span>
+        </h1>
+        <p class="mt-7 max-w-md text-sm leading-7 text-slate-300">EVOTIVE RESEARCH가 제공하는 MacroWatch는 관심 지표의<span class="mobile-space"> </span>중요한 변화를 놓치지 않도록 돕는 모니터링 도구입니다. <span class="inline-signal-dot" aria-label="monitoring active"></span></p>
+        
+      </section>
+      <section class="flex justify-center lg:justify-end">
+        <div class="auth-panel">
+            <div class="mb-8">
+              <p class="text-[10px] font-bold tracking-[.22em] text-[#d1a55d]">WELCOME TO</p>
+              <h2 class="mt-3 text-3xl font-semibold tracking-[-.035em] text-white">MacroWatch</h2>
+              <p class="mt-3 text-sm leading-6 text-slate-400">나만의 경제지표를 한 곳에서 추적하고, 편리하게 카카오톡으로 알림을 받으세요.</p>
+            </div>
+
+            <form id="auth-form" autocomplete="off">
+              <p id="auth-message" role="alert" class="mb-4 min-h-5 text-sm text-red-300"></p>
+              <button id="auth-submit" type="submit" class="group flex w-full items-center justify-center rounded-xl bg-[#fee500] px-4 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-yellow-500/10 transition hover:-translate-y-0.5 hover:bg-[#ffe812] disabled:cursor-wait disabled:opacity-60">
+                <i id="auth-spinner" class="fa-solid fa-circle-notch mr-2 hidden animate-spin"></i>
+                <i class="fa-solid fa-comment mr-2 transition group-hover:scale-110"></i>
+                <span id="auth-submit-label">카카오로 계속하기</span>
+              </button>
+            <div class="mt-4 flex items-start gap-3 text-xs leading-5 text-slate-500">
+              <i class="fa-solid fa-shield-halved mt-0.5 text-xs text-[#a67531]"></i>
+              <p>카카오 계정으로 안전하게 시작합니다. 전화번호, 이메일 등 불필요한 개인정보는 수집하지 않습니다.</p>
+            </div>
+            </form>
+
+            <div class="my-6 flex items-center gap-3 text-[10px] font-medium tracking-[.12em] text-slate-600">
+              <span class="auth-divider-line" aria-hidden="true"></span>
+              <span>OR CONTINUE WITH</span>
+              <span class="auth-divider-line" aria-hidden="true"></span>
+            </div>
+
+            <form id="password-login-form" autocomplete="off" class="space-y-3">
+              <div>
+               <!-- <label for="login-id" class="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-400">아이디 </label> -->
+                <input lang="en" inputmode="latin" autocapitalize="off" spellcheck="false" id="login-id" type="text" autocomplete="username" placeholder="아이디 입력" class="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-[#d1a55d]/70 focus:bg-slate-950 latin-input">
+              </div>
+              <div>
+               <!-- <label for="login-password" class="mb-1.5 block text-xs font-medium text-slate-400">비밀번호</label> -->
+                <input lang="en" inputmode="latin" autocapitalize="off" spellcheck="false" id="login-password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" class="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-[#d1a55d]/70 focus:bg-slate-950 latin-input">
+              </div>
+              <button id="password-login-button" type="submit" class="flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/[.045] py-3 text-sm font-bold text-slate-300 transition hover:border-[#d1a55d]/40 hover:bg-white/[.08] hover:text-white">
+                ID/PW로 로그인
+              </button>
+              <p class="pt-1 text-center text-xs text-slate-500">
+                아직 계정이 없나요?
+                <button id="signup-placeholder-button" type="button" class="ml-1 font-semibold text-[#e2bd7d] transition hover:text-[#f0d59b]">회원가입</button>
+              </p>
+            </form>
+
+            
+          </div>
+      </section>
+    </div>
+    <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-4 text-[10px] tracking-[.14em] text-slate-400 sm:px-10">
+      
+    </footer>
+  </div>
+</main>
+
+  <!-- ===== 로그인 화면 끝 / 대시보드 시작 ===== -->
+  <div
+    id="app-shell"
+    class="hidden max-w-3xl mx-auto"
+  >
+
+    <!-- 대시보드 상단: 제목 / 설정 / 로그아웃 -->
+    <div class="dashboard-header bg-slate-900 border border-slate-700/80 rounded-xl p-5 mb-6 shadow-xl">
+      <!-- 왼쪽: 로고와 MacroWatch 제목을 하나의 영역으로 묶습니다. -->
+      <div class="dashboard-brand flex items-center gap-2.5">    
+        <!-- Evotive 로고 이미지 -->
+        <div class="dashboard-logo" aria-hidden="true"></div>    
+        <!-- 서비스 이름과 설명 -->
+        <div>
+          <h1 class="text-2xl font-extrabold text-white tracking-tight">
+            MacroWatch
+          </h1>    
+          <p class="text-xs text-slate-400 mt-0.5">
+            경제지표 변동 추적 및 알림 도구.
+          </p>
+        </div>    
+      </div>
+      <div class="dashboard-actions flex items-center gap-2">
+        <div id="db-status" class="px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800/80 text-slate-400 border border-slate-700/60 flex items-center gap-2 shadow-inner">
+          <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span> DB 연결 확인 중...
+        </div>
+        <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 transition hover:border-yellow-500 hover:text-yellow-400">
+          <i class="fa-solid fa-user text-xs"></i>
+        </button>
+        <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" class="hidden flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 transition hover:border-blue-500 hover:text-blue-400">
+          <i class="fa-solid fa-gear text-xs"></i>
+        </a>
+        <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 transition hover:border-red-500 hover:text-red-400">
+          <i class="fa-solid fa-right-from-bracket text-xs"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 탭 메뉴 -->
+    
+
+    <!-- ===== 경제지표 추적 화면 시작 ===== -->
+    <div id="tab-content-tracker" class="space-y-6">
+      
+      <!-- 오른쪽: 경제지표 신규 등록 입력폼 -->
+      
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center">
+          <i class="fa-solid fa-plus-circle mr-2 text-blue-500"></i> 지표 추적 신규 등록
+        </h2>
+        <form id="add-form" autocomplete="off" onsubmit="handleAddTarget(event)" class="space-y-4">
+          <div id="target-basic-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div id="input-title-field" class="sm:col-span-2">
+              <label class="text-xs text-slate-400 block mb-1">지표 이름</label>
+              <input autocomplete="off" type="text" id="input-title" required placeholder="예: 미국 10년물 국채금리" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+            </div>
+            <div id="input-type-field" class="sm:col-span-2">
+              <label class="text-xs text-slate-400 block mb-1">데이터 소스 유형</label>
+              <select id="input-type" onchange="handleSourceTypeChange()" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                <option value="FRED">연준 FRED API</option>
+                <option value="BOK">한국은행 ECOS API</option>
+              </select>
+            </div>
+          </div>
+          <!-- 선택한 공식 API에서만 지표 후보를 찾고, 선택하면 아래 코드 입력칸을 자동으로 채웁니다. -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <label for="indicator-search-query" class="text-xs font-semibold text-slate-700">지표 코드 찾기 (선택)</label>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">위에서 선택한 데이터 소스에서만 후보를 찾습니다. FRED는 등록된 경제지표 용어 사전을 사용하며, 찾지 못한 표현은 영어로 검색할 수 있습니다.</p>
+            <div class="mt-2 flex gap-2">
+              <input id="indicator-search-query" onkeydown="handleIndicatorSearchKeydown(event)" autocomplete="off" type="search" placeholder="예: 미국 신규 실업수당 청구건수" class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-900 outline-none focus:border-blue-500">
+              <button id="indicator-search-button" type="button" onclick="searchIndicators()" class="shrink-0 rounded-lg bg-slate-800 px-3 text-sm font-bold text-white transition hover:bg-slate-700">찾기</button>
+            </div>
+          </div>
+          <div id="field-fred" class="hidden space-y-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">FRED Series ID</label>
+              <input lang="en" inputmode="latin" autocapitalize="off" spellcheck="false" autocomplete="off" type="text" id="input-fred-id" placeholder="예: DGS10" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none latin-input">
+            </div>
+          </div>
+
+          <div id="field-bok" class="hidden space-y-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">한국은행 통계표 코드</label>
+                <input lang="en" inputmode="latin" autocapitalize="off" spellcheck="false" autocomplete="off" type="text" id="input-bok-code" placeholder="예: 817Y002" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none latin-input">
+              </div>
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">통계 항목 코드</label>
+                <input lang="en" inputmode="latin" autocapitalize="off" spellcheck="false" autocomplete="off" type="text" id="input-bok-item-code" placeholder="예: 010210000" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none latin-input">
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">원본 데이터 주기</label>
+              <select id="input-bok-cycle" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                <option value="D">일별</option>
+                <option value="M">월별</option>
+                <option value="Q">분기별</option>
+                <option value="S">반기별</option>
+                <option value="A">연별</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 감지 조건 및 목표값 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">알림 조건 설정</label>
+              <select id="input-condition" onchange="toggleTargetValueInput('input-condition', 'input-target-val')" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                <option value="gte">설정값 상향 돌파 시</option>
+                <option value="lte">설정값 하향 돌파 시</option>
+                <option value="cross">상/하향 돌파 모두</option>
+                <option value="changed">지표값 변동 감지 시</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">알림 설정값 (선택)</label>
+              <input autocomplete="off" type="number" step="any" id="input-target-val" placeholder="예: 0.0" data-default-placeholder="예: 0.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+            </div>
+          </div>
+
+          <button id="add-submit-button" type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg transition shadow-lg shadow-blue-600/20">
+            신규 등록하기
+          </button>
+        </form>
+      </div>
+
+
+      <!-- 왼쪽: 현재 추적 중인 지표 목록 -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-bold text-white flex items-center">
+            <i class="fa-solid fa-list-check mr-2 text-blue-500"></i> 추적 현황
+          </h2>
+          <!--
+            Drag & Drop 사용 안내
+            - 평소에는 짧은 안내 문구만 보여줍니다.
+            - ? 버튼에 마우스를 올리거나 클릭하면 자세한 사용법이 아래로 펼쳐집니다.
+            - 실제 순서 변경 기능 자체는 script.js의 드래그 관련 함수가 담당합니다.
+          -->
+          <div class="track-help">
+            <i class="fa-solid fa-arrows-up-down track-help-icon" aria-hidden="true"></i>
+            <span>끌어서 순서 변경</span>
+
+            <div class="track-help-tooltip" role="tooltip">
+              <p>
+                <strong>같은 Tab 안에서 이동</strong><br>
+                항목을 위아래로 끌어서 원하는 위치로 순서를 바꿀 수 있습니다.
+              </p>
+              <p>
+                <strong>다른 Tab으로 이동</strong><br>
+                항목을 원하는 Tab 위에 놓으면 해당 Tab으로 이동합니다.
+              </p>
+              <p>
+                <strong>터치 화면</strong><br>
+                <i class="fa-solid fa-grip-vertical mx-1 text-slate-400" aria-hidden="true"></i> 부분을 약 0.5초 누른 뒤 끌어서 순서를 바꿀 수 있습니다.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div id="target-list" class="divide-y divide-slate-800/80">
+          <p class="loading-state text-sm text-slate-500 py-4 text-center">목록을 불러오는 중...</p>
+        </div>
+          
+      </div>
+          <div
+          class="sheet-tabs"
+          role="tablist"
+          aria-label="Tab tabs"
+        >
+            <button type="button" class="sheet-tab is-active" role="tab" aria-selected="true">Tab 01</button>
+            <button type="button" class="sheet-tab sheet-tab-add" role="tab" aria-selected="false">+ Tab</button>
+          </div>
+
+    </div>
+
+    <!-- ===== 경제지표 추적 화면 끝 / 뉴스 준비 영역 ===== -->
+    <div id="tab-content-news" class="hidden">
+      <div class="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center shadow-xl">
+        <i class="fa-solid fa-newspaper text-2xl text-slate-600"></i>
+        <h2 class="mt-3 text-base font-bold text-slate-200">뉴스 기능 준비 중</h2>
+        <p class="mt-2 text-sm text-slate-500">맞춤형 뉴스 수집과 요약 기능은 추후 제공할 예정입니다.</p>
+      </div>
+    </div>
+
+    <footer class="dashboard-copyright border-t border-white/10 px-4 py-4 text-center text-[10px] tracking-[.14em] text-slate-400">© 2026 EVOTIVE RESEARCH. All rights reserved.</footer>
+
+  </div>
+
+  <!-- ===== 공용 안내창: 서비스 준비 중 / 등록 완료 ===== -->
+  <div
+    id="service-preparing-modal"
+    class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="service-preparing-title"
+  >
+    <section class="w-full max-w-xs rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl shadow-black/40">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-blue-500/30 bg-blue-500/10 text-xl text-blue-400">
+        <i class="fa-solid fa-hourglass-half"></i>
+      </div>
+      <h2 id="service-preparing-title" class="mt-4 text-lg font-bold text-white">서비스 준비 중입니다.</h2>
+      <p class="mt-2 text-xs leading-relaxed text-slate-400">ID/PW 로그인과 회원가입은 추후 제공할 예정입니다.</p>
+      <button id="service-preparing-close" type="button" class="mt-5 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white transition hover:bg-blue-500">확인</button>
+    </section>
+  </div>
+
+  <!-- ===== 지표 후보 선택창 ===== -->
+  <div id="indicator-search-modal" class="hidden fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="indicator-search-title">
+    <section class="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+      <header class="flex items-start justify-between border-b border-slate-700 px-5 py-4">
+        <div>
+          <h2 id="indicator-search-title" class="text-lg font-bold text-white">지표 후보 선택</h2>
+          <p id="indicator-search-description" class="mt-1 text-xs leading-relaxed text-slate-400">원하는 지표를 선택하면 입력칸에 공식 코드가 자동으로 채워집니다.</p>
+        </div>
+        <button type="button" onclick="closeIndicatorSearchModal()" aria-label="지표 후보 선택창 닫기" class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </header>
+      <div id="indicator-search-results" class="min-h-0 overflow-y-auto p-4"></div>
+      <footer class="border-t border-slate-700 px-5 py-3 text-right">
+        <button type="button" onclick="closeIndicatorSearchModal()" class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-600">닫기</button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ===== 개인 설정창: 카카오톡 연결 / 회원 탈퇴 ===== -->
+  <div
+    id="profile-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+  >
+    <section class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-user-gear mr-2 text-blue-400"></i>개인 설정</h2>
+          <p class="mt-1 text-xs text-slate-500">알림 계정 연결 상태를 관리합니다.</p>
+        </div>
+        <button id="profile-close-button" type="button" aria-label="개인 설정 닫기" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-bold text-slate-200"><i class="fa-solid fa-comment mr-2 text-yellow-400"></i>카카오톡 알림</p>
+            <p id="kakao-connection-status" class="mt-1 text-xs text-slate-500">연결 상태 확인 중</p>
+          </div>
+          <span id="kakao-status-badge" class="shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400">확인 중</span>
+        </div>
+        <button id="kakao-connect-button" type="button" class="mt-4 flex w-full items-center justify-center rounded-lg bg-yellow-500 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-wait disabled:opacity-60">
+          <i class="fa-solid fa-link mr-2"></i><span>카카오 계정 다시 연결하기</span>
+        </button>
+        <button id="account-delete-button" type="button" class="mt-4 flex w-full items-center justify-center rounded-lg border border-red-800/70 bg-red-950/30 py-2.5 text-sm font-bold text-red-400 transition hover:bg-red-950/60">
+          <i class="fa-solid fa-user-slash mr-2"></i>카카오 연동 해제 및 회원 탈퇴
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== 회원 탈퇴 최종 확인창 ===== -->
+  <div
+    id="account-delete-modal"
+    class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4"
+  >
+    <section class="w-full max-w-sm rounded-2xl border border-red-900/60 bg-slate-900 p-6 text-center shadow-2xl">
+      <i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i>
+      <h2 class="mt-4 text-lg font-bold text-white">카카오 연동을 해제하고 탈퇴할까요?</h2>
+      <p class="mt-2 text-sm leading-relaxed text-slate-400">등록한 지표와 알림 설정이 모두 삭제되며 되돌릴 수 없습니다.</p>
+      <div class="mt-5 flex gap-2">
+        <button id="account-delete-cancel" type="button" class="flex-1 rounded-lg bg-slate-800 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-700">취소</button>
+        <button id="account-delete-confirm" type="button" class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-60">탈퇴하기</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== 카카오톡 알림 상태 변경 확인창 ===== -->
+  <div
+    id="toggle-alert-modal"
+    class="hidden fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="toggle-alert-title"
+  >
+    <section class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
+      <i class="fa-solid fa-bell text-2xl text-amber-400"></i>
+      <h2 id="toggle-alert-title" class="mt-4 text-lg font-bold text-white">알림 설정 변경</h2>
+      <p id="toggle-alert-message" class="mt-2 text-sm text-slate-400"></p>
+      <div class="mt-5 flex gap-2">
+        <button type="button" onclick="closeToggleAlertModal()" class="flex-1 rounded-lg bg-slate-800 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-700">취소</button>
+        <button type="button" onclick="confirmToggleTarget()" class="flex-1 rounded-lg bg-amber-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-400">확인</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== 추적 지표 수정창 ===== -->
+  <div
+    id="edit-modal"
+    class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
+  >
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-lg space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-pen-to-square mr-1 text-blue-500"></i> 추적 항목 수정</h3>
+        <button onclick="closeEditModal()" class="text-slate-400 hover:text-white text-sm"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">지표 이름</label>
+          <input autocomplete="off" type="text" id="edit-title" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">알림 조건 설정</label>
+          <select id="edit-condition" onchange="toggleTargetValueInput('edit-condition', 'edit-target-val')" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white">
+            <option value="gte">목표값 상향 돌파 시</option>
+            <option value="lte">목표값 하향 돌파 시</option>
+            <option value="cross">상/하향 돌파 모두</option>
+            <option value="changed" selected>지표값 변동 감지 시</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">알림 설정값</label>
+          <input autocomplete="off" type="number" step="any" id="edit-target-val" data-default-placeholder="" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white">
+        </div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeEditModal()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold rounded-lg transition">취소</button>
+        <button onclick="saveEditTarget()" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg transition">저장하기</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===== 추적 지표 삭제 확인창 ===== -->
+  <div
+    id="delete-modal"
+    class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
+  >
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl">
+      <div class="flex items-center gap-2 text-red-300">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <h3 class="text-lg font-bold text-white">추적 항목 삭제</h3>
+      </div>
+      <p class="text-sm text-slate-300">정말 삭제하시겠습니까?</p>
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeDeleteModal()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold rounded-lg transition">취소</button>
+        <button onclick="confirmDeleteTarget()" class="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-lg transition">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로그인 처리 스크립트 -->
+  <script src="config.js?v=1"></script>
+  <script src="auth.js?v=12"></script>
+
+  <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
+  <script src="indicator-terms.js?v=2"></script>
+  <script src="script.js?v=74"></script>
+</body>
+</html>

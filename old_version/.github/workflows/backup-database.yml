@@ -1,0 +1,61 @@
+name: Backup database to Google Drive
+
+on:
+  schedule:
+    # GitHub Actions cron uses UTC: Saturday 18:00 = Sunday 03:00 KST.
+    - cron: "0 18 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Google authentication library
+        run: pip install google-auth requests
+
+      - name: Export database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/data.sql --data-only --use-copy -x "storage.buckets_vectors" -x "storage.vector_indexes"
+          tar -czf macrowatch-backup.tar.gz backup
+
+      - name: Encrypt backup
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          BACKUP_ENCRYPTION_PASSWORD="$(python backend/backup_crypto.py)"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$BACKUP_ENCRYPTION_PASSWORD" \
+            --symmetric --cipher-algo AES256 \
+            --output macrowatch-backup.tar.gz.gpg \
+            macrowatch-backup.tar.gz
+
+      - name: Replace Google Drive backup file
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_DRIVE_LATEST_FILE_ID: ${{ secrets.GOOGLE_DRIVE_LATEST_FILE_ID }}
+          GOOGLE_DRIVE_PREVIOUS_FILE_ID: ${{ secrets.GOOGLE_DRIVE_PREVIOUS_FILE_ID }}
+        run: python backend/upload_drive_backup.py macrowatch-backup.tar.gz.gpg
+

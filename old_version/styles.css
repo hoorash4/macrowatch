@@ -1,0 +1,863 @@
+/* ===== 공통 기본 스타일 =====
+   숫자 입력창, 폰트, 공통 로고처럼 로그인/대시보드 양쪽에서 쓰는 기본 규칙입니다.
+*/
+body {
+  padding: 1rem;
+}
+
+@media (min-width:640px) {
+  body {
+    padding: 1.5rem;
+  }
+}
+
+input:focus::placeholder {
+color: transparent;
+}
+
+/* 지표 이름을 제외한 코드·주소·로그인 입력란은 영문 IME를 우선합니다. */
+.latin-input {
+  ime-mode: inactive;
+}#input-target-val,
+#edit-target-val {
+appearance: textfield;
+  -moz-appearance: textfield;
+}#input-target-val::-webkit-inner-spin-button,
+#input-target-val::-webkit-outer-spin-button,
+#edit-target-val::-webkit-inner-spin-button,
+#edit-target-val::-webkit-outer-spin-button {
+-webkit-appearance: none;
+  margin: 0;
+}.font-cinzel {
+font-family: 'Cinzel', Georgia, serif;
+}.font-sans,
+.font-pretendard {
+font-family: 'Pretendard', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}.evotive-source-logo {
+aspect-ratio: 1 / 1;
+  background: transparent url("./images/logo.png") center / contain no-repeat;
+}/* ===== 로그인 화면 =====
+   로그인 카드, 상단 브랜드 영역, 안내 문구, 로그인 버튼의 기본 디자인입니다.
+*/
+.auth-canvas {
+background: #ece9e2;
+  border: 0;
+  border-radius: 1.75rem !important;
+  min-height: calc(100vh - 2rem) !important;
+}.auth-canvas > div {
+max-width: none;
+  min-height: calc(100vh - 2rem);
+  grid-template-columns: minmax(0,1.15fr) minmax(360px,.85fr);
+}.auth-canvas > div > section:last-child {
+background: #e5e1d9;
+  position: relative;
+  padding: clamp(2rem,6vw,7rem);
+}.auth-canvas > div > section:last-child::before {
+content: "MACROWATCH / PRIVATE ACCESS";
+  position: absolute;
+  top: clamp(2rem,5vw,5.5rem);
+  right: clamp(2rem,6vw,7rem);
+  font: 600 .62rem/1 Pretendard,sans-serif;
+  letter-spacing: .2em;
+  color: #8e8a82;
+}#auth-screen {
+border-radius: 1.75rem;
+  overflow: hidden;
+}#auth-screen .auth-panel {
+max-width: 430px;
+  margin: auto;
+  padding: clamp(2rem,4vw,3.5rem);
+  border: 0;
+  background: #f7f5f0;
+  box-shadow: 0 24px 64px rgba(0,0,0,.32);
+  color: #071b42;
+  border-radius: 1.25rem;
+}.mobile-space {
+display: none;
+}#auth-screen .auth-panel h2 {
+font-size: 1.8rem;
+  letter-spacing: -.04em;
+}#auth-screen .auth-panel .text-white {
+color: #071b42;
+}#auth-screen .auth-panel .text-slate-400,
+#auth-screen .auth-panel .text-slate-500 {
+color: #64748b;
+}#auth-screen .auth-panel input,
+#auth-screen .auth-panel select {
+background: #fff;
+  border-color: #d8d2c7;
+  color: #071b42;
+}#auth-screen .auth-panel input::placeholder {
+color: #94a3b8;
+}#auth-screen .auth-panel .mt-4.flex.items-start {
+margin-top: 1.35rem;
+}#auth-screen .auth-panel > div.mb-8 {
+margin-bottom: .55rem;
+}.auth-divider-line {
+  flex: 1 1 0%;
+  height: 1px;
+  background: #c8c1b5;
+}#password-login-button {
+background: #071b42;
+  border-color: #071b42;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(7,27,66,.18);
+  margin-top: 1.5rem;
+}#password-login-button:hover {
+background: #12366f;
+  border-color: #12366f;
+}#password-login-form > p.pt-1 {
+text-align: center;
+  margin-top: 1.5rem;
+  padding-top: 0;
+}#signup-placeholder-button {
+color: #a67531;
+}#signup-placeholder-button:hover {
+color: #071b42;
+}#auth-screen > div > header {
+background: #f7f5f0;
+  border-bottom: 1px solid #ddd7cc;
+  min-height: 96px;
+  padding-top: 1.35rem;
+  padding-bottom: 1.35rem;
+  overflow: visible;
+}#auth-screen > div > header > div:first-child {
+display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 100%;
+  min-width: max-content;
+  gap: .22rem;
+  overflow: visible;
+}#auth-screen > div > header > div:first-child > div:last-child {
+flex-shrink: 1;
+  min-width: max-content;
+  overflow: visible;
+}#auth-screen > div > header .evotive-source-logo {
+background-color: #f7f5f0;
+  border-radius: 0;
+  z-index: 1;
+  width: 56px;
+  height: 43px;
+  flex: none;
+  margin-right: -.1rem;
+}#auth-screen > div > header .font-cinzel {
+color: #071b42;
+  white-space: nowrap;
+  overflow: visible;
+  font-size: 1.16rem;
+  letter-spacing: .03em;
+}#auth-screen > div > header .font-cinzel + p {
+font-size: .62rem;
+  white-space: nowrap;
+  font-weight: 400;
+  letter-spacing: .14em;
+  margin-top: -.02rem;
+  line-height: 1.05;
+}#auth-screen > div > header .text-\[9px\] {
+color: #a67531;
+  white-space: nowrap;
+  font-size: .46rem;
+  letter-spacing: .08em;
+}.header-product-label {
+display: block;
+  font: 500 .63rem/1 Pretendard,sans-serif;
+  letter-spacing: .16em;
+  color: #8c8a84;
+  white-space: nowrap;
+}#auth-screen .grid.flex-1 {
+padding-left: clamp(2.5rem,11vw,11rem);
+  padding-right: clamp(2.5rem,11vw,11rem);
+  column-gap: clamp(2rem,7vw,7rem);
+  background-image: radial-gradient(rgba(247,245,240,.14) 1px,transparent 1px);
+  background-size: 36px 36px;
+}/* 메인 타이틀 두 줄의 굵기를 각각 조절합니다. */
+#auth-screen {
+  --title-evolving-weight: 100;
+  --title-insight-weight: 600;
+  --title-adaptive-weight: 100;
+  --title-shift-weight: 500;
+}
+#auth-screen .main-title-line {
+  display: block;
+  white-space: nowrap;
+}
+#auth-screen .main-title-word {
+  display: block;
+}
+#auth-screen .title-evolving {
+  font-weight: var(--title-evolving-weight);
+}
+#auth-screen .title-insight {
+  font-weight: var(--title-insight-weight);
+}
+#auth-screen .title-adaptive {
+  font-weight: var(--title-adaptive-weight);
+}
+#auth-screen .title-shift {
+  font-weight: var(--title-shift-weight);
+}
+#auth-screen .grid > section:first-child h1 {
+letter-spacing: -.03em;
+  max-width: none;
+  white-space: normal;
+  font-size: clamp(2.35rem,5.2vw,5.3rem);
+  line-height: 1.28;
+}#auth-screen .grid > section:first-child > p:not(.mb-6) {
+line-height: 2;
+  position: relative;
+  padding-left: 1.15rem;
+  max-width: 640px;
+  width: 100%;
+  font-size: .96rem;
+  letter-spacing: -.01em;
+  margin-top: clamp(1rem, 3.35vw, 3.35rem);
+}#auth-screen .grid > section:first-child > p:not(.mb-6)::before {
+content: "";
+  position: absolute;
+  left: 0;
+  top: .35rem;
+  bottom: .35rem;
+  width: 2px;
+  background: rgba(201,170,114,.62);
+}#auth-screen .grid > section:first-child > p:not(.mb-6) .inline-signal-dot {
+display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #42b883;
+  vertical-align: middle;
+  box-shadow: 0 0 0 4px rgba(66,184,131,.14);
+  animation: macroPulse 2.2s ease-in-out infinite;
+  position: relative;
+  top: -2px;
+}
+
+@keyframes macroPulse {0%,100% {
+opacity:.35; transform:scale(.85);
+}50% {
+opacity:1; transform:scale(1);
+}
+}#auth-screen > div > footer {
+justify-content: center;
+  text-align: center;
+  background: #04132f;
+  border-top-color: rgba(255,255,255,.12);
+}#auth-screen > div > footer::after {
+content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
+  color: #64748b;
+  margin: 0 auto;
+}/* ===== 대시보드 화면 =====
+   로그인 후 보이는 MacroWatch 본 화면의 카드, 입력폼, 추적 리스트 기본 디자인입니다.
+*/
+#app-shell {
+  --dashboard-inner-pad: 1.5rem;
+border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 24px 70px rgba(0,0,0,.3);
+  position: relative;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--dashboard-inner-pad);
+  border-radius: 1.75rem;
+  background: #071b42;
+  overflow: hidden;
+  min-height: 0;
+  height: auto;
+}#app-shell > * {
+position: relative;
+  z-index: 1;
+}
+
+  
+  /* 대시보드 상단에 Evotive 로고 이미지를 표시합니다. */
+.dashboard-brand {
+  gap: .22rem;
+}
+
+.dashboard-logo {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  margin-right: -.1rem;
+
+  background:
+    transparent
+    url("./images/logo.png")
+    center / contain
+    no-repeat;
+}
+  
+  
+  /* 대시보드 상단은 브랜드와 액션 사이에 가변 공간을 둔 3열 구조로 배치합니다. */
+.dashboard-header {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1rem;
+}
+
+.dashboard-brand,
+.dashboard-actions {
+  min-width: 0;
+}
+
+.dashboard-actions {
+  justify-self: end;
+  width: max-content;
+  gap: 0 !important;
+  align-items: center;
+  transform-origin: right center;
+}
+
+#app-shell > .bg-slate-900:first-child {
+border-color: #d9d4ca;
+  background: #f7f5f0;
+  margin: 0 calc(var(--dashboard-inner-pad) * -1);
+  border-radius: 1.75rem 1.75rem 0 0;
+  padding: 1.25rem .5rem 1.25rem 1.5rem;
+  box-shadow: none;
+}#app-shell > .bg-slate-900:first-child h1 {
+color: #071b42;
+}#app-shell > .bg-slate-900:first-child p {
+color: #64748b;
+}#app-shell > .bg-slate-900:first-child button,
+#app-shell > .bg-slate-900:first-child a {
+background: #fff;
+  border-color: #d9d4ca;
+  color: #64748b;
+}#app-shell > .bg-slate-900:first-child #db-status {
+display: none;
+}#app-shell .text-white {
+color: #f7f5f0;
+}#app-shell .text-slate-400 {
+color: #aeb8c8;
+}#app-shell .text-slate-500 {
+color: #8794a8;
+}#app-shell .bg-slate-900:not(:first-child) {
+background: #0d2a55;
+  border-color: rgba(255,255,255,.12);
+}#app-shell > #tab-content-tracker,
+#app-shell > #tab-content-news {
+position: relative;
+  z-index: 1;
+  margin-left: calc(var(--dashboard-inner-pad) * -1);
+  margin-right: calc(var(--dashboard-inner-pad) * -1);
+  padding: 1.5rem var(--dashboard-inner-pad);
+  background-image: radial-gradient(rgba(247,245,240,.1) 1px,transparent 1px);
+  background-size: 36px 36px;
+}/* 넓은 화면은 오른쪽 현재값을 사용하고, 425px 이하에서는 타이틀 아래로 이동합니다. */
+.compact-mobile-summary {
+  display: none !important;
+}
+
+@media (max-width:425px) {
+  .target-condition-summary {
+    display: none !important;
+  }
+
+  .compact-mobile-summary {
+    display: block !important;
+  }
+}
+
+/* 추적 메인 영역이 좁은 화면에서 콘텐츠의 고정 최소 폭을 만들지 않게 합니다. */
+#app-shell,
+#tab-content-tracker,
+#tab-content-tracker > div,
+#tab-content-tracker > .sheet-tabs,
+#target-list,
+#target-list > div[data-target-container],
+#tab-content-tracker input,
+#tab-content-tracker select {
+  min-width: 0;
+}
+
+#tab-content-tracker {
+display: grid;
+  grid-template-columns: minmax(0,1fr) 360px;
+  gap: 1.25rem;
+  row-gap: 0;
+  align-items: start;
+}#tab-content-tracker > div:first-child {
+grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  margin-top: 0;
+
+  background: #fff;
+  border-color: #d9d4ca;
+  color: #071b42;
+  box-shadow: 0 14px 30px rgba(7,27,66,.08);
+}#tab-content-tracker > div:first-child h2,
+#tab-content-tracker > div:first-child label,
+#tab-content-tracker > div:first-child p,
+#tab-content-tracker > div:first-child span {
+color: #071b42;
+}#tab-content-tracker > div:first-child input,
+#tab-content-tracker > div:first-child select {
+background: #fff;
+  border-color: #d9d4ca;
+  color: #071b42;
+  -webkit-text-fill-color: #071b42;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: .3rem;
+  padding-left: .3rem;
+}#tab-content-tracker > div:first-child input::placeholder {
+color: #94a3b8;
+  -webkit-text-fill-color: #94a3b8;
+  opacity: 1;
+}#tab-content-tracker > div:first-child select option {
+color: #071b42;
+  background: #fff;
+  white-space: normal;
+}#tab-content-tracker > div:first-child button[type="submit"] {
+color: #f7f5f0;
+  background: #071b42;
+}#tab-content-tracker > div:first-child button[type="submit"]:hover {
+color: #fff;
+  background: #12366f;
+}#tab-content-tracker > div:nth-child(2) {
+grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  margin-top: 0;
+  margin-bottom: 0;
+
+  background: #0d2a55;
+  color: #f7f5f0;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 1.25rem 1.25rem 1.25rem 0;
+  box-shadow: 0 14px 30px rgba(7,27,66,.08);
+}#tab-content-tracker > div:nth-child(2) h2,
+#tab-content-tracker > div:nth-child(2) .text-white {
+color: #f7f5f0;
+}#tab-content-tracker > div:nth-child(2) .text-slate-400,
+#tab-content-tracker > div:nth-child(2) .text-slate-500 {
+color: #aeb8c8;
+}#target-list {
+min-height: 45rem;
+}#target-list > div[data-target-container] {
+border-top-color: rgba(100,116,139,.12);
+  border-bottom-color: rgba(100,116,139,.12);
+}
+
+@keyframes dashboardSpin {to {
+transform: rotate(360deg);
+} }
+
+@keyframes dashboardDots {0%,20% {
+content:"";
+}40% {
+content:".";
+}60% {
+content:"..";
+}80%,100% {
+content:"...";
+}
+}#target-list > p.loading-state {
+display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  color: #aeb8c8;
+}#target-list > p.loading-state::before {
+content: "";
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(209,165,93,.28);
+  border-top-color: #d1a55d;
+  border-radius: 50%;
+  animation: dashboardSpin .8s linear infinite;
+}#target-list > p.loading-state::after {
+content: "";
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: dashboardDots 1.2s steps(1,end) infinite;
+}#tab-content-news > div {
+background: #f7f5f0;
+  border-color: #d9d4ca;
+}#app-shell > .dashboard-copyright {
+position: relative;
+  margin: 0 -1.5rem;
+  background: #04132f;
+  z-index: 2;
+  border-radius: 0 0 1.75rem 1.75rem;
+  padding-bottom: 1rem;
+}/* ===== 마우스·터치 공통 드래그 표시 =====
+   마우스는 행 전체, 터치는 점 6개에서 시작하며 같은 미리보기를 사용합니다.
+*/
+.touch-drag-handle {
+  touch-action: none;
+  user-select: none;
+}
+
+body.is-pointer-dragging {
+  user-select: none;
+}
+
+.drag-preview {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  opacity: .5;
+  background: #0d2a55;
+  border: 1px solid rgba(209,165,93,.75);
+  border-radius: .55rem;
+  box-shadow: 0 12px 24px rgba(0,0,0,.35);
+}
+
+#target-list [data-target-row],
+#target-list [data-target-row] * {
+  cursor: pointer !important;
+}
+
+/* ===== Drag & Drop 사용 안내 =====
+   리스트 제목 오른쪽에 보이는 "Drag & Drop 순서 변경 ?" 안내입니다.
+   데스크톱에서는 마우스를 올리면 열리고,
+   클릭/터치 환경에서는 JS가 .is-open 클래스를 붙여 열어 줍니다.
+*/
+.track-help {
+position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: .36rem;
+  padding: .34rem .58rem;
+  border: 1px solid rgba(209,165,93,.28);
+  border-radius: 999px;
+  background: rgba(255,255,255,.045);
+  color: #aeb8c8;
+  font-size: .68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}.track-help-icon {
+color: #d1a55d;
+  font-size: .62rem;
+}/* 평소에는 숨겨 두었다가 hover / focus / click 때 아래로 펼칩니다. */
+.track-help-tooltip {
+position: absolute;
+  right: 0;
+  top: calc(100% + 9px);
+  z-index: 30;
+  width: 270px;
+  padding: .85rem .95rem;
+  border: 1px solid rgba(209,165,93,.26);
+  border-radius: .8rem;
+  background: #071b42;
+  color: #d8dee8;
+  box-shadow: 0 12px 28px rgba(0,0,0,.26);
+  font-size: .69rem;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: normal;
+
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+  pointer-events: none;
+}/* 안내창 위쪽의 작은 화살표 꼬리입니다. */
+.track-help-tooltip::before {
+content: "";
+  position: absolute;
+  top: -5px;
+  right: 12px;
+  width: 9px;
+  height: 9px;
+  background: #071b42;
+  border-left: 1px solid rgba(209,165,93,.26);
+  border-top: 1px solid rgba(209,165,93,.26);
+  transform: rotate(45deg);
+}.track-help-tooltip p + p {
+margin-top: .7rem;
+}.track-help-tooltip strong {
+color: #f2d49c;
+  font-weight: 700;
+}/* 데스크톱 hover, 키보드 focus, 모바일 click 모두 같은 방식으로 안내창을 표시합니다. */
+@media (hover: hover) and (pointer: fine) {
+  .track-help:hover .track-help-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
+.track-help.is-open .track-help-tooltip {
+opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}/* ===== Track 탭 =====
+   Tab01~10 및 + Tab 탭의 크기와 위치를 담당합니다.
+   비활성 탭은 살짝 작고 뒤에 있는 것처럼 보이며, 활성 탭은 흰색과 그림자로 앞으로 보이게 합니다.
+   지표를 드래그하는 동안에는 다른 Track으로 옮길 수 있다는 안내도 여기서 표시합니다.
+*/
+#tab-content-tracker > .sheet-tabs {
+grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 1.25rem 0 0;
+  background: transparent;
+  border: 0;
+  overflow: visible;
+}#tab-content-tracker > .sheet-tabs .sheet-tab {
+position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  width: var(--sheet-tab-width, 96px);
+  min-width: var(--sheet-tab-width, 96px);
+  padding: 0;
+  margin-left: -10px;
+  background: #ece8df;
+  color: #64748b;
+  border: 1px solid #d0cbc1;
+  border-top: 0;
+  border-radius: 0 0 .55rem .55rem;
+  font: 700 .64rem/1 Pretendard,sans-serif;
+  transform: scale(.94);
+  transform-origin: top center;
+  cursor: pointer;
+  transition: transform .15s ease, background .15s ease, color .15s ease;
+}#tab-content-tracker > .sheet-tabs .sheet-tab:first-child {
+margin-left: 0;
+}
+
+.tab-label-short {
+  display: none;
+}
+
+#tab-content-tracker > .sheet-tabs.is-compact-label .tab-label-full {
+  display: none;
+}
+
+#tab-content-tracker > .sheet-tabs.is-compact-label .tab-label-short {
+  display: inline;
+}#tab-content-tracker > .sheet-tabs .sheet-tab.is-active {
+z-index: 3;
+  background: #fff;
+  color: #071b42;
+  transform: scale(1);
+  box-shadow: 0 4px 10px rgba(0,0,0,.30);
+}#tab-content-tracker > .sheet-tabs .sheet-tab-add {
+z-index: 1;
+  background: #ece8df;
+  color: #64748b;
+}#tab-content-tracker > .sheet-tabs.is-dragging .sheet-tab:not(.sheet-tab-add) {
+border-color: rgba(209,165,93,.75);
+}
+
+/* 드래그 중 실제로 놓을 수 있는 탭만 벨 아이콘과 같은 금색으로 강조합니다. */
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-drag-over {
+  border-color: #d1a55d !important;
+  background: #d1a55d !important;
+  color: #071b42 !important;
+  box-shadow: 0 4px 10px rgba(209,165,93,.38);
+}
+
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-allowed::before,
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-forbidden::before {
+  display: block !important;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%);
+  padding: .22rem .42rem;
+  border-radius: .35rem;
+  font-size: .56rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 5px 12px rgba(0,0,0,.22);
+  pointer-events: none;
+}
+
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-allowed::before {
+  content: "↓" !important;
+  background: #071b42;
+  color: #f2d49c;
+}
+
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-forbidden::before {
+  content: "" !important;
+  top: 50%;
+  bottom: auto;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid #ef4444;
+  border-radius: 50%;
+  background:
+    linear-gradient(
+      135deg,
+      transparent 43%,
+      #ef4444 44%,
+      #ef4444 56%,
+      transparent 57%
+    ),
+    #fff;
+}
+/* 큰 화면 헤더를 메인 콘텐츠와 같은 중앙 그리드에 맞춥니다. */
+@media (min-width:1024px) {
+  /* 큰 화면에서는 두 헤더 콘텐츠 사이 간격만 화면 폭에 맞춰 넓힙니다. */
+  #auth-screen > div > header {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: clamp(24rem,40vw,64rem);
+    justify-content: center;
+  }
+}
+
+/* ===== 반응형 화면 =====
+   데스크톱 기본 디자인은 위쪽 규칙을 사용합니다.
+   아래에서는 화면 폭이 작아질 때 꼭 필요한 배치와 크기만 바꿉니다.
+   반응형으로 작아지게 만들어서 소형 스마트폰인 320px 까지는 온전하게 표현 됨.
+  1023 - 1024까지 랩탑 등 컴퓨터 화면 용.
+  767 - 768이 아이패드 기준값. 767부터 타블릿으로 처리.
+  스마트폰의 경우 적응형으로 작아지게 코딩했으므로 별도의 처리 불필요함.
+*/
+
+@media (max-width:1023px) {
+  /* 세로형에서는 로고·메인 콘텐츠·로그인 폼을 같은 중앙 폭에 맞춥니다. */
+  #auth-screen > div > header {
+    width: auto;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  #auth-screen > div > header > div:first-child {
+    width: min(calc(100% - 3rem), 430px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+  #auth-screen .grid.flex-1 {
+    width: min(calc(100% - 3rem), 430px);
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .auth-canvas { min-height: calc(100vh - 1.5rem) !important; }
+  /* 세로형에서도 전체 높이를 유지하고 푸터를 최하단으로 밀어냅니다. */
+  .auth-canvas > div {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 1.5rem);
+  }
+  .auth-canvas > div > footer {
+    margin-top: auto;
+  }
+  .auth-canvas > div > section:last-child {
+    padding: 2.5rem 1.5rem 4rem;
+  }
+  .auth-canvas > div > section:last-child::before { display: none; }
+  #auth-screen .header-product-label { display: none; }
+
+
+  #auth-screen .grid > section:first-child h1 {
+    font-size: clamp(2.2rem,8vw,3.8rem);
+    line-height: 1.22;
+  }
+  #auth-screen .main-title-word {
+    display: inline;
+  }
+  #auth-screen .main-title-word + .main-title-word {
+    margin-left: .22em;
+  }
+}
+
+@media (max-width:1023px) {
+  #tab-content-tracker { grid-template-columns: 1fr; }
+
+  #tab-content-tracker > div:first-child,
+  #tab-content-tracker > div:nth-child(2) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  #tab-content-tracker > div:first-child {
+    order: 2;
+    margin-top: 1.25rem;
+  }
+
+  #tab-content-tracker > div:nth-child(2) { border-radius: 1rem 1rem 1rem 0; }
+
+  #tab-content-tracker > .sheet-tabs {
+    grid-column: 1;
+    grid-row: auto;
+    border-radius: 0 0 1rem 1rem;
+    overflow: visible;
+  }
+
+
+}
+
+@media (max-width:767px) {
+  /* 767px 이하에서만 로고 블럭 크기를 화면 폭에 맞춰 줄입니다. */
+  #auth-screen > div > header > div:first-child {
+    transform: scale(clamp(.7, calc(100vw / 767px), 1));
+    transform-origin: left center;
+  }
+
+  .mobile-space { display: inline; }
+
+  #auth-screen > div > footer { font-size: 9px; }
+  
+  #auth-screen .grid > section:first-child > p:not(.mb-6) {
+    font-size: .9rem;
+    padding-left: .95rem;
+    line-height: 1.9;
+  }
+
+  #auth-screen .grid > section:first-child > p:not(.mb-6)::before {
+    top: 0;
+    bottom: 0;
+    height: auto;
+  }
+
+  /* 767px 이하에서 헤더의 양쪽 블록을 함께 축소합니다. */
+  .dashboard-actions {
+    transform: scale(clamp(.7, calc(100vw / 767px), 1));
+    transform-origin: right center;
+  }
+
+  .dashboard-brand {
+    transform: scale(clamp(.7, calc(100vw / 767px), 1));
+    transform-origin: left center;
+  }
+}
+
+
+
+/* 갤럭시 Z Fold6 펼침 세로 화면 기준(약 670px)부터 내부 좌우 패딩을 줄입니다. */
+@media (max-width:670px) {
+  #app-shell {
+    --dashboard-inner-pad: clamp(0px, calc(9.8vw - 41.6px), 1.5rem);
+  }
+  body {
+    padding: clamp(0px, calc(9.8vw - 41.6px), 1.5rem);
+  }
+}
+
+/* 425px 이하에서는 화면 가장자리에 맞춰 최외곽 라운드만 제거합니다. */
+@media (max-width:425px) {
+  #auth-screen,
+  .auth-canvas,
+  #app-shell,
+  #app-shell > .dashboard-header,
+  #app-shell > .bg-slate-900:first-child {
+    border-radius: 0 !important;
+  }
+}
+
