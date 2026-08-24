@@ -86,6 +86,10 @@ def parse_business_filings(workbook_bytes: bytes) -> dict[str, int]:
     workbook = openpyxl.load_workbook(io.BytesIO(workbook_bytes), read_only=True, data_only=True)
     filings: dict[str, int] = {}
     for sheet in workbook.worksheets:
+        # F-2 also contains chapter-detail sheets named "(9, 12, 15)".
+        # The monthly total is only present in the base F-2 sheet.
+        if "(" in sheet.title:
+            continue
         title = str(sheet.cell(2, 1).value or "")
         match = MONTH_PATTERN.search(title)
         if not match:
