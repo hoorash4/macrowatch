@@ -47,6 +47,12 @@ function getLatestSentimentLabel(item) {
   return { label: `${label} ${Math.round((count / total) * 100)}%`, className };
 }
 
+function renderSentimentSegment(percent, colorClass) {
+  if (!percent) return '';
+  const label = percent >= 16 ? `<span class="text-[9px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
+  return `<span class="flex items-center justify-center ${colorClass}" style="height:${percent}%">${label}</span>`;
+}
+
 function renderNewsSentiment(rows) {
   const chart = document.getElementById('news-sentiment-chart');
   const description = document.getElementById('news-sentiment-description');
@@ -75,7 +81,7 @@ function renderNewsSentiment(rows) {
     const neutral = articleTotal ? (Number(item.neutral_count || 0) / articleTotal) * 100 : 0;
     const negative = articleTotal ? (Number(item.negative_count || 0) / articleTotal) * 100 : 0;
     const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 중립 ${item.neutral_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
-    return `<div class="group flex min-w-9 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-28 w-full max-w-10 flex-col-reverse overflow-hidden rounded-md bg-slate-800/80 ring-1 ring-inset ring-white/5"><span class="bg-emerald-400/90 transition group-hover:bg-emerald-300" style="height:${positive}%"></span><span class="bg-slate-400/90 transition group-hover:bg-slate-300" style="height:${neutral}%"></span><span class="bg-rose-400/90 transition group-hover:bg-rose-300" style="height:${negative}%"></span></div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
+    return `<div class="group flex min-w-11 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-12 flex-col-reverse overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${renderSentimentSegment(positive, 'bg-emerald-400/90 transition group-hover:bg-emerald-300')}${renderSentimentSegment(neutral, 'bg-slate-400/90 transition group-hover:bg-slate-300')}${renderSentimentSegment(negative, 'bg-rose-400/90 transition group-hover:bg-rose-300')}</div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
   }).join('');
   chart.innerHTML = `${legend}<div class="flex min-w-0 items-end gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/30 px-4 py-4 sm:gap-3">${bars}</div>`;
 }
