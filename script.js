@@ -122,7 +122,7 @@ function renderNewsSentiment(rows) {
       : '',
   ].join('');
   const graphClass = view.layout === 'horizontal'
-    ? 'flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4'
+    ? 'flex min-h-56 min-w-0 flex-col justify-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6'
     : `flex min-w-0 items-end justify-between ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
   chart.innerHTML = `${legend}<div${graphId} class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
