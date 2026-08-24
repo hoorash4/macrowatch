@@ -5,8 +5,8 @@ import type { ArticleSentiment, Candidate, SourceName } from "../_shared/news-ty
 
 const DEFAULT_LOOKBACK_HOURS = 24;
 const MAX_LOOKBACK_HOURS = 15 * 24;
-const DEFAULT_BATCH_SIZE = 25;
-const MAX_BATCH_SIZE = 25;
+const DEFAULT_BATCH_SIZE = 10;
+const MAX_BATCH_SIZE = 10;
 const MAX_CANDIDATE_TEXT_CHARS = 1_000;
 const SOURCE_FETCH_TIMEOUT_MS = 30_000;
 const RSS_FEEDS: Record<SourceName, string[]> = {

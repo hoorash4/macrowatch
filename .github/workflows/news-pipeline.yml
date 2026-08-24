@@ -25,7 +25,7 @@ jobs:
   analyze-news:
     if: github.event_name != 'push' || contains(github.event.head_commit.message, '[run-news]')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - name: Run news pipeline
         env:
@@ -40,7 +40,7 @@ jobs:
               --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
               --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
               --header "Content-Type: application/json" \
-              --data "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":25,\"dry_run\":$DRY_RUN}")
+              --data "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":10,\"dry_run\":$DRY_RUN}")
             echo "$response"
             [ "$(jq -r '.has_more' <<< "$response")" = "true" ] || break
             offset=$(jq -r '.next_offset' <<< "$response")
