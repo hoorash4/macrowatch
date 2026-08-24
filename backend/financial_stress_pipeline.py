@@ -38,8 +38,6 @@ LEAD_COMPONENT_WEIGHTS = {
     "financial_conditions": 1 / 3,
     "short_term_funding_spread": 1 / 3,
 }
-LEAD_LEVEL_WEIGHT = 0.50
-LEAD_CHANGE_WEIGHT = 0.50
 SHORT_TERM_FUNDING_FLOOR = 0.10
 SHORT_TERM_FUNDING_REFERENCE = 0.60
 SHORT_TERM_FUNDING_CHANGE_REFERENCE = 0.30
@@ -253,48 +251,61 @@ def positive_score(value: float, reference: float) -> float:
     return max(0.0, value / reference * 100.0)
 
 
-def blend_level_and_change(level: float, change: float) -> float:
-    return level * LEAD_LEVEL_WEIGHT + change * LEAD_CHANGE_WEIGHT
+def signed_score(value: float, reference: float) -> float:
+    return value / reference * 100.0
 
 
 def build_market_stress_lead(
     rows: list[dict[str, object]],
     short_term_funding_spread: dict[str, float],
-) -> dict[str, float]:
-    """Use market-priced deterioration, not lagging default data, for the lead signal."""
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Return independent level and month-over-month market-stress signals."""
     ordered_rows = sorted(rows, key=lambda row: str(row["month"]))
     lead_scores: dict[str, float] = {}
+    momentum_scores: dict[str, float] = {}
     for index, row in enumerate(ordered_rows):
-        if index < 3:
-            continue
-        previous = ordered_rows[index - 3]
         month = str(row["month"])
         try:
-            high_yield_change = float(row["high_yield_oas_pct"]) - float(previous["high_yield_oas_pct"])
-            conditions_change = float(row["financial_conditions_credit_index"]) - float(previous["financial_conditions_credit_index"])
             funding_spread = float(short_term_funding_spread[month])
-            previous_funding_spread = float(short_term_funding_spread[str(previous["month"])])
+            component_scores = {
+                "high_yield": fixed_stress_score(float(row["high_yield_oas_pct"]), "high_yield_oas_pct"),
+                "financial_conditions": fixed_stress_score(float(row["financial_conditions_credit_index"]), "financial_conditions_credit_index"),
+                "short_term_funding_spread": positive_score(
+                    funding_spread - SHORT_TERM_FUNDING_FLOOR,
+                    SHORT_TERM_FUNDING_REFERENCE,
+                ),
+            }
         except (KeyError, TypeError, ValueError):
             continue
-        component_scores = {
-            "high_yield": blend_level_and_change(
-                fixed_stress_score(float(row["high_yield_oas_pct"]), "high_yield_oas_pct"),
-                positive_score(high_yield_change, 1.0),
-            ),
-            "financial_conditions": blend_level_and_change(
-                fixed_stress_score(float(row["financial_conditions_credit_index"]), "financial_conditions_credit_index"),
-                positive_score(conditions_change, 0.5),
-            ),
-            "short_term_funding_spread": blend_level_and_change(
-                positive_score(funding_spread - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE),
-                positive_score(funding_spread - previous_funding_spread, SHORT_TERM_FUNDING_CHANGE_REFERENCE),
-            ),
-        }
         lead_scores[month] = round(
             sum(component_scores[key] * weight for key, weight in LEAD_COMPONENT_WEIGHTS.items()),
             2,
         )
-    return lead_scores
+        if index == 0:
+            continue
+        previous = ordered_rows[index - 1]
+        try:
+            momentum_components = {
+                "high_yield": signed_score(
+                    float(row["high_yield_oas_pct"]) - float(previous["high_yield_oas_pct"]),
+                    1.0,
+                ),
+                "financial_conditions": signed_score(
+                    float(row["financial_conditions_credit_index"]) - float(previous["financial_conditions_credit_index"]),
+                    0.5,
+                ),
+                "short_term_funding_spread": signed_score(
+                    funding_spread - float(short_term_funding_spread[str(previous["month"])]),
+                    SHORT_TERM_FUNDING_CHANGE_REFERENCE,
+                ),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+        momentum_scores[month] = round(
+            sum(momentum_components[key] * weight for key, weight in LEAD_COMPONENT_WEIGHTS.items()),
+            2,
+        )
+    return lead_scores, momentum_scores
 
 
 def build_market_stress_index(
@@ -306,7 +317,7 @@ def build_market_stress_index(
     index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
     filings, confirmed_filings = smoothed_filings(recent_rows)
-    lead_scores = build_market_stress_lead(recent_rows, short_term_funding_spread)
+    lead_scores, momentum_scores = build_market_stress_lead(recent_rows, short_term_funding_spread)
     component_values: dict[str, dict[str, float]] = {
         "business_bankruptcy_filings": filings,
     }
@@ -336,6 +347,7 @@ def build_market_stress_index(
                 "is_provisional": month not in confirmed_filings,
                 "sp500_month_end_close": sp500_month_end.get(month),
                 "lead_index": lead_scores.get(month),
+                "lead_momentum": momentum_scores.get(month),
             }
         )
     return index_rows
