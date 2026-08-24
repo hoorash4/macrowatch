@@ -277,7 +277,7 @@ body:has(#app-shell:not(.hidden)) {
 .dashboard-nav-item:hover,.dashboard-nav-item.is-active { background:transparent; color:#8a8a8a; }.dashboard-nav-item.is-active::after { transform:scaleX(1); }.dashboard-nav:has(.dashboard-nav-item:hover:not(.is-active)) .dashboard-nav-item.is-active::after { transform:scaleX(0); }.dashboard-nav-item:hover:not(.is-active)::after { transform:scaleX(1); }.dashboard-nav-item.is-active::before { display:none; }.dashboard-nav-item i { display:none; }
 .dashboard-nav-actions { display:flex; gap:.15rem; margin:0 0 0 auto; }.dashboard-nav-actions button,.dashboard-nav-actions a { display:grid; width:2rem; height:2rem; place-items:center; border-radius:50%; color:#777; font-size:.75rem; }.dashboard-nav-actions button:hover,.dashboard-nav-actions a:hover { background:#161616; color:#fff; }
 #db-status { display:none !important; }
-.dashboard-main { width:min(100%, 72rem); min-width:0; margin:0 auto; }.dashboard-panel-hidden { display:none !important; }
+.dashboard-main { width:min(100%, 64rem); min-width:0; margin:0 auto; }.dashboard-panel-hidden { display:none !important; }
 
 .market-overview { margin-bottom:2rem; }
 .market-overview-grid { display:grid; grid-template-columns:minmax(0, 1fr); padding-top:1.5rem; }
