@@ -254,11 +254,12 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
   const monthly = [...monthlyRows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
   const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.lead_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  const leverage = weekly.filter((row) => Number.isFinite(Number(row.leverage_signal)));
   if (!chart || !monthly.length || !weekly.length) return;
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const dates = [...monthly.map((row) => row.month), ...weekly.map((row) => row.week)].map((value) => new Date(value).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const left = [...monthly.map((row) => Number(row.stress_index)), ...weekly.map((row) => Number(row.lead_index))], leftMin = Math.min(...left), leftMax = Math.max(...left), leftRange = Math.max(leftMax - leftMin, 1), leftLower = leftMin - leftRange * .1, leftUpper = leftMax + leftRange * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (leftUpper - value)) / (leftUpper - leftLower);
+  const left = [...monthly.map((row) => Number(row.stress_index)), ...weekly.map((row) => Number(row.lead_index)), ...leverage.map((row) => Number(row.leverage_signal))], leftMin = Math.min(...left), leftMax = Math.max(...left), leftRange = Math.max(leftMax - leftMin, 1), leftLower = leftMin - leftRange * .1, leftUpper = leftMax + leftRange * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (leftUpper - value)) / (leftUpper - leftLower);
   const path = (rows, key, yFn, dateKey) => rows.filter((row) => Number.isFinite(Number(row[key]))).map((row, index) => `${index ? 'L' : 'M'}${x(row[dateKey]).toFixed(1)},${yFn(Number(row[key])).toFixed(1)}`).join('');
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
@@ -275,7 +276,10 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
     return `<line x1="${x(previous.month)}" y1="${y(Number(previous.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="#b7791f" stroke-width="2.75" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
   }).join('');
   const monthlyDots = monthly.map((row) => `<circle cx="${x(row.month)}" cy="${y(Number(row.stress_index))}" r="3.25" fill="#b7791f" tabindex="0"><title>${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${row.is_provisional ? ' (잠정치)' : ''}</title></circle>`).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI 및 MSI Lead 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}<path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#6d4b91" stroke-width="2.5"/>${monthlyDots}${years}</svg>`;
+  const leveragePath = leverage.length > 1
+    ? `<path d="${path(leverage, 'leverage_signal', y, 'week')}" fill="none" stroke="#0f766e" stroke-width="2.25" stroke-dasharray="5 4"><title>NFCI 레버리지 신호</title></path>`
+    : '';
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI, MSI Lead 및 NFCI 레버리지 신호 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}<path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#6d4b91" stroke-width="2.5"/>${leveragePath}${monthlyDots}${years}</svg>`;
 }
 
 function renderCreditStressMomentum(rows, monthlyRows = []) {
@@ -320,7 +324,7 @@ function renderCreditStressMomentum(rows, monthlyRows = []) {
 async function loadWeeklyStressLead(monthlyRows = []) {
   if (!supabaseClient) return;
   const [weeklyResponse, monthlyResponse] = await Promise.all([
-    supabaseClient.from('us_market_stress_lead_weekly').select('week,lead_index,lead_momentum').order('week', { ascending: false }).limit(160),
+    supabaseClient.from('us_market_stress_lead_weekly').select('week,lead_index,lead_momentum,leverage_signal').order('week', { ascending: false }).limit(160),
     supabaseClient.from('us_market_stress_index_monthly').select('month,stress_index').order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
   ]);
   if (weeklyResponse.error || monthlyResponse.error) return;

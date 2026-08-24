@@ -22,6 +22,7 @@ COURTS_URLS = (
 )
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
+NONFINANCIAL_LEVERAGE_SERIES = "NFCINONFINLEVERAGE"
 SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
@@ -47,6 +48,7 @@ SHORT_TERM_FUNDING_CHANGE_REFERENCE = 0.30
 FIXED_COMPONENT_SCALES = {
     "high_yield_oas_pct": (2.0, 20.0),
     "financial_conditions_credit_index": (-0.5, 2.0),
+    "nonfinancial_leverage_index": (-1.5, 2.0),
     "business_bankruptcy_filings": (1000.0, 5000.0),
 }
 
@@ -179,13 +181,27 @@ def carry_forward_monthly(values: dict[str, float], months: list[str]) -> dict[s
     return carried
 
 
-def build_weekly_lead(high_yield: dict[str, float], conditions: dict[str, float], funding: dict[str, float]) -> list[dict[str, object]]:
-    weeks = sorted(set(high_yield) | set(conditions) | set(funding))
-    high_yield, conditions, funding = (carry_forward_monthly(values, weeks) for values in (high_yield, conditions, funding))
+def build_weekly_lead(
+    high_yield: dict[str, float],
+    conditions: dict[str, float],
+    funding: dict[str, float],
+    leverage: dict[str, float],
+) -> list[dict[str, object]]:
+    weeks = sorted(set(high_yield) | set(conditions) | set(funding) | set(leverage))
+    high_yield, conditions, funding, leverage = (
+        carry_forward_monthly(values, weeks)
+        for values in (high_yield, conditions, funding, leverage)
+    )
     rows, previous = [], None
     for week in weeks:
-        hy, condition, spread = high_yield.get(week), conditions.get(week), funding.get(week)
-        if not all(isinstance(value, (int, float)) for value in (hy, condition, spread)): continue
+        hy, condition, spread, leverage_value = (
+            high_yield.get(week),
+            conditions.get(week),
+            funding.get(week),
+            leverage.get(week),
+        )
+        if not all(isinstance(value, (int, float)) for value in (hy, condition, spread, leverage_value)):
+            continue
         level = (
             fixed_stress_score(float(hy), "high_yield_oas_pct") * LEAD_COMPONENT_WEIGHTS["high_yield"]
             + fixed_stress_score(float(condition), "financial_conditions_credit_index") * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
@@ -196,7 +212,12 @@ def build_weekly_lead(high_yield: dict[str, float], conditions: dict[str, float]
             + signed_score(float(condition) - previous[1], 0.5) * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
             + signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
         )
-        rows.append({"week": week, "lead_index": round(level, 2), "lead_momentum": None if momentum is None else round(momentum, 2)})
+        rows.append({
+            "week": week,
+            "lead_index": round(level, 2),
+            "lead_momentum": None if momentum is None else round(momentum, 2),
+            "leverage_signal": round(fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index"), 2),
+        })
         previous = (float(hy), float(condition), float(spread))
     return rows
 
@@ -485,11 +506,17 @@ def main() -> None:
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
     weekly_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
+    weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, start, today)
     weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, start, today)
     weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, today)
     completed_week = (today - timedelta(days=((today.weekday() - 4) % 7 or 7))).isoformat()
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys() if week <= completed_week}
-    weekly_rows = build_weekly_lead({week: value for week, value in weekly_high_yield.items() if week <= completed_week}, {week: value for week, value in weekly_conditions.items() if week <= completed_week}, weekly_funding)
+    weekly_rows = build_weekly_lead(
+        {week: value for week, value in weekly_high_yield.items() if week <= completed_week},
+        {week: value for week, value in weekly_conditions.items() if week <= completed_week},
+        weekly_funding,
+        {week: value for week, value in weekly_leverage.items() if week <= completed_week},
+    )
     upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
     latest_start = today - timedelta(days=60)
     latest_high_yield = fetch_fred_latest(HIGH_YIELD_SERIES, fred_api_key, latest_start, today)
