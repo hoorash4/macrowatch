@@ -36,15 +36,14 @@ function getEffectiveArticleTotal(item) {
 }
 
 function getLatestSentimentLabel(item) {
-  const total = getEffectiveArticleTotal(item);
-  if (!total) return { label: '집계 대기', className: 'text-slate-300' };
+  const directionalTotal = Number(item.positive_count || 0) + Number(item.negative_count || 0);
+  if (!directionalTotal) return { label: '방향 신호 없음', className: 'text-slate-300' };
   const entries = [
     ['positive', Number(item.positive_count || 0), '긍정', 'text-emerald-300'],
     ['negative', Number(item.negative_count || 0), '부정', 'text-rose-300'],
-    ['neutral', Number(item.neutral_count || 0), '중립', 'text-slate-300'],
   ].sort((a, b) => b[1] - a[1]);
   const [, count, label, className] = entries[0];
-  return { label: `${label} ${Math.round((count / total) * 100)}%`, className };
+  return { label: `${label} ${Math.round((count / directionalTotal) * 100)}%`, className };
 }
 
 function renderSentimentSegment(percent, colorClass) {
@@ -69,19 +68,23 @@ function renderNewsSentiment(rows) {
 
   const latestRow = data[data.length - 1];
   const latestSignal = getLatestSentimentLabel(latestRow);
-  const total = getEffectiveArticleTotal(latestRow);
+  const directionalTotal = Number(latestRow.positive_count || 0) + Number(latestRow.negative_count || 0);
+  const neutral = Number(latestRow.neutral_count || 0);
   const uncertain = Number(latestRow.uncertain_count || 0);
-  description.textContent = `${formatNewsDate(latestRow.article_date)} 기준 ${total}건 분석${uncertain ? ` · 판단 보류 ${uncertain}건` : ''}`;
+  description.textContent = `${formatNewsDate(latestRow.article_date)} 기준 방향 신호 ${directionalTotal}건 · 중립 ${neutral}건${uncertain ? ` · 판단 보류 ${uncertain}건` : ''}`;
   latest.innerHTML = `<p class="text-[10px] font-semibold tracking-[.12em] text-slate-500">LATEST</p><p class="mt-1 text-sm font-bold ${latestSignal.className}">${latestSignal.label}</p>`;
 
-  const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-emerald-400"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-slate-400"></i>중립</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-rose-400"></i>부정</span></div>';
+  const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-emerald-400"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-rose-400"></i>부정</span><span class="text-slate-500">중립은 별도 표시</span></div>';
   const bars = data.map((item) => {
-    const articleTotal = getEffectiveArticleTotal(item);
-    const positive = articleTotal ? (Number(item.positive_count || 0) / articleTotal) * 100 : 0;
-    const neutral = articleTotal ? (Number(item.neutral_count || 0) / articleTotal) * 100 : 0;
-    const negative = articleTotal ? (Number(item.negative_count || 0) / articleTotal) * 100 : 0;
+    const directionalCount = Number(item.positive_count || 0) + Number(item.negative_count || 0);
+    const positive = directionalCount ? (Number(item.positive_count || 0) / directionalCount) * 100 : 0;
+    const negative = directionalCount ? (Number(item.negative_count || 0) / directionalCount) * 100 : 0;
+    const neutralCount = Number(item.neutral_count || 0);
     const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 중립 ${item.neutral_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
-    return `<div class="group flex min-w-11 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-12 flex-col-reverse overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${renderSentimentSegment(positive, 'bg-emerald-400/90 transition group-hover:bg-emerald-300')}${renderSentimentSegment(neutral, 'bg-slate-400/90 transition group-hover:bg-slate-300')}${renderSentimentSegment(negative, 'bg-rose-400/90 transition group-hover:bg-rose-300')}</div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
+    const bar = directionalCount
+      ? `${renderSentimentSegment(positive, 'bg-emerald-400/90 transition group-hover:bg-emerald-300')}${renderSentimentSegment(negative, 'bg-rose-400/90 transition group-hover:bg-rose-300')}`
+      : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
+    return `<div class="group flex min-w-11 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-12 flex-col-reverse overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${bar}</div><span class="whitespace-nowrap text-[10px] text-slate-500">중립 ${neutralCount}</span><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
   }).join('');
   chart.innerHTML = `${legend}<div class="flex min-w-0 items-end gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/30 px-4 py-4 sm:gap-3">${bars}</div>`;
 }
