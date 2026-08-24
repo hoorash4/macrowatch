@@ -31,19 +31,24 @@ async function requestAnalysis(model: string, candidates: Candidate[], marketCon
 
 export async function analyzeCandidates(candidates: Candidate[], marketContext: MarketContext | null) {
   if (!candidates.length) return [];
-  const outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext);
+  let outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext);
   const expected = new Set(candidates.map((candidate) => candidate.itemHash));
   const received = outputs.map((item) => item.itemHash);
   const uniqueReceived = new Set(received);
   if (received.length !== uniqueReceived.size || [...uniqueReceived].some((hash) => !expected.has(hash))) {
-    throw new Error("AI 분석 결과의 뉴스 식별자가 올바르지 않습니다.");
+    outputs = await Promise.all(candidates.map(async (candidate) => {
+      const single = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext);
+      if (single.length !== 1) throw new Error("기사별 재분석 결과가 하나가 아닙니다.");
+      return { ...single[0], itemHash: candidate.itemHash };
+    }));
   }
-  const missing = candidates.filter((candidate) => !uniqueReceived.has(candidate.itemHash));
+  const resolvedHashes = new Set(outputs.map((item) => item.itemHash));
+  const missing = candidates.filter((candidate) => !resolvedHashes.has(candidate.itemHash));
   if (missing.length) {
     const recovered = await Promise.all(missing.map(async (candidate) => {
       const single = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext);
-      if (single.length !== 1 || single[0].itemHash !== candidate.itemHash) throw new Error("누락 뉴스 재분석 결과의 식별자가 올바르지 않습니다.");
-      return single[0];
+      if (single.length !== 1) throw new Error("누락 뉴스 재분석 결과가 하나가 아닙니다.");
+      return { ...single[0], itemHash: candidate.itemHash };
     }));
     outputs.push(...recovered);
   }

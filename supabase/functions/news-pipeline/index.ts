@@ -16,6 +16,7 @@ const RSS_FEEDS: Record<SourceName, string[]> = {
 };
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
+function errorText(error: unknown) { return error instanceof Error ? error.message : typeof error === "object" && error !== null ? JSON.stringify(error) : String(error); }
 function normalizeText(value: string) { return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); }
 function parseDate(value: string | null) { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null; }
 async function hashText(value: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value.toLowerCase().replace(/\W+/g, " ").trim())); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
@@ -61,10 +62,14 @@ async function resetExcludedCount(supabase: ReturnType<typeof createClient>, art
 async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidate[], articleDate: string, resetExcluded = false) {
   const candidatesByHash = new Map(candidates.map((candidate) => [candidate.itemHash, candidate])), includedOutputs = outputs.filter((output) => !output.excludeFromIndex);
   const dates = new Set<string>([articleDate]), now = new Date().toISOString();
-  const rows = includedOutputs.map((output) => { const candidate = candidatesByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, article_date: articleDate, ai_sentiment: output.sentiment, derived_keywords: output.keywords, uncertain_summary: output.uncertainSummary, updated_at: now }; });
   const supabase = serverClient();
   if (resetExcluded) await resetExcludedCount(supabase, articleDate);
-  if (rows.length) { const { data, error } = await supabase.from("news_article_sentiments").select("article_date").in("article_hash", rows.map((row) => row.article_hash)); if (error) throw error; for (const existing of data || []) if (existing.article_date) dates.add(existing.article_date); }
+  const hashes = includedOutputs.map((output) => output.itemHash);
+  const { data: existingRows, error: existingError } = hashes.length ? await supabase.from("news_article_sentiments").select("article_hash,article_date,ai_sentiment,admin_sentiment,derived_keywords,uncertain_summary").in("article_hash", hashes) : { data: [], error: null };
+  if (existingError) throw existingError;
+  const existingByHash = new Map((existingRows || []).map((row) => [row.article_hash, row]));
+  for (const existing of existingRows || []) if (existing.article_date) dates.add(existing.article_date);
+  const rows = includedOutputs.map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
   if (rows.length) { const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" }); if (error) throw error; }
   const excludedCount = outputs.filter((item) => item.excludeFromIndex).length;
   for (const date of dates) await refreshDailySentiment(supabase, date, date === articleDate ? excludedCount : 0);
@@ -99,5 +104,5 @@ Deno.serve(async (request) => {
     }
     const sentiments = outputs.reduce<Record<string, number>>((counts, output) => ({ ...counts, [output.sentiment]: (counts[output.sentiment] || 0) + 1 }), { positive: 0, negative: 0, neutral: 0, uncertain: 0 });
     return json({ collected: candidates.length, processed: batch.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, offset, limit, has_more: hasMore, next_offset: offset + batch.length, dry_run: dryRun, persisted, sources: batch.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), market_context: marketContext, market_context_warning: marketContextWarning, errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
-  } catch (error) { return json({ error: `${stage}: ${error instanceof Error ? error.message : String(error)}`, stage }, 500); }
+  } catch (error) { return json({ error: `${stage}: ${errorText(error)}`, stage }, 500); }
 });
