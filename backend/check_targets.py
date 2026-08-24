@@ -43,6 +43,7 @@ class SupabaseRest:
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
         }
+        self.session = requests.Session()
 
     def request(
         self,
@@ -56,7 +57,7 @@ class SupabaseRest:
         headers = dict(self.headers)
         if prefer:
             headers["Prefer"] = prefer
-        response = requests.request(
+        response = self.session.request(
             method,
             f"{self.url}/rest/v1/{table}",
             headers=headers,

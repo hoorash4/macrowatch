@@ -1,7 +1,6 @@
 // ===== Supabase / API 연결 설정 =====
 // 브라우저에서 Supabase 클라이언트를 만들 때 사용하는 공개 연결 정보입니다.
-const SUPABASE_URL = 'https://xhghpywvthjuvespzdul.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_rPKY5Wfpp1JnSkPhIzJqJA_cijBqYgc';
+const { supabaseUrl: SUPABASE_URL, supabasePublishableKey: SUPABASE_KEY } = window.MACROWATCH_CONFIG;
 const supabaseClient = window.macroWatchSupabase
 || (window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null);
 

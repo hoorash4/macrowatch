@@ -1,6 +1,5 @@
 (() => {
-  const AUTH_SUPABASE_URL = 'https://xhghpywvthjuvespzdul.supabase.co';
-  const AUTH_SUPABASE_KEY = 'sb_publishable_rPKY5Wfpp1JnSkPhIzJqJA_cijBqYgc';
+  const { supabaseUrl: AUTH_SUPABASE_URL, supabasePublishableKey: AUTH_SUPABASE_KEY } = window.MACROWATCH_CONFIG;
   const authClient = window.supabase?.createClient(AUTH_SUPABASE_URL, AUTH_SUPABASE_KEY);
   window.macroWatchSupabase = authClient;
   const elements = {};

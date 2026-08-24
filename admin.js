@@ -1,6 +1,5 @@
 (() => {
-  const SUPABASE_URL = 'https://xhghpywvthjuvespzdul.supabase.co';
-  const SUPABASE_KEY = 'sb_publishable_rPKY5Wfpp1JnSkPhIzJqJA_cijBqYgc';
+  const { supabaseUrl: SUPABASE_URL, supabasePublishableKey: SUPABASE_KEY } = window.MACROWATCH_CONFIG;
   const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
   let scheduleTimes = ['08:00', '18:00'];
 
