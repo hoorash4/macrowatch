@@ -51,9 +51,12 @@ jobs:
             fi
           }
           offset=0
+          limit=10
+          [ "$DRY_RUN" = "true" ] && limit=1
           while true; do
-            response=$(request_batch "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":10,\"dry_run\":$DRY_RUN,\"mark_complete\":true}")
+            response=$(request_batch "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":$limit,\"dry_run\":$DRY_RUN,\"mark_complete\":true}")
             echo "$response"
+            [ "$DRY_RUN" = "true" ] && break
             [ "$(jq -r '.already_completed // false' <<< "$response")" = "true" ] && break
             [ "$(jq -r '.has_more' <<< "$response")" = "true" ] || break
             offset=$(jq -r '.next_offset' <<< "$response")
