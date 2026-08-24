@@ -442,20 +442,23 @@ async function loadCreditStressComponentsDashboard() {
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const [monthlyResponse, latestResponse] = await Promise.all([
-      supabaseClient.from('us_credit_stress_monthly')
-        .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
-        .order('month', { ascending: false })
-        .limit(CREDIT_STRESS_HISTORY_MONTHS + 2),
-      supabaseClient.from('us_credit_stress_latest')
-        .select('as_of,high_yield_oas_pct,financial_conditions_credit_index')
-        .eq('singleton', true)
-        .maybeSingle(),
-    ]);
-    const { data, error } = monthlyResponse;
+    const { data, error } = await supabaseClient.from('us_credit_stress_monthly')
+      .select('month,high_yield_oas_pct,financial_conditions_credit_index,business_bankruptcy_filings')
+      .order('month', { ascending: false })
+      .limit(CREDIT_STRESS_HISTORY_MONTHS + 2);
     if (error) throw error;
-    const latest = latestResponse.error || !latestResponse.data ? [] : [{ ...latestResponse.data, month: latestResponse.data.as_of, is_latest: true }];
-    renderCreditStressComponents([...(data || []), ...latest]);
+    renderCreditStressComponents(data || []);
+
+    const latestResponse = await supabaseClient.from('us_credit_stress_latest')
+      .select('as_of,high_yield_oas_pct,financial_conditions_credit_index')
+      .eq('singleton', true)
+      .maybeSingle();
+    if (!latestResponse.error && latestResponse.data) {
+      renderCreditStressComponents([
+        ...(data || []),
+        { ...latestResponse.data, month: latestResponse.data.as_of, is_latest: true },
+      ]);
+    }
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
   }
