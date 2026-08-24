@@ -449,6 +449,7 @@ async function loadCreditStressComponentsDashboard() {
     if (error) throw error;
     renderCreditStressComponents(data || []);
   } catch (error) {
+    chart.dataset.loadError = error instanceof Error ? error.message : String(error);
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
   }
 }
