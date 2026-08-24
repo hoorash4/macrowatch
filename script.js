@@ -323,10 +323,24 @@ function renderCreditStressMomentum(rows, monthlyRows = []) {
 
 async function loadWeeklyStressLead(monthlyRows = []) {
   if (!supabaseClient) return;
-  const [weeklyResponse, monthlyResponse] = await Promise.all([
-    supabaseClient.from('us_market_stress_lead_weekly').select('week,lead_index,lead_momentum,leverage_signal').order('week', { ascending: false }).limit(160),
-    supabaseClient.from('us_market_stress_index_monthly').select('month,stress_index').order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
-  ]);
+  const weeklyQuery = () => supabaseClient
+    .from('us_market_stress_lead_weekly')
+    .select('week,lead_index,lead_momentum,leverage_signal')
+    .order('week', { ascending: false })
+    .limit(160);
+  let weeklyResponse = await weeklyQuery();
+  if (weeklyResponse.error) {
+    weeklyResponse = await supabaseClient
+      .from('us_market_stress_lead_weekly')
+      .select('week,lead_index,lead_momentum')
+      .order('week', { ascending: false })
+      .limit(160);
+  }
+  const monthlyResponse = await supabaseClient
+    .from('us_market_stress_index_monthly')
+    .select('month,stress_index')
+    .order('month', { ascending: false })
+    .limit(CREDIT_STRESS_HISTORY_MONTHS);
   if (weeklyResponse.error || monthlyResponse.error) return;
   renderCreditStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
   renderCreditStressMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })), monthlyRows.length ? monthlyRows : monthlyResponse.data || []);
