@@ -62,7 +62,7 @@ function renderNewsSentiment(rows) {
   const uncertain = Number(latestRow.uncertain_count || 0);
   description.textContent = `${formatNewsDate(latestRow.article_date)} 기준 긍정·부정 방향 신호 ${directionalTotal}건${uncertain ? ` · 판단 보류 ${uncertain}건` : ''}`;
 
-  const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-emerald-600"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-600"></i>부정</span></div>';
+  const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-emerald-600"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-800"></i>부정</span></div>';
   const visibleRows = data.slice(-visibleNewsSentimentDays);
   const bars = visibleRows.map((item) => {
     const directionalCount = Number(item.positive_count || 0) + Number(item.negative_count || 0);
@@ -70,7 +70,7 @@ function renderNewsSentiment(rows) {
     const negative = directionalCount ? (Number(item.negative_count || 0) / directionalCount) * 100 : 0;
     const title = `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`;
     const bar = directionalCount
-      ? `${renderSentimentSegment(positive, 'bg-emerald-600 transition group-hover:bg-emerald-500')}${renderSentimentSegment(negative, 'bg-red-600 transition group-hover:bg-red-500')}`
+      ? `${renderSentimentSegment(positive, 'bg-emerald-600 transition group-hover:bg-emerald-500')}${renderSentimentSegment(negative, 'bg-red-800 transition group-hover:bg-red-700')}`
       : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
     return `<div class="group flex min-w-11 flex-1 flex-col items-center gap-2" title="${title}"><div class="flex h-44 w-full max-w-12 flex-col overflow-hidden rounded-lg bg-slate-800/80 ring-1 ring-inset ring-white/5 shadow-lg shadow-black/10">${bar}</div><span class="whitespace-nowrap text-[10px] text-slate-500">${formatNewsDate(item.article_date)}</span></div>`;
   }).join('');
