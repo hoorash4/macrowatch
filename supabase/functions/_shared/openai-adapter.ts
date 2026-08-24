@@ -1,5 +1,6 @@
 import type { ArticleSentiment, Candidate } from "./news-types.ts";
 import { AI_POLICY } from "./ai-policy.ts";
+import type { MarketContext } from "./market-indicators.ts";
 
 const ARTICLE_SCHEMA = { type: "object", additionalProperties: false, properties: { outputs: { type: "array", items: { type: "object", additionalProperties: false, properties: { item_hash: { type: "string" }, exclude_from_index: { type: "boolean" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] }, keywords: { type: "array", items: { type: "string" } }, uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] } }, required: ["item_hash", "exclude_from_index", "sentiment", "keywords", "uncertain_summary"] } } }, required: ["outputs"] };
 
@@ -9,16 +10,16 @@ function systemPrompt() {
   return prompt.replace(/\{\{news_candidates\}\}/g, "").trim();
 }
 
-function candidatePrompt(candidates: Candidate[]) {
-  return JSON.stringify(candidates.map(({ source, itemHash, publishedAt, text }) => ({ source, item_hash: itemHash, published_at: publishedAt, text })));
+function candidatePrompt(candidates: Candidate[], marketContext: MarketContext | null) {
+  return JSON.stringify({ market_context: marketContext, news_candidates: candidates.map(({ source, itemHash, publishedAt, text }) => ({ source, item_hash: itemHash, published_at: publishedAt, text })) });
 }
 
-async function requestAnalysis(model: string, candidates: Candidate[]) {
+async function requestAnalysis(model: string, candidates: Candidate[], marketContext: MarketContext | null) {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, reasoning: { effort: "low" }, max_output_tokens: 3_000, prompt_cache_key: "macrowatch-article-sentiment-v1", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates) }] }], text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } } }),
+    body: JSON.stringify({ model, reasoning: { effort: "low" }, max_output_tokens: 3_000, prompt_cache_key: "macrowatch-article-sentiment-v2", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext) }] }], text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();
@@ -28,9 +29,9 @@ async function requestAnalysis(model: string, candidates: Candidate[]) {
   return parsed.outputs.map((item): ArticleSentiment => ({ itemHash: String(item.item_hash), excludeFromIndex: item.exclude_from_index === true, sentiment: item.sentiment as ArticleSentiment["sentiment"], keywords: Array.isArray(item.keywords) ? item.keywords.map(String).slice(0, 3) : [], uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary) }));
 }
 
-export async function analyzeCandidates(candidates: Candidate[]) {
+export async function analyzeCandidates(candidates: Candidate[], marketContext: MarketContext | null) {
   if (!candidates.length) return [];
-  const outputs = await requestAnalysis(AI_POLICY.standardModel, candidates);
+  const outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext);
   const expected = new Set(candidates.map((candidate) => candidate.itemHash));
   const received = outputs.map((item) => item.itemHash);
   const uniqueReceived = new Set(received);

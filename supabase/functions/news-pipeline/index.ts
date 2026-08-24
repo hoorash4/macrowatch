@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { analyzeCandidates } from "../_shared/openai-adapter.ts";
+import { loadMarketContext } from "../_shared/market-context.ts";
 import type { ArticleSentiment, Candidate, SourceName } from "../_shared/news-types.ts";
 
 const DEFAULT_LOOKBACK_HOURS = 24;
@@ -71,10 +72,11 @@ Deno.serve(async (request) => {
   let stage = "요청 검증";
   try {
     const { lookbackHours, offset, limit, dryRun } = await getRunOptions(request); stage = "뉴스 수집";
-    const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "AI 분석";
-    const outputs = await analyzeCandidates(batch); stage = "결과 저장";
+    const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "시장 맥락 조회";
+    const { context: marketContext, warning: marketContextWarning } = await loadMarketContext(); stage = "AI 분석";
+    const outputs = await analyzeCandidates(batch, marketContext); stage = "결과 저장";
     const persisted = dryRun ? { articles: 0, excluded_articles: 0, dates: [] } : await persistAnalysis(outputs, batch, offset === 0);
     const sentiments = outputs.reduce<Record<string, number>>((counts, output) => ({ ...counts, [output.sentiment]: (counts[output.sentiment] || 0) + 1 }), { positive: 0, negative: 0, neutral: 0, uncertain: 0 });
-    return json({ collected: candidates.length, processed: batch.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, offset, limit, has_more: offset + batch.length < candidates.length, next_offset: offset + batch.length, dry_run: dryRun, persisted, sources: batch.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
+    return json({ collected: candidates.length, processed: batch.length, analyzed_articles: outputs.length, sentiments, lookback_hours: lookbackHours, offset, limit, has_more: offset + batch.length < candidates.length, next_offset: offset + batch.length, dry_run: dryRun, persisted, sources: batch.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.source]: (counts[item.source] || 0) + 1 }), {}), market_context: marketContext, market_context_warning: marketContextWarning, errors, next_step: dryRun ? "테스트 완료 (저장 없음)" : "기사별 분류와 일별 집계 저장 완료" });
   } catch (error) { return json({ error: `${stage}: ${error instanceof Error ? error.message : String(error)}`, stage }, 500); }
 });
