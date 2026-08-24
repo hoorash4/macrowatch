@@ -243,25 +243,26 @@ async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, 
   if (upsertError) throw upsertError;
 }
 
-async function getLookbackHours(request: Request) {
+async function getRunOptions(request: Request) {
   const body = await request.json().catch(() => ({}));
   const requested = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS);
   if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOKBACK_HOURS) {
     throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`);
   }
-  return requested;
+  return { lookbackHours: requested, dryRun: body.dry_run === true };
 }
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
-    const lookbackHours = await getLookbackHours(request);
+    const { lookbackHours, dryRun } = await getRunOptions(request);
     const { candidates, errors } = await collectCandidates(lookbackHours);
     const events = await analyzeCandidates(candidates);
-    const persisted = await persistAnalysis(events, candidates);
+    const persisted = dryRun ? { events: 0, dates: [] } : await persistAnalysis(events, candidates);
     return json({
       collected: candidates.length,
       lookback_hours: lookbackHours,
+      dry_run: dryRun,
       analyzed: events.length,
       persisted,
       sources: candidates.reduce<Record<string, number>>((counts, item) => {
@@ -269,7 +270,7 @@ Deno.serve(async (request) => {
         return counts;
       }, {}),
       errors,
-      next_step: "분석 결과 저장 완료",
+      next_step: dryRun ? "테스트 완료 (저장 없음)" : "분석 결과 저장 완료",
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "뉴스 수집에 실패했습니다." }, 500);

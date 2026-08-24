@@ -194,7 +194,7 @@
   async function runWorkflow(kind) {
     const button = document.getElementById(kind === 'check' ? 'run-check-button' : kind === 'backup' ? 'run-backup-button' : 'run-news-button');
     const label = button.querySelector('span');
-    const idleLabel = kind === 'check' ? '지금 지표 확인' : kind === 'backup' ? '지금 수동 백업' : '지금 뉴스 분석';
+    const idleLabel = kind === 'check' ? '지금 지표 확인' : kind === 'backup' ? '지금 수동 백업' : '뉴스 분석 테스트';
     button.disabled = true;
     label.textContent = '진행 중';
       setBadge(document.getElementById(kind === 'check' ? 'check-badge' : kind === 'backup' ? 'backup-badge' : 'news-badge'), {
@@ -204,7 +204,7 @@
       const result = await invokeAdmin(kind === 'check' ? 'run_check' : kind === 'backup' ? 'run_backup' : 'run_news');
       const run = await waitForCompletion(kind, result.requested_at);
       if (run.conclusion === 'success') {
-        showNotice('실행 완료', kind === 'check' ? '지표 확인이 완료되었습니다.' : kind === 'backup' ? '수동 백업이 완료되었습니다.' : '뉴스 분석이 완료되었습니다.');
+        showNotice('실행 완료', kind === 'check' ? '지표 확인이 완료되었습니다.' : kind === 'backup' ? '수동 백업이 완료되었습니다.' : '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.');
       } else {
         showNotice('실행 실패', `작업이 ${run.conclusion || '실패'} 상태로 종료되었습니다.`, true);
       }

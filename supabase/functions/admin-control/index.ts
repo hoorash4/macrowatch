@@ -214,7 +214,10 @@ export default {
         const requestedAt = new Date().toISOString();
         await githubRequest(`/actions/workflows/${workflow}/dispatches`, githubToken, {
           method: "POST",
-          body: JSON.stringify({ ref: BRANCH }),
+          body: JSON.stringify({
+            ref: BRANCH,
+            ...(action === "run_news" ? { inputs: { dry_run: "true" } } : {}),
+          }),
         });
         return json({ requested_at: requestedAt }, 202, origin);
       }
