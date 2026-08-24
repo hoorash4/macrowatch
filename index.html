@@ -121,7 +121,7 @@
         </a>
         <p class="dashboard-nav-label">WORKSPACE</p>
         <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>뉴스 흐름 분석</span></button>
-        <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>신용 스트레스</span></button>
+        <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>시장 스트레스 지수</span></button>
         <div class="dashboard-nav-actions">
           <div id="db-status" class="hidden">DB 연결 확인 중...</div>
           <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
@@ -172,6 +172,7 @@
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 월별 시장 스트레스 지수입니다.</p>
+        <p class="mt-0.5 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
       </div>
       <div id="credit-stress-chart" class="min-h-72 p-5">
         <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
@@ -510,6 +511,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=84"></script>
+  <script src="script.js?v=85"></script>
 </body>
 </html>
