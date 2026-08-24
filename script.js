@@ -35,10 +35,6 @@ function formatNewsDate(value) {
   return month && day ? `${Number(month)}/${Number(day)}` : '—';
 }
 
-function getEffectiveArticleTotal(item) {
-  return Number(item.positive_count || 0) + Number(item.negative_count || 0) + Number(item.neutral_count || 0);
-}
-
 function renderSentimentSegment(percent, colorClass) {
   if (!percent) return '';
   const label = percent >= 16 ? `<span class="text-[9px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
@@ -47,20 +43,13 @@ function renderSentimentSegment(percent, colorClass) {
 
 function renderNewsSentiment(rows) {
   const chart = document.getElementById('news-sentiment-chart');
-  const description = document.getElementById('news-sentiment-description');
-  if (!chart || !description) return;
+  if (!chart) return;
 
   const data = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date)));
   if (!data.length) {
-    description.textContent = '아직 표시할 뉴스 분석 결과가 없습니다.';
     chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">다음 뉴스 분석 후 최근 10일 추이가 표시됩니다.</div>';
     return;
   }
-
-  const latestRow = data[data.length - 1];
-  const directionalTotal = Number(latestRow.positive_count || 0) + Number(latestRow.negative_count || 0);
-  const uncertain = Number(latestRow.uncertain_count || 0);
-  description.textContent = `${formatNewsDate(latestRow.article_date)} 기준 긍정·부정 방향 신호 ${directionalTotal}건${uncertain ? ` · 판단 보류 ${uncertain}건` : ''}`;
 
   const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-emerald-600"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-800"></i>부정</span></div>';
   const visibleRows = data.slice(-visibleNewsSentimentDays);
@@ -97,8 +86,6 @@ async function loadNewsSentimentDashboard() {
     visibleNewsSentimentDays = NEWS_SENTIMENT_INITIAL_DAYS;
     renderNewsSentiment(newsSentimentRows);
   } catch (error) {
-    const description = document.getElementById('news-sentiment-description');
-    if (description) description.textContent = '뉴스 분석 결과를 불러오지 못했습니다.';
     chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">잠시 후 다시 시도해 주세요.</div>';
   }
 }
