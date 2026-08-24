@@ -352,19 +352,6 @@ function toCreditStressNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function buildCreditStressScores(rows, key) {
-  const available = (value) => Number.isFinite(value) && (key !== 'business_bankruptcy_filings' || value > 0);
-  const values = rows.map((row) => toCreditStressNumber(row[key])).filter(available).sort((a, b) => a - b);
-  if (!values.length) return new Map();
-  const lower = values[Math.floor((values.length - 1) * 0.05)];
-  const upper = values[Math.ceil((values.length - 1) * 0.95)];
-  const spread = upper - lower || 1;
-  return new Map(rows.map((row) => {
-    const value = toCreditStressNumber(row[key]);
-    return [row.month, available(value) ? Math.max(0, Math.min(100, ((value - lower) / spread) * 100)) : null];
-  }));
-}
-
 function addBankruptcyTrailingAverage(rows) {
   const filings = [];
   return rows.map((row) => {
@@ -390,54 +377,47 @@ function renderCreditStressComponents(rows) {
   const series = [
     { key: 'high_yield_oas_pct', label: '하이일드 스프레드', color: '#9f3030', digits: 2, suffix: '%p' },
     { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b7791f', digits: 3, suffix: '' },
-  ].map((item) => ({ ...item, scores: buildCreditStressScores(data, item.key) }));
-  const bankruptcy = { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' };
+    { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#285e8e', digits: 0, suffix: '건' },
+  ];
   const width = 920;
   const height = CREDIT_STRESS_CHART_HEIGHT;
-  const padding = { top: 20, right: 52, bottom: 32, left: 52 };
+  const padding = { top: 20, right: 112, bottom: 32, left: 52 };
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
-  const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (100 - score)) / 100;
-  const bankruptcyValues = data.map((row) => toCreditStressNumber(row[bankruptcy.key])).filter(Number.isFinite);
-  const bankruptcyMinimum = Math.min(...bankruptcyValues), bankruptcyMaximum = Math.max(...bankruptcyValues), bankruptcyRange = Math.max(bankruptcyMaximum - bankruptcyMinimum, 1);
-  const bankruptcyLower = Math.max(0, bankruptcyMinimum - bankruptcyRange * .1), bankruptcyUpper = bankruptcyMaximum + bankruptcyRange * .1;
-  const bankruptcyY = (value) => padding.top + ((height - padding.top - padding.bottom) * (bankruptcyUpper - value)) / (bankruptcyUpper - bankruptcyLower);
-  const pathFor = (item) => {
+  const scaleFor = (item, clampAtZero = false) => {
+    const values = data.map((row) => toCreditStressNumber(row[item.key])).filter(Number.isFinite);
+    const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 0.01);
+    const lower = clampAtZero ? Math.max(0, minimum - range * .1) : minimum - range * .1;
+    const upper = maximum + range * .1;
+    return { lower, upper, y: (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower) };
+  };
+  const [highYield, conditions, bankruptcy] = series;
+  const highYieldScale = scaleFor(highYield);
+  const conditionsScale = scaleFor(conditions);
+  const bankruptcyScale = scaleFor(bankruptcy, true);
+  const pathFor = (item, scale) => {
     let path = '';
     let connected = false;
     data.forEach((row, index) => {
-      const score = item.scores.get(row.month);
-      if (score == null) { connected = false; return; }
-      path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${y(score).toFixed(1)}`;
+      const value = toCreditStressNumber(row[item.key]);
+      if (!Number.isFinite(value)) { connected = false; return; }
+      path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${scale.y(value).toFixed(1)}`;
       connected = true;
     });
     return path;
   };
-  const bankruptcyPath = (() => {
-    let path = '', connected = false;
-    data.forEach((row, index) => {
-      const value = toCreditStressNumber(row[bankruptcy.key]);
-      if (!Number.isFinite(value)) { connected = false; return; }
-      path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${bankruptcyY(value).toFixed(1)}`;
-      connected = true;
-    });
-    return path;
-  })();
   const labels = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
-  const dots = series.flatMap((item) => data.map((row, index) => {
-    const score = item.scores.get(row.month);
-    if (score == null) return '';
+  const yearGuides = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<line x1="${x(index)}" x2="${x(index)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>` : '').join('');
+  const dotsFor = (item, scale) => data.map((row, index) => {
     const value = toCreditStressNumber(row[item.key]);
+    if (!Number.isFinite(value)) return '';
     const detail = `${row.month}\n${item.label}: ${value.toFixed(item.digits)}${item.suffix}`;
-    return `<circle cx="${x(index)}" cy="${y(score)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
-  })).join('');
-  const bankruptcyDots = data.map((row, index) => {
-    const value = toCreditStressNumber(row[bankruptcy.key]);
-    return Number.isFinite(value) ? `<circle cx="${x(index)}" cy="${bankruptcyY(value)}" r="3.5" fill="${bankruptcy.color}" tabindex="0"><title>${row.month}\n${bankruptcy.label}: ${value.toFixed(bankruptcy.digits)}${bankruptcy.suffix}</title></circle>` : '';
+    return `<circle cx="${x(index)}" cy="${scale.y(value)}" r="3.5" fill="${item.color}" tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const grid = [0, 25, 50, 75, 100].map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed"${score === 0 || score === 100 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${score}</text>`).join('');
-  const bankruptcyAxis = Array.from({ length: 5 }, (_, index) => bankruptcyUpper - ((bankruptcyUpper - bankruptcyLower) * index) / 4).map((value) => `<text x="${width - padding.right + 9}" y="${bankruptcyY(value) + 3}" fill="#285e8e" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('');
-  const legend = [...series, bankruptcy].map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${bankruptcyAxis}${series.map((item) => `<path d="${pathFor(item)}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}<path d="${bankruptcyPath}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}${bankruptcyDots}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-right text-[11px] text-slate-500">점에 마우스를 올리면 표시 수치를 확인할 수 있습니다.</p>`;
+  const ticksFor = (scale, formatter, color, axisX, withGrid = false) => Array.from({ length: 5 }, (_, index) => scale.upper - ((scale.upper - scale.lower) * index) / 4).map((value) => `${withGrid ? `<line x1="${padding.left}" x2="${width - padding.right}" y1="${scale.y(value)}" y2="${scale.y(value)}" stroke="#dbe3ed"${index === 0 || index === 4 ? '' : ' stroke-dasharray="3 4"'}/>` : ''}<text x="${axisX}" y="${scale.y(value) + 3}"${axisX === padding.left - 9 ? ' text-anchor="end"' : ''} fill="${color}" font-size="10">${formatter(value)}</text>`).join('');
+  const plotRight = width - padding.right, bankruptcyAxisX = width - 52;
+  const axes = `<line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${plotRight}" x2="${plotRight}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${bankruptcyAxisX}" x2="${bankruptcyAxisX}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>`;
+  const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${axes}${ticksFor(highYieldScale, (value) => value.toFixed(1), '#9f3030', padding.left - 9, true)}${yearGuides}${ticksFor(conditionsScale, (value) => value.toFixed(2), '#b7791f', plotRight + 8)}${ticksFor(bankruptcyScale, (value) => Math.round(value).toLocaleString('en-US'), '#285e8e', bankruptcyAxisX + 8)}<path d="${pathFor(highYield, highYieldScale)}" fill="none" stroke="${highYield.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(conditions, conditionsScale)}" fill="none" stroke="${conditions.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(bankruptcy, bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round"/>${dotsFor(highYield, highYieldScale)}${dotsFor(conditions, conditionsScale)}${dotsFor(bankruptcy, bankruptcyScale)}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div><p class="mt-3 text-right text-[11px] text-slate-500">점에 마우스를 올리면 표시 수치를 확인할 수 있습니다.</p>`;
 }
 
 async function loadCreditStressComponentsDashboard() {
