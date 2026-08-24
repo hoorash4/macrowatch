@@ -132,6 +132,19 @@ def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -
     return {month: value for month, (_observed_on, value) in month_end.items()}
 
 
+def carry_forward_monthly(values: dict[str, float], months: list[str]) -> dict[str, float]:
+    """Keep a continuous monthly series when a source omits an otherwise ordinary month."""
+    carried: dict[str, float] = {}
+    previous: float | None = None
+    for month in sorted(months):
+        current = values.get(month)
+        if current is not None:
+            previous = current
+        if previous is not None:
+            carried[month] = previous
+    return carried
+
+
 def fetch_court_workbook(year: int, month: int, day: int) -> bytes:
     period = f"{month:02d}{day:02d}.{year}"
     publication_year, publication_month = year, month + 1
@@ -370,6 +383,7 @@ def main() -> None:
     }
     business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
     months = sorted(set(high_yield) | set(financial_conditions) | set(business_filings))
+    short_term_funding_spread = carry_forward_monthly(short_term_funding_spread, months)
     rows = [
         {
             "month": month,
