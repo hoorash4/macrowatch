@@ -82,7 +82,13 @@ Deno.serve(async (request) => {
     if (targetError) throw targetError;
     if (!target) return respond({ error: "해당 지표를 찾을 수 없습니다." }, 404);
     const value = await collect(target);
-    const { data: updated, error: updateError } = await db.from("targets").update({ last_value: value, last_checked_at: new Date().toISOString(), last_error: null }).eq("id", targetId).select().single();
+    const { data: updated, error: updateError } = await db
+      .from("targets")
+      .update({ last_value: value, last_checked_at: new Date().toISOString(), last_error: null })
+      .eq("id", targetId)
+      .eq("user_id", userData.user.id)
+      .select()
+      .single();
     if (updateError) throw updateError;
     return respond({ target: updated });
   } catch (error) {

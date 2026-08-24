@@ -32,6 +32,10 @@ function fromBase64Url(value: string) {
   return atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
 }
 
+function fromBase64UrlBytes(value: string) {
+  return Uint8Array.from(fromBase64Url(value), (character) => character.charCodeAt(0));
+}
+
 async function signState(payload: string, secret: string) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -63,13 +67,52 @@ async function verifyState(state: string, secret: string) {
   }
 }
 
+async function tokenEncryptionKey(secret: string) {
+  const material = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(`macrowatch/kakao-token/v1\0${secret}`),
+  );
+  return crypto.subtle.importKey("raw", material, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function encryptToken(token: string | undefined, secret: string) {
+  if (!token) return null;
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    await tokenEncryptionKey(secret),
+    encoder.encode(token),
+  );
+  return {
+    version: 1,
+    iv: toBase64Url(iv),
+    ciphertext: toBase64Url(new Uint8Array(ciphertext)),
+  };
+}
+
+async function decryptToken(value: unknown, secret: string) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  const encrypted = value as Record<string, unknown>;
+  if (encrypted.version !== 1 || typeof encrypted.iv !== "string" || typeof encrypted.ciphertext !== "string") {
+    return "";
+  }
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: fromBase64UrlBytes(encrypted.iv) },
+    await tokenEncryptionKey(secret),
+    fromBase64UrlBytes(encrypted.ciphertext),
+  );
+  return new TextDecoder().decode(plaintext);
+}
+
 async function unlinkKakaoAccount(
   config: Record<string, unknown>,
   clientId: string,
   clientSecret: string,
+  tokenEncryptionSecret: string,
 ) {
-  let accessToken = String(config.access_token || "");
-  const refreshToken = String(config.refresh_token || "");
+  let accessToken = await decryptToken(config.access_token, tokenEncryptionSecret);
+  const refreshToken = await decryptToken(config.refresh_token, tokenEncryptionSecret);
   if (!accessToken && !refreshToken) return;
 
   const unlink = (token: string) => fetch("https://kapi.kakao.com/v1/user/unlink", {
@@ -132,15 +175,17 @@ export default {
       const body = await request.json();
       const action = String(body?.action || "");
       const stateSecret = kakaoClientSecret || serviceRoleKey;
+      const tokenEncryptionSecret = Deno.env.get("KAKAO_TOKEN_ENCRYPTION_KEY") || serviceRoleKey;
 
       if (action === "start") {
+        const state = await createState(stateSecret);
         const authorizeUrl = new URL("https://kauth.kakao.com/oauth/authorize");
         authorizeUrl.searchParams.set("client_id", kakaoClientId);
         authorizeUrl.searchParams.set("redirect_uri", REDIRECT_URI);
         authorizeUrl.searchParams.set("response_type", "code");
         authorizeUrl.searchParams.set("scope", "talk_message");
-        authorizeUrl.searchParams.set("state", await createState(stateSecret));
-        return json({ authorize_url: authorizeUrl.toString() }, 200, origin);
+        authorizeUrl.searchParams.set("state", state);
+        return json({ authorize_url: authorizeUrl.toString(), state }, 200, origin);
       }
 
       if (action === "exchange") {
@@ -219,8 +264,8 @@ export default {
             connected: true,
             wants_kakao: true,
             kakao_user_id: kakaoUserId,
-            access_token: tokenData.access_token,
-            refresh_token: tokenData.refresh_token || null,
+            access_token: await encryptToken(tokenData.access_token, tokenEncryptionSecret),
+            refresh_token: await encryptToken(tokenData.refresh_token, tokenEncryptionSecret),
             access_expires_at: new Date(now + Number(tokenData.expires_in || 0) * 1000).toISOString(),
             refresh_expires_at: tokenData.refresh_token_expires_in
               ? new Date(now + Number(tokenData.refresh_token_expires_in) * 1000).toISOString()
@@ -285,7 +330,7 @@ export default {
         const config = channel?.config && typeof channel.config === "object"
           ? channel.config as Record<string, unknown>
           : {};
-        await unlinkKakaoAccount(config, kakaoClientId, kakaoClientSecret);
+        await unlinkKakaoAccount(config, kakaoClientId, kakaoClientSecret, tokenEncryptionSecret);
 
         await admin.from("device_tokens").delete().eq("user_id", user.id);
         await admin.from("notification_channels").delete().eq("user_id", user.id);

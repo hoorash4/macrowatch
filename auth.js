@@ -1,5 +1,6 @@
 (() => {
   const { supabaseUrl: AUTH_SUPABASE_URL, supabasePublishableKey: AUTH_SUPABASE_KEY } = window.MACROWATCH_CONFIG;
+  const KAKAO_OAUTH_STATE_KEY = 'macrowatch.kakao-oauth-state';
   const authClient = window.supabase?.createClient(AUTH_SUPABASE_URL, AUTH_SUPABASE_KEY);
   window.macroWatchSupabase = authClient;
   const elements = {};
@@ -52,7 +53,8 @@
     setMessage();
     try {
       const data = await invokeKakao('start');
-      if (!data?.authorize_url) throw new Error('카카오 로그인 주소를 받지 못했습니다.');
+      if (!data?.authorize_url || !data?.state) throw new Error('카카오 로그인 정보를 받지 못했습니다.');
+      window.sessionStorage.setItem(KAKAO_OAUTH_STATE_KEY, data.state);
       window.location.assign(data.authorize_url);
     } catch (error) {
       setMessage(error.message || '카카오 로그인을 시작하지 못했습니다.');
@@ -63,6 +65,11 @@
   async function finishKakaoLogin(code, state) {
     setBusy(true);
     setMessage('카카오 로그인을 완료하는 중입니다.');
+    const expectedState = window.sessionStorage.getItem(KAKAO_OAUTH_STATE_KEY);
+    window.sessionStorage.removeItem(KAKAO_OAUTH_STATE_KEY);
+    if (!expectedState || expectedState !== state) {
+      throw new Error('카카오 로그인 요청을 확인할 수 없습니다. 다시 시도해 주세요.');
+    }
     const tokens = await invokeKakao('exchange', { code, state });
     const { data, error } = await authClient.auth.setSession({
       access_token: tokens.access_token,
