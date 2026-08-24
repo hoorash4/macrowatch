@@ -103,7 +103,9 @@ function renderNewsSentiment(rows) {
     const directionalCount = Number(item.positive_count || 0) + Number(item.negative_count || 0);
     const positive = directionalCount ? (Number(item.positive_count || 0) / directionalCount) * 100 : 0;
     const negative = directionalCount ? (Number(item.negative_count || 0) / directionalCount) * 100 : 0;
-    const title = view.showNumbers ? `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}` : '';
+    const title = view.showNumbers
+      ? `${item.article_date}: 긍정 ${item.positive_count || 0}, 부정 ${item.negative_count || 0}${item.uncertain_count ? `, 판단 보류 ${item.uncertain_count}` : ''}`
+      : `${item.article_date}: 긍정 ${Math.round(positive)}%, 부정 ${Math.round(negative)}%`;
     return view.layout === 'horizontal'
       ? renderHorizontalSentimentBar(item, positive, negative, directionalCount, view, title)
       : renderVerticalSentimentBar(item, positive, negative, directionalCount, view, title);
