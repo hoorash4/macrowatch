@@ -342,7 +342,7 @@ function initializeDashboardScrollState() {
   if (!navigation) return;
 
   const updateScrollState = () => {
-    document.body.classList.toggle('dashboard-is-scrolled', window.scrollY > 12);
+    document.body.classList.toggle('dashboard-is-scrolled', navigation.getBoundingClientRect().top <= 0);
   };
 
   window.addEventListener('scroll', updateScrollState, { passive: true });
