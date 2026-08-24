@@ -24,7 +24,7 @@ let noticeCloseAction = null;
 let pointerDragState = createPointerDragState();
 let pendingToggleId = null;
 
-const NEWS_SENTIMENT_INITIAL_DAYS = 10;
+const NEWS_SENTIMENT_INITIAL_DAYS = 50;
 const NEWS_SENTIMENT_PAGE_SIZE = 10;
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 let newsSentimentRows = [];
