@@ -24,6 +24,12 @@ HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
 MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 TIMEOUT_SECONDS = 45
+INDEX_HISTORY_YEARS = 3
+STRESS_COMPONENTS = (
+    ("high_yield_oas_pct", 0.50),
+    ("financial_conditions_credit_index", 0.30),
+    ("business_bankruptcy_filings", 0.20),
+)
 
 
 def month_start(value: date) -> str:
@@ -154,6 +160,99 @@ def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_k
     response.raise_for_status()
 
 
+def percentile(sorted_values: list[float], ratio: float) -> float:
+    if not sorted_values:
+        raise ValueError("백분위 계산에 사용할 값이 없습니다.")
+    position = (len(sorted_values) - 1) * ratio
+    lower = int(position)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    fraction = position - lower
+    return sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * fraction
+
+
+def normalized_scores(values: dict[str, float]) -> dict[str, float]:
+    ordered = sorted(values.values())
+    lower = percentile(ordered, 0.05)
+    upper = percentile(ordered, 0.95)
+    spread = upper - lower or 1.0
+    return {
+        month: round(max(0.0, min(100.0, ((value - lower) / spread) * 100.0)), 4)
+        for month, value in values.items()
+    }
+
+
+def smoothed_filings(rows: list[dict[str, object]]) -> tuple[dict[str, float], set[str]]:
+    """Return a trailing filing average and the months backed by published reports."""
+    observed: list[float] = []
+    values: dict[str, float] = {}
+    confirmed: set[str] = set()
+    for row in sorted(rows, key=lambda item: str(item["month"])):
+        raw_value = row.get("business_bankruptcy_filings")
+        if isinstance(raw_value, (int, float)) and raw_value > 0:
+            observed.append(float(raw_value))
+            values[str(row["month"])] = sum(observed[-3:]) / min(3, len(observed))
+            confirmed.add(str(row["month"]))
+        elif observed:
+            # A court report is not yet available. Preserve the latest published
+            # trend instead of treating an unreported month as zero or changing
+            # component weights.
+            values[str(row["month"])] = sum(observed[-3:]) / min(3, len(observed))
+    return values, confirmed
+
+
+def build_market_stress_index(rows: list[dict[str, object]], today: date) -> list[dict[str, object]]:
+    index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
+    recent_rows = [row for row in rows if str(row["month"]) >= index_start]
+    filings, confirmed_filings = smoothed_filings(recent_rows)
+    component_values: dict[str, dict[str, float]] = {
+        "business_bankruptcy_filings": filings,
+    }
+    for key, _weight in STRESS_COMPONENTS:
+        if key == "business_bankruptcy_filings":
+            continue
+        component_values[key] = {
+            str(row["month"]): float(row[key])
+            for row in recent_rows
+            if isinstance(row.get(key), (int, float))
+        }
+    component_scores = {
+        key: normalized_scores(values)
+        for key, values in component_values.items()
+        if values
+    }
+    index_rows: list[dict[str, object]] = []
+    for row in recent_rows:
+        month = str(row["month"])
+        if any(month not in component_scores.get(key, {}) for key, _weight in STRESS_COMPONENTS):
+            continue
+        score = sum(component_scores[key][month] * weight for key, weight in STRESS_COMPONENTS)
+        index_rows.append(
+            {
+                "month": month,
+                "stress_index": round(score, 2),
+                "is_provisional": month not in confirmed_filings,
+            }
+        )
+    return index_rows
+
+
+def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
+    if not rows:
+        return
+    response = requests.post(
+        f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_index_monthly?on_conflict=month",
+        headers={
+            "apikey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        json=rows,
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=5)
@@ -184,7 +283,12 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 월별 신용 스트레스 데이터가 없습니다.")
     upsert_rows(rows, supabase_url, service_role_key)
-    print(f"upserted_months={len(rows)} business_filings={len(business_filings)} high_yield={len(high_yield)} nfci={len(financial_conditions)}")
+    index_rows = build_market_stress_index(rows, today)
+    upsert_market_stress_index(index_rows, supabase_url, service_role_key)
+    print(
+        f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
+        f"business_filings={len(business_filings)} high_yield={len(high_yield)} nfci={len(financial_conditions)}"
+    )
 
 
 if __name__ == "__main__":
