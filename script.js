@@ -66,7 +66,7 @@ function renderSentimentSegment(percent, colorClass, showLabel) {
 
 function renderHorizontalSentimentSegment(percent, colorClass, showLabel) {
   if (!percent) return '';
-  const label = showLabel && percent >= 12 ? `<span class="text-[10px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
+  const label = showLabel && percent >= 12 ? `<span class="sentiment-segment-label text-[10px] font-bold">${Math.round(percent)}%</span>` : '';
   return `<span class="flex h-full items-center justify-center ${colorClass}" style="width:${percent}%">${label}</span>`;
 }
 
