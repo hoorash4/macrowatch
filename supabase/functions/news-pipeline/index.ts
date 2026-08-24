@@ -70,6 +70,14 @@ async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidat
   return { articles: rows.length, excluded_articles: outputs.length - rows.length, dates: [...dates].sort() };
 }
 async function getRunOptions(request: Request) { const body = await request.json().catch(() => ({})); const lookbackHours = Number(body.lookback_hours ?? DEFAULT_LOOKBACK_HOURS), offset = Number(body.offset ?? 0), limit = Number(body.limit ?? DEFAULT_BATCH_SIZE); if (!Number.isInteger(lookbackHours) || lookbackHours < 1 || lookbackHours > MAX_LOOKBACK_HOURS) throw new Error(`lookback_hours는 1에서 ${MAX_LOOKBACK_HOURS} 사이의 정수여야 합니다.`); if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_BATCH_SIZE) throw new Error(`offset은 0 이상의 정수이고 limit은 1에서 ${MAX_BATCH_SIZE} 사이여야 합니다.`); return { lookbackHours, offset, limit, dryRun: body.dry_run === true, markComplete: body.mark_complete === true }; }
+async function analyzeBatch(candidates: Candidate[], marketContext: Awaited<ReturnType<typeof loadMarketContext>>["context"]) {
+  try {
+    return await analyzeCandidates(candidates, marketContext);
+  } catch (batchError) {
+    console.error("Batch analysis failed; recording the batch as uncertain.", batchError);
+    return candidates.map((candidate) => ({ itemHash: candidate.itemHash, excludeFromIndex: false, sentiment: "uncertain" as const, keywords: [], uncertainSummary: "자동 분류 실패" }));
+  }
+}
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   let stage = "요청 검증";
@@ -84,7 +92,7 @@ Deno.serve(async (request) => {
     stage = "뉴스 수집";
     const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "시장 맥락 조회";
     const { context: marketContext, warning: marketContextWarning } = await loadMarketContext(); stage = "AI 분석";
-    const outputs = await analyzeCandidates(batch, marketContext); stage = "결과 저장";
+    const outputs = await analyzeBatch(batch, marketContext); stage = "결과 저장";
     const hasMore = offset + batch.length < candidates.length;
     const persisted = dryRun ? { articles: 0, excluded_articles: 0, dates: [] } : await persistAnalysis(outputs, batch, offset === 0);
     if (markComplete && !dryRun && !hasMore) {

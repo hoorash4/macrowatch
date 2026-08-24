@@ -36,7 +36,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           request_batch() {
-            local payload="$1" attempt=1 max_attempts=4 response status
+            local payload="$1" attempt=1 max_attempts=2 response status
             while [ "$attempt" -le "$max_attempts" ]; do
               response=$(mktemp)
               status=$(curl --silent --show-error --output "$response" --write-out "%{http_code}" --max-time 120 \
