@@ -270,10 +270,17 @@ function renderCreditStressDashboard(rows) {
 function renderCreditStressMomentum(rows) {
   const chart = document.getElementById('credit-stress-momentum-chart');
   if (!chart) return;
-  const data = [...rows]
+  const monthlyData = [...rows]
     .map((row) => ({ ...row, value: toCreditStressNumber(row.lead_momentum) }))
     .filter((row) => Number.isFinite(row.value))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const data = monthlyData.map((row, index) => {
+    const window = monthlyData.slice(Math.max(0, index - 2), index + 1);
+    const average = window.length === 3
+      ? window.reduce((sum, item) => sum + item.value, 0) / 3
+      : null;
+    return { ...row, average };
+  });
   if (!data.length) {
     chart.innerHTML = '<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 월간 스트레스 변화가 표시됩니다.</div>';
     return;
@@ -281,16 +288,25 @@ function renderCreditStressMomentum(rows) {
   const width = 920;
   const height = 250;
   const padding = { top: 18, right: 24, bottom: 32, left: 46 };
-  const extent = Math.max(...data.map((row) => Math.abs(row.value)), 1);
+  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 1);
   const step = [1, 2, 5, 10, 20, 50, 100].find((value) => value >= extent / 2) || 100;
   const axisMaximum = Math.ceil(extent / step) * step;
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#94a3b8' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value > 0 ? '+' : ''}${value}</text>`).join('');
-  const lines = data.slice(1).map((row, index) => `<line x1="${x(index)}" y1="${y(data[index].value)}" x2="${x(index + 1)}" y2="${y(row.value)}" stroke="#6d4b91" stroke-width="2.5" stroke-linecap="round"/>`).join('');
+  const lines = data.slice(1).map((row, index) => `<line x1="${x(index)}" y1="${y(data[index].value)}" x2="${x(index + 1)}" y2="${y(row.value)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
+  const averageLines = data.slice(1).map((row, index) => {
+    const previous = data[index];
+    if (!Number.isFinite(previous.average) || !Number.isFinite(row.average)) return '';
+    return `<line x1="${x(index)}" y1="${y(previous.average)}" x2="${x(index + 1)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
+  }).join('');
   const dots = data.map((row, index) => `<circle cx="${x(index)}" cy="${y(row.value)}" r="3.25" fill="${row.value >= 0 ? '#9f3030' : '#285e8e'}" tabindex="0"><title>${row.month}\n월간 스트레스 변화: ${row.value >= 0 ? '+' : ''}${row.value.toFixed(1)}</title></circle>`).join('');
+  const averageDots = data.map((row, index) => {
+    if (!Number.isFinite(row.average)) return '';
+    return `<circle cx="${x(index)}" cy="${y(row.average)}" r="2.75" fill="#6d4b91" tabindex="0"><title>${row.month}\n3개월 평균 변화: ${row.average >= 0 ? '+' : ''}${row.average.toFixed(1)}</title></circle>`;
+  }).join('');
   const labels = data.map((row, index) => String(row.month).endsWith('-01-01') || index === 0 ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 월간 스트레스 변화 추이">${grid}${lines}${dots}${labels}</svg></div><div class="mt-3 flex items-center gap-5 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>스트레스 확대</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>스트레스 완화</span></div>`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 월간 스트레스 변화 추이">${grid}${lines}${averageLines}${dots}${averageDots}${labels}</svg></div><div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>스트레스 확대</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>스트레스 완화</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-800"></i>3개월 평균</span></div>`;
 }
 
 async function loadCreditStressDashboard() {
