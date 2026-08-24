@@ -2,8 +2,8 @@ name: Refresh U.S. credit stress
 
 on:
   schedule:
-    # Monthly refresh after U.S. Courts' month-end filing table is typically available.
-    - cron: "0 18 12 * *"
+    # 06:10 KST: update the in-progress month's averages every day.
+    - cron: "10 21 * * *"
   workflow_dispatch:
     inputs:
       years:
@@ -35,4 +35,9 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python backend/financial_stress_pipeline.py --years "${{ inputs.years || '5' }}"
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python backend/financial_stress_pipeline.py --years 1
+          else
+            python backend/financial_stress_pipeline.py --years "${{ inputs.years || '5' }}"
+          fi
