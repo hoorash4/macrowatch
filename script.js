@@ -263,7 +263,6 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
   const path = (rows, key, yFn, dateKey) => rows.filter((row) => Number.isFinite(Number(row[key]))).map((row, index) => `${index ? 'L' : 'M'}${x(row[dateKey]).toFixed(1)},${yFn(Number(row[key])).toFixed(1)}`).join('');
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
   const ticks = Array.from({ length: 5 }, (_, index) => index / 4);
   const grid = ticks.map((ratio) => {
     const value = leftUpper - (leftUpper - leftLower) * ratio;
@@ -281,7 +280,7 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
     return `<line x1="${x(previous.month)}" y1="${y(Number(previous.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="#b7791f" stroke-width="2.75" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
   }).join('');
   const monthlyDots = monthly.map((row) => `<circle cx="${x(row.month)}" cy="${y(Number(row.stress_index))}" r="3.25" fill="#b7791f" tabindex="0"><title>${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${row.is_provisional ? ' (잠정치)' : ''}</title></circle>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI, MSI Lead 및 S&P 500 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${rightAxis}${monthlySegments}<path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#6d4b91" stroke-width="2.5"/><path d="${path(monthly, 'sp500_month_end_close', sy, 'month')}" fill="none" stroke="#285e8e" stroke-width="2.25"/>${monthlyDots}${years}</svg></div>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI, MSI Lead 및 S&P 500 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${rightAxis}${monthlySegments}<path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#6d4b91" stroke-width="2.5"/><path d="${path(monthly, 'sp500_month_end_close', sy, 'month')}" fill="none" stroke="#285e8e" stroke-width="2.25"/>${monthlyDots}</svg>`;
 }
 
 function renderCreditStressMomentum(rows, monthlyRows = []) {
@@ -304,7 +303,7 @@ function renderCreditStressMomentum(rows, monthlyRows = []) {
   }
   const width = 920;
   const height = 190;
-  const padding = { top: 18, right: 52, bottom: 20, left: 52 };
+  const padding = { top: 18, right: 52, bottom: 32, left: 52 };
   const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 1);
   const step = [1, 2, 5, 10, 20, 50, 100].find((value) => value >= extent / 2) || 100;
   const axisMaximum = Math.ceil(extent / step) * step;
@@ -320,7 +319,8 @@ function renderCreditStressMomentum(rows, monthlyRows = []) {
     return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 스트레스 변화 추이">${grid}${yearGuides}${lines}${averageLines}</svg></div>`;
+  const years = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<text x="${x(row.month)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>`).join('');
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 스트레스 변화 추이">${grid}${yearGuides}${lines}${averageLines}${years}</svg>`;
 }
 
 async function loadWeeklyStressLead(monthlyRows = []) {
