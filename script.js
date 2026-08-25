@@ -567,9 +567,54 @@ async function loadMarketStressDashboard() {
 
 window.loadMarketStressDashboard = loadMarketStressDashboard;
 
+function renderKoreaTensionChart(rows) {
+  const chart = document.getElementById('korea-tension-chart');
+  if (!chart) return;
+  const levels = [...rows]
+    .map((row) => {
+      const credit = Number(row.corporate_credit_spread);
+      const funding = Number(row.short_term_funding_spread);
+      return Number.isFinite(credit) && Number.isFinite(funding)
+        ? { week: row.week, value: (credit + funding) / 2 }
+        : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  const weeklyChanges = levels.slice(1).map((row, index) => ({
+    ...row,
+    change: row.value - levels[index].value,
+  }));
+  const data = weeklyChanges.map((row, index) => {
+    const window = weeklyChanges.slice(Math.max(0, index - 3), index + 1);
+    return {
+      ...row,
+      average: window.length === 4 ? window.reduce((sum, item) => sum + item.change, 0) / 4 : null,
+    };
+  });
+  if (!data.length) {
+    chart.innerHTML = '<div class="flex min-h-40 items-center justify-center text-xs text-slate-400">첫 산출 후 선행 긴장 시그널이 표시됩니다.</div>';
+    return;
+  }
+  const width = 920, height = 190, padding = { top: 18, right: 58, bottom: 32, left: 52 };
+  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.change), Math.abs(row.average || 0)]), 0.01);
+  const axisMaximum = Math.ceil(extent * 1.2 * 100) / 100;
+  const start = new Date(data[0].week).getTime(), end = new Date(data.at(-1).week).getTime();
+  const x = (week) => padding.left + ((new Date(week).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
+  const y = (value) => padding.top + (height - padding.top - padding.bottom) * (axisMaximum - value) / (axisMaximum * 2);
+  const format = (value) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+  const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${format(value)}</text>`).join('');
+  const changes = data.slice(1).map((row, index) => `<line x1="${x(data[index].week)}" y1="${y(data[index].change)}" x2="${x(row.week)}" y2="${y(row.change)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
+  const averages = data.slice(1).map((row, index) => {
+    const previous = data[index];
+    return Number.isFinite(previous.average) && Number.isFinite(row.average) ? `<line x1="${x(previous.week)}" y1="${y(previous.average)}" x2="${x(row.week)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>` : '';
+  }).join('');
+  chart.innerHTML = `<div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600"><i class="h-0.5 w-5 bg-violet-800"></i>선행 긴장 시그널 <span class="font-normal text-slate-400">(주간 변동 · 4주 평균)</span></div><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 주간 선행 긴장 시그널"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${changes}${averages}</svg>`;
+}
+
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
+  const tensionChart = document.getElementById('korea-tension-chart');
   const data = [...rows]
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
@@ -579,15 +624,11 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   if (!chart) return;
   if (!data.length) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
+    if (tensionChart) tensionChart.innerHTML = '';
     if (fsiChart) fsiChart.innerHTML = '';
     return;
   }
-  // The stress series starts at the first day of a month while the weekly
-  // close is dated Friday. Extend the first weekly value to that same left
-  // boundary so the two plotted series share an exact starting point.
-  const weeklyKospi = weeklyKospiSource.length && String(weeklyKospiSource[0].week) > String(data[0].month)
-    ? [{ ...weeklyKospiSource[0], week: data[0].month }, ...weeklyKospiSource]
-    : weeklyKospiSource;
+  const weeklyKospi = weeklyKospiSource;
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
@@ -665,6 +706,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     });
   };
   attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', mapY: y, chartHeight: height, chartPadding: padding, source: 'korea-main', label: '' });
+  renderKoreaTensionChart(weeklyKospi);
 
   if (!fsiChart) return;
   const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)) && Number(row.bok_fsi) !== 0);
@@ -711,7 +753,7 @@ async function loadKoreaStressDashboard() {
         .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
         .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
       supabaseClient.from('korea_market_stress_weekly')
-        .select('week,kospi_close')
+        .select('week,kospi_close,corporate_credit_spread,short_term_funding_spread')
         .order('week', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS * 6),
     ]);
     if (monthlyResponse.error) throw monthlyResponse.error;

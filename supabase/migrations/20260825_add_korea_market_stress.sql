@@ -33,3 +33,7 @@ create index if not exists korea_market_stress_weekly_week_idx on public.korea_m
 alter table public.korea_market_stress_weekly enable row level security;
 drop policy if exists "Authenticated users can read Korean weekly market stress" on public.korea_market_stress_weekly;
 create policy "Authenticated users can read Korean weekly market stress" on public.korea_market_stress_weekly for select to authenticated using (true);
+
+alter table public.korea_market_stress_weekly
+  add column if not exists corporate_credit_spread numeric(12, 4),
+  add column if not exists short_term_funding_spread numeric(12, 4);

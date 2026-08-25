@@ -43,6 +43,7 @@ STRESS_BANDS = {
     "interbank_liquidity": (0.0, 1.5),   # KORIBOR 3M - KOFR
 }
 TIMEOUT = 45
+WEEKLY_DISPLAY_START = date(2023, 9, 1)
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -123,8 +124,8 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
     return {month: value for month, (_observed, value) in values.items()}
 
 
-def daily_friday_close(key: str, stat: str, item: str, years: int) -> list[dict]:
-    """Return each Friday's KOSPI close, using Thursday only for Friday holidays."""
+def daily_friday_values(key: str, stat: str, item: str, years: int) -> dict[str, tuple[date, float]]:
+    """Return each Friday-ending week's last official daily value."""
     today = date.today()
     rows: list[dict] = []
     for year in range(today.year - years, today.year + 1):
@@ -145,10 +146,7 @@ def daily_friday_close(key: str, stat: str, item: str, years: int) -> list[dict]
         week = friday.isoformat()
         if week not in closes or observed > closes[week][0]:
             closes[week] = (observed, value)
-    return [
-        {"week": week, "kospi_close": round(value, 2), "observed_at": observed.isoformat()}
-        for week, (observed, value) in sorted(closes.items())
-    ]
+    return closes
 
 
 def fetch_bok_fsi(years: int) -> dict[str, float]:
@@ -205,7 +203,26 @@ def main() -> None:
     url = require_env("SUPABASE_URL")
     service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
-    kospi_weekly = daily_friday_close(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
+    kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
+    corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], args.years)
+    treasury_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["treasury_3y"][1], args.years)
+    cp_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cp_91d"][1], args.years)
+    cd_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cd_91d"][1], args.years)
+    kospi_weekly = []
+    for week, (observed_at, kospi_close) in sorted(kospi_weekly_values.items()):
+        if date.fromisoformat(week) < WEEKLY_DISPLAY_START:
+            continue
+        corporate = corporate_weekly_values.get(week)
+        treasury = treasury_weekly_values.get(week)
+        cp_weekly = cp_weekly_values.get(week)
+        cd_weekly = cd_weekly_values.get(week)
+        kospi_weekly.append({
+            "week": week,
+            "kospi_close": round(kospi_close, 2),
+            "observed_at": observed_at.isoformat(),
+            "corporate_credit_spread": round(corporate[1] - treasury[1], 4) if corporate and treasury else None,
+            "short_term_funding_spread": round(cp_weekly[1] - cd_weekly[1], 4) if cp_weekly and cd_weekly else None,
+        })
     try:
         fsi = fetch_bok_fsi(args.years)
     except Exception as error:
