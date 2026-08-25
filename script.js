@@ -567,6 +567,63 @@ async function loadMarketStressDashboard() {
 
 window.loadMarketStressDashboard = loadMarketStressDashboard;
 
+function renderKoreaStressChart(rows) {
+  const chart = document.getElementById('korea-stress-chart');
+  const data = [...rows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  if (!chart) return;
+  if (!data.length) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
+    return;
+  }
+  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
+  const dates = data.map((row) => new Date(row.month).getTime());
+  const start = Math.min(...dates), end = Math.max(...dates);
+  const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
+  const leftValues = data.flatMap((row) => [Number(row.stress_index), Number(row.bok_fsi)]).filter(Number.isFinite);
+  const min = Math.min(...leftValues), max = Math.max(...leftValues), range = Math.max(max - min, 1);
+  const lower = Math.max(0, min - range * 0.12), upper = max + range * 0.12;
+  const y = (value) => padding.top + (height - padding.top - padding.bottom) * (upper - value) / Math.max(1, upper - lower);
+  const kospiValues = data.map((row) => Number(row.kospi_close)).filter(Number.isFinite);
+  const hasKospi = kospiValues.length > 1;
+  const kospiMin = hasKospi ? Math.min(...kospiValues) : 0, kospiMax = hasKospi ? Math.max(...kospiValues) : 1;
+  const kospiRange = Math.max(kospiMax - kospiMin, 1), kospiLower = Math.max(0, kospiMin - kospiRange * .12), kospiUpper = kospiMax + kospiRange * .12;
+  const kospiY = (value) => padding.top + (height - padding.top - padding.bottom) * (kospiUpper - value) / Math.max(1, kospiUpper - kospiLower);
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = upper - (upper - lower) * index / 4, py = y(value);
+    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
+  }).join('');
+  const years = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4));
+  const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>`).join('');
+  const draw = (key, mapY, color, dash = '') => data.slice(1).map((row, index) => {
+    const before = Number(data[index][key]), current = Number(row[key]);
+    return Number.isFinite(before) && Number.isFinite(current) ? `<line x1="${x(data[index].month)}" y1="${mapY(before)}" x2="${x(row.month)}" y2="${mapY(current)}" stroke="${color}" stroke-width="${key === 'stress_index' ? '3.25' : '2'}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>` : '';
+  }).join('');
+  const stress = data.slice(1).map((row, index) => {
+    const before = data[index], provisional = Boolean(before.is_provisional || row.is_provisional);
+    return `<line x1="${x(before.month)}" y1="${y(Number(before.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="${provisional ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisional ? ' stroke-dasharray="4 3"' : ''}/>`;
+  }).join('');
+  const fsi = draw('bok_fsi', y, '#6d28d9');
+  const kospi = hasKospi ? draw('kospi_close', kospiY, '#6b7280') : '';
+  const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수, 한국은행 FSI, 코스피 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${fsi}${stress}${kospiLabels}</svg>`;
+}
+
+async function loadKoreaStressDashboard() {
+  const chart = document.getElementById('korea-stress-chart');
+  if (!chart || !supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from('korea_market_stress_monthly')
+      .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
+      .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS);
+    if (error) throw error;
+    renderKoreaStressChart(data || []);
+  } catch (error) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';
+  }
+}
+
+window.loadKoreaStressDashboard = loadKoreaStressDashboard;
+
 function toCreditStressNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
@@ -702,7 +759,7 @@ function initializeDashboardNavigation() {
   const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
   if (!buttons.length || !panels.length) return;
 
-  const hashByView = { overview: '#news', credit: '#credit' };
+  const hashByView = { overview: '#news', credit: '#credit', korea: '#korea-stress' };
   const viewByHash = {
     ...Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view])),
     '#tracker': 'overview',

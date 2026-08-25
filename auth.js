@@ -104,6 +104,7 @@
       window.loadNewsSentimentDashboard?.(),
       window.loadMarketStressDashboard?.(),
       window.loadCreditStressComponentsDashboard?.(),
+      window.loadKoreaStressDashboard?.(),
     ]);
   }
 
