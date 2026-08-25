@@ -24,9 +24,9 @@ SERIES = {
 }
 WEIGHTS = {
     # VXEEM is retained as an auxiliary signal only while its main-index impact is tested.
-    "em_dollar_index": 0.4375,
-    "high_yield_oas": 0.28125,
-    "tail_risk_oas": 0.28125,
+    "em_dollar_index": 0.45,
+    "high_yield_oas": 0.275,
+    "tail_risk_oas": 0.275,
 }
 # Fixed absolute reference bands. Scores are deliberately not capped at 100:
 # a future credit event must be able to register above the reference extreme.

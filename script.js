@@ -577,6 +577,10 @@ function renderEmStressDashboard(rows) {
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
+  const movingAverageRows = weekly.map((row, index) => {
+    const windowRows = weekly.slice(Math.max(0, index - 3), index + 1);
+    return { ...row, stress_4w_average: windowRows.reduce((sum, item) => sum + Number(item.stress_index), 0) / windowRows.length };
+  });
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
@@ -626,7 +630,8 @@ function renderEmStressDashboard(rows) {
     }
   });
   finishPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths.join('')}${eemLabels}${years}</svg>`;
+  const movingAverageLine = movingAverageRows.slice(1).map((row, index) => `<line x1="${x(movingAverageRows[index].week)}" y1="${y(movingAverageRows[index].stress_4w_average)}" x2="${x(row.week)}" y2="${y(row.stress_4w_average)}" stroke="#6d28d9" stroke-width="2.5" stroke-linecap="round"/>`).join('');
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths.join('')}${movingAverageLine}${eemLabels}${years}</svg>`;
 
   const createElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -648,7 +653,8 @@ function renderEmStressDashboard(rows) {
       if (valueLabel && periodLabel) {
         const [, month, day] = String(nearest.week).split('-').map(Number);
         valueLabel.setAttribute('x', pointX); valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
-        valueLabel.textContent = `EM-MSI ${Number(nearest.stress_index).toFixed(2)}${Number.isFinite(Number(nearest.eem_weekly_close)) ? ` · EEM ${Number(nearest.eem_weekly_close).toFixed(2)}` : ''}`;
+        const moving = movingAverageRows.find((row) => row.week === nearest.week)?.stress_4w_average;
+        valueLabel.textContent = `EM-MSI ${Number(nearest.stress_index).toFixed(2)} · 4주 평균 ${Number(moving).toFixed(2)}${Number.isFinite(Number(nearest.eem_weekly_close)) ? ` · EEM ${Number(nearest.eem_weekly_close).toFixed(2)}` : ''}`;
         periodLabel.setAttribute('x', pointX); periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
         periodLabel.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
       }
