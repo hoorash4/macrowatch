@@ -10,10 +10,11 @@ type Analysis = {
   analysis: { primary_reason: Reason; reason_confidence: number; transition_assessment: Transition; financial_stress_mentioned: boolean; growth_downside_mentioned: boolean; inflation_pressure_mentioned: boolean; summary: string };
 };
 
-type Source = { meetingDate: string; sourceUrl: string };
+type Source = { meetingDate: string; sourceUrl: string; isEmergency: boolean };
 type EventRow = {
   central_bank: string; meeting_date: string; action: Action | null; primary_reason: Reason | null;
   analysis_status: string; policy_segment: number | null; segment_sequence: number | null;
+  is_emergency?: boolean; change_bps?: number | null;
 };
 
 const FED_BASE = "https://www.federalreserve.gov";
@@ -54,13 +55,16 @@ function normalizeText(html: string) { return html.replace(/<script[\s\S]*?<\/sc
 function dateFromUrl(url: string) { const matched = url.match(/(20\d{6})/); return matched ? `${matched[1].slice(0, 4)}-${matched[1].slice(4, 6)}-${matched[1].slice(6, 8)}` : null; }
 async function sha256(value: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 
-function extractStatementLinks(html: string) {
+function extractStatementLinks(html: string, assumeScheduled = false) {
   const output: Source[] = [];
   const anchor = /<a\b[^>]*href=["']([^"']+)["'][^>]*>\s*Statement\s*<\/a>/gi;
   for (const match of html.matchAll(anchor)) {
     const sourceUrl = new URL(match[1], FED_BASE).toString();
     const meetingDate = dateFromUrl(sourceUrl);
-    if (meetingDate) output.push({ meetingDate, sourceUrl });
+    const preceding = html.slice(Math.max(0, (match.index || 0) - 1_500), match.index || 0);
+    const headings = [...preceding.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi)];
+    const heading = headings.length ? normalizeText(headings[headings.length - 1][1]) : "";
+    if (meetingDate) output.push({ meetingDate, sourceUrl, isEmergency: !(assumeScheduled || /\bMeeting\b/i.test(heading)) });
   }
   // The current FOMC calendar labels the actual statement link as "HTML"
   // below a Statement heading, so collect its stable official URL pattern too.
@@ -68,7 +72,7 @@ function extractStatementLinks(html: string) {
   for (const match of html.matchAll(calendarStatement)) {
     const sourceUrl = new URL(match[1], FED_BASE).toString();
     const meetingDate = dateFromUrl(sourceUrl);
-    if (meetingDate) output.push({ meetingDate, sourceUrl });
+    if (meetingDate) output.push({ meetingDate, sourceUrl, isEmergency: false });
   }
   return output;
 }
@@ -85,7 +89,7 @@ async function fedSources(mode: "latest" | "backfill") {
     // a separate historical-by-year page.  Those expected 404s are harmless.
     if (!response.ok && page.includes("fomchistorical")) continue;
     if (!response.ok) throw new Error(`Fed FOMC 목록을 읽지 못했습니다 (${response.status}).`);
-    discovered.push(...extractStatementLinks(await response.text()));
+    discovered.push(...extractStatementLinks(await response.text(), page.includes("fomccalendars")));
   }
   return [...new Map(discovered.map((item) => [`${item.meetingDate}|${item.sourceUrl}`, item])).values()]
     .filter((item) => item.meetingDate >= "2000-01-01" && item.meetingDate <= new Date().toISOString().slice(0, 10))
@@ -128,15 +132,17 @@ async function analyzeStatement(statement: string, meetingDate: string, previous
 function regimeKey(row: Pick<EventRow, "action" | "primary_reason">) { return row.action && row.primary_reason ? `${row.action}:${row.primary_reason}` : null; }
 
 async function recomputeSegments(supabase: ReturnType<typeof createClient>) {
-  const { data, error } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,primary_reason,analysis_status,policy_segment,segment_sequence").eq("central_bank", "fed").eq("analysis_status", "completed").order("meeting_date");
+  const { data, error } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,primary_reason,analysis_status,policy_segment,segment_sequence,is_emergency,change_bps").eq("central_bank", "fed").eq("analysis_status", "completed").order("meeting_date");
   if (error) throw error;
   let segment = 0, sequence = 0, activeKey: string | null = null;
   const updates = (data || []).map((row: EventRow) => {
     const key = regimeKey(row);
-    if (!key || row.action === "hold") { activeKey = null; sequence = 0; return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: null, segment_sequence: 0, policy_impulse: 0, policy_stress_contribution: 0, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() }; }
+    const hasLargeRateMove = Math.abs(Number(row.change_bps || 0)) >= 50;
+    const impactMultiplier = Number(((row.is_emergency ? 1.25 : 1) * (hasLargeRateMove ? 1.25 : 1)).toFixed(2));
+    if (!key || row.action === "hold") { activeKey = null; sequence = 0; return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: null, segment_sequence: 0, policy_impulse: 0, policy_stress_contribution: 0, is_emergency: row.is_emergency === true, has_large_rate_move: hasLargeRateMove, impact_multiplier: impactMultiplier, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() }; }
     if (key !== activeKey) { segment += 1; sequence = 1; activeKey = key; } else sequence += 1;
     const base = STRESS_BASE[row.primary_reason!][row.action!];
-    return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: segment, segment_sequence: sequence, policy_impulse: Number((base / sequence).toFixed(3)), policy_stress_contribution: base, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() };
+    return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: segment, segment_sequence: sequence, policy_impulse: Number(((base * impactMultiplier) / sequence).toFixed(3)), policy_stress_contribution: Number((base * impactMultiplier).toFixed(3)), is_emergency: row.is_emergency === true, has_large_rate_move: hasLargeRateMove, impact_multiplier: impactMultiplier, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() };
   });
   for (const update of updates) {
     const { central_bank, meeting_date, ...values } = update;
@@ -166,18 +172,22 @@ Deno.serve(async (request) => {
       const statement = await getStatement(source.sourceUrl);
       const statementHash = await sha256(statement);
       const saved = known.get(source.meetingDate);
-      if (saved?.statement_hash === statementHash && saved.analysis_status === "completed") { skipped += 1; continue; }
+      if (saved?.statement_hash === statementHash && saved.analysis_status === "completed") {
+        const { error: metadataError } = await supabase.from("central_bank_policy_events").update({ source_url: source.sourceUrl, is_emergency: source.isEmergency, updated_at: new Date().toISOString() }).eq("central_bank", "fed").eq("meeting_date", source.meetingDate);
+        if (metadataError) throw metadataError;
+        skipped += 1; continue;
+      }
       processed += 1;
       try {
         const { data: previousRows, error: previousError } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,primary_reason,analysis_status,policy_segment,segment_sequence").eq("central_bank", "fed").eq("analysis_status", "completed").lt("meeting_date", source.meetingDate).order("meeting_date", { ascending: false }).limit(1);
         if (previousError) throw previousError;
         const analysis = await analyzeStatement(statement, source.meetingDate, previousRows?.[0] as EventRow || null);
-        const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, analysis_status: "completed", action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, analyzed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() };
+        const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, analyzed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() };
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert(row, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;
       } catch (error) {
         failed += 1;
-        const { error: saveError } = await supabase.from("central_bank_policy_events").upsert({ central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, analysis_status: "failed", last_error: errorMessage(error).slice(0, 900), updated_at: new Date().toISOString() }, { onConflict: "central_bank,meeting_date" });
+        const { error: saveError } = await supabase.from("central_bank_policy_events").upsert({ central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "failed", last_error: errorMessage(error).slice(0, 900), updated_at: new Date().toISOString() }, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;
       }
     }
