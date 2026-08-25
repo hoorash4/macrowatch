@@ -294,14 +294,6 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
     return element;
   };
-  const hoverLine = createSvgElement('line', {
-    x1: padding.left,
-    x2: width - padding.right,
-    stroke: '#64748b',
-    'stroke-width': 0.75,
-    'pointer-events': 'none',
-    visibility: 'hidden',
-  });
   const hoverGuide = createSvgElement('line', {
     y1: padding.top,
     y2: height - padding.bottom,
@@ -312,8 +304,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     visibility: 'hidden',
   });
   const hoverValue = createSvgElement('text', {
-    x: width - padding.right - 6,
-    'text-anchor': 'end',
+    'text-anchor': 'middle',
     fill: '#334155',
     'font-size': 11,
     'font-weight': 700,
@@ -323,7 +314,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     'pointer-events': 'none',
     visibility: 'hidden',
   });
-  svg.append(hoverLine, hoverGuide, hoverValue);
+  svg.append(hoverGuide, hoverValue);
   const setHover = (event) => {
     const bounds = svg.getBoundingClientRect();
     const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
@@ -334,20 +325,17 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     const pointX = x(nearest.week);
     const midpoint = (padding.top + height - padding.bottom) / 2;
     const labelY = pointY < midpoint
-      ? Math.min(height - padding.bottom - 6, pointY + 15)
-      : Math.max(padding.top + 11, pointY - 7);
-    hoverLine.setAttribute('y1', pointY);
-    hoverLine.setAttribute('y2', pointY);
-    hoverLine.setAttribute('visibility', 'visible');
+      ? height - padding.bottom - 6
+      : padding.top + 11;
     hoverGuide.setAttribute('x1', pointX);
     hoverGuide.setAttribute('x2', pointX);
     hoverGuide.setAttribute('visibility', 'visible');
+    hoverValue.setAttribute('x', pointX);
     hoverValue.setAttribute('y', labelY);
     hoverValue.setAttribute('visibility', 'visible');
     hoverValue.textContent = Number(nearest.tension_index).toFixed(1);
   };
   const clearHover = () => {
-    hoverLine.setAttribute('visibility', 'hidden');
     hoverGuide.setAttribute('visibility', 'hidden');
     hoverValue.setAttribute('visibility', 'hidden');
   };
