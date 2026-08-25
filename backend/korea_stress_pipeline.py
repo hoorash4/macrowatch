@@ -7,15 +7,18 @@ an external official comparison series; it is never an input to the index.
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import os
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from urllib.parse import quote
 
 import requests
 
 
 ECOS = "https://ecos.bok.or.kr/api"
+BOK_SNAPSHOT_FSI = "https://snapshot.bok.or.kr/api/chart/getChart?id=1583"
 MARKET_RATES = "817Y002"
 KOSPI_TABLE = "802Y001"
 SERIES = {
@@ -106,31 +109,19 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
     return {month: value for month, (_observed, value) in values.items()}
 
 
-def find_fsi(key: str, years: int) -> dict[str, float]:
-    """Discover BOK's FSI table instead of hard-coding a fragile table code."""
-    catalog = request(["StatisticTableList", quote(key, safe=""), "json", "kr", "1", "10000"])
-    matching_tables = [
-        row for row in catalog.get("StatisticTableList", {}).get("row", [])
-        if "금융불안" in str(row.get("STAT_NAME", ""))
-    ]
-    table = next((row for row in matching_tables if str(row.get("CYCLE", "")) == "M"), None)
-    if not table:
-        return {}
-    stat = str(table["STAT_CODE"])
-    items = request(["StatisticItemList", quote(key, safe=""), "json", "kr", "1", "1000", stat])
-    item_rows = items.get("StatisticItemList", {}).get("row", [])
-    item = next((row for row in item_rows
-                 if "금융불안" in str(row.get("ITEM_NAME", row.get("ITEM_NAME1", "")))), None)
-    code = str((item or {}).get("ITEM_CODE", (item or {}).get("ITEM_CODE1", "")))
-    if not code:
-        return {}
-    today = date.today()
-    rows = ecos_rows(key, stat, "M", f"{today.year - years}01", today.strftime("%Y%m"), code)
-    values = {}
-    for row in rows:
+def fetch_bok_fsi(years: int) -> dict[str, float]:
+    """Read the Bank of Korea's published FSI comparison series directly."""
+    response = requests.get(BOK_SNAPSHOT_FSI, headers=HEADERS, timeout=(12, TIMEOUT))
+    response.raise_for_status()
+    csv_text = response.json()["data"]["chart_opt"]["data"]["csv"]
+    first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
+    values: dict[str, float] = {}
+    for row in csv.DictReader(io.StringIO(csv_text)):
         try:
-            values[f"{str(row['TIME'])[:4]}-{str(row['TIME'])[4:6]}-01"] = float(row["DATA_VALUE"])
-        except (KeyError, TypeError, ValueError):
+            month = datetime.fromtimestamp(float(row["period"]) / 1000, tz=timezone.utc).date().replace(day=1).isoformat()
+            if month >= first_month:
+                values[month] = float(next(value for key, value in row.items() if key != "period"))
+        except (KeyError, StopIteration, TypeError, ValueError, OSError):
             continue
     return values
 
@@ -162,7 +153,7 @@ def main() -> None:
     service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
     try:
-        fsi = find_fsi(key, args.years)
+        fsi = fetch_bok_fsi(args.years)
     except Exception as error:
         # The MacroWatch index and KOSPI update must not stop merely because
         # the official comparison series is temporarily unavailable.
