@@ -76,8 +76,8 @@ async function authenticatedUser(supabaseUrl: string, anonKey: string, jwt: stri
 }
 
 function validateTimes(value: unknown) {
-  if (!Array.isArray(value) || value.length !== 2) {
-    throw new Error("확인 시간 두 개를 입력해 주세요.");
+  if (!Array.isArray(value) || value.length < 1 || value.length > 4) {
+    throw new Error("확인 시간은 하루 1회부터 4회까지 설정할 수 있습니다.");
   }
   const times = value.map((item) => String(item));
   if (times.some((item) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(item))) {

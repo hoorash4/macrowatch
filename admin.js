@@ -3,6 +3,18 @@
   const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
   let scheduleTimes = ['08:00', '18:00'];
 
+  function defaultScheduleTime(index) {
+    return ['08:00', '12:00', '16:00', '20:00'][index] || '08:00';
+  }
+
+  function renderScheduleTimeInputs(times = scheduleTimes) {
+    const count = Math.min(4, Math.max(1, Number(document.getElementById('schedule-count').value) || 1));
+    const container = document.getElementById('schedule-times');
+    container.innerHTML = Array.from({ length: count }, (_, index) => `
+      <input data-schedule-time type="time" value="${escapeHtml(times[index] || defaultScheduleTime(index))}" aria-label="${index + 1}회차 확인 시간" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm text-white outline-none focus:border-blue-500">
+    `).join('');
+  }
+
   function formatTime(value) {
     if (!value) return '기록 없음';
     return new Intl.DateTimeFormat('ko-KR', {
@@ -131,9 +143,9 @@
     setBadge(document.getElementById('news-badge'), data.news);
     document.getElementById('news-time').textContent = formatTime(data.news?.updated_at || data.news?.created_at);
 
-    scheduleTimes = Array.isArray(data.schedule?.times) ? data.schedule.times : ['08:00', '18:00'];
-    document.getElementById('schedule-time-1').value = scheduleTimes[0] || '08:00';
-    document.getElementById('schedule-time-2').value = scheduleTimes[1] || '18:00';
+    scheduleTimes = Array.isArray(data.schedule?.times) && data.schedule.times.length ? data.schedule.times : ['08:00', '18:00'];
+    document.getElementById('schedule-count').value = String(scheduleTimes.length);
+    renderScheduleTimeInputs(scheduleTimes);
     document.getElementById('schedule-label').textContent = `매일 ${scheduleTimes.join(' · ')}`;
     document.getElementById('next-check-time').textContent = nextScheduledCheck(scheduleTimes);
     applyDatabaseStatus(data.database);
@@ -300,10 +312,7 @@
 
   async function saveSchedule() {
     const button = document.getElementById('save-schedule-button');
-    const times = [
-      document.getElementById('schedule-time-1').value,
-      document.getElementById('schedule-time-2').value
-    ];
+    const times = Array.from(document.querySelectorAll('[data-schedule-time]'), (input) => input.value);
     button.disabled = true;
     button.textContent = '저장 중';
     try {
@@ -360,6 +369,10 @@
     document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));
     document.getElementById('run-news-button').addEventListener('click', () => runWorkflow('news'));
     document.getElementById('save-schedule-button').addEventListener('click', saveSchedule);
+    document.getElementById('schedule-count').addEventListener('change', () => {
+      const current = Array.from(document.querySelectorAll('[data-schedule-time]'), (input) => input.value);
+      renderScheduleTimeInputs(current);
+    });
     document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
