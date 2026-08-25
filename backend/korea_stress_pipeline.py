@@ -1,7 +1,7 @@
 """Build MacroWatch's Korean market-stress index from official BOK data.
 
-The index deliberately excludes the exchange rate.  FSI is collected only as
-an external official comparison series; it is never an input to the index.
+FSI is collected only as an external official comparison series; it is never
+an input to the index.
 """
 
 from __future__ import annotations
@@ -20,13 +20,27 @@ import requests
 ECOS = "https://ecos.bok.or.kr/api"
 BOK_SNAPSHOT_FSI = "https://snapshot.bok.or.kr/api/chart/getChart?id=1583"
 MARKET_RATES = "817Y002"
+EXCHANGE_RATES = "731Y001"
 KOSPI_TABLE = "802Y001"
 SERIES = {
     "treasury_3y": (MARKET_RATES, "010200000"),
+    "aa_minus_3y": (MARKET_RATES, "010300000"),
     "bbb_minus_3y": (MARKET_RATES, "010320000"),
     "cd_91d": (MARKET_RATES, "010502000"),
     "cp_91d": (MARKET_RATES, "010503000"),
+    "koribor_3m": (MARKET_RATES, "010150000"),
+    "kofr": (MARKET_RATES, "010901000"),
+    "usdkrw": (EXCHANGE_RATES, "0000001"),
     "kospi_close": (KOSPI_TABLE, "0001000"),
+}
+# Fixed stress bands, rather than ranges recalculated from the displayed
+# period.  This keeps an older quiet period from being re-scaled upward when
+# more observations are added later.
+STRESS_BANDS = {
+    "investment_grade": (0.3, 3.0),      # AA- corporate 3Y - KTB 3Y
+    "rating_gap": (1.0, 8.0),            # BBB- corporate 3Y - AA- corporate 3Y
+    "short_term_funding": (0.0, 2.0),    # CP 91D - CD 91D
+    "interbank_liquidity": (0.0, 1.5),   # KORIBOR 3M - KOFR
 }
 TIMEOUT = 45
 HEADERS = {
@@ -174,16 +188,41 @@ def main() -> None:
     today_month = date.today().replace(day=1).isoformat()
     rows = []
     for month in months:
-        bbb, treasury = values["bbb_minus_3y"].get(month), values["treasury_3y"].get(month)
+        bbb, aa, treasury = (
+            values["bbb_minus_3y"].get(month),
+            values["aa_minus_3y"].get(month),
+            values["treasury_3y"].get(month),
+        )
         cp, cd = values["cp_91d"].get(month), values["cd_91d"].get(month)
-        if not all(isinstance(value, float) for value in (bbb, treasury, cp, cd)):
+        koribor, kofr = values["koribor_3m"].get(month), values["kofr"].get(month)
+        usdkrw = values["usdkrw"].get(month)
+        if not all(isinstance(value, float) for value in (bbb, aa, treasury, cp, cd, koribor, kofr, usdkrw)):
             continue
-        credit_spread, funding_spread = bbb - treasury, cp - cd
+        credit_spread = bbb - treasury
+        investment_grade_spread = aa - treasury
+        rating_gap_spread = bbb - aa
+        funding_spread = cp - cd
+        interbank_liquidity_spread = koribor - kofr
+        # Keep the exchange-rate input on a spread-like scale without a
+        # threshold, cap, or changing historical normalization.  A move from
+        # KRW 1,300 to 1,400 per USD changes this input from 1.30 to 1.40.
+        usdkrw_stress = round(usdkrw / 1000.0, 2)
+        component_scores = (
+            score(investment_grade_spread, *STRESS_BANDS["investment_grade"]),
+            score(rating_gap_spread, *STRESS_BANDS["rating_gap"]),
+            score(funding_spread, *STRESS_BANDS["short_term_funding"]),
+            score(interbank_liquidity_spread, *STRESS_BANDS["interbank_liquidity"]),
+            usdkrw_stress,
+        )
         rows.append({
             "month": month,
-            "stress_index": round((score(credit_spread, 1.0, 8.0) + score(funding_spread, 0.0, 2.0)) / 2, 2),
+            "stress_index": round(sum(component_scores) / len(component_scores), 2),
             "corporate_credit_spread": round(credit_spread, 4),
+            "investment_grade_spread": round(investment_grade_spread, 4),
+            "rating_gap_spread": round(rating_gap_spread, 4),
             "short_term_funding_spread": round(funding_spread, 4),
+            "interbank_liquidity_spread": round(interbank_liquidity_spread, 4),
+            "usdkrw_exchange_rate": round(usdkrw, 2),
             "kospi_close": values["kospi_close"].get(month),
             "bok_fsi": fsi.get(month),
             # FSI is a comparison-only series.  It must not determine the
