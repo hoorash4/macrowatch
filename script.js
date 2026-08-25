@@ -323,14 +323,18 @@ function renderCreditConditionsMomentum(rows, monthlyRows = []) {
   const width = 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
-  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 1);
-  const step = [1, 2, 5, 10, 20, 50, 100].find((value) => value >= extent / 2) || 100;
-  const axisMaximum = Math.ceil(extent / step) * step;
+  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 0.005);
+  const step = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10].find((value) => value >= extent / 2) || 20;
+  const axisMaximum = Math.ceil((extent * 1.15) / step) * step;
+  const formatAxisValue = (value) => {
+    const digits = Math.abs(value) < 0.1 ? 3 : Math.abs(value) < 1 ? 2 : 1;
+    return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
+  };
   const dates = [...data.map((row) => row.month), ...monthlyRows.map((row) => row.month)].map((value) => new Date(value).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - value)) / (axisMaximum * 2);
-  const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value > 0 ? '+' : ''}${value}</text>`).join('');
+  const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
   const lines = data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
   const averageLines = data.slice(1).map((row, index) => {
     const previous = data[index];
