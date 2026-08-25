@@ -502,14 +502,14 @@ function renderCreditConditionsMomentum(rows) {
   });
 }
 
-function renderFundingMomentum(rows) {
+function renderHighYieldMomentum(rows) {
   renderWeeklyMomentumChart({
     chartId: 'market-stress-momentum-chart',
     rows,
-    valueKey: 'short_term_funding_spread',
-    source: 'funding',
-    emptyMessage: '첫 산출 후 주간 단기자금 스프레드 변화를 표시합니다.',
-    ariaLabel: '미국 주간 단기자금 스프레드 변화 추이',
+    valueKey: 'high_yield_oas_pct',
+    source: 'high-yield',
+    emptyMessage: '첫 산출 후 주간 하이일드 스프레드 변화를 표시합니다.',
+    ariaLabel: '미국 주간 하이일드 스프레드 변화 추이',
     lineColor: '#99d5ce',
     averageColor: '#0f766e',
   });
@@ -519,7 +519,7 @@ async function loadMarketTension(monthlyRows = []) {
   if (!supabaseClient) return;
   const weeklyResponse = await supabaseClient
     .from('us_market_tension_weekly')
-    .select('week,tension_index,financial_conditions_credit_index,short_term_funding_spread,sp500_friday_close,is_provisional')
+    .select('week,tension_index,financial_conditions_credit_index,high_yield_oas_pct,sp500_friday_close,is_provisional')
     .order('week', { ascending: false })
     .limit(160);
   const monthlyResponse = await supabaseClient
@@ -531,7 +531,7 @@ async function loadMarketTension(monthlyRows = []) {
   renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
   const weeklyRows = (weeklyResponse.data || []).map((row) => ({ ...row, month: row.week }));
   renderCreditConditionsMomentum(weeklyRows);
-  renderFundingMomentum(weeklyRows);
+  renderHighYieldMomentum(weeklyRows);
 }
 
 async function loadMarketStressDashboard() {
