@@ -34,23 +34,20 @@ INDEX_HISTORY_YEARS = 3
 OFFICIAL_DATA_HEADERS = {"User-Agent": "MacroWatch/1.0 (+https://hoorash4.github.io/macrowatch/)"}
 EBP_CSV_URL = "https://www.federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv"
 CMDI_XLSX_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx"
-STRESS_COMPONENTS = (
-    "financial_conditions_risk_index",
-    "high_yield_oas_pct",
-    "financial_conditions_credit_index",
+MONTHLY_STRESS_COMPONENTS = (
+    "excess_bond_premium",
     "corporate_bond_market_distress_index",
     "business_bankruptcy_filings",
 )
-LEAD_COMPONENT_WEIGHTS = {
+WEEKLY_TENSION_COMPONENT_WEIGHTS = {
     "high_yield": 0.20,
-    "financial_conditions": 0.20,
+    "financial_conditions_credit": 0.20,
+    "financial_conditions_risk": 0.20,
     "short_term_funding_spread": 0.20,
     "nonfinancial_leverage": 0.20,
-    "excess_bond_premium": 0.20,
 }
 SHORT_TERM_FUNDING_FLOOR = 0.10
 SHORT_TERM_FUNDING_REFERENCE = 0.60
-SHORT_TERM_FUNDING_CHANGE_REFERENCE = 0.30
 # Fixed 0-to-100 reference ranges. These never roll with incoming data; values
 # above the reference range deliberately remain above 100 to preserve stress
 # severity during future extremes.
@@ -270,11 +267,6 @@ def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
     return {month: value for month, (_observed_on, value) in values.items()}
 
 
-def monthly_values_for_weeks(values: dict[str, float], weeks: list[str]) -> dict[str, float]:
-    """Apply a released monthly value consistently to every weekly bucket in that month."""
-    return {week: values[week[:7] + "-01"] for week in weeks if week[:7] + "-01" in values}
-
-
 def carry_forward_values(values: dict[str, float], periods: list[str]) -> dict[str, float]:
     """Fill an unreleased period with the latest actual observation."""
     carried: dict[str, float] = {}
@@ -288,48 +280,46 @@ def carry_forward_values(values: dict[str, float], periods: list[str]) -> dict[s
     return carried
 
 
-def build_weekly_lead(
+def build_weekly_market_tension(
     high_yield: dict[str, float],
-    conditions: dict[str, float],
+    credit_conditions: dict[str, float],
+    risk_conditions: dict[str, float],
     funding: dict[str, float],
     leverage: dict[str, float],
-    excess_bond_premium: dict[str, float],
 ) -> list[dict[str, object]]:
-    weeks = sorted(set(high_yield) | set(conditions) | set(funding) | set(leverage))
-    excess_bond_premium = monthly_values_for_weeks(excess_bond_premium, weeks)
-    raw_sources = (high_yield, conditions, funding, leverage, excess_bond_premium)
-    high_yield, conditions, funding, leverage, excess_bond_premium = (
+    weeks = sorted(set(high_yield) | set(credit_conditions) | set(risk_conditions) | set(funding) | set(leverage))
+    raw_sources = (high_yield, credit_conditions, risk_conditions, funding, leverage)
+    high_yield, credit_conditions, risk_conditions, funding, leverage = (
         carry_forward_values(values, weeks)
         for values in raw_sources
     )
     rows, previous_level = [], None
     for week in weeks:
-        hy, condition, spread, leverage_value, ebp = (
+        hy, credit_condition, risk_condition, spread, leverage_value = (
             high_yield.get(week),
-            conditions.get(week),
+            credit_conditions.get(week),
+            risk_conditions.get(week),
             funding.get(week),
             leverage.get(week),
-            excess_bond_premium.get(week),
         )
-        if not all(isinstance(value, (int, float)) for value in (hy, condition, spread, leverage_value, ebp)):
+        if not all(isinstance(value, (int, float)) for value in (hy, credit_condition, risk_condition, spread, leverage_value)):
             continue
         level = (
-            fixed_stress_score(float(hy), "high_yield_oas_pct") * LEAD_COMPONENT_WEIGHTS["high_yield"]
-            + fixed_stress_score(float(condition), "financial_conditions_credit_index") * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
-            + positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
-            + fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index") * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
-            + fixed_stress_score(float(ebp), "excess_bond_premium") * LEAD_COMPONENT_WEIGHTS["excess_bond_premium"]
+            fixed_stress_score(float(hy), "high_yield_oas_pct") * WEEKLY_TENSION_COMPONENT_WEIGHTS["high_yield"]
+            + fixed_stress_score(float(credit_condition), "financial_conditions_credit_index") * WEEKLY_TENSION_COMPONENT_WEIGHTS["financial_conditions_credit"]
+            + fixed_stress_score(float(risk_condition), "financial_conditions_risk_index") * WEEKLY_TENSION_COMPONENT_WEIGHTS["financial_conditions_risk"]
+            + positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE) * WEEKLY_TENSION_COMPONENT_WEIGHTS["short_term_funding_spread"]
+            + fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index") * WEEKLY_TENSION_COMPONENT_WEIGHTS["nonfinancial_leverage"]
         )
-        rounded_level = round(level, 2)
-        momentum = None if previous_level is None else rounded_level - previous_level
+        tension_index = round(level, 2)
+        momentum = None if previous_level is None else tension_index - previous_level
         rows.append({
             "week": week,
-            "lead_index": rounded_level,
-            "lead_momentum": None if momentum is None else round(momentum, 2),
-            "leverage_signal": round(fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index"), 2),
+            "tension_index": tension_index,
+            "tension_momentum": None if momentum is None else round(momentum, 2),
             "is_provisional": any(week not in source for source in raw_sources),
         })
-        previous_level = rounded_level
+        previous_level = tension_index
     return rows
 
 
@@ -441,85 +431,19 @@ def positive_score(value: float, reference: float) -> float:
     return max(0.0, value / reference * 100.0)
 
 
-def signed_score(value: float, reference: float) -> float:
-    return value / reference * 100.0
-
-
-def build_market_stress_lead(
-    rows: list[dict[str, object]],
-    short_term_funding_spread: dict[str, float],
-) -> tuple[dict[str, float], dict[str, float]]:
-    """Return independent level and month-over-month market-stress signals."""
-    ordered_rows = sorted(rows, key=lambda row: str(row["month"]))
-    lead_scores: dict[str, float] = {}
-    momentum_scores: dict[str, float] = {}
-    for index, row in enumerate(ordered_rows):
-        month = str(row["month"])
-        try:
-            funding_spread = float(short_term_funding_spread[month])
-            component_scores = {
-                "high_yield": fixed_stress_score(float(row["high_yield_oas_pct"]), "high_yield_oas_pct"),
-                "financial_conditions": fixed_stress_score(float(row["financial_conditions_credit_index"]), "financial_conditions_credit_index"),
-                "short_term_funding_spread": positive_score(
-                    funding_spread - SHORT_TERM_FUNDING_FLOOR,
-                    SHORT_TERM_FUNDING_REFERENCE,
-                ),
-            }
-        except (KeyError, TypeError, ValueError):
-            continue
-        available_weights = {
-            key: LEAD_COMPONENT_WEIGHTS[key]
-            for key in component_scores
-        }
-        available_weight_total = sum(available_weights.values())
-        lead_scores[month] = round(
-            sum(component_scores[key] * weight for key, weight in available_weights.items())
-            / available_weight_total,
-            2,
-        )
-        if index == 0:
-            continue
-        previous = ordered_rows[index - 1]
-        try:
-            momentum_components = {
-                "high_yield": signed_score(
-                    float(row["high_yield_oas_pct"]) - float(previous["high_yield_oas_pct"]),
-                    1.0,
-                ),
-                "financial_conditions": signed_score(
-                    float(row["financial_conditions_credit_index"]) - float(previous["financial_conditions_credit_index"]),
-                    0.5,
-                ),
-                "short_term_funding_spread": signed_score(
-                    funding_spread - float(short_term_funding_spread[str(previous["month"])]),
-                    SHORT_TERM_FUNDING_CHANGE_REFERENCE,
-                ),
-            }
-        except (KeyError, TypeError, ValueError):
-            continue
-        momentum_scores[month] = round(
-            sum(momentum_components[key] * weight for key, weight in available_weights.items())
-            / available_weight_total,
-            2,
-        )
-    return lead_scores, momentum_scores
-
-
 def build_market_stress_index(
     rows: list[dict[str, object]],
     today: date,
     sp500_month_end: dict[str, float],
-    short_term_funding_spread: dict[str, float],
 ) -> list[dict[str, object]]:
     index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
     filings, confirmed_filings = smoothed_filings(recent_rows)
-    lead_scores, momentum_scores = build_market_stress_lead(recent_rows, short_term_funding_spread)
     months = [str(row["month"]) for row in recent_rows]
     raw_component_values: dict[str, dict[str, float]] = {
         "business_bankruptcy_filings": filings,
     }
-    for key in STRESS_COMPONENTS:
+    for key in MONTHLY_STRESS_COMPONENTS:
         if key == "business_bankruptcy_filings":
             continue
         raw_component_values[key] = {
@@ -539,20 +463,18 @@ def build_market_stress_index(
     index_rows: list[dict[str, object]] = []
     for row in recent_rows:
         month = str(row["month"])
-        if any(month not in component_scores.get(key, {}) for key in STRESS_COMPONENTS):
+        if any(month not in component_scores.get(key, {}) for key in MONTHLY_STRESS_COMPONENTS):
             continue
-        score = sum(component_scores[key][month] for key in STRESS_COMPONENTS) / len(STRESS_COMPONENTS)
+        score = sum(component_scores[key][month] for key in MONTHLY_STRESS_COMPONENTS) / len(MONTHLY_STRESS_COMPONENTS)
         index_rows.append(
             {
                 "month": month,
                 "stress_index": round(score, 2),
                 "is_provisional": (
                     month not in confirmed_filings
-                    or any(month not in raw_component_values.get(key, {}) for key in STRESS_COMPONENTS)
+                    or any(month not in raw_component_values.get(key, {}) for key in MONTHLY_STRESS_COMPONENTS)
                 ),
                 "sp500_month_end_close": sp500_month_end.get(month),
-                "lead_index": lead_scores.get(month),
-                "lead_momentum": momentum_scores.get(month),
             }
         )
     return index_rows
@@ -575,15 +497,10 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
     response.raise_for_status()
 
 
-def upsert_weekly_lead(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_lead_weekly?on_conflict=week"
+def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/us_market_tension_weekly?on_conflict=week"
     headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}
     response = requests.post(endpoint, headers=headers, json=rows, timeout=TIMEOUT_SECONDS)
-    if response.status_code == 400 and ("leverage_signal" in response.text or "is_provisional" in response.text):
-        # Keep the established lead series updating while the additive database
-        # migration is still being applied by the production integration.
-        legacy_rows = [{key: value for key, value in row.items() if key not in {"leverage_signal", "is_provisional"}} for row in rows]
-        response = requests.post(endpoint, headers=headers, json=legacy_rows, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
 
 
@@ -672,23 +589,23 @@ def main() -> None:
         index_rows_input,
         today,
         sp500_month_end,
-        short_term_funding_spread,
     )
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
-    weekly_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
+    weekly_credit_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
+    weekly_risk_conditions = fetch_fred_week_end(FINANCIAL_RISK_SERIES, fred_api_key, start, today)
     weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, start, today)
     weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, start, today)
     weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, today)
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys()}
-    weekly_rows = build_weekly_lead(
+    weekly_rows = build_weekly_market_tension(
         weekly_high_yield,
-        weekly_conditions,
+        weekly_credit_conditions,
+        weekly_risk_conditions,
         weekly_funding,
         weekly_leverage,
-        excess_bond_premium,
     )
-    upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
+    upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
     if latest_dates:
         upsert_latest_credit_stress({
             "singleton": True,

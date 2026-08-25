@@ -102,7 +102,7 @@
     await Promise.all([
       window.fetchTargets?.(),
       window.loadNewsSentimentDashboard?.(),
-      window.loadCreditStressDashboard?.(),
+      window.loadMarketStressDashboard?.(),
       window.loadCreditStressComponentsDashboard?.(),
     ]);
   }
