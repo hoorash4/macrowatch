@@ -110,7 +110,7 @@ def find_fsi(key: str, years: int) -> dict[str, float]:
     stat = str(table["STAT_CODE"])
     items = request(["StatisticItemList", quote(key, safe=""), "json", "kr", "1", "1000", stat])
     item_rows = items.get("StatisticItemList", {}).get("row", [])
-    print(f"fsi_item_candidates={[(row.get('ITEM_CODE'), row.get('ITEM_NAME'), row.get('ITEM_NAME1')) for row in item_rows[:8]}")
+    print(f"fsi_item_candidates={[(row.get('ITEM_CODE'), row.get('ITEM_NAME'), row.get('ITEM_NAME1')) for row in item_rows[:8]]}")
     item = next((row for row in item_rows
                  if "금융불안" in str(row.get("ITEM_NAME", row.get("ITEM_NAME1", "")))), None)
     code = str((item or {}).get("ITEM_CODE", (item or {}).get("ITEM_CODE1", "")))
