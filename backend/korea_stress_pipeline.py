@@ -99,13 +99,19 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
 def find_fsi(key: str, years: int) -> dict[str, float]:
     """Discover BOK's FSI table instead of hard-coding a fragile table code."""
     catalog = request(["StatisticTableList", quote(key, safe=""), "json", "kr", "1", "10000"])
-    table = next((row for row in catalog.get("StatisticTableList", {}).get("row", [])
-                  if "금융불안" in str(row.get("STAT_NAME", "")) and str(row.get("CYCLE", "")) == "M"), None)
+    matching_tables = [
+        row for row in catalog.get("StatisticTableList", {}).get("row", [])
+        if "금융불안" in str(row.get("STAT_NAME", ""))
+    ]
+    print(f"fsi_table_candidates={[(row.get('STAT_CODE'), row.get('STAT_NAME'), row.get('CYCLE')) for row in matching_tables[:5]]}")
+    table = next((row for row in matching_tables if str(row.get("CYCLE", "")) == "M"), None)
     if not table:
         return {}
     stat = str(table["STAT_CODE"])
     items = request(["StatisticItemList", quote(key, safe=""), "json", "kr", "1", "1000", stat])
-    item = next((row for row in items.get("StatisticItemList", {}).get("row", [])
+    item_rows = items.get("StatisticItemList", {}).get("row", [])
+    print(f"fsi_item_candidates={[(row.get('ITEM_CODE'), row.get('ITEM_NAME'), row.get('ITEM_NAME1')) for row in item_rows[:8]}")
+    item = next((row for row in item_rows
                  if "금융불안" in str(row.get("ITEM_NAME", row.get("ITEM_NAME1", "")))), None)
     code = str((item or {}).get("ITEM_CODE", (item or {}).get("ITEM_CODE1", "")))
     if not code:
