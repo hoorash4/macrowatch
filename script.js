@@ -611,7 +611,7 @@ function renderEmStressDashboard(rows, usLeadRows = []) {
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const overlay = weekly.map((row) => {
     const lead = usLeadScoreAt(usLeadRows, row.week);
-    return Number.isFinite(lead) ? { ...row, us_lead_overlay: Number(row.stress_index) * 0.7 + lead * 0.3 } : null;
+    return Number.isFinite(lead) ? { ...row, us_lead_overlay: Number(row.stress_index) * 0.5 + lead * 0.5 } : null;
   }).filter(Boolean);
   const values = weekly.map((row) => Number(row.stress_index)).concat(overlay.map((row) => Number(row.us_lead_overlay)));
   const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1);
@@ -753,7 +753,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = [], usLeadRows = []) {
     const monthEnd = new Date(`${String(row.month).slice(0, 7)}-01`);
     monthEnd.setMonth(monthEnd.getMonth() + 1, 0);
     const lead = usLeadScoreAt(usLeadRows, monthEnd.toISOString().slice(0, 10));
-    return Number.isFinite(lead) ? { ...row, us_lead_overlay: Number(row.stress_index) * 0.7 + lead * 0.3 } : null;
+    return Number.isFinite(lead) ? { ...row, us_lead_overlay: Number(row.stress_index) * 0.5 + lead * 0.5 } : null;
   }).filter(Boolean);
   const leftValues = data.map((row) => Number(row.stress_index)).concat(overlay.map((row) => Number(row.us_lead_overlay))).filter(Number.isFinite);
   const min = Math.min(...leftValues), max = Math.max(...leftValues), range = Math.max(max - min, 1);
