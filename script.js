@@ -570,7 +570,36 @@ async function loadMarketStressDashboard() {
 
 window.loadMarketStressDashboard = loadMarketStressDashboard;
 
-function renderEmStressDashboard(rows) {
+function buildUsLeadSignalRows(rows) {
+  const scored = [...rows]
+    .map((row) => {
+      const credit = Number(row.financial_conditions_credit_index);
+      const risk = Number(row.financial_conditions_risk_index);
+      if (!Number.isFinite(credit) || !Number.isFinite(risk)) return null;
+      // The fixed -0.5 to 2.0 reference band is also used by the U.S.
+      // weekly tension pipeline, so this overlay never re-scales with time.
+      const score = (value) => Math.max(0, ((value + 0.5) / 2.5) * 100);
+      return { week: row.week, lead_score: score(credit) * 0.6 + score(risk) * 0.4 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  return scored.map((row, index) => {
+    const window = scored.slice(Math.max(0, index - 3), index + 1);
+    return { ...row, lead_score: window.reduce((sum, item) => sum + item.lead_score, 0) / window.length };
+  });
+}
+
+function usLeadScoreAt(leadRows, dateValue) {
+  const target = new Date(dateValue).getTime();
+  let matched = null;
+  for (const row of leadRows) {
+    if (new Date(row.week).getTime() <= target) matched = row;
+    else break;
+  }
+  return matched?.lead_score ?? null;
+}
+
+function renderEmStressDashboard(rows, usLeadRows = []) {
   const chart = document.getElementById('em-stress-chart');
   const weekly = [...rows]
     .filter((row) => Number.isFinite(Number(row.stress_index)))
@@ -580,7 +609,11 @@ function renderEmStressDashboard(rows) {
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const values = weekly.map((row) => Number(row.stress_index));
+  const overlay = weekly.map((row) => {
+    const lead = usLeadScoreAt(usLeadRows, row.week);
+    return Number.isFinite(lead) ? { ...row, us_lead_overlay: Number(row.stress_index) * 0.7 + lead * 0.3 } : null;
+  }).filter(Boolean);
+  const values = weekly.map((row) => Number(row.stress_index)).concat(overlay.map((row) => Number(row.us_lead_overlay)));
   const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1);
   const lower = Math.max(0, minimum - range * .1), upper = maximum + range * .1;
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / Math.max(1, upper - lower);
@@ -625,7 +658,11 @@ function renderEmStressDashboard(rows) {
     }
   });
   finishPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths.join('')}${eemLabels}${years}</svg>`;
+  const usLeadOverlay = overlay.slice(1).map((row, index) => {
+    const previous = overlay[index];
+    return `<line x1="${x(previous.week)}" y1="${y(Number(previous.us_lead_overlay))}" x2="${x(row.week)}" y2="${y(Number(row.us_lead_overlay))}" stroke="#4f9da3" stroke-opacity="0.48" stroke-width="2.5" stroke-linecap="round"/>`;
+  }).join('');
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${usLeadOverlay}${paths.join('')}${eemLabels}${years}</svg>`;
 
   const createElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -679,11 +716,12 @@ async function loadEmStressDashboard() {
   const chart = document.getElementById('em-stress-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from('em_market_stress_weekly')
-      .select('week,stress_index,eem_weekly_close,is_provisional')
-      .order('week', { ascending: false }).limit(160);
-    if (error) throw error;
-    renderEmStressDashboard(data || []);
+    const [emResponse, leadResponse] = await Promise.all([
+      supabaseClient.from('em_market_stress_weekly').select('week,stress_index,eem_weekly_close,is_provisional').order('week', { ascending: false }).limit(160),
+      supabaseClient.from('us_market_tension_weekly').select('week,financial_conditions_credit_index,financial_conditions_risk_index').order('week', { ascending: false }).limit(200),
+    ]);
+    if (emResponse.error) throw emResponse.error;
+    renderEmStressDashboard(emResponse.data || [], buildUsLeadSignalRows(leadResponse.data || []));
   } catch (_) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 지수를 불러오지 못했습니다.</div>';
   }
@@ -691,7 +729,7 @@ async function loadEmStressDashboard() {
 
 window.loadEmStressDashboard = loadEmStressDashboard;
 
-function renderKoreaStressChart(rows, weeklyKospiRows = []) {
+function renderKoreaStressChart(rows, weeklyKospiRows = [], usLeadRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
   const data = [...rows]
@@ -711,7 +749,13 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const leftValues = data.map((row) => Number(row.stress_index)).filter(Number.isFinite);
+  const overlay = data.map((row) => {
+    const monthEnd = new Date(`${String(row.month).slice(0, 7)}-01`);
+    monthEnd.setMonth(monthEnd.getMonth() + 1, 0);
+    const lead = usLeadScoreAt(usLeadRows, monthEnd.toISOString().slice(0, 10));
+    return Number.isFinite(lead) ? { ...row, us_lead_overlay: Number(row.stress_index) * 0.7 + lead * 0.3 } : null;
+  }).filter(Boolean);
+  const leftValues = data.map((row) => Number(row.stress_index)).concat(overlay.map((row) => Number(row.us_lead_overlay))).filter(Number.isFinite);
   const min = Math.min(...leftValues), max = Math.max(...leftValues), range = Math.max(max - min, 1);
   const lower = Math.max(0, min - range * 0.12), upper = max + range * 0.12;
   const y = (value) => padding.top + (height - padding.top - padding.bottom) * (upper - value) / Math.max(1, upper - lower);
@@ -734,12 +778,13 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     const before = data[index], provisional = Boolean(before.is_provisional || row.is_provisional);
     return `<line x1="${x(before.month)}" y1="${y(Number(before.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="${provisional ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisional ? ' stroke-dasharray="4 3"' : ''}/>`;
   }).join('');
+  const usLeadOverlay = overlay.slice(1).map((row, index) => `<line x1="${x(overlay[index].month)}" y1="${y(Number(overlay[index].us_lead_overlay))}" x2="${x(row.month)}" y2="${y(Number(row.us_lead_overlay))}" stroke="#4f9da3" stroke-opacity="0.48" stroke-width="2.5" stroke-linecap="round"/>`).join('');
   const kospi = hasKospi ? weeklyKospi.slice(1).map((row, index) => {
     const before = weeklyKospi[index];
     return `<line x1="${x(before.week)}" y1="${kospiY(Number(before.kospi_close))}" x2="${x(row.week)}" y2="${kospiY(Number(row.kospi_close))}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
   }).join('') : '';
   const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${usLeadOverlay}${stress}${kospiLabels}</svg>`;
 
   const createSvgElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -831,13 +876,16 @@ async function loadKoreaStressDashboard() {
   const chart = document.getElementById('korea-stress-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const [monthlyResponse, weeklyResponse] = await Promise.all([
+    const [monthlyResponse, weeklyResponse, leadResponse] = await Promise.all([
       supabaseClient.from('korea_market_stress_monthly')
         .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
         .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
       supabaseClient.from('korea_market_stress_weekly')
         .select('week,kospi_close,corporate_credit_spread,short_term_funding_spread')
         .order('week', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS * 6),
+      supabaseClient.from('us_market_tension_weekly')
+        .select('week,financial_conditions_credit_index,financial_conditions_risk_index')
+        .order('week', { ascending: false }).limit(200),
     ]);
     if (monthlyResponse.error) throw monthlyResponse.error;
     if (weeklyResponse.error) throw weeklyResponse.error;
@@ -850,7 +898,7 @@ async function loadKoreaStressDashboard() {
         // K-MSI 자체는 DB 자료만으로 계속 표시한다.
       }
     }
-    renderKoreaStressChart(displayRows, weeklyResponse.data || []);
+    renderKoreaStressChart(displayRows, weeklyResponse.data || [], buildUsLeadSignalRows(leadResponse.data || []));
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';
   }
