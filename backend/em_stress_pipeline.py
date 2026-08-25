@@ -158,12 +158,14 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
         is_provisional = missing_actual or week_date > last_completed_friday or any(week > latest for latest in source_last_weeks.values())
         hy_average = trailing_average(hy_history)
         tail_average = trailing_average(tail_history)
+        volatility_average = trailing_average(volatility_history)
         rows.append({
             "week": week,
             "stress_index": round(stress_index, 2),
             "high_yield_4w_average": round(hy_average, 4),
             "tail_risk_4w_average": round(tail_average, 4),
             "blended_4w_average": round((hy_average + tail_average) / 2, 4),
+            "vxeem_4w_average": round(volatility_average, 4),
             "eem_weekly_close": round(carried_eem[week], 2) if week in carried_eem else None,
             "is_provisional": is_provisional,
         })
