@@ -307,7 +307,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-streak { color:#5e7890; font-size:.6rem; font-weight:750; text-align:right; white-space:nowrap; }
 .sector-flow-week li em { color:#326e98; font-size:.62rem; font-style:normal; font-weight:700; text-align:right; white-space:nowrap; }
 .sector-flow-week-current { border-color:#c86b20; box-shadow:0 5px 12px rgba(190,104,35,.13); }
-.sector-flow-week-current header { background:linear-gradient(90deg,#e99542 0%,#dc7829 42%,#bc5c1d 100%); }
+.sector-flow-week-current header { background:linear-gradient(90deg,#db8335 0%,#d4772d 42%,#c96b25 100%); }
 .sector-flow-week-current li b { background:#fbe7d1; color:#ad5218; }
 .sentiment-segment-label { color:#fff !important; text-shadow:0 1px 2px rgba(0,0,0,.32); }
 
