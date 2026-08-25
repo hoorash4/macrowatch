@@ -4,6 +4,7 @@ create table if not exists public.em_market_stress_weekly (
   high_yield_4w_average numeric(12, 4) not null,
   tail_risk_4w_average numeric(12, 4) not null,
   blended_4w_average numeric(12, 4) not null,
+  eem_weekly_close numeric(12, 2),
   is_provisional boolean not null default false,
   updated_at timestamptz not null default now()
 );

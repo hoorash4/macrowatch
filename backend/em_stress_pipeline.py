@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import os
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
 
 FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
 TIMEOUT = 45
 HISTORY_YEARS = 3
 
@@ -70,6 +71,37 @@ def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) ->
     return {week: value for week, (_observed_on, value) in weeks.items()}
 
 
+def fetch_eem_week_end(start: date, end: date) -> dict[str, float]:
+    """Fetch EEM closes for personal-use comparison, then retain each week's last close."""
+    response = requests.get(
+        YAHOO_CHART_URL,
+        params={
+            "period1": int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
+            "period2": int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp()),
+            "interval": "1d",
+            "events": "history",
+        },
+        headers={"User-Agent": "MacroWatch personal research dashboard/1.0"},
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    result = (response.json().get("chart", {}).get("result") or [{}])[0]
+    timestamps = result.get("timestamp") or []
+    closes = ((result.get("indicators", {}).get("quote") or [{}])[0].get("close") or [])
+    weeks: dict[str, tuple[date, float]] = {}
+    for raw_timestamp, raw_close in zip(timestamps, closes):
+        if raw_close is None:
+            continue
+        try:
+            observed_on, close = datetime.fromtimestamp(raw_timestamp, tz=timezone.utc).date(), float(raw_close)
+        except (TypeError, ValueError, OSError):
+            continue
+        week = (observed_on + timedelta(days=4 - observed_on.weekday())).isoformat()
+        if week not in weeks or observed_on > weeks[week][0]:
+            weeks[week] = (observed_on, close)
+    return {week: close for week, (_observed_on, close) in weeks.items()}
+
+
 def carry_forward(values: dict[str, float], weeks: list[str]) -> dict[str, float]:
     carried: dict[str, float] = {}
     previous: float | None = None
@@ -90,11 +122,12 @@ def trailing_average(values: list[float], length: int = 4) -> float:
     return sum(window) / len(window)
 
 
-def build_rows(raw: dict[str, dict[str, float]], today: date) -> list[dict[str, object]]:
+def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[str, float]) -> list[dict[str, object]]:
     weeks = sorted(set().union(*(set(values) for values in raw.values())))
     if not weeks:
         return []
     carried = {key: carry_forward(values, weeks) for key, values in raw.items()}
+    carried_eem = carry_forward(eem_values, weeks)
     last_completed_friday = today - timedelta(days=(today.weekday() - 4) % 7)
     source_last_weeks = {key: max(values) for key, values in raw.items() if values}
     hy_history: list[float] = []
@@ -123,6 +156,7 @@ def build_rows(raw: dict[str, dict[str, float]], today: date) -> list[dict[str, 
             "high_yield_4w_average": round(hy_average, 4),
             "tail_risk_4w_average": round(tail_average, 4),
             "blended_4w_average": round((hy_average + tail_average) / 2, 4),
+            "eem_weekly_close": round(carried_eem[week], 2) if week in carried_eem else None,
             "is_provisional": is_provisional,
         })
     return rows
@@ -154,11 +188,12 @@ def main() -> None:
     today = date.today()
     start = today.replace(year=today.year - args.years)
     raw = {key: fetch_fred_week_end(series_id, fred_key, start, today) for key, series_id in SERIES.items()}
-    rows = build_rows(raw, today)
+    eem_values = fetch_eem_week_end(start, today)
+    rows = build_rows(raw, today, eem_values)
     if not rows:
         raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
     upsert(rows, supabase_url, service_key)
-    print("upserted_weeks={} ".format(len(rows)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
+    print("upserted_weeks={} eem={} ".format(len(rows), len(eem_values)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
 
 
 if __name__ == "__main__":

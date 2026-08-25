@@ -252,7 +252,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
   const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
+  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
@@ -585,6 +585,14 @@ function renderEmStressDashboard(rows) {
   const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1);
   const lower = Math.max(0, minimum - range * .1), upper = maximum + range * .1;
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / Math.max(1, upper - lower);
+  const eemValues = weekly.map((row) => Number(row.eem_weekly_close)).filter(Number.isFinite);
+  const hasEem = eemValues.length > 1;
+  const eemMinimum = hasEem ? Math.min(...eemValues) : 0;
+  const eemMaximum = hasEem ? Math.max(...eemValues) : 1;
+  const eemRange = Math.max(eemMaximum - eemMinimum, 1);
+  const eemLower = Math.max(0, eemMinimum - eemRange * .1);
+  const eemUpper = eemMaximum + eemRange * .1;
+  const eemY = (value) => padding.top + ((height - padding.top - padding.bottom) * (eemUpper - value)) / Math.max(1, eemUpper - eemLower);
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
@@ -592,6 +600,12 @@ function renderEmStressDashboard(rows) {
     const value = upper - (upper - lower) * index / 4;
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
   }).join('');
+  const eem = hasEem ? weekly.slice(1).map((row, index) => {
+    const previous = weekly[index];
+    const before = Number(previous.eem_weekly_close), current = Number(row.eem_weekly_close);
+    return Number.isFinite(before) && Number.isFinite(current) ? `<line x1="${x(previous.week)}" y1="${eemY(before)}" x2="${x(row.week)}" y2="${eemY(current)}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>` : '';
+  }).join('') : '';
+  const eemLabels = hasEem ? [eemLower, (eemLower + eemUpper) / 2, eemUpper].map((value) => `<text x="${width - padding.right + 8}" y="${eemY(value) + 3}" fill="#6b7280" font-size="10">${value.toFixed(1)}</text>`).join('') : '';
   const paths = [];
   let path = '', provisionalPath = null;
   const finishPath = () => {
@@ -612,7 +626,7 @@ function renderEmStressDashboard(rows) {
     }
   });
   finishPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 주간 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${paths.join('')}${years}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths.join('')}${eemLabels}${years}</svg>`;
 
   const createElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -634,7 +648,7 @@ function renderEmStressDashboard(rows) {
       if (valueLabel && periodLabel) {
         const [, month, day] = String(nearest.week).split('-').map(Number);
         valueLabel.setAttribute('x', pointX); valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
-        valueLabel.textContent = Number(nearest.stress_index).toFixed(2);
+        valueLabel.textContent = `EM-MSI ${Number(nearest.stress_index).toFixed(2)}${Number.isFinite(Number(nearest.eem_weekly_close)) ? ` · EEM ${Number(nearest.eem_weekly_close).toFixed(2)}` : ''}`;
         periodLabel.setAttribute('x', pointX); periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
         periodLabel.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
       }
@@ -706,7 +720,7 @@ async function loadEmStressDashboard() {
   if (!chart || !supabaseClient) return;
   try {
     const { data, error } = await supabaseClient.from('em_market_stress_weekly')
-      .select('week,stress_index,high_yield_4w_average,tail_risk_4w_average,blended_4w_average,is_provisional')
+      .select('week,stress_index,high_yield_4w_average,tail_risk_4w_average,blended_4w_average,eem_weekly_close,is_provisional')
       .order('week', { ascending: false }).limit(160);
     if (error) throw error;
     renderEmStressDashboard(data || []);
