@@ -272,7 +272,11 @@ def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
         for row_number, header in enumerate(sheet.iter_rows(min_row=1, max_row=100, values_only=True), start=1):
             labels = [str(value or "").strip().lower() for value in header]
             try:
-                date_column = next(index for index, label in enumerate(labels) if label == "date" or "date" in label)
+                date_column = next(
+                    index
+                    for index, label in enumerate(labels)
+                    if label == "date" or "date" in label or label in {"eow_friday", "week_end", "week ending"}
+                )
                 value_column = next(index for index, label in enumerate(labels) if ("market" in label and "cmdi" in label) or label == "market")
                 header_row = row_number
                 break
