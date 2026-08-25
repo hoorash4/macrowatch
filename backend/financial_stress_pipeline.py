@@ -289,6 +289,7 @@ def build_weekly_market_tension(
     risk_conditions: dict[str, float],
     funding: dict[str, float],
     leverage: dict[str, float],
+    sp500: dict[str, float],
 ) -> list[dict[str, object]]:
     weeks = sorted(set(high_yield) | set(credit_conditions) | set(risk_conditions) | set(funding) | set(leverage))
     raw_sources = (high_yield, credit_conditions, risk_conditions, funding, leverage)
@@ -322,6 +323,7 @@ def build_weekly_market_tension(
             "tension_index": tension_index,
             "tension_momentum": None if momentum is None else round(momentum, 2),
             "financial_conditions_credit_index": round(float(credit_condition), 4),
+            "sp500_friday_close": sp500.get(week),
             "is_provisional": week > latest_confirmed_week,
         })
         previous_level = tension_index
@@ -600,6 +602,7 @@ def main() -> None:
     weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, start, today)
     weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, start, today)
     weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, today)
+    weekly_sp500 = fetch_fred_week_end(SP500_SERIES, fred_api_key, start, today)
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys()}
     weekly_rows = build_weekly_market_tension(
         weekly_high_yield,
@@ -607,6 +610,7 @@ def main() -> None:
         weekly_risk_conditions,
         weekly_funding,
         weekly_leverage,
+        weekly_sp500,
     )
     upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
     if latest_dates:

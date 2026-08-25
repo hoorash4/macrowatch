@@ -256,6 +256,15 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
+  const sp500Values = weekly.map((row) => Number(row.sp500_friday_close)).filter(Number.isFinite);
+  const hasSp500 = sp500Values.length > 1;
+  const sp500Minimum = hasSp500 ? Math.min(...sp500Values) : 0;
+  const sp500Maximum = hasSp500 ? Math.max(...sp500Values) : 1;
+  const sp500Range = Math.max(sp500Maximum - sp500Minimum, Math.max(sp500Maximum * 0.1, 1));
+  const sp500Step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((step) => step >= sp500Range / 4) || 5000;
+  const sp500Lower = hasSp500 ? Math.max(0, Math.floor((sp500Minimum - sp500Range * .1) / sp500Step) * sp500Step) : 0;
+  const sp500Upper = hasSp500 ? Math.ceil((sp500Maximum + sp500Range * .1) / sp500Step) * sp500Step : 1;
+  const sp500Y = (value) => padding.top + ((height - padding.top - padding.bottom) * (sp500Upper - value)) / Math.max(1, sp500Upper - sp500Lower);
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
@@ -264,6 +273,17 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     const value = upper - (upper - lower) * ratio;
     const py = padding.top + (height - padding.top - padding.bottom) * ratio;
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
+  }).join('');
+  const sp500Axis = hasSp500 ? Array.from(
+    { length: Math.round((sp500Upper - sp500Lower) / sp500Step) + 1 },
+    (_, index) => sp500Lower + index * sp500Step,
+  ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#285e8e" font-size="10">${value.toLocaleString('en-US')}</text>`).join('') : '';
+  const sp500Lines = weekly.slice(1).map((row, index) => {
+    const previous = weekly[index];
+    const previousValue = Number(previous.sp500_friday_close);
+    const currentValue = Number(row.sp500_friday_close);
+    if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
+    return `<line x1="${x(previous.week)}" y1="${sp500Y(previousValue)}" x2="${x(row.week)}" y2="${sp500Y(currentValue)}" stroke="#285e8e" stroke-width="2" stroke-linecap="round"/>`;
   }).join('');
   const weeklyPaths = [];
   let weeklyPath = '';
@@ -286,7 +306,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     weeklyPath += ` L ${endPoint}`;
   });
   finishWeeklyPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${weeklyPaths.join('')}${years}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 금요일 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths.join('')}${years}</svg>`;
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const createSvgElement = (name, attributes) => {
@@ -386,6 +406,18 @@ function renderCreditConditionsMomentum(rows) {
     ...row,
     value: row.value - creditConditions[index].value,
   }));
+  const msiLevels = [...rows]
+    .map((row) => ({ ...row, value: toCreditStressNumber(row.tension_index) }))
+    .filter((row) => Number.isFinite(row.value))
+    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const msiChanges = msiLevels.slice(1).map((row, index) => ({
+    month: row.month,
+    value: row.value - msiLevels[index].value,
+  }));
+  const msiAverages = new Map(msiChanges.map((row, index) => {
+    const window = msiChanges.slice(Math.max(0, index - 3), index + 1);
+    return [row.month, window.length === 4 ? window.reduce((sum, item) => sum + item.value, 0) / 4 : null];
+  }));
   const data = changes.map((row, index) => {
     const window = changes.slice(Math.max(0, index - 3), index + 1);
     return {
@@ -393,6 +425,7 @@ function renderCreditConditionsMomentum(rows) {
       average: window.length === 4
         ? window.reduce((sum, item) => sum + item.value, 0) / 4
         : null,
+      msiAverage: msiAverages.get(row.month) ?? null,
     };
   });
   if (!data.length) {
@@ -402,7 +435,7 @@ function renderCreditConditionsMomentum(rows) {
   const width = 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
-  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 0.005);
+  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0), Math.abs(row.msiAverage || 0)]), 0.005);
   const step = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10].find((value) => value >= extent / 2) || 20;
   const axisMaximum = Math.ceil((extent * 1.15) / step) * step;
   const formatAxisValue = (value) => {
@@ -420,8 +453,13 @@ function renderCreditConditionsMomentum(rows) {
     if (!Number.isFinite(previous.average) || !Number.isFinite(row.average)) return '';
     return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
+  const msiAverageLines = data.slice(1).map((row, index) => {
+    const previous = data[index];
+    if (!Number.isFinite(previous.msiAverage) || !Number.isFinite(row.msiAverage)) return '';
+    return `<line x1="${x(previous.month)}" y1="${y(previous.msiAverage)}" x2="${x(row.month)}" y2="${y(row.msiAverage)}" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>`;
+  }).join('');
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 신용여건 변화 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 신용여건 및 시장 스트레스 변화 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}${msiAverageLines}</svg>`;
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const hoverGuide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -473,7 +511,7 @@ async function loadMarketTension(monthlyRows = []) {
   if (!supabaseClient) return;
   const weeklyResponse = await supabaseClient
     .from('us_market_tension_weekly')
-    .select('week,tension_index,financial_conditions_credit_index,is_provisional')
+    .select('week,tension_index,financial_conditions_credit_index,sp500_friday_close,is_provisional')
     .order('week', { ascending: false })
     .limit(160);
   const monthlyResponse = await supabaseClient
