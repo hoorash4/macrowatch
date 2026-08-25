@@ -395,28 +395,16 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   });
 }
 
-function renderCreditConditionsMomentum(rows) {
-  const chart = document.getElementById('credit-stress-momentum-chart');
+function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor }) {
+  const chart = document.getElementById(chartId);
   if (!chart) return;
-  const creditConditions = [...rows]
-    .map((row) => ({ ...row, value: toCreditStressNumber(row.financial_conditions_credit_index) }))
+  const levels = [...rows]
+    .map((row) => ({ ...row, value: toCreditStressNumber(row[valueKey]) }))
     .filter((row) => Number.isFinite(row.value))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
-  const changes = creditConditions.slice(1).map((row, index) => ({
+  const changes = levels.slice(1).map((row, index) => ({
     ...row,
-    value: row.value - creditConditions[index].value,
-  }));
-  const msiLevels = [...rows]
-    .map((row) => ({ ...row, value: toCreditStressNumber(row.tension_index) }))
-    .filter((row) => Number.isFinite(row.value))
-    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
-  const msiChanges = msiLevels.slice(1).map((row, index) => ({
-    month: row.month,
-    value: row.value - msiLevels[index].value,
-  }));
-  const msiAverages = new Map(msiChanges.map((row, index) => {
-    const window = msiChanges.slice(Math.max(0, index - 3), index + 1);
-    return [row.month, window.length === 4 ? window.reduce((sum, item) => sum + item.value, 0) / 4 : null];
+    value: row.value - levels[index].value,
   }));
   const data = changes.map((row, index) => {
     const window = changes.slice(Math.max(0, index - 3), index + 1);
@@ -425,41 +413,35 @@ function renderCreditConditionsMomentum(rows) {
       average: window.length === 4
         ? window.reduce((sum, item) => sum + item.value, 0) / 4
         : null,
-      msiAverage: msiAverages.get(row.month) ?? null,
     };
   });
   if (!data.length) {
-    chart.innerHTML = '<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 주간 신용여건 변화가 표시됩니다.</div>';
+    chart.innerHTML = `<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">${emptyMessage}</div>`;
     return;
   }
   const width = 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
-  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0), Math.abs(row.msiAverage || 0)]), 0.005);
+  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 0.005);
   const step = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10].find((value) => value >= extent / 2) || 20;
   const axisMaximum = Math.ceil((extent * 1.15) / step) * step;
   const formatAxisValue = (value) => {
     const digits = Math.abs(value) < 0.1 ? 3 : Math.abs(value) < 1 ? 2 : 1;
     return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
   };
-  const dates = creditConditions.map((row) => new Date(row.month).getTime());
+  const dates = levels.map((row) => new Date(row.month).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
-  const lines = data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
+  const lines = data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="${lineColor}" stroke-width="1.75" stroke-linecap="round"/>`).join('');
   const averageLines = data.slice(1).map((row, index) => {
     const previous = data[index];
     if (!Number.isFinite(previous.average) || !Number.isFinite(row.average)) return '';
-    return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
-  }).join('');
-  const msiAverageLines = data.slice(1).map((row, index) => {
-    const previous = data[index];
-    if (!Number.isFinite(previous.msiAverage) || !Number.isFinite(row.msiAverage)) return '';
-    return `<line x1="${x(previous.month)}" y1="${y(previous.msiAverage)}" x2="${x(row.month)}" y2="${y(row.msiAverage)}" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"/>`;
+    return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="${averageColor}" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 신용여건 및 시장 스트레스 변화 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}${msiAverageLines}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}</svg>`;
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const hoverGuide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -479,7 +461,7 @@ function renderCreditConditionsMomentum(rows) {
   };
   const clearGuide = () => hoverGuide.setAttribute('visibility', 'hidden');
   const handleSharedHover = ({ detail }) => {
-    if (detail.source === 'credit') return;
+    if (detail.source === source) return;
     if (detail.active) showGuide(detail.week);
     else clearGuide();
   };
@@ -496,14 +478,40 @@ function renderCreditConditionsMomentum(rows) {
     ));
     showGuide(nearest.month);
     window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
-      detail: { active: true, source: 'credit', week: nearest.month },
+      detail: { active: true, source, week: nearest.month },
     }));
   });
   svg.addEventListener('pointerleave', () => {
     clearGuide();
     window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
-      detail: { active: false, source: 'credit' },
+      detail: { active: false, source },
     }));
+  });
+}
+
+function renderCreditConditionsMomentum(rows) {
+  renderWeeklyMomentumChart({
+    chartId: 'credit-stress-momentum-chart',
+    rows,
+    valueKey: 'financial_conditions_credit_index',
+    source: 'credit',
+    emptyMessage: '첫 산출 후 주간 신용여건 변화가 표시됩니다.',
+    ariaLabel: '미국 주간 신용여건 변화 추이',
+    lineColor: '#c4b5d5',
+    averageColor: '#6d4b91',
+  });
+}
+
+function renderMarketStressMomentum(rows) {
+  renderWeeklyMomentumChart({
+    chartId: 'market-stress-momentum-chart',
+    rows,
+    valueKey: 'tension_index',
+    source: 'stress-momentum',
+    emptyMessage: '첫 산출 후 주간 시장 스트레스 변화가 표시됩니다.',
+    ariaLabel: '미국 주간 시장 스트레스 변화 추이',
+    lineColor: '#99d5ce',
+    averageColor: '#0f766e',
   });
 }
 
@@ -521,7 +529,9 @@ async function loadMarketTension(monthlyRows = []) {
     .limit(CREDIT_STRESS_HISTORY_MONTHS);
   if (weeklyResponse.error || monthlyResponse.error) return;
   renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
-  renderCreditConditionsMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })));
+  const weeklyRows = (weeklyResponse.data || []).map((row) => ({ ...row, month: row.week }));
+  renderCreditConditionsMomentum(weeklyRows);
+  renderMarketStressMomentum(weeklyRows);
 }
 
 async function loadMarketStressDashboard() {
