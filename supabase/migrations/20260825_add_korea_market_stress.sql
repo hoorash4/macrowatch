@@ -14,7 +14,7 @@ alter table public.korea_market_stress_monthly enable row level security;
 drop policy if exists "Authenticated users can read Korean market stress" on public.korea_market_stress_monthly;
 create policy "Authenticated users can read Korean market stress" on public.korea_market_stress_monthly for select to authenticated using (true);
 
-comment on table public.korea_market_stress_monthly is 'MacroWatch Korean market stress index. BOK FSI is a comparison series only, never an input.';
+comment on table public.korea_market_stress_monthly is 'MacroWatch Korean market stress index. It combines BOK FSI (70%) and the MacroWatch market component (30%).';
 
 alter table public.korea_market_stress_monthly
   add column if not exists investment_grade_spread numeric(12, 4),
