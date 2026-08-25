@@ -315,11 +315,9 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     visibility: 'hidden',
   });
   svg.append(hoverGuide, hoverValue);
-  const setHover = (event) => {
-    const bounds = svg.getBoundingClientRect();
-    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+  const showHover = (week) => {
     const nearest = weekly.reduce((closest, row) => (
-      Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest
+      Math.abs(x(row.week) - x(week)) < Math.abs(x(closest.week) - x(week)) ? row : closest
     ));
     const pointY = y(Number(nearest.tension_index));
     const pointX = x(nearest.week);
@@ -335,15 +333,41 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     hoverValue.setAttribute('visibility', 'visible');
     hoverValue.textContent = Number(nearest.tension_index).toFixed(1);
   };
+  const setHover = (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const nearest = weekly.reduce((closest, row) => (
+      Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest
+    ));
+    showHover(nearest.week);
+    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
+      detail: { active: true, source: 'stress', week: nearest.week },
+    }));
+  };
   const clearHover = () => {
     hoverGuide.setAttribute('visibility', 'hidden');
     hoverValue.setAttribute('visibility', 'hidden');
   };
+  const handleSharedHover = ({ detail }) => {
+    if (detail.source === 'stress') return;
+    if (detail.active) showHover(detail.week);
+    else clearHover();
+  };
+  if (chart._marketStressHoverListener) {
+    window.removeEventListener('macrowatch:market-stress-hover', chart._marketStressHoverListener);
+  }
+  chart._marketStressHoverListener = handleSharedHover;
+  window.addEventListener('macrowatch:market-stress-hover', handleSharedHover);
   svg.addEventListener('pointermove', setHover);
-  svg.addEventListener('pointerleave', clearHover);
+  svg.addEventListener('pointerleave', () => {
+    clearHover();
+    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
+      detail: { active: false, source: 'stress' },
+    }));
+  });
 }
 
-function renderCreditConditionsMomentum(rows, monthlyRows = []) {
+function renderCreditConditionsMomentum(rows) {
   const chart = document.getElementById('credit-stress-momentum-chart');
   if (!chart) return;
   const creditConditions = [...rows]
@@ -377,7 +401,7 @@ function renderCreditConditionsMomentum(rows, monthlyRows = []) {
     const digits = Math.abs(value) < 0.1 ? 3 : Math.abs(value) < 1 ? 2 : 1;
     return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
   };
-  const dates = [...data.map((row) => row.month), ...monthlyRows.map((row) => row.month)].map((value) => new Date(value).getTime());
+  const dates = creditConditions.map((row) => new Date(row.month).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - value)) / (axisMaximum * 2);
@@ -390,6 +414,51 @@ function renderCreditConditionsMomentum(rows, monthlyRows = []) {
   }).join('');
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 신용여건 변화 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}</svg>`;
+  const svg = chart.querySelector('svg');
+  if (!svg) return;
+  const hoverGuide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  hoverGuide.setAttribute('y1', String(padding.top));
+  hoverGuide.setAttribute('y2', String(height - padding.bottom));
+  hoverGuide.setAttribute('stroke', '#94a3b8');
+  hoverGuide.setAttribute('stroke-width', '0.75');
+  hoverGuide.setAttribute('stroke-dasharray', '3 4');
+  hoverGuide.setAttribute('pointer-events', 'none');
+  hoverGuide.setAttribute('visibility', 'hidden');
+  svg.append(hoverGuide);
+  const showGuide = (week) => {
+    const pointX = x(week);
+    hoverGuide.setAttribute('x1', String(pointX));
+    hoverGuide.setAttribute('x2', String(pointX));
+    hoverGuide.setAttribute('visibility', 'visible');
+  };
+  const clearGuide = () => hoverGuide.setAttribute('visibility', 'hidden');
+  const handleSharedHover = ({ detail }) => {
+    if (detail.source === 'credit') return;
+    if (detail.active) showGuide(detail.week);
+    else clearGuide();
+  };
+  if (chart._marketStressHoverListener) {
+    window.removeEventListener('macrowatch:market-stress-hover', chart._marketStressHoverListener);
+  }
+  chart._marketStressHoverListener = handleSharedHover;
+  window.addEventListener('macrowatch:market-stress-hover', handleSharedHover);
+  svg.addEventListener('pointermove', (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const nearest = data.reduce((closest, row) => (
+      Math.abs(x(row.month) - pointerX) < Math.abs(x(closest.month) - pointerX) ? row : closest
+    ));
+    showGuide(nearest.month);
+    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
+      detail: { active: true, source: 'credit', week: nearest.month },
+    }));
+  });
+  svg.addEventListener('pointerleave', () => {
+    clearGuide();
+    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
+      detail: { active: false, source: 'credit' },
+    }));
+  });
 }
 
 async function loadMarketTension(monthlyRows = []) {
@@ -406,7 +475,7 @@ async function loadMarketTension(monthlyRows = []) {
     .limit(CREDIT_STRESS_HISTORY_MONTHS);
   if (weeklyResponse.error || monthlyResponse.error) return;
   renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
-  renderCreditConditionsMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })), monthlyRows.length ? monthlyRows : monthlyResponse.data || []);
+  renderCreditConditionsMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })));
 }
 
 async function loadMarketStressDashboard() {
