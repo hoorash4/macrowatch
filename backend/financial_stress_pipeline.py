@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import calendar
+import csv
 import io
 import os
 import re
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import openpyxl
 import requests
@@ -31,22 +32,22 @@ THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 TIMEOUT_SECONDS = 45
 INDEX_HISTORY_YEARS = 3
-# Monthly US-MSI weights: the slower, less-leading sources receive the lower
-# multipliers.  Keeping raw multipliers here makes the intended ordering clear;
-# the calculation normalizes them to 100 percent.
-STRESS_COMPONENT_MULTIPLIERS = (
-    ("financial_conditions_risk_index", 1.4),
-    ("high_yield_oas_pct", 1.3),
-    ("financial_conditions_credit_index", 1.2),
-    ("sloos_tightening_pct", 1.1),
-    ("business_bankruptcy_filings", 1.0),
+EBP_CSV_URL = "https://www.federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv"
+CMDI_XLSX_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx"
+STRESS_COMPONENTS = (
+    "financial_conditions_risk_index",
+    "high_yield_oas_pct",
+    "financial_conditions_credit_index",
+    "corporate_bond_market_distress_index",
+    "sloos_tightening_pct",
+    "business_bankruptcy_filings",
 )
-STRESS_COMPONENT_WEIGHT_TOTAL = sum(weight for _key, weight in STRESS_COMPONENT_MULTIPLIERS)
 LEAD_COMPONENT_WEIGHTS = {
-    "high_yield": 0.25,
-    "financial_conditions": 0.25,
-    "short_term_funding_spread": 0.25,
-    "nonfinancial_leverage": 0.25,
+    "high_yield": 0.20,
+    "financial_conditions": 0.20,
+    "short_term_funding_spread": 0.20,
+    "nonfinancial_leverage": 0.20,
+    "excess_bond_premium": 0.20,
 }
 SHORT_TERM_FUNDING_FLOOR = 0.10
 SHORT_TERM_FUNDING_REFERENCE = 0.60
@@ -58,6 +59,8 @@ FIXED_COMPONENT_SCALES = {
     "high_yield_oas_pct": (2.0, 20.0),
     "financial_conditions_credit_index": (-0.5, 2.0),
     "financial_conditions_risk_index": (-0.5, 2.0),
+    "corporate_bond_market_distress_index": (0.0, 1.0),
+    "excess_bond_premium": (-1.0, 4.0),
     "nonfinancial_leverage_index": (-1.5, 2.0),
     "business_bankruptcy_filings": (1000.0, 5000.0),
     "sloos_tightening_pct": (0.0, 100.0),
@@ -222,6 +225,80 @@ def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) ->
     return {week: value for week, (_observed_on, value) in values.items()}
 
 
+def fetch_ebp_monthly(start: date, end: date) -> dict[str, float]:
+    """Read the Federal Reserve Board's monthly Excess Bond Premium CSV."""
+    response = requests.get(EBP_CSV_URL, timeout=TIMEOUT_SECONDS)
+    response.raise_for_status()
+    reader = csv.DictReader(io.StringIO(response.text))
+    values: dict[str, float] = {}
+    for row in reader:
+        normalized = {str(key).strip().lower(): value for key, value in row.items() if key}
+        raw_date = normalized.get("date") or normalized.get("observation_date")
+        raw_value = normalized.get("ebp")
+        if raw_value is None:
+            raw_value = next((value for key, value in normalized.items() if "excess bond premium" in key), None)
+        try:
+            observed_on = date.fromisoformat(str(raw_date))
+            value = float(str(raw_value))
+        except (TypeError, ValueError):
+            continue
+        if start <= observed_on <= end:
+            values[month_start(observed_on)] = value
+    if not values:
+        raise RuntimeError("연준 EBP CSV에서 월별 값을 찾지 못했습니다.")
+    return values
+
+
+def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
+    """Read the New York Fed Market CMDI workbook without retaining the file."""
+    response = requests.get(CMDI_XLSX_URL, timeout=TIMEOUT_SECONDS)
+    response.raise_for_status()
+    workbook = openpyxl.load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
+    values: dict[str, tuple[date, float]] = {}
+    for sheet in workbook.worksheets:
+        header_row = date_column = value_column = None
+        for row_number, header in enumerate(sheet.iter_rows(min_row=1, max_row=20, values_only=True), start=1):
+            labels = [str(value or "").strip().lower() for value in header]
+            try:
+                date_column = next(index for index, label in enumerate(labels) if label == "date" or "date" in label)
+                value_column = next(index for index, label in enumerate(labels) if "market" in label and "cmdi" in label)
+                header_row = row_number
+                break
+            except StopIteration:
+                continue
+        if header_row is None or date_column is None or value_column is None:
+            continue
+        for row in sheet.iter_rows(min_row=header_row + 1, values_only=True):
+            if len(row) <= max(date_column, value_column):
+                continue
+            raw_date, raw_value = row[date_column], row[value_column]
+            if isinstance(raw_date, datetime):
+                observed_on = raw_date.date()
+            elif isinstance(raw_date, date):
+                observed_on = raw_date
+            else:
+                try:
+                    observed_on = date.fromisoformat(str(raw_date))
+                except (TypeError, ValueError):
+                    continue
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if start <= observed_on <= end:
+                month = month_start(observed_on)
+                if month not in values or observed_on > values[month][0]:
+                    values[month] = (observed_on, value)
+    if not values:
+        raise RuntimeError("뉴욕연은 CMDI XLSX에서 Market CMDI 값을 찾지 못했습니다.")
+    return {month: value for month, (_observed_on, value) in values.items()}
+
+
+def monthly_values_for_weeks(values: dict[str, float], weeks: list[str]) -> dict[str, float]:
+    """Apply a released monthly value consistently to every weekly bucket in that month."""
+    return {week: values[week[:7] + "-01"] for week in weeks if week[:7] + "-01" in values}
+
+
 def carry_forward_monthly(values: dict[str, float], months: list[str]) -> dict[str, float]:
     """Keep a continuous monthly series when a source omits an otherwise ordinary month."""
     carried: dict[str, float] = {}
@@ -240,34 +317,39 @@ def build_weekly_lead(
     conditions: dict[str, float],
     funding: dict[str, float],
     leverage: dict[str, float],
+    excess_bond_premium: dict[str, float],
 ) -> list[dict[str, object]]:
     weeks = sorted(set(high_yield) | set(conditions) | set(funding) | set(leverage))
-    raw_sources = (high_yield, conditions, funding, leverage)
-    high_yield, conditions, funding, leverage = (
+    excess_bond_premium = monthly_values_for_weeks(excess_bond_premium, weeks)
+    raw_sources = (high_yield, conditions, funding, leverage, excess_bond_premium)
+    high_yield, conditions, funding, leverage, excess_bond_premium = (
         carry_forward_monthly(values, weeks)
         for values in raw_sources
     )
     rows, previous = [], None
     for week in weeks:
-        hy, condition, spread, leverage_value = (
+        hy, condition, spread, leverage_value, ebp = (
             high_yield.get(week),
             conditions.get(week),
             funding.get(week),
             leverage.get(week),
+            excess_bond_premium.get(week),
         )
-        if not all(isinstance(value, (int, float)) for value in (hy, condition, spread, leverage_value)):
+        if not all(isinstance(value, (int, float)) for value in (hy, condition, spread, leverage_value, ebp)):
             continue
         level = (
             fixed_stress_score(float(hy), "high_yield_oas_pct") * LEAD_COMPONENT_WEIGHTS["high_yield"]
             + fixed_stress_score(float(condition), "financial_conditions_credit_index") * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
             + positive_score(float(spread) - SHORT_TERM_FUNDING_FLOOR, SHORT_TERM_FUNDING_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
             + fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index") * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
+            + fixed_stress_score(float(ebp), "excess_bond_premium") * LEAD_COMPONENT_WEIGHTS["excess_bond_premium"]
         )
         momentum = None if previous is None else (
             signed_score(float(hy) - previous[0], 1.0) * LEAD_COMPONENT_WEIGHTS["high_yield"]
             + signed_score(float(condition) - previous[1], 0.5) * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
             + signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
             + signed_score(float(leverage_value) - previous[3], 0.5) * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
+            + signed_score(float(ebp) - previous[4], 0.5) * LEAD_COMPONENT_WEIGHTS["excess_bond_premium"]
         )
         rows.append({
             "week": week,
@@ -276,7 +358,7 @@ def build_weekly_lead(
             "leverage_signal": round(fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index"), 2),
             "is_provisional": any(week not in source for source in raw_sources),
         })
-        previous = (float(hy), float(condition), float(spread), float(leverage_value))
+        previous = (float(hy), float(condition), float(spread), float(leverage_value), float(ebp))
     return rows
 
 
@@ -466,7 +548,7 @@ def build_market_stress_index(
     raw_component_values: dict[str, dict[str, float]] = {
         "business_bankruptcy_filings": filings,
     }
-    for key, _weight in STRESS_COMPONENT_MULTIPLIERS:
+    for key in STRESS_COMPONENTS:
         if key == "business_bankruptcy_filings":
             continue
         raw_component_values[key] = {
@@ -486,19 +568,16 @@ def build_market_stress_index(
     index_rows: list[dict[str, object]] = []
     for row in recent_rows:
         month = str(row["month"])
-        if any(month not in component_scores.get(key, {}) for key, _weight in STRESS_COMPONENT_MULTIPLIERS):
+        if any(month not in component_scores.get(key, {}) for key in STRESS_COMPONENTS):
             continue
-        score = sum(
-            component_scores[key][month] * multiplier / STRESS_COMPONENT_WEIGHT_TOTAL
-            for key, multiplier in STRESS_COMPONENT_MULTIPLIERS
-        )
+        score = sum(component_scores[key][month] for key in STRESS_COMPONENTS) / len(STRESS_COMPONENTS)
         index_rows.append(
             {
                 "month": month,
                 "stress_index": round(score, 2),
                 "is_provisional": (
                     month not in confirmed_filings
-                    or any(month not in raw_component_values.get(key, {}) for key, _weight in STRESS_COMPONENT_MULTIPLIERS)
+                    or any(month not in raw_component_values.get(key, {}) for key in STRESS_COMPONENTS)
                 ),
                 "sp500_month_end_close": sp500_month_end.get(month),
                 "lead_index": lead_scores.get(month),
@@ -565,6 +644,8 @@ def main() -> None:
     financial_conditions = fetch_fred_monthly(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, end)
     financial_risk = fetch_fred_monthly(FINANCIAL_RISK_SERIES, fred_api_key, start, end)
     sloos = fetch_fred_quarterly_to_months(SLOOS_SERIES, fred_api_key, start, end)
+    excess_bond_premium = fetch_ebp_monthly(start, end)
+    cmdi = fetch_cmdi_monthly(start, end)
     sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
     commercial_paper = fetch_fred_monthly(COMMERCIAL_PAPER_SERIES, fred_api_key, start, end)
     three_month_treasury = fetch_fred_monthly(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, end)
@@ -573,7 +654,10 @@ def main() -> None:
         for month in commercial_paper.keys() & three_month_treasury.keys()
     }
     business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
-    months = sorted(set(high_yield) | set(financial_conditions) | set(financial_risk) | set(sloos) | set(business_filings))
+    months = sorted(
+        set(high_yield) | set(financial_conditions) | set(financial_risk)
+        | set(sloos) | set(excess_bond_premium) | set(cmdi) | set(business_filings)
+    )
     short_term_funding_spread = carry_forward_monthly(short_term_funding_spread, months)
     rows = [
         {
@@ -581,6 +665,8 @@ def main() -> None:
             "high_yield_oas_pct": high_yield.get(month),
             "financial_conditions_credit_index": financial_conditions.get(month),
             "financial_conditions_risk_index": financial_risk.get(month),
+            "excess_bond_premium": excess_bond_premium.get(month),
+            "corporate_bond_market_distress_index": cmdi.get(month),
             "sloos_tightening_pct": sloos.get(month),
             "business_bankruptcy_filings": business_filings.get(month),
         }
@@ -599,6 +685,8 @@ def main() -> None:
             "high_yield_oas_pct": latest_high_yield[1],
             "financial_conditions_credit_index": latest_conditions[1],
             "financial_conditions_risk_index": latest_risk[1],
+            "excess_bond_premium": excess_bond_premium.get(latest_month),
+            "corporate_bond_market_distress_index": cmdi.get(latest_month),
         }
         matching_row = next((row for row in rows if row["month"] == latest_month), None)
         if matching_row is None:
@@ -625,6 +713,7 @@ def main() -> None:
         weekly_conditions,
         weekly_funding,
         weekly_leverage,
+        excess_bond_premium,
     )
     upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
     if latest_dates:
@@ -638,6 +727,7 @@ def main() -> None:
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
         f"nfci_credit={len(financial_conditions)} nfci_risk={len(financial_risk)} "
+        f"ebp_months={len(excess_bond_premium)} cmdi_months={len(cmdi)} "
         f"sloos_months={len(sloos)} sp500={len(sp500_month_end)} "
         f"short_funding_spread={len(short_term_funding_spread)} "
         f"weekly_leverage={len(weekly_leverage)}"
