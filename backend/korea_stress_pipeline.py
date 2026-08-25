@@ -258,6 +258,7 @@ def main() -> None:
     months = sorted(set().union(*[set(rows) for rows in values.values()]))
     today_month = date.today().replace(day=1).isoformat()
     rows = []
+    last_official_fsi: float | None = None
     for month in months:
         bbb, aa, treasury = (
             values["bbb_minus_3y"].get(month),
@@ -286,12 +287,19 @@ def main() -> None:
             usdkrw_stress,
         )
         component_stress_index = round(sum(component_scores) / len(component_scores), 2)
-        fsi_value = fsi.get(month)
-        has_fsi = isinstance(fsi_value, float) and fsi_value != 0
+        official_fsi = fsi.get(month)
+        has_fsi = isinstance(official_fsi, float) and official_fsi != 0
+        if has_fsi:
+            last_official_fsi = official_fsi
+        # FSI is published with a lag.  Until the official value arrives,
+        # retain the last official reading for the composite only and mark
+        # that month provisional.  Do not expose the carried value as an
+        # official FSI observation in the comparison chart.
+        fsi_for_index = official_fsi if has_fsi else last_official_fsi
         stress_index = round(
-            component_stress_index * KMSI_COMPONENT_WEIGHT + fsi_value * KMSI_FSI_WEIGHT,
+            component_stress_index * KMSI_COMPONENT_WEIGHT + fsi_for_index * KMSI_FSI_WEIGHT,
             2,
-        ) if has_fsi else component_stress_index
+        ) if fsi_for_index is not None else component_stress_index
         rows.append({
             "month": month,
             "stress_index": stress_index,
@@ -303,7 +311,7 @@ def main() -> None:
             "interbank_liquidity_spread": round(interbank_liquidity_spread, 4),
             "usdkrw_exchange_rate": round(usdkrw, 2),
             "kospi_close": values["kospi_close"].get(month),
-            "bok_fsi": fsi_value,
+            "bok_fsi": official_fsi if has_fsi else None,
             "is_provisional": month == today_month or not has_fsi,
         })
     if not rows:
