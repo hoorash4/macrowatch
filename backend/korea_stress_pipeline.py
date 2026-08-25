@@ -111,19 +111,30 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
 
 def fetch_bok_fsi(years: int) -> dict[str, float]:
     """Read the Bank of Korea's published FSI comparison series directly."""
-    response = requests.get(BOK_SNAPSHOT_FSI, headers=HEADERS, timeout=(12, TIMEOUT))
-    response.raise_for_status()
-    csv_text = response.json()["data"]["chart_opt"]["data"]["csv"]
-    first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
-    values: dict[str, float] = {}
-    for row in csv.DictReader(io.StringIO(csv_text)):
+    headers = {**HEADERS, "Referer": "https://snapshot.bok.or.kr/dashboard/A6"}
+    last_error: Exception | None = None
+    for attempt in range(3):
         try:
-            month = datetime.fromtimestamp(float(row["period"]) / 1000, tz=timezone.utc).date().replace(day=1).isoformat()
-            if month >= first_month:
-                values[month] = float(next(value for key, value in row.items() if key != "period"))
-        except (KeyError, StopIteration, TypeError, ValueError, OSError):
-            continue
-    return values
+            response = requests.get(BOK_SNAPSHOT_FSI, headers=headers, timeout=(12, TIMEOUT))
+            response.raise_for_status()
+            csv_text = response.json()["data"]["chart_opt"]["data"]["csv"]
+            first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
+            values: dict[str, float] = {}
+            for row in csv.DictReader(io.StringIO(csv_text)):
+                try:
+                    month = datetime.fromtimestamp(float(row["period"]) / 1000, tz=timezone.utc).date().replace(day=1).isoformat()
+                    if month >= first_month:
+                        values[month] = float(next(value for key, value in row.items() if key != "period"))
+                except (KeyError, StopIteration, TypeError, ValueError, OSError):
+                    continue
+            if values:
+                return values
+            raise RuntimeError("BOK FSI 응답에서 유효한 월별 값을 찾지 못했습니다.")
+        except (requests.RequestException, KeyError, TypeError, ValueError, RuntimeError) as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"BOK FSI collection failed after retries: {last_error}")
 
 
 def score(value: float, low: float, high: float) -> float:
