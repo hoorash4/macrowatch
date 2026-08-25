@@ -1030,12 +1030,30 @@ function initializeDashboardScrollState() {
   updateScrollState();
 }
 
+function initializeSectorFlowWeekLabels() {
+  const currentWeek = new Date();
+  currentWeek.setHours(0, 0, 0, 0);
+  currentWeek.setDate(currentWeek.getDate() - ((currentWeek.getDay() + 6) % 7));
+
+  document.querySelectorAll('[data-sector-week-offset]').forEach((card) => {
+    const weekStart = new Date(currentWeek);
+    weekStart.setDate(weekStart.getDate() + (Number(card.dataset.sectorWeekOffset) * 7));
+    const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
+    const firstMondayOffset = (monthStart.getDay() + 6) % 7;
+    const weekOfMonth = Math.floor((weekStart.getDate() + firstMondayOffset - 1) / 7) + 1;
+
+    card.querySelector('[data-sector-week-period]').textContent = `${weekStart.getMonth() + 1}월`;
+    card.querySelector('[data-sector-week-label]').textContent = `${weekOfMonth}주차`;
+  });
+}
+
 // ===== 페이지 초기화 =====
 // 페이지의 HTML이 모두 만들어진 뒤 한 번만 실행되는 초기 설정입니다.
 // 입력폼 초기 상태, 안내 모달 닫기 버튼, Drag & Drop 도움말을 여기서 연결합니다.
 document.addEventListener('DOMContentLoaded', () => {
   initializeDashboardNavigation();
   initializeDashboardScrollState();
+  initializeSectorFlowWeekLabels();
 
   // 신규 등록폼은 공식 API 직접 입력으로 시작합니다.
   toggleTypeFields();
