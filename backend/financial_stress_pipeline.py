@@ -32,6 +32,7 @@ THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 TIMEOUT_SECONDS = 45
 INDEX_HISTORY_YEARS = 3
+OFFICIAL_DATA_HEADERS = {"User-Agent": "MacroWatch/1.0 (+https://hoorash4.github.io/macrowatch/)"}
 EBP_CSV_URL = "https://www.federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv"
 CMDI_XLSX_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx"
 STRESS_COMPONENTS = (
@@ -227,7 +228,7 @@ def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) ->
 
 def fetch_ebp_monthly(start: date, end: date) -> dict[str, float]:
     """Read the Federal Reserve Board's monthly Excess Bond Premium CSV."""
-    response = requests.get(EBP_CSV_URL, timeout=TIMEOUT_SECONDS)
+    response = requests.get(EBP_CSV_URL, headers=OFFICIAL_DATA_HEADERS, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
     reader = csv.DictReader(io.StringIO(response.content.decode("utf-8-sig", errors="replace")))
     values: dict[str, float] = {}
@@ -253,7 +254,7 @@ def fetch_ebp_monthly(start: date, end: date) -> dict[str, float]:
 
 def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
     """Read the New York Fed Market CMDI workbook without retaining the file."""
-    response = requests.get(CMDI_XLSX_URL, timeout=TIMEOUT_SECONDS)
+    response = requests.get(CMDI_XLSX_URL, headers=OFFICIAL_DATA_HEADERS, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
     workbook = openpyxl.load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
     values: dict[str, tuple[date, float]] = {}
