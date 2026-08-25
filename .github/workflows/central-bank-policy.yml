@@ -1,0 +1,51 @@
+name: Refresh central-bank policy signals
+
+on:
+  schedule:
+    # Official FOMC statements are checked daily.  Existing statement hashes are
+    # skipped, so days without a new decision do not make an OpenAI request.
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "latest or backfill"
+        required: false
+        default: "latest"
+        type: choice
+        options: [latest, backfill]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-central-bank-policy
+  cancel-in-progress: false
+
+jobs:
+  refresh-fed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Analyze official FOMC statements
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: ${{ inputs.mode || 'latest' }}
+        run: |
+          run_batch() {
+            curl --silent --show-error --fail-with-body --max-time 300 \
+              --request POST "$SUPABASE_URL/functions/v1/policy-pipeline" \
+              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Content-Type: application/json" \
+              --data "{\"bank\":\"fed\",\"mode\":\"$MODE\",\"limit\":4}"
+          }
+          if [ "$MODE" = "backfill" ]; then
+            while true; do
+              response=$(run_batch)
+              echo "$response"
+              [ "$(jq -r '.has_more // false' <<< "$response")" = "true" ] || break
+            done
+          else
+            run_batch
+          fi
