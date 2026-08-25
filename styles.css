@@ -268,7 +268,7 @@ body:has(#app-shell:not(.hidden)) {
 .dashboard-nav { position:sticky; top:0; z-index:20; display:block; isolation:isolate; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
 .dashboard-nav::before { position:absolute; z-index:-1; top:0; right:0; bottom:0; left:0; content:""; opacity:0; background:rgba(225, 233, 238, .66); box-shadow:0 1px 0 rgba(20,36,51,.12); backdrop-filter:blur(12px); transition:opacity .2s ease; }
 .dashboard-is-scrolled .dashboard-nav::before { opacity:1; }
-.dashboard-nav-inner { display:flex; align-items:center; gap:clamp(1rem, 3vw, 3rem); width:min(calc(100% - 3rem), 90rem); margin:0 auto; padding:1.2rem 0; }
+.dashboard-nav-inner { display:flex; align-items:center; gap:clamp(.7rem, 1.35vw, 1.35rem); width:min(calc(100% - 3rem), 90rem); margin:0 auto; padding:1.2rem 0; }
 .dashboard-wordmark { display:flex; align-items:center; gap:.75rem; margin:0 clamp(1rem, 3vw, 3rem) 0 0; color:#161616; }
 .dashboard-logo { width:44px; height:44px; flex:none; background:url("./images/logo.png") center / contain no-repeat; }
 .dashboard-wordmark-copy { display:grid; gap:.12rem; line-height:1; }
