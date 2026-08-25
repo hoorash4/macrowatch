@@ -528,7 +528,6 @@ function renderCreditConditionsMomentum(rows) {
     secondaryValueKey: 'credit_risk_composite',
     secondaryAverageColor: '#8b6aa9',
     showChanges: false,
-    invertVertical: true,
   });
 }
 
