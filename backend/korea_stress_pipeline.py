@@ -76,7 +76,14 @@ def ecos_rows(key: str, stat: str, cycle: str, start: str, end: str, item: str =
 
 def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, float]:
     today = date.today()
-    rows = ecos_rows(key, stat, "D", f"{today.year - years}0101", today.strftime("%Y%m%d"), item)
+    # ECOS becomes unreliable when a multi-year daily range is searched at
+    # once.  Keep each official request within one calendar year, then merge
+    # the pages locally.
+    rows: list[dict] = []
+    for year in range(today.year - years, today.year + 1):
+        start = f"{year}0101"
+        end = today.strftime("%Y%m%d") if year == today.year else f"{year}1231"
+        rows.extend(ecos_rows(key, stat, "D", start, end, item))
     values: dict[str, tuple[str, float]] = {}
     for row in rows:
         try:
