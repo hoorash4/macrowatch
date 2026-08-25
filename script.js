@@ -306,7 +306,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     weeklyPath += ` L ${endPoint}`;
   });
   finishWeeklyPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 금요일 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths.join('')}${years}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths.join('')}${years}</svg>`;
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const createSvgElement = (name, attributes) => {
@@ -573,7 +573,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const data = [...rows]
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
-  const weeklyKospi = [...weeklyKospiRows]
+  const weeklyKospiSource = [...weeklyKospiRows]
     .filter((row) => Number.isFinite(Number(row.kospi_close)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart) return;
@@ -582,6 +582,12 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     if (fsiChart) fsiChart.innerHTML = '';
     return;
   }
+  // The stress series starts at the first day of a month while the weekly
+  // close is dated Friday. Extend the first weekly value to that same left
+  // boundary so the two plotted series share an exact starting point.
+  const weeklyKospi = weeklyKospiSource.length && String(weeklyKospiSource[0].week) > String(data[0].month)
+    ? [{ ...weeklyKospiSource[0], week: data[0].month }, ...weeklyKospiSource]
+    : weeklyKospiSource;
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
@@ -614,7 +620,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     return `<line x1="${x(before.week)}" y1="${kospiY(Number(before.kospi_close))}" x2="${x(row.week)}" y2="${kospiY(Number(row.kospi_close))}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
   }).join('') : '';
   const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 금요일 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
 
   const createSvgElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -661,7 +667,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', mapY: y, chartHeight: height, chartPadding: padding, source: 'korea-main', label: '' });
 
   if (!fsiChart) return;
-  const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)));
+  const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)) && Number(row.bok_fsi) !== 0);
   if (!fsiRows.length) {
     fsiChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">한국은행 FSI 비교 자료가 연결되면 보조지표로 표시됩니다.</div>';
     return;
