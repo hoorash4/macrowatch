@@ -99,6 +99,24 @@
     </section>
 
     <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+      <div class="mb-5">
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-cyan-400">Sector registry</p>
+        <h2 class="mt-1 text-lg font-bold text-white"><i class="fa-solid fa-chart-column mr-2 text-cyan-400"></i>시장 주도 섹터</h2>
+        <p class="mt-1 text-sm leading-relaxed text-slate-400">향후 주간 섹터 흐름 산출에 사용할 대표 국내 ETF 목록입니다. 여기서 추가·수정·비활성화해도 현재 뉴스 분석과 지표 수집에는 영향을 주지 않습니다.</p>
+      </div>
+
+      <form id="sector-etf-form" class="grid grid-cols-1 gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-6">
+        <input id="sector-name-input" required maxlength="80" placeholder="섹터명" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500 md:col-span-1">
+        <input id="sector-etf-name-input" required maxlength="120" placeholder="대표 ETF명" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500 md:col-span-2">
+        <input id="sector-etf-ticker-input" required maxlength="24" placeholder="ETF 코드" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm uppercase text-white outline-none focus:border-cyan-500 md:col-span-1">
+        <input id="sector-etf-issuer-input" required maxlength="80" placeholder="운용사" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500 md:col-span-1">
+        <button type="submit" class="rounded-lg bg-cyan-700 px-3 py-2 text-sm font-bold text-white transition hover:bg-cyan-600"><i class="fa-solid fa-plus mr-1"></i>추가</button>
+      </form>
+      <p class="mt-2 text-[11px] text-slate-500">동일 ETF 코드는 한 번만 등록됩니다. 기존 대표 ETF를 바꿀 때는 행에서 수정 후 저장하세요.</p>
+      <div id="sector-etf-list" class="mt-4 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60"><p class="p-4 text-center text-sm text-slate-500">섹터 목록을 불러오는 중입니다.</p></div>
+    </section>
+
+    <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-newspaper mr-2 text-emerald-400"></i>주식시장 뉴스 분석</h2>
@@ -195,7 +213,7 @@
   </div>
 
   <script src="config.js?v=1"></script>
-  <script src="admin.js?v=5"></script>
+  <script src="admin.js?v=6"></script>
 </body>
 </html>
 

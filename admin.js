@@ -182,6 +182,61 @@
     }));
   }
 
+  function renderSectorEtfs(items) {
+    const list = document.getElementById('sector-etf-list');
+    if (!items.length) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 섹터 ETF가 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0 ${item.is_active ? '' : 'opacity-50'}"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_2fr_1fr_1fr_auto_auto]"><input data-sector-field="sector_name" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.sector_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_name" data-sector-id="${escapeHtml(item.id)}" maxlength="120" value="${escapeHtml(item.etf_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_ticker" data-sector-id="${escapeHtml(item.id)}" maxlength="24" value="${escapeHtml(item.etf_ticker)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs uppercase text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="issuer" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.issuer)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><label class="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-2 text-[11px] text-slate-300"><input data-sector-field="is_active" data-sector-id="${escapeHtml(item.id)}" type="checkbox" ${item.is_active ? 'checked' : ''}>활성</label><div class="flex gap-1"><button data-save-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-cyan-700/70 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-950/50">저장</button>${item.is_active ? `<button data-retire-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-amber-700/70 px-2 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-950/50">비활성화</button>` : ''}</div></div></article>`).join('');
+    list.querySelectorAll('[data-save-sector-id]').forEach((button) => button.addEventListener('click', async () => {
+      const id = button.dataset.saveSectorId;
+      const value = (field) => list.querySelector(`[data-sector-id="${id}"][data-sector-field="${field}"]`);
+      button.disabled = true;
+      try {
+        await invokeAdmin('save_sector_etf', {
+          id,
+          sector_name: value('sector_name').value,
+          etf_name: value('etf_name').value,
+          etf_ticker: value('etf_ticker').value,
+          issuer: value('issuer').value,
+          is_active: value('is_active').checked
+        });
+        await loadSectorEtfs();
+      } catch (error) { showNotice('섹터 ETF 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
+    }));
+    list.querySelectorAll('[data-retire-sector-id]').forEach((button) => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try { await invokeAdmin('retire_sector_etf', { id: button.dataset.retireSectorId }); await loadSectorEtfs(); }
+      catch (error) { showNotice('섹터 ETF 비활성화 실패', error.message || '변경하지 못했습니다.', true); button.disabled = false; }
+    }));
+  }
+
+  async function loadSectorEtfs() {
+    const list = document.getElementById('sector-etf-list');
+    try { renderSectorEtfs((await invokeAdmin('list_sector_etfs')).items || []); }
+    catch (error) { list.innerHTML = '<p class="p-4 text-center text-sm text-red-300">섹터 목록을 불러오지 못했습니다. DB 마이그레이션 적용 후 다시 시도해 주세요.</p>'; }
+  }
+
+  async function addSectorEtf(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      await invokeAdmin('save_sector_etf', {
+        sector_name: document.getElementById('sector-name-input').value,
+        etf_name: document.getElementById('sector-etf-name-input').value,
+        etf_ticker: document.getElementById('sector-etf-ticker-input').value,
+        issuer: document.getElementById('sector-etf-issuer-input').value,
+        is_active: true
+      });
+      form.reset();
+      await loadSectorEtfs();
+    } catch (error) { showNotice('섹터 ETF 추가 실패', error.message || '추가하지 못했습니다.', true); }
+    finally { submit.disabled = false; }
+  }
+
   async function loadUncertainNews() {
     try { renderUncertainNews((await invokeAdmin('list_uncertain_news')).items || []); }
     catch (error) { document.getElementById('uncertain-news-list').innerHTML = '<p class="p-4 text-center text-sm text-red-300">목록을 불러오지 못했습니다.</p>'; }
@@ -195,6 +250,7 @@
       const status = await invokeAdmin('status');
       applyStatus(status);
       await loadUncertainNews();
+      await loadSectorEtfs();
     } catch (error) {
       showNotice('불러오기 실패', error.message || '상태를 확인하지 못했습니다.', true);
     } finally {
@@ -305,6 +361,7 @@
     document.getElementById('run-news-button').addEventListener('click', () => runWorkflow('news'));
     document.getElementById('save-schedule-button').addEventListener('click', saveSchedule);
     document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
+    document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
     document.getElementById('operation-modal').addEventListener('click', (event) => {
       if (event.target === event.currentTarget) hideNotice();

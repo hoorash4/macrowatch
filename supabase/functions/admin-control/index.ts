@@ -89,6 +89,24 @@ function validateTimes(value: unknown) {
   return times.sort();
 }
 
+function requiredText(value: unknown, label: string, maxLength: number) {
+  const text = String(value || "").trim();
+  if (!text || text.length > maxLength) {
+    throw new Error(`${label}을(를) ${maxLength}자 이내로 입력해 주세요.`);
+  }
+  return text;
+}
+
+function validateSectorEtf(body: Record<string, unknown>) {
+  return {
+    sector_name: requiredText(body.sector_name, "섹터명", 80),
+    etf_name: requiredText(body.etf_name, "ETF명", 120),
+    etf_ticker: requiredText(body.etf_ticker, "ETF 코드", 24).toUpperCase(),
+    issuer: requiredText(body.issuer, "운용사", 80),
+    is_active: body.is_active !== false,
+  };
+}
+
 function kstTimeToCron(time: string) {
   const [hour, minute] = time.split(":").map(Number);
   const utcMinutes = (hour * 60 + minute - 9 * 60 + 24 * 60) % (24 * 60);
@@ -278,6 +296,49 @@ export default {
           .order("published_at", { ascending: false }).limit(100);
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "list_sector_etfs") {
+        const { data, error } = await admin.from("market_sector_etfs")
+          .select("id,sector_name,etf_name,etf_ticker,issuer,is_active,created_at,updated_at")
+          .order("is_active", { ascending: false })
+          .order("sector_name", { ascending: true });
+        if (error) throw error;
+        return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "save_sector_etf") {
+        const values = validateSectorEtf(body || {});
+        const id = String(body?.id || "").trim();
+        if (id) {
+          const { data, error } = await admin.from("market_sector_etfs")
+            .update({ ...values, updated_at: new Date().toISOString() })
+            .eq("id", id)
+            .select("id,sector_name,etf_name,etf_ticker,issuer,is_active,updated_at")
+            .maybeSingle();
+          if (error) throw error;
+          if (!data) return json({ error: "등록 항목을 찾을 수 없습니다." }, 404, origin);
+          return json({ item: data }, 200, origin);
+        }
+        const { data, error } = await admin.from("market_sector_etfs")
+          .insert(values)
+          .select("id,sector_name,etf_name,etf_ticker,issuer,is_active,updated_at")
+          .single();
+        if (error) throw error;
+        return json({ item: data }, 201, origin);
+      }
+
+      if (action === "retire_sector_etf") {
+        const id = String(body?.id || "").trim();
+        if (!id) return json({ error: "등록 항목 식별자가 필요합니다." }, 400, origin);
+        const { data, error } = await admin.from("market_sector_etfs")
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq("id", id)
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "등록 항목을 찾을 수 없습니다." }, 404, origin);
+        return json({ retired: true }, 200, origin);
       }
 
       if (action === "resolve_uncertain_news") {
