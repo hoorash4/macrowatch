@@ -18,26 +18,23 @@ HISTORY_YEARS = 3
 # All values are oriented so that a higher level means greater EM stress.
 SERIES = {
     "high_yield_oas": "BAMLEMHYHYLCRPIUSOAS",
-    "broad_oas": "BAMLEMCLLCRPIUSOAS",
-    "public_sector_oas": "BAMLEMPUPUBSLCRPIUSOAS",
     "em_dollar_index": "DTWEXEMEGS",
     "tail_risk_oas": "BAMLEM4BRRBLCRPIOAS",
+    "em_equity_volatility": "VXEEMCLS",
 }
 WEIGHTS = {
     "em_dollar_index": 0.30,
-    "high_yield_oas": 0.225,
-    "tail_risk_oas": 0.225,
-    "broad_oas": 0.125,
-    "public_sector_oas": 0.125,
+    "em_equity_volatility": 0.30,
+    "high_yield_oas": 0.20,
+    "tail_risk_oas": 0.20,
 }
 # Fixed absolute reference bands. Scores are deliberately not capped at 100:
 # a future credit event must be able to register above the reference extreme.
 SCALES = {
     "high_yield_oas": (2.0, 20.0),
-    "broad_oas": (1.0, 10.0),
-    "public_sector_oas": (1.0, 15.0),
     "em_dollar_index": (100.0, 160.0),
     "tail_risk_oas": (3.0, 20.0),
+    "em_equity_volatility": (10.0, 80.0),
 }
 
 
