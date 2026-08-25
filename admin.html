@@ -46,7 +46,7 @@
       <div class="mb-5">
         <p class="text-xs font-bold uppercase tracking-[0.18em] text-violet-400">Index registry</p>
         <h2 class="mt-1 text-lg font-bold text-white"><i class="fa-solid fa-layer-group mr-2 text-violet-400"></i>자체 지표 구성</h2>
-        <p class="mt-1 text-sm leading-relaxed text-slate-400">현재 서비스에서 사용하는 주간 지표의 구성·가중치·기본 업데이트 단위입니다. 미국 월간 지표는 사용하거나 표시하지 않습니다.</p>
+        <p class="mt-1 text-sm leading-relaxed text-slate-400">현재 서비스에서 사용하는 지표의 구성·가중치·기본 업데이트 단위입니다. 미국 월간 지표는 사용하거나 표시하지 않습니다.</p>
       </div>
 
       <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -71,6 +71,17 @@
             <li class="flex items-center gap-2"><i class="h-0.5 w-5 bg-violet-400/50"></i><span><strong class="font-semibold text-slate-100">흐린 선</strong> · NFCI 신용여건 60% + 위험 지수 40% 결합값의 주간 변화 4주 평균</span></li>
           </ul>
           <p class="mt-4 border-t border-slate-800 pt-3 text-xs leading-relaxed text-slate-500">두 선 모두 원천지표의 수준이 아니라 주간 변화의 4주 이동평균입니다.</p>
+        </article>
+
+        <article class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div><h3 class="font-bold text-slate-100">이머징 시장 스트레스 지수 <span class="text-teal-300">EM-MSI</span></h3><p class="mt-1 text-xs text-slate-500">주 단위 · 3년 표시</p></div>
+            <span class="rounded-full border border-teal-800/60 bg-teal-950/50 px-2.5 py-1 text-[11px] font-bold text-teal-300">달러 45% · 각 27.5%</span>
+          </div>
+          <ul class="mt-4 grid grid-cols-1 gap-2 text-sm text-slate-300 sm:grid-cols-2">
+            <li>이머징 달러지수</li><li>이머징 하이일드 스프레드</li><li class="sm:col-span-2">이머징 테일리스크 회사채 스프레드</li>
+          </ul>
+          <p class="mt-4 border-t border-slate-800 pt-3 text-xs leading-relaxed text-slate-500">세 주간 지표를 결합한 이머징 본지표입니다. 각 원천값이 늦으면 마지막 확인값을 이어 쓰며, 해당 주는 잠정치로 표시합니다. 이머징 주식 변동성은 현재 본지표 가중치에 포함하지 않습니다.</p>
         </article>
 
         <article class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
