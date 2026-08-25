@@ -81,6 +81,9 @@ async function fedSources(mode: "latest" | "backfill") {
   const discovered: Source[] = [];
   for (const page of pages) {
     const response = await fetch(page, { signal: AbortSignal.timeout(30_000) });
+    // Recent years are kept in the current calendar before the Fed publishes
+    // a separate historical-by-year page.  Those expected 404s are harmless.
+    if (!response.ok && page.includes("fomchistorical")) continue;
     if (!response.ok) throw new Error(`Fed FOMC 목록을 읽지 못했습니다 (${response.status}).`);
     discovered.push(...extractStatementLinks(await response.text()));
   }
