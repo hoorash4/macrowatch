@@ -270,7 +270,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   let weeklyPathIsProvisional = null;
   const finishWeeklyPath = () => {
     if (!weeklyPath) return;
-    weeklyPaths.push(`<path d="${weeklyPath}" fill="none" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"${weeklyPathIsProvisional ? ' stroke-dasharray="6 4"' : ''}/>`);
+    weeklyPaths.push(`<path d="${weeklyPath}" fill="none" stroke="${weeklyPathIsProvisional ? '#d97706' : '#0f766e'}" stroke-width="${weeklyPathIsProvisional ? '3.25' : '2.5'}" stroke-linecap="round"${weeklyPathIsProvisional ? ' stroke-dasharray="4 3"' : ''}/>`);
     weeklyPath = '';
   };
   weekly.slice(1).forEach((row, index) => {
