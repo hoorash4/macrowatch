@@ -170,7 +170,7 @@ function calculateCorrelation(pairs) {
 }
 
 function renderMarketStressDashboard(rows, weeklyRows = []) {
-  if (weeklyRows.length) return renderMarketStressAndTensionChart(rows, weeklyRows);
+  if (weeklyRows.length) return renderMarketStressAndTensionChart(weeklyRows);
   const chart = document.getElementById('credit-stress-chart');
   if (!chart) return;
   if (!rows.length) {
@@ -248,30 +248,23 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
 }
 
-function renderMarketStressAndTensionChart(monthlyRows, weeklyRows) {
+function renderMarketStressAndTensionChart(weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
-  const monthly = [...monthlyRows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
   const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
-  if (!chart || !monthly.length || !weekly.length) return;
+  if (!chart || !weekly.length) return;
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
-  const dates = [...monthly.map((row) => row.month), ...weekly.map((row) => row.week)].map((value) => new Date(value).getTime());
+  const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const left = [...monthly.map((row) => Number(row.stress_index)), ...weekly.map((row) => Number(row.tension_index))], leftMin = Math.min(...left), leftMax = Math.max(...left), leftRange = Math.max(leftMax - leftMin, 1), leftLower = leftMin - leftRange * .1, leftUpper = leftMax + leftRange * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (leftUpper - value)) / (leftUpper - leftLower);
+  const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
   const ticks = Array.from({ length: 5 }, (_, index) => index / 4);
   const grid = ticks.map((ratio) => {
-    const value = leftUpper - (leftUpper - leftLower) * ratio;
+    const value = upper - (upper - lower) * ratio;
     const py = padding.top + (height - padding.top - padding.bottom) * ratio;
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
   }).join('');
-  const monthlySegments = monthly.slice(1).map((row, index) => {
-    const previous = monthly[index];
-    const provisional = row.is_provisional === true;
-    return `<line x1="${x(previous.month)}" y1="${y(Number(previous.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="#b7791f" stroke-width="2.75" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
-  }).join('');
-  const monthlyDots = monthly.map((row) => `<circle cx="${x(row.month)}" cy="${y(Number(row.stress_index))}" r="3.25" fill="#b7791f" tabindex="0"><title>${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${row.is_provisional ? ' (잠정치)' : ''}</title></circle>`).join('');
   const weeklyPaths = [];
   let weeklyPath = '';
   let weeklyPathIsProvisional = null;
@@ -293,7 +286,7 @@ function renderMarketStressAndTensionChart(monthlyRows, weeklyRows) {
     weeklyPath += ` L ${endPoint}`;
   });
   finishWeeklyPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="월간 시장 스트레스와 주간 시장 긴장 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}${weeklyPaths.join('')}${monthlyDots}${years}</svg><div class="mt-4 flex flex-wrap justify-end gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI (월간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-700"></i>US-MTI (주간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-teal-700"></i>US-MTI 잠정치</span></div>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${weeklyPaths.join('')}${years}</svg>`;
 }
 
 function renderCreditConditionsMomentum(rows, monthlyRows = []) {
