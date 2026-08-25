@@ -49,6 +49,7 @@ const RESPONSE_SCHEMA = {
 };
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
+function errorMessage(error: unknown) { return error instanceof Error ? error.message : typeof error === "object" ? JSON.stringify(error) : String(error); }
 function normalizeText(html: string) { return html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim(); }
 function dateFromUrl(url: string) { const matched = url.match(/(20\d{6})/); return matched ? `${matched[1].slice(0, 4)}-${matched[1].slice(4, 6)}-${matched[1].slice(6, 8)}` : null; }
 async function sha256(value: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
@@ -171,7 +172,7 @@ Deno.serve(async (request) => {
         if (saveError) throw saveError;
       } catch (error) {
         failed += 1;
-        const { error: saveError } = await supabase.from("central_bank_policy_events").upsert({ central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, analysis_status: "failed", last_error: error instanceof Error ? error.message.slice(0, 900) : String(error).slice(0, 900), updated_at: new Date().toISOString() }, { onConflict: "central_bank,meeting_date" });
+        const { error: saveError } = await supabase.from("central_bank_policy_events").upsert({ central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, analysis_status: "failed", last_error: errorMessage(error).slice(0, 900), updated_at: new Date().toISOString() }, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;
       }
     }
@@ -181,5 +182,5 @@ Deno.serve(async (request) => {
       return !saved || saved.analysis_status !== "completed";
     }) && processed >= limit;
     return json({ bank: "fed", mode, discovered: selected.length, processed, skipped, failed, has_more: hasMore });
-  } catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, 500); }
+  } catch (error) { return json({ error: errorMessage(error) }, 500); }
 });
