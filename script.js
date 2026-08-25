@@ -993,7 +993,7 @@ function initializeDashboardNavigation() {
   const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
   if (!buttons.length || !panels.length) return;
 
-  const hashByView = { overview: '#news', credit: '#credit', korea: '#korea-stress', em: '#em-msi' };
+  const hashByView = { overview: '#news', credit: '#credit', korea: '#korea-stress', em: '#em-msi', policy: '#policy-signals' };
   const viewByHash = {
     ...Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view])),
     '#tracker': 'overview',

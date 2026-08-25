@@ -124,6 +124,7 @@
         <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
+        <button type="button" class="dashboard-nav-item" data-dashboard-view="policy"><i class="fa-solid fa-landmark"></i><span>통화정책 시그널</span></button>
         <div class="dashboard-nav-actions">
           <div id="db-status" class="hidden">DB 연결 확인 중...</div>
           <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
@@ -275,6 +276,22 @@
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed" style="border-color:#d97706"></i>EM-MSI 잠정치</span>
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-slate-500"></i>EEM 주간 종가</span>
         </div>
+      </div>
+    </section>
+
+    <section id="policy-signal-dashboard" data-dashboard-panel="policy" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="policy-signal-title">
+      <div class="border-b border-slate-800 px-5 py-5">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-landmark text-sm"></i></span>
+          <div>
+            <p class="text-[10px] font-bold tracking-[.16em] text-sky-300">MONETARY POLICY SIGNALS</p>
+            <h2 id="policy-signal-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">통화정책 시그널</h2>
+          </div>
+        </div>
+        <p class="mt-6 text-[11px] text-slate-500">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
+      </div>
+      <div class="flex min-h-64 items-center justify-center p-5 text-center">
+        <p class="text-sm text-slate-500">FOMC 정책 신호 데이터를 분석하고 있습니다.</p>
       </div>
     </section>
 
