@@ -581,7 +581,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart) return;
   if (!data.length) {
-    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
+    chart.innerHTML = '<div class="korea-empty-state flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
     if (fsiChart) fsiChart.innerHTML = '';
     return;
   }
