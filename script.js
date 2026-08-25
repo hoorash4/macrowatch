@@ -716,18 +716,25 @@ function renderEmStressDashboard(rows) {
   }
 
   if (!changeChart) return;
-  const changeRows = weekly.slice(4).map((row, index) => ({ ...row, four_week_change: Number(row.stress_index) - Number(weekly[index].stress_index) }));
+  const changeRows = weekly.slice(4).map((row, index) => {
+    const startIndex = index;
+    const netChange = Number(row.stress_index) - Number(weekly[startIndex].stress_index);
+    const pathLength = weekly.slice(startIndex + 1, startIndex + 5).reduce((sum, item, pathIndex) => sum + Math.abs(Number(item.stress_index) - Number(weekly[startIndex + pathIndex].stress_index)), 0);
+    const efficiency = pathLength > 0 ? Math.min(1, Math.abs(netChange) / pathLength) : 0;
+    const direction = netChange > 0 ? 1 : netChange < 0 ? -1 : 0;
+    return { ...row, four_week_efficiency: direction * efficiency * 100 };
+  });
   if (!changeRows.length) {
-    changeChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">5주 이상 데이터가 쌓이면 4주 스트레스 변화가 표시됩니다.</div>';
+    changeChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">5주 이상 데이터가 쌓이면 4주 방향성 효율이 표시됩니다.</div>';
     return;
   }
   const changeHeight = 128, changePadding = { top: 18, right: 52, bottom: 28, left: 52 };
-  const changeLimit = Math.max(...changeRows.map((row) => Math.abs(row.four_week_change)), 1) * 1.15;
+  const changeLimit = 100;
   const changeY = (value) => changePadding.top + (changeHeight - changePadding.top - changePadding.bottom) * (changeLimit - value) / (changeLimit * 2);
   const changeGrid = [-changeLimit, 0, changeLimit].map((value) => `<line x1="${changePadding.left}" x2="${width - changePadding.right}" y1="${changeY(value)}" y2="${changeY(value)}" stroke="${value === 0 ? '#94a3b8' : '#e6e1f2'}" stroke-dasharray="${value === 0 ? '0' : '3 4'}"/><text x="${changePadding.left - 9}" y="${changeY(value) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${value > 0 ? '+' : ''}${value.toFixed(1)}</text>`).join('');
   const changeGuides = changeRows.filter((row, index) => index > 0 && String(row.week).slice(0, 4) !== String(changeRows[index - 1].week).slice(0, 4)).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${changePadding.top}" y2="${changeHeight - changePadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  const changeLine = changeRows.slice(1).map((row, index) => `<line x1="${x(changeRows[index].week)}" y1="${changeY(changeRows[index].four_week_change)}" x2="${x(row.week)}" y2="${changeY(row.four_week_change)}" stroke="#6d28d9" stroke-width="2.5" stroke-linecap="round"/>`).join('');
-  changeChart.innerHTML = `<svg class="w-full" style="height:${changeHeight}px" viewBox="0 0 ${width} ${changeHeight}" role="img" aria-label="이머징 4주 스트레스 변화 보조지표"><line x1="${changePadding.left}" x2="${changePadding.left}" y1="${changePadding.top}" y2="${changeHeight - changePadding.bottom}" stroke="#b6a8d0"/>${changeGrid}${changeGuides}${changeLine}</svg>`;
+  const changeLine = changeRows.slice(1).map((row, index) => `<line x1="${x(changeRows[index].week)}" y1="${changeY(changeRows[index].four_week_efficiency)}" x2="${x(row.week)}" y2="${changeY(row.four_week_efficiency)}" stroke="#6d28d9" stroke-width="2.5" stroke-linecap="round"/>`).join('');
+  changeChart.innerHTML = `<svg class="w-full" style="height:${changeHeight}px" viewBox="0 0 ${width} ${changeHeight}" role="img" aria-label="이머징 4주 방향성 효율 보조지표"><line x1="${changePadding.left}" x2="${changePadding.left}" y1="${changePadding.top}" y2="${changeHeight - changePadding.bottom}" stroke="#b6a8d0"/>${changeGrid}${changeGuides}${changeLine}</svg>`;
   const changeSvg = changeChart.querySelector('svg');
   if (!changeSvg) return;
   const changeGuide = createElement('line', { y1: changePadding.top, y2: changeHeight - changePadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
@@ -738,7 +745,7 @@ function renderEmStressDashboard(rows) {
     const pointX = x(nearest.week);
     changeGuide.setAttribute('x1', pointX); changeGuide.setAttribute('x2', pointX); changeGuide.setAttribute('visibility', 'visible');
     changeLabel.setAttribute('x', pointX); changeLabel.setAttribute('y', changePadding.top + 11); changeLabel.setAttribute('visibility', 'visible');
-    changeLabel.textContent = `4주 변화 ${nearest.four_week_change >= 0 ? '+' : ''}${nearest.four_week_change.toFixed(2)}`;
+    changeLabel.textContent = `4주 방향성 효율 ${nearest.four_week_efficiency >= 0 ? '+' : ''}${nearest.four_week_efficiency.toFixed(2)}`;
   };
   const clearChange = () => [changeGuide, changeLabel].forEach((element) => element.setAttribute('visibility', 'hidden'));
   const sharedChange = ({ detail }) => { if (detail.source !== 'em-change') detail.active ? showChange(detail.week) : clearChange(); };
