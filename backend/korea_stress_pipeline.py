@@ -16,7 +16,6 @@ import requests
 ECOS = "https://ecos.bok.or.kr/api"
 BOK_SNAPSHOT_FSI = "https://snapshot.bok.or.kr/api/chart/getChart?id=1583"
 MARKET_RATES = "817Y002"
-EXCHANGE_RATES = "731Y001"
 KOSPI_TABLE = "802Y001"
 SERIES = {
     "treasury_3y": (MARKET_RATES, "010200000"),
@@ -26,7 +25,6 @@ SERIES = {
     "cp_91d": (MARKET_RATES, "010503000"),
     "koribor_3m": (MARKET_RATES, "010150000"),
     "kofr": (MARKET_RATES, "010901000"),
-    "usdkrw": (EXCHANGE_RATES, "0000001"),
     "kospi_close": (KOSPI_TABLE, "0001000"),
 }
 # Fixed stress bands, rather than ranges recalculated from the displayed
@@ -267,24 +265,18 @@ def main() -> None:
         )
         cp, cd = values["cp_91d"].get(month), values["cd_91d"].get(month)
         koribor, kofr = values["koribor_3m"].get(month), values["kofr"].get(month)
-        usdkrw = values["usdkrw"].get(month)
-        if not all(isinstance(value, float) for value in (bbb, aa, treasury, cp, cd, koribor, kofr, usdkrw)):
+        if not all(isinstance(value, float) for value in (bbb, aa, treasury, cp, cd, koribor, kofr)):
             continue
         credit_spread = bbb - treasury
         investment_grade_spread = aa - treasury
         rating_gap_spread = bbb - aa
         funding_spread = cp - cd
         interbank_liquidity_spread = koribor - kofr
-        # Keep the exchange-rate input on a spread-like scale without a
-        # threshold, cap, or changing historical normalization.  A move from
-        # KRW 1,300 to 1,400 per USD changes this input from 1.30 to 1.40.
-        usdkrw_stress = round(usdkrw / 1000.0, 2)
         component_scores = (
             score(investment_grade_spread, *STRESS_BANDS["investment_grade"]),
             score(rating_gap_spread, *STRESS_BANDS["rating_gap"]),
             score(funding_spread, *STRESS_BANDS["short_term_funding"]),
             score(interbank_liquidity_spread, *STRESS_BANDS["interbank_liquidity"]),
-            usdkrw_stress,
         )
         component_stress_index = round(sum(component_scores) / len(component_scores), 2)
         official_fsi = fsi.get(month)
@@ -309,7 +301,6 @@ def main() -> None:
             "rating_gap_spread": round(rating_gap_spread, 4),
             "short_term_funding_spread": round(funding_spread, 4),
             "interbank_liquidity_spread": round(interbank_liquidity_spread, 4),
-            "usdkrw_exchange_rate": round(usdkrw, 2),
             "kospi_close": values["kospi_close"].get(month),
             "bok_fsi": official_fsi if has_fsi else None,
             "is_provisional": month == today_month or not has_fsi,
