@@ -604,7 +604,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
   }).join('');
   const years = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4));
-  const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>`).join('');
+  const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${Number(String(row.month).slice(5, 7))}월</text>`).join('');
   const draw = (key, mapY, color, dash = '') => data.slice(1).map((row, index) => {
     const before = Number(data[index][key]), current = Number(row[key]);
     return Number.isFinite(before) && Number.isFinite(current) ? `<line x1="${x(data[index].month)}" y1="${mapY(before)}" x2="${x(row.month)}" y2="${mapY(current)}" stroke="${color}" stroke-width="${key === 'stress_index' ? '3.25' : '2'}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>` : '';
