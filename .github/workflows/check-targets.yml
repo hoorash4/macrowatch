@@ -12,7 +12,9 @@ permissions:
 
 concurrency:
   group: macro-target-check
-  cancel-in-progress: false
+  # A scheduled run and a manually started run must never send separate alerts.
+  # Keep only the newest run; it aggregates every triggered target into one Kakao message.
+  cancel-in-progress: true
 
 jobs:
   check-targets:
