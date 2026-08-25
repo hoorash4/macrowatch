@@ -23,10 +23,10 @@ SERIES = {
     "em_equity_volatility": "VXEEMCLS",
 }
 WEIGHTS = {
-    "em_dollar_index": 0.35,
-    "em_equity_volatility": 0.20,
-    "high_yield_oas": 0.225,
-    "tail_risk_oas": 0.225,
+    # VXEEM is retained as an auxiliary signal only while its main-index impact is tested.
+    "em_dollar_index": 0.4375,
+    "high_yield_oas": 0.28125,
+    "tail_risk_oas": 0.28125,
 }
 # Fixed absolute reference bands. Scores are deliberately not capped at 100:
 # a future credit event must be able to register above the reference extreme.
@@ -149,7 +149,7 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
         volatility_history.append(equity_volatility)
         stress_index = sum(
             score(float(values[key]), *SCALES[key]) * WEIGHTS[key]
-            for key in SERIES
+            for key in WEIGHTS
         )
         week_date = date.fromisoformat(week)
         missing_actual = any(week not in raw[key] for key in SERIES)
