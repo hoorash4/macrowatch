@@ -138,9 +138,11 @@ async function recomputeSegments(supabase: ReturnType<typeof createClient>) {
     const base = STRESS_BASE[row.primary_reason!][row.action!];
     return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: segment, segment_sequence: sequence, policy_impulse: Number((base / sequence).toFixed(3)), policy_stress_contribution: base, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() };
   });
-  if (!updates.length) return;
-  const { error: upsertError } = await supabase.from("central_bank_policy_events").upsert(updates, { onConflict: "central_bank,meeting_date" });
-  if (upsertError) throw upsertError;
+  for (const update of updates) {
+    const { central_bank, meeting_date, ...values } = update;
+    const { error: updateError } = await supabase.from("central_bank_policy_events").update(values).eq("central_bank", central_bank).eq("meeting_date", meeting_date);
+    if (updateError) throw updateError;
+  }
 }
 
 Deno.serve(async (request) => {
