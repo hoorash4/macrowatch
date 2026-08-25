@@ -296,6 +296,10 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-columns,.sector-flow-week li { grid-template-columns:2.1rem minmax(0,1fr) 2rem auto; }
 .sector-flow-columns span:nth-child(3),.sector-flow-columns span:last-child { text-align:right; }
 .sector-flow-streak { color:#5e7890; font-size:.6rem; font-weight:750; text-align:right; white-space:nowrap; }
+.sector-flow-week header { background:linear-gradient(115deg,#087c9d,#1a5c9c); }
+.sector-flow-week-current { border-color:#c86b20; box-shadow:0 12px 25px rgba(190,104,35,.18); }
+.sector-flow-week-current header { background:linear-gradient(115deg,#bc5c1d,#e28a2c); }
+.sector-flow-week-current li b { background:#fbe7d1; color:#ad5218; }
 
 #app-shell .text-white { color:#142433; } #app-shell .text-slate-400 { color:#647585; } #app-shell .text-slate-500 { color:#82909c; } #app-shell [class*="bg-slate-950"] { background:#e9eef1 !important; }.compact-mobile-summary { display:none !important; }
 #tab-content-tracker { display:grid; grid-template-columns:minmax(0, 1fr) 360px; column-gap:1.25rem; row-gap:0; align-items:start; margin-bottom:1.25rem; }
