@@ -228,24 +228,24 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     const previousValue = Number(previous.sp500_month_end_close);
     const currentValue = Number(row.sp500_month_end_close);
     if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
-    return `<line x1="${x(index)}" y1="${sp500Y(previousValue)}" x2="${x(index + 1)}" y2="${sp500Y(currentValue)}" stroke="#285e8e" stroke-width="2.25" stroke-linecap="round"/>`;
+    return `<line x1="${x(index)}" y1="${sp500Y(previousValue)}" x2="${x(index + 1)}" y2="${sp500Y(currentValue)}" stroke="#6b7280" stroke-width="2.25" stroke-linecap="round"/>`;
   }).join('');
   const sp500Dots = data.map((row, index) => {
     const value = Number(row.sp500_month_end_close);
     if (!Number.isFinite(value)) return '';
-    return `<circle cx="${x(index)}" cy="${sp500Y(value)}" r="3.25" fill="#285e8e" tabindex="0"><title>${row.month}\nS&P 500 월말 종가: ${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</title></circle>`;
+    return `<circle cx="${x(index)}" cy="${sp500Y(value)}" r="3.25" fill="#6b7280" tabindex="0"><title>${row.month}\nS&P 500 월말 종가: ${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</title></circle>`;
   }).join('');
   const sp500Axis = hasSp500 ? Array.from(
     { length: Math.round(sp500AxisRange / sp500Step) + 1 },
     (_, index) => sp500AxisMinimum + index * sp500Step,
-  ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#285e8e" font-size="10">${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</text>`).join('') : '';
+  ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#6b7280" font-size="10">${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</text>`).join('') : '';
   const correlationPairs = data
     .map((row) => [Number(row.stress_index), Number(row.sp500_month_end_close)])
     .filter(([stress, sp500]) => Number.isFinite(stress) && Number.isFinite(sp500));
   const correlation = calculateCorrelation(correlationPairs);
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-blue-800"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
 }
 
 function renderMarketStressAndTensionChart(weeklyRows) {
@@ -277,20 +277,20 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const sp500Axis = hasSp500 ? Array.from(
     { length: Math.round((sp500Upper - sp500Lower) / sp500Step) + 1 },
     (_, index) => sp500Lower + index * sp500Step,
-  ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#285e8e" font-size="10">${value.toLocaleString('en-US')}</text>`).join('') : '';
+  ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#6b7280" font-size="10">${value.toLocaleString('en-US')}</text>`).join('') : '';
   const sp500Lines = weekly.slice(1).map((row, index) => {
     const previous = weekly[index];
     const previousValue = Number(previous.sp500_friday_close);
     const currentValue = Number(row.sp500_friday_close);
     if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
-    return `<line x1="${x(previous.week)}" y1="${sp500Y(previousValue)}" x2="${x(row.week)}" y2="${sp500Y(currentValue)}" stroke="#285e8e" stroke-width="2" stroke-linecap="round"/>`;
+    return `<line x1="${x(previous.week)}" y1="${sp500Y(previousValue)}" x2="${x(row.week)}" y2="${sp500Y(currentValue)}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
   }).join('');
   const weeklyPaths = [];
   let weeklyPath = '';
   let weeklyPathIsProvisional = null;
   const finishWeeklyPath = () => {
     if (!weeklyPath) return;
-    weeklyPaths.push(`<path d="${weeklyPath}" fill="none" stroke="${weeklyPathIsProvisional ? '#d97706' : '#0f766e'}" stroke-width="${weeklyPathIsProvisional ? '3.25' : '2.5'}" stroke-linecap="round"${weeklyPathIsProvisional ? ' stroke-dasharray="4 3"' : ''}/>`);
+    weeklyPaths.push(`<path d="${weeklyPath}" fill="none" stroke="${weeklyPathIsProvisional ? '#d97706' : '#00838c'}" stroke-width="${weeklyPathIsProvisional ? '3.25' : '3.25'}" stroke-linecap="round"${weeklyPathIsProvisional ? ' stroke-dasharray="4 3"' : ''}/>`);
     weeklyPath = '';
   };
   weekly.slice(1).forEach((row, index) => {
@@ -395,7 +395,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   });
 }
 
-function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor }) {
+function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor, invertVertical = false }) {
   const chart = document.getElementById(chartId);
   if (!chart) return;
   const levels = [...rows]
@@ -432,7 +432,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const dates = levels.map((row) => new Date(row.month).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - value)) / (axisMaximum * 2);
+  const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value + axisMaximum : axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
   const lines = data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="${lineColor}" stroke-width="1.75" stroke-linecap="round"/>`).join('');
   const averageLines = data.slice(1).map((row, index) => {
@@ -499,6 +499,7 @@ function renderCreditConditionsMomentum(rows) {
     ariaLabel: '미국 주간 신용여건 변화 추이',
     lineColor: '#c4b5d5',
     averageColor: '#6d4b91',
+    invertVertical: true,
   });
 }
 
@@ -520,6 +521,7 @@ function renderCreditRiskCompositeMomentum(rows) {
     ariaLabel: '미국 주간 신용여건·위험 신호 합성 변화 추이',
     lineColor: '#99d5ce',
     averageColor: '#0f766e',
+    invertVertical: true,
   });
 }
 
