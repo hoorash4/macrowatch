@@ -23,7 +23,13 @@ SERIES = {
     "em_dollar_index": "DTWEXEMEGS",
     "tail_risk_oas": "BAMLEM4BRRBLCRPIOAS",
 }
-WEIGHTS = {key: 0.20 for key in SERIES}
+WEIGHTS = {
+    "em_dollar_index": 0.30,
+    "high_yield_oas": 0.225,
+    "tail_risk_oas": 0.225,
+    "broad_oas": 0.125,
+    "public_sector_oas": 0.125,
+}
 # Fixed absolute reference bands. Scores are deliberately not capped at 100:
 # a future credit event must be able to register above the reference extreme.
 SCALES = {
