@@ -25,7 +25,6 @@ HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
 FINANCIAL_RISK_SERIES = "NFCIRISK"
 NONFINANCIAL_LEVERAGE_SERIES = "NFCINONFINLEVERAGE"
-SLOOS_SERIES = "DRTSCILM"
 SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
@@ -40,7 +39,6 @@ STRESS_COMPONENTS = (
     "high_yield_oas_pct",
     "financial_conditions_credit_index",
     "corporate_bond_market_distress_index",
-    "sloos_tightening_pct",
     "business_bankruptcy_filings",
 )
 LEAD_COMPONENT_WEIGHTS = {
@@ -64,7 +62,6 @@ FIXED_COMPONENT_SCALES = {
     "excess_bond_premium": (-1.0, 4.0),
     "nonfinancial_leverage_index": (-1.5, 2.0),
     "business_bankruptcy_filings": (1000.0, 5000.0),
-    "sloos_tightening_pct": (0.0, 100.0),
 }
 
 
@@ -114,49 +111,6 @@ def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> 
         except (KeyError, TypeError, ValueError):
             continue
     return {month: sum(rows) / len(rows) for month, rows in values.items() if rows}
-
-
-def fetch_fred_quarterly_to_months(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    """Expand a quarterly observation into the three months it measures.
-
-    SLOOS observations are dated on the first day after their reference
-    quarter.  A value dated 2026-04-01 therefore belongs to Jan--Mar 2026,
-    not to the publication month.  The monthly index is revised from
-    provisional to confirmed when that observation becomes available.
-    """
-    response = requests.get(
-        FRED_URL,
-        params={
-            "series_id": series_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "observation_start": (start - timedelta(days=100)).isoformat(),
-            "observation_end": (end + timedelta(days=100)).isoformat(),
-            "limit": "100000",
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    values: dict[str, float] = {}
-    for observation in response.json().get("observations", []):
-        raw_value, observed_on = observation.get("value"), observation.get("date")
-        if raw_value in (None, ".") or not isinstance(observed_on, str):
-            continue
-        try:
-            value = float(raw_value)
-            quarter_end = date.fromisoformat(observed_on) - timedelta(days=1)
-        except (TypeError, ValueError):
-            continue
-        for offset in range(3):
-            year = quarter_end.year
-            month_number = quarter_end.month - offset
-            while month_number <= 0:
-                year -= 1
-                month_number += 12
-            month = date(year, month_number, 1)
-            if start <= month <= end:
-                values[month.isoformat()] = value
-    return values
 
 
 def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
@@ -660,7 +614,6 @@ def main() -> None:
     high_yield = fetch_fred_monthly(HIGH_YIELD_SERIES, fred_api_key, start, end)
     financial_conditions = fetch_fred_monthly(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, end)
     financial_risk = fetch_fred_monthly(FINANCIAL_RISK_SERIES, fred_api_key, start, end)
-    sloos = fetch_fred_quarterly_to_months(SLOOS_SERIES, fred_api_key, start, end)
     excess_bond_premium = fetch_ebp_monthly(start, end)
     cmdi = fetch_cmdi_monthly(start, end)
     sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
@@ -673,7 +626,7 @@ def main() -> None:
     business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
     months = sorted(
         set(high_yield) | set(financial_conditions) | set(financial_risk)
-        | set(sloos) | set(excess_bond_premium) | set(cmdi) | set(business_filings)
+        | set(excess_bond_premium) | set(cmdi) | set(business_filings)
     )
     short_term_funding_spread = carry_forward_values(short_term_funding_spread, months)
     rows = [
@@ -684,7 +637,6 @@ def main() -> None:
             "financial_conditions_risk_index": financial_risk.get(month),
             "excess_bond_premium": excess_bond_premium.get(month),
             "corporate_bond_market_distress_index": cmdi.get(month),
-            "sloos_tightening_pct": sloos.get(month),
             "business_bankruptcy_filings": business_filings.get(month),
         }
         for month in months
@@ -710,7 +662,6 @@ def main() -> None:
             rows.append({
                 "month": latest_month,
                 **latest_values,
-                "sloos_tightening_pct": None,
                 "business_bankruptcy_filings": None,
             })
         else:
@@ -750,7 +701,7 @@ def main() -> None:
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
         f"nfci_credit={len(financial_conditions)} nfci_risk={len(financial_risk)} "
         f"ebp_months={len(excess_bond_premium)} cmdi_months={len(cmdi)} "
-        f"sloos_months={len(sloos)} sp500={len(sp500_month_end)} "
+        f"sp500={len(sp500_month_end)} "
         f"short_funding_spread={len(short_term_funding_spread)} "
         f"weekly_leverage={len(weekly_leverage)}"
     )
