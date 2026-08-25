@@ -39,6 +39,11 @@ MONTHLY_STRESS_COMPONENTS = (
     "corporate_bond_market_distress_index",
     "business_bankruptcy_filings",
 )
+MONTHLY_STRESS_COMPONENT_WEIGHTS = {
+    "excess_bond_premium": 4,
+    "corporate_bond_market_distress_index": 4,
+    "business_bankruptcy_filings": 2,
+}
 WEEKLY_TENSION_COMPONENT_WEIGHTS = {
     "high_yield": 0.20,
     "financial_conditions_credit": 0.20,
@@ -465,7 +470,10 @@ def build_market_stress_index(
         month = str(row["month"])
         if any(month not in component_scores.get(key, {}) for key in MONTHLY_STRESS_COMPONENTS):
             continue
-        score = sum(component_scores[key][month] for key in MONTHLY_STRESS_COMPONENTS) / len(MONTHLY_STRESS_COMPONENTS)
+        score = sum(
+            component_scores[key][month] * MONTHLY_STRESS_COMPONENT_WEIGHTS[key]
+            for key in MONTHLY_STRESS_COMPONENTS
+        ) / sum(MONTHLY_STRESS_COMPONENT_WEIGHTS.values())
         index_rows.append(
             {
                 "month": month,
