@@ -36,7 +36,9 @@ def request(path: list[str], key: str) -> dict:
 
 
 def ecos_rows(key: str, stat: str, cycle: str, start: str, end: str, item: str = "") -> list[dict]:
-    path = ["StatisticSearch", quote(key, safe=""), "json", "kr", "1", "10000", stat, cycle, start, end]
+    # ECOS guarantees this response size; the three-year daily window remains
+    # below it even after excluding weekends and holidays.
+    path = ["StatisticSearch", quote(key, safe=""), "json", "kr", "1", "1000", stat, cycle, start, end]
     if item:
         path.append(item)
     payload = request(path, key)
