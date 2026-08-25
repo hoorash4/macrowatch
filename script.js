@@ -287,6 +287,58 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   });
   finishWeeklyPath();
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${weeklyPaths.join('')}${years}</svg>`;
+  const svg = chart.querySelector('svg');
+  if (!svg) return;
+  const createSvgElement = (name, attributes) => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+    return element;
+  };
+  const hoverLine = createSvgElement('line', {
+    x1: padding.left,
+    x2: width - padding.right,
+    stroke: '#64748b',
+    'stroke-width': 0.75,
+    'pointer-events': 'none',
+    visibility: 'hidden',
+  });
+  const hoverValue = createSvgElement('text', {
+    x: width - padding.right - 6,
+    'text-anchor': 'end',
+    fill: '#334155',
+    'font-size': 11,
+    'font-weight': 700,
+    stroke: '#f8fafc',
+    'stroke-width': 4,
+    'paint-order': 'stroke',
+    'pointer-events': 'none',
+    visibility: 'hidden',
+  });
+  svg.append(hoverLine, hoverValue);
+  const setHover = (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const nearest = weekly.reduce((closest, row) => (
+      Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest
+    ));
+    const pointY = y(Number(nearest.tension_index));
+    const midpoint = (padding.top + height - padding.bottom) / 2;
+    const labelY = pointY < midpoint
+      ? Math.min(height - padding.bottom - 6, pointY + 15)
+      : Math.max(padding.top + 11, pointY - 7);
+    hoverLine.setAttribute('y1', pointY);
+    hoverLine.setAttribute('y2', pointY);
+    hoverLine.setAttribute('visibility', 'visible');
+    hoverValue.setAttribute('y', labelY);
+    hoverValue.setAttribute('visibility', 'visible');
+    hoverValue.textContent = Number(nearest.tension_index).toFixed(1);
+  };
+  const clearHover = () => {
+    hoverLine.setAttribute('visibility', 'hidden');
+    hoverValue.setAttribute('visibility', 'hidden');
+  };
+  svg.addEventListener('pointermove', setHover);
+  svg.addEventListener('pointerleave', clearHover);
 }
 
 function renderCreditConditionsMomentum(rows, monthlyRows = []) {
