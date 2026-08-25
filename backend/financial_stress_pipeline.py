@@ -37,12 +37,10 @@ CMDI_XLSX_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/c
 MONTHLY_STRESS_COMPONENTS = (
     "excess_bond_premium",
     "corporate_bond_market_distress_index",
-    "business_bankruptcy_filings",
 )
 MONTHLY_STRESS_COMPONENT_WEIGHTS = {
-    "excess_bond_premium": 4,
-    "corporate_bond_market_distress_index": 3,
-    "business_bankruptcy_filings": 3,
+    "excess_bond_premium": 1,
+    "corporate_bond_market_distress_index": 1,
 }
 WEEKLY_TENSION_COMPONENT_WEIGHTS = {
     "high_yield": 0.20,
@@ -445,14 +443,9 @@ def build_market_stress_index(
 ) -> list[dict[str, object]]:
     index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
-    filings, confirmed_filings = smoothed_filings(recent_rows)
     months = [str(row["month"]) for row in recent_rows]
-    raw_component_values: dict[str, dict[str, float]] = {
-        "business_bankruptcy_filings": filings,
-    }
+    raw_component_values: dict[str, dict[str, float]] = {}
     for key in MONTHLY_STRESS_COMPONENTS:
-        if key == "business_bankruptcy_filings":
-            continue
         raw_component_values[key] = {
             str(row["month"]): float(row[key])
             for row in recent_rows
@@ -480,9 +473,9 @@ def build_market_stress_index(
             {
                 "month": month,
                 "stress_index": round(score, 2),
-                "is_provisional": (
-                    month not in confirmed_filings
-                    or any(month not in raw_component_values.get(key, {}) for key in MONTHLY_STRESS_COMPONENTS)
+                "is_provisional": any(
+                    month not in raw_component_values.get(key, {})
+                    for key in MONTHLY_STRESS_COMPONENTS
                 ),
                 "sp500_month_end_close": sp500_month_end.get(month),
             }
