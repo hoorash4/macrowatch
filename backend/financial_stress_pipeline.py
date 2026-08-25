@@ -414,8 +414,14 @@ def build_market_stress_lead(
             }
         except (KeyError, TypeError, ValueError):
             continue
+        available_weights = {
+            key: LEAD_COMPONENT_WEIGHTS[key]
+            for key in component_scores
+        }
+        available_weight_total = sum(available_weights.values())
         lead_scores[month] = round(
-            sum(component_scores[key] * weight for key, weight in LEAD_COMPONENT_WEIGHTS.items()),
+            sum(component_scores[key] * weight for key, weight in available_weights.items())
+            / available_weight_total,
             2,
         )
         if index == 0:
@@ -439,7 +445,8 @@ def build_market_stress_lead(
         except (KeyError, TypeError, ValueError):
             continue
         momentum_scores[month] = round(
-            sum(momentum_components[key] * weight for key, weight in LEAD_COMPONENT_WEIGHTS.items()),
+            sum(momentum_components[key] * weight for key, weight in available_weights.items())
+            / available_weight_total,
             2,
         )
     return lead_scores, momentum_scores
