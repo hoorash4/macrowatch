@@ -572,8 +572,6 @@ window.loadMarketStressDashboard = loadMarketStressDashboard;
 
 function renderEmStressDashboard(rows) {
   const chart = document.getElementById('em-stress-chart');
-  const signalsChart = document.getElementById('em-stress-signals-chart');
-  const changeChart = document.getElementById('em-stress-change-chart');
   const weekly = [...rows]
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
@@ -675,91 +673,6 @@ function renderEmStressDashboard(rows) {
     });
   };
   attachVerticalGuide({ host: chart, source: 'em-main', showLabels: true });
-
-  if (!signalsChart) return;
-  const signalRows = weekly.filter((row) => Number.isFinite(Number(row.vxeem_4w_average)));
-  if (!signalRows.length) {
-    signalsChart.innerHTML = '<div class="flex min-h-40 items-center justify-center text-xs text-slate-400">첫 산출 후 이머징 위험회피 보조지표가 표시됩니다.</div>';
-    return;
-  }
-  const signalHeight = 148, signalPadding = { top: 18, right: 52, bottom: 28, left: 52 };
-  const signalValues = signalRows.map((row) => Number(row.vxeem_4w_average));
-  const signalMinimum = Math.min(...signalValues), signalMaximum = Math.max(...signalValues), signalRange = Math.max(signalMaximum - signalMinimum, 1);
-  const signalLower = Math.max(0, signalMinimum - signalRange * .12), signalUpper = signalMaximum + signalRange * .12;
-  const signalY = (value) => signalPadding.top + (signalHeight - signalPadding.top - signalPadding.bottom) * (signalUpper - value) / Math.max(1, signalUpper - signalLower);
-  const signalGrid = Array.from({ length: 3 }, (_, index) => {
-    const value = signalUpper - (signalUpper - signalLower) * index / 2;
-    return `<line x1="${signalPadding.left}" x2="${width - signalPadding.right}" y1="${signalY(value)}" y2="${signalY(value)}" stroke="#e6e1f2" stroke-dasharray="3 4"/><text x="${signalPadding.left - 9}" y="${signalY(value) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${value.toFixed(1)}</text>`;
-  }).join('');
-  const signalGuides = signalRows.filter((row, index) => index > 0 && String(row.week).slice(0, 4) !== String(signalRows[index - 1].week).slice(0, 4)).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${signalPadding.top}" y2="${signalHeight - signalPadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  const vxeemLine = signalRows.slice(1).map((row, index) => `<line x1="${x(signalRows[index].week)}" y1="${signalY(Number(signalRows[index].vxeem_4w_average))}" x2="${x(row.week)}" y2="${signalY(Number(row.vxeem_4w_average))}" stroke="#00838c" stroke-width="2.5" stroke-linecap="round"/>`).join('');
-  signalsChart.innerHTML = `<svg class="w-full" style="height:${signalHeight}px" viewBox="0 0 ${width} ${signalHeight}" role="img" aria-label="이머징 주식 위험회피 보조지표"><line x1="${signalPadding.left}" x2="${signalPadding.left}" y1="${signalPadding.top}" y2="${signalHeight - signalPadding.bottom}" stroke="#b6a8d0"/>${signalGrid}${signalGuides}${vxeemLine}</svg>`;
-  // Match the main chart's vertical guide without adding duplicate labels.
-  const signalSvg = signalsChart.querySelector('svg');
-  if (signalSvg) {
-    const guide = createElement('line', { y1: signalPadding.top, y2: signalHeight - signalPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-    signalSvg.append(guide);
-    const show = (week) => { const pointX = x(week); guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible'); };
-    const clear = () => guide.setAttribute('visibility', 'hidden');
-    const shared = ({ detail }) => { if (detail.source !== 'em-signals') detail.active ? show(detail.week) : clear(); };
-    if (signalsChart._emStressGuideListener) window.removeEventListener('macrowatch:em-stress-hover', signalsChart._emStressGuideListener);
-    signalsChart._emStressGuideListener = shared;
-    window.addEventListener('macrowatch:em-stress-hover', shared);
-    signalSvg.addEventListener('pointermove', (event) => {
-      const bounds = signalSvg.getBoundingClientRect();
-      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-      const nearest = signalRows.reduce((closest, row) => Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest);
-      show(nearest.week);
-      window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: true, source: 'em-signals', week: nearest.week } }));
-    });
-    signalSvg.addEventListener('pointerleave', () => { clear(); window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: false, source: 'em-signals' } })); });
-  }
-
-  if (!changeChart) return;
-  const changeRows = weekly.slice(4).map((row, index) => {
-    const startIndex = index;
-    const netChange = Number(row.stress_index) - Number(weekly[startIndex].stress_index);
-    const pathLength = weekly.slice(startIndex + 1, startIndex + 5).reduce((sum, item, pathIndex) => sum + Math.abs(Number(item.stress_index) - Number(weekly[startIndex + pathIndex].stress_index)), 0);
-    const efficiency = pathLength > 0 ? Math.min(1, Math.abs(netChange) / pathLength) : 0;
-    const direction = netChange > 0 ? 1 : netChange < 0 ? -1 : 0;
-    return { ...row, four_week_efficiency: direction * efficiency * 100 };
-  });
-  if (!changeRows.length) {
-    changeChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">5주 이상 데이터가 쌓이면 4주 방향성 효율이 표시됩니다.</div>';
-    return;
-  }
-  const changeHeight = 128, changePadding = { top: 18, right: 52, bottom: 28, left: 52 };
-  const changeLimit = 100;
-  const changeY = (value) => changePadding.top + (changeHeight - changePadding.top - changePadding.bottom) * (changeLimit - value) / (changeLimit * 2);
-  const changeGrid = [-changeLimit, 0, changeLimit].map((value) => `<line x1="${changePadding.left}" x2="${width - changePadding.right}" y1="${changeY(value)}" y2="${changeY(value)}" stroke="${value === 0 ? '#94a3b8' : '#e6e1f2'}" stroke-dasharray="${value === 0 ? '0' : '3 4'}"/><text x="${changePadding.left - 9}" y="${changeY(value) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${value > 0 ? '+' : ''}${value.toFixed(1)}</text>`).join('');
-  const changeGuides = changeRows.filter((row, index) => index > 0 && String(row.week).slice(0, 4) !== String(changeRows[index - 1].week).slice(0, 4)).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${changePadding.top}" y2="${changeHeight - changePadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  const changeLine = changeRows.slice(1).map((row, index) => `<line x1="${x(changeRows[index].week)}" y1="${changeY(changeRows[index].four_week_efficiency)}" x2="${x(row.week)}" y2="${changeY(row.four_week_efficiency)}" stroke="#6d28d9" stroke-width="2.5" stroke-linecap="round"/>`).join('');
-  changeChart.innerHTML = `<svg class="w-full" style="height:${changeHeight}px" viewBox="0 0 ${width} ${changeHeight}" role="img" aria-label="이머징 4주 방향성 효율 보조지표"><line x1="${changePadding.left}" x2="${changePadding.left}" y1="${changePadding.top}" y2="${changeHeight - changePadding.bottom}" stroke="#b6a8d0"/>${changeGrid}${changeGuides}${changeLine}</svg>`;
-  const changeSvg = changeChart.querySelector('svg');
-  if (!changeSvg) return;
-  const changeGuide = createElement('line', { y1: changePadding.top, y2: changeHeight - changePadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-  const changeLabel = createElement('text', { 'text-anchor': 'middle', fill: '#5b21b6', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' });
-  changeSvg.append(changeGuide, changeLabel);
-  const showChange = (week) => {
-    const nearest = changeRows.reduce((closest, row) => Math.abs(x(row.week) - x(week)) < Math.abs(x(closest.week) - x(week)) ? row : closest);
-    const pointX = x(nearest.week);
-    changeGuide.setAttribute('x1', pointX); changeGuide.setAttribute('x2', pointX); changeGuide.setAttribute('visibility', 'visible');
-    changeLabel.setAttribute('x', pointX); changeLabel.setAttribute('y', changePadding.top + 11); changeLabel.setAttribute('visibility', 'visible');
-    changeLabel.textContent = `4주 방향성 효율 ${nearest.four_week_efficiency >= 0 ? '+' : ''}${nearest.four_week_efficiency.toFixed(2)}`;
-  };
-  const clearChange = () => [changeGuide, changeLabel].forEach((element) => element.setAttribute('visibility', 'hidden'));
-  const sharedChange = ({ detail }) => { if (detail.source !== 'em-change') detail.active ? showChange(detail.week) : clearChange(); };
-  if (changeChart._emStressGuideListener) window.removeEventListener('macrowatch:em-stress-hover', changeChart._emStressGuideListener);
-  changeChart._emStressGuideListener = sharedChange;
-  window.addEventListener('macrowatch:em-stress-hover', sharedChange);
-  changeSvg.addEventListener('pointermove', (event) => {
-    const bounds = changeSvg.getBoundingClientRect();
-    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-    const nearest = changeRows.reduce((closest, row) => Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest);
-    showChange(nearest.week);
-    window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: true, source: 'em-change', week: nearest.week } }));
-  });
-  changeSvg.addEventListener('pointerleave', () => { clearChange(); window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: false, source: 'em-change' } })); });
 }
 
 async function loadEmStressDashboard() {
@@ -767,7 +680,7 @@ async function loadEmStressDashboard() {
   if (!chart || !supabaseClient) return;
   try {
     const { data, error } = await supabaseClient.from('em_market_stress_weekly')
-      .select('week,stress_index,high_yield_4w_average,vxeem_4w_average,eem_weekly_close,is_provisional')
+      .select('week,stress_index,eem_weekly_close,is_provisional')
       .order('week', { ascending: false }).limit(160);
     if (error) throw error;
     renderEmStressDashboard(data || []);
