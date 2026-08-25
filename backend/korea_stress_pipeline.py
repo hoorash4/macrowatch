@@ -90,7 +90,7 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
             observed, value = str(row["TIME"]), float(row["DATA_VALUE"])
         except (KeyError, TypeError, ValueError):
             continue
-        month = observed[:6] + "-01"
+        month = f"{observed[:4]}-{observed[4:6]}-01"
         if month not in values or observed > values[month][0]:
             values[month] = (observed, value)
     return {month: value for month, (_observed, value) in values.items()}
