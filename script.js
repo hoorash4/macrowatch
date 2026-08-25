@@ -314,24 +314,31 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     'pointer-events': 'none',
     visibility: 'hidden',
   });
-  svg.append(hoverGuide, hoverValue);
+  const hoverPeriod = createSvgElement('text', {
+    'text-anchor': 'middle',
+    fill: '#64748b',
+    'font-size': 10,
+    'pointer-events': 'none',
+    visibility: 'hidden',
+  });
+  svg.append(hoverGuide, hoverValue, hoverPeriod);
   const showHover = (week) => {
     const nearest = weekly.reduce((closest, row) => (
       Math.abs(x(row.week) - x(week)) < Math.abs(x(closest.week) - x(week)) ? row : closest
     ));
-    const pointY = y(Number(nearest.tension_index));
     const pointX = x(nearest.week);
-    const midpoint = (padding.top + height - padding.bottom) / 2;
-    const labelY = pointY < midpoint
-      ? height - padding.bottom - 6
-      : padding.top + 11;
+    const [, month, day] = String(nearest.week).split('-').map(Number);
     hoverGuide.setAttribute('x1', pointX);
     hoverGuide.setAttribute('x2', pointX);
     hoverGuide.setAttribute('visibility', 'visible');
     hoverValue.setAttribute('x', pointX);
-    hoverValue.setAttribute('y', labelY);
+    hoverValue.setAttribute('y', padding.top + 11);
     hoverValue.setAttribute('visibility', 'visible');
     hoverValue.textContent = Number(nearest.tension_index).toFixed(1);
+    hoverPeriod.setAttribute('x', pointX);
+    hoverPeriod.setAttribute('y', height - padding.bottom + 12);
+    hoverPeriod.setAttribute('visibility', 'visible');
+    hoverPeriod.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
   };
   const setHover = (event) => {
     const bounds = svg.getBoundingClientRect();
@@ -347,6 +354,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const clearHover = () => {
     hoverGuide.setAttribute('visibility', 'hidden');
     hoverValue.setAttribute('visibility', 'hidden');
+    hoverPeriod.setAttribute('visibility', 'hidden');
   };
   const handleSharedHover = ({ detail }) => {
     if (detail.source === 'stress') return;
