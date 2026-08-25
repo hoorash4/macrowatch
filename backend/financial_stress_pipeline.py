@@ -294,6 +294,7 @@ def build_weekly_market_tension(
 ) -> list[dict[str, object]]:
     weeks = sorted(set(high_yield) | set(credit_conditions) | set(risk_conditions) | set(funding) | set(leverage))
     raw_sources = (high_yield, credit_conditions, risk_conditions, funding, leverage)
+    latest_confirmed_week = min(max(values) for values in raw_sources if values)
     high_yield, credit_conditions, risk_conditions, funding, leverage = (
         carry_forward_values(values, weeks)
         for values in raw_sources
@@ -322,7 +323,7 @@ def build_weekly_market_tension(
             "week": week,
             "tension_index": tension_index,
             "tension_momentum": None if momentum is None else round(momentum, 2),
-            "is_provisional": any(week not in source for source in raw_sources),
+            "is_provisional": week > latest_confirmed_week,
         })
         previous_level = tension_index
     return rows
