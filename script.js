@@ -1043,7 +1043,9 @@ function initializeSectorFlowWeekLabels() {
     const weekOfMonth = Math.floor((weekStart.getDate() + firstMondayOffset - 1) / 7) + 1;
 
     card.querySelector('[data-sector-week-period]').textContent = `${weekStart.getMonth() + 1}월`;
-    card.querySelector('[data-sector-week-label]').textContent = `${weekOfMonth}주차`;
+    card.querySelector('[data-sector-week-label]').textContent = Number(card.dataset.sectorWeekOffset) === 0
+      ? '이번 주'
+      : `${weekOfMonth}주차`;
   });
 }
 
