@@ -35,7 +35,7 @@ def request(path: list[str], key: str) -> dict:
 
 
 def ecos_rows(key: str, stat: str, cycle: str, start: str, end: str, item: str = "") -> list[dict]:
-    path = ["StatisticSearch", quote(key, safe=""), "json", "kr", "1", "100000", stat, cycle, start, end]
+    path = ["StatisticSearch", quote(key, safe=""), "json", "kr", "1", "10000", stat, cycle, start, end]
     if item:
         path.append(item)
     payload = request(path, key)
