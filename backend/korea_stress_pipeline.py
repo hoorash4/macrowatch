@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from datetime import date
 from urllib.parse import quote
 
@@ -45,9 +46,18 @@ def require_env(name: str) -> str:
 
 
 def request(path: list[str]) -> dict:
-    response = requests.get("/".join([ECOS, *path]), headers=HEADERS, timeout=TIMEOUT)
-    response.raise_for_status()
-    return response.json()
+    url = "/".join([ECOS, *path])
+    last_error: requests.RequestException | None = None
+    for attempt in range(3):
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=(12, TIMEOUT))
+            response.raise_for_status()
+            return response.json()
+        except (requests.ConnectionError, requests.Timeout) as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"ECOS connection failed after retries: {last_error}")
 
 
 def ecos_rows(key: str, stat: str, cycle: str, start: str, end: str, item: str = "") -> list[dict]:
@@ -103,14 +113,12 @@ def find_fsi(key: str, years: int) -> dict[str, float]:
         row for row in catalog.get("StatisticTableList", {}).get("row", [])
         if "금융불안" in str(row.get("STAT_NAME", ""))
     ]
-    print(f"fsi_table_candidates={[(row.get('STAT_CODE'), row.get('STAT_NAME'), row.get('CYCLE')) for row in matching_tables[:5]]}")
     table = next((row for row in matching_tables if str(row.get("CYCLE", "")) == "M"), None)
     if not table:
         return {}
     stat = str(table["STAT_CODE"])
     items = request(["StatisticItemList", quote(key, safe=""), "json", "kr", "1", "1000", stat])
     item_rows = items.get("StatisticItemList", {}).get("row", [])
-    print(f"fsi_item_candidates={[(row.get('ITEM_CODE'), row.get('ITEM_NAME'), row.get('ITEM_NAME1')) for row in item_rows[:8]]}")
     item = next((row for row in item_rows
                  if "금융불안" in str(row.get("ITEM_NAME", row.get("ITEM_NAME1", "")))), None)
     code = str((item or {}).get("ITEM_CODE", (item or {}).get("ITEM_CODE1", "")))
