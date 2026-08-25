@@ -1,6 +1,5 @@
--- Separate the fast market-tension series from the slower monthly stress series
--- without altering historical lead data. The weekly index uses only daily and
--- weekly inputs; the monthly index uses only monthly or quarterly-released inputs.
+-- Separate the fast market-tension series from the slower monthly stress series.
+-- The legacy lead series and its embedded monthly values are superseded.
 
 create table if not exists public.us_market_tension_weekly (
   week date primary key,
@@ -21,3 +20,9 @@ create policy "Authenticated users can read weekly U.S. market tension"
 
 comment on table public.us_market_tension_weekly is
   'Published weekly U.S. Market Tension Index. It uses only daily and weekly inputs.';
+
+alter table public.us_market_stress_index_monthly
+  drop column if exists lead_index,
+  drop column if exists lead_momentum;
+
+drop table if exists public.us_market_stress_lead_weekly;
