@@ -55,8 +55,10 @@ let newsSentimentRows = [];
 let newsSentimentView = 'recent';
 
 function formatNewsDate(value) {
-  const [year, month, day] = String(value || '').split('-');
-  return month && day ? `${Number(month)}/${Number(day)}` : '—';
+  const date = new Date(`${String(value || '')}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return '—';
+  date.setUTCDate(date.getUTCDate() - 1);
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
 }
 
 function renderSentimentSegment(percent, colorClass, showLabel) {

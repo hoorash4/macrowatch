@@ -43,10 +43,6 @@ async function collectCandidates(lookbackHours: number) {
   return { candidates: deduplicate(results.flatMap((result) => result.status === "fulfilled" ? result.value : [])), errors: results.flatMap((result, index) => result.status === "rejected" ? [{ source: sources[index], error: String(result.reason) }] : []) };
 }
 function kstDate(iso: string) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso)); }
-function previousKstDate(iso: string) {
-  const [year, month, day] = kstDate(iso).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
-}
 function serverClient() {
   const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
@@ -89,8 +85,7 @@ Deno.serve(async (request) => {
   let stage = "요청 검증";
   try {
     const { lookbackHours, offset, limit, dryRun, markComplete } = await getRunOptions(request);
-    // The 01:00 KST run aggregates the prior day's 24-hour news flow for the dashboard.
-    const runDate = previousKstDate(new Date().toISOString());
+    const runDate = kstDate(new Date().toISOString());
     if (markComplete && !dryRun && offset === 0) {
       const { data, error } = await serverClient().from("news_pipeline_runs").select("run_date,next_offset,completed_at").eq("run_date", runDate).maybeSingle();
       if (error) throw error;
