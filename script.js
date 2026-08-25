@@ -354,7 +354,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     hoverValue.setAttribute('x', pointX);
     hoverValue.setAttribute('y', padding.top + 11);
     hoverValue.setAttribute('visibility', 'visible');
-    hoverValue.textContent = Number(nearest.tension_index).toFixed(1);
+    hoverValue.textContent = Number(nearest.tension_index).toFixed(2);
     hoverPeriod.setAttribute('x', pointX);
     hoverPeriod.setAttribute('y', height - padding.bottom + 12);
     hoverPeriod.setAttribute('visibility', 'visible');
