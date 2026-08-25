@@ -41,8 +41,8 @@ MONTHLY_STRESS_COMPONENTS = (
 )
 MONTHLY_STRESS_COMPONENT_WEIGHTS = {
     "excess_bond_premium": 4,
-    "corporate_bond_market_distress_index": 4,
-    "business_bankruptcy_filings": 2,
+    "corporate_bond_market_distress_index": 3,
+    "business_bankruptcy_filings": 3,
 }
 WEEKLY_TENSION_COMPONENT_WEIGHTS = {
     "high_yield": 0.20,
