@@ -120,7 +120,7 @@
           </span>
         </a>
         <p class="dashboard-nav-label">WORKSPACE</p>
-        <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>뉴스 흐름 분석</span></button>
+        <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>흐름 분석</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
@@ -160,6 +160,28 @@
         <div class="flex items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">뉴스 분석 결과를 불러오는 중입니다.</div>
       </div>
       <p class="mt-4 px-5 pb-5 text-right text-[11px] text-slate-500">매일 밤 11:30~자정(KST)에 업데이트됩니다.</p>
+    </section>
+
+    <section id="sector-flow-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="sector-flow-title">
+      <div class="border-b border-slate-800 px-5 py-5">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-teal-400/20 bg-teal-400/10 text-teal-300"><i class="fa-solid fa-layer-group text-sm"></i></span>
+          <div>
+            <p class="text-[10px] font-bold tracking-[.16em] text-teal-300">SECTOR FLOW ANALYSIS</p>
+            <h2 id="sector-flow-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">주도섹터 흐름 분석</h2>
+          </div>
+        </div>
+        <p class="mt-6 text-[11px] text-slate-500">주간 수익률 기준 상위 섹터의 변화를 최근 5주 흐름으로 보여줍니다.</p>
+        <p class="mt-0.5 text-[11px] text-slate-500">대표 ETF와 수익률 수집을 연결하면 실제 순위가 표시됩니다.</p>
+      </div>
+      <div class="sector-flow-preview" aria-label="주도섹터 5주 레이아웃 미리보기">
+        <article class="sector-flow-week"><p>4주 전</p><ol><li>—</li><li>—</li><li>—</li><li>—</li><li>—</li></ol></article>
+        <article class="sector-flow-week"><p>3주 전</p><ol><li>—</li><li>—</li><li>—</li><li>—</li><li>—</li></ol></article>
+        <article class="sector-flow-week"><p>2주 전</p><ol><li>—</li><li>—</li><li>—</li><li>—</li><li>—</li></ol></article>
+        <article class="sector-flow-week"><p>지난주</p><ol><li>—</li><li>—</li><li>—</li><li>—</li><li>—</li></ol></article>
+        <article class="sector-flow-week sector-flow-week-current"><p>이번 주</p><ol><li>—</li><li>—</li><li>—</li><li>—</li><li>—</li></ol></article>
+      </div>
+      <p class="px-5 pb-5 text-right text-[11px] text-slate-500">정규시장 기준 · 이번 주는 현재 시점까지 누적</p>
     </section>
 
     </div>
