@@ -570,7 +570,11 @@ window.loadMarketStressDashboard = loadMarketStressDashboard;
 function renderKoreaStressChart(rows) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
-  const data = [...rows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  // 임시 비교용 표시 종료일입니다. 원본 DB와 수집 데이터는 변경하지 않습니다.
+  const koreaDisplayEndMonth = '2026-01-01';
+  const data = [...rows]
+    .filter((row) => String(row.month).slice(0, 10) <= koreaDisplayEndMonth && Number.isFinite(Number(row.stress_index)))
+    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
   if (!chart) return;
   if (!data.length) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
