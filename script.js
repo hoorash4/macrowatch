@@ -257,7 +257,6 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
   const dates = [...monthly.map((row) => row.month), ...weekly.map((row) => row.week)].map((value) => new Date(value).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const left = [...monthly.map((row) => Number(row.stress_index)), ...weekly.map((row) => Number(row.lead_index))], leftMin = Math.min(...left), leftMax = Math.max(...left), leftRange = Math.max(leftMax - leftMin, 1), leftLower = leftMin - leftRange * .1, leftUpper = leftMax + leftRange * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (leftUpper - value)) / (leftUpper - leftLower);
-  const path = (rows, key, yFn, dateKey) => rows.filter((row) => Number.isFinite(Number(row[key]))).map((row, index) => `${index ? 'L' : 'M'}${x(row[dateKey]).toFixed(1)},${yFn(Number(row[key])).toFixed(1)}`).join('');
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
@@ -273,7 +272,12 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
     return `<line x1="${x(previous.month)}" y1="${y(Number(previous.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="#b7791f" stroke-width="2.75" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
   }).join('');
   const monthlyDots = monthly.map((row) => `<circle cx="${x(row.month)}" cy="${y(Number(row.stress_index))}" r="3.25" fill="#b7791f" tabindex="0"><title>${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${row.is_provisional ? ' (잠정치)' : ''}</title></circle>`).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI와 MSI Lead 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}<path d="${path(weekly, 'lead_index', y, 'week')}" fill="none" stroke="#0f766e" stroke-width="2.5"/>${monthlyDots}${years}</svg>`;
+  const weeklySegments = weekly.slice(1).map((row, index) => {
+    const previous = weekly[index];
+    const provisional = previous.is_provisional || row.is_provisional;
+    return `<line x1="${x(previous.week)}" y1="${y(Number(previous.lead_index))}" x2="${x(row.week)}" y2="${y(Number(row.lead_index))}" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
+  }).join('');
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI와 MSI Lead 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}${weeklySegments}${monthlyDots}${years}</svg>`;
 }
 
 function renderCreditStressMomentum(rows, monthlyRows = []) {
@@ -319,7 +323,7 @@ async function loadWeeklyStressLead(monthlyRows = []) {
   if (!supabaseClient) return;
   const weeklyQuery = () => supabaseClient
     .from('us_market_stress_lead_weekly')
-    .select('week,lead_index,lead_momentum,leverage_signal')
+    .select('week,lead_index,lead_momentum,leverage_signal,is_provisional')
     .order('week', { ascending: false })
     .limit(160);
   let weeklyResponse = await weeklyQuery();

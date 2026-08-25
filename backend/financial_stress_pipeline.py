@@ -22,18 +22,26 @@ COURTS_URLS = (
 )
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
+FINANCIAL_RISK_SERIES = "NFCIRISK"
 NONFINANCIAL_LEVERAGE_SERIES = "NFCINONFINLEVERAGE"
+SLOOS_SERIES = "DRTSCILM"
 SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 TIMEOUT_SECONDS = 45
 INDEX_HISTORY_YEARS = 3
-STRESS_COMPONENTS = (
-    ("high_yield_oas_pct", 0.50),
-    ("financial_conditions_credit_index", 0.30),
-    ("business_bankruptcy_filings", 0.20),
+# Monthly US-MSI weights: the slower, less-leading sources receive the lower
+# multipliers.  Keeping raw multipliers here makes the intended ordering clear;
+# the calculation normalizes them to 100 percent.
+STRESS_COMPONENT_MULTIPLIERS = (
+    ("financial_conditions_risk_index", 1.4),
+    ("high_yield_oas_pct", 1.3),
+    ("financial_conditions_credit_index", 1.2),
+    ("sloos_tightening_pct", 1.1),
+    ("business_bankruptcy_filings", 1.0),
 )
+STRESS_COMPONENT_WEIGHT_TOTAL = sum(weight for _key, weight in STRESS_COMPONENT_MULTIPLIERS)
 LEAD_COMPONENT_WEIGHTS = {
     "high_yield": 0.25,
     "financial_conditions": 0.25,
@@ -49,8 +57,10 @@ SHORT_TERM_FUNDING_CHANGE_REFERENCE = 0.30
 FIXED_COMPONENT_SCALES = {
     "high_yield_oas_pct": (2.0, 20.0),
     "financial_conditions_credit_index": (-0.5, 2.0),
+    "financial_conditions_risk_index": (-0.5, 2.0),
     "nonfinancial_leverage_index": (-1.5, 2.0),
     "business_bankruptcy_filings": (1000.0, 5000.0),
+    "sloos_tightening_pct": (0.0, 100.0),
 }
 
 
@@ -100,6 +110,49 @@ def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> 
         except (KeyError, TypeError, ValueError):
             continue
     return {month: sum(rows) / len(rows) for month, rows in values.items() if rows}
+
+
+def fetch_fred_quarterly_to_months(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
+    """Expand a quarterly observation into the three months it measures.
+
+    SLOOS observations are dated on the first day after their reference
+    quarter.  A value dated 2026-04-01 therefore belongs to Jan--Mar 2026,
+    not to the publication month.  The monthly index is revised from
+    provisional to confirmed when that observation becomes available.
+    """
+    response = requests.get(
+        FRED_URL,
+        params={
+            "series_id": series_id,
+            "api_key": api_key,
+            "file_type": "json",
+            "observation_start": (start - timedelta(days=100)).isoformat(),
+            "observation_end": (end + timedelta(days=100)).isoformat(),
+            "limit": "100000",
+        },
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    values: dict[str, float] = {}
+    for observation in response.json().get("observations", []):
+        raw_value, observed_on = observation.get("value"), observation.get("date")
+        if raw_value in (None, ".") or not isinstance(observed_on, str):
+            continue
+        try:
+            value = float(raw_value)
+            quarter_end = date.fromisoformat(observed_on) - timedelta(days=1)
+        except (TypeError, ValueError):
+            continue
+        for offset in range(3):
+            year = quarter_end.year
+            month_number = quarter_end.month - offset
+            while month_number <= 0:
+                year -= 1
+                month_number += 12
+            month = date(year, month_number, 1)
+            if start <= month <= end:
+                values[month.isoformat()] = value
+    return values
 
 
 def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
@@ -189,9 +242,10 @@ def build_weekly_lead(
     leverage: dict[str, float],
 ) -> list[dict[str, object]]:
     weeks = sorted(set(high_yield) | set(conditions) | set(funding) | set(leverage))
+    raw_sources = (high_yield, conditions, funding, leverage)
     high_yield, conditions, funding, leverage = (
         carry_forward_monthly(values, weeks)
-        for values in (high_yield, conditions, funding, leverage)
+        for values in raw_sources
     )
     rows, previous = [], None
     for week in weeks:
@@ -220,6 +274,7 @@ def build_weekly_lead(
             "lead_index": round(level, 2),
             "lead_momentum": None if momentum is None else round(momentum, 2),
             "leverage_signal": round(fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index"), 2),
+            "is_provisional": any(week not in source for source in raw_sources),
         })
         previous = (float(hy), float(condition), float(spread), float(leverage_value))
     return rows
@@ -400,17 +455,22 @@ def build_market_stress_index(
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
     filings, confirmed_filings = smoothed_filings(recent_rows)
     lead_scores, momentum_scores = build_market_stress_lead(recent_rows, short_term_funding_spread)
-    component_values: dict[str, dict[str, float]] = {
+    months = [str(row["month"]) for row in recent_rows]
+    raw_component_values: dict[str, dict[str, float]] = {
         "business_bankruptcy_filings": filings,
     }
-    for key, _weight in STRESS_COMPONENTS:
+    for key, _weight in STRESS_COMPONENT_MULTIPLIERS:
         if key == "business_bankruptcy_filings":
             continue
-        component_values[key] = {
+        raw_component_values[key] = {
             str(row["month"]): float(row[key])
             for row in recent_rows
             if isinstance(row.get(key), (int, float))
         }
+    component_values = {
+        key: carry_forward_monthly(values, months)
+        for key, values in raw_component_values.items()
+    }
     component_scores = {
         key: {month: fixed_stress_score(value, key) for month, value in values.items()}
         for key, values in component_values.items()
@@ -419,14 +479,20 @@ def build_market_stress_index(
     index_rows: list[dict[str, object]] = []
     for row in recent_rows:
         month = str(row["month"])
-        if any(month not in component_scores.get(key, {}) for key, _weight in STRESS_COMPONENTS):
+        if any(month not in component_scores.get(key, {}) for key, _weight in STRESS_COMPONENT_MULTIPLIERS):
             continue
-        score = sum(component_scores[key][month] * weight for key, weight in STRESS_COMPONENTS)
+        score = sum(
+            component_scores[key][month] * multiplier / STRESS_COMPONENT_WEIGHT_TOTAL
+            for key, multiplier in STRESS_COMPONENT_MULTIPLIERS
+        )
         index_rows.append(
             {
                 "month": month,
                 "stress_index": round(score, 2),
-                "is_provisional": month not in confirmed_filings,
+                "is_provisional": (
+                    month not in confirmed_filings
+                    or any(month not in raw_component_values.get(key, {}) for key, _weight in STRESS_COMPONENT_MULTIPLIERS)
+                ),
                 "sp500_month_end_close": sp500_month_end.get(month),
                 "lead_index": lead_scores.get(month),
                 "lead_momentum": momentum_scores.get(month),
@@ -456,10 +522,10 @@ def upsert_weekly_lead(rows: list[dict[str, object]], supabase_url: str, service
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_lead_weekly?on_conflict=week"
     headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}
     response = requests.post(endpoint, headers=headers, json=rows, timeout=TIMEOUT_SECONDS)
-    if response.status_code == 400 and "leverage_signal" in response.text:
+    if response.status_code == 400 and ("leverage_signal" in response.text or "is_provisional" in response.text):
         # Keep the established lead series updating while the additive database
         # migration is still being applied by the production integration.
-        legacy_rows = [{key: value for key, value in row.items() if key != "leverage_signal"} for row in rows]
+        legacy_rows = [{key: value for key, value in row.items() if key not in {"leverage_signal", "is_provisional"}} for row in rows]
         response = requests.post(endpoint, headers=headers, json=legacy_rows, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
 
@@ -490,6 +556,8 @@ def main() -> None:
 
     high_yield = fetch_fred_monthly(HIGH_YIELD_SERIES, fred_api_key, start, end)
     financial_conditions = fetch_fred_monthly(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, end)
+    financial_risk = fetch_fred_monthly(FINANCIAL_RISK_SERIES, fred_api_key, start, end)
+    sloos = fetch_fred_quarterly_to_months(SLOOS_SERIES, fred_api_key, start, end)
     sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
     commercial_paper = fetch_fred_monthly(COMMERCIAL_PAPER_SERIES, fred_api_key, start, end)
     three_month_treasury = fetch_fred_monthly(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, end)
@@ -498,13 +566,15 @@ def main() -> None:
         for month in commercial_paper.keys() & three_month_treasury.keys()
     }
     business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
-    months = sorted(set(high_yield) | set(financial_conditions) | set(business_filings))
+    months = sorted(set(high_yield) | set(financial_conditions) | set(financial_risk) | set(sloos) | set(business_filings))
     short_term_funding_spread = carry_forward_monthly(short_term_funding_spread, months)
     rows = [
         {
             "month": month,
             "high_yield_oas_pct": high_yield.get(month),
             "financial_conditions_credit_index": financial_conditions.get(month),
+            "financial_conditions_risk_index": financial_risk.get(month),
+            "sloos_tightening_pct": sloos.get(month),
             "business_bankruptcy_filings": business_filings.get(month),
         }
         for month in months
@@ -514,19 +584,26 @@ def main() -> None:
     latest_start = today - timedelta(days=60)
     latest_high_yield = fetch_fred_latest(HIGH_YIELD_SERIES, fred_api_key, latest_start, today)
     latest_conditions = fetch_fred_latest(FINANCIAL_CONDITIONS_SERIES, fred_api_key, latest_start, today)
-    latest_dates = [source[0] for source in (latest_high_yield, latest_conditions) if source is not None]
+    latest_risk = fetch_fred_latest(FINANCIAL_RISK_SERIES, fred_api_key, latest_start, today)
+    latest_dates = [source[0] for source in (latest_high_yield, latest_conditions, latest_risk) if source is not None]
     latest_month = month_start(max(latest_dates)) if latest_dates else None
-    index_rows_input = rows
-    if latest_month and latest_month not in {str(row["month"]) for row in rows} and latest_high_yield and latest_conditions:
-        index_rows_input = [
-            *rows,
-            {
+    if latest_month and latest_high_yield and latest_conditions and latest_risk:
+        latest_values = {
+            "high_yield_oas_pct": latest_high_yield[1],
+            "financial_conditions_credit_index": latest_conditions[1],
+            "financial_conditions_risk_index": latest_risk[1],
+        }
+        matching_row = next((row for row in rows if row["month"] == latest_month), None)
+        if matching_row is None:
+            rows.append({
                 "month": latest_month,
-                "high_yield_oas_pct": latest_high_yield[1],
-                "financial_conditions_credit_index": latest_conditions[1],
+                **latest_values,
+                "sloos_tightening_pct": None,
                 "business_bankruptcy_filings": None,
-            },
-        ]
+            })
+        else:
+            matching_row.update(latest_values)
+    index_rows_input = rows
     upsert_rows(rows, supabase_url, service_role_key)
     index_rows = build_market_stress_index(index_rows_input, today, sp500_month_end, short_term_funding_spread)
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
@@ -535,13 +612,12 @@ def main() -> None:
     weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, start, today)
     weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, start, today)
     weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, today)
-    completed_week = (today - timedelta(days=((today.weekday() - 4) % 7 or 7))).isoformat()
-    weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys() if week <= completed_week}
+    weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys()}
     weekly_rows = build_weekly_lead(
-        {week: value for week, value in weekly_high_yield.items() if week <= completed_week},
-        {week: value for week, value in weekly_conditions.items() if week <= completed_week},
+        weekly_high_yield,
+        weekly_conditions,
         weekly_funding,
-        {week: value for week, value in weekly_leverage.items() if week <= completed_week},
+        weekly_leverage,
     )
     upsert_weekly_lead(weekly_rows, supabase_url, service_role_key)
     if latest_dates:
