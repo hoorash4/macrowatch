@@ -321,17 +321,38 @@ def monthly_values_for_weeks(values: dict[str, float], weeks: list[str]) -> dict
     return {week: values[week[:7] + "-01"] for week in weeks if week[:7] + "-01" in values}
 
 
-def carry_forward_monthly(values: dict[str, float], months: list[str]) -> dict[str, float]:
-    """Keep a continuous monthly series when a source omits an otherwise ordinary month."""
+def carry_forward_values(values: dict[str, float], periods: list[str]) -> dict[str, float]:
+    """Fill an unreleased period with the latest actual observation."""
     carried: dict[str, float] = {}
     previous: float | None = None
-    for month in sorted(months):
-        current = values.get(month)
+    for period in sorted(periods):
+        current = values.get(period)
         if current is not None:
             previous = current
         if previous is not None:
-            carried[month] = previous
+            carried[period] = previous
     return carried
+
+
+def carry_forward_row_components(
+    rows: list[dict[str, object]],
+    component_keys: tuple[str, ...],
+) -> list[dict[str, object]]:
+    """Return display rows with gaps held at the latest actual source value.
+
+    The caller retains the unfilled rows to determine final versus provisional
+    status. A later source release overwrites these held values on the next run.
+    """
+    carried_rows = [dict(row) for row in rows]
+    latest: dict[str, float] = {}
+    for row in sorted(carried_rows, key=lambda item: str(item["month"])):
+        for key in component_keys:
+            value = row.get(key)
+            if isinstance(value, (int, float)):
+                latest[key] = float(value)
+            elif key in latest:
+                row[key] = latest[key]
+    return carried_rows
 
 
 def build_weekly_lead(
@@ -345,7 +366,7 @@ def build_weekly_lead(
     excess_bond_premium = monthly_values_for_weeks(excess_bond_premium, weeks)
     raw_sources = (high_yield, conditions, funding, leverage, excess_bond_premium)
     high_yield, conditions, funding, leverage, excess_bond_premium = (
-        carry_forward_monthly(values, weeks)
+        carry_forward_values(values, weeks)
         for values in raw_sources
     )
     rows, previous = [], None
@@ -558,13 +579,20 @@ def build_market_stress_lead(
 
 def build_market_stress_index(
     rows: list[dict[str, object]],
+    reported_rows: list[dict[str, object]],
     today: date,
     sp500_month_end: dict[str, float],
     short_term_funding_spread: dict[str, float],
 ) -> list[dict[str, object]]:
     index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
     recent_rows = [row for row in rows if str(row["month"]) >= index_start]
-    filings, confirmed_filings = smoothed_filings(recent_rows)
+    reported_by_month = {str(row["month"]): row for row in reported_rows}
+    reported_recent_rows = [
+        reported_by_month[str(row["month"])]
+        for row in recent_rows
+        if str(row["month"]) in reported_by_month
+    ]
+    filings, confirmed_filings = smoothed_filings(reported_recent_rows)
     lead_scores, momentum_scores = build_market_stress_lead(recent_rows, short_term_funding_spread)
     months = [str(row["month"]) for row in recent_rows]
     raw_component_values: dict[str, dict[str, float]] = {
@@ -575,11 +603,11 @@ def build_market_stress_index(
             continue
         raw_component_values[key] = {
             str(row["month"]): float(row[key])
-            for row in recent_rows
+            for row in reported_recent_rows
             if isinstance(row.get(key), (int, float))
         }
     component_values = {
-        key: carry_forward_monthly(values, months)
+        key: carry_forward_values(values, months)
         for key, values in raw_component_values.items()
     }
     component_scores = {
@@ -680,7 +708,7 @@ def main() -> None:
         set(high_yield) | set(financial_conditions) | set(financial_risk)
         | set(sloos) | set(excess_bond_premium) | set(cmdi) | set(business_filings)
     )
-    short_term_funding_spread = carry_forward_monthly(short_term_funding_spread, months)
+    short_term_funding_spread = carry_forward_values(short_term_funding_spread, months)
     rows = [
         {
             "month": month,
@@ -720,9 +748,19 @@ def main() -> None:
             })
         else:
             matching_row.update(latest_values)
+    # Keep the actual source rows for provisional-state detection. The stored
+    # rows use the last actual value until the matching release arrives.
+    reported_rows = [dict(row) for row in rows]
+    rows = carry_forward_row_components(rows, STRESS_COMPONENTS)
     index_rows_input = rows
     upsert_rows(rows, supabase_url, service_role_key)
-    index_rows = build_market_stress_index(index_rows_input, today, sp500_month_end, short_term_funding_spread)
+    index_rows = build_market_stress_index(
+        index_rows_input,
+        reported_rows,
+        today,
+        sp500_month_end,
+        short_term_funding_spread,
+    )
     upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
     weekly_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
