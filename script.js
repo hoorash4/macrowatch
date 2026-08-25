@@ -395,7 +395,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   });
 }
 
-function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor, invertVertical = false }) {
+function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor, secondaryValueKey = null, secondaryAverageColor = null, showChanges = true, invertVertical = false }) {
   const chart = document.getElementById(chartId);
   if (!chart) return;
   const levels = [...rows]
@@ -406,6 +406,18 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     ...row,
     value: row.value - levels[index].value,
   }));
+  const secondaryLevels = secondaryValueKey ? [...rows]
+    .map((row) => ({ ...row, value: toCreditStressNumber(row[secondaryValueKey]) }))
+    .filter((row) => Number.isFinite(row.value))
+    .sort((a, b) => String(a.month).localeCompare(String(b.month))) : [];
+  const secondaryChanges = secondaryLevels.slice(1).map((row, index) => ({
+    ...row,
+    value: row.value - secondaryLevels[index].value,
+  }));
+  const secondaryAverages = new Map(secondaryChanges.map((row, index) => {
+    const window = secondaryChanges.slice(Math.max(0, index - 3), index + 1);
+    return [row.month, window.length === 4 ? window.reduce((sum, item) => sum + item.value, 0) / 4 : null];
+  }));
   const data = changes.map((row, index) => {
     const window = changes.slice(Math.max(0, index - 3), index + 1);
     return {
@@ -413,6 +425,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
       average: window.length === 4
         ? window.reduce((sum, item) => sum + item.value, 0) / 4
         : null,
+      secondaryAverage: secondaryAverages.get(row.month) ?? null,
     };
   });
   if (!data.length) {
@@ -422,7 +435,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const width = 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
-  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0)]), 0.005);
+  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0), Math.abs(row.secondaryAverage || 0)]), 0.005);
   const step = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10].find((value) => value >= extent / 2) || 20;
   const axisMaximum = Math.ceil((extent * 1.15) / step) * step;
   const formatAxisValue = (value) => {
@@ -434,14 +447,19 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value + axisMaximum : axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
-  const lines = data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="${lineColor}" stroke-width="1.75" stroke-linecap="round"/>`).join('');
+  const lines = showChanges ? data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="${lineColor}" stroke-width="1.75" stroke-linecap="round"/>`).join('') : '';
   const averageLines = data.slice(1).map((row, index) => {
     const previous = data[index];
     if (!Number.isFinite(previous.average) || !Number.isFinite(row.average)) return '';
     return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="${averageColor}" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
+  const secondaryAverageLines = secondaryAverageColor ? data.slice(1).map((row, index) => {
+    const previous = data[index];
+    if (!Number.isFinite(previous.secondaryAverage) || !Number.isFinite(row.secondaryAverage)) return '';
+    return `<line x1="${x(previous.month)}" y1="${y(previous.secondaryAverage)}" x2="${x(row.month)}" y2="${y(row.secondaryAverage)}" stroke="${secondaryAverageColor}" stroke-width="2.5" stroke-opacity="0.48" stroke-linecap="round"/>`;
+  }).join('') : '';
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${secondaryAverageLines}${averageLines}</svg>`;
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const hoverGuide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -490,20 +508,6 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
 }
 
 function renderCreditConditionsMomentum(rows) {
-  renderWeeklyMomentumChart({
-    chartId: 'credit-stress-momentum-chart',
-    rows,
-    valueKey: 'financial_conditions_credit_index',
-    source: 'credit',
-    emptyMessage: '첫 산출 후 주간 신용여건 변화가 표시됩니다.',
-    ariaLabel: '미국 주간 신용여건 변화 추이',
-    lineColor: '#c4b5d5',
-    averageColor: '#6d4b91',
-    invertVertical: true,
-  });
-}
-
-function renderCreditRiskCompositeMomentum(rows) {
   const compositeRows = rows
     .map((row) => {
       const credit = toCreditStressNumber(row.financial_conditions_credit_index);
@@ -513,14 +517,17 @@ function renderCreditRiskCompositeMomentum(rows) {
     })
     .filter(Boolean);
   renderWeeklyMomentumChart({
-    chartId: 'market-stress-momentum-chart',
+    chartId: 'credit-stress-momentum-chart',
     rows: compositeRows,
-    valueKey: 'credit_risk_composite',
-    source: 'credit-risk-composite',
-    emptyMessage: '첫 산출 후 신용여건·위험 신호 변화를 표시합니다.',
-    ariaLabel: '미국 주간 신용여건·위험 신호 합성 변화 추이',
-    lineColor: '#99d5ce',
-    averageColor: '#0f766e',
+    valueKey: 'financial_conditions_credit_index',
+    source: 'credit',
+    emptyMessage: '첫 산출 후 신용여건 4주 평균이 표시됩니다.',
+    ariaLabel: '미국 주간 신용여건과 위험 신호의 4주 평균 추이',
+    lineColor: '#c4b5d5',
+    averageColor: '#6d4b91',
+    secondaryValueKey: 'credit_risk_composite',
+    secondaryAverageColor: '#8b6aa9',
+    showChanges: false,
     invertVertical: true,
   });
 }
@@ -541,7 +548,6 @@ async function loadMarketTension(monthlyRows = []) {
   renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
   const weeklyRows = (weeklyResponse.data || []).map((row) => ({ ...row, month: row.week }));
   renderCreditConditionsMomentum(weeklyRows);
-  renderCreditRiskCompositeMomentum(weeklyRows);
 }
 
 async function loadMarketStressDashboard() {
