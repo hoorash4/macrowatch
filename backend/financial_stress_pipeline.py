@@ -325,6 +325,7 @@ def build_weekly_market_tension(
             "financial_conditions_credit_index": round(float(credit_condition), 4),
             "financial_conditions_risk_index": round(float(risk_condition), 4),
             "nonfinancial_leverage_index": round(float(leverage_value), 4),
+            "short_term_funding_spread": round(float(spread), 4),
             "sp500_friday_close": sp500.get(week),
             "is_provisional": week > latest_confirmed_week,
         })
