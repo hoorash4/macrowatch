@@ -61,6 +61,14 @@ function extractStatementLinks(html: string) {
     const meetingDate = dateFromUrl(sourceUrl);
     if (meetingDate) output.push({ meetingDate, sourceUrl });
   }
+  // The current FOMC calendar labels the actual statement link as "HTML"
+  // below a Statement heading, so collect its stable official URL pattern too.
+  const calendarStatement = /href=["']([^"']*\/newsevents\/pressreleases\/monetary20\d{6}a\.htm)["']/gi;
+  for (const match of html.matchAll(calendarStatement)) {
+    const sourceUrl = new URL(match[1], FED_BASE).toString();
+    const meetingDate = dateFromUrl(sourceUrl);
+    if (meetingDate) output.push({ meetingDate, sourceUrl });
+  }
   return output;
 }
 
