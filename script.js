@@ -302,6 +302,15 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     'pointer-events': 'none',
     visibility: 'hidden',
   });
+  const hoverGuide = createSvgElement('line', {
+    y1: padding.top,
+    y2: height - padding.bottom,
+    stroke: '#94a3b8',
+    'stroke-width': 0.75,
+    'stroke-dasharray': '3 4',
+    'pointer-events': 'none',
+    visibility: 'hidden',
+  });
   const hoverValue = createSvgElement('text', {
     x: width - padding.right - 6,
     'text-anchor': 'end',
@@ -314,7 +323,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     'pointer-events': 'none',
     visibility: 'hidden',
   });
-  svg.append(hoverLine, hoverValue);
+  svg.append(hoverLine, hoverGuide, hoverValue);
   const setHover = (event) => {
     const bounds = svg.getBoundingClientRect();
     const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
@@ -322,6 +331,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
       Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest
     ));
     const pointY = y(Number(nearest.tension_index));
+    const pointX = x(nearest.week);
     const midpoint = (padding.top + height - padding.bottom) / 2;
     const labelY = pointY < midpoint
       ? Math.min(height - padding.bottom - 6, pointY + 15)
@@ -329,12 +339,16 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     hoverLine.setAttribute('y1', pointY);
     hoverLine.setAttribute('y2', pointY);
     hoverLine.setAttribute('visibility', 'visible');
+    hoverGuide.setAttribute('x1', pointX);
+    hoverGuide.setAttribute('x2', pointX);
+    hoverGuide.setAttribute('visibility', 'visible');
     hoverValue.setAttribute('y', labelY);
     hoverValue.setAttribute('visibility', 'visible');
     hoverValue.textContent = Number(nearest.tension_index).toFixed(1);
   };
   const clearHover = () => {
     hoverLine.setAttribute('visibility', 'hidden');
+    hoverGuide.setAttribute('visibility', 'hidden');
     hoverValue.setAttribute('visibility', 'hidden');
   };
   svg.addEventListener('pointermove', setHover);
