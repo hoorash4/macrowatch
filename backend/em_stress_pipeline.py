@@ -135,6 +135,7 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
     source_last_weeks = {key: max(values) for key, values in raw.items() if values}
     hy_history: list[float] = []
     tail_history: list[float] = []
+    volatility_history: list[float] = []
     rows: list[dict[str, object]] = []
     for week in weeks:
         values = {key: carried[key].get(week) for key in SERIES}
@@ -142,10 +143,14 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
             continue
         high_yield = float(values["high_yield_oas"])
         tail_risk = float(values["tail_risk_oas"])
+        equity_volatility = float(values["em_equity_volatility"])
         hy_history.append(high_yield)
         tail_history.append(tail_risk)
+        volatility_history.append(equity_volatility)
+        # Retain VXEEM's risk-aversion signal while avoiding a single week's option-market noise.
+        scored_values = {**values, "em_equity_volatility": trailing_average(volatility_history)}
         stress_index = sum(
-            score(float(values[key]), *SCALES[key]) * WEIGHTS[key]
+            score(float(scored_values[key]), *SCALES[key]) * WEIGHTS[key]
             for key in SERIES
         )
         week_date = date.fromisoformat(week)
