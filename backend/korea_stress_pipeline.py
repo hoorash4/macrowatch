@@ -132,7 +132,11 @@ def upsert(rows: list[dict], url: str, service_key: str) -> None:
         json=rows,
         timeout=TIMEOUT,
     )
-    response.raise_for_status()
+    if not response.ok:
+        raise RuntimeError(
+            f"Supabase Korea stress upsert failed: {response.status_code} "
+            f"{response.text[:1200]}"
+        )
 
 
 def main() -> None:
