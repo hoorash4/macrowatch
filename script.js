@@ -570,13 +570,11 @@ window.loadMarketStressDashboard = loadMarketStressDashboard;
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
-  // 임시 비교용 표시 종료일입니다. 원본 DB와 수집 데이터는 변경하지 않습니다.
-  const koreaDisplayEndMonth = '2026-01-01';
   const data = [...rows]
-    .filter((row) => String(row.month).slice(0, 10) <= koreaDisplayEndMonth && Number.isFinite(Number(row.stress_index)))
+    .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
   const weeklyKospi = [...weeklyKospiRows]
-    .filter((row) => String(row.week).slice(0, 10) <= koreaDisplayEndMonth && Number.isFinite(Number(row.kospi_close)))
+    .filter((row) => Number.isFinite(Number(row.kospi_close)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart) return;
   if (!data.length) {
