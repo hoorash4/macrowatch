@@ -229,16 +229,18 @@ def fetch_ebp_monthly(start: date, end: date) -> dict[str, float]:
     """Read the Federal Reserve Board's monthly Excess Bond Premium CSV."""
     response = requests.get(EBP_CSV_URL, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
-    reader = csv.DictReader(io.StringIO(response.text))
+    reader = csv.DictReader(io.StringIO(response.content.decode("utf-8-sig", errors="replace")))
     values: dict[str, float] = {}
     for row in reader:
         normalized = {str(key).strip().lower(): value for key, value in row.items() if key}
         raw_date = normalized.get("date") or normalized.get("observation_date")
+        if raw_date is None:
+            raw_date = next((value for key, value in normalized.items() if "date" in key), None)
         raw_value = normalized.get("ebp")
         if raw_value is None:
-            raw_value = next((value for key, value in normalized.items() if "excess bond premium" in key), None)
+            raw_value = next((value for key, value in normalized.items() if key.endswith("ebp") or "excess bond premium" in key), None)
         try:
-            observed_on = date.fromisoformat(str(raw_date))
+            observed_on = date.fromisoformat(str(raw_date).split(" ")[0])
             value = float(str(raw_value))
         except (TypeError, ValueError):
             continue
@@ -257,11 +259,11 @@ def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
     values: dict[str, tuple[date, float]] = {}
     for sheet in workbook.worksheets:
         header_row = date_column = value_column = None
-        for row_number, header in enumerate(sheet.iter_rows(min_row=1, max_row=20, values_only=True), start=1):
+        for row_number, header in enumerate(sheet.iter_rows(min_row=1, max_row=100, values_only=True), start=1):
             labels = [str(value or "").strip().lower() for value in header]
             try:
                 date_column = next(index for index, label in enumerate(labels) if label == "date" or "date" in label)
-                value_column = next(index for index, label in enumerate(labels) if "market" in label and "cmdi" in label)
+                value_column = next(index for index, label in enumerate(labels) if ("market" in label and "cmdi" in label) or label == "market")
                 header_row = row_number
                 break
             except StopIteration:
@@ -277,9 +279,15 @@ def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
             elif isinstance(raw_date, date):
                 observed_on = raw_date
             else:
-                try:
-                    observed_on = date.fromisoformat(str(raw_date))
-                except (TypeError, ValueError):
+                raw_date_text = str(raw_date).split(" ")[0]
+                observed_on = None
+                for pattern in ("%Y-%m-%d", "%m/%d/%Y"):
+                    try:
+                        observed_on = datetime.strptime(raw_date_text, pattern).date()
+                        break
+                    except ValueError:
+                        continue
+                if observed_on is None:
                     continue
             try:
                 value = float(raw_value)
