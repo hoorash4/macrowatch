@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=44">
+  <link rel="stylesheet" href="styles.css?v=45">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -123,6 +123,7 @@
         <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>뉴스 흐름 분석</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
         <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
+        <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
         <div class="dashboard-nav-actions">
           <div id="db-status" class="hidden">DB 연결 확인 중...</div>
           <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
@@ -244,6 +245,22 @@
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed" style="border-color:#d97706"></i>K-MSI 잠정치</span>
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>코스피 주간 종가</span>
         </div>
+      </div>
+    </section>
+
+    <section id="em-stress-dashboard" data-dashboard-panel="em" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="em-stress-title">
+      <div class="border-b border-slate-800 px-5 py-5">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-earth-americas text-sm"></i></span>
+          <div>
+            <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">EM-MSI · EMERGING MARKET STRESS INDEX</p>
+            <h2 id="em-stress-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">이머징 시장 스트레스 지수</h2>
+          </div>
+        </div>
+        <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발 중인 이머징 시장 스트레스 지수입니다.</p>
+      </div>
+      <div class="px-5 py-5">
+        <div class="flex min-h-80 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-center text-sm text-slate-500">구성 지표와 데이터 수집 방식을 설계 중입니다.</div>
       </div>
     </section>
 
@@ -573,6 +590,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=134"></script>
+  <script src="script.js?v=135"></script>
 </body>
 </html>
