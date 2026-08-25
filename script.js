@@ -395,7 +395,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   });
 }
 
-function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor, secondaryValueKey = null, secondaryAverageColor = null, showChanges = true, invertVertical = false }) {
+function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessage, ariaLabel, lineColor, averageColor, secondaryValueKey = null, secondaryAverageColor = null, showChanges = true, invertVertical = false, domainStart = null, domainEnd = null }) {
   const chart = document.getElementById(chartId);
   if (!chart) return;
   const levels = [...rows]
@@ -443,7 +443,8 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
   };
   const dates = levels.map((row) => new Date(row.month).getTime());
-  const start = Math.min(...dates), end = Math.max(...dates);
+  const start = domainStart ? new Date(domainStart).getTime() : Math.min(...dates);
+  const end = domainEnd ? new Date(domainEnd).getTime() : Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value + axisMaximum : axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
@@ -528,6 +529,8 @@ function renderCreditConditionsMomentum(rows) {
     secondaryValueKey: 'credit_risk_composite',
     secondaryAverageColor: '#8b6aa9',
     showChanges: false,
+    domainStart: rows.at(-1)?.week,
+    domainEnd: rows[0]?.week,
   });
 }
 

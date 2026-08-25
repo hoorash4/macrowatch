@@ -52,25 +52,25 @@
       <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <article class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
           <div class="flex items-start justify-between gap-3">
-            <div><h3 class="font-bold text-slate-100">미국 시장 스트레스 지수 <span class="text-violet-300">US-MSI</span></h3><p class="mt-1 text-xs text-slate-500">월 단위 · 3년 표시</p></div>
-            <span class="rounded-full border border-violet-800/60 bg-violet-950/50 px-2.5 py-1 text-[11px] font-bold text-violet-300">동일 가중</span>
-          </div>
-          <ul class="mt-4 space-y-2 text-sm text-slate-300">
-            <li class="flex gap-2"><span class="text-violet-400">01</span><span>Excess Bond Premium (EBP)</span></li>
-            <li class="flex gap-2"><span class="text-violet-400">02</span><span>Corporate Bond Market Distress Index (CMDI)</span></li>
-          </ul>
-          <p class="mt-4 border-t border-slate-800 pt-3 text-xs leading-relaxed text-slate-500">두 원천 지표를 고정 기준으로 점수화해 평균합니다. 원천값이 늦으면 마지막 확인값을 사용하고 잠정치로 표시합니다.</p>
-        </article>
-
-        <article class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div><h3 class="font-bold text-slate-100">미국 주간 긴장 지표</h3><p class="mt-1 text-xs text-slate-500">주 단위 · 보조지표</p></div>
-            <span class="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-slate-300">각 20%</span>
+            <div><h3 class="font-bold text-slate-100">미국 시장 스트레스 지수 <span class="text-violet-300">US-MSI</span></h3><p class="mt-1 text-xs text-slate-500">주 단위 · 3년 표시</p></div>
+            <span class="rounded-full border border-violet-800/60 bg-violet-950/50 px-2.5 py-1 text-[11px] font-bold text-violet-300">각 20%</span>
           </div>
           <ul class="mt-4 grid grid-cols-1 gap-2 text-sm text-slate-300 sm:grid-cols-2">
             <li>하이일드 스프레드</li><li>NFCI 신용 지수</li><li>NFCI 위험 지수</li><li>단기자금 스프레드</li><li class="sm:col-span-2">NFCI 비금융 레버리지 지수</li>
           </ul>
-          <p class="mt-4 border-t border-slate-800 pt-3 text-xs leading-relaxed text-slate-500">다섯 지표의 동일가중 수준값을 산출하고, 주간 변화와 4주 평균을 보조 시계열로 사용합니다.</p>
+          <p class="mt-4 border-t border-slate-800 pt-3 text-xs leading-relaxed text-slate-500">다섯 주간 지표를 동일가중으로 결합한 현재 서비스의 미국 본지표입니다. 원천값이 늦으면 마지막 확인값을 사용하고 잠정치로 표시합니다.</p>
+        </article>
+
+        <article class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div><h3 class="font-bold text-slate-100">선행 긴장 시그널</h3><p class="mt-1 text-xs text-slate-500">주 단위 · US-MSI 보조지표</p></div>
+            <span class="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-slate-300">신용 60% · 위험 40%</span>
+          </div>
+          <ul class="mt-4 space-y-2 text-sm text-slate-300">
+            <li class="flex gap-2"><span class="text-violet-400">01</span><span>NFCI 신용 지수</span></li>
+            <li class="flex gap-2"><span class="text-violet-400">02</span><span>NFCI 위험 지수</span></li>
+          </ul>
+          <p class="mt-4 border-t border-slate-800 pt-3 text-xs leading-relaxed text-slate-500">신용·위험 지수를 6:4로 결합한 뒤, 주간 변화의 4주 이동평균만 보조 시계열로 표시합니다.</p>
         </article>
 
         <article class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
