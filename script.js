@@ -296,22 +296,28 @@ function renderMarketStressAndTensionChart(monthlyRows, weeklyRows) {
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="월간 시장 스트레스와 주간 시장 긴장 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}${weeklyPaths.join('')}${monthlyDots}${years}</svg><div class="mt-4 flex flex-wrap justify-end gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI (월간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-700"></i>US-MTI (주간)</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-teal-700"></i>US-MTI 잠정치</span></div>`;
 }
 
-function renderMarketTensionMomentum(rows, monthlyRows = []) {
+function renderCreditConditionsMomentum(rows, monthlyRows = []) {
   const chart = document.getElementById('credit-stress-momentum-chart');
   if (!chart) return;
-  const monthlyData = [...rows]
-    .map((row) => ({ ...row, value: toCreditStressNumber(row.tension_momentum) }))
+  const creditConditions = [...rows]
+    .map((row) => ({ ...row, value: toCreditStressNumber(row.financial_conditions_credit_index) }))
     .filter((row) => Number.isFinite(row.value))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
-  const data = monthlyData.map((row, index) => {
-    const window = monthlyData.slice(Math.max(0, index - 3), index + 1);
-    const average = window.length === 4
-      ? window.reduce((sum, item) => sum + item.value, 0) / 4
-      : null;
-    return { ...row, average };
+  const changes = creditConditions.slice(1).map((row, index) => ({
+    ...row,
+    value: row.value - creditConditions[index].value,
+  }));
+  const data = changes.map((row, index) => {
+    const window = changes.slice(Math.max(0, index - 3), index + 1);
+    return {
+      ...row,
+      average: window.length === 4
+        ? window.reduce((sum, item) => sum + item.value, 0) / 4
+        : null,
+    };
   });
   if (!data.length) {
-    chart.innerHTML = '<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 주간 시장 긴장 변화가 표시됩니다.</div>';
+    chart.innerHTML = '<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 주간 신용여건 변화가 표시됩니다.</div>';
     return;
   }
   const width = 920;
@@ -332,14 +338,14 @@ function renderMarketTensionMomentum(rows, monthlyRows = []) {
     return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 긴장 변화 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 신용여건 변화 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${averageLines}</svg>`;
 }
 
 async function loadMarketTension(monthlyRows = []) {
   if (!supabaseClient) return;
   const weeklyResponse = await supabaseClient
     .from('us_market_tension_weekly')
-    .select('week,tension_index,tension_momentum,is_provisional')
+    .select('week,tension_index,financial_conditions_credit_index,is_provisional')
     .order('week', { ascending: false })
     .limit(160);
   const monthlyResponse = await supabaseClient
@@ -349,7 +355,7 @@ async function loadMarketTension(monthlyRows = []) {
     .limit(CREDIT_STRESS_HISTORY_MONTHS);
   if (weeklyResponse.error || monthlyResponse.error) return;
   renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
-  renderMarketTensionMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })), monthlyRows.length ? monthlyRows : monthlyResponse.data || []);
+  renderCreditConditionsMomentum((weeklyResponse.data || []).map((row) => ({ ...row, month: row.week })), monthlyRows.length ? monthlyRows : monthlyResponse.data || []);
 }
 
 async function loadMarketStressDashboard() {

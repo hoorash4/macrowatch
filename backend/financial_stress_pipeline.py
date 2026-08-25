@@ -323,6 +323,7 @@ def build_weekly_market_tension(
             "week": week,
             "tension_index": tension_index,
             "tension_momentum": None if momentum is None else round(momentum, 2),
+            "financial_conditions_credit_index": round(float(credit_condition), 4),
             "is_provisional": week > latest_confirmed_week,
         })
         previous_level = tension_index
