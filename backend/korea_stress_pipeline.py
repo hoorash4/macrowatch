@@ -26,10 +26,11 @@ SERIES = {
     "kospi_close": (KOSPI_TABLE, "0001000"),
 }
 TIMEOUT = 45
+HEADERS = {"User-Agent": "MacroWatch/1.0 (+https://hoorash4.github.io/macrowatch/)"}
 
 
 def request(path: list[str], key: str) -> dict:
-    response = requests.get("/".join([ECOS, *path]), timeout=TIMEOUT)
+    response = requests.get("/".join([ECOS, *path]), headers=HEADERS, timeout=TIMEOUT)
     response.raise_for_status()
     return response.json()
 
