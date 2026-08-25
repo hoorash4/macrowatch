@@ -603,12 +603,11 @@ function renderKoreaTensionChart(rows) {
   const y = (value) => padding.top + (height - padding.top - padding.bottom) * (axisMaximum - value) / (axisMaximum * 2);
   const format = (value) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${format(value)}</text>`).join('');
-  const changes = data.slice(1).map((row, index) => `<line x1="${x(data[index].week)}" y1="${y(data[index].change)}" x2="${x(row.week)}" y2="${y(row.change)}" stroke="#c4b5d5" stroke-width="1.75" stroke-linecap="round"/>`).join('');
   const averages = data.slice(1).map((row, index) => {
     const previous = data[index];
     return Number.isFinite(previous.average) && Number.isFinite(row.average) ? `<line x1="${x(previous.week)}" y1="${y(previous.average)}" x2="${x(row.week)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>` : '';
   }).join('');
-  chart.innerHTML = `<div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600"><i class="h-0.5 w-5 bg-violet-800"></i>선행 긴장 시그널 <span class="font-normal text-slate-400">(주간 변동 · 4주 평균)</span></div><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 주간 선행 긴장 시그널"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${changes}${averages}</svg>`;
+  chart.innerHTML = `<div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600"><i class="h-0.5 w-5 bg-violet-800"></i>선행 긴장 시그널 <span class="font-normal text-slate-400">(4주 이동평균)</span></div><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 주간 선행 긴장 시그널"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${averages}</svg>`;
 }
 
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {

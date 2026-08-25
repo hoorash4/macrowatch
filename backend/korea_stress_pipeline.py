@@ -1,8 +1,4 @@
-"""Build MacroWatch's Korean market-stress index from official BOK data.
-
-FSI is collected only as an external official comparison series; it is never
-an input to the index.
-"""
+"""Build MacroWatch's Korean market-stress index from official BOK data."""
 
 from __future__ import annotations
 
@@ -44,6 +40,8 @@ STRESS_BANDS = {
 }
 TIMEOUT = 45
 WEEKLY_DISPLAY_START = date(2023, 9, 1)
+KMSI_COMPONENT_WEIGHT = 0.40
+KMSI_FSI_WEIGHT = 0.60
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -195,6 +193,32 @@ def upsert(rows: list[dict], url: str, service_key: str, table: str, conflict: s
         )
 
 
+def fetch_existing_fsi(url: str, service_key: str, years: int) -> dict[str, float]:
+    """Keep the last official FSI reading if the source is briefly unavailable."""
+    first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
+    response = requests.get(
+        f"{url.rstrip('/')}/rest/v1/korea_market_stress_monthly",
+        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+        params={
+            "select": "month,bok_fsi",
+            "month": f"gte.{first_month}",
+            "bok_fsi": "not.is.null",
+        },
+        timeout=TIMEOUT,
+    )
+    if not response.ok:
+        return {}
+    values: dict[str, float] = {}
+    for row in response.json():
+        try:
+            value = float(row["bok_fsi"])
+            if value != 0:
+                values[str(row["month"])] = value
+        except (KeyError, TypeError, ValueError):
+            continue
+    return values
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=3)
@@ -223,13 +247,14 @@ def main() -> None:
             "corporate_credit_spread": round(corporate[1] - treasury[1], 4) if corporate and treasury else None,
             "short_term_funding_spread": round(cp_weekly[1] - cd_weekly[1], 4) if cp_weekly and cd_weekly else None,
         })
+    existing_fsi = fetch_existing_fsi(url, service_key, args.years)
     try:
-        fsi = fetch_bok_fsi(args.years)
+        fsi = {**existing_fsi, **fetch_bok_fsi(args.years)}
     except Exception as error:
         # The MacroWatch index and KOSPI update must not stop merely because
         # the official comparison series is temporarily unavailable.
         print(f"fsi_unavailable={error}")
-        fsi = {}
+        fsi = existing_fsi
     months = sorted(set().union(*[set(rows) for rows in values.values()]))
     today_month = date.today().replace(day=1).isoformat()
     rows = []
@@ -260,9 +285,17 @@ def main() -> None:
             score(interbank_liquidity_spread, *STRESS_BANDS["interbank_liquidity"]),
             usdkrw_stress,
         )
+        component_stress_index = round(sum(component_scores) / len(component_scores), 2)
+        fsi_value = fsi.get(month)
+        has_fsi = isinstance(fsi_value, float) and fsi_value != 0
+        stress_index = round(
+            component_stress_index * KMSI_COMPONENT_WEIGHT + fsi_value * KMSI_FSI_WEIGHT,
+            2,
+        ) if has_fsi else component_stress_index
         rows.append({
             "month": month,
-            "stress_index": round(sum(component_scores) / len(component_scores), 2),
+            "stress_index": stress_index,
+            "market_component_index": component_stress_index,
             "corporate_credit_spread": round(credit_spread, 4),
             "investment_grade_spread": round(investment_grade_spread, 4),
             "rating_gap_spread": round(rating_gap_spread, 4),
@@ -270,10 +303,8 @@ def main() -> None:
             "interbank_liquidity_spread": round(interbank_liquidity_spread, 4),
             "usdkrw_exchange_rate": round(usdkrw, 2),
             "kospi_close": values["kospi_close"].get(month),
-            "bok_fsi": fsi.get(month),
-            # FSI is a comparison-only series.  It must not determine the
-            # confirmation status of MacroWatch's own index.
-            "is_provisional": month == today_month,
+            "bok_fsi": fsi_value,
+            "is_provisional": month == today_month or not has_fsi,
         })
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")

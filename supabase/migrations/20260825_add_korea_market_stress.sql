@@ -37,3 +37,6 @@ create policy "Authenticated users can read Korean weekly market stress" on publ
 alter table public.korea_market_stress_weekly
   add column if not exists corporate_credit_spread numeric(12, 4),
   add column if not exists short_term_funding_spread numeric(12, 4);
+
+alter table public.korea_market_stress_monthly
+  add column if not exists market_component_index numeric(12, 2);
