@@ -240,8 +240,17 @@ def fetch_ebp_monthly(start: date, end: date) -> dict[str, float]:
         raw_value = normalized.get("ebp")
         if raw_value is None:
             raw_value = next((value for key, value in normalized.items() if key.endswith("ebp") or "excess bond premium" in key), None)
+        raw_date_text = str(raw_date).split(" ")[0]
+        observed_on = None
+        for pattern in ("%Y-%m-%d", "%m/%d/%Y"):
+            try:
+                observed_on = datetime.strptime(raw_date_text, pattern).date()
+                break
+            except ValueError:
+                continue
         try:
-            observed_on = date.fromisoformat(str(raw_date).split(" ")[0])
+            if observed_on is None:
+                continue
             value = float(str(raw_value))
         except (TypeError, ValueError):
             continue
