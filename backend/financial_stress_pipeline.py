@@ -348,7 +348,7 @@ def build_weekly_lead(
         carry_forward_values(values, weeks)
         for values in raw_sources
     )
-    rows, previous = [], None
+    rows, previous_level = [], None
     for week in weeks:
         hy, condition, spread, leverage_value, ebp = (
             high_yield.get(week),
@@ -366,21 +366,16 @@ def build_weekly_lead(
             + fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index") * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
             + fixed_stress_score(float(ebp), "excess_bond_premium") * LEAD_COMPONENT_WEIGHTS["excess_bond_premium"]
         )
-        momentum = None if previous is None else (
-            signed_score(float(hy) - previous[0], 1.0) * LEAD_COMPONENT_WEIGHTS["high_yield"]
-            + signed_score(float(condition) - previous[1], 0.5) * LEAD_COMPONENT_WEIGHTS["financial_conditions"]
-            + signed_score(float(spread) - previous[2], SHORT_TERM_FUNDING_CHANGE_REFERENCE) * LEAD_COMPONENT_WEIGHTS["short_term_funding_spread"]
-            + signed_score(float(leverage_value) - previous[3], 0.5) * LEAD_COMPONENT_WEIGHTS["nonfinancial_leverage"]
-            + signed_score(float(ebp) - previous[4], 0.5) * LEAD_COMPONENT_WEIGHTS["excess_bond_premium"]
-        )
+        rounded_level = round(level, 2)
+        momentum = None if previous_level is None else rounded_level - previous_level
         rows.append({
             "week": week,
-            "lead_index": round(level, 2),
+            "lead_index": rounded_level,
             "lead_momentum": None if momentum is None else round(momentum, 2),
             "leverage_signal": round(fixed_stress_score(float(leverage_value), "nonfinancial_leverage_index"), 2),
             "is_provisional": any(week not in source for source in raw_sources),
         })
-        previous = (float(hy), float(condition), float(spread), float(leverage_value), float(ebp))
+        previous_level = rounded_level
     return rows
 
 
