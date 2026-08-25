@@ -570,6 +570,153 @@ async function loadMarketStressDashboard() {
 
 window.loadMarketStressDashboard = loadMarketStressDashboard;
 
+function renderEmStressDashboard(rows) {
+  const chart = document.getElementById('em-stress-chart');
+  const signalsChart = document.getElementById('em-stress-signals-chart');
+  const weekly = [...rows]
+    .filter((row) => Number.isFinite(Number(row.stress_index)))
+    .sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  if (!chart || !weekly.length) return;
+  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
+  const dates = weekly.map((row) => new Date(row.week).getTime());
+  const start = Math.min(...dates), end = Math.max(...dates);
+  const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
+  const values = weekly.map((row) => Number(row.stress_index));
+  const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1);
+  const lower = Math.max(0, minimum - range * .1), upper = maximum + range * .1;
+  const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / Math.max(1, upper - lower);
+  const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
+  const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
+  const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = upper - (upper - lower) * index / 4;
+    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
+  }).join('');
+  const paths = [];
+  let path = '', provisionalPath = null;
+  const finishPath = () => {
+    if (!path) return;
+    paths.push(`<path d="${path}" fill="none" stroke="${provisionalPath ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisionalPath ? ' stroke-dasharray="4 3"' : ''}/>`);
+    path = '';
+  };
+  weekly.slice(1).forEach((row, index) => {
+    const previous = weekly[index];
+    const provisional = Boolean(previous.is_provisional || row.is_provisional);
+    const endpoint = `${x(row.week)} ${y(Number(row.stress_index))}`;
+    if (provisionalPath !== provisional) {
+      finishPath();
+      provisionalPath = provisional;
+      path = `M ${x(previous.week)} ${y(Number(previous.stress_index))} L ${endpoint}`;
+    } else {
+      path += ` L ${endpoint}`;
+    }
+  });
+  finishPath();
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 주간 시장 스트레스 지수 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${paths.join('')}${years}</svg>`;
+
+  const createElement = (name, attributes) => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+    return element;
+  };
+  const attachVerticalGuide = ({ host, source, showLabels }) => {
+    const svg = host?.querySelector('svg');
+    if (!svg) return;
+    const guide = createElement('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
+    const valueLabel = showLabels ? createElement('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' }) : null;
+    const periodLabel = showLabels ? createElement('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, 'pointer-events': 'none', visibility: 'hidden' }) : null;
+    svg.append(guide);
+    if (valueLabel && periodLabel) svg.append(valueLabel, periodLabel);
+    const show = (week) => {
+      const nearest = weekly.reduce((closest, row) => Math.abs(x(row.week) - x(week)) < Math.abs(x(closest.week) - x(week)) ? row : closest);
+      const pointX = x(nearest.week);
+      guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible');
+      if (valueLabel && periodLabel) {
+        const [, month, day] = String(nearest.week).split('-').map(Number);
+        valueLabel.setAttribute('x', pointX); valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
+        valueLabel.textContent = Number(nearest.stress_index).toFixed(2);
+        periodLabel.setAttribute('x', pointX); periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
+        periodLabel.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
+      }
+    };
+    const clear = () => [guide, valueLabel, periodLabel].filter(Boolean).forEach((element) => element.setAttribute('visibility', 'hidden'));
+    const onShared = ({ detail }) => {
+      if (detail.source === source) return;
+      if (detail.active) show(detail.week); else clear();
+    };
+    if (host._emStressGuideListener) window.removeEventListener('macrowatch:em-stress-hover', host._emStressGuideListener);
+    host._emStressGuideListener = onShared;
+    window.addEventListener('macrowatch:em-stress-hover', onShared);
+    svg.addEventListener('pointermove', (event) => {
+      const bounds = svg.getBoundingClientRect();
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+      const nearest = weekly.reduce((closest, row) => Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest);
+      show(nearest.week);
+      window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: true, source, week: nearest.week } }));
+    });
+    svg.addEventListener('pointerleave', () => {
+      clear();
+      window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: false, source } }));
+    });
+  };
+  attachVerticalGuide({ host: chart, source: 'em-main', showLabels: true });
+
+  if (!signalsChart) return;
+  const signalRows = weekly.filter((row) => [row.high_yield_4w_average, row.tail_risk_4w_average, row.blended_4w_average].every((value) => Number.isFinite(Number(value))));
+  if (!signalRows.length) {
+    signalsChart.innerHTML = '<div class="flex min-h-40 items-center justify-center text-xs text-slate-400">첫 산출 후 이머징 신용 긴장 시그널이 표시됩니다.</div>';
+    return;
+  }
+  const signalHeight = 148, signalPadding = { top: 18, right: 52, bottom: 28, left: 52 };
+  const signalValues = signalRows.flatMap((row) => [Number(row.high_yield_4w_average), Number(row.tail_risk_4w_average), Number(row.blended_4w_average)]);
+  const signalMinimum = Math.min(...signalValues), signalMaximum = Math.max(...signalValues), signalRange = Math.max(signalMaximum - signalMinimum, .25);
+  const signalLower = Math.max(0, signalMinimum - signalRange * .12), signalUpper = signalMaximum + signalRange * .12;
+  const signalY = (value) => signalPadding.top + (signalHeight - signalPadding.top - signalPadding.bottom) * (signalUpper - value) / Math.max(.1, signalUpper - signalLower);
+  const signalGrid = Array.from({ length: 3 }, (_, index) => {
+    const value = signalUpper - (signalUpper - signalLower) * index / 2;
+    return `<line x1="${signalPadding.left}" x2="${width - signalPadding.right}" y1="${signalY(value)}" y2="${signalY(value)}" stroke="#e6e1f2" stroke-dasharray="3 4"/><text x="${signalPadding.left - 9}" y="${signalY(value) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${value.toFixed(1)}</text>`;
+  }).join('');
+  const signalGuides = signalRows.filter((row, index) => index > 0 && String(row.week).slice(0, 4) !== String(signalRows[index - 1].week).slice(0, 4)).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${signalPadding.top}" y2="${signalHeight - signalPadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
+  const lineFor = (key, color, opacity = 1, widthValue = 2.25) => signalRows.slice(1).map((row, index) => `<line x1="${x(signalRows[index].week)}" y1="${signalY(Number(signalRows[index][key]))}" x2="${x(row.week)}" y2="${signalY(Number(row[key]))}" stroke="${color}" stroke-opacity="${opacity}" stroke-width="${widthValue}" stroke-linecap="round"/>`).join('');
+  signalsChart.innerHTML = `<svg class="w-full" style="height:${signalHeight}px" viewBox="0 0 ${width} ${signalHeight}" role="img" aria-label="이머징 신용 긴장 보조지표"><line x1="${signalPadding.left}" x2="${signalPadding.left}" y1="${signalPadding.top}" y2="${signalHeight - signalPadding.bottom}" stroke="#b6a8d0"/><line x1="${width - signalPadding.right}" x2="${width - signalPadding.right}" y1="${signalPadding.top}" y2="${signalHeight - signalPadding.bottom}" stroke="#b6a8d0"/>${signalGrid}${signalGuides}${lineFor('blended_4w_average', '#c4b5d5', .55, 2.5)}${lineFor('tail_risk_4w_average', '#e11d48')}${lineFor('high_yield_4w_average', '#6d28d9', 1, 2.75)}</svg>`;
+  // Match the main chart's vertical guide without adding duplicate labels.
+  const signalSvg = signalsChart.querySelector('svg');
+  if (signalSvg) {
+    const guide = createElement('line', { y1: signalPadding.top, y2: signalHeight - signalPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
+    signalSvg.append(guide);
+    const show = (week) => { const pointX = x(week); guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible'); };
+    const clear = () => guide.setAttribute('visibility', 'hidden');
+    const shared = ({ detail }) => { if (detail.source !== 'em-signals') detail.active ? show(detail.week) : clear(); };
+    if (signalsChart._emStressGuideListener) window.removeEventListener('macrowatch:em-stress-hover', signalsChart._emStressGuideListener);
+    signalsChart._emStressGuideListener = shared;
+    window.addEventListener('macrowatch:em-stress-hover', shared);
+    signalSvg.addEventListener('pointermove', (event) => {
+      const bounds = signalSvg.getBoundingClientRect();
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+      const nearest = signalRows.reduce((closest, row) => Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest);
+      show(nearest.week);
+      window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: true, source: 'em-signals', week: nearest.week } }));
+    });
+    signalSvg.addEventListener('pointerleave', () => { clear(); window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: false, source: 'em-signals' } })); });
+  }
+}
+
+async function loadEmStressDashboard() {
+  const chart = document.getElementById('em-stress-chart');
+  if (!chart || !supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from('em_market_stress_weekly')
+      .select('week,stress_index,high_yield_4w_average,tail_risk_4w_average,blended_4w_average,is_provisional')
+      .order('week', { ascending: false }).limit(160);
+    if (error) throw error;
+    renderEmStressDashboard(data || []);
+  } catch (_) {
+    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 지수를 불러오지 못했습니다.</div>';
+  }
+}
+
+window.loadEmStressDashboard = loadEmStressDashboard;
+
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
@@ -685,7 +832,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     .filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(fsiRows[index - 1].month).slice(0, 4))
     .map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`)
     .join('');
-  const fsiLine = fsiRows.slice(1).map((row, index) => `<line x1="${x(fsiRows[index].month)}" y1="${fsiY(Number(fsiRows[index].bok_fsi))}" x2="${x(row.month)}" y2="${fsiY(Number(row.bok_fsi))}" stroke="#6d28d9" stroke-width="2.25" stroke-linecap="round"/>`).join('');
+  const fsiLine = fsiRows.slice(1).map((row, index) => `<line x1="${x(fsiRows[index].month)}" y1="${fsiY(Number(fsiRows[index].bok_fsi))}" x2="${x(row.month)}" y2="${fsiY(Number(row.bok_fsi))}" stroke="#6d4b91" stroke-width="2.25" stroke-linecap="round"/>`).join('');
   fsiChart.innerHTML = `<svg class="w-full" style="height:${fsiHeight}px" viewBox="0 0 ${width} ${fsiHeight}" role="img" aria-label="한국은행 금융불안지수 보조지표"><line x1="${fsiPadding.left}" x2="${fsiPadding.left}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/><line x1="${width - fsiPadding.right}" x2="${width - fsiPadding.right}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/>${fsiGrid}${fsiYearGuides}${fsiLine}</svg>`;
   attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', mapY: fsiY, chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI', showLabels: false });
 }

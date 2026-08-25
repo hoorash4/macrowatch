@@ -258,10 +258,26 @@
             <h2 id="em-stress-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">이머징 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발 중인 이머징 시장 스트레스 지수입니다.</p>
+        <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
+        <p class="mt-0.5 text-[11px] text-slate-500">높을수록 이머징 외화 신용시장과 통화의 스트레스가 높음을 뜻합니다.</p>
+        <p class="mt-0.5 text-[11px] text-slate-500">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
-      <div class="px-5 py-5">
-        <div class="flex min-h-80 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-center text-sm text-slate-500">구성 지표와 데이터 수집 방식을 설계 중입니다.</div>
+      <div class="px-5 pb-2 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div id="em-stress-chart" class="min-h-80">
+            <div class="em-empty-state flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 데이터를 불러오는 중입니다.</div>
+          </div>
+          <div id="em-stress-signals-chart" class="mt-2 min-h-52">
+            <div class="em-empty-state flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 신용 긴장 시그널을 불러오는 중입니다.</div>
+          </div>
+        </div>
+      </div>
+      <div class="px-5 pb-5 pt-0">
+        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
+          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>EM-MSI</span>
+          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed" style="border-color:#d97706"></i>EM-MSI 잠정치</span>
+          <span class="ml-auto inline-flex items-center gap-2"><span>(보조지표:</span><i class="h-0.5 w-5 bg-violet-800"></i><span>HY 4주 평균</span><i class="h-0.5 w-5 bg-rose-600"></i><span>꼬리위험 4주 평균</span><i class="h-0.5 w-5 bg-violet-400"></i><span>5:5 혼합)</span></span>
+        </div>
       </div>
     </section>
 
@@ -591,6 +607,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=136"></script>
+  <script src="script.js?v=137"></script>
 </body>
 </html>

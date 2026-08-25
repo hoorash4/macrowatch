@@ -105,6 +105,7 @@
       window.loadMarketStressDashboard?.(),
       window.loadCreditStressComponentsDashboard?.(),
       window.loadKoreaStressDashboard?.(),
+      window.loadEmStressDashboard?.(),
     ]);
   }
 

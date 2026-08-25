@@ -1,0 +1,165 @@
+"""Collect the published weekly Emerging Market Stress Index without storing source files."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from collections import defaultdict
+from datetime import date, timedelta
+
+import requests
+
+
+FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
+TIMEOUT = 45
+HISTORY_YEARS = 3
+
+# All values are oriented so that a higher level means greater EM stress.
+SERIES = {
+    "high_yield_oas": "BAMLEMHYHYLCRPIUSOAS",
+    "broad_oas": "BAMLEMCLLCRPIUSOAS",
+    "public_sector_oas": "BAMLEMPUPUBSLCRPIUSOAS",
+    "em_dollar_index": "DTWEXEMEGS",
+    "tail_risk_oas": "BAMLEM4BRRBLCRPIOAS",
+}
+WEIGHTS = {key: 0.20 for key in SERIES}
+# Fixed absolute reference bands. Scores are deliberately not capped at 100:
+# a future credit event must be able to register above the reference extreme.
+SCALES = {
+    "high_yield_oas": (2.0, 20.0),
+    "broad_oas": (1.0, 10.0),
+    "public_sector_oas": (1.0, 15.0),
+    "em_dollar_index": (100.0, 160.0),
+    "tail_risk_oas": (3.0, 20.0),
+}
+
+
+def required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
+    response = requests.get(
+        FRED_URL,
+        params={
+            "series_id": series_id,
+            "api_key": api_key,
+            "file_type": "json",
+            "observation_start": start.isoformat(),
+            "observation_end": end.isoformat(),
+            "limit": "100000",
+        },
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    weeks: dict[str, tuple[str, float]] = {}
+    for observation in response.json().get("observations", []):
+        raw_value, observed_on = observation.get("value"), observation.get("date")
+        if raw_value in (None, ".") or not isinstance(observed_on, str):
+            continue
+        try:
+            observed_date, value = date.fromisoformat(observed_on), float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        week = (observed_date + timedelta(days=4 - observed_date.weekday())).isoformat()
+        if week not in weeks or observed_on > weeks[week][0]:
+            weeks[week] = (observed_on, value)
+    return {week: value for week, (_observed_on, value) in weeks.items()}
+
+
+def carry_forward(values: dict[str, float], weeks: list[str]) -> dict[str, float]:
+    carried: dict[str, float] = {}
+    previous: float | None = None
+    for week in weeks:
+        if week in values:
+            previous = values[week]
+        if previous is not None:
+            carried[week] = previous
+    return carried
+
+
+def score(value: float, floor: float, reference: float) -> float:
+    return max(0.0, (value - floor) / (reference - floor) * 100.0)
+
+
+def trailing_average(values: list[float], length: int = 4) -> float:
+    window = values[-length:]
+    return sum(window) / len(window)
+
+
+def build_rows(raw: dict[str, dict[str, float]], today: date) -> list[dict[str, object]]:
+    weeks = sorted(set().union(*(set(values) for values in raw.values())))
+    if not weeks:
+        return []
+    carried = {key: carry_forward(values, weeks) for key, values in raw.items()}
+    last_completed_friday = today - timedelta(days=(today.weekday() - 4) % 7)
+    source_last_weeks = {key: max(values) for key, values in raw.items() if values}
+    hy_history: list[float] = []
+    tail_history: list[float] = []
+    rows: list[dict[str, object]] = []
+    for week in weeks:
+        values = {key: carried[key].get(week) for key in SERIES}
+        if not all(isinstance(value, (int, float)) for value in values.values()):
+            continue
+        high_yield = float(values["high_yield_oas"])
+        tail_risk = float(values["tail_risk_oas"])
+        hy_history.append(high_yield)
+        tail_history.append(tail_risk)
+        stress_index = sum(
+            score(float(values[key]), *SCALES[key]) * WEIGHTS[key]
+            for key in SERIES
+        )
+        week_date = date.fromisoformat(week)
+        missing_actual = any(week not in raw[key] for key in SERIES)
+        is_provisional = missing_actual or week_date > last_completed_friday or any(week > latest for latest in source_last_weeks.values())
+        hy_average = trailing_average(hy_history)
+        tail_average = trailing_average(tail_history)
+        rows.append({
+            "week": week,
+            "stress_index": round(stress_index, 2),
+            "high_yield_4w_average": round(hy_average, 4),
+            "tail_risk_4w_average": round(tail_average, 4),
+            "blended_4w_average": round((hy_average + tail_average) / 2, 4),
+            "is_provisional": is_provisional,
+        })
+    return rows
+
+
+def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> None:
+    response = requests.post(
+        f"{url.rstrip('/')}/rest/v1/em_market_stress_weekly?on_conflict=week",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        json=rows,
+        timeout=TIMEOUT,
+    )
+    if not response.ok:
+        raise RuntimeError(f"Supabase EM stress upsert failed: {response.status_code} {response.text[:1000]}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--years", type=int, default=HISTORY_YEARS)
+    args = parser.parse_args()
+    fred_key = required_env("FRED_API_KEY")
+    supabase_url = required_env("SUPABASE_URL")
+    service_key = required_env("SUPABASE_SERVICE_ROLE_KEY")
+    today = date.today()
+    start = today.replace(year=today.year - args.years)
+    raw = {key: fetch_fred_week_end(series_id, fred_key, start, today) for key, series_id in SERIES.items()}
+    rows = build_rows(raw, today)
+    if not rows:
+        raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
+    upsert(rows, supabase_url, service_key)
+    print("upserted_weeks={} ".format(len(rows)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
+
+
+if __name__ == "__main__":
+    main()
