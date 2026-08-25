@@ -502,14 +502,22 @@ function renderCreditConditionsMomentum(rows) {
   });
 }
 
-function renderHighYieldMomentum(rows) {
+function renderCreditRiskCompositeMomentum(rows) {
+  const compositeRows = rows
+    .map((row) => {
+      const credit = toCreditStressNumber(row.financial_conditions_credit_index);
+      const risk = toCreditStressNumber(row.financial_conditions_risk_index);
+      if (!Number.isFinite(credit) || !Number.isFinite(risk)) return null;
+      return { ...row, credit_risk_composite: credit * 0.6 + risk * 0.4 };
+    })
+    .filter(Boolean);
   renderWeeklyMomentumChart({
     chartId: 'market-stress-momentum-chart',
-    rows,
-    valueKey: 'high_yield_oas_pct',
-    source: 'high-yield',
-    emptyMessage: '첫 산출 후 주간 하이일드 스프레드 변화를 표시합니다.',
-    ariaLabel: '미국 주간 하이일드 스프레드 변화 추이',
+    rows: compositeRows,
+    valueKey: 'credit_risk_composite',
+    source: 'credit-risk-composite',
+    emptyMessage: '첫 산출 후 신용여건·위험 신호 변화를 표시합니다.',
+    ariaLabel: '미국 주간 신용여건·위험 신호 합성 변화 추이',
     lineColor: '#99d5ce',
     averageColor: '#0f766e',
   });
@@ -519,7 +527,7 @@ async function loadMarketTension(monthlyRows = []) {
   if (!supabaseClient) return;
   const weeklyResponse = await supabaseClient
     .from('us_market_tension_weekly')
-    .select('week,tension_index,financial_conditions_credit_index,high_yield_oas_pct,sp500_friday_close,is_provisional')
+    .select('week,tension_index,financial_conditions_credit_index,financial_conditions_risk_index,sp500_friday_close,is_provisional')
     .order('week', { ascending: false })
     .limit(160);
   const monthlyResponse = await supabaseClient
@@ -531,7 +539,7 @@ async function loadMarketTension(monthlyRows = []) {
   renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
   const weeklyRows = (weeklyResponse.data || []).map((row) => ({ ...row, month: row.week }));
   renderCreditConditionsMomentum(weeklyRows);
-  renderHighYieldMomentum(weeklyRows);
+  renderCreditRiskCompositeMomentum(weeklyRows);
 }
 
 async function loadMarketStressDashboard() {
