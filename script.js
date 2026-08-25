@@ -676,6 +676,22 @@ function renderKoreaStressChart(rows) {
   attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', mapY: fsiY, chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI' });
 }
 
+async function fetchBokFsiForDisplay() {
+  const response = await fetch('https://snapshot.bok.or.kr/api/chart/getChart?id=1583');
+  if (!response.ok) throw new Error('BOK FSI request failed');
+  const payload = await response.json();
+  const csv = payload?.data?.chart_opt?.data?.csv;
+  if (typeof csv !== 'string') throw new Error('BOK FSI response is invalid');
+  return csv.trim().split(/\r?\n/).slice(1).reduce((values, line) => {
+    const [period, rawValue] = line.split(',');
+    const value = Number(rawValue);
+    if (!Number.isFinite(Number(period)) || !Number.isFinite(value)) return values;
+    const month = new Date(Number(period)).toISOString().slice(0, 7) + '-01';
+    values[month] = value;
+    return values;
+  }, {});
+}
+
 async function loadKoreaStressDashboard() {
   const chart = document.getElementById('korea-stress-chart');
   if (!chart || !supabaseClient) return;
@@ -684,7 +700,16 @@ async function loadKoreaStressDashboard() {
       .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
       .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS);
     if (error) throw error;
-    renderKoreaStressChart(data || []);
+    let displayRows = data || [];
+    if (!displayRows.some((row) => Number.isFinite(Number(row.bok_fsi)))) {
+      try {
+        const officialFsi = await fetchBokFsiForDisplay();
+        displayRows = displayRows.map((row) => ({ ...row, bok_fsi: officialFsi[String(row.month).slice(0, 10)] ?? null }));
+      } catch (_) {
+        // K-MSI 자체는 DB 자료만으로 계속 표시한다.
+      }
+    }
+    renderKoreaStressChart(displayRows);
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';
   }
