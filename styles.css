@@ -298,7 +298,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-streak { color:#5e7890; font-size:.6rem; font-weight:750; text-align:right; white-space:nowrap; }
 .sector-flow-week header { background:linear-gradient(115deg,#087c9d,#1a5c9c); }
 .sector-flow-week-current { border-color:#c86b20; box-shadow:0 12px 25px rgba(190,104,35,.18); }
-.sector-flow-week-current header { background:linear-gradient(115deg,#bc5c1d,#e28a2c); }
+.sector-flow-week-current header { background:linear-gradient(115deg,#e28a2c,#bc5c1d); }
 .sector-flow-week-current li b { background:#fbe7d1; color:#ad5218; }
 .sector-flow-week { box-shadow:0 4px 10px rgba(44,78,106,.08); }
 .sector-flow-week-current { box-shadow:0 5px 12px rgba(190,104,35,.13); }
