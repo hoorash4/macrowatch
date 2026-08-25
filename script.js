@@ -569,17 +569,19 @@ window.loadMarketStressDashboard = loadMarketStressDashboard;
 
 function renderKoreaStressChart(rows) {
   const chart = document.getElementById('korea-stress-chart');
+  const fsiChart = document.getElementById('korea-fsi-chart');
   const data = [...rows].filter((row) => Number.isFinite(Number(row.stress_index))).sort((a, b) => String(a.month).localeCompare(String(b.month)));
   if (!chart) return;
   if (!data.length) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
+    if (fsiChart) fsiChart.innerHTML = '';
     return;
   }
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = data.map((row) => new Date(row.month).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const leftValues = data.flatMap((row) => [Number(row.stress_index), Number(row.bok_fsi)]).filter(Number.isFinite);
+  const leftValues = data.map((row) => Number(row.stress_index)).filter(Number.isFinite);
   const min = Math.min(...leftValues), max = Math.max(...leftValues), range = Math.max(max - min, 1);
   const lower = Math.max(0, min - range * 0.12), upper = max + range * 0.12;
   const y = (value) => padding.top + (height - padding.top - padding.bottom) * (upper - value) / Math.max(1, upper - lower);
@@ -602,10 +604,72 @@ function renderKoreaStressChart(rows) {
     const before = data[index], provisional = Boolean(before.is_provisional || row.is_provisional);
     return `<line x1="${x(before.month)}" y1="${y(Number(before.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="${provisional ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisional ? ' stroke-dasharray="4 3"' : ''}/>`;
   }).join('');
-  const fsi = draw('bok_fsi', y, '#6d28d9');
   const kospi = hasKospi ? draw('kospi_close', kospiY, '#6b7280') : '';
   const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수, 한국은행 FSI, 코스피 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${fsi}${stress}${kospiLabels}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
+
+  const createSvgElement = (name, attributes) => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+    return element;
+  };
+  const attachHover = ({ host, hoverRows, valueKey, mapY, chartHeight, chartPadding, source, label }) => {
+    const svg = host.querySelector('svg');
+    if (!svg || !hoverRows.length) return;
+    const guide = createSvgElement('line', { y1: chartPadding.top, y2: chartHeight - chartPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
+    const value = createSvgElement('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' });
+    const period = createSvgElement('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, 'pointer-events': 'none', visibility: 'hidden' });
+    svg.append(guide, value, period);
+    const show = (month) => {
+      const nearest = hoverRows.reduce((closest, row) => Math.abs(x(row.month) - x(month)) < Math.abs(x(closest.month) - x(month)) ? row : closest);
+      const pointX = x(nearest.month);
+      guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible');
+      value.setAttribute('x', pointX); value.setAttribute('y', chartPadding.top + 12); value.setAttribute('visibility', 'visible');
+      value.textContent = `${label} ${Number(nearest[valueKey]).toFixed(2)}`;
+      period.setAttribute('x', pointX); period.setAttribute('y', chartHeight - chartPadding.bottom + 12); period.setAttribute('visibility', 'visible');
+      period.textContent = String(nearest.month).slice(0, 7);
+    };
+    const clear = () => [guide, value, period].forEach((element) => element.setAttribute('visibility', 'hidden'));
+    const onMove = (event) => {
+      const bounds = svg.getBoundingClientRect();
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+      const nearest = hoverRows.reduce((closest, row) => Math.abs(x(row.month) - pointerX) < Math.abs(x(closest.month) - pointerX) ? row : closest);
+      show(nearest.month);
+      window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', { detail: { active: true, source, month: nearest.month } }));
+    };
+    const onSharedHover = ({ detail }) => {
+      if (detail.source === source) return;
+      if (detail.active) show(detail.month); else clear();
+    };
+    if (host._koreaStressHoverListener) window.removeEventListener('macrowatch:korea-stress-hover', host._koreaStressHoverListener);
+    host._koreaStressHoverListener = onSharedHover;
+    window.addEventListener('macrowatch:korea-stress-hover', onSharedHover);
+    svg.addEventListener('pointermove', onMove);
+    svg.addEventListener('pointerleave', () => {
+      clear();
+      window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', { detail: { active: false, source } }));
+    });
+  };
+  attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', mapY: y, chartHeight: height, chartPadding: padding, source: 'korea-main', label: 'KSI' });
+
+  if (!fsiChart) return;
+  const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)));
+  if (!fsiRows.length) {
+    fsiChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">한국은행 FSI 비교 자료가 연결되면 보조지표로 표시됩니다.</div>';
+    return;
+  }
+  const fsiHeight = 148, fsiPadding = { top: 18, right: 58, bottom: 28, left: 52 };
+  const fsiValues = fsiRows.map((row) => Number(row.bok_fsi));
+  const fsiMin = Math.min(...fsiValues), fsiMax = Math.max(...fsiValues), fsiRange = Math.max(fsiMax - fsiMin, 1);
+  const fsiLower = Math.max(0, fsiMin - fsiRange * .12), fsiUpper = fsiMax + fsiRange * .12;
+  const fsiY = (value) => fsiPadding.top + (fsiHeight - fsiPadding.top - fsiPadding.bottom) * (fsiUpper - value) / Math.max(1, fsiUpper - fsiLower);
+  const fsiGrid = Array.from({ length: 3 }, (_, index) => {
+    const chartValue = fsiUpper - (fsiUpper - fsiLower) * index / 2;
+    return `<line x1="${fsiPadding.left}" x2="${width - fsiPadding.right}" y1="${fsiY(chartValue)}" y2="${fsiY(chartValue)}" stroke="#e6e1f2" stroke-dasharray="3 4"/><text x="${fsiPadding.left - 9}" y="${fsiY(chartValue) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${chartValue.toFixed(1)}</text>`;
+  }).join('');
+  const fsiLine = fsiRows.slice(1).map((row, index) => `<line x1="${x(fsiRows[index].month)}" y1="${fsiY(Number(fsiRows[index].bok_fsi))}" x2="${x(row.month)}" y2="${fsiY(Number(row.bok_fsi))}" stroke="#6d28d9" stroke-width="2.25" stroke-linecap="round"/>`).join('');
+  fsiChart.innerHTML = `<div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600"><i class="h-0.5 w-5 bg-violet-700"></i>한국은행 FSI <span class="font-normal text-slate-400">(보조지표)</span></div><svg class="w-full" style="height:${fsiHeight}px" viewBox="0 0 ${width} ${fsiHeight}" role="img" aria-label="한국은행 금융불안지수 보조지표"><line x1="${fsiPadding.left}" x2="${fsiPadding.left}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/>${fsiGrid}${fsiLine}</svg>`;
+  attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', mapY: fsiY, chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI' });
 }
 
 async function loadKoreaStressDashboard() {

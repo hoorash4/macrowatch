@@ -184,7 +184,9 @@ def main() -> None:
             "short_term_funding_spread": round(funding_spread, 4),
             "kospi_close": values["kospi_close"].get(month),
             "bok_fsi": fsi.get(month),
-            "is_provisional": month == today_month or month not in fsi,
+            # FSI is a comparison-only series.  It must not determine the
+            # confirmation status of MacroWatch's own index.
+            "is_provisional": month == today_month,
         })
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
