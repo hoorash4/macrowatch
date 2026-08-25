@@ -11,7 +11,7 @@ import csv
 import io
 import os
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 import requests
@@ -123,6 +123,34 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
     return {month: value for month, (_observed, value) in values.items()}
 
 
+def daily_friday_close(key: str, stat: str, item: str, years: int) -> list[dict]:
+    """Return each Friday's KOSPI close, using Thursday only for Friday holidays."""
+    today = date.today()
+    rows: list[dict] = []
+    for year in range(today.year - years, today.year + 1):
+        start = f"{year}0101"
+        end = today.strftime("%Y%m%d") if year == today.year else f"{year}1231"
+        rows.extend(ecos_rows(key, stat, "D", start, end, item))
+    closes: dict[str, tuple[date, float]] = {}
+    for row in rows:
+        try:
+            observed = datetime.strptime(str(row["TIME"]), "%Y%m%d").date()
+            value = float(row["DATA_VALUE"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        friday = observed + timedelta(days=4 - observed.weekday())
+        # Do not label a partial current week as a completed Friday close.
+        if friday > today:
+            continue
+        week = friday.isoformat()
+        if week not in closes or observed > closes[week][0]:
+            closes[week] = (observed, value)
+    return [
+        {"week": week, "kospi_close": round(value, 2), "observed_at": observed.isoformat()}
+        for week, (observed, value) in sorted(closes.items())
+    ]
+
+
 def fetch_bok_fsi(years: int) -> dict[str, float]:
     """Read the Bank of Korea's published FSI comparison series directly."""
     headers = {**HEADERS, "Referer": "https://snapshot.bok.or.kr/dashboard/A6"}
@@ -155,9 +183,9 @@ def score(value: float, low: float, high: float) -> float:
     return max(0.0, (value - low) / (high - low) * 100.0)
 
 
-def upsert(rows: list[dict], url: str, service_key: str) -> None:
+def upsert(rows: list[dict], url: str, service_key: str, table: str, conflict: str) -> None:
     response = requests.post(
-        f"{url.rstrip('/')}/rest/v1/korea_market_stress_monthly?on_conflict=month",
+        f"{url.rstrip('/')}/rest/v1/{table}?on_conflict={conflict}",
         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"},
         json=rows,
         timeout=TIMEOUT,
@@ -177,6 +205,7 @@ def main() -> None:
     url = require_env("SUPABASE_URL")
     service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
+    kospi_weekly = daily_friday_close(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
     try:
         fsi = fetch_bok_fsi(args.years)
     except Exception as error:
@@ -231,8 +260,10 @@ def main() -> None:
         })
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
-    upsert(rows, url, service_key)
-    print(f"upserted_months={len(rows)} fsi_months={len(fsi)}")
+    upsert(rows, url, service_key, "korea_market_stress_monthly", "month")
+    if kospi_weekly:
+        upsert(kospi_weekly, url, service_key, "korea_market_stress_weekly", "week")
+    print(f"upserted_months={len(rows)} kospi_weeks={len(kospi_weekly)} fsi_months={len(fsi)}")
 
 
 if __name__ == "__main__":

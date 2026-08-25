@@ -567,7 +567,7 @@ async function loadMarketStressDashboard() {
 
 window.loadMarketStressDashboard = loadMarketStressDashboard;
 
-function renderKoreaStressChart(rows) {
+function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
   // 임시 비교용 표시 종료일입니다. 원본 DB와 수집 데이터는 변경하지 않습니다.
@@ -575,6 +575,9 @@ function renderKoreaStressChart(rows) {
   const data = [...rows]
     .filter((row) => String(row.month).slice(0, 10) <= koreaDisplayEndMonth && Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const weeklyKospi = [...weeklyKospiRows]
+    .filter((row) => String(row.week).slice(0, 10) <= koreaDisplayEndMonth && Number.isFinite(Number(row.kospi_close)))
+    .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart) return;
   if (!data.length) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
@@ -582,14 +585,14 @@ function renderKoreaStressChart(rows) {
     return;
   }
   const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
-  const dates = data.map((row) => new Date(row.month).getTime());
+  const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const leftValues = data.map((row) => Number(row.stress_index)).filter(Number.isFinite);
   const min = Math.min(...leftValues), max = Math.max(...leftValues), range = Math.max(max - min, 1);
   const lower = Math.max(0, min - range * 0.12), upper = max + range * 0.12;
   const y = (value) => padding.top + (height - padding.top - padding.bottom) * (upper - value) / Math.max(1, upper - lower);
-  const kospiValues = data.map((row) => Number(row.kospi_close)).filter(Number.isFinite);
+  const kospiValues = weeklyKospi.map((row) => Number(row.kospi_close)).filter(Number.isFinite);
   const hasKospi = kospiValues.length > 1;
   const kospiMin = hasKospi ? Math.min(...kospiValues) : 0, kospiMax = hasKospi ? Math.max(...kospiValues) : 1;
   const kospiRange = Math.max(kospiMax - kospiMin, 1), kospiLower = Math.max(0, kospiMin - kospiRange * .12), kospiUpper = kospiMax + kospiRange * .12;
@@ -608,9 +611,12 @@ function renderKoreaStressChart(rows) {
     const before = data[index], provisional = Boolean(before.is_provisional || row.is_provisional);
     return `<line x1="${x(before.month)}" y1="${y(Number(before.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="${provisional ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisional ? ' stroke-dasharray="4 3"' : ''}/>`;
   }).join('');
-  const kospi = hasKospi ? draw('kospi_close', kospiY, '#6b7280') : '';
+  const kospi = hasKospi ? weeklyKospi.slice(1).map((row, index) => {
+    const before = weeklyKospi[index];
+    return `<line x1="${x(before.week)}" y1="${kospiY(Number(before.kospi_close))}" x2="${x(row.week)}" y2="${kospiY(Number(row.kospi_close))}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
+  }).join('') : '';
   const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 금요일 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
 
   const createSvgElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -696,11 +702,17 @@ async function loadKoreaStressDashboard() {
   const chart = document.getElementById('korea-stress-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from('korea_market_stress_monthly')
-      .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
-      .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS);
-    if (error) throw error;
-    let displayRows = data || [];
+    const [monthlyResponse, weeklyResponse] = await Promise.all([
+      supabaseClient.from('korea_market_stress_monthly')
+        .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
+        .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
+      supabaseClient.from('korea_market_stress_weekly')
+        .select('week,kospi_close')
+        .order('week', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS * 6),
+    ]);
+    if (monthlyResponse.error) throw monthlyResponse.error;
+    if (weeklyResponse.error) throw weeklyResponse.error;
+    let displayRows = monthlyResponse.data || [];
     if (!displayRows.some((row) => Number.isFinite(Number(row.bok_fsi)))) {
       try {
         const officialFsi = await fetchBokFsiForDisplay();
@@ -709,7 +721,7 @@ async function loadKoreaStressDashboard() {
         // K-MSI 자체는 DB 자료만으로 계속 표시한다.
       }
     }
-    renderKoreaStressChart(displayRows);
+    renderKoreaStressChart(displayRows, weeklyResponse.data || []);
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';
   }
