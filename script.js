@@ -272,12 +272,28 @@ function renderCombinedStressChart(monthlyRows, weeklyRows) {
     return `<line x1="${x(previous.month)}" y1="${y(Number(previous.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="#b7791f" stroke-width="2.75" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
   }).join('');
   const monthlyDots = monthly.map((row) => `<circle cx="${x(row.month)}" cy="${y(Number(row.stress_index))}" r="3.25" fill="#b7791f" tabindex="0"><title>${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${row.is_provisional ? ' (잠정치)' : ''}</title></circle>`).join('');
-  const weeklySegments = weekly.slice(1).map((row, index) => {
+  const weeklyPaths = [];
+  let weeklyPath = '';
+  let weeklyPathIsProvisional = null;
+  const finishWeeklyPath = () => {
+    if (!weeklyPath) return;
+    weeklyPaths.push(`<path d="${weeklyPath}" fill="none" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"${weeklyPathIsProvisional ? ' stroke-dasharray="6 4"' : ''}/>`);
+    weeklyPath = '';
+  };
+  weekly.slice(1).forEach((row, index) => {
     const previous = weekly[index];
-    const provisional = previous.is_provisional || row.is_provisional;
-    return `<line x1="${x(previous.week)}" y1="${y(Number(previous.lead_index))}" x2="${x(row.week)}" y2="${y(Number(row.lead_index))}" stroke="#0f766e" stroke-width="2.5" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
-  }).join('');
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI와 MSI Lead 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}${weeklySegments}${monthlyDots}${years}</svg>`;
+    const provisional = Boolean(previous.is_provisional || row.is_provisional);
+    const endPoint = `${x(row.week)} ${y(Number(row.lead_index))}`;
+    if (weeklyPathIsProvisional !== provisional) {
+      finishWeeklyPath();
+      weeklyPathIsProvisional = provisional;
+      weeklyPath = `M ${x(previous.week)} ${y(Number(previous.lead_index))} L ${endPoint}`;
+      return;
+    }
+    weeklyPath += ` L ${endPoint}`;
+  });
+  finishWeeklyPath();
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="US-MSI와 MSI Lead 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${monthlySegments}${weeklyPaths.join('')}${monthlyDots}${years}</svg><div class="mt-4 flex flex-wrap justify-end gap-x-5 gap-y-2 text-xs text-slate-400"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-amber-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-700"></i>MSI Lead</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-teal-700"></i>MSI Lead 잠정치</span></div>`;
 }
 
 function renderCreditStressMomentum(rows, monthlyRows = []) {
