@@ -570,7 +570,7 @@ async function loadMarketStressDashboard() {
 
 window.loadMarketStressDashboard = loadMarketStressDashboard;
 
-function renderKoreaTensionChart(rows) {
+function renderKoreaTensionChart(rows, { domainStart = null, domainEnd = null } = {}) {
   const chart = document.getElementById('korea-tension-chart');
   if (!chart) return;
   const levels = [...rows]
@@ -601,7 +601,8 @@ function renderKoreaTensionChart(rows) {
   const width = 920, height = 190, padding = { top: 18, right: 58, bottom: 32, left: 52 };
   const extent = Math.max(...data.flatMap((row) => [Math.abs(row.change), Math.abs(row.average || 0)]), 0.01);
   const axisMaximum = Math.ceil(extent * 1.2 * 100) / 100;
-  const start = new Date(data[0].week).getTime(), end = new Date(data.at(-1).week).getTime();
+  const start = domainStart ?? new Date(data[0].week).getTime();
+  const end = domainEnd ?? new Date(data.at(-1).week).getTime();
   const x = (week) => padding.left + ((new Date(week).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + (height - padding.top - padding.bottom) * (axisMaximum - value) / (axisMaximum * 2);
   const format = (value) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
@@ -611,6 +612,51 @@ function renderKoreaTensionChart(rows) {
     return Number.isFinite(previous.average) && Number.isFinite(row.average) ? `<line x1="${x(previous.week)}" y1="${y(previous.average)}" x2="${x(row.week)}" y2="${y(row.average)}" stroke="#6d4b91" stroke-width="3" stroke-linecap="round"/>` : '';
   }).join('');
   chart.innerHTML = `<div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600"><i class="h-0.5 w-5 bg-violet-800"></i>선행 긴장 시그널 <span class="font-normal text-slate-400">(4주 이동평균)</span></div><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 주간 선행 긴장 시그널"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${averages}</svg>`;
+  const svg = chart.querySelector('svg');
+  if (!svg) return;
+  const guide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  guide.setAttribute('y1', String(padding.top));
+  guide.setAttribute('y2', String(height - padding.bottom));
+  guide.setAttribute('stroke', '#94a3b8');
+  guide.setAttribute('stroke-width', '0.75');
+  guide.setAttribute('stroke-dasharray', '3 4');
+  guide.setAttribute('pointer-events', 'none');
+  guide.setAttribute('visibility', 'hidden');
+  svg.append(guide);
+  const showGuide = (period) => {
+    const nearest = data.reduce((closest, row) => (
+      Math.abs(x(row.week) - x(period)) < Math.abs(x(closest.week) - x(period)) ? row : closest
+    ));
+    const pointX = x(nearest.week);
+    guide.setAttribute('x1', String(pointX));
+    guide.setAttribute('x2', String(pointX));
+    guide.setAttribute('visibility', 'visible');
+  };
+  const clearGuide = () => guide.setAttribute('visibility', 'hidden');
+  const onSharedHover = ({ detail }) => {
+    if (detail.source === 'korea-tension') return;
+    if (detail.active) showGuide(detail.month); else clearGuide();
+  };
+  if (chart._koreaStressHoverListener) window.removeEventListener('macrowatch:korea-stress-hover', chart._koreaStressHoverListener);
+  chart._koreaStressHoverListener = onSharedHover;
+  window.addEventListener('macrowatch:korea-stress-hover', onSharedHover);
+  svg.addEventListener('pointermove', (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const nearest = data.reduce((closest, row) => (
+      Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest
+    ));
+    showGuide(nearest.week);
+    window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', {
+      detail: { active: true, source: 'korea-tension', month: nearest.week },
+    }));
+  });
+  svg.addEventListener('pointerleave', () => {
+    clearGuide();
+    window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', {
+      detail: { active: false, source: 'korea-tension' },
+    }));
+  });
 }
 
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {
@@ -708,7 +754,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     });
   };
   attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', mapY: y, chartHeight: height, chartPadding: padding, source: 'korea-main', label: '' });
-  renderKoreaTensionChart(weeklyKospi);
+  renderKoreaTensionChart(weeklyKospi, { domainStart: start, domainEnd: end });
 
   if (!fsiChart) return;
   const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)) && Number(row.bok_fsi) !== 0);
