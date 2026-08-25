@@ -138,7 +138,7 @@ async function recomputeSegments(supabase: ReturnType<typeof createClient>) {
   const updates = (data || []).map((row: EventRow) => {
     const key = regimeKey(row);
     const hasLargeRateMove = Math.abs(Number(row.change_bps || 0)) >= 50;
-    const impactMultiplier = Number(((row.is_emergency ? 1.25 : 1) * (hasLargeRateMove ? 1.25 : 1)).toFixed(2));
+    const impactMultiplier = Number((1 + (row.is_emergency ? 0.25 : 0) + (hasLargeRateMove ? 0.25 : 0)).toFixed(2));
     if (!key || row.action === "hold") { activeKey = null; sequence = 0; return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: null, segment_sequence: 0, policy_impulse: 0, policy_stress_contribution: 0, is_emergency: row.is_emergency === true, has_large_rate_move: hasLargeRateMove, impact_multiplier: impactMultiplier, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() }; }
     if (key !== activeKey) { segment += 1; sequence = 1; activeKey = key; } else sequence += 1;
     const base = STRESS_BASE[row.primary_reason!][row.action!];
