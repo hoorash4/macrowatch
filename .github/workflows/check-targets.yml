@@ -3,8 +3,7 @@ name: Check macro targets
 on:
   schedule:
     # GitHub Actions cron uses UTC. Managed from MacroWatch admin.
-    - cron: "0 23 * * *"
-    - cron: "0 11 * * *"
+    - cron: "0 22 * * *"
   workflow_dispatch:
 
 permissions:
