@@ -1109,7 +1109,9 @@ function renderSectorFlow(rows) {
     const body = card.querySelector('ol');
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
-    if (columns) columns.innerHTML = '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
+    if (columns) columns.innerHTML = isLatestWeek
+      ? '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span><span>주간</span><span>누적</span>'
+      : '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
       const etf = row.market_sector_etfs;

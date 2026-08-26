@@ -1070,6 +1070,18 @@ body:has(#app-shell:not(.hidden)) {
   grid-template-columns:1fr;
 }
 .sector-flow-week-current > ol > li:last-child { border-bottom:0; }
+.sector-flow-week-current .sector-flow-columns,
+.sector-flow-week-current > ol > li {
+  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 4rem 6rem 6rem;
+  gap:.65rem;
+}
+.sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:right; }
+.sector-flow-week-current > ol > li { min-height:2.8rem; }
+.sector-flow-week-current .sector-flow-returns { display:contents; }
+.sector-flow-week-current .sector-flow-returns > span {
+  justify-content:flex-end;
+}
+.sector-flow-week-current .sector-flow-returns small { display:none; }
 .sector-flow-note {
   color:var(--color-text-description);
 }
@@ -1246,6 +1258,7 @@ body:has(#app-shell:not(.hidden)) {
     padding:0 .35rem;
   }
   .sector-flow-history { grid-template-columns:repeat(4,12rem); }
+  .sector-flow-week-current { min-width:38rem; }
 }
 @keyframes dashboardSpin {
   to {
