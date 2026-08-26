@@ -178,15 +178,26 @@ Deno.serve(async (request) => {
     }
     const sources = await fedSources(mode);
     const selected = mode === "backfill" ? sources : sources.filter((source) => source.meetingDate >= `${new Date().getUTCFullYear() - 1}-01-01`);
-    const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status").eq("central_bank", "fed");
+    const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status,source_url,is_emergency").eq("central_bank", "fed");
     if (existingError) throw existingError;
-    const known = new Map((existing || []).map((row: { meeting_date: string; statement_hash: string; analysis_status: string }) => [row.meeting_date, row]));
+    const known = new Map((existing || []).map((row: { meeting_date: string; statement_hash: string; analysis_status: string; source_url: string | null; is_emergency: boolean | null }) => [row.meeting_date, row]));
     let processed = 0, skipped = 0, failed = 0;
     for (const source of selected) {
       if (processed >= limit) break;
+      const saved = known.get(source.meetingDate);
+      // A historical backfill fills gaps; it is not a re-analysis command.
+      // Trust completed rows so each small batch does not download and hash
+      // the entire archive again. Keep changed source metadata synchronized.
+      if (mode === "backfill" && saved?.analysis_status === "completed") {
+        if (saved.source_url !== source.sourceUrl || saved.is_emergency !== source.isEmergency) {
+          const { error: metadataError } = await supabase.from("central_bank_policy_events").update({ source_url: source.sourceUrl, is_emergency: source.isEmergency, updated_at: new Date().toISOString() }).eq("central_bank", "fed").eq("meeting_date", source.meetingDate);
+          if (metadataError) throw metadataError;
+        }
+        skipped += 1;
+        continue;
+      }
       const statement = await getStatement(source.sourceUrl);
       const statementHash = await sha256(statement);
-      const saved = known.get(source.meetingDate);
       if (saved?.statement_hash === statementHash && saved.analysis_status === "completed") {
         const { error: metadataError } = await supabase.from("central_bank_policy_events").update({ source_url: source.sourceUrl, is_emergency: source.isEmergency, updated_at: new Date().toISOString() }).eq("central_bank", "fed").eq("meeting_date", source.meetingDate);
         if (metadataError) throw metadataError;
