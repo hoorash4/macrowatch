@@ -316,6 +316,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-columns \{ font-size:\.64rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-sector \{ font-size:\.86rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns \{[\s\S]*border-radius:\.42rem;[\s\S]*background:rgba\(47,105,154,\.055\)/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns \{\s*padding:\.28rem \.2rem;/);
   assert.doesNotMatch(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns > span:nth-child\(2\)::before/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.7rem; \}/);
   assert.match(styles, /sector-flow-week-current \{ min-width:48rem; \}/);

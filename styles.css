@@ -925,7 +925,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-streak { font-size:.66rem; }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns small { font-size:.61rem; }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns {
-  padding:.28rem .42rem;
+  padding:.28rem .2rem;
   border:1px solid rgba(47,105,154,.1);
   border-radius:.42rem;
   background:rgba(47,105,154,.055);
