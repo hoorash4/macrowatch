@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=57">
+  <link rel="stylesheet" href="styles.css?v=58">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -165,7 +165,7 @@
         </div>
         <div class="analysis-empty-state-light flex items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">뉴스 분석 결과를 불러오는 중입니다.</div>
       </div>
-      <section id="news-extreme-signals" class="mx-5 mb-5 mt-8 overflow-hidden rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-[0_14px_34px_rgba(2,6,23,.28)]" aria-label="중장기 시장 전환 신호">
+      <section id="news-extreme-signals" class="mx-5 mb-5 mt-8 overflow-hidden rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" aria-label="중장기 시장 전환 신호">
         <div class="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
@@ -173,7 +173,12 @@
               <p class="decisive-news-title text-base font-semibold">결정적 뉴스</p>
             </div>
             <p class="decisive-news-description mt-2 text-sm leading-relaxed">단기 변동보다 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스입니다. AI 판단이므로 실제 중요도와 다를 수 있습니다.</p>
-            <div id="decisive-news-keywords" class="mt-3 flex flex-wrap gap-2" aria-label="결정적 뉴스 키워드"></div>
+            <div id="decisive-news-keywords" class="decisive-news-keywords" aria-label="결정적 뉴스 키워드">
+              <span class="decisive-news-keyword-label">표시 예시</span>
+              <span class="decisive-news-keyword is-example">금융기관 부실</span>
+              <span class="decisive-news-keyword is-example">신용시장 경색</span>
+              <span class="decisive-news-keyword is-example">감염병 확산</span>
+            </div>
           </div>
           <div class="min-h-14 shrink-0 rounded-md border border-violet-300/30 bg-violet-900/65 px-4 py-3 text-sm font-bold text-violet-100 shadow-sm">
             <div class="flex items-center gap-2">
@@ -670,6 +675,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=148"></script>
+  <script src="script.js?v=149"></script>
 </body>
 </html>

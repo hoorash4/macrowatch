@@ -93,17 +93,32 @@ let newsSentimentView = 'recent';
 // ===== 뉴스 흐름 분석 모듈 =====
 // 일별 집계 데이터 조회, 긍정·부정 비율 계산, 기간별 막대 렌더링을 담당한다.
 // 기사 분류와 저장은 서버에서 수행하므로 이 구역은 읽기와 화면 표시만 맡는다.
+const DECISIVE_NEWS_KEYWORD_EXAMPLES = ['금융기관 부실', '신용시장 경색', '감염병 확산'];
+
+function normalizeDecisiveNewsKeywords(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((keyword) => String(keyword).trim()).filter(Boolean))].slice(0, 8);
+}
+
+function renderDecisiveNewsKeywords(container, values) {
+  if (!container) return;
+  const isExample = values.length === 0;
+  const keywords = isExample ? DECISIVE_NEWS_KEYWORD_EXAMPLES : values;
+  const label = isExample ? '<span class="decisive-news-keyword-label">표시 예시</span>' : '';
+  container.innerHTML = `${label}${keywords.map((keyword) => `<span class="decisive-news-keyword${isExample ? ' is-example' : ''}">${escapeHtml(keyword)}</span>`).join('')}`;
+}
+
 function renderExtremeNewsSignals(rows) {
   const decisive = document.getElementById('decisive-news-count');
   const keywords = document.getElementById('decisive-news-keywords');
   if (!decisive) return;
   const latest = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date))).at(-1);
-  if (!latest) return;
-  decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
-  const values = Array.isArray(latest.decisive_news_keywords) ? [...new Set(latest.decisive_news_keywords.map((keyword) => String(keyword).trim()).filter(Boolean))].slice(0, 8) : [];
-  if (keywords) {
-    keywords.innerHTML = values.map((keyword) => `<span class="rounded-full border border-[#d8b978]/35 bg-slate-950/40 px-2.5 py-1 text-xs font-semibold text-[#f2d396]">${escapeHtml(keyword)}</span>`).join('');
+  if (!latest) {
+    renderDecisiveNewsKeywords(keywords, []);
+    return;
   }
+  decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
+  renderDecisiveNewsKeywords(keywords, normalizeDecisiveNewsKeywords(latest.decisive_news_keywords));
   document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '자정 기준 집계'; });
 }
 

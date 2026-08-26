@@ -622,6 +622,9 @@ body:has(#app-shell:not(.hidden)) {
   border-color:var(--color-text-primary);
 }
 /* 결정적 뉴스는 밝은 카드 안의 유일한 어두운 강조 패널이므로 색을 패널 내부에만 제한합니다. */
+#news-extreme-signals {
+  box-shadow:0 3px 9px rgba(2,6,23,.16);
+}
 #news-extreme-signals .decisive-news-title {
   color:#ffe4ac;
   font-size:1rem;
@@ -641,6 +644,33 @@ body:has(#app-shell:not(.hidden)) {
   color:#ddd6fe;
   font-size:.75rem;
   font-weight:650;
+}
+.decisive-news-keywords {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:.5rem;
+  margin-top:.75rem;
+}
+.decisive-news-keyword-label {
+  color:#a8a29e;
+  font-size:.6875rem;
+  font-weight:650;
+  letter-spacing:.02em;
+}
+.decisive-news-keyword {
+  padding:.25rem .625rem;
+  border:1px solid rgba(216,185,120,.35);
+  border-radius:9999px;
+  background:rgba(2,6,23,.4);
+  color:#f2d396;
+  font-size:.75rem;
+  font-weight:600;
+}
+.decisive-news-keyword.is-example {
+  border-style:dashed;
+  border-color:rgba(168,162,158,.3);
+  color:#b8b2a8;
 }
 /* 분석 카드의 작은 아이콘 상자는 카드 종류와 관계없이 같은 표면을 사용합니다. */
 #app-shell .analysis-card-icon {
