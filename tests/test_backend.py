@@ -120,6 +120,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("직전 정책 배경이 제공되지 않은 경우 not_confirmed가 아니라 uncertain", prompt)
         self.assertIn("reason_confidence가 0.55 미만이면 primary_reason=uncertain", prompt)
         self.assertIn("외부 입력이 성명문과 충돌하면 성명문을 우선", prompt)
+        self.assertIn("같은 방향의 인상 또는 인하가 동결 없이 2회 이상 연속", prompt)
+        self.assertIn("징검다리 추세", prompt)
+        self.assertIn("동결이 두 번 연속될 때 두 번째 동결", prompt)
+        self.assertIn("이를 직접 판정하거나 출력하지 않는다", prompt)
 
     def test_fomc_pipeline_normalizes_ai_output_before_storage(self) -> None:
         pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
