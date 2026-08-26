@@ -289,7 +289,7 @@ body:has(#app-shell:not(.hidden)) {
 #credit-stress-dashboard { margin-bottom:4rem; }
 #credit-stress-components-dashboard { margin-bottom:0; }.market-overview-grid > section > div:first-child, .sector-flow-view-card > section > div:first-child { padding:0 0 1.2rem !important; border-color:#161616 !important; }
 .market-overview-grid h2, .sector-flow-view-card h2, #credit-stress-components-dashboard h2, #korea-stress-dashboard h2, #em-stress-dashboard h2 { color:#161616 !important; font-size:1.15rem !important; }.market-overview-grid p, .sector-flow-view-card p, #credit-stress-components-dashboard p, #korea-stress-dashboard p, #em-stress-dashboard p { color:#737069 !important; }
-#news-extreme-signals .decisive-news-title { color:#ffe4ac !important; font-size:1.1rem !important; font-weight:800 !important; }
+#news-extreme-signals .decisive-news-title { color:#ffe4ac !important; font-size:1rem !important; font-weight:600 !important; }
 #news-extreme-signals .decisive-news-description { color:#f5f0e5 !important; font-weight:600 !important; }
 #news-extreme-signals .decisive-news-count-label, #news-extreme-signals .decisive-news-count-value { color:#f5f3ff !important; font-size:.9375rem !important; font-weight:750 !important; }
 #news-extreme-signals [data-extreme-signal-status] { color:#ddd6fe !important; font-size:.8125rem !important; font-weight:650 !important; }
