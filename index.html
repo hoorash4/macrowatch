@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=62">
+  <link rel="stylesheet" href="styles.css?v=63">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -153,9 +153,9 @@
               <h2 id="news-sentiment-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">뉴스 흐름 분석</h2>
             </div>
           </div>
-          <p class="mt-6 text-[11px] text-slate-500">최근 24시간 동안 기사화된 뉴스의 긍정/부정 흐름을 분석합니다.</p>
-          <p class="mt-0.5 text-[11px] text-slate-500">중장기 과열·침체 국면에서는 역발상 관점을 반영합니다.</p>
-          <p class="mt-0.5 text-[11px] text-[#e0bf7f]">매일 밤 11:30~자정(KST)에 업데이트됩니다.</p>
+          <p class="analysis-card-description mt-6 text-slate-500">최근 24시간 동안 기사화된 뉴스의 긍정/부정 흐름을 분석합니다.</p>
+          <p class="analysis-card-description mt-0.5 text-slate-500">중장기 과열·침체 국면에서는 역발상 관점을 반영합니다.</p>
+          <p class="analysis-card-description mt-0.5 text-[#e0bf7f]">매일 밤 11:30~자정(KST)에 업데이트됩니다.</p>
         </div>
       </div>
       <div id="news-sentiment-chart" class="grid min-h-52 grid-cols-1 gap-5 p-5 sm:grid-cols-[auto_1fr]">
@@ -203,8 +203,8 @@
             <h2 id="sector-flow-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">주도섹터 흐름 분석</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">주간 수익률 기준 상위 섹터의 변화를 최근 4주 흐름으로 보여줍니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">대표 ETF와 수익률 수집을 연결하면 실제 순위가 표시됩니다.</p>
+        <p class="analysis-card-description mt-6 text-slate-500">주간 수익률 기준 상위 섹터의 변화를 최근 4주 흐름으로 보여줍니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">대표 ETF와 수익률 수집을 연결하면 실제 순위가 표시됩니다.</p>
       </div>
       <div class="sector-flow-preview" aria-label="주도섹터 4주 레이아웃 미리보기">
         <article class="sector-flow-week" data-sector-week-offset="-3"><header><span data-sector-week-period>—월</span><strong data-sector-week-label>—주차</strong></header><div class="sector-flow-columns"><span>순위</span><span>섹터</span><span>연속</span><span>주간 · 누적</span></div><ol><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li></ol></article>
@@ -227,9 +227,9 @@
             <h2 id="credit-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">미국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 주간 시장 스트레스 지수입니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
+        <p class="analysis-card-description mt-6 text-slate-500">MacroWatch가 개발한 주간 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -260,8 +260,8 @@
             <h2 id="credit-stress-components-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">미국 신용위험 추이</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">서로 단위가 다른 세 지표의 추세를 함께 비교합니다.</p>
+        <p class="analysis-card-description mt-6 text-slate-500">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">서로 단위가 다른 세 지표의 추세를 함께 비교합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div id="credit-stress-components-chart" class="min-h-72">
@@ -279,9 +279,9 @@
             <h2 id="korea-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">한국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 월간 한국 시장 스트레스 지수입니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
+        <p class="analysis-card-description mt-6 text-slate-500">MacroWatch가 개발한 월간 한국 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -312,9 +312,9 @@
             <h2 id="em-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">이머징 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">높을수록 이머징 외화 신용시장과 통화의 스트레스가 높음을 뜻합니다.</p>
-        <p class="mt-0.5 text-[11px] text-slate-500">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
+        <p class="analysis-card-description mt-6 text-slate-500">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">높을수록 이머징 외화 신용시장과 통화의 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description mt-0.5 text-slate-500">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -341,7 +341,7 @@
             <h2 id="policy-signal-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">통화정책 시그널</h2>
           </div>
         </div>
-        <p class="mt-6 text-[11px] text-slate-500">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
+        <p class="analysis-card-description mt-6 text-slate-500">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
