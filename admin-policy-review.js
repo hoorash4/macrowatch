@@ -6,6 +6,8 @@
     ['growth_overheat', '경기·금융시장 과열'],
     ['recession_financial_stress', '경기침체·금융시스템 위험'],
     ['insurance_easing', '보험성·선제적 완화'],
+    ['normalization_hike', '정상화 인상'],
+    ['normalization_cut', '정상화 인하'],
     ['uncertain', '불명확'],
   ];
 
@@ -20,10 +22,11 @@
       return;
     }
     list.innerHTML = items.map((item) => {
-      const directionalOptions = [...REASON_OPTIONS];
-      if (item.action === 'hike') directionalOptions.splice(directionalOptions.length - 1, 0, ['normalization_hike', '정상화 인상']);
-      if (item.action === 'cut') directionalOptions.splice(directionalOptions.length - 1, 0, ['normalization_cut', '정상화 인하']);
-      const options = directionalOptions.map(([value, label]) => `<option value="${value}" ${item.primary_reason === value ? 'selected' : ''}>${label}</option>`).join('');
+      const options = REASON_OPTIONS.map(([value, label]) => {
+        const incompatible = (value === 'normalization_hike' && item.action !== 'hike')
+          || (value === 'normalization_cut' && item.action !== 'cut');
+        return `<option value="${value}" ${item.primary_reason === value ? 'selected' : ''} ${incompatible ? 'disabled' : ''}>${label}</option>`;
+      }).join('');
       const reviewLabel = item.review_type === 'latest' ? '최근 FOMC 결과' : item.review_type === 'uncertain' ? '이유 불명확' : '정책 배경 변경';
       return `<article class="border-b border-slate-800 p-4 last:border-0" data-policy-review="${escapeHtml(item.meeting_date)}" data-policy-action="${escapeHtml(item.action)}"><div class="mb-3 flex flex-wrap items-center justify-between gap-2"><div><strong class="text-sm text-slate-100">${escapeHtml(item.meeting_date)}</strong><span class="ml-2 text-xs font-semibold text-sky-300">${escapeHtml(actionLabel(item.action))}${Number.isFinite(Number(item.change_bps)) ? ` · ${Math.abs(Number(item.change_bps))}bp` : ''}</span></div><span class="rounded-full border border-amber-700/50 bg-amber-950/40 px-2 py-0.5 text-[11px] text-amber-300">${reviewLabel}</span></div><form autocomplete="off" class="policy-review-form grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_7rem_auto]"><select name="primary_reason" autocomplete="off" required class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"><option value="">정규 이유 선택</option>${options}</select><input name="reason_keyword" autocomplete="off" maxlength="80" value="${escapeHtml(item.reason_keyword)}" placeholder="이유 키워드 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"><input name="score" autocomplete="off" required type="number" step="0.001" min="-1000" max="1000" value="${escapeHtml(item.score)}" placeholder="점수 (0도 직접 입력)" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60">확정</button></form></article>`;
     }).join('');
