@@ -1,7 +1,7 @@
 import type { PolicyAction, PolicyReason, PolicyScoringInput, PolicyScoringResult, PolicyTrendType } from "./policy-types.ts";
 
 export const POLICY_INDEX_BASE = 1_000;
-export const POLICY_SCORE_PROFILE = "fed-policy-v3";
+export const POLICY_SCORE_PROFILE = "fed-policy-v4";
 
 type DirectionState = {
   action: Exclude<PolicyAction, "hold">;
@@ -153,7 +153,9 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
     } else if (state) {
       state.holds += 1;
       const requiredDirectionCount = state.sequence >= 3 ? 3 : state.sequence;
-      const triggerHold = state.hasBridge ? 2 : 1;
+      // A first hold can be a pause inside a continuing or bridge trend. Only
+      // two consecutive holds confirm that the directional run has stopped.
+      const triggerHold = 2;
       const eligible = requiredDirectionCount >= 2 && state.holds >= triggerHold;
       if (eligible) {
         state.terminationStarted = true;

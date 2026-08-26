@@ -46,20 +46,20 @@ test("25bp 초과 폭은 25bp마다 25%씩, 긴급회의는 50%를 합산한다"
   assert.equal(result[3].final_event_score, -12.5);
 });
 
-test("확정 연속 추세는 첫 동결부터 100점으로 체감한다", () => {
+test("확정 연속 추세도 첫 동결은 보류하고 두 번째부터 100점으로 체감한다", () => {
   const result = scorePolicyHistory(rows([
     ["hike", "inflation_fight"], ["hike", "inflation_fight"], ["hike", "inflation_fight"],
     ["hold", "inflation_fight"], ["hold", "inflation_fight"], ["hold", "inflation_fight"],
   ]));
-  assert.deepEqual(result.slice(3).map((row) => row.final_event_score), [-100, -50, -33.333]);
+  assert.deepEqual(result.slice(3).map((row) => row.final_event_score), [0, -100, -50]);
 });
 
-test("두 번의 조정은 첫 동결부터 50점으로 체감한다", () => {
+test("두 번의 조정도 첫 동결은 보류하고 두 번째부터 50점으로 체감한다", () => {
   const result = scorePolicyHistory(rows([
     ["cut", "recession_financial_stress"], ["cut", "recession_financial_stress"],
     ["hold", "recession_financial_stress"], ["hold", "recession_financial_stress"],
   ]));
-  assert.deepEqual(result.slice(2).map((row) => row.final_event_score), [-50, -25]);
+  assert.deepEqual(result.slice(2).map((row) => row.final_event_score), [0, -50]);
 });
 
 test("징검다리 확정 추세는 두 번째 연속 동결부터 종료 점수를 준다", () => {
