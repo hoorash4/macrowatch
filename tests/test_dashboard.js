@@ -167,4 +167,7 @@ test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 
   assert.match(charts, /class="news-sentiment-view-button"/);
   assert.match(charts, /news-sentiment-view-button--back/);
   assert.match(styles, /\.news-sentiment-view-button\s*\{/);
+  assert.match(charts, /news-sentiment-toolbar/);
+  assert.match(styles, /#news-sentiment-chart\s*\{[\s\S]*?padding-right:1\.25rem;[\s\S]*?padding-left:1\.25rem;/);
+  assert.match(styles, /\.news-sentiment-toolbar\s*\{[\s\S]*?justify-content:space-between;/);
 });

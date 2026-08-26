@@ -116,7 +116,7 @@ function renderNewsSentiment(rows) {
   }
 
   const view = NEWS_SENTIMENT_VIEWS[newsSentimentView];
-  const legend = '<div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3"><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>긍정</span><span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>부정</span></div>';
+  const legend = '<div class="news-sentiment-legend"><span><i class="bg-red-900"></i>긍정</span><span><i class="bg-blue-900"></i>부정</span></div>';
   const visibleRows = data.slice(-view.days);
   const displayRows = view.layout === 'horizontal' ? [...visibleRows].reverse() : visibleRows;
   const bars = displayRows.map((item) => {
@@ -144,7 +144,8 @@ function renderNewsSentiment(rows) {
     // 데이터가 기간을 채우기 전에는 왼쪽부터 쌓고, 가득 차면 자연스럽게 스크롤한다.
     : `flex h-60 min-w-0 items-end justify-start ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
-  chart.innerHTML = `${legend}<div${graphId} class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
+  // 그래프 아래 한 줄에서 범례와 기간 전환을 양쪽에 배치해 차트 영역을 넓게 사용한다.
+  chart.innerHTML = `<div${graphId} class="news-sentiment-graph ${graphClass}">${bars}</div><div class="news-sentiment-toolbar">${legend}<div class="news-sentiment-controls">${controls}</div></div>`;
   if (newsSentimentView === 'all') {
     const historyChart = document.getElementById('news-sentiment-history-scroll');
     if (historyChart) historyChart.scrollLeft = historyChart.scrollWidth;
