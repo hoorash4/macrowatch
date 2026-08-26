@@ -63,8 +63,8 @@ function renderExtremeNewsSignals(rows) {
   decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
   const values = Array.isArray(latest.decisive_news_keywords) ? [...new Set(latest.decisive_news_keywords.map((keyword) => String(keyword).trim()).filter(Boolean))].slice(0, 8) : [];
   if (keywords) {
-    keywords.classList.toggle('hidden', values.length === 0);
-    keywords.innerHTML = values.map((keyword) => `<span class="rounded-full border border-[#d8b978]/35 bg-slate-950/40 px-2 py-0.5 text-[10px] font-semibold text-[#e0bf7f]">${escapeHtml(keyword)}</span>`).join('');
+    const shown = values.length ? values : ['예시', '금융기관', '파산신청', '50bp', '통화스와프'];
+    keywords.innerHTML = shown.map((keyword, index) => `<span class="rounded-full border ${values.length || index ? 'border-[#d8b978]/35 bg-slate-950/40 text-[#f2d396]' : 'border-slate-500/50 bg-slate-800/70 text-slate-300'} px-2.5 py-1 text-xs font-semibold">${escapeHtml(keyword)}</span>`).join('');
   }
   document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '자정 기준 집계'; });
 }
