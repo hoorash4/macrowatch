@@ -51,6 +51,9 @@
   --radius-card: 1.25rem;
   --radius-control: .55rem;
   --shadow-card: 0 18px 45px rgba(47,66,80,.08);
+  /* 분석 메뉴 레이아웃: 메뉴 첫 카드의 상단 공간과 카드 사이 간격을 여기서 관리합니다. */
+  --dashboard-panel-top-space: 1.5rem;
+  --dashboard-card-gap: 1.5rem;
   /* 분석 카드의 공통 여백: 페이지 상단 내비게이션에는 적용하지 않습니다. */
   --analysis-card-header-padding-x: 1.25rem;
   --analysis-card-header-padding-y: 1.25rem;
@@ -525,7 +528,8 @@ body:has(#app-shell:not(.hidden)) {
 }
 .dashboard-panels {
   display:grid;
-  gap:1.5rem;
+  gap:var(--dashboard-card-gap);
+  padding-top:var(--dashboard-panel-top-space);
   min-width:0;
 }
 .dashboard-view-card,.dashboard-tracker-card {
@@ -552,7 +556,7 @@ body:has(#app-shell:not(.hidden)) {
  */
 .market-overview {
   display:grid;
-  gap:1.5rem;
+  gap:var(--dashboard-card-gap);
   margin-bottom:0;
 }
 /* 메뉴 전환 시 붙는 상태 클래스는 각 패널의 기본 display 선언보다 뒤에서 적용합니다. */
@@ -562,16 +566,12 @@ body:has(#app-shell:not(.hidden)) {
 .market-overview-grid {
   display:grid;
   grid-template-columns:minmax(0, 1fr);
-  padding-top:1.5rem;
 }
 .market-overview-grid #news-sentiment-dashboard, .sector-flow-view-card #sector-flow-dashboard {
   border:0;
   border-radius:0;
   background:transparent;
   box-shadow:none;
-}
-#credit-stress-dashboard {
-  margin-bottom:4rem;
 }
 #credit-stress-components-dashboard {
   margin-bottom:0;

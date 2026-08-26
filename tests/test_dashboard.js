@@ -114,3 +114,13 @@ test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', (
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
 });
+
+test('분석 메뉴의 최상단 공간과 카드 간격은 공통 토큰을 사용한다', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(styles, /--dashboard-panel-top-space:\s*1\.5rem/);
+  assert.match(styles, /--dashboard-card-gap:\s*1\.5rem/);
+  assert.match(styles, /\.dashboard-panels\s*\{[\s\S]*?gap:var\(--dashboard-card-gap\);[\s\S]*?padding-top:var\(--dashboard-panel-top-space\);/);
+  assert.match(styles, /\.market-overview\s*\{[\s\S]*?gap:var\(--dashboard-card-gap\);/);
+  assert.doesNotMatch(styles, /#credit-stress-dashboard\s*\{[\s\S]*?margin-bottom:4rem/);
+  assert.doesNotMatch(styles, /\.market-overview-grid\s*\{[\s\S]*?padding-top:1\.5rem/);
+});
