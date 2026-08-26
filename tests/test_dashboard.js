@@ -308,4 +308,8 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:first-child em \{[\s\S]*border-radius:\.4rem;[\s\S]*text-align:center;/);
   assert.match(styles, /span:first-child em\.sector-return-positive \{[\s\S]*background:rgba\(213,72,63,\.08\)/);
   assert.match(styles, /span:first-child em\.sector-return-negative \{[\s\S]*background:rgba\(40,112,186,\.08\)/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) header > strong \{ font-size:\.88rem; \}/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-columns \{ font-size:\.64rem; \}/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-sector \{ font-size:\.78rem; \}/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.78rem; \}/);
 });

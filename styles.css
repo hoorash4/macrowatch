@@ -915,6 +915,14 @@ body:has(#app-shell:not(.hidden)) {
   justify-self:center;
   text-align:center;
 }
+/* 과거 주차 카드는 순위·변동 값만 유지하고 나머지 정보 글자를 한 단계 키웁니다. */
+.sector-flow-week:not(.sector-flow-week-current) header > span { font-size:.8rem; }
+.sector-flow-week:not(.sector-flow-week-current) header > strong { font-size:.88rem; }
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-columns { font-size:.64rem; }
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-sector { font-size:.78rem; }
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-streak { font-size:.66rem; }
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns small { font-size:.61rem; }
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns em { font-size:.78rem; }
 .sector-flow-week ol {
   display:grid;
   gap:0;
