@@ -127,3 +127,22 @@ test("360일이 되기 전에 전고점에 도달하면 같은 상승 사이클�
   assert.equal(result[2].previous_peak_adjustment, 0);
   assert.equal(result[3].previous_peak_adjustment, 0);
 });
+
+test("uncertain 동결은 추세 횟수에는 포함하지만 점수는 항상 0이다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "inflation_fight"], ["hike", "inflation_fight"], ["hike", "inflation_fight"],
+    ["hold", "uncertain"], ["hold", "uncertain"],
+  ]));
+  assert.deepEqual(result.slice(3).map((row) => row.hold_sequence), [1, 2]);
+  assert.deepEqual(result.slice(3).map((row) => row.final_event_score), [0, 0]);
+});
+
+test("징검다리 추세의 uncertain 연속 동결도 관리자 판단 없이 0이다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "growth_overheat"], ["hold", "uncertain"],
+    ["hike", "growth_overheat"], ["hold", "uncertain"],
+    ["hike", "growth_overheat"], ["hold", "uncertain"], ["hold", "uncertain"],
+  ]));
+  assert.equal(result[6].trend_type, "hold_scoring");
+  assert.equal(result[6].final_event_score, 0);
+});

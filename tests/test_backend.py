@@ -146,6 +146,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('body.mode === "score"', pipeline)
         self.assertIn('not("policy_index", "is", null)', pipeline)
 
+    def test_policy_admin_reviews_only_directional_decisions(self) -> None:
+        policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
+        self.assertIn('.neq("action", "hold")', policy_admin)
+
 
 class EmergingIndexTests(unittest.TestCase):
     def test_index_uses_documented_weighted_components(self) -> None:

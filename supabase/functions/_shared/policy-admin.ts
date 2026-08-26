@@ -9,6 +9,7 @@ export async function listPolicyReviews(admin: ServiceClient) {
   const { data, error } = await admin.from("central_bank_policy_events")
     .select("meeting_date,action,change_bps,ai_primary_reason,transition_assessment")
     .eq("central_bank", "fed").eq("analysis_status", "completed")
+    .neq("action", "hold")
     .is("admin_primary_reason", null)
     .or("ai_primary_reason.eq.uncertain,transition_assessment.eq.confirmed")
     .order("meeting_date", { ascending: false }).limit(100);

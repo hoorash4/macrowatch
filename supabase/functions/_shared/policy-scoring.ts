@@ -152,7 +152,11 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
         state.terminationStarted = true;
         const startScore = state.sequence >= 3 ? 100 : 50;
         const holdScoreSequence = state.holds - triggerHold + 1;
-        holdAdjustment = round((holdDirection(state.reason) * startScore) / holdScoreSequence);
+        // An uncertain hold still advances the factual hold sequence, but its
+        // policy meaning is intentionally left pending and always scores zero.
+        holdAdjustment = reason === "uncertain"
+          ? 0
+          : round((holdDirection(state.reason) * startScore) / holdScoreSequence);
       } else if (state.sequence < 2 && state.holds >= 2) {
         state.terminationStarted = true;
       }
