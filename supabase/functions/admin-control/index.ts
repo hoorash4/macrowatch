@@ -125,7 +125,7 @@ function encodeBase64(value: string) {
   return btoa(binary);
 }
 
-async function refreshArticleSentiment(admin: ReturnType<typeof createClient>, articleDate: string) {
+async function refreshArticleSentiment(admin: any, articleDate: string) {
   const { data, error } = await admin.from("news_article_sentiments")
     .select("ai_sentiment,admin_sentiment").eq("article_date", articleDate);
   if (error) throw error;
@@ -139,7 +139,7 @@ async function refreshArticleSentiment(admin: ReturnType<typeof createClient>, a
   if (upsertError) throw upsertError;
 }
 
-async function excludeUncertainArticle(admin: ReturnType<typeof createClient>, id: string) {
+async function excludeUncertainArticle(admin: any, id: string) {
   const { data, error } = await admin.from("news_article_sentiments")
     .delete()
     .eq("id", id).eq("ai_sentiment", "uncertain").is("admin_sentiment", null)
