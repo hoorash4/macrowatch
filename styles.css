@@ -986,19 +986,26 @@ body:has(#app-shell:not(.hidden)) {
   color:#526d82;
   white-space:normal;
 }
+.sector-flow-history .sector-flow-week:last-child .sector-flow-holdings {
+  right:0;
+  left:auto;
+}
 .sector-flow-sector.is-open { overflow:visible; }
 .sector-flow-sector.is-open .sector-flow-holdings { display:block; }
 .sector-flow-week-popover-open { z-index:50; }
-.sector-flow-holdings > b {
+.sector-flow-week .sector-flow-holdings > b {
   display:block;
-  width:auto;
+  width:100%;
   min-height:0;
   margin-bottom:.4rem;
-  border-radius:0;
-  background:transparent;
+  padding:.3rem .4rem;
+  border-radius:.3rem;
+  background:#e7f1f8;
   color:#1f5f8d;
   font-size:.68rem;
   line-height:1.3;
+  box-sizing:border-box;
+  place-items:initial;
   white-space:nowrap;
 }
 .sector-flow-holdings ol { display:grid; gap:.25rem; margin:0; }
