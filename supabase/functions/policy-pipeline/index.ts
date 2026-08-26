@@ -174,7 +174,13 @@ Deno.serve(async (request) => {
     const supabase = createClient(url, serviceRole);
     if (body.mode === "score") {
       const scored = await recomputePolicyScores(supabase, "fed");
-      return json({ bank: "fed", mode: "score", scored: scored.length });
+      return json({
+        bank: "fed",
+        mode: "score",
+        scored: scored.length,
+        confirmed_peaks: scored.filter((row) => row.is_confirmed_rate_peak).length,
+        aged_peak_reaches: scored.filter((row) => row.previous_peak_adjustment === 100).length,
+      });
     }
     const sources = await fedSources(mode);
     const selected = mode === "backfill" ? sources : sources.filter((source) => source.meetingDate >= `${new Date().getUTCFullYear() - 1}-01-01`);
