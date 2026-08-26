@@ -17,7 +17,10 @@ export type MarketContext = {
   stochastic_k_10_5_5: number;
   stochastic_d_10_5_5: number;
   disparity60_widening: boolean;
+  disparity60_upside_widening: boolean;
+  disparity60_downside_widening: boolean;
   bearish_stochastic_divergence: boolean;
+  bullish_stochastic_divergence: boolean;
 };
 
 const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -77,6 +80,20 @@ function bearishDivergence(candles: MarketCandle[], slowK: Array<number | null>)
   return previousK !== null && previousK !== undefined && latestK !== null && latestK !== undefined && candles[latest].close > candles[previous].close && latestK < previousK;
 }
 
+function bullishDivergence(candles: MarketCandle[], slowK: Array<number | null>) {
+  const start = Math.max(1, candles.length - 30), troughs: number[] = [];
+  for (let index = start; index < candles.length - 1; index += 1) {
+    const k = slowK[index - 9];
+    if (k !== null && k !== undefined && candles[index].close <= candles[index - 1].close
+      && candles[index].close <= candles[index + 1].close) troughs.push(index);
+  }
+  if (troughs.length < 2) return false;
+  const previous = troughs.at(-2)!, latest = troughs.at(-1)!;
+  const previousK = slowK[previous - 9], latestK = slowK[latest - 9];
+  return previousK !== null && previousK !== undefined && latestK !== null && latestK !== undefined
+    && candles[latest].close < candles[previous].close && latestK > previousK;
+}
+
 export function calculateMarketContext(candles: MarketCandle[]): MarketContext | null {
   const ordered = [...candles].sort((left, right) => left.date.localeCompare(right.date));
   if (ordered.length < 60) return null;
@@ -84,10 +101,15 @@ export function calculateMarketContext(candles: MarketCandle[]): MarketContext |
   const previousDisparity = ordered.length < 65 ? null : 100 * ordered.at(-6)!.close / average(ordered.slice(-65, -5).map((item) => item.close));
   const adx = adx14(ordered), stochasticValues = stochastic(ordered);
   if (adx === null || !stochasticValues) return null;
+  const disparity60Up = previousDisparity !== null && disparity60 > 100 && disparity60 > previousDisparity;
+  const disparity60Down = previousDisparity !== null && disparity60 < 100 && disparity60 < previousDisparity;
   return {
     index: "KOSPI", market_date: latest.date, close: round(latest.close), ma60: round(ma60), disparity60: round(disparity60), adx14: round(adx),
     stochastic_k_10_5_5: round(stochasticValues.k), stochastic_d_10_5_5: round(stochasticValues.d),
     disparity60_widening: previousDisparity !== null && disparity60 > previousDisparity,
+    disparity60_upside_widening: disparity60Up,
+    disparity60_downside_widening: disparity60Down,
     bearish_stochastic_divergence: bearishDivergence(ordered, stochasticValues.slowK),
+    bullish_stochastic_divergence: bullishDivergence(ordered, stochasticValues.slowK),
   };
 }

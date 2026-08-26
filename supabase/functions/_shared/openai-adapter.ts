@@ -1,62 +1,210 @@
-import type { ArticleSentiment, Candidate, ExtremeNewsRule, ExtremeSignal } from "./news-types.ts";
+import type { ArticleSentiment, Candidate, ExtremeNewsRule } from "./news-types.ts";
 import { AI_POLICY } from "./ai-policy.ts";
 import type { MarketContext } from "./market-indicators.ts";
 
-const ARTICLE_SCHEMA = { type: "object", additionalProperties: false, properties: { outputs: { type: "array", items: { type: "object", additionalProperties: false, properties: { item_hash: { type: "string" }, exclude_from_index: { type: "boolean" }, sentiment: { type: "string", enum: ["positive", "neutral", "negative", "uncertain"] }, keywords: { type: "array", items: { type: "string" } }, uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] }, extreme_signal: { anyOf: [{ type: "string", enum: ["decisive"] }, { type: "null" }] }, extreme_keywords: { type: "array", items: { type: "string" } } }, required: ["item_hash", "exclude_from_index", "sentiment", "keywords", "uncertain_summary", "extreme_signal", "extreme_keywords"] } } }, required: ["outputs"] };
+const SENTIMENTS = ["positive", "neutral", "negative", "uncertain"] as const;
+
+// OpenAI의 strict structured output으로 JSON 문법과 필수 필드를 보장한다.
+// 필드 간 조건부 의미는 normalizeOutput에서 한 번 더 강제한다.
+const ARTICLE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    outputs: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          item_hash: { type: "string" },
+          exclude_from_index: { type: "boolean" },
+          sentiment: { type: "string", enum: SENTIMENTS },
+          keywords: { type: "array", items: { type: "string" }, maxItems: 3 },
+          uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] },
+          extreme_signal: { anyOf: [{ type: "string", enum: ["decisive"] }, { type: "null" }] },
+          extreme_keywords: { type: "array", items: { type: "string" }, maxItems: 3 },
+        },
+        required: [
+          "item_hash",
+          "exclude_from_index",
+          "sentiment",
+          "keywords",
+          "uncertain_summary",
+          "extreme_signal",
+          "extreme_keywords",
+        ],
+      },
+    },
+  },
+  required: ["outputs"],
+};
+
+class AnalysisFormatError extends Error {}
+
+function criteriaText(extremeRules: ExtremeNewsRule[]) {
+  if (!extremeRules.length) return "- 등록된 기준 없음: 모든 기사에서 extreme_signal=null";
+  return extremeRules
+    .map((rule, index) => `${index + 1}. ${JSON.stringify(rule.phrase.replace(/\s+/g, " ").trim())}`)
+    .join("\n");
+}
 
 function systemPrompt(extremeRules: ExtremeNewsRule[]) {
   const prompt = Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT");
   if (!prompt) throw new Error("NEWS_ANALYSIS_SYSTEM_PROMPT가 설정되지 않았습니다.");
-  const base = prompt.replace(/\{\{news_candidates\}\}/g, "").trim();
-  const rules = extremeRules.map((rule) => `- ${rule.phrase}`).join("\n");
-  return `${base}\n\n[미국 주식시장 파급 경로 보완]\n일반 뉴스의 exclude_from_index 및 sentiment 판단에서 한국 지수 파급 경로뿐 아니라 미국 주가지수 파급 경로도 함께 검토하라. 미국의 금리·통화정책·고용·물가·신용·대형 금융기관·핵심 산업·원자재·글로벌 위험회피·국제 공급망에 직접 연결되는 사건은 한국 지수 경로가 기사에 명시되지 않았더라도 단순히 제3국 뉴스로 제외하지 않는다. 한국 또는 미국 중 어느 한 시장에 합리적인 파급 경로가 있으면 긍정 또는 부정 중 우세한 방향을 선택하라. 두 시장의 잠재적 영향이 다르거나 양쪽 경로가 함께 존재한다는 이유만으로 uncertain을 사용하지 않는다. uncertain은 기존 규칙대로 방향 판단의 핵심 사실 자체가 부족할 때만 사용한다. 이 보완 규칙은 기존의 모든 기사별 출력·중복 금지·사실 제한 규칙을 바꾸지 않는다.\n\n[방향 분류 적극성 보완]\n중립적·불명확 분류를 안전한 기본값으로 사용하지 마라. 기사에 근거한 시장 전달 경로와 우세한 방향을 합리적으로 판단할 수 있으면, 확정적 예측이 아니더라도 positive 또는 negative를 선택하라. 영향 크기가 작거나 결과가 확실하지 않다는 이유만으로 neutral 또는 uncertain으로 보내지 않는다. neutral은 관련 금융·경제 사건의 긍정·부정 경로가 실제로 균형인 경우에만, uncertain은 방향 판단에 필요한 핵심 사실 자체가 부족한 경우에만 사용한다. 한국·미국과 모두 무관한 개별기업·제3국 뉴스의 제외 기준은 유지한다.\n\n[결정적 뉴스 감지]\n관리자가 등록한 아래 기준은 한국 주가지수 영향 판단과 별개의 최우선 감지 기준이다. 관리자가 등록한 기준과 문맥상 실질적으로 같은 사건이면, 한국 지수와의 전달 경로가 없거나 exclude_from_index=true인 기사라도 반드시 extreme_signal=decisive를 반환하라. 정확한 키워드 일치는 요구하지 않지만, 단어 일부·막연한 관련성·단순 전망만으로는 분류하지 않는다. 기사 전체의 주체·행동·원인·파급 범위를 함께 확인한다. 기준이 없거나 어느 기준에도 해당하지 않으면 null이다. extreme_signal 판단을 위해 exclude_from_index 또는 sentiment 값을 바꾸지 마라. extreme_signal=decisive이면 기사 제목을 복사하지 않은 2~3개의 짧은 파생 키워드를 extreme_keywords에 반환하고, decisive가 아니면 extreme_keywords=[]로 반환하라.\n${rules || "- 등록된 기준 없음: 모든 기사 extreme_signal=null"}\n\n출력 JSON의 각 항목에 extreme_signal과 extreme_keywords를 반드시 포함한다. extreme_signal 허용값은 decisive, null뿐이다.`;
+
+  const criteria = criteriaText(extremeRules);
+  const withoutLegacyCandidates = prompt.replace(/\{\{news_candidates\}\}/gi, "").trim();
+  if (withoutLegacyCandidates.includes("{{EXTREME_SIGNAL_CRITERIA}}")) {
+    return withoutLegacyCandidates.replace(/\{\{EXTREME_SIGNAL_CRITERIA\}\}/g, criteria);
+  }
+
+  // 구버전 프롬프트도 동작하게 하되 판단 규칙을 중복해서 덧붙이지 않는다.
+  return `${withoutLegacyCandidates}\n\n## [관리자 등록 기준]\n${criteria}`;
 }
 
 function candidatePrompt(candidates: Candidate[], marketContext: MarketContext | null) {
-  return JSON.stringify({ market_context: marketContext, news_candidates: candidates.map(({ source, itemHash, publishedAt, text }) => ({ source, item_hash: itemHash, published_at: publishedAt, text })) });
+  return JSON.stringify({
+    market_context: marketContext,
+    news_candidates: candidates.map(({ source, itemHash, publishedAt, text }) => ({
+      source,
+      item_hash: itemHash,
+      published_at: publishedAt,
+      text,
+    })),
+  });
 }
 
-async function requestAnalysis(model: string, candidates: Candidate[], marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[]) {
+function outputText(payload: Record<string, unknown>) {
+  if (typeof payload.output_text === "string") return payload.output_text;
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const content = Array.isArray((item as { content?: unknown[] }).content)
+      ? (item as { content: unknown[] }).content
+      : [];
+    for (const part of content) {
+      if (part && typeof part === "object" && (part as { type?: unknown }).type === "output_text"
+        && typeof (part as { text?: unknown }).text === "string") {
+        return (part as { text: string }).text;
+      }
+    }
+  }
+  return null;
+}
+
+function cleanKeywords(value: unknown) {
+  return Array.isArray(value)
+    ? value.map(String).map((keyword) => keyword.trim()).filter(Boolean).slice(0, 3)
+    : [];
+}
+
+function parseOutput(item: Record<string, unknown>): ArticleSentiment {
+  const sentiment = SENTIMENTS.includes(item.sentiment as typeof SENTIMENTS[number])
+    ? item.sentiment as ArticleSentiment["sentiment"]
+    : "uncertain";
+  const extremeSignal = item.extreme_signal === "decisive" ? "decisive" : null;
+  return {
+    itemHash: String(item.item_hash),
+    excludeFromIndex: item.exclude_from_index === true,
+    sentiment,
+    keywords: cleanKeywords(item.keywords),
+    uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary).trim() || null,
+    extremeSignal,
+    extremeKeywords: extremeSignal ? cleanKeywords(item.extreme_keywords) : [],
+  };
+}
+
+// 제외 기사는 감성 집계 대상이 아니므로 neutral은 JSON 형식 유지를 위한 자리값일 뿐이다.
+// 모델이 조건부 필드를 잘못 채워도 저장 전에 항상 동일한 조합으로 정규화한다.
+function normalizeOutput(output: ArticleSentiment): ArticleSentiment {
+  const normalized = {
+    ...output,
+    extremeKeywords: output.extremeSignal ? output.extremeKeywords : [],
+  };
+  if (normalized.excludeFromIndex) {
+    return { ...normalized, sentiment: "neutral", keywords: [], uncertainSummary: null };
+  }
+  if (normalized.sentiment !== "uncertain") {
+    return { ...normalized, keywords: [], uncertainSummary: null };
+  }
+  return normalized;
+}
+
+async function requestAnalysis(
+  model: string,
+  candidates: Candidate[],
+  marketContext: MarketContext | null,
+  extremeRules: ExtremeNewsRule[],
+) {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, reasoning: { effort: "low" }, max_output_tokens: 3_000, prompt_cache_key: "macrowatch-article-sentiment-v9", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt(extremeRules) }] }, { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext) }] }], text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } } }),
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      reasoning: { effort: "low" },
+      max_output_tokens: 3_000,
+      prompt_cache_key: "macrowatch-article-sentiment-v10",
+      input: [
+        { role: "system", content: [{ type: "input_text", text: systemPrompt(extremeRules) }] },
+        { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext) }] },
+      ],
+      text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } },
+    }),
   });
   if (!response.ok) throw new Error(`OpenAI 분석 오류 (${response.status}): ${await response.text()}`);
-  const payload = await response.json();
-  const outputText = typeof payload.output_text === "string" ? payload.output_text : payload.output?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || []).find((item: { type?: string }) => item.type === "output_text")?.text;
-  if (typeof outputText !== "string") throw new Error("OpenAI 응답에 output_text가 없습니다.");
-  const parsed = JSON.parse(outputText) as { outputs: Array<Record<string, unknown>> };
-  return parsed.outputs.map((item): ArticleSentiment => { const extremeSignal = item.extreme_signal === "decisive" ? "decisive" : null; return { itemHash: String(item.item_hash), excludeFromIndex: item.exclude_from_index === true, sentiment: item.sentiment as ArticleSentiment["sentiment"], keywords: Array.isArray(item.keywords) ? item.keywords.map(String).slice(0, 3) : [], uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary), extremeSignal, extremeKeywords: extremeSignal && Array.isArray(item.extreme_keywords) ? item.extreme_keywords.map(String).map((keyword) => keyword.trim()).filter(Boolean).slice(0, 3) : [] }; });
+
+  const payload = await response.json() as Record<string, unknown>;
+  const text = outputText(payload);
+  if (!text) throw new AnalysisFormatError("OpenAI 응답에 output_text가 없습니다.");
+  try {
+    const parsed = JSON.parse(text) as { outputs?: Array<Record<string, unknown>> };
+    if (!Array.isArray(parsed.outputs)) throw new AnalysisFormatError("outputs 배열이 없습니다.");
+    return parsed.outputs.map(parseOutput);
+  } catch (error) {
+    if (error instanceof AnalysisFormatError) throw error;
+    throw new AnalysisFormatError(`OpenAI JSON 해석 실패: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
-export async function analyzeCandidates(candidates: Candidate[], marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[]) {
+async function analyzeOne(candidate: Candidate, marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[]) {
+  const output = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext, extremeRules);
+  if (output.length !== 1) throw new AnalysisFormatError("기사별 분석 결과가 하나가 아닙니다.");
+  return normalizeOutput({ ...output[0], itemHash: candidate.itemHash });
+}
+
+export async function analyzeCandidates(
+  candidates: Candidate[],
+  marketContext: MarketContext | null,
+  extremeRules: ExtremeNewsRule[],
+) {
   if (!candidates.length) return [];
-  let outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext, extremeRules);
-  const expected = new Set(candidates.map((candidate) => candidate.itemHash));
-  const received = outputs.map((item) => item.itemHash);
-  const uniqueReceived = new Set(received);
-  if (received.length !== uniqueReceived.size || [...uniqueReceived].some((hash) => !expected.has(hash))) {
-    outputs = await Promise.all(candidates.map(async (candidate) => {
-      const single = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext, extremeRules);
-      if (single.length !== 1) throw new Error("기사별 재분석 결과가 하나가 아닙니다.");
-      return { ...single[0], itemHash: candidate.itemHash };
-    }));
+
+  let outputs: ArticleSentiment[];
+  try {
+    outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext, extremeRules);
+  } catch (error) {
+    // 네트워크·인증 오류에는 무의미한 반복 호출을 하지 않는다.
+    // 구조화 출력 형식만 깨진 경우에 한해 기사별로 한 번씩 복구한다.
+    if (!(error instanceof AnalysisFormatError) || candidates.length === 1) throw error;
+    return Promise.all(candidates.map((candidate) => analyzeOne(candidate, marketContext, extremeRules)));
   }
-  const resolvedHashes = new Set(outputs.map((item) => item.itemHash));
-  const missing = candidates.filter((candidate) => !resolvedHashes.has(candidate.itemHash));
-  if (missing.length) {
-    const recovered = await Promise.all(missing.map(async (candidate) => {
-      const single = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext, extremeRules);
-      if (single.length !== 1) throw new Error("누락 뉴스 재분석 결과가 하나가 아닙니다.");
-      return { ...single[0], itemHash: candidate.itemHash };
-    }));
-    outputs.push(...recovered);
+
+  const expectedHashes = new Set(candidates.map((candidate) => candidate.itemHash));
+  const byHash = new Map<string, ArticleSentiment>();
+  for (const output of outputs) {
+    if (expectedHashes.has(output.itemHash) && !byHash.has(output.itemHash)) byHash.set(output.itemHash, output);
   }
+
+  // 잘못된 해시나 중복 응답 때문에 정상 기사까지 다시 호출하지 않고 누락 기사만 복구한다.
+  const missing = candidates.filter((candidate) => !byHash.has(candidate.itemHash));
+  const recovered = await Promise.all(missing.map((candidate) => analyzeOne(candidate, marketContext, extremeRules)));
+  recovered.forEach((output) => byHash.set(output.itemHash, output));
+
   return candidates.map((candidate) => {
-    const output = outputs.find((item) => item.itemHash === candidate.itemHash);
-    if (!output) throw new Error("뉴스 분석 결과가 누락되었습니다.");
-    return output.excludeFromIndex || output.sentiment === "uncertain" ? output : { ...output, keywords: [], uncertainSummary: null };
+    const output = byHash.get(candidate.itemHash);
+    if (!output) throw new AnalysisFormatError("뉴스 분석 결과가 누락되었습니다.");
+    return normalizeOutput(output);
   });
 }

@@ -365,7 +365,9 @@ Deno.serve(async (request) => {
       });
       if (error) throw error;
     }
-    const sentiments = outputs.reduce<Record<string, number>>(
+    // 제외 기사의 neutral은 JSON 형식 유지를 위한 자리값이므로 감성 집계에 포함하지 않는다.
+    const indexOutputs = outputs.filter((output) => !output.excludeFromIndex);
+    const sentiments = indexOutputs.reduce<Record<string, number>>(
       (counts, output) => ({
         ...counts,
         [output.sentiment]: (counts[output.sentiment] || 0) + 1,
@@ -380,6 +382,7 @@ Deno.serve(async (request) => {
       collected: candidates.length,
       processed: batch.length,
       analyzed_articles: outputs.length,
+      excluded_articles: outputs.length - indexOutputs.length,
       sentiments,
       lookback_hours: lookbackHours,
       offset,

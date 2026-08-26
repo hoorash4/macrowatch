@@ -92,7 +92,20 @@ class SourceContractTests(unittest.TestCase):
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")
         self.assertIn('Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT")', adapter)
-        self.assertIn('prompt.replace(/\\{\\{news_candidates\\}\\}/g, "")', adapter)
+        self.assertIn('prompt.replace(/\\{\\{news_candidates\\}\\}/gi, "")', adapter)
+        self.assertIn('{{EXTREME_SIGNAL_CRITERIA}}', adapter)
+        self.assertNotIn('[미국 주식시장 파급 경로 보완]', adapter)
+
+    def test_news_output_contract_excludes_articles_from_sentiment_counts(self) -> None:
+        pipeline = (ROOT / "supabase/functions/news-pipeline/index.ts").read_text(encoding="utf-8")
+        self.assertIn("outputs.filter((output) => !output.excludeFromIndex)", pipeline)
+        self.assertIn("outputs.length - indexOutputs.length", pipeline)
+
+    def test_market_context_has_both_disparity_directions(self) -> None:
+        indicators = (ROOT / "supabase/functions/_shared/market-indicators.ts").read_text(encoding="utf-8")
+        self.assertIn("disparity60_upside_widening", indicators)
+        self.assertIn("disparity60_downside_widening", indicators)
+        self.assertIn("bullish_stochastic_divergence", indicators)
 
     def test_news_sources_and_partial_failure_reporting_remain_enabled(self) -> None:
         pipeline = (ROOT / "supabase/functions/news-pipeline/index.ts").read_text(encoding="utf-8")
