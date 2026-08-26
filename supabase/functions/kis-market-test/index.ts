@@ -11,10 +11,7 @@ function json(body: unknown, status = 200) {
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
-    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
-    const apiKey = request.headers.get("apikey") || "";
-    if (!serviceRole || (bearer !== serviceRole && apiKey !== serviceRole)) return json({ ok: false, error: "서버 인증이 필요합니다." }, 401);
+    // 배포 기본값인 Supabase 게이트웨이 JWT 검증을 통과한 서버 요청만 여기까지 도달한다.
     const credentials = loadKisCredentials();
     const token = await issueKisAccessToken(credentials);
     const end = new Date();

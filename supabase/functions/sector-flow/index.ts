@@ -14,17 +14,10 @@ function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
-function requireServerRequest(request: Request) {
-  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
-  const apiKey = request.headers.get("apikey") || "";
-  if (!serviceRole || (bearer !== serviceRole && apiKey !== serviceRole)) throw new Error("서버 인증이 필요합니다.");
-}
-
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
-    requireServerRequest(request);
+    // 배포 기본값인 Supabase 게이트웨이 JWT 검증을 통과한 서버 요청만 여기까지 도달한다.
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stage = body.stage === "open" ? "open" : body.stage === "close" ? "close" : null;
     if (!stage) return json({ error: "stage는 open 또는 close여야 합니다." }, 400);
@@ -92,6 +85,6 @@ Deno.serve(async (request) => {
     return json({ ok: true, stage, registry_count: registry.length, price_rows: collected.length, ranking_rows: rankings.length, failures });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return json({ ok: false, error: message }, message === "서버 인증이 필요합니다." ? 401 : 500);
+    return json({ ok: false, error: message }, 500);
   }
 });

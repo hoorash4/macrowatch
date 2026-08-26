@@ -4,7 +4,7 @@ project_id = "xhghpywvthjuvespzdul"
 verify_jwt = false
 
 [functions.kis-market-test]
-verify_jwt = false
+verify_jwt = true
 
 [functions.sector-flow]
-verify_jwt = false
+verify_jwt = true
