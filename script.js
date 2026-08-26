@@ -102,7 +102,7 @@ function initializeSectorFlowWeekLabels() {
 
     card.querySelector('[data-sector-week-period]').textContent = `${weekStart.getMonth() + 1}월`;
     card.querySelector('[data-sector-week-label]').textContent = Number(card.dataset.sectorWeekOffset) === 0
-      ? '이번 주'
+      ? '이번 주 섹터 수익률 주간 순위'
       : `${weekOfMonth}주차`;
   });
 }
