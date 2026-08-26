@@ -146,6 +146,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("target_range_lower,target_range_upper,primary_reason", pipeline)
         self.assertIn("normalizeAnalysis(await analyzeStatement", pipeline)
         self.assertIn('body.mode === "score"', pipeline)
+        self.assertIn("score_profile: POLICY_SCORE_PROFILE", pipeline)
         self.assertIn('not("policy_index", "is", null)', pipeline)
         self.assertIn("FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신", pipeline)
 

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recomputePolicyScores } from "../_shared/policy-score-store.ts";
+import { POLICY_SCORE_PROFILE } from "../_shared/policy-scoring.ts";
 
 type Action = "hike" | "hold" | "cut";
 type Reason = "inflation_fight" | "growth_overheat" | "recession_financial_stress" | "insurance_easing" | "normalization_hike" | "normalization_cut" | "uncertain";
@@ -186,6 +187,7 @@ Deno.serve(async (request) => {
       return json({
         bank: "fed",
         mode: "score",
+        score_profile: POLICY_SCORE_PROFILE,
         scored: scored.length,
         confirmed_peaks: scored.filter((row) => row.is_confirmed_rate_peak).length,
         aged_peak_reaches: scored.filter((row) => row.previous_peak_adjustment === 100).length,
