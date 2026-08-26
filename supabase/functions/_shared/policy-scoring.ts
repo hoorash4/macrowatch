@@ -1,7 +1,7 @@
 import type { PolicyAction, PolicyReason, PolicyScoringInput, PolicyScoringResult, PolicyTrendType } from "./policy-types.ts";
 
 export const POLICY_INDEX_BASE = 1_000;
-export const POLICY_SCORE_PROFILE = "fed-policy-v2";
+export const POLICY_SCORE_PROFILE = "fed-policy-v3";
 
 type DirectionState = {
   action: Exclude<PolicyAction, "hold">;
@@ -17,6 +17,10 @@ type DirectionState = {
 
 const round = (value: number) => Number(value.toFixed(3));
 const directional = (action: PolicyAction): action is Exclude<PolicyAction, "hold"> => action !== "hold";
+const largeMoveWeight = (changeBps: number | null | undefined) => {
+  const extraSteps = Math.floor(Math.max(0, Math.abs(Number(changeBps || 0)) - 25) / 25);
+  return extraSteps * 0.25;
+};
 
 function rawBase(reason: PolicyReason, action: Exclude<PolicyAction, "hold">) {
   if (reason === "inflation_fight" && action === "hike") return 100;
@@ -67,7 +71,8 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
 
   rows.forEach((row) => {
     const reason = row.admin_primary_reason || row.ai_primary_reason;
-    const hasLargeRateMove = Math.abs(Number(row.change_bps || 0)) >= 50;
+    const largeMoveMultiplier = largeMoveWeight(row.change_bps);
+    const hasLargeRateMove = largeMoveMultiplier > 0;
     let baseScore = 0;
     let firstAdjustment = 0;
     let largeAdjustment = 0;
@@ -142,8 +147,8 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
           || (reason === "recession_financial_stress" && row.action === "cut"));
       firstAdjustment = firstEligible ? round(adjustmentMagnitude * 0.10) : 0;
       if (baseScore !== 0) {
-        largeAdjustment = hasLargeRateMove ? round(adjustmentMagnitude * 0.25) : 0;
-        emergencyAdjustment = row.is_emergency ? round(adjustmentMagnitude * 0.25) : 0;
+        largeAdjustment = round(adjustmentMagnitude * largeMoveMultiplier);
+        emergencyAdjustment = row.is_emergency ? round(adjustmentMagnitude * 0.50) : 0;
       }
     } else if (state) {
       state.holds += 1;

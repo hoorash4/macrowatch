@@ -43,7 +43,7 @@
       const timestamp = Date.UTC(year, 0, 1);
       if (timestamp < firstTimestamp || timestamp > lastTimestamp) return '';
       const x = scale(timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right);
-      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-chart-year">${String(year).slice(2)}</text>`;
+      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-chart-year">${year}</text>`;
     }).join('');
     container.innerHTML = `<div class="policy-chart-frame"><svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수"><line x1="${PADDING.left}" y1="${HEIGHT - PADDING.bottom}" x2="${timelineWidth - PADDING.right}" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-axis"/><g>${yearTicks}</g><path d="${path}" class="policy-chart-line"/><g>${points.map((point) => `<circle cx="${point.x}" cy="${point.y}" r="3" class="policy-chart-point"/>`).join('')}</g><line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/><text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 11}" class="policy-chart-cursor-action"></text><text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-chart-cursor-period"></text></svg></div>`;
     const frame = container.querySelector('.policy-chart-frame');

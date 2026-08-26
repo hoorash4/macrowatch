@@ -91,10 +91,10 @@ test('HTML inline 이벤트가 사용하는 핸들러만 명시적으로 공개�
   }
 });
 
-test('FOMC 정책 그래프는 두 자리 연도와 커서 월 표시를 제공한다', () => {
+test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공한다', () => {
   const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-chart.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(chart, /String\(year\)\.slice\(2\)/);
+  assert.match(chart, />\$\{year\}<\/text>/);
   assert.match(chart, /data-policy-cursor-period/);
   assert.match(chart, /data-policy-cursor-action/);
   assert.match(chart, /년 \$\{String\(row\.meeting_date\)\.slice\(5, 7\)\}월/);

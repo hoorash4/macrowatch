@@ -30,15 +30,20 @@ test("보험성 인하는 두 번만 체감하고 세 번째부터 보류한다"
   assert.deepEqual(result.map((row) => row.final_event_score), [-50, -25, 0]);
 });
 
-test("50bp와 긴급회의는 양수는 확대하고 음수는 상쇄한다", () => {
+test("25bp 초과 폭은 25bp마다 25%씩, 긴급회의는 50%를 합산한다", () => {
+  const moveScores = [25, 50, 75, 100].map((changeBps) => scorePolicyHistory(rows([
+    ["hike", "inflation_fight", changeBps],
+  ]))[0].final_event_score);
+  assert.deepEqual(moveScores, [110, 135, 160, 185]);
+
   const result = scorePolicyHistory(rows([
     ["hike", "inflation_fight", 50, true],
     ["hold", "uncertain"],
     ["hold", "uncertain"],
     ["hike", "growth_overheat", 50, true],
   ]));
-  assert.equal(result[0].final_event_score, 160);
-  assert.equal(result[3].final_event_score, -25);
+  assert.equal(result[0].final_event_score, 185);
+  assert.equal(result[3].final_event_score, -12.5);
 });
 
 test("확정 연속 추세는 첫 동결부터 100점으로 체감한다", () => {
