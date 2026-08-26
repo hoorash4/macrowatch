@@ -130,18 +130,19 @@ function renderNewsSentiment(rows) {
   }).join('');
   const controls = [
     newsSentimentView === 'recent' && data.length > NEWS_SENTIMENT_VIEWS.recent.days
-      ? '<button type="button" data-news-sentiment-view="expanded" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">더보기</button>'
+      ? '<button type="button" data-news-sentiment-view="expanded" class="news-sentiment-view-button"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span>더보기</span></button>'
       : '',
     newsSentimentView === 'expanded' && data.length > NEWS_SENTIMENT_VIEWS.expanded.days
-      ? '<button type="button" data-news-sentiment-view="all" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">이전 30일 더 보기</button>'
+      ? '<button type="button" data-news-sentiment-view="all" class="news-sentiment-view-button"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>이전 30일 더 보기</span></button>'
       : '',
     newsSentimentView !== 'recent'
-      ? '<button type="button" data-news-sentiment-view="recent" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-slate-500 hover:text-white">돌아가기</button>'
+      ? '<button type="button" data-news-sentiment-view="recent" class="news-sentiment-view-button news-sentiment-view-button--back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>돌아가기</span></button>'
       : '',
   ].join('');
   const graphClass = view.layout === 'horizontal'
     ? 'flex h-60 min-w-0 flex-col justify-center gap-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6'
-    : `flex h-60 min-w-0 items-end justify-between ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
+    // 데이터가 기간을 채우기 전에는 왼쪽부터 쌓고, 가득 차면 자연스럽게 스크롤한다.
+    : `flex h-60 min-w-0 items-end justify-start ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
   chart.innerHTML = `${legend}<div${graphId} class="${graphClass}">${bars}</div>${controls ? `<div class="col-span-full flex justify-center gap-2">${controls}</div>` : ''}`;
   if (newsSentimentView === 'all') {
@@ -1005,4 +1006,3 @@ window.MacroWatchDashboard?.registerLoader(async () => {
   ]);
 });
 })();
-

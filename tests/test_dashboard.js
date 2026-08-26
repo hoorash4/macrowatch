@@ -158,3 +158,13 @@ test('프론트엔드 공통 기반과 차트 모듈은 운영 순서로 분리�
   assert.match(charts, /MacroWatchDashboard\?\.registerLoader/);
   assert.doesNotMatch(main, /function escapeHtml/);
 });
+
+test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 공통 스타일을 사용한다', () => {
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(charts, /items-end justify-start/);
+  assert.doesNotMatch(charts, /items-end justify-between/);
+  assert.match(charts, /class="news-sentiment-view-button"/);
+  assert.match(charts, /news-sentiment-view-button--back/);
+  assert.match(styles, /\.news-sentiment-view-button\s*\{/);
+});

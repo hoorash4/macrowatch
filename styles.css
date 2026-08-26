@@ -668,6 +668,41 @@ body:has(#app-shell:not(.hidden)) {
 #news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart, #korea-stress-chart, #em-stress-chart {
   padding:1.6rem 0 0;
 }
+/* 뉴스 흐름 기간 전환 버튼은 밝은 차트 표면에서도 동작이 즉시 보이도록 공통화합니다. */
+.news-sentiment-view-button {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:.45rem;
+  min-height:2rem;
+  padding:.375rem .75rem;
+  border:1px solid #334155;
+  border-radius:.5rem;
+  background:#334155;
+  color:#f8fafc;
+  box-shadow:0 1px 2px rgba(15,23,42,.16);
+  font-size:.75rem;
+  font-weight:700;
+  transition:background-color .15s ease,border-color .15s ease,transform .15s ease;
+}
+.news-sentiment-view-button:hover {
+  border-color:#1e293b;
+  background:#1e293b;
+  transform:translateY(-1px);
+}
+.news-sentiment-view-button:focus-visible {
+  outline:2px solid #38bdf8;
+  outline-offset:2px;
+}
+.news-sentiment-view-button--back {
+  border-color:#94a3b8;
+  background:#f8fafc;
+  color:#334155;
+}
+.news-sentiment-view-button--back:hover {
+  border-color:#64748b;
+  background:#e2e8f0;
+}
 .policy-chart-frame {
   position:relative;
   min-height:20rem;
