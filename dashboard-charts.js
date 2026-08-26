@@ -1040,13 +1040,12 @@ function renderSectorFlow(rows) {
     const week = weeks[index - firstDataCard], list = (grouped.get(week) || []).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 5);
     const body = card.querySelector('ol');
     if (!body) return;
-    const returnHeading = card.querySelector('.sector-flow-columns span:last-child');
-    if (returnHeading) returnHeading.textContent = '주간 · 4주 누적';
+    const columns = card.querySelector('.sector-flow-columns');
+    if (columns) columns.innerHTML = '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     body.innerHTML = list.length ? list.map((row) => {
       const sector = row.market_sector_etfs?.sector_name || '—';
-      const returns = `${sectorReturn(row.weekly_return_pct)} · ${sectorReturn(row.cumulative_return_pct)}`;
-      return `<li><b><span>${Number(row.rank)}</span>${sectorRankChange(row)}</b><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><em>${returns}</em></li>`;
-    }).join('') : '<li><b>—</b><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><em>—</em></li>';
+      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row)}</span><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em>${sectorReturn(row.weekly_return_pct)}</em></span><span><small>4주 누적</small><em>${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
+    }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>4주 누적</small><em>—</em></span></div></li>';
   });
   const latestWeek = weeks.at(-1), latest = (grouped.get(latestWeek) || [])[0];
   const note = document.getElementById('sector-flow-update-note');

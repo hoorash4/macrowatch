@@ -883,7 +883,7 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-columns,.sector-flow-week li {
   display:grid;
-  grid-template-columns:2.5rem minmax(0,1fr) 2rem auto;
+  grid-template-columns:1.65rem 2.15rem minmax(0,1fr) 2rem;
   gap:.35rem;
   align-items:center;
 }
@@ -896,7 +896,7 @@ body:has(#app-shell:not(.hidden)) {
 /* 주도섹터 표의 수치 열만 우측 정렬합니다. 열의 의미가 고정된 표 구조이므로
  * 위치 선택자는 이 모듈 안에서만 제한적으로 사용합니다.
  */
-.sector-flow-columns span:nth-child(3),.sector-flow-columns span:last-child {
+.sector-flow-columns span:last-child {
   text-align:right;
 }
 .sector-flow-week ol {
@@ -907,29 +907,35 @@ body:has(#app-shell:not(.hidden)) {
   list-style:none;
 }
 .sector-flow-week li {
-  min-height:2.05rem;
+  min-height:3.35rem;
   border-bottom:1px solid rgba(47,105,154,.16);
-  padding:.25rem .05rem;
+  padding:.38rem .05rem .42rem;
 }
 /* 마지막 행에는 구분선을 중복해서 그리지 않습니다. */
 .sector-flow-week li:last-child {
   border-bottom:0;
 }
 .sector-flow-week li b {
-  display:flex;
-  width:2.15rem;
+  display:grid;
+  width:1.65rem;
   min-height:1.55rem;
-  min-width:0;
-  align-items:center;
-  justify-content:center;
-  gap:.08rem;
+  place-items:center;
   border-radius:.25rem;
   background:#dcecf8;
   color:#175886;
   font-size:.66rem;
   font-weight:850;
 }
-.sector-flow-week li b small {
+.sector-flow-change {
+  display:grid;
+  min-height:1.55rem;
+  place-items:center;
+  color:#647f94;
+  font-size:.58rem;
+  font-weight:800;
+  white-space:nowrap;
+}
+.sector-flow-change small {
   font-size:.42rem;
   line-height:1;
 }
@@ -948,7 +954,27 @@ body:has(#app-shell:not(.hidden)) {
   text-align:right;
   white-space:nowrap;
 }
-.sector-flow-week li em {
+.sector-flow-returns {
+  grid-column:3 / 5;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.55rem;
+  min-width:0;
+}
+.sector-flow-returns > span {
+  display:inline-flex;
+  align-items:baseline;
+  gap:.25rem;
+  min-width:0;
+  white-space:nowrap;
+}
+.sector-flow-returns small {
+  color:#8297a8;
+  font-size:.52rem;
+  font-weight:700;
+}
+.sector-flow-returns em {
   color:#326e98;
   font-size:.62rem;
   font-style:normal;

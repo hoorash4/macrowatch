@@ -222,10 +222,16 @@ test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다',
 test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/sector-flow.yml'), 'utf8');
   assert.match(workflow, /10 0 \* \* 1-5/);
   assert.match(workflow, /40 6 \* \* 1-5/);
-  assert.match(charts, /returnHeading\.textContent = '주간 · 4주 누적'/);
+  assert.match(charts, /<span>순위<\/span><span>변동<\/span><span>섹터<\/span><span>연속<\/span>/);
+  assert.match(charts, /sector-flow-rank/);
+  assert.match(charts, /sector-flow-change/);
+  assert.match(charts, /sector-flow-returns/);
+  assert.match(styles, /grid-template-columns:1\.65rem 2\.15rem minmax\(0,1fr\) 2rem/);
+  assert.match(styles, /grid-column:3 \/ 5/);
   assert.match(charts, /sectorReturn\(row\.weekly_return_pct\).*sectorReturn\(row\.cumulative_return_pct\)/s);
   assert.match(charts, /Math\.abs\(number\) < 10 \? number\.toFixed\(2\) : Math\.round\(number\)\.toString\(\)/);
   assert.match(charts, /latest\.price_stage === 'open'/);
