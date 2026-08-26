@@ -3,25 +3,23 @@
 from __future__ import annotations
 
 import argparse
-import calendar
-import csv
-import io
-import os
-import re
-from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-import openpyxl
-import requests
-
-from common import SupabaseRest, carry_forward, fetch_fred_observations, uncapped_score
-
-
-COURTS_URLS = (
-    "https://www.uscourts.gov/sites/default/files/document/bf_f2.1_{period}.xlsx",
-    "https://www.uscourts.gov/sites/default/files/data_tables/bf_f2.1_{period}.xlsx",
-    "https://www.uscourts.gov/sites/default/files/{publication_year}-{publication_month:02d}/bf_f2.1_{period}.xlsx",
+from common import SupabaseRest, carry_forward, require_env, uncapped_score
+from financial_stress_sources import (
+    TIMEOUT_SECONDS,
+    collect_business_filings,
+    fetch_cmdi_monthly,
+    fetch_ebp_monthly,
+    fetch_fred_latest,
+    fetch_fred_month_end,
+    fetch_fred_monthly,
+    fetch_fred_week_end,
+    latest_completed_quarter_end,
+    month_start,
 )
+
+
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
 FINANCIAL_RISK_SERIES = "NFCIRISK"
@@ -29,12 +27,7 @@ NONFINANCIAL_LEVERAGE_SERIES = "NFCINONFINLEVERAGE"
 SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
-MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
-TIMEOUT_SECONDS = 45
 INDEX_HISTORY_YEARS = 3
-OFFICIAL_DATA_HEADERS = {"User-Agent": "MacroWatch/1.0 (+https://hoorash4.github.io/macrowatch/)"}
-EBP_CSV_URL = "https://www.federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv"
-CMDI_XLSX_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx"
 MONTHLY_STRESS_COMPONENTS = (
     "excess_bond_premium",
     "corporate_bond_market_distress_index",
@@ -64,189 +57,6 @@ FIXED_COMPONENT_SCALES = {
     "nonfinancial_leverage_index": (-1.5, 2.0),
     "business_bankruptcy_filings": (1000.0, 5000.0),
 }
-
-
-def month_start(value: date) -> str:
-    return value.replace(day=1).isoformat()
-
-
-def quarter_ends(start_year: int, start_month: int, end_year: int, end_month: int):
-    cursor_year, cursor_month = start_year, ((start_month - 1) // 3 + 1) * 3
-    while (cursor_year, cursor_month) <= (end_year, end_month):
-        yield cursor_year, cursor_month, calendar.monthrange(cursor_year, cursor_month)[1]
-        cursor_month += 3
-        if cursor_month > 12:
-            cursor_year += 1
-            cursor_month = 3
-
-
-def latest_completed_quarter_end(today: date) -> date:
-    quarter_start_month = ((today.month - 1) // 3) * 3 + 1
-    if quarter_start_month == 1:
-        return date(today.year - 1, 12, 31)
-    previous_month = quarter_start_month - 1
-    return date(today.year, previous_month, calendar.monthrange(today.year, previous_month)[1])
-
-
-def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    values: dict[str, list[float]] = defaultdict(list)
-    for observation in fetch_fred_observations(
-        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
-    ):
-        raw_value = observation.get("value")
-        if raw_value in (None, "."):
-            continue
-        try:
-            values[observation["date"][:7] + "-01"].append(float(raw_value))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return {month: sum(rows) / len(rows) for month, rows in values.items() if rows}
-
-
-def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    """Return the final available daily observation for each calendar month."""
-    month_end: dict[str, tuple[str, float]] = {}
-    for observation in fetch_fred_observations(
-        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
-    ):
-        raw_value = observation.get("value")
-        observed_on = observation.get("date")
-        if raw_value in (None, ".") or not isinstance(observed_on, str):
-            continue
-        try:
-            value = float(raw_value)
-        except (TypeError, ValueError):
-            continue
-        month = observed_on[:7] + "-01"
-        if month not in month_end or observed_on > month_end[month][0]:
-            month_end[month] = (observed_on, value)
-    return {month: value for month, (_observed_on, value) in month_end.items()}
-
-
-def fetch_fred_latest(series_id: str, api_key: str, start: date, end: date) -> tuple[date, float] | None:
-    latest: tuple[date, float] | None = None
-    for observation in fetch_fred_observations(
-        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
-    ):
-        raw_value, observed_on = observation.get("value"), observation.get("date")
-        if raw_value in (None, ".") or not isinstance(observed_on, str):
-            continue
-        try:
-            candidate = (date.fromisoformat(observed_on), float(raw_value))
-        except (TypeError, ValueError):
-            continue
-        if latest is None or candidate[0] > latest[0]:
-            latest = candidate
-    return latest
-
-
-def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    """Return the final available observation for each Friday-ended week."""
-    values: dict[str, tuple[str, float]] = {}
-    for observation in fetch_fred_observations(
-        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
-    ):
-        raw_value, observed_on = observation.get("value"), observation.get("date")
-        if raw_value in (None, ".") or not isinstance(observed_on, str):
-            continue
-        try:
-            observed_date, value = date.fromisoformat(observed_on), float(raw_value)
-        except (TypeError, ValueError):
-            continue
-        week = (observed_date + timedelta(days=4 - observed_date.weekday())).isoformat()
-        if week not in values or observed_on > values[week][0]:
-            values[week] = (observed_on, value)
-    return {week: value for week, (_observed_on, value) in values.items()}
-
-
-def fetch_ebp_monthly(start: date, end: date) -> dict[str, float]:
-    """Read the Federal Reserve Board's monthly Excess Bond Premium CSV."""
-    response = requests.get(EBP_CSV_URL, headers=OFFICIAL_DATA_HEADERS, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
-    reader = csv.DictReader(io.StringIO(response.content.decode("utf-8-sig", errors="replace")))
-    values: dict[str, float] = {}
-    for row in reader:
-        normalized = {str(key).strip().lower(): value for key, value in row.items() if key}
-        raw_date = normalized.get("date") or normalized.get("observation_date")
-        if raw_date is None:
-            raw_date = next((value for key, value in normalized.items() if "date" in key), None)
-        raw_value = normalized.get("ebp")
-        if raw_value is None:
-            raw_value = next((value for key, value in normalized.items() if key.endswith("ebp") or "excess bond premium" in key), None)
-        raw_date_text = str(raw_date).split(" ")[0]
-        observed_on = None
-        for pattern in ("%Y-%m-%d", "%m/%d/%Y"):
-            try:
-                observed_on = datetime.strptime(raw_date_text, pattern).date()
-                break
-            except ValueError:
-                continue
-        try:
-            if observed_on is None:
-                continue
-            value = float(str(raw_value))
-        except (TypeError, ValueError):
-            continue
-        if start <= observed_on <= end:
-            values[month_start(observed_on)] = value
-    if not values:
-        raise RuntimeError("연준 EBP CSV에서 월별 값을 찾지 못했습니다.")
-    return values
-
-
-def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
-    """Read the New York Fed Market CMDI workbook without retaining the file."""
-    response = requests.get(CMDI_XLSX_URL, headers=OFFICIAL_DATA_HEADERS, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
-    workbook = openpyxl.load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
-    values: dict[str, tuple[date, float]] = {}
-    for sheet in workbook.worksheets:
-        header_row = date_column = value_column = None
-        for row_number, header in enumerate(sheet.iter_rows(min_row=1, max_row=100, values_only=True), start=1):
-            labels = [str(value or "").strip().lower() for value in header]
-            try:
-                date_column = next(
-                    index
-                    for index, label in enumerate(labels)
-                    if label == "date" or "date" in label or label in {"eow_friday", "week_end", "week ending"}
-                )
-                value_column = next(index for index, label in enumerate(labels) if ("market" in label and "cmdi" in label) or label == "market")
-                header_row = row_number
-                break
-            except StopIteration:
-                continue
-        if header_row is None or date_column is None or value_column is None:
-            continue
-        for row in sheet.iter_rows(min_row=header_row + 1, values_only=True):
-            if len(row) <= max(date_column, value_column):
-                continue
-            raw_date, raw_value = row[date_column], row[value_column]
-            if isinstance(raw_date, datetime):
-                observed_on = raw_date.date()
-            elif isinstance(raw_date, date):
-                observed_on = raw_date
-            else:
-                raw_date_text = str(raw_date).split(" ")[0]
-                observed_on = None
-                for pattern in ("%Y-%m-%d", "%m/%d/%Y"):
-                    try:
-                        observed_on = datetime.strptime(raw_date_text, pattern).date()
-                        break
-                    except ValueError:
-                        continue
-                if observed_on is None:
-                    continue
-            try:
-                value = float(raw_value)
-            except (TypeError, ValueError):
-                continue
-            if start <= observed_on <= end:
-                month = month_start(observed_on)
-                if month not in values or observed_on > values[month][0]:
-                    values[month] = (observed_on, value)
-    if not values:
-        raise RuntimeError("뉴욕연은 CMDI XLSX에서 Market CMDI 값을 찾지 못했습니다.")
-    return {month: value for month, (_observed_on, value) in values.items()}
 
 
 def carry_forward_values(values: dict[str, float], periods: list[str]) -> dict[str, float]:
@@ -303,71 +113,6 @@ def build_weekly_market_tension(
         })
         previous_level = tension_index
     return rows
-
-
-def fetch_court_workbook(year: int, month: int, day: int) -> bytes:
-    period = f"{month:02d}{day:02d}.{year}"
-    publication_year, publication_month = year, month + 1
-    if publication_month == 13:
-        publication_year, publication_month = year + 1, 1
-    for template in COURTS_URLS:
-        response = requests.get(
-            template.format(
-                period=period,
-                publication_year=publication_year,
-                publication_month=publication_month,
-            ),
-            timeout=TIMEOUT_SECONDS,
-        )
-        if response.ok:
-            return response.content
-    raise RuntimeError(f"법원 F-2 월간 XLSX를 찾지 못했습니다: {year}-{month:02d}")
-
-
-def parse_business_filings(workbook_bytes: bytes) -> dict[str, int]:
-    workbook = openpyxl.load_workbook(io.BytesIO(workbook_bytes), read_only=True, data_only=True)
-    filings: dict[str, int] = {}
-    for sheet in workbook.worksheets:
-        # F-2 also contains chapter-detail sheets named "(9, 12, 15)".
-        # The monthly total is only present in the base F-2 sheet.
-        if "(" in sheet.title:
-            continue
-        title = str(sheet.cell(2, 1).value or "")
-        match = MONTH_PATTERN.search(title)
-        if not match:
-            continue
-        total_row = next(
-            (row for row in range(1, sheet.max_row + 1) if str(sheet.cell(row, 1).value or "").strip() == "Total"),
-            None,
-        )
-        if total_row is None:
-            raise RuntimeError(f"법원 F-2 표에서 Total 행을 찾지 못했습니다: {sheet.title}")
-        value = sheet.cell(total_row, 7).value  # Predominant Nature of Debt: Business, All Chapters
-        try:
-            filing_count = int(str(value).replace(",", ""))
-        except (TypeError, ValueError) as error:
-            raise RuntimeError(f"법원 F-2 사업체 파산보호 건수가 올바르지 않습니다: {sheet.title}") from error
-        month_number = list(calendar.month_name).index(match.group(1))
-        filings[f"{match.group(3)}-{month_number:02d}-01"] = filing_count
-    if not filings:
-        raise RuntimeError("법원 F-2 XLSX에서 월별 사업체 파산보호 신청 건수를 찾지 못했습니다.")
-    return filings
-
-
-def collect_business_filings(start: date, end: date) -> dict[str, int]:
-    filings: dict[str, int] = {}
-    for year, month, day in quarter_ends(start.year, start.month, end.year, end.month):
-        try:
-            workbook = fetch_court_workbook(year, month, day)
-        except RuntimeError as error:
-            # The court publishes each three-month report after its period ends.
-            # Keep the available history intact while a newly expected report is pending.
-            print(f"skipped_court_report={year}-{month:02d} reason={error}")
-            continue
-        for month_key, value in parse_business_filings(workbook).items():
-            if start.isoformat()[:7] <= month_key[:7] <= end.isoformat()[:7]:
-                filings[month_key] = value
-    return filings
 
 
 def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
@@ -478,9 +223,9 @@ def main() -> None:
     if args.years < 1 or args.years > 10:
         raise SystemExit("--years 값은 1~10 사이여야 합니다.")
 
-    fred_api_key = os.environ["FRED_API_KEY"]
-    supabase_url = os.environ["SUPABASE_URL"]
-    service_role_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+    fred_api_key = require_env("FRED_API_KEY")
+    supabase_url = require_env("SUPABASE_URL")
+    service_role_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
     start = date(today.year - args.years, today.month, 1)
     end = date(today.year, today.month, 1)

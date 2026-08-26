@@ -4,11 +4,11 @@ on:
   push:
     branches: [main]
   schedule:
-    # 00:30 KST, with two 40-minute fallbacks. Avoid the top of the hour,
+    # 00:30 KST, with two 20-minute fallbacks. Avoid the top of the hour,
     # where GitHub scheduled events are more likely to be delayed or dropped.
     - cron: "30 15 * * *"
+    - cron: "50 15 * * *"
     - cron: "10 16 * * *"
-    - cron: "50 16 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

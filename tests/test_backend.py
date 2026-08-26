@@ -186,10 +186,14 @@ class SourceContractTests(unittest.TestCase):
 
     def test_news_schedule_avoids_hour_boundary_and_logs_failed_response(self) -> None:
         workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")
-        for cron in ('cron: "30 15 * * *"', 'cron: "10 16 * * *"', 'cron: "50 16 * * *"'):
+        for cron in ('cron: "30 15 * * *"', 'cron: "50 15 * * *"', 'cron: "10 16 * * *"'):
             self.assertIn(cron, workflow)
         self.assertIn('cat "$response" >&2', workflow)
         self.assertLess(workflow.index('cat "$response" >&2'), workflow.index('news-pipeline request failed with HTTP'))
+
+    def test_financial_stress_workflow_tracks_source_adapter(self) -> None:
+        workflow = (ROOT / ".github/workflows/financial-stress.yml").read_text(encoding="utf-8")
+        self.assertIn("backend/financial_stress_sources.py", workflow)
 
     def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
         initial = (ROOT / "supabase/migrations/20260824_article_sentiment_pipeline.sql").read_text(encoding="utf-8")
