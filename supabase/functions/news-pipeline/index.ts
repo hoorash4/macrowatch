@@ -65,12 +65,14 @@ async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, 
   if (error) throw error;
   const counts = { positive: 0, neutral: 0, negative: 0, uncertain: 0 };
   for (const row of data || []) counts[(row.admin_sentiment || row.ai_sentiment) as keyof typeof counts] += 1;
-  const { data: extremeRows, error: extremeError } = await supabase.from("news_extreme_matches").select("extreme_signal").eq("article_date", articleDate);
+  const { data: extremeRows, error: extremeError } = await supabase.from("news_extreme_matches").select("extreme_signal,keywords").eq("article_date", articleDate);
   if (extremeError) throw extremeError;
-  const decisiveCount = (extremeRows || []).filter((row) => row.extreme_signal === "decisive").length;
+  const decisiveRows = (extremeRows || []).filter((row) => row.extreme_signal === "decisive");
+  const decisiveCount = decisiveRows.length;
+  const decisiveKeywords = [...new Set(decisiveRows.flatMap((row) => Array.isArray(row.keywords) ? row.keywords.map(String).map((keyword) => keyword.trim()).filter(Boolean) : []))].slice(0, 8);
   const { data: existing, error: existingError } = await supabase.from("news_daily_article_sentiment").select("excluded_count").eq("article_date", articleDate).maybeSingle();
   if (existingError) throw existingError;
-  const { error: upsertError } = await supabase.from("news_daily_article_sentiment").upsert({ article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative, neutral_count: counts.neutral, uncertain_count: counts.uncertain, decisive_news_count: decisiveCount, excluded_count: (existing?.excluded_count || 0) + excludedIncrement, analyzed_article_count: (data || []).length, generated_at: new Date().toISOString() });
+  const { error: upsertError } = await supabase.from("news_daily_article_sentiment").upsert({ article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative, neutral_count: counts.neutral, uncertain_count: counts.uncertain, decisive_news_count: decisiveCount, decisive_news_keywords: decisiveKeywords, excluded_count: (existing?.excluded_count || 0) + excludedIncrement, analyzed_article_count: (data || []).length, generated_at: new Date().toISOString() });
   if (upsertError) throw upsertError;
 }
 async function resetExcludedCount(supabase: ReturnType<typeof createClient>, articleDate: string) { const { error } = await supabase.from("news_daily_article_sentiment").update({ excluded_count: 0, generated_at: new Date().toISOString() }).eq("article_date", articleDate); if (error) throw error; }
@@ -86,7 +88,7 @@ async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidat
   // article_date is the collection day used for graph aggregation; published_at remains untouched.
   const rows = includedOutputs.filter((output) => { const existing = existingByHash.get(output.itemHash); return !existing || existing.article_date === articleDate; }).map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, collected_at: now, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, extreme_signal: output.extremeSignal, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
   if (rows.length) { const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" }); if (error) throw error; }
-  const extremeMatches = outputs.filter((output) => output.extremeSignal).map((output) => ({ article_date: articleDate, article_hash: output.itemHash, extreme_signal: output.extremeSignal, created_at: now }));
+  const extremeMatches = outputs.filter((output) => output.extremeSignal).map((output) => ({ article_date: articleDate, article_hash: output.itemHash, extreme_signal: output.extremeSignal, keywords: output.extremeKeywords, created_at: now }));
   if (extremeMatches.length) { const { error } = await supabase.from("news_extreme_matches").upsert(extremeMatches, { onConflict: "article_date,article_hash" }); if (error) throw error; }
   const excludedCount = outputs.filter((item) => item.excludeFromIndex).length;
   await refreshDailySentiment(supabase, articleDate, excludedCount);

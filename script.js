@@ -56,10 +56,16 @@ let newsSentimentView = 'recent';
 
 function renderExtremeNewsSignals(rows) {
   const decisive = document.getElementById('decisive-news-count');
+  const keywords = document.getElementById('decisive-news-keywords');
   if (!decisive) return;
   const latest = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date))).at(-1);
   if (!latest) return;
   decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
+  const values = Array.isArray(latest.decisive_news_keywords) ? [...new Set(latest.decisive_news_keywords.map((keyword) => String(keyword).trim()).filter(Boolean))].slice(0, 8) : [];
+  if (keywords) {
+    keywords.classList.toggle('hidden', values.length === 0);
+    keywords.innerHTML = values.map((keyword) => `<span class="rounded-full border border-[#d8b978]/35 bg-slate-950/40 px-2 py-0.5 text-[10px] font-semibold text-[#e0bf7f]">${escapeHtml(keyword)}</span>`).join('');
+  }
   document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '자정 기준 집계'; });
 }
 
@@ -154,7 +160,7 @@ async function loadNewsSentimentDashboard() {
   if (!chart || !supabaseClient) return;
   try {
     const { data, error } = await supabaseClient.from('news_daily_article_sentiment')
-      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count,decisive_news_count')
+      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count,decisive_news_count,decisive_news_keywords')
       .order('article_date', { ascending: false })
       .limit(NEWS_SENTIMENT_HISTORY_DAYS);
     if (error) throw error;

@@ -22,4 +22,5 @@ export type ArticleSentiment = {
   keywords: string[];
   uncertainSummary: string | null;
   extremeSignal: ExtremeSignal;
+  extremeKeywords: string[];
 };
