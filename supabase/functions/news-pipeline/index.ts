@@ -157,14 +157,16 @@ function serverClient() {
   if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
   return createClient(supabaseUrl, serviceRoleKey);
 }
-async function loadExtremeRules(supabase: ReturnType<typeof createClient>): Promise<ExtremeNewsRule[]> {
+type ServerClient = ReturnType<typeof serverClient>;
+
+async function loadExtremeRules(supabase: ServerClient): Promise<ExtremeNewsRule[]> {
   const { data, error } = await supabase.from("news_extreme_rules")
     .select("id,signal,phrase").eq("is_active", true).order("created_at", { ascending: true });
   if (error) throw error;
   return (data || []).filter((item) => item.signal === "decisive")
     .map((item) => ({ id: String(item.id), signal: item.signal, phrase: String(item.phrase) }));
 }
-async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, articleDate: string, excludedIncrement = 0) {
+async function refreshDailySentiment(supabase: ServerClient, articleDate: string, excludedIncrement = 0) {
   const { data, error } = await supabase.from("news_article_sentiments")
     .select("ai_sentiment,admin_sentiment")
     .eq("article_date", articleDate);
@@ -202,7 +204,7 @@ async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, 
   if (upsertError) throw upsertError;
 }
 
-async function resetExcludedCount(supabase: ReturnType<typeof createClient>, articleDate: string) {
+async function resetExcludedCount(supabase: ServerClient, articleDate: string) {
   const { error } = await supabase.from("news_daily_article_sentiment")
     .update({ excluded_count: 0, generated_at: new Date().toISOString() })
     .eq("article_date", articleDate);
@@ -237,10 +239,10 @@ function buildArticleRows(
         // 그래프 집계일은 수집일이고 원문 발행 시각은 published_at에 별도 보존한다.
         article_date: articleDate,
         ai_sentiment: preserved ? "uncertain" : output.sentiment,
-        derived_keywords: preserved ? existing.derived_keywords : output.keywords,
-        uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary,
+        derived_keywords: preserved ? preserved.derived_keywords : output.keywords,
+        uncertain_summary: preserved ? preserved.uncertain_summary : output.uncertainSummary,
         extreme_signal: output.extremeSignal,
-        admin_sentiment: preserved ? existing.admin_sentiment : null,
+        admin_sentiment: preserved ? preserved.admin_sentiment : null,
         updated_at: now,
       };
     });
@@ -330,12 +332,13 @@ Deno.serve(async (request) => {
           next_step: "오늘의 뉴스 분석은 이미 완료되었습니다.",
         });
       }
-      if (data?.next_offset > 0) {
+      const nextOffset = data?.next_offset ?? 0;
+      if (nextOffset > 0) {
         return json({
           resumed: true,
           run_date: runDate,
           has_more: true,
-          next_offset: data.next_offset,
+          next_offset: nextOffset,
           next_step: "마지막 완료 지점부터 계속합니다.",
         });
       }

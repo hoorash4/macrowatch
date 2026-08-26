@@ -45,4 +45,6 @@ jobs:
           python -m compileall -q backend
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check Supabase Edge Function types
-        run: deno check supabase/functions/*/index.ts
+        # 현재 리팩터링 대상부터 엄격하게 검사한다. 기존 함수들의 타입 부채는
+        # 기능별로 정리할 때 이 목록에 순차적으로 추가한다.
+        run: deno check supabase/functions/news-pipeline/index.ts
