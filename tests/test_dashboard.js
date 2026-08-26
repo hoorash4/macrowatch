@@ -173,6 +173,13 @@ test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한�
   assert.doesNotMatch(admin, /매일 05:30 KST/);
 });
 
+test('뉴스 흐름 안내는 전일 집계와 예상 완료 시점을 표시한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(html, /전일 24시간 동안 기사화된 뉴스의 긍정·부정 흐름을 분석합니다/);
+  assert.match(html, /매일 오전 1시경\(KST\) 업데이트됩니다/);
+  assert.doesNotMatch(html, /최근 24시간 동안 기사화된 뉴스/);
+});
+
 test('프론트엔드 공통 기반과 차트 모듈은 운영 순서로 분리되어 있다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
