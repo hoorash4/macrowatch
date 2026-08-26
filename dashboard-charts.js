@@ -1052,7 +1052,7 @@ function sectorHoldingsTooltip(etf) {
     .slice(0, 3);
   const sectorName = escapeHtml(etf?.sector_name || '—');
   const items = holdings.length
-    ? holdings.map((holding) => `<li><span>${escapeHtml(holding.holding_name)}</span><em>${Number(holding.weight_pct).toFixed(1)}%</em></li>`).join('')
+    ? holdings.map((holding) => `<li><span>${escapeHtml(holding.holding_name)}</span></li>`).join('')
     : '<li class="sector-flow-holdings-empty"><span>미수집</span></li>';
   return `<button type="button" class="sector-flow-sector" aria-expanded="false"><span>${sectorName}</span><span class="sector-flow-holdings" role="tooltip"><b>섹터 대표 종목</b><ol>${items}</ol></span></button>`;
 }

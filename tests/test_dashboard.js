@@ -271,6 +271,6 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /initializeSectorHoldingInteractions/);
   assert.match(charts, /pointerout/);
   assert.doesNotMatch(styles, /sector-flow-sector:hover \.sector-flow-holdings/);
-  assert.doesNotMatch(styles, /sector-flow-holdings li em[^\n]*\n\}/);
+  assert.doesNotMatch(charts, /weight_pct\)\.toFixed/);
   assert.match(styles, /\.sector-flow-streak \{[\s\S]*font-size:\.6rem/);
 });

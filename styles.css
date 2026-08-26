@@ -1005,13 +1005,10 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-holdings li {
   display:flex;
   min-height:0;
-  justify-content:space-between;
-  gap:.6rem;
   border:0;
   padding:0;
   font-size:.66rem;
 }
-.sector-flow-holdings li em { color:#70899b; font-style:normal; }
 .sector-flow-holdings-empty { color:#8a9aa7; }
 .sector-flow-streak {
   color:#5e7890;
