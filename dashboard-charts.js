@@ -1053,8 +1053,8 @@ function renderSectorFlow(rows) {
   const latestWeek = weeks.at(-1), latest = (grouped.get(latestWeek) || [])[0];
   const note = document.getElementById('sector-flow-update-note');
   if (note && latest) note.textContent = latest.price_stage === 'open'
-    ? '오늘 시가 기준 · 오후 3시 40분 종가 반영 예정'
-    : '오늘 종가 기준 · 매 영업일 오후 3시 40분 반영';
+    ? '오늘 시가 기준 · 매 영업일 시가·종가 반영'
+    : '오늘 종가 기준 · 매 영업일 시가·종가 반영';
 }
 
 async function loadSectorFlowDashboard() {

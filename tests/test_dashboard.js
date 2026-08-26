@@ -227,5 +227,7 @@ test('주도섹터는 시가와 종가를 구분하고 현재 주에는 주간 �
   assert.match(workflow, /40 6 \* \* 1-5/);
   assert.match(charts, /current \? '주간' : '주간 · 누적'/);
   assert.match(charts, /latest\.price_stage === 'open'/);
-  assert.match(html, /오전 9시 10분 시가 · 오후 3시 40분 종가/);
+  assert.match(html, /매 영업일 시가·종가 반영/);
+  assert.doesNotMatch(html, /오전 9시 10분 시가 · 오후 3시 40분 종가/);
+  assert.doesNotMatch(charts, /오후 3시 40분/);
 });

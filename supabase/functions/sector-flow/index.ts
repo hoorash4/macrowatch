@@ -17,7 +17,8 @@ function kstDate() {
 function requireServerRequest(request: Request) {
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
-  if (!serviceRole || bearer !== serviceRole) throw new Error("서버 인증이 필요합니다.");
+  const apiKey = request.headers.get("apikey") || "";
+  if (!serviceRole || (bearer !== serviceRole && apiKey !== serviceRole)) throw new Error("서버 인증이 필요합니다.");
 }
 
 Deno.serve(async (request) => {
