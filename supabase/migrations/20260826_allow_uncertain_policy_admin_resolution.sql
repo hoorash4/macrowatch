@@ -18,6 +18,5 @@ alter table public.central_bank_policy_events
       and admin_score_override is not null
       and admin_resolved_at is not null
       and admin_resolved_by is not null
-      and (admin_primary_reason = 'uncertain' or nullif(btrim(admin_reason_keyword), '') is not null)
     )
   );

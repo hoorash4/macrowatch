@@ -151,7 +151,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('.neq("action", "hold")', policy_admin)
         self.assertIn('"uncertain"]', policy_admin)
         self.assertIn('String(rawScore).trim() === ""', policy_admin)
-        self.assertIn('reason !== "uncertain" && !keyword', policy_admin)
+        self.assertNotIn('reason !== "uncertain" && !keyword', policy_admin)
 
 
 class EmergingIndexTests(unittest.TestCase):
