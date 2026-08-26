@@ -75,6 +75,13 @@ test('결정적 뉴스는 한국시간 월요일부터 일요일까지 누적한
   assert.deepEqual([...result.keywords], ['신용경색', '환율']);
 });
 
+test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나란히 배치한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(html, /decisive-news-description[\s\S]*decisive-news-summary-row[\s\S]*decisive-news-count-card[\s\S]*decisive-news-keyword-panel/);
+  assert.match(styles, /\.decisive-news-summary-row\s*\{[\s\S]*?grid-template-columns:minmax\(13\.5rem,auto\) minmax\(0,1fr\)/);
+});
+
 test('상관계수 계산은 완전한 양·음의 관계를 보존한다', () => {
   const { calculateCorrelation } = dashboard.window.MacroWatchDashboard.utils;
   assert.equal(calculateCorrelation([[1, 2], [2, 4], [3, 6]]), 1);

@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=71">
+  <link rel="stylesheet" href="styles.css?v=72">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -166,26 +166,29 @@
         <div class="analysis-empty-state-light flex items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">뉴스 분석 결과를 불러오는 중입니다.</div>
       </div>
       <section id="news-extreme-signals" class="mx-5 mb-5 mt-8 overflow-hidden rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" aria-label="중장기 시장 전환 신호">
-        <div class="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <i class="fa-solid fa-bolt text-sm text-[#ffda8a]"></i>
-              <p class="decisive-news-title text-base font-semibold">결정적 뉴스</p>
-            </div>
-            <p class="decisive-news-description mt-2 text-sm leading-relaxed">단기 변동보다 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스입니다. AI 판단이므로 실제 중요도와 다를 수 있습니다.</p>
-            <div id="decisive-news-keywords" class="decisive-news-keywords" aria-label="결정적 뉴스 키워드">
-              <span class="decisive-news-keyword-label">표시 예시</span>
-              <span class="decisive-news-keyword is-example">금융기관 부실</span>
-              <span class="decisive-news-keyword is-example">신용시장 경색</span>
-              <span class="decisive-news-keyword is-example">감염병 확산</span>
-            </div>
+        <div class="decisive-news-content">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-bolt text-sm text-[#ffda8a]"></i>
+            <p class="decisive-news-title text-base font-semibold">결정적 뉴스</p>
           </div>
-          <div class="min-h-14 shrink-0 rounded-md border border-violet-300/30 bg-violet-900/65 px-4 py-3 text-sm font-bold text-violet-100 shadow-sm">
-            <div class="flex items-center gap-2">
-              <span class="decisive-news-count-label">금주의 결정적 뉴스</span>
-              <span id="decisive-news-count" class="decisive-news-count-value">—</span>
+          <p class="decisive-news-description mt-2 text-sm leading-relaxed">단기 변동보다 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스입니다. AI 판단이므로 실제 중요도와 다를 수 있습니다.</p>
+          <div class="decisive-news-summary-row">
+            <div class="decisive-news-count-card">
+              <div class="flex items-center gap-2">
+                <span class="decisive-news-count-label">금주의 결정적 뉴스</span>
+                <span id="decisive-news-count" class="decisive-news-count-value">—</span>
+              </div>
+              <p data-extreme-signal-status class="mt-1 text-xs font-medium text-violet-100/90">(월요일 자정 초기화)</p>
             </div>
-            <p data-extreme-signal-status class="mt-1 text-xs font-medium text-violet-100/90">(월요일 자정 초기화)</p>
+            <div class="decisive-news-keyword-panel">
+              <p class="decisive-news-keyword-heading">금주의 키워드</p>
+              <div id="decisive-news-keywords" class="decisive-news-keywords" aria-label="결정적 뉴스 키워드">
+                <span class="decisive-news-keyword-label">표시 예시</span>
+                <span class="decisive-news-keyword is-example">금융기관 부실</span>
+                <span class="decisive-news-keyword is-example">신용시장 경색</span>
+                <span class="decisive-news-keyword is-example">감염병 확산</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
