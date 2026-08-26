@@ -275,4 +275,5 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-streak \{[\s\S]*font-size:\.6rem/);
   assert.match(styles, /sector-flow-week:last-child \.sector-flow-holdings[\s\S]*right:0;[\s\S]*left:auto;/);
   assert.match(styles, /sector-flow-week \.sector-flow-holdings > b[\s\S]*width:100%;[\s\S]*background:#e7f1f8/);
+  assert.match(styles, /\.sector-flow-holdings \{[\s\S]*width:9rem;/);
 });

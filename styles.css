@@ -977,7 +977,7 @@ body:has(#app-shell:not(.hidden)) {
   left:0;
   top:calc(100% + .4rem);
   display:none;
-  width:13rem;
+  width:9rem;
   padding:.65rem .7rem;
   border:1px solid rgba(51,101,139,.24);
   border-radius:.55rem;
