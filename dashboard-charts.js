@@ -54,7 +54,8 @@ function renderDecisiveNewsKeywords(container, values) {
 }
 
 function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
-  // 뉴스 분석일은 저장일보다 하루 앞서므로 화면에 사용하는 실제 기사일로 환산합니다.
+  // 결정적 뉴스는 누락 방지를 위해 실제 수집·분석이 완료된 article_date 주차에 포함합니다.
+  // 뉴스 흐름 그래프의 표시 날짜 보정과 달리 여기서는 하루를 빼지 않습니다.
   const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const kstToday = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate());
   const mondayOffset = (new Date(kstToday).getUTCDay() + 6) % 7;
@@ -63,8 +64,7 @@ function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
   const weeklyRows = rows.filter((row) => {
     const storedDate = Date.parse(`${String(row.article_date || '')}T00:00:00Z`);
     if (!Number.isFinite(storedDate)) return false;
-    const newsDate = storedDate - 24 * 60 * 60 * 1000;
-    return newsDate >= weekStart && newsDate < weekEnd;
+    return storedDate >= weekStart && storedDate < weekEnd;
   });
   return {
     count: weeklyRows.reduce((sum, row) => sum + Number(row.decisive_news_count || 0), 0),
