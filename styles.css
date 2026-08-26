@@ -1105,10 +1105,8 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.74rem;
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(-n+2) { text-align:center; }
-.sector-flow-week-current .sector-flow-columns span:nth-child(1),
-.sector-flow-week-current > ol > li > .sector-flow-rank { transform:translateX(.2rem); }
-.sector-flow-week-current .sector-flow-columns span:nth-child(2),
-.sector-flow-week-current > ol > li > .sector-flow-change { transform:translateX(-.2rem); }
+.sector-flow-week-current > ol > li > .sector-flow-rank,
+.sector-flow-week-current > ol > li > .sector-flow-change { justify-self:center; }
 .sector-flow-week-current > ol > li {
   position:relative;
   min-height:2.8rem;
