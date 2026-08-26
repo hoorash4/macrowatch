@@ -56,8 +56,14 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
   let reasonSegment = 0;
   let state: DirectionState | null = null;
   let policyIndex = POLICY_INDEX_BASE;
+  let rateCycleId = 0;
+  let lastDirectionalAction: Exclude<PolicyAction, "hold"> | null = null;
+  let peakCandidate: { upper: number; formedDate: string; resultIndex: number } | null = null;
+  let previousPeak: { upper: number; formedDate: string } | null = null;
+  let previousPeakReachedThisCycle = false;
+  const results: PolicyScoringResult[] = [];
 
-  return rows.map((row) => {
+  rows.forEach((row) => {
     const reason = row.admin_primary_reason || row.ai_primary_reason;
     const hasLargeRateMove = Math.abs(Number(row.change_bps || 0)) >= 50;
     let baseScore = 0;
@@ -65,6 +71,42 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
     let largeAdjustment = 0;
     let emergencyAdjustment = 0;
     let holdAdjustment = 0;
+    let previousPeakAdjustment = 0;
+    let previousPeakAgeDays: number | null = null;
+    let previousPeakReached = false;
+
+    if (row.action === "hike") {
+      if (lastDirectionalAction !== "hike") {
+        rateCycleId += 1;
+        peakCandidate = null;
+        previousPeakReachedThisCycle = false;
+      }
+      if (previousPeak && typeof row.target_range_upper === "number" && !previousPeakReachedThisCycle) {
+        previousPeakReached = row.target_range_upper >= previousPeak.upper;
+        if (previousPeakReached) {
+          previousPeakReachedThisCycle = true;
+          previousPeakAgeDays = Math.floor((Date.parse(row.meeting_date) - Date.parse(previousPeak.formedDate)) / 86_400_000);
+          if (previousPeakAgeDays >= 360) previousPeakAdjustment = 100;
+        }
+      }
+      if (typeof row.target_range_upper === "number" && (!peakCandidate || row.target_range_upper > peakCandidate.upper)) {
+        peakCandidate = { upper: row.target_range_upper, formedDate: row.meeting_date, resultIndex: results.length };
+      }
+      lastDirectionalAction = "hike";
+    } else if (row.action === "cut") {
+      if (lastDirectionalAction === "hike" && peakCandidate) {
+        previousPeak = { upper: peakCandidate.upper, formedDate: peakCandidate.formedDate };
+        const peakRow = results[peakCandidate.resultIndex];
+        if (peakRow) {
+          peakRow.is_confirmed_rate_peak = true;
+          peakRow.rate_peak_upper = peakCandidate.upper;
+          peakRow.rate_peak_formed_date = peakCandidate.formedDate;
+        }
+      }
+      peakCandidate = null;
+      previousPeakReachedThisCycle = false;
+      lastDirectionalAction = "cut";
+    }
 
     if (directional(row.action)) {
       const startsNewDirection = !state
@@ -116,11 +158,11 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
       }
     }
 
-    const automaticScore = round(baseScore + firstAdjustment + largeAdjustment + emergencyAdjustment + holdAdjustment);
+    const automaticScore = round(baseScore + firstAdjustment + largeAdjustment + emergencyAdjustment + holdAdjustment + previousPeakAdjustment);
     const hasAdminScore = typeof row.admin_score_override === "number" && Number.isFinite(row.admin_score_override);
     const finalEventScore = hasAdminScore ? row.admin_score_override! : automaticScore;
     policyIndex = round(policyIndex + finalEventScore);
-    return {
+    const result: PolicyScoringResult = {
       ...row,
       effective_reason: reason,
       direction_segment: state?.segment ?? null,
@@ -134,9 +176,20 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
       large_move_adjustment: largeAdjustment,
       emergency_adjustment: emergencyAdjustment,
       hold_adjustment: holdAdjustment,
+      previous_peak_adjustment: previousPeakAdjustment,
+      rate_cycle_id: rateCycleId || null,
+      is_confirmed_rate_peak: false,
+      rate_peak_upper: null,
+      rate_peak_formed_date: null,
+      previous_peak_upper: previousPeak?.upper ?? null,
+      previous_peak_formed_date: previousPeak?.formedDate ?? null,
+      previous_peak_age_days: previousPeakAgeDays,
+      previous_peak_reached: previousPeakReached,
       final_event_score: round(finalEventScore),
       policy_index: policyIndex,
       has_large_rate_move: hasLargeRateMove,
     };
+    results.push(result);
   });
+  return results;
 }

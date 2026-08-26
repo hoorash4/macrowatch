@@ -30,6 +30,15 @@ jobs:
         with:
           version: latest
 
+      - name: Apply policy peak scoring schema
+        run: |
+          jq -Rs '{query: .}' supabase/migrations/20260826_add_policy_previous_peak_scoring.sql > /tmp/policy-peak-migration.json
+          curl --silent --show-error --fail-with-body \
+            --request POST "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/database/query" \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data-binary @/tmp/policy-peak-migration.json
+
       - name: Deploy Edge Functions
         run: |
           for fn in supabase/functions/*; do

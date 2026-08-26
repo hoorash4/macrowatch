@@ -6,7 +6,7 @@ type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
 
 export async function recomputePolicyScores(supabase: ServiceClient, centralBank = "fed") {
   const { data, error } = await supabase.from("central_bank_policy_events")
-    .select("central_bank,meeting_date,action,ai_primary_reason,primary_reason,admin_primary_reason,admin_score_override,change_bps,is_emergency")
+    .select("central_bank,meeting_date,action,ai_primary_reason,primary_reason,admin_primary_reason,admin_score_override,change_bps,is_emergency,target_range_upper")
     .eq("central_bank", centralBank).eq("analysis_status", "completed").order("meeting_date");
   if (error) throw error;
   const inputs = (data || []).filter((row) => row.action && (row.ai_primary_reason || row.primary_reason)).map((row) => ({
@@ -28,6 +28,15 @@ export async function recomputePolicyScores(supabase: ServiceClient, centralBank
       large_move_adjustment: row.large_move_adjustment,
       emergency_adjustment: row.emergency_adjustment,
       hold_adjustment: row.hold_adjustment,
+      previous_peak_adjustment: row.previous_peak_adjustment,
+      rate_cycle_id: row.rate_cycle_id,
+      is_confirmed_rate_peak: row.is_confirmed_rate_peak,
+      rate_peak_upper: row.rate_peak_upper,
+      rate_peak_formed_date: row.rate_peak_formed_date,
+      previous_peak_upper: row.previous_peak_upper,
+      previous_peak_formed_date: row.previous_peak_formed_date,
+      previous_peak_age_days: row.previous_peak_age_days,
+      previous_peak_reached: row.previous_peak_reached,
       final_event_score: row.final_event_score,
       policy_index: row.policy_index,
       has_large_rate_move: row.has_large_rate_move,

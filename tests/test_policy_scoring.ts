@@ -86,3 +86,44 @@ test("관리자 점수는 해당 회의만 대체하고 1000 기준 지수에 �
   assert.equal(result[0].policy_index, 1075);
   assert.equal(result[1].policy_index, 1075);
 });
+
+test("인하가 나오면 직전 상승 사이클의 최초 최고금리 회의를 고점으로 확정한다", () => {
+  const input: PolicyScoringInput[] = [
+    { central_bank: "fed", meeting_date: "2020-01-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5 },
+    { central_bank: "fed", meeting_date: "2020-06-01", action: "hold", ai_primary_reason: "inflation_fight", target_range_upper: 5 },
+    { central_bank: "fed", meeting_date: "2021-01-01", action: "cut", ai_primary_reason: "recession_financial_stress", target_range_upper: 4.75 },
+  ];
+  const result = scorePolicyHistory(input);
+  assert.equal(result[0].is_confirmed_rate_peak, true);
+  assert.equal(result[0].rate_peak_upper, 5);
+  assert.equal(result[0].rate_peak_formed_date, "2020-01-01");
+  assert.equal(result[1].is_confirmed_rate_peak, false);
+});
+
+test("360일 이상 된 최근 전고점에 인상으로 최초 도달하면 100점을 합산한다", () => {
+  const input: PolicyScoringInput[] = [
+    { central_bank: "fed", meeting_date: "2020-01-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5 },
+    { central_bank: "fed", meeting_date: "2020-06-01", action: "cut", ai_primary_reason: "recession_financial_stress", target_range_upper: 4.5 },
+    { central_bank: "fed", meeting_date: "2022-01-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 4.75 },
+    { central_bank: "fed", meeting_date: "2022-03-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5 },
+    { central_bank: "fed", meeting_date: "2022-05-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5.25 },
+  ];
+  const result = scorePolicyHistory(input);
+  assert.equal(result[3].previous_peak_reached, true);
+  assert.equal(result[3].previous_peak_adjustment, 100);
+  assert.equal(result[3].final_event_score, 150);
+  assert.equal(result[4].previous_peak_adjustment, 0);
+});
+
+test("360일이 되기 전에 전고점에 도달하면 같은 상승 사이클에서 나중에 소급 가중하지 않는다", () => {
+  const input: PolicyScoringInput[] = [
+    { central_bank: "fed", meeting_date: "2020-01-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5 },
+    { central_bank: "fed", meeting_date: "2020-02-01", action: "cut", ai_primary_reason: "recession_financial_stress", target_range_upper: 4.5 },
+    { central_bank: "fed", meeting_date: "2020-06-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5 },
+    { central_bank: "fed", meeting_date: "2021-06-01", action: "hike", ai_primary_reason: "inflation_fight", target_range_upper: 5.25 },
+  ];
+  const result = scorePolicyHistory(input);
+  assert.equal(result[2].previous_peak_reached, true);
+  assert.equal(result[2].previous_peak_adjustment, 0);
+  assert.equal(result[3].previous_peak_adjustment, 0);
+});

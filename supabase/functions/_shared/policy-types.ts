@@ -11,6 +11,7 @@ export type PolicyScoringInput = {
   admin_score_override?: number | null;
   change_bps?: number | null;
   is_emergency?: boolean;
+  target_range_upper?: number | null;
 };
 
 export type PolicyScoringResult = PolicyScoringInput & {
@@ -26,6 +27,15 @@ export type PolicyScoringResult = PolicyScoringInput & {
   large_move_adjustment: number;
   emergency_adjustment: number;
   hold_adjustment: number;
+  previous_peak_adjustment: number;
+  rate_cycle_id: number | null;
+  is_confirmed_rate_peak: boolean;
+  rate_peak_upper: number | null;
+  rate_peak_formed_date: string | null;
+  previous_peak_upper: number | null;
+  previous_peak_formed_date: string | null;
+  previous_peak_age_days: number | null;
+  previous_peak_reached: boolean;
   final_event_score: number;
   policy_index: number;
   has_large_rate_move: boolean;
