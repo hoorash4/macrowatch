@@ -59,6 +59,8 @@ export async function resolvePolicyReview(
   const isUnresolvedReview = current.action !== "hold" && !current.admin_primary_reason
     && (current.ai_primary_reason === "uncertain" || current.transition_assessment === "confirmed");
   if (!isLatest && !isUnresolvedReview) throw new Error("현재 수정할 수 있는 검토 대상이 아닙니다.");
+  // Manual review owns the final reason and score, so it is not constrained by
+  // the action-to-reason direction rules used to validate automated analysis.
   if (keyword.length > 80) throw new Error("이유 키워드는 80자 이내로 입력해 주세요.");
   if (rawScore === null || rawScore === undefined || String(rawScore).trim() === "" || !Number.isFinite(score) || score < -1_000 || score > 1_000) {
     throw new Error("점수는 0을 포함해 -1000부터 1000 사이의 숫자로 직접 입력해 주세요.");
