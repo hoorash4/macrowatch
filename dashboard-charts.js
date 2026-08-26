@@ -669,7 +669,7 @@ function renderEmStressDashboard(rows) {
       if (valueLabel && periodLabel) {
         const [, month, day] = String(nearest.week).split('-').map(Number);
         valueLabel.setAttribute('x', pointX); valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
-        valueLabel.textContent = `EM-MSI ${Number(nearest.stress_index).toFixed(2)}${Number.isFinite(Number(nearest.eem_weekly_close)) ? ` · EEM ${Number(nearest.eem_weekly_close).toFixed(2)}` : ''}`;
+        valueLabel.textContent = Number(nearest.stress_index).toFixed(2);
         periodLabel.setAttribute('x', pointX); periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
         periodLabel.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
       }

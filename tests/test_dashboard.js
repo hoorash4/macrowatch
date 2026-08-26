@@ -173,3 +173,10 @@ test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 
   assert.match(styles, /#news-sentiment-chart\s*\{[\s\S]*?padding-right:1\.25rem;[\s\S]*?padding-left:1\.25rem;/);
   assert.match(styles, /\.news-sentiment-toolbar\s*\{[\s\S]*?justify-content:space-between;/);
 });
+
+test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  assert.match(charts, /valueLabel\.textContent = Number\(nearest\.stress_index\)\.toFixed\(2\)/);
+  assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EM-MSI/);
+  assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EEM/);
+});
