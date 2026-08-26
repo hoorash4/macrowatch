@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=59">
+  <link rel="stylesheet" href="styles.css?v=60">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -335,7 +335,7 @@
     <section id="policy-signal-dashboard" data-dashboard-panel="policy" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="policy-signal-title">
       <div class="analysis-card-header">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-landmark text-sm"></i></span>
+          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-landmark text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-sky-300">MONETARY POLICY SIGNALS</p>
             <h2 id="policy-signal-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">통화정책 시그널</h2>
@@ -343,7 +343,11 @@
         </div>
         <p class="mt-6 text-[11px] text-slate-500">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
       </div>
-      <div id="policy-signal-chart" class="min-h-64 p-5"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">FOMC 정책 점수를 불러오는 중입니다.</div></div>
+      <div class="px-5 pb-2 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div id="policy-signal-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">FOMC 정책 점수를 불러오는 중입니다.</div></div>
+        </div>
+      </div>
     </section>
 
     </div>
@@ -675,6 +679,6 @@
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
   <script src="script.js?v=150"></script>
-  <script src="policy-chart.js?v=1"></script>
+  <script src="policy-chart.js?v=2"></script>
 </body>
 </html>

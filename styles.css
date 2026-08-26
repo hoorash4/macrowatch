@@ -685,8 +685,6 @@ body:has(#app-shell:not(.hidden)) {
   position:relative;
   min-height:20rem;
   overflow:hidden;
-  border:1px solid var(--color-border-light);
-  background:var(--color-surface-soft);
 }
 .policy-chart-svg {
   display:block;
@@ -700,6 +698,10 @@ body:has(#app-shell:not(.hidden)) {
 .policy-chart-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-chart-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
 .policy-chart-cursor.is-visible { opacity:.75; }
+.policy-chart-cursor-period { opacity:0; pointer-events:none; }
+.policy-chart-cursor-period.is-visible { opacity:1; }
+.policy-chart-cursor-period rect { fill:#334155; }
+.policy-chart-cursor-period text { fill:#fff; font-size:12px; font-weight:750; }
 /* 밝은 카드에서 사용하는 데이터 대기·오류 상태입니다. */
 #app-shell .analysis-empty-state-light {
   border-color:var(--color-border-light);

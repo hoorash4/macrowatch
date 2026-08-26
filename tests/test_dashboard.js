@@ -90,3 +90,12 @@ test('HTML inline 이벤트가 사용하는 핸들러만 명시적으로 공개�
     assert.equal(typeof dashboard.window[name], 'function', `${name} 핸들러가 공개되어야 한다`);
   }
 });
+
+test('FOMC 정책 그래프는 두 자리 연도와 커서 월 표시를 제공한다', () => {
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-chart.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(chart, /point\.year\.slice\(2\)/);
+  assert.match(chart, /data-policy-cursor-period/);
+  assert.match(chart, /년 \$\{String\(row\.meeting_date\)\.slice\(5, 7\)\}월/);
+  assert.match(html, /rounded-xl border border-slate-200 bg-slate-50 p-3[\s\S]*id="policy-signal-chart"/);
+});
