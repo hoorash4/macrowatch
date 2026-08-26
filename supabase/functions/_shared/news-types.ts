@@ -1,4 +1,11 @@
 export type SourceName = "yonhap" | "maekyung" | "financial_news";
+export type ExtremeSignal = "critical_negative" | "critical_positive" | null;
+
+export type ExtremeNewsRule = {
+  id: string;
+  signal: Exclude<ExtremeSignal, null>;
+  phrase: string;
+};
 
 export type Candidate = {
   source: SourceName;
@@ -14,4 +21,5 @@ export type ArticleSentiment = {
   sentiment: "positive" | "neutral" | "negative" | "uncertain";
   keywords: string[];
   uncertainSummary: string | null;
+  extremeSignal: ExtremeSignal;
 };

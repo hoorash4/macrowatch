@@ -54,6 +54,17 @@ const NEWS_SENTIMENT_VIEWS = {
 let newsSentimentRows = [];
 let newsSentimentView = 'recent';
 
+function renderExtremeNewsSignals(rows) {
+  const negative = document.getElementById('critical-negative-count');
+  const positive = document.getElementById('critical-positive-count');
+  if (!negative || !positive) return;
+  const latest = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date))).at(-1);
+  if (!latest) return;
+  negative.textContent = `${Number(latest.critical_negative_count || 0)}건`;
+  positive.textContent = `${Number(latest.critical_positive_count || 0)}건`;
+  document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '오늘 기준 집계'; });
+}
+
 function formatNewsDate(value) {
   const date = new Date(`${String(value || '')}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return '—';
@@ -145,12 +156,13 @@ async function loadNewsSentimentDashboard() {
   if (!chart || !supabaseClient) return;
   try {
     const { data, error } = await supabaseClient.from('news_daily_article_sentiment')
-      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count')
+      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count,critical_negative_count,critical_positive_count')
       .order('article_date', { ascending: false })
       .limit(NEWS_SENTIMENT_HISTORY_DAYS);
     if (error) throw error;
     newsSentimentRows = data || [];
     newsSentimentView = 'recent';
+    renderExtremeNewsSignals(newsSentimentRows);
     renderNewsSentiment(newsSentimentRows);
   } catch (error) {
     chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">잠시 후 다시 시도해 주세요.</div>';

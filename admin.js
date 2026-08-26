@@ -224,6 +224,56 @@
     }));
   }
 
+  function extremeSignalLabel(signal) {
+    return signal === 'critical_negative' ? '치명적 악재' : '결정적 호재';
+  }
+
+  function renderExtremeNewsRules(items) {
+    const list = document.getElementById('extreme-news-rule-list');
+    if (!items.length) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 기준이 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0 ${item.is_active ? '' : 'opacity-50'}"><div class="grid grid-cols-1 gap-2 md:grid-cols-[150px_1fr_auto_auto]"><select data-extreme-field="signal" data-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><option value="critical_negative" ${item.signal === 'critical_negative' ? 'selected' : ''}>치명적 악재</option><option value="critical_positive" ${item.signal === 'critical_positive' ? 'selected' : ''}>결정적 호재</option></select><input data-extreme-field="phrase" data-extreme-id="${escapeHtml(item.id)}" maxlength="300" value="${escapeHtml(item.phrase)}" aria-label="${escapeHtml(extremeSignalLabel(item.signal))} 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><label class="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-2 text-[11px] text-slate-300"><input data-extreme-field="is_active" data-extreme-id="${escapeHtml(item.id)}" type="checkbox" ${item.is_active ? 'checked' : ''}>활성</label><div class="flex gap-1"><button data-save-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button>${item.is_active ? `<button data-retire-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-amber-700/70 px-2 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-950/50">비활성화</button>` : ''}</div></div></article>`).join('');
+    list.querySelectorAll('[data-save-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
+      const id = button.dataset.saveExtremeId;
+      const value = (field) => list.querySelector(`[data-extreme-id="${id}"][data-extreme-field="${field}"]`);
+      button.disabled = true;
+      try {
+        await invokeAdmin('save_extreme_news_rule', { id, signal: value('signal').value, phrase: value('phrase').value, is_active: value('is_active').checked });
+        await loadExtremeNewsRules();
+      } catch (error) { showNotice('기준 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
+    }));
+    list.querySelectorAll('[data-retire-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try { await invokeAdmin('retire_extreme_news_rule', { id: button.dataset.retireExtremeId }); await loadExtremeNewsRules(); }
+      catch (error) { showNotice('기준 비활성화 실패', error.message || '처리하지 못했습니다.', true); button.disabled = false; }
+    }));
+  }
+
+  async function loadExtremeNewsRules() {
+    const list = document.getElementById('extreme-news-rule-list');
+    try { renderExtremeNewsRules((await invokeAdmin('list_extreme_news_rules')).items || []); }
+    catch (error) { list.innerHTML = '<p class="p-4 text-center text-sm text-red-300">기준 목록을 불러오지 못했습니다. DB 마이그레이션 적용 후 다시 시도해 주세요.</p>'; }
+  }
+
+  async function addExtremeNewsRule(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      await invokeAdmin('save_extreme_news_rule', {
+        signal: document.getElementById('extreme-news-signal-input').value,
+        phrase: document.getElementById('extreme-news-phrase-input').value,
+        is_active: true,
+      });
+      form.reset();
+      await loadExtremeNewsRules();
+    } catch (error) { showNotice('기준 추가 실패', error.message || '추가하지 못했습니다.', true); }
+    finally { submit.disabled = false; }
+  }
+
   async function loadSectorEtfs() {
     const list = document.getElementById('sector-etf-list');
     try { renderSectorEtfs((await invokeAdmin('list_sector_etfs')).items || []); }
@@ -263,6 +313,7 @@
       applyStatus(status);
       await loadUncertainNews();
       await loadSectorEtfs();
+      await loadExtremeNewsRules();
     } catch (error) {
       showNotice('불러오기 실패', error.message || '상태를 확인하지 못했습니다.', true);
     } finally {
@@ -375,6 +426,7 @@
     });
     document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
+    document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
     document.getElementById('operation-modal').addEventListener('click', (event) => {
       if (event.target === event.currentTarget) hideNotice();

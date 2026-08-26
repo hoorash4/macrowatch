@@ -29,6 +29,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install notification dependency
+        run: pip install requests
+
       - name: Run news pipeline
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -61,3 +70,13 @@ jobs:
             [ "$(jq -r '.has_more' <<< "$response")" = "true" ] || break
             offset=$(jq -r '.next_offset' <<< "$response")
           done
+
+      - name: Notify only when an extreme news signal exists
+        if: inputs.dry_run != 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+        run: python backend/send_news_extreme_alert.py

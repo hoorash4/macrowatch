@@ -107,6 +107,14 @@ function validateSectorEtf(body: Record<string, unknown>) {
   };
 }
 
+function validateExtremeNewsRule(body: Record<string, unknown>) {
+  const signal = String(body?.signal || "");
+  if (signal !== "critical_negative" && signal !== "critical_positive") {
+    throw new Error("신호 유형은 치명적 악재 또는 결정적 호재여야 합니다.");
+  }
+  return { signal, phrase: requiredText(body?.phrase, "기준 문장", 300), is_active: body?.is_active !== false };
+}
+
 function kstTimeToCron(time: string) {
   const [hour, minute] = time.split(":").map(Number);
   const utcMinutes = (hour * 60 + minute - 9 * 60 + 24 * 60) % (24 * 60);
@@ -305,6 +313,49 @@ export default {
           .order("sector_name", { ascending: true });
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "list_extreme_news_rules") {
+        const { data, error } = await admin.from("news_extreme_rules")
+          .select("id,signal,phrase,is_active,created_at,updated_at")
+          .order("is_active", { ascending: false })
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "save_extreme_news_rule") {
+        const values = validateExtremeNewsRule(body || {});
+        const id = String(body?.id || "").trim();
+        if (id) {
+          const { data, error } = await admin.from("news_extreme_rules")
+            .update({ ...values, updated_at: new Date().toISOString() })
+            .eq("id", id)
+            .select("id,signal,phrase,is_active,updated_at")
+            .maybeSingle();
+          if (error) throw error;
+          if (!data) return json({ error: "기준 항목을 찾을 수 없습니다." }, 404, origin);
+          return json({ item: data }, 200, origin);
+        }
+        const { data, error } = await admin.from("news_extreme_rules")
+          .insert(values)
+          .select("id,signal,phrase,is_active,created_at,updated_at")
+          .single();
+        if (error) throw error;
+        return json({ item: data }, 201, origin);
+      }
+
+      if (action === "retire_extreme_news_rule") {
+        const id = String(body?.id || "").trim();
+        if (!id) return json({ error: "기준 항목 식별자가 필요합니다." }, 400, origin);
+        const { data, error } = await admin.from("news_extreme_rules")
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq("id", id)
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "기준 항목을 찾을 수 없습니다." }, 404, origin);
+        return json({ retired: true }, 200, origin);
       }
 
       if (action === "save_sector_etf") {

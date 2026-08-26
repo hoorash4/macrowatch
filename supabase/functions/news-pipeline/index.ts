@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { analyzeCandidates } from "../_shared/openai-adapter.ts";
 import { loadMarketContext } from "../_shared/market-context.ts";
-import type { ArticleSentiment, Candidate, SourceName } from "../_shared/news-types.ts";
+import type { ArticleSentiment, Candidate, ExtremeNewsRule, SourceName } from "../_shared/news-types.ts";
 
 const DEFAULT_LOOKBACK_HOURS = 24;
 const MAX_LOOKBACK_HOURS = 15 * 24;
@@ -53,14 +53,23 @@ function serverClient() {
   if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase 서버 설정이 없습니다.");
   return createClient(supabaseUrl, serviceRoleKey);
 }
+async function loadExtremeRules(supabase: ReturnType<typeof createClient>): Promise<ExtremeNewsRule[]> {
+  const { data, error } = await supabase.from("news_extreme_rules")
+    .select("id,signal,phrase").eq("is_active", true).order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).filter((item) => item.signal === "critical_negative" || item.signal === "critical_positive")
+    .map((item) => ({ id: String(item.id), signal: item.signal, phrase: String(item.phrase) }));
+}
 async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, articleDate: string, excludedIncrement = 0) {
-  const { data, error } = await supabase.from("news_article_sentiments").select("ai_sentiment,admin_sentiment").eq("article_date", articleDate);
+  const { data, error } = await supabase.from("news_article_sentiments").select("ai_sentiment,admin_sentiment,extreme_signal").eq("article_date", articleDate);
   if (error) throw error;
   const counts = { positive: 0, neutral: 0, negative: 0, uncertain: 0 };
   for (const row of data || []) counts[(row.admin_sentiment || row.ai_sentiment) as keyof typeof counts] += 1;
+  const extremeCounts = { critical_negative: 0, critical_positive: 0 };
+  for (const row of data || []) if (row.extreme_signal === "critical_negative" || row.extreme_signal === "critical_positive") extremeCounts[row.extreme_signal] += 1;
   const { data: existing, error: existingError } = await supabase.from("news_daily_article_sentiment").select("excluded_count").eq("article_date", articleDate).maybeSingle();
   if (existingError) throw existingError;
-  const { error: upsertError } = await supabase.from("news_daily_article_sentiment").upsert({ article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative, neutral_count: counts.neutral, uncertain_count: counts.uncertain, excluded_count: (existing?.excluded_count || 0) + excludedIncrement, analyzed_article_count: (data || []).length, generated_at: new Date().toISOString() });
+  const { error: upsertError } = await supabase.from("news_daily_article_sentiment").upsert({ article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative, neutral_count: counts.neutral, uncertain_count: counts.uncertain, critical_negative_count: extremeCounts.critical_negative, critical_positive_count: extremeCounts.critical_positive, excluded_count: (existing?.excluded_count || 0) + excludedIncrement, analyzed_article_count: (data || []).length, generated_at: new Date().toISOString() });
   if (upsertError) throw upsertError;
 }
 async function resetExcludedCount(supabase: ReturnType<typeof createClient>, articleDate: string) { const { error } = await supabase.from("news_daily_article_sentiment").update({ excluded_count: 0, generated_at: new Date().toISOString() }).eq("article_date", articleDate); if (error) throw error; }
@@ -70,11 +79,11 @@ async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidat
   const supabase = serverClient();
   if (resetExcluded) await resetExcludedCount(supabase, articleDate);
   const hashes = includedOutputs.map((output) => output.itemHash);
-  const { data: existingRows, error: existingError } = hashes.length ? await supabase.from("news_article_sentiments").select("article_hash,article_date,ai_sentiment,admin_sentiment,derived_keywords,uncertain_summary").in("article_hash", hashes) : { data: [], error: null };
+  const { data: existingRows, error: existingError } = hashes.length ? await supabase.from("news_article_sentiments").select("article_hash,article_date,ai_sentiment,admin_sentiment,derived_keywords,uncertain_summary,extreme_signal").in("article_hash", hashes) : { data: [], error: null };
   if (existingError) throw existingError;
   const existingByHash = new Map((existingRows || []).map((row) => [row.article_hash, row]));
   // article_date is the collection day used for graph aggregation; published_at remains untouched.
-  const rows = includedOutputs.filter((output) => { const existing = existingByHash.get(output.itemHash); return !existing || existing.article_date === articleDate; }).map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, collected_at: now, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
+  const rows = includedOutputs.filter((output) => { const existing = existingByHash.get(output.itemHash); return !existing || existing.article_date === articleDate; }).map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, collected_at: now, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, extreme_signal: output.extremeSignal, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
   if (rows.length) { const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" }); if (error) throw error; }
   const excludedCount = outputs.filter((item) => item.excludeFromIndex).length;
   await refreshDailySentiment(supabase, articleDate, excludedCount);
@@ -98,9 +107,10 @@ Deno.serve(async (request) => {
       if (data?.next_offset > 0) return json({ resumed: true, run_date: runDate, has_more: true, next_offset: data.next_offset, next_step: "마지막 완료 지점부터 계속합니다." });
     }
     stage = "뉴스 수집";
-    const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "시장 맥락 조회";
+    const { candidates, errors } = await collectCandidates(lookbackHours), batch = candidates.slice(offset, offset + limit); stage = "극단 신호 기준 조회";
+    const extremeRules = await loadExtremeRules(serverClient()); stage = "시장 맥락 조회";
     const { context: marketContext, warning: marketContextWarning } = await loadMarketContext(); stage = "AI 분석";
-    const outputs = await analyzeCandidates(batch, marketContext); stage = "결과 저장";
+    const outputs = await analyzeCandidates(batch, marketContext, extremeRules); stage = "결과 저장";
     const hasMore = offset + batch.length < candidates.length;
     const persisted = dryRun ? { articles: 0, excluded_articles: 0, dates: [] } : await persistAnalysis(outputs, batch, runDate, offset === 0);
     if (markComplete && !dryRun) {
