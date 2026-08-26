@@ -319,4 +319,5 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week-current \{ min-width:48rem; \}/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);
   assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.66rem;[\s\S]*font-weight:500;/);
+  assert.doesNotMatch(styles, /margin-left:\.28rem/);
 });

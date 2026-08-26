@@ -1106,7 +1106,6 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(-n+2) { text-align:center; }
 .sector-flow-classification-note {
-  margin-left:.28rem;
   font-size:.66rem;
   font-weight:500;
   white-space:nowrap;
