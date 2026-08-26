@@ -115,7 +115,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("errors: results.flatMap", pipeline)
 
     def test_fomc_prompt_has_stability_boundaries(self) -> None:
-        prompt = (ROOT / "supabase/prompts/fomc-policy-v1.0.txt").read_text(encoding="utf-8")
+        prompt = (ROOT / "supabase/prompts/fomc-policy-v1.1.txt").read_text(encoding="utf-8")
         self.assertIn("물가를 직접 억제하거나 가격안정을 회복하는 것이 인상의 핵심 목적이 아니고", prompt)
         self.assertIn("직전 정책 배경이 제공되지 않은 경우 not_confirmed가 아니라 uncertain", prompt)
         self.assertIn("reason_confidence가 0.55 미만이면 primary_reason=uncertain", prompt)
@@ -134,7 +134,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("외부 코드가 저장된 직전 목표금리와 이번 목표금리의 동일한 경계끼리 비교", prompt)
         self.assertNotIn("2008년 이전처럼", prompt)
         self.assertIn("[동결의 정책 문맥]", prompt)
-        self.assertIn("FOMC 분석 프롬프트 v1.0", prompt)
+        self.assertIn("FOMC 분석 프롬프트 v1.1", prompt)
 
     def test_fomc_pipeline_normalizes_ai_output_before_storage(self) -> None:
         pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")

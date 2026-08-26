@@ -113,7 +113,7 @@ async function analyzeStatement(statement: string, meetingDate: string, previous
   };
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna", reasoning: { effort: "low" }, max_output_tokens: 1_200, prompt_cache_key: "macrowatch-fomc-policy-v1", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify(input) }] }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
+    body: JSON.stringify({ model: Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna", reasoning: { effort: "low" }, max_output_tokens: 1_200, prompt_cache_key: "macrowatch-fomc-policy-v1.1", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify(input) }] }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI FOMC 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();

@@ -37,6 +37,11 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260826_add_policy_previous_peak_scoring.sql
 
+      - name: Publish FOMC policy prompt v1.1
+        run: |
+          supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
+            "FOMC_POLICY_SYSTEM_PROMPT=$(<supabase/prompts/fomc-policy-v1.1.txt)"
+
       - name: Deploy Edge Functions
         run: |
           for fn in supabase/functions/*; do
