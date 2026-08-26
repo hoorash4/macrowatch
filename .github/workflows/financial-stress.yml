@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - backend/financial_stress_pipeline.py
+      - backend/common.py
       - supabase/migrations/**
       - .github/workflows/financial-stress.yml
   schedule:

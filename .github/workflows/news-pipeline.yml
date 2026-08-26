@@ -65,6 +65,9 @@ jobs:
           while true; do
             response=$(request_batch "{\"lookback_hours\":24,\"offset\":$offset,\"limit\":$limit,\"dry_run\":$DRY_RUN,\"mark_complete\":true}")
             echo "$response"
+            if [ "$offset" -eq 0 ] && [ "$(jq '.errors | length' <<< "$response")" -gt 0 ]; then
+              echo "::warning::일부 RSS 피드 수집에 실패했습니다: $(jq -c '.errors' <<< "$response")"
+            fi
             [ "$DRY_RUN" = "true" ] && break
             [ "$(jq -r '.already_completed // false' <<< "$response")" = "true" ] && break
             [ "$(jq -r '.has_more' <<< "$response")" = "true" ] || break

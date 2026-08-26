@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -9,15 +8,10 @@ import requests
 from google.auth.transport.requests import Request
 from google.oauth2.service_account import Credentials
 
+from common import require_env
+
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
 
 
 def download_file(access_token: str, file_id: str) -> bytes:

@@ -1,16 +1,16 @@
-"""Collect the published weekly Emerging Market Stress Index without storing source files."""
+"""이머징 시장 원천자료를 주간으로 맞춰 EM-MSI와 비교선을 갱신한다."""
 
 from __future__ import annotations
 
 import argparse
-import os
-from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 import requests
 
+from common import SupabaseRest, carry_forward as carry_forward_periods
+from common import fetch_fred_observations, require_env, uncapped_score
 
-FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
+
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
 TIMEOUT = 45
 HISTORY_YEARS = 3
@@ -23,7 +23,7 @@ SERIES = {
     "em_equity_volatility": "VXEEMCLS",
 }
 WEIGHTS = {
-    # VXEEM is retained as an auxiliary signal only while its main-index impact is tested.
+    # VXEEM은 본지수에 넣지 않고 별도 보조자료의 4주 평균 계산에만 사용한다.
     "em_dollar_index": 0.45,
     "high_yield_oas": 0.275,
     "tail_risk_oas": 0.275,
@@ -39,28 +39,15 @@ SCALES = {
 
 
 def required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
+    """기존 호출부를 유지하는 공통 환경변수 함수 어댑터."""
+    return require_env(name)
 
 
 def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    response = requests.get(
-        FRED_URL,
-        params={
-            "series_id": series_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "observation_start": start.isoformat(),
-            "observation_end": end.isoformat(),
-            "limit": "100000",
-        },
-        timeout=TIMEOUT,
-    )
-    response.raise_for_status()
     weeks: dict[str, tuple[str, float]] = {}
-    for observation in response.json().get("observations", []):
+    for observation in fetch_fred_observations(
+        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT
+    ):
         raw_value, observed_on = observation.get("value"), observation.get("date")
         if raw_value in (None, ".") or not isinstance(observed_on, str):
             continue
@@ -106,18 +93,12 @@ def fetch_eem_week_end(start: date, end: date) -> dict[str, float]:
 
 
 def carry_forward(values: dict[str, float], weeks: list[str]) -> dict[str, float]:
-    carried: dict[str, float] = {}
-    previous: float | None = None
-    for week in weeks:
-        if week in values:
-            previous = values[week]
-        if previous is not None:
-            carried[week] = previous
-    return carried
+    """기존 호출부를 유지하는 주간 최근값 이월 어댑터."""
+    return carry_forward_periods(values, weeks)
 
 
 def score(value: float, floor: float, reference: float) -> float:
-    return max(0.0, (value - floor) / (reference - floor) * 100.0)
+    return uncapped_score(value, floor, reference)
 
 
 def trailing_average(values: list[float], length: int = 4) -> float:
@@ -139,31 +120,35 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
     rows: list[dict[str, object]] = []
     for week in weeks:
         values = {key: carried[key].get(week) for key in SERIES}
-        if not all(isinstance(value, (int, float)) for value in values.values()):
+        # 보조지표(VXEEM)가 늦거나 비어도 본지수의 세 구성요소가 모두 있으면
+        # EM-MSI 행은 생성한다. 지수에 포함되지 않는 자료가 본지수를 막아서는 안 된다.
+        if not all(isinstance(values.get(key), (int, float)) for key in WEIGHTS):
             continue
         high_yield = float(values["high_yield_oas"])
         tail_risk = float(values["tail_risk_oas"])
-        equity_volatility = float(values["em_equity_volatility"])
+        equity_volatility = values.get("em_equity_volatility")
         hy_history.append(high_yield)
         tail_history.append(tail_risk)
-        volatility_history.append(equity_volatility)
+        if isinstance(equity_volatility, (int, float)):
+            volatility_history.append(float(equity_volatility))
         stress_index = sum(
             score(float(values[key]), *SCALES[key]) * WEIGHTS[key]
             for key in WEIGHTS
         )
         week_date = date.fromisoformat(week)
-        missing_actual = any(week not in raw[key] for key in SERIES)
-        is_provisional = missing_actual or week_date > last_completed_friday or any(week > latest for latest in source_last_weeks.values())
+        missing_actual = any(week not in raw[key] for key in WEIGHTS)
+        required_last_weeks = [source_last_weeks[key] for key in WEIGHTS if key in source_last_weeks]
+        is_provisional = missing_actual or week_date > last_completed_friday or any(week > latest for latest in required_last_weeks)
         hy_average = trailing_average(hy_history)
         tail_average = trailing_average(tail_history)
-        volatility_average = trailing_average(volatility_history)
+        volatility_average = trailing_average(volatility_history) if volatility_history else None
         rows.append({
             "week": week,
             "stress_index": round(stress_index, 2),
             "high_yield_4w_average": round(hy_average, 4),
             "tail_risk_4w_average": round(tail_average, 4),
             "blended_4w_average": round((hy_average + tail_average) / 2, 4),
-            "vxeem_4w_average": round(volatility_average, 4),
+            "vxeem_4w_average": round(volatility_average, 4) if volatility_average is not None else None,
             "eem_weekly_close": round(carried_eem[week], 2) if week in carried_eem else None,
             "is_provisional": is_provisional,
         })
@@ -171,19 +156,9 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
 
 
 def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> None:
-    response = requests.post(
-        f"{url.rstrip('/')}/rest/v1/em_market_stress_weekly?on_conflict=week",
-        headers={
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal",
-        },
-        json=rows,
-        timeout=TIMEOUT,
+    SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT).upsert(
+        "em_market_stress_weekly", rows, conflict="week"
     )
-    if not response.ok:
-        raise RuntimeError(f"Supabase EM stress upsert failed: {response.status_code} {response.text[:1000]}")
 
 
 def main() -> None:

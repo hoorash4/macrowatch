@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - backend/korea_stress_pipeline.py
+      - backend/common.py
       - supabase/migrations/20260825_add_korea_market_stress.sql
       - .github/workflows/korea-stress.yml
   schedule:

@@ -6,6 +6,9 @@ on:
     - cron: "0 22 * * *"
   workflow_dispatch:
 
+# check_targets.py와 common.py는 같은 실행 단위다. 공통 모듈 변경도 다음 예약 실행부터
+# 자동 반영되며, 수동 실행으로 즉시 검증할 수 있다.
+
 permissions:
   contents: read
 

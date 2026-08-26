@@ -1,4 +1,4 @@
-"""Collect monthly U.S. credit-stress indicators without retaining source files."""
+"""미국 신용·시장 스트레스 원천자료를 수집하고 월·주 지수를 갱신한다."""
 
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from datetime import date, datetime, timedelta
 import openpyxl
 import requests
 
+from common import SupabaseRest, carry_forward, fetch_fred_observations, uncapped_score
 
-FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
+
 COURTS_URLS = (
     "https://www.uscourts.gov/sites/default/files/document/bf_f2.1_{period}.xlsx",
     "https://www.uscourts.gov/sites/default/files/data_tables/bf_f2.1_{period}.xlsx",
@@ -88,21 +89,10 @@ def latest_completed_quarter_end(today: date) -> date:
 
 
 def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    response = requests.get(
-        FRED_URL,
-        params={
-            "series_id": series_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "observation_start": start.isoformat(),
-            "observation_end": end.isoformat(),
-            "limit": "100000",
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
     values: dict[str, list[float]] = defaultdict(list)
-    for observation in response.json().get("observations", []):
+    for observation in fetch_fred_observations(
+        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
+    ):
         raw_value = observation.get("value")
         if raw_value in (None, "."):
             continue
@@ -115,21 +105,10 @@ def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> 
 
 def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
     """Return the final available daily observation for each calendar month."""
-    response = requests.get(
-        FRED_URL,
-        params={
-            "series_id": series_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "observation_start": start.isoformat(),
-            "observation_end": end.isoformat(),
-            "limit": "100000",
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
     month_end: dict[str, tuple[str, float]] = {}
-    for observation in response.json().get("observations", []):
+    for observation in fetch_fred_observations(
+        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
+    ):
         raw_value = observation.get("value")
         observed_on = observation.get("date")
         if raw_value in (None, ".") or not isinstance(observed_on, str):
@@ -145,14 +124,10 @@ def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -
 
 
 def fetch_fred_latest(series_id: str, api_key: str, start: date, end: date) -> tuple[date, float] | None:
-    response = requests.get(
-        FRED_URL,
-        params={"series_id": series_id, "api_key": api_key, "file_type": "json", "observation_start": start.isoformat(), "observation_end": end.isoformat(), "limit": "100000"},
-        timeout=TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
     latest: tuple[date, float] | None = None
-    for observation in response.json().get("observations", []):
+    for observation in fetch_fred_observations(
+        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
+    ):
         raw_value, observed_on = observation.get("value"), observation.get("date")
         if raw_value in (None, ".") or not isinstance(observed_on, str):
             continue
@@ -167,16 +142,20 @@ def fetch_fred_latest(series_id: str, api_key: str, start: date, end: date) -> t
 
 def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
     """Return the final available observation for each Friday-ended week."""
-    response = requests.get(FRED_URL, params={"series_id": series_id, "api_key": api_key, "file_type": "json", "observation_start": start.isoformat(), "observation_end": end.isoformat(), "limit": "100000"}, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
     values: dict[str, tuple[str, float]] = {}
-    for observation in response.json().get("observations", []):
+    for observation in fetch_fred_observations(
+        series_id, api_key, start=start.isoformat(), end=end.isoformat(), timeout=TIMEOUT_SECONDS
+    ):
         raw_value, observed_on = observation.get("value"), observation.get("date")
-        if raw_value in (None, ".") or not isinstance(observed_on, str): continue
-        try: observed_date, value = date.fromisoformat(observed_on), float(raw_value)
-        except (TypeError, ValueError): continue
+        if raw_value in (None, ".") or not isinstance(observed_on, str):
+            continue
+        try:
+            observed_date, value = date.fromisoformat(observed_on), float(raw_value)
+        except (TypeError, ValueError):
+            continue
         week = (observed_date + timedelta(days=4 - observed_date.weekday())).isoformat()
-        if week not in values or observed_on > values[week][0]: values[week] = (observed_on, value)
+        if week not in values or observed_on > values[week][0]:
+            values[week] = (observed_on, value)
     return {week: value for week, (_observed_on, value) in values.items()}
 
 
@@ -271,16 +250,8 @@ def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
 
 
 def carry_forward_values(values: dict[str, float], periods: list[str]) -> dict[str, float]:
-    """Fill an unreleased period with the latest actual observation."""
-    carried: dict[str, float] = {}
-    previous: float | None = None
-    for period in sorted(periods):
-        current = values.get(period)
-        if current is not None:
-            previous = current
-        if previous is not None:
-            carried[period] = previous
-    return carried
+    """기존 공개 함수 이름을 유지하면서 공통 이월 계산을 사용한다."""
+    return carry_forward(values, sorted(periods))
 
 
 def build_weekly_market_tension(
@@ -400,23 +371,14 @@ def collect_business_filings(start: date, end: date) -> dict[str, int]:
 
 
 def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
-    response = requests.post(
-        f"{supabase_url.rstrip('/')}/rest/v1/us_credit_stress_monthly?on_conflict=month",
-        headers={
-            "apikey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal",
-        },
-        json=rows,
-        timeout=TIMEOUT_SECONDS,
+    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
+        "us_credit_stress_monthly", rows, conflict="month"
     )
-    response.raise_for_status()
 
 
 def fixed_stress_score(value: float, key: str) -> float:
     floor, reference = FIXED_COMPONENT_SCALES[key]
-    return max(0.0, ((value - floor) / (reference - floor)) * 100.0)
+    return uncapped_score(value, floor, reference)
 
 
 def smoothed_filings(rows: list[dict[str, object]]) -> tuple[dict[str, float], set[str]]:
@@ -492,35 +454,21 @@ def build_market_stress_index(
 def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
     if not rows:
         return
-    response = requests.post(
-        f"{supabase_url.rstrip('/')}/rest/v1/us_market_stress_index_monthly?on_conflict=month",
-        headers={
-            "apikey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal",
-        },
-        json=rows,
-        timeout=TIMEOUT_SECONDS,
+    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
+        "us_market_stress_index_monthly", rows, conflict="month"
     )
-    response.raise_for_status()
 
 
 def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/us_market_tension_weekly?on_conflict=week"
-    headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}
-    response = requests.post(endpoint, headers=headers, json=rows, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
+    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
+        "us_market_tension_weekly", rows, conflict="week"
+    )
 
 
 def upsert_latest_credit_stress(row: dict[str, object], supabase_url: str, service_role_key: str) -> None:
-    response = requests.post(
-        f"{supabase_url.rstrip('/')}/rest/v1/us_credit_stress_latest?on_conflict=singleton",
-        headers={"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"},
-        json=row,
-        timeout=TIMEOUT_SECONDS,
+    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
+        "us_credit_stress_latest", row, conflict="singleton"
     )
-    response.raise_for_status()
 
 
 def main() -> None:

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - backend/em_stress_pipeline.py
+      - backend/common.py
       - .github/workflows/em-stress.yml
   schedule:
     - cron: "30 21 * * *"

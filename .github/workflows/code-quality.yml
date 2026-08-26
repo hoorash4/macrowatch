@@ -1,0 +1,48 @@
+name: Verify code structure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*.js"
+      - "backend/**"
+      - "supabase/functions/**"
+      - "tests/**"
+      - ".github/workflows/code-quality.yml"
+  pull_request:
+    paths:
+      - "*.js"
+      - "backend/**"
+      - "supabase/functions/**"
+      - "tests/**"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check JavaScript syntax and behavior contracts
+        run: |
+          node --check script.js
+          node --check admin.js
+          node --check auth.js
+          node tests/test_dashboard.js
+      - name: Check Python syntax and behavior contracts
+        run: |
+          python -m compileall -q backend
+          python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Check Supabase Edge Function types
+        run: deno check supabase/functions/*/index.ts

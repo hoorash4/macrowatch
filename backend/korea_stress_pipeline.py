@@ -1,16 +1,17 @@
-"""Build MacroWatch's Korean market-stress index from official BOK data."""
+"""한국은행 공식자료로 K-MSI와 비교용 주간 시계열을 갱신한다."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import io
-import os
 import time
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 import requests
+
+from common import SupabaseRest, require_env as require_shared_env, uncapped_score
 
 
 ECOS = "https://ecos.bok.or.kr/api"
@@ -53,10 +54,8 @@ HEADERS = {
 
 
 def require_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
+    """기존 호출부를 유지하는 공통 환경변수 함수 어댑터."""
+    return require_shared_env(name)
 
 
 def request(path: list[str]) -> dict:
@@ -174,21 +173,13 @@ def fetch_bok_fsi(years: int) -> dict[str, float]:
 
 
 def score(value: float, low: float, high: float) -> float:
-    return max(0.0, (value - low) / (high - low) * 100.0)
+    return uncapped_score(value, low, high)
 
 
 def upsert(rows: list[dict], url: str, service_key: str, table: str, conflict: str) -> None:
-    response = requests.post(
-        f"{url.rstrip('/')}/rest/v1/{table}?on_conflict={conflict}",
-        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"},
-        json=rows,
-        timeout=TIMEOUT,
+    SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT).upsert(
+        table, rows, conflict=conflict
     )
-    if not response.ok:
-        raise RuntimeError(
-            f"Supabase Korea stress upsert failed: {response.status_code} "
-            f"{response.text[:1200]}"
-        )
 
 
 def fetch_existing_fsi(url: str, service_key: str, years: int) -> dict[str, float]:

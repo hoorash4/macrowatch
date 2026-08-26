@@ -1,8 +1,44 @@
+(() => {
+'use strict';
+
 // ===== Supabase / API 연결 설정 =====
 // 브라우저에서 Supabase 클라이언트를 만들 때 사용하는 공개 연결 정보입니다.
 const { supabaseUrl: SUPABASE_URL, supabasePublishableKey: SUPABASE_KEY } = window.MACROWATCH_CONFIG;
 const supabaseClient = window.macroWatchSupabase
 || (window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null);
+
+// ===== 공통 인증 API 모듈 =====
+// 브라우저에서 Supabase Edge Function을 부르는 모든 기능은 이 모듈을 통한다.
+// 토큰 조회, 공통 헤더, JSON 오류 해석을 한곳에 두어 기능별 코드가 서로 다른
+// 인증 방식이나 오류 문구를 만들지 않도록 한다.
+const DashboardApi = (() => {
+  async function accessToken() {
+    if (!supabaseClient) throw new Error('Supabase 연결 정보를 확인해 주세요.');
+    const { data, error } = await supabaseClient.auth.getSession();
+    const token = data?.session?.access_token;
+    if (error || !token) throw new Error('로그인이 필요합니다.');
+    return token;
+  }
+
+  async function invoke(functionName, payload) {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${await accessToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `${functionName} 요청에 실패했습니다. (${response.status})`);
+    }
+    return data;
+  }
+
+  return Object.freeze({ invoke });
+})();
 
 // ===== 화면과 데이터의 현재 상태 =====
 const ITEMS_PER_TRACK = 8;
@@ -54,6 +90,9 @@ const NEWS_SENTIMENT_VIEWS = {
 let newsSentimentRows = [];
 let newsSentimentView = 'recent';
 
+// ===== 뉴스 흐름 분석 모듈 =====
+// 일별 집계 데이터 조회, 긍정·부정 비율 계산, 기간별 막대 렌더링을 담당한다.
+// 기사 분류와 저장은 서버에서 수행하므로 이 구역은 읽기와 화면 표시만 맡는다.
 function renderExtremeNewsSignals(rows) {
   const decisive = document.getElementById('decisive-news-count');
   const keywords = document.getElementById('decisive-news-keywords');
@@ -63,8 +102,7 @@ function renderExtremeNewsSignals(rows) {
   decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
   const values = Array.isArray(latest.decisive_news_keywords) ? [...new Set(latest.decisive_news_keywords.map((keyword) => String(keyword).trim()).filter(Boolean))].slice(0, 8) : [];
   if (keywords) {
-    const shown = values.length ? values : ['예시', '금융기관', '파산신청', '50bp', '통화스와프'];
-    keywords.innerHTML = shown.map((keyword, index) => `<span class="rounded-full border ${values.length || index ? 'border-[#d8b978]/35 bg-slate-950/40 text-[#f2d396]' : 'border-slate-500/50 bg-slate-800/70 text-slate-300'} px-2.5 py-1 text-xs font-semibold">${escapeHtml(keyword)}</span>`).join('');
+    keywords.innerHTML = values.map((keyword) => `<span class="rounded-full border border-[#d8b978]/35 bg-slate-950/40 px-2.5 py-1 text-xs font-semibold text-[#f2d396]">${escapeHtml(keyword)}</span>`).join('');
   }
   document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '자정 기준 집계'; });
 }
@@ -173,8 +211,9 @@ async function loadNewsSentimentDashboard() {
   }
 }
 
-window.loadNewsSentimentDashboard = loadNewsSentimentDashboard;
-
+// ===== 미국 시장 스트레스 모듈 =====
+// 월간·주간 스트레스 데이터의 축 계산과 본지표·보조지표 렌더링을 담당한다.
+// 지수 산식과 원천 데이터 수집은 Python 파이프라인에서 수행한다.
 function calculateCorrelation(pairs) {
   if (pairs.length < 2) return null;
   const meanX = pairs.reduce((sum, [x]) => sum + x, 0) / pairs.length;
@@ -433,15 +472,15 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     value: row.value - secondaryLevels[index].value,
   }));
   const secondaryAverages = new Map(secondaryChanges.map((row, index) => {
-    const window = secondaryChanges.slice(Math.max(0, index - 3), index + 1);
-    return [row.month, window.length === 4 ? window.reduce((sum, item) => sum + item.value, 0) / 4 : null];
+    const sampleWindow = secondaryChanges.slice(Math.max(0, index - 3), index + 1);
+    return [row.month, sampleWindow.length === 4 ? sampleWindow.reduce((sum, item) => sum + item.value, 0) / 4 : null];
   }));
   const data = changes.map((row, index) => {
-    const window = changes.slice(Math.max(0, index - 3), index + 1);
+    const sampleWindow = changes.slice(Math.max(0, index - 3), index + 1);
     return {
       ...row,
-      average: window.length === 4
-        ? window.reduce((sum, item) => sum + item.value, 0) / 4
+      average: sampleWindow.length === 4
+        ? sampleWindow.reduce((sum, item) => sum + item.value, 0) / 4
         : null,
       secondaryAverage: secondaryAverages.get(row.month) ?? null,
     };
@@ -586,8 +625,8 @@ async function loadMarketStressDashboard() {
   }
 }
 
-window.loadMarketStressDashboard = loadMarketStressDashboard;
-
+// ===== 이머징 시장 스트레스 모듈 =====
+// 이머징 지수와 비교 자산의 공통 주간 시계열을 렌더링한다.
 function renderEmStressDashboard(rows) {
   const chart = document.getElementById('em-stress-chart');
   const weekly = [...rows]
@@ -707,8 +746,8 @@ async function loadEmStressDashboard() {
   }
 }
 
-window.loadEmStressDashboard = loadEmStressDashboard;
-
+// ===== 한국 시장 스트레스 모듈 =====
+// K-MSI 월간 본지표, 주간 코스피 비교선, 한국은행 FSI 보조지표를 표시한다.
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
@@ -874,8 +913,6 @@ async function loadKoreaStressDashboard() {
   }
 }
 
-window.loadKoreaStressDashboard = loadKoreaStressDashboard;
-
 function toCreditStressNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
@@ -894,6 +931,8 @@ function addBankruptcyTrailingAverage(rows) {
   });
 }
 
+// ===== 미국 신용위험 구성지표 모듈 =====
+// 단위가 다른 원천지표를 각자의 축으로 그려 장기 방향을 비교한다.
 function renderCreditStressComponents(rows) {
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart) return;
@@ -990,8 +1029,6 @@ async function loadCreditStressComponentsDashboard() {
     chart.innerHTML = '<div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
   }
 }
-
-window.loadCreditStressComponentsDashboard = loadCreditStressComponentsDashboard;
 
 // 알림 조건에 따라 설정값 입력칸을 활성화하거나 비활성화합니다.
 function toggleTargetValueInput(conditionId, valueId) {
@@ -1343,32 +1380,18 @@ async function searchIndicators(loadMore = false) {
   }
 
   try {
-    const { data } = await supabaseClient.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) throw new Error('로그인이 필요합니다.');
-
     if (!loadMore) {
       indicatorSearchQuery = query;
       indicatorSearchSource = source;
     }
 
-    const response = await fetch(SUPABASE_URL + '/functions/v1/search-indicators', {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: 'Bearer ' + token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'search',
-        source,
-        query,
-        fredQueries: source === 'FRED' ? buildFredSearchTerms(query) : [],
-        excludedCodes: indicatorSearchResults.map((result) => result.code),
-      }),
+    const payload = await DashboardApi.invoke('search-indicators', {
+      action: 'search',
+      source,
+      query,
+      fredQueries: source === 'FRED' ? buildFredSearchTerms(query) : [],
+      excludedCodes: indicatorSearchResults.map((result) => result.code),
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || '지표 후보를 불러오지 못했습니다.');
 
     renderIndicatorSearchResults(payload.results || [], payload.warning || '', loadMore);
   } catch (error) {
@@ -1408,21 +1431,11 @@ async function selectIndicatorSearchResult(index) {
     if (container) container.innerHTML = '<p class="p-5 text-center text-sm text-slate-400">ECOS 통계 항목을 불러오는 중입니다.</p>';
 
     try {
-      const { data } = await supabaseClient.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error('로그인이 필요합니다.');
-
-      const response = await fetch(SUPABASE_URL + '/functions/v1/search-indicators', {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'ecos-items', statCode: result.code, tableTitle: result.title }),
+      const payload = await DashboardApi.invoke('search-indicators', {
+        action: 'ecos-items',
+        statCode: result.code,
+        tableTitle: result.title,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'ECOS 통계 항목을 불러오지 못했습니다.');
 
       const items = Array.isArray(payload.results) ? payload.results : [];
       if (items.length) {
@@ -1685,12 +1698,7 @@ async function checkOneTarget(targetId) {
   const button = document.querySelector('[data-check-one="' + targetId + '"]');
   if (button) { button.disabled = true; button.textContent = '확인 요청 중'; }
   try {
-    const session = await supabaseClient.auth.getSession();
-    const token = session.data.session?.access_token;
-    if (!token) throw new Error('로그인이 필요합니다.');
-    const response = await fetch(SUPABASE_URL + '/functions/v1/check-one-target', { method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ target_id: targetId }) });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || '확인 작업을 시작하지 못했습니다.');
+    const result = await DashboardApi.invoke('check-one-target', { target_id: targetId });
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await fetchTargets();
     const value = result.target?.last_value;
@@ -2318,21 +2326,7 @@ async function handleAddTarget(e) {
         targets.push(insertedTarget);
 
         try {
-          const session = await supabaseClient.auth.getSession();
-          const token = session.data.session?.access_token;
-          if (!token) throw new Error('로그인이 필요합니다.');
-
-          const response = await fetch(SUPABASE_URL + '/functions/v1/check-one-target', {
-            method: 'POST',
-            headers: {
-              apikey: SUPABASE_KEY,
-              Authorization: 'Bearer ' + token,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ target_id: insertedTarget.id }),
-          });
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(result.error || '현재값을 확인하지 못했습니다.');
+          const result = await DashboardApi.invoke('check-one-target', { target_id: insertedTarget.id });
 
           const checkedTarget = result.target || insertedTarget;
           targets[targets.length - 1] = checkedTarget;
@@ -2496,3 +2490,42 @@ function getOriginalUrl(item) {
 function escapeHtml(str) {
   return String(str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+// ===== 외부 공개 인터페이스 =====
+// 로그인 모듈에는 대시보드 전체 로드 함수 하나만 제공한다. HTML의 기존 inline
+// 이벤트는 기능을 바꾸지 않기 위해 실제 사용하는 핸들러만 명시적으로 공개한다.
+// 나머지 계산·렌더링 함수와 상태는 이 파일의 캡슐 안에 머문다.
+window.MacroWatchDashboard = Object.freeze({
+  async loadAll() {
+    await Promise.all([
+      fetchTargets(),
+      loadNewsSentimentDashboard(),
+      loadMarketStressDashboard(),
+      loadCreditStressComponentsDashboard(),
+      loadKoreaStressDashboard(),
+      loadEmStressDashboard(),
+    ]);
+  },
+  utils: Object.freeze({ calculateCorrelation, escapeHtml, formatNewsDate, getConditionText }),
+});
+
+Object.assign(window, {
+  checkOneTarget,
+  closeDeleteModal,
+  closeEditModal,
+  closeIndicatorSearchModal,
+  closeToggleAlertModal,
+  confirmDeleteTarget,
+  confirmToggleTarget,
+  handleAddTarget,
+  handleDeleteTarget,
+  handleIndicatorSearchKeydown,
+  handleSourceTypeChange,
+  openEditModal,
+  saveEditTarget,
+  searchIndicators,
+  toggleTargetActive,
+  toggleTargetDetails,
+  toggleTargetValueInput,
+});
+})();

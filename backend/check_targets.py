@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -11,6 +9,14 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
+
+from common import (
+    SupabaseRest,
+    fetch_fred_observations,
+    refresh_kakao_access_token as refresh_shared_kakao_token,
+    require_env,
+    send_kakao_text,
+)
 
 
 HTTP_TIMEOUT = 30
@@ -32,51 +38,6 @@ class CheckResult:
     previous_value: Decimal | None
     current_value: Decimal
     should_alert: bool
-
-
-class SupabaseRest:
-    def __init__(self) -> None:
-        self.url = require_env("SUPABASE_URL").rstrip("/")
-        self.key = require_env("SUPABASE_SERVICE_ROLE_KEY")
-        self.headers = {
-            "apikey": self.key,
-            "Authorization": f"Bearer {self.key}",
-            "Content-Type": "application/json",
-        }
-        self.session = requests.Session()
-
-    def request(
-        self,
-        method: str,
-        table: str,
-        *,
-        params: dict[str, str] | None = None,
-        body: Any = None,
-        prefer: str | None = None,
-    ) -> Any:
-        headers = dict(self.headers)
-        if prefer:
-            headers["Prefer"] = prefer
-        response = self.session.request(
-            method,
-            f"{self.url}/rest/v1/{table}",
-            headers=headers,
-            params=params,
-            json=body,
-            timeout=HTTP_TIMEOUT,
-        )
-        if not response.ok:
-            raise RuntimeError(f"Supabase {table}: {response.status_code} {response.text[:500]}")
-        if not response.content:
-            return None
-        return response.json()
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
 
 
 def request_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -116,20 +77,15 @@ def fetch_fred(config: dict[str, Any]) -> Decimal:
     series_id = str(config.get("series_id", "")).strip().upper()
     if not series_id:
         raise CollectionError("FRED series_id가 없습니다.")
-    response = requests.get(
-        "https://api.stlouisfed.org/fred/series/observations",
-        params={
-            "series_id": series_id,
-            "api_key": require_env("FRED_API_KEY"),
-            "file_type": "json",
-            "sort_order": "desc",
-            "limit": 10,
-        },
+    observations = fetch_fred_observations(
+        series_id,
+        require_env("FRED_API_KEY"),
+        sort_order="desc",
+        limit=10,
         headers=request_headers({"Accept": "application/json"}),
         timeout=HTTP_TIMEOUT,
     )
-    response.raise_for_status()
-    for observation in response.json().get("observations", []):
+    for observation in observations:
         if observation.get("value") not in (None, "."):
             return parse_decimal(observation["value"])
     raise CollectionError(f"FRED {series_id}의 최신값이 없습니다.")
@@ -240,28 +196,7 @@ def condition_label(condition: str) -> str:
 
 
 def refresh_kakao_access_token() -> str | None:
-    client_id = os.getenv("KAKAO_REST_API_KEY", "").strip()
-    refresh_token = os.getenv("KAKAO_REFRESH_TOKEN", "").strip()
-    if not client_id or not refresh_token:
-        return None
-    data = {
-        "grant_type": "refresh_token",
-        "client_id": client_id,
-        "refresh_token": refresh_token,
-    }
-    client_secret = os.getenv("KAKAO_CLIENT_SECRET", "").strip()
-    if client_secret:
-        data["client_secret"] = client_secret
-    response = requests.post(
-        "https://kauth.kakao.com/oauth/token",
-        data=data,
-        timeout=HTTP_TIMEOUT,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if payload.get("refresh_token"):
-        print("Kakao issued a new refresh token. Update KAKAO_REFRESH_TOKEN secret soon.")
-    return payload.get("access_token")
+    return refresh_shared_kakao_token(required=False)
 
 
 def send_kakao_message(access_token: str, results: list[CheckResult]) -> None:
@@ -276,21 +211,7 @@ def send_kakao_message(access_token: str, results: list[CheckResult]) -> None:
                 condition_label(condition),
             ]
         )
-    template = {
-        "object_type": "text",
-        "text": "\n".join(lines),
-        "link": {
-            "web_url": "https://hoorash4.github.io/macrowatch/",
-            "mobile_web_url": "https://hoorash4.github.io/macrowatch/",
-        },
-    }
-    response = requests.post(
-        "https://kapi.kakao.com/v2/api/talk/memo/default/send",
-        headers={"Authorization": f"Bearer {access_token}"},
-        data={"template_object": json.dumps(template, ensure_ascii=False)},
-        timeout=HTTP_TIMEOUT,
-    )
-    response.raise_for_status()
+    send_kakao_text(access_token, "\n".join(lines))
 
 
 def record_alerts(

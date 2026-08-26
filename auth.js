@@ -99,14 +99,7 @@
     elements.authScreen.classList.add('hidden');
     elements.appShell.classList.remove('hidden');
     await updateAdminLink();
-    await Promise.all([
-      window.fetchTargets?.(),
-      window.loadNewsSentimentDashboard?.(),
-      window.loadMarketStressDashboard?.(),
-      window.loadCreditStressComponentsDashboard?.(),
-      window.loadKoreaStressDashboard?.(),
-      window.loadEmStressDashboard?.(),
-    ]);
+    await window.MacroWatchDashboard?.loadAll();
   }
 
   function showLogin(message = '') {
