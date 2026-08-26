@@ -76,19 +76,20 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
         reasonSegment += 1;
         state = { action: row.action, segment: directionSegment, sequence: 1, hasBridge: false, holds: 0, terminationStarted: false, reason, reasonSegment, reasonSequence: 1 };
       } else {
-        if (state.holds === 1) state.hasBridge = true;
-        state.sequence += 1;
-        state.holds = 0;
-        if (state.reason === reason) state.reasonSequence += 1;
+        const continuingState = state as DirectionState;
+        if (continuingState.holds === 1) continuingState.hasBridge = true;
+        continuingState.sequence += 1;
+        continuingState.holds = 0;
+        if (continuingState.reason === reason) continuingState.reasonSequence += 1;
         else {
           reasonSegment += 1;
-          state.reason = reason;
-          state.reasonSegment = reasonSegment;
-          state.reasonSequence = 1;
+          continuingState.reason = reason;
+          continuingState.reasonSegment = reasonSegment;
+          continuingState.reasonSequence = 1;
         }
       }
 
-      const activeState = state;
+      const activeState = state as DirectionState;
       baseScore = directionalScore(reason, row.action, activeState.reasonSequence);
       const rawMagnitude = Math.abs(rawBase(reason, row.action));
       const adjustmentMagnitude = activeState.reasonSequence > 0 ? rawMagnitude / activeState.reasonSequence : 0;
