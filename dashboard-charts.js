@@ -1116,8 +1116,8 @@ function renderSectorFlow(rows) {
     body.innerHTML = list.length ? list.map((row) => {
       const etf = row.market_sector_etfs;
       const streakUnit = isLatestWeek ? '주차' : '주';
-      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}<span class="sector-flow-streak">${Number(row.top10_streak)}${streakUnit}</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
-    }).join('') : `<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—${isLatestWeek ? '주차' : '주'}</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>`;
+      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div><span class="sector-flow-streak">${Number(row.top10_streak)}${streakUnit}</span></li>`;
+    }).join('') : `<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div><span class="sector-flow-streak">—${isLatestWeek ? '주차' : '주'}</span></li>`;
   });
   const note = document.getElementById('sector-flow-update-note');
   if (note) note.textContent = '매 영업일 시가·종가 반영';
