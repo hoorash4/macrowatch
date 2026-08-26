@@ -5,6 +5,8 @@ import { calculateSectorRankings, mondayOf, type SectorPrice } from "../_shared/
 
 const HISTORY_DAYS = 105;
 const REQUEST_INTERVAL_MS = 180;
+const DATABASE_PAGE_SIZE = 1000;
+type StoredSectorPrice = { etf_id: string; market_date: string; open_price: number | string; close_price: number | string | null };
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
@@ -12,6 +14,24 @@ function json(body: unknown, status = 200) {
 
 function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+}
+
+// Supabase Data API의 기본 행 제한을 넘는 가격 이력도 빠짐없이 읽습니다.
+async function loadSectorPriceHistory(admin: ReturnType<typeof createClient>, historyStart: string) {
+  const allRows: StoredSectorPrice[] = [];
+  for (let from = 0;; from += DATABASE_PAGE_SIZE) {
+    const { data, error } = await admin.from("market_sector_etf_prices")
+      .select("etf_id,market_date,open_price,close_price")
+      .gte("market_date", historyStart)
+      .order("market_date", { ascending: true })
+      .order("etf_id", { ascending: true })
+      .range(from, from + DATABASE_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = (data || []) as StoredSectorPrice[];
+    allRows.push(...page);
+    if (page.length < DATABASE_PAGE_SIZE) break;
+  }
+  return allRows;
 }
 
 Deno.serve(async (request) => {
@@ -61,10 +81,8 @@ Deno.serve(async (request) => {
     if (priceError) throw priceError;
 
     const historyStart = new Date(end.getTime() - HISTORY_DAYS * 86_400_000).toISOString().slice(0, 10);
-    const { data: prices, error: historyError } = await admin.from("market_sector_etf_prices")
-      .select("etf_id,market_date,open_price,close_price").gte("market_date", historyStart).order("market_date");
-    if (historyError) throw historyError;
-    const normalized: SectorPrice[] = (prices || []).map((row) => ({
+    const prices = await loadSectorPriceHistory(admin, historyStart);
+    const normalized: SectorPrice[] = prices.map((row) => ({
       etfId: row.etf_id, marketDate: row.market_date, openPrice: Number(row.open_price),
       closePrice: row.close_price === null ? null : Number(row.close_price),
     }));
