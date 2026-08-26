@@ -1063,6 +1063,8 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current header {
   background:linear-gradient(90deg,#db8335 0%,#d4772d 42%,#c96b25 100%);
 }
+.sector-flow-week-current header > span { font-size:.82rem; }
+.sector-flow-week-current header > strong { font-size:.9rem; }
 .sector-flow-week-current li b {
   background:#fbe7d1;
   color:#ad5218;
@@ -1077,21 +1079,29 @@ body:has(#app-shell:not(.hidden)) {
   gap:.65rem;
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:center; }
-.sector-flow-week-current .sector-flow-columns { padding:0 .05rem; }
+.sector-flow-week-current .sector-flow-columns {
+  padding:0 .05rem;
+  font-size:.66rem;
+}
 .sector-flow-week-current .sector-flow-columns span:nth-child(-n+2) { text-align:center; }
 .sector-flow-week-current > ol > li { min-height:2.8rem; }
+.sector-flow-week-current > ol > li > strong,
+.sector-flow-week-current .sector-flow-sector { font-size:.8rem; }
 .sector-flow-week-current .sector-flow-streak {
+  font-size:.68rem;
   text-align:center;
 }
 .sector-flow-week-current .sector-flow-returns { display:contents; }
 .sector-flow-week-current .sector-flow-returns > span {
   justify-content:center;
 }
+.sector-flow-week-current .sector-flow-returns em { font-size:.8rem; }
 .sector-flow-week-current .sector-flow-returns small { display:none; }
 .sector-flow-top-holding {
   overflow:hidden;
   color:#61798d;
-  font-size:.7rem;
+  font-size:.78rem;
+  font-weight:650;
   text-align:center;
   text-overflow:ellipsis;
   white-space:nowrap;
