@@ -971,17 +971,20 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-returns small {
   color:#8297a8;
-  font-size:.52rem;
+  font-size:.55rem;
   font-weight:700;
 }
 .sector-flow-returns em {
   color:#326e98;
-  font-size:.62rem;
+  font-size:.72rem;
   font-style:normal;
-  font-weight:700;
+  font-weight:820;
   text-align:right;
   white-space:nowrap;
 }
+.sector-flow-returns em.sector-return-positive { color:#d5483f; }
+.sector-flow-returns em.sector-return-negative { color:#2870ba; }
+.sector-flow-returns em.sector-return-neutral { color:#326e98; }
 .sector-flow-week-current {
   border-color:#c86b20;
   box-shadow:0 5px 12px rgba(190,104,35,.13);

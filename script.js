@@ -97,9 +97,8 @@ function initializeSectorFlowWeekLabels() {
   document.querySelectorAll('[data-sector-week-offset]').forEach((card) => {
     const weekStart = new Date(currentWeek);
     weekStart.setDate(weekStart.getDate() + (Number(card.dataset.sectorWeekOffset) * 7));
-    const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
-    const firstMondayOffset = (monthStart.getDay() + 6) % 7;
-    const weekOfMonth = Math.floor((weekStart.getDate() + firstMondayOffset - 1) / 7) + 1;
+    // 월요일 날짜의 순번으로 주차를 표시합니다. 예: 8월 3일=1주차, 10일=2주차.
+    const weekOfMonth = Math.floor((weekStart.getDate() - 1) / 7) + 1;
 
     card.querySelector('[data-sector-week-period]').textContent = `${weekStart.getMonth() + 1}월`;
     card.querySelector('[data-sector-week-label]').textContent = Number(card.dataset.sectorWeekOffset) === 0

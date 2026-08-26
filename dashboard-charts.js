@@ -1026,6 +1026,21 @@ function sectorReturn(value) {
   return `${number > 0 ? '+' : ''}${formatted}%`;
 }
 
+function sectorReturnTone(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number === 0) return 'sector-return-neutral';
+  return number > 0 ? 'sector-return-positive' : 'sector-return-negative';
+}
+
+function setSectorWeekHeading(card, week, isLatest) {
+  if (!week) return;
+  const date = new Date(`${week}T00:00:00Z`);
+  const period = card.querySelector('[data-sector-week-period]');
+  const label = card.querySelector('[data-sector-week-label]');
+  if (period) period.textContent = `${date.getUTCMonth() + 1}월`;
+  if (label) label.textContent = isLatest ? '이번 주' : `${Math.floor((date.getUTCDate() - 1) / 7) + 1}주차`;
+}
+
 function renderSectorFlow(rows) {
   const grouped = new Map();
   rows.forEach((row) => {
@@ -1042,9 +1057,10 @@ function renderSectorFlow(rows) {
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
+    setSectorWeekHeading(card, week, week === weeks.at(-1));
     body.innerHTML = list.length ? list.map((row) => {
       const sector = row.market_sector_etfs?.sector_name || '—';
-      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row)}</span><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em>${sectorReturn(row.weekly_return_pct)}</em></span><span><small>4주 누적</small><em>${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
+      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row)}</span><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>4주 누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
     }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>4주 누적</small><em>—</em></span></div></li>';
   });
   const latestWeek = weeks.at(-1), latest = (grouped.get(latestWeek) || [])[0];

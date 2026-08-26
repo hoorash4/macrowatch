@@ -223,6 +223,7 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/sector-flow.yml'), 'utf8');
   assert.match(workflow, /10 0 \* \* 1-5/);
   assert.match(workflow, /40 6 \* \* 1-5/);
@@ -232,6 +233,12 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.match(charts, /sector-flow-returns/);
   assert.match(styles, /grid-template-columns:1\.65rem 2\.15rem minmax\(0,1fr\) 2rem/);
   assert.match(styles, /grid-column:3 \/ 5/);
+  assert.match(script, /Math\.floor\(\(weekStart\.getDate\(\) - 1\) \/ 7\) \+ 1/);
+  assert.match(charts, /setSectorWeekHeading\(card, week, week === weeks\.at\(-1\)\)/);
+  assert.match(charts, /sector-return-positive/);
+  assert.match(charts, /sector-return-negative/);
+  assert.match(styles, /sector-return-positive \{ color:#d5483f/);
+  assert.match(styles, /sector-return-negative \{ color:#2870ba/);
   assert.match(charts, /sectorReturn\(row\.weekly_return_pct\).*sectorReturn\(row\.cumulative_return_pct\)/s);
   assert.match(charts, /Math\.abs\(number\) < 10 \? number\.toFixed\(2\) : Math\.round\(number\)\.toString\(\)/);
   assert.match(charts, /latest\.price_stage === 'open'/);
