@@ -1057,6 +1057,12 @@ function sectorHoldingsTooltip(etf) {
   return `<button type="button" class="sector-flow-sector" aria-expanded="false"><span>${sectorName}</span><span class="sector-flow-holdings" role="tooltip"><b>섹터 대표 종목</b><ol>${items}</ol></span></button>`;
 }
 
+function sectorTopHolding(etf) {
+  const topHolding = [...(etf?.market_sector_etf_holdings || [])]
+    .sort((a, b) => Number(a.weight_rank) - Number(b.weight_rank))[0];
+  return `<span class="sector-flow-top-holding">${topHolding ? escapeHtml(topHolding.holding_name) : '미수집'}</span>`;
+}
+
 function closeSectorHoldings(trigger) {
   if (!trigger) return;
   trigger.classList.remove('is-open');
@@ -1110,14 +1116,18 @@ function renderSectorFlow(rows) {
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = isLatestWeek
-      ? '<span>순위</span><span>변동</span><span>섹터</span><span>주간 수익률</span><span>4주간 누적</span><span>연속 랭크</span>'
+      ? '<span>순위</span><span>변동</span><span>섹터</span><span>대표종목</span><span>주간 수익률</span><span>4주 누적 수익률</span><span>연속 랭킹 유지</span>'
       : '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
       const etf = row.market_sector_etfs;
-      const streakUnit = isLatestWeek ? '주차' : '주';
-      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div><span class="sector-flow-streak">${Number(row.top10_streak)}${streakUnit}</span></li>`;
-    }).join('') : `<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div><span class="sector-flow-streak">—${isLatestWeek ? '주차' : '주'}</span></li>`;
+      const rank = `<b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}`;
+      const returns = `<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div>`;
+      const streak = `<span class="sector-flow-streak">${Number(row.top10_streak)}${isLatestWeek ? '주차' : '주'}</span>`;
+      return `<li>${rank}${isLatestWeek ? `${sectorTopHolding(etf)}${returns}${streak}` : `${streak}${returns}`}</li>`;
+    }).join('') : isLatestWeek
+      ? '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-top-holding">—</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div><span class="sector-flow-streak">—주차</span></li>'
+      : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
   if (note) note.textContent = '매 영업일 시가·종가 반영';

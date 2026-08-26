@@ -246,6 +246,7 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.match(styles, /sector-flow-change-move[\s\S]*font-size:\.60rem/);
   assert.match(styles, /sector-return-positive \{ color:#d5483f/);
   assert.match(styles, /sector-return-negative \{ color:#2870ba/);
+  assert.match(styles, /sector-flow-returns > span:nth-child\(2\) em \{ font-weight:500; \}/);
   assert.match(charts, /sectorReturn\(row\.weekly_return_pct\).*sectorReturn\(row\.cumulative_return_pct\)/s);
   assert.match(charts, /absolute < 10[\s\S]*number\.toFixed\(2\)[\s\S]*absolute < 100[\s\S]*number\.toFixed\(1\)[\s\S]*Math\.trunc\(number\)\.toString\(\)/);
   assert.doesNotMatch(charts, /오늘 (시가|종가) 기준/);
@@ -280,13 +281,14 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-holdings \{[\s\S]*width:9rem;/);
   assert.match(styles, /\.sector-flow-week-current > ol \{\s*grid-template-columns:1fr;/);
   assert.match(styles, /sector-flow-week-current > ol > li:last-child \{ border-bottom:0; \}/);
-  assert.match(charts, /<span>주간 수익률<\/span><span>4주간 누적<\/span><span>연속 랭크<\/span>/);
+  assert.match(charts, /<span>대표종목<\/span><span>주간 수익률<\/span><span>4주 누적 수익률<\/span><span>연속 랭킹 유지<\/span>/);
+  assert.match(charts, /function sectorTopHolding\(etf\)/);
   assert.match(charts, /isLatestWeek \? '주차' : '주'/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 7rem 7rem 5rem/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) minmax\(7rem,1fr\) 7rem 8rem 6rem/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns \{ display:contents; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(-n\+2\) \{ text-align:center; \}/);
-  assert.match(charts, /sector-flow-returns[\s\S]*sector-flow-streak/);
+  assert.match(charts, /isLatestWeek \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}` : `\$\{streak\}\$\{returns\}`/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{\s*text-align:center;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span \{\s*justify-content:center;/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:nth-child\(2\) em \{ font-weight:500; \}/);
+  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*text-align:center;/);
 });
