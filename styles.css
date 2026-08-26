@@ -625,6 +625,10 @@ body:has(#app-shell:not(.hidden)) {
   color:#f5f0e5;
   font-weight:300;
 }
+.decisive-news-ai-note {
+  display:block;
+  margin-top:.125rem;
+}
 #news-extreme-signals .decisive-news-count-label, #news-extreme-signals .decisive-news-count-value {
   color:#f5f3ff;
   font-size:.9375rem;
@@ -711,8 +715,8 @@ body:has(#app-shell:not(.hidden)) {
 }
 .decisive-news-keyword.is-example {
   border-style:dashed;
-  border-color:rgba(168,162,158,.3);
-  color:#b8b2a8;
+  border-color:rgba(203,213,225,.52);
+  color:#c9c4bb;
 }
 /* 분석 카드의 작은 아이콘 상자는 카드 종류와 관계없이 같은 표면을 사용합니다. */
 #app-shell .analysis-card-icon {

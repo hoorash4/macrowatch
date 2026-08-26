@@ -81,8 +81,11 @@ test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나�
   assert.match(html, /decisive-news-description[\s\S]*decisive-news-summary-row[\s\S]*decisive-news-count-card[\s\S]*decisive-news-keyword-panel/);
   assert.match(styles, /\.decisive-news-summary-row\s*\{[\s\S]*?grid-template-columns:minmax\(13\.5rem,auto\) minmax\(0,1fr\)/);
   assert.match(html, /나열된 키워드가 포함된 뉴스를 지속적으로 관찰할 필요가 있습니다/);
+  assert.match(html, /class="decisive-news-ai-note">\(AI의 판단이므로 실제 중요도와 다를 수 있습니다\.\)<\/span>/);
   assert.match(styles, /\.decisive-news-content\s*\{[\s\S]*?padding:1\.25rem 1\.5rem/);
   assert.match(styles, /\.decisive-news-count-card\s*\{[\s\S]*?align-items:center;[\s\S]*?text-align:center;/);
+  assert.match(styles, /\.decisive-news-ai-note\s*\{[\s\S]*?display:block;/);
+  assert.match(styles, /\.decisive-news-keyword\.is-example\s*\{[\s\S]*?border-color:rgba\(203,213,225,\.52\)/);
 });
 
 test('상관계수 계산은 완전한 양·음의 관계를 보존한다', () => {
