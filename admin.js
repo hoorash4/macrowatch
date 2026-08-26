@@ -253,9 +253,7 @@
     try {
       await invokeAdmin('save_sector_etf', {
         sector_name: document.getElementById('sector-name-input').value,
-        etf_name: document.getElementById('sector-etf-name-input').value,
-        etf_ticker: document.getElementById('sector-etf-ticker-input').value,
-        issuer: document.getElementById('sector-etf-issuer-input').value
+        etf_ticker: document.getElementById('sector-etf-ticker-input').value
       });
       form.reset();
       await loadSectorEtfs();

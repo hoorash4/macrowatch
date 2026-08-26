@@ -47,11 +47,7 @@ values
   ('한국부동산리츠인프라', 'KODEX 한국부동산리츠인프라', '476800', '삼성자산운용'),
   ('수소경제테마', 'RISE 수소경제테마', '367770', 'KB자산운용')
 on conflict (etf_ticker)
-do update set
-  sector_name = excluded.sector_name,
-  etf_name = excluded.etf_name,
-  issuer = excluded.issuer,
-  updated_at = now();
+do nothing;
 
 comment on index public.market_sector_etfs_sector_name_uidx is
   'Enforces one representative ETF per displayed sector.';

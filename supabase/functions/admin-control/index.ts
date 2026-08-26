@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy-admin.ts";
+import { fetchKisDailyPriceBundle, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const REPOSITORY = "hoorash4/macrowatch";
@@ -106,6 +107,34 @@ function validateSectorEtf(body: Record<string, unknown>) {
     issuer: requiredText(body.issuer, "운용사", 80),
     is_active: true,
   };
+}
+
+function validateNewSectorEtf(body: Record<string, unknown>) {
+  const ticker = requiredText(body.etf_ticker, "ETF 코드", 6);
+  if (!/^\d{6}$/.test(ticker)) throw new Error("ETF 코드는 6자리 숫자여야 합니다.");
+  return { sector_name: requiredText(body.sector_name, "섹터명", 80), etf_ticker: ticker };
+}
+
+function issuerFromEtfName(name: string) {
+  const brands: Array<[string, string]> = [
+    ["KODEX", "삼성자산운용"], ["TIGER", "미래에셋자산운용"], ["RISE", "KB자산운용"],
+    ["ACE", "한국투자신탁운용"], ["PLUS", "한화자산운용"], ["HANARO", "NH-Amundi자산운용"],
+    ["SOL", "신한자산운용"], ["KOSEF", "키움투자자산운용"], ["KIWOOM", "키움투자자산운용"],
+    ["TIMEFOLIO", "타임폴리오자산운용"], ["BNK", "BNK자산운용"], ["1Q", "하나자산운용"],
+  ];
+  const matched = brands.find(([brand]) => name.toUpperCase().startsWith(`${brand} `) || name.toUpperCase() === brand);
+  if (!matched) throw new Error(`ETF명에서 운용사를 자동 확인하지 못했습니다: ${name}`);
+  return matched[1];
+}
+
+async function rebuildSectorRankings(supabaseUrl: string, serviceRoleKey: string) {
+  const response = await fetch(`${supabaseUrl}/functions/v1/sector-flow`, {
+    method: "POST",
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ stage: "close", rebuild_only: true }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true) throw new Error(payload?.error || "섹터 순위 재계산에 실패했습니다.");
 }
 
 function validateExtremeNewsRule(body: Record<string, unknown>) {
@@ -362,9 +391,9 @@ export default {
       }
 
       if (action === "save_sector_etf") {
-        const values = validateSectorEtf(body || {});
         const id = String(body?.id || "").trim();
         if (id) {
+          const values = validateSectorEtf(body || {});
           const { data, error } = await admin.from("market_sector_etfs")
             .update({ ...values, updated_at: new Date().toISOString() })
             .eq("id", id)
@@ -374,12 +403,35 @@ export default {
           if (!data) return json({ error: "등록 항목을 찾을 수 없습니다." }, 404, origin);
           return json({ item: data }, 200, origin);
         }
+        const input = validateNewSectorEtf(body || {});
+        const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
+        const end = new Date(), start = new Date(end.getTime() - 9 * 7 * 86_400_000);
+        const bundle = await fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end);
+        if (!bundle.instrumentName) throw new Error("KIS에서 ETF 정식명을 확인하지 못했습니다.");
+        if (!bundle.prices.length) throw new Error("KIS에서 최근 9주 가격을 확인하지 못했습니다.");
+        const values = {
+          ...input,
+          etf_name: bundle.instrumentName,
+          issuer: issuerFromEtfName(bundle.instrumentName),
+          is_active: true,
+        };
         const { data, error } = await admin.from("market_sector_etfs")
           .insert(values)
           .select("id,sector_name,etf_name,etf_ticker,issuer,is_active,updated_at")
           .single();
         if (error) throw error;
-        return json({ item: data }, 201, origin);
+        try {
+          const { error: priceError } = await admin.from("market_sector_etf_prices").upsert(bundle.prices.map((price) => ({
+            etf_id: data.id, market_date: price.marketDate, open_price: price.open, close_price: price.close,
+            volume: price.volume, updated_at: new Date().toISOString(),
+          })), { onConflict: "etf_id,market_date" });
+          if (priceError) throw priceError;
+          await rebuildSectorRankings(supabaseUrl, serviceRoleKey);
+          return json({ item: data, price_rows: bundle.prices.length }, 201, origin);
+        } catch (registrationError) {
+          await admin.from("market_sector_etfs").delete().eq("id", data.id);
+          throw registrationError;
+        }
       }
 
       if (action === "delete_sector_etf") {

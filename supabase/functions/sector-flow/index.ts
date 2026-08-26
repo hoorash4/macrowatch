@@ -40,6 +40,7 @@ Deno.serve(async (request) => {
     // 배포 기본값인 Supabase 게이트웨이 JWT 검증을 통과한 서버 요청만 여기까지 도달한다.
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stage = body.stage === "open" ? "open" : body.stage === "close" ? "close" : null;
+    const rebuildOnly = body.rebuild_only === true;
     if (!stage) return json({ error: "stage는 open 또는 close여야 합니다." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -50,44 +51,46 @@ Deno.serve(async (request) => {
     if (registryError) throw registryError;
     if (!registry?.length) throw new Error("등록된 섹터 ETF가 없습니다.");
 
-    const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
     const today = kstDate(), end = new Date(`${today}T00:00:00Z`);
     const currentWeek = mondayOf(today);
     const retentionStart = new Date(Date.parse(`${currentWeek}T00:00:00Z`) - (RETENTION_WEEKS - 1) * 7 * 86_400_000)
       .toISOString().slice(0, 10);
     const collected: Record<string, unknown>[] = [], failures: Array<{ ticker: string; error: string }> = [];
 
-    for (const item of registry) {
-      try {
-        // 초기 이력은 이미 적재되어 있으므로 운영 중에는 당일 일봉만 갱신합니다.
-        const candles = await fetchKisDailyPrices(credentials, token, item.etf_ticker, end, end);
-        for (const candle of candles) {
-          const isToday = candle.marketDate === today;
-          collected.push({
-            etf_id: item.id,
-            market_date: candle.marketDate,
-            open_price: candle.open,
-            close_price: isToday && stage === "open" ? null : candle.close,
-            volume: candle.volume,
-            updated_at: new Date().toISOString(),
-          });
+    if (!rebuildOnly) {
+      const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
+      for (const item of registry) {
+        try {
+          // 초기 이력은 이미 적재되어 있으므로 운영 중에는 당일 일봉만 갱신합니다.
+          const candles = await fetchKisDailyPrices(credentials, token, item.etf_ticker, end, end);
+          for (const candle of candles) {
+            const isToday = candle.marketDate === today;
+            collected.push({
+              etf_id: item.id,
+              market_date: candle.marketDate,
+              open_price: candle.open,
+              close_price: isToday && stage === "open" ? null : candle.close,
+              volume: candle.volume,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        } catch (error) {
+          failures.push({ ticker: item.etf_ticker, error: error instanceof Error ? error.message : String(error) });
         }
-      } catch (error) {
-        failures.push({ ticker: item.etf_ticker, error: error instanceof Error ? error.message : String(error) });
+        await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS));
       }
-      await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS));
-    }
-    if (!collected.length) {
-      if (failures.length) throw new Error(`ETF 가격 수집 실패: ${failures.length}건`);
-      return json({ ok: true, stage, skipped: true, reason: "거래일 가격이 없습니다.", failures });
-    }
+      if (!collected.length) {
+        if (failures.length) throw new Error(`ETF 가격 수집 실패: ${failures.length}건`);
+        return json({ ok: true, stage, skipped: true, reason: "거래일 가격이 없습니다.", failures });
+      }
 
-    const { error: priceError } = await admin.from("market_sector_etf_prices")
-      .upsert(collected, { onConflict: "etf_id,market_date" });
-    if (priceError) throw priceError;
+      const { error: priceError } = await admin.from("market_sector_etf_prices")
+        .upsert(collected, { onConflict: "etf_id,market_date" });
+      if (priceError) throw priceError;
+    }
 
     // 종가가 정상 반영된 뒤에만 9주 범위를 벗어난 원본 가격을 정리합니다.
-    if (stage === "close") {
+    if (stage === "close" && !rebuildOnly) {
       const { error: retentionError } = await admin.from("market_sector_etf_prices")
         .delete().lt("market_date", retentionStart);
       if (retentionError) throw retentionError;
@@ -105,7 +108,7 @@ Deno.serve(async (request) => {
       .select("etf_id,rank,top10_streak").eq("week_start", previousWeek);
     if (previousError) throw previousError;
     const previousByEtf = new Map((previousRows || []).map((row) => [row.etf_id, row]));
-    const persistedRows = currentRows.map((row) => {
+    const persistedRows = rebuildOnly ? rankings : currentRows.map((row) => {
       const previous = previousByEtf.get(row.etfId);
       const previousRank = previous ? Number(previous.rank) : row.previousRank;
       const top10Streak = row.rank <= 10
@@ -113,7 +116,11 @@ Deno.serve(async (request) => {
         : 0;
       return { ...row, previousRank, top10Streak, isNew: row.rank <= 10 && (previousRank === null || previousRank > 10) };
     });
-    const { error: deleteError } = await admin.from("market_sector_weekly_rankings").delete().eq("week_start", currentWeek);
+    const replaceFrom = rebuildOnly && persistedRows.length ? persistedRows[0].weekStart : currentWeek;
+    const deleteQuery = admin.from("market_sector_weekly_rankings").delete();
+    const { error: deleteError } = rebuildOnly
+      ? await deleteQuery.gte("week_start", replaceFrom)
+      : await deleteQuery.eq("week_start", currentWeek);
     if (deleteError) throw deleteError;
     if (persistedRows.length) {
       const { error: rankingError } = await admin.from("market_sector_weekly_rankings").insert(persistedRows.map((row) => ({
@@ -124,7 +131,7 @@ Deno.serve(async (request) => {
       })));
       if (rankingError) throw rankingError;
     }
-    return json({ ok: true, stage, registry_count: registry.length, price_rows: collected.length, ranking_rows: persistedRows.length, retention_start: retentionStart, failures });
+    return json({ ok: true, stage, rebuild_only: rebuildOnly, registry_count: registry.length, price_rows: collected.length, ranking_rows: persistedRows.length, retention_start: retentionStart, failures });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ ok: false, error: message }, 500);

@@ -98,6 +98,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(len({row[2] for row in rows}), 39)
         self.assertIn("market_sector_etfs_sector_name_uidx", migration)
         self.assertNotIn("글로벌AI사이버보안", migration)
+        self.assertIn("do nothing", migration.lower())
+        self.assertNotIn("do update set", migration.lower())
 
     def test_sector_flow_stores_open_close_and_server_rankings(self):
         migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
@@ -111,14 +113,34 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("RETENTION_WEEKS = 9", pipeline)
         self.assertIn("fetchKisDailyPrices(credentials, token, item.etf_ticker, end, end)", pipeline)
         self.assertIn('.delete().lt("market_date", retentionStart)', pipeline)
-        self.assertIn('if (stage === "close")', pipeline)
-        self.assertIn('.delete().eq("week_start", currentWeek)', pipeline)
+        self.assertIn('if (stage === "close" && !rebuildOnly)', pipeline)
+        self.assertIn("body.rebuild_only === true", pipeline)
+        self.assertIn("rebuildOnly ? rankings : currentRows.map", pipeline)
+        self.assertIn('await deleteQuery.eq("week_start", currentWeek)', pipeline)
         self.assertIn(".range(from, from + DATABASE_PAGE_SIZE - 1)", pipeline)
         self.assertIn("if (page.length < DATABASE_PAGE_SIZE) break", pipeline)
         self.assertIn("endpointPrice / baseline.closePrice", scoring)
         self.assertIn("fourWeekBaseline", scoring)
         self.assertIn("endpointPrice / fourWeekBaseline.closePrice", scoring)
         self.assertNotIn("latestPrice / baseline.closePrice", scoring)
+
+    def test_new_sector_etf_registration_resolves_metadata_and_backfills_prices(self):
+        admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
+        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
+        control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
+        kis = (ROOT / "supabase/functions/_shared/kis-client.ts").read_text(encoding="utf-8")
+
+        self.assertIn('id="sector-name-input"', admin_html)
+        self.assertIn('id="sector-etf-ticker-input"', admin_html)
+        self.assertNotIn('id="sector-etf-name-input"', admin_html)
+        self.assertNotIn('id="sector-etf-issuer-input"', admin_html)
+        self.assertIn("sector_name: document.getElementById('sector-name-input').value", admin_js)
+        self.assertIn("etf_ticker: document.getElementById('sector-etf-ticker-input').value", admin_js)
+        self.assertIn("fetchKisDailyPriceBundle", control)
+        self.assertIn("9 * 7 * 86_400_000", control)
+        self.assertIn('body: JSON.stringify({ stage: "close", rebuild_only: true })', control)
+        self.assertIn("issuerFromEtfName(bundle.instrumentName)", control)
+        self.assertIn("hts_kor_isnm", kis)
 
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")
