@@ -284,16 +284,16 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /<span>대표종목<\/span><span>주간 수익률<\/span><span>4주 누적 수익률<\/span><span>연속 랭킹 유지<\/span>/);
   assert.match(charts, /function sectorTopHolding\(etf\)/);
   assert.match(charts, /isLatestWeek \? '주차' : '주'/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) minmax\(7rem,1fr\) repeat\(3,7rem\)/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 10\.5rem repeat\(3,7rem\)/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns \{ display:contents; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(-n\+2\) \{ text-align:center; \}/);
   assert.match(charts, /isLatestWeek \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}` : `\$\{streak\}\$\{returns\}`/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*font-size:\.68rem;[\s\S]*text-align:center;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span \{\s*justify-content:center;/);
-  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*text-align:center;/);
+  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*padding-right:\.2rem;[\s\S]*text-align:right;/);
   assert.match(styles, /sector-flow-week-current header > strong \{ font-size:\.9rem; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size:\.66rem;/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-sector \{ font-size:\.8rem; \}/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-sector \{ font-size:\.88rem; \}/);
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*font-size:\.78rem;[\s\S]*font-weight:500;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns em \{ font-size:\.8rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\)[\s\S]*\.sector-flow-streak \{[\s\S]*justify-self:center;[\s\S]*text-align:center;/);
@@ -313,6 +313,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /span:first-child em\.sector-return-negative \{[\s\S]*background:rgba\(40,112,186,\.08\)/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) header > strong \{ font-size:\.88rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-columns \{ font-size:\.64rem; \}/);
-  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-sector \{ font-size:\.78rem; \}/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-sector \{ font-size:\.86rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.78rem; \}/);
+  assert.match(styles, /sector-flow-week-current \{ min-width:48rem; \}/);
 });

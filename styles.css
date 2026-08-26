@@ -921,7 +921,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week:not(.sector-flow-week-current) header > span { font-size:.8rem; }
 .sector-flow-week:not(.sector-flow-week-current) header > strong { font-size:.88rem; }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-columns { font-size:.64rem; }
-.sector-flow-week:not(.sector-flow-week-current) .sector-flow-sector { font-size:.78rem; }
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-sector { font-size:.86rem; }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-streak { font-size:.66rem; }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns small { font-size:.61rem; }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns em { font-size:.78rem; }
@@ -1094,7 +1094,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current > ol > li:last-child { border-bottom:0; }
 .sector-flow-week-current .sector-flow-columns,
 .sector-flow-week-current > ol > li {
-  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) minmax(7rem,1fr) repeat(3,7rem);
+  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 10.5rem repeat(3,7rem);
   gap:.65rem;
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:center; }
@@ -1114,7 +1114,7 @@ body:has(#app-shell:not(.hidden)) {
   min-height:2.8rem;
 }
 .sector-flow-week-current > ol > li > strong,
-.sector-flow-week-current .sector-flow-sector { font-size:.8rem; }
+.sector-flow-week-current .sector-flow-sector { font-size:.88rem; }
 .sector-flow-week-current .sector-flow-streak {
   justify-self:center;
   box-sizing:border-box;
@@ -1176,10 +1176,11 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-top-holding {
   overflow:hidden;
+  padding-right:.2rem;
   color:#7890a2;
   font-size:.78rem;
   font-weight:500;
-  text-align:center;
+  text-align:right;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
@@ -1359,7 +1360,7 @@ body:has(#app-shell:not(.hidden)) {
     padding:0 .35rem;
   }
   .sector-flow-history { grid-template-columns:repeat(4,12rem); }
-  .sector-flow-week-current { min-width:38rem; }
+  .sector-flow-week-current { min-width:48rem; }
 }
 @keyframes dashboardSpin {
   to {
