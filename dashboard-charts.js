@@ -1116,7 +1116,7 @@ function renderSectorFlow(rows) {
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = isLatestWeek
-      ? '<span>순위</span><span>변동</span><span>섹터 <small class="sector-flow-classification-note">(KRX 업종 구분과 다름)</small></span><span>대표종목</span><span>주간 수익률</span><span>4주 누적 수익률</span><span>연속 랭킹 유지</span>'
+      ? '<span>순위</span><span>변동</span><span>섹터 <span class="sector-flow-classification-note">(KRX 업종 구분과 다름)</span></span><span>대표종목</span><span>주간 수익률</span><span>4주 누적 수익률</span><span>연속 랭킹 유지</span>'
       : '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
