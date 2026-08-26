@@ -124,6 +124,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("징검다리 추세", prompt)
         self.assertIn("동결이 두 번 연속될 때 두 번째 동결", prompt)
         self.assertIn("이를 직접 판정하거나 출력하지 않는다", prompt)
+        self.assertNotIn("연속 인상 중 첫번째 동결", prompt)
 
     def test_fomc_pipeline_normalizes_ai_output_before_storage(self) -> None:
         pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
