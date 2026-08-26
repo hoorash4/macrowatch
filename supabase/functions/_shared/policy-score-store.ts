@@ -1,8 +1,10 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { POLICY_SCORE_PROFILE, scorePolicyHistory } from "./policy-scoring.ts";
 import type { PolicyScoringInput } from "./policy-types.ts";
 
-export async function recomputePolicyScores(supabase: ReturnType<typeof createClient>, centralBank = "fed") {
+type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
+
+export async function recomputePolicyScores(supabase: ServiceClient, centralBank = "fed") {
   const { data, error } = await supabase.from("central_bank_policy_events")
     .select("central_bank,meeting_date,action,ai_primary_reason,primary_reason,admin_primary_reason,admin_score_override,change_bps,is_emergency")
     .eq("central_bank", centralBank).eq("analysis_status", "completed").order("meeting_date");

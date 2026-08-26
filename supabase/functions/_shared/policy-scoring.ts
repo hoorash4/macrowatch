@@ -88,10 +88,11 @@ export function scorePolicyHistory(inputRows: PolicyScoringInput[]): PolicyScori
         }
       }
 
-      baseScore = directionalScore(reason, row.action, state.reasonSequence);
+      const activeState = state;
+      baseScore = directionalScore(reason, row.action, activeState.reasonSequence);
       const rawMagnitude = Math.abs(rawBase(reason, row.action));
-      const adjustmentMagnitude = state.reasonSequence > 0 ? rawMagnitude / state.reasonSequence : 0;
-      const firstEligible = state.sequence === 1
+      const adjustmentMagnitude = activeState.reasonSequence > 0 ? rawMagnitude / activeState.reasonSequence : 0;
+      const firstEligible = activeState.sequence === 1
         && ((reason === "inflation_fight" && row.action === "hike")
           || (reason === "recession_financial_stress" && row.action === "cut"));
       firstAdjustment = firstEligible ? round(adjustmentMagnitude * 0.10) : 0;

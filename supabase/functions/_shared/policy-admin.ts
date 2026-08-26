@@ -1,10 +1,11 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recomputePolicyScores } from "./policy-score-store.ts";
 import type { PolicyReason } from "./policy-types.ts";
 
 const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing"]);
+type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
 
-export async function listPolicyReviews(admin: ReturnType<typeof createClient>) {
+export async function listPolicyReviews(admin: ServiceClient) {
   const { data, error } = await admin.from("central_bank_policy_events")
     .select("meeting_date,action,change_bps,ai_primary_reason,transition_assessment")
     .eq("central_bank", "fed").eq("analysis_status", "completed")
@@ -21,7 +22,7 @@ export async function listPolicyReviews(admin: ReturnType<typeof createClient>) 
 }
 
 export async function resolvePolicyReview(
-  admin: ReturnType<typeof createClient>,
+  admin: ServiceClient,
   userId: string,
   body: Record<string, unknown>,
 ) {
