@@ -11,7 +11,7 @@
     ['uncertain', '불명확'],
   ];
 
-  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character]);
+  const { escapeHtml } = window.MacroWatchFrontend;
   const actionLabel = (action) => ({ hike: '인상', hold: '동결', cut: '인하' })[action] || action;
 
   function render(items) {

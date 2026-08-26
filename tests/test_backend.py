@@ -161,8 +161,10 @@ class SourceContractTests(unittest.TestCase):
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
         admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
+        frontend_core = (ROOT / "frontend-core.js").read_text(encoding="utf-8")
         policy_review = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
-        self.assertIn("JSON.stringify({ ...payload, action })", admin_client)
+        self.assertIn("functionClient.invoke('admin-control', { ...payload, action }", admin_client)
+        self.assertIn("body: JSON.stringify(payload)", frontend_core)
         self.assertNotIn("action: article.dataset.policyAction", policy_review)
 
     def test_admin_registries_use_delete_without_activation_controls(self) -> None:

@@ -1,6 +1,7 @@
 (() => {
-  const { supabaseUrl: SUPABASE_URL, supabasePublishableKey: SUPABASE_KEY } = window.MACROWATCH_CONFIG;
-  const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+  const db = window.MacroWatchFrontend.createSupabaseClient();
+  const { escapeHtml } = window.MacroWatchFrontend;
+  const functionClient = window.MacroWatchFrontend.createFunctionClient(db);
   let scheduleTimes = ['08:00', '18:00'];
 
   function defaultScheduleTime(index) {
@@ -56,15 +57,6 @@
     return formatTime(new Date(`${nextDay}T${sorted[0]}:00+09:00`));
   }
 
-  function escapeHtml(value) {
-    return String(value || '').replace(/[&<>"]/g, (character) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;'
-    })[character]);
-  }
-
   function showNotice(title, message, isError = false) {
     document.getElementById('operation-title').textContent = title;
     document.getElementById('operation-message').textContent = message;
@@ -79,34 +71,10 @@
     document.getElementById('operation-modal').classList.add('hidden');
   }
 
-  async function getAccessToken() {
-    const { data, error } = await db.auth.getSession();
-    if (error || !data.session?.access_token) {
-      throw new Error('로그인이 필요합니다.');
-    }
-    return data.session.access_token;
-  }
-
-  async function invokeAdmin(action, payload = {}, retried = false) {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-control`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${await getAccessToken()}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ ...payload, action })
+  async function invokeAdmin(action, payload = {}) {
+    return functionClient.invoke('admin-control', { ...payload, action }, {
+      errorMessage: (status) => `관리자 요청에 실패했습니다. (${status})`,
     });
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 401 && !retried) {
-      const refreshed = await db.auth.refreshSession();
-      if (!refreshed.error && refreshed.data.session) {
-        return invokeAdmin(action, payload, true);
-      }
-    }
-    if (!response.ok) throw new Error(data?.error || `관리자 요청에 실패했습니다. (${response.status})`);
-    if (data?.error) throw new Error(data.error);
-    return data;
   }
 
   window.MacroWatchAdminApi = Object.freeze({ invoke: invokeAdmin, notice: showNotice });

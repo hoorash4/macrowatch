@@ -671,14 +671,16 @@
     </div>
   </div>
 
-  <!-- 로그인 처리 스크립트 -->
+  <!-- 공통 브라우저 기반과 로그인 처리: 뒤 모듈이 같은 Supabase 클라이언트를 재사용합니다. -->
   <script src="autocomplete-off.js?v=1"></script>
   <script src="config.js?v=1"></script>
-  <script src="auth.js?v=13"></script>
+  <script src="frontend-core.js?v=1"></script>
+  <script src="auth.js?v=14"></script>
 
-  <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
+  <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=150"></script>
+  <script src="script.js?v=151"></script>
+  <script src="dashboard-charts.js?v=1"></script>
   <script src="policy-chart.js?v=5"></script>
 </body>
 </html>

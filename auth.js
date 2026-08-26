@@ -1,7 +1,7 @@
 (() => {
-  const { supabaseUrl: AUTH_SUPABASE_URL, supabasePublishableKey: AUTH_SUPABASE_KEY } = window.MACROWATCH_CONFIG;
+  const { supabaseUrl: AUTH_SUPABASE_URL, supabasePublishableKey: AUTH_SUPABASE_KEY } = window.MacroWatchFrontend.config;
   const KAKAO_OAUTH_STATE_KEY = 'macrowatch.kakao-oauth-state';
-  const authClient = window.supabase?.createClient(AUTH_SUPABASE_URL, AUTH_SUPABASE_KEY);
+  const authClient = window.MacroWatchFrontend.createSupabaseClient();
   window.macroWatchSupabase = authClient;
   const elements = {};
   let initialized = false;

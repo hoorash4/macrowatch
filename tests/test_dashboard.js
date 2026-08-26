@@ -48,8 +48,11 @@ function loadDashboardScript() {
   };
   context.globalThis = context;
   vm.createContext(context);
-  const source = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-  vm.runInContext(source, context, { filename: 'script.js' });
+  // 운영 HTML과 같은 순서로 공통 기반 → 페이지 셸/추적 → 차트 모듈을 불러온다.
+  for (const filename of ['frontend-core.js', 'script.js', 'dashboard-charts.js']) {
+    const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8');
+    vm.runInContext(source, context, { filename });
+  }
   return context;
 }
 
@@ -127,10 +130,10 @@ test('분석 메뉴의 최상단 공간과 카드 간격은 공통 토큰을 사
 
 test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰을 사용한다', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.match(styles, /--tracker-section-separation:\s*1\.25rem/);
+  assert.match(styles, /--tracker-section-separation:\s*1\.5rem/);
   assert.match(styles, /--tracker-card-accent:\s*#8aa2b4/);
   assert.match(styles, /--tracker-card-border-width:\s*2px/);
-  assert.match(styles, /--tracker-card-border-top-width:\s*5px/);
+  assert.match(styles, /--tracker-card-border-top-width:\s*8px/);
   assert.match(styles, /\.dashboard-tracker-card\s*\{[\s\S]*?margin-top:var\(--tracker-section-separation\);[\s\S]*?border:var\(--tracker-card-border-width\) solid var\(--tracker-card-accent\);[\s\S]*?border-top-width:var\(--tracker-card-border-top-width\);[\s\S]*?background:var\(--tracker-card-background\);/);
 });
 
@@ -139,4 +142,19 @@ test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한�
   assert.match(admin, /매일 00:30 KST/);
   assert.match(admin, /00:50 · 01:10 자동 재시도/);
   assert.doesNotMatch(admin, /매일 05:30 KST/);
+});
+
+test('프론트엔드 공통 기반과 차트 모듈은 운영 순서로 분리되어 있다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  const coreIndex = html.indexOf('<script src="frontend-core.js');
+  const authIndex = html.indexOf('<script src="auth.js');
+  const mainIndex = html.indexOf('<script src="script.js');
+  const chartIndex = html.indexOf('<script src="dashboard-charts.js');
+  assert.ok(coreIndex < authIndex && authIndex < mainIndex && mainIndex < chartIndex);
+  assert.doesNotMatch(main, /function renderMarketStressDashboard/);
+  assert.match(charts, /function renderMarketStressDashboard/);
+  assert.match(charts, /MacroWatchDashboard\?\.registerLoader/);
+  assert.doesNotMatch(main, /function escapeHtml/);
 });
