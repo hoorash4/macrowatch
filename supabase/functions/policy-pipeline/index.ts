@@ -101,6 +101,9 @@ async function getStatement(sourceUrl: string) {
 function systemPrompt() {
   const prompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
   if (!prompt) throw new Error("FOMC_POLICY_SYSTEM_PROMPT가 설정되지 않았습니다.");
+  if (!prompt.trimStart().startsWith(`FOMC 분석 프롬프트 ${POLICY_PROMPT_VERSION}`)) {
+    throw new Error(`FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신해야 합니다.`);
+  }
   return prompt.replace(/\{\{meeting_metadata\}\}|\{\{previous_policy_context\}\}|\{\{fomc_statement\}\}/g, "").trim();
 }
 

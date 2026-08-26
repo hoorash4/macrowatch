@@ -147,6 +147,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("normalizeAnalysis(await analyzeStatement", pipeline)
         self.assertIn('body.mode === "score"', pipeline)
         self.assertIn('not("policy_index", "is", null)', pipeline)
+        self.assertIn("FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신", pipeline)
 
     def test_policy_admin_reviews_only_directional_decisions(self) -> None:
         policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
