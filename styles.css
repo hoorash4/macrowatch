@@ -895,7 +895,9 @@ body:has(#app-shell:not(.hidden)) {
   align-items:center;
 }
 .sector-flow-columns {
-  margin:.75rem .65rem .35rem;
+  margin:.75rem .65rem .15rem;
+  padding:0 0 .5rem;
+  border-bottom:1px solid rgba(47,105,154,.2);
   color:#225f90;
   font-size:.58rem;
   font-weight:800;
@@ -932,7 +934,7 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-week li {
   min-height:3.35rem;
-  border-bottom:1px solid rgba(47,105,154,.16);
+  border-bottom:1px dashed rgba(47,105,154,.16);
   padding:.38rem .05rem .42rem;
 }
 /* 마지막 행에는 구분선을 중복해서 그리지 않습니다. */
@@ -1097,9 +1099,8 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:center; }
 .sector-flow-week-current .sector-flow-columns {
-  margin-bottom:.15rem;
-  padding:0 .05rem .5rem;
-  border-bottom:1px dashed rgba(47,105,154,.2);
+  padding-right:.05rem;
+  padding-left:.05rem;
   color:#174f78;
   font-size:.66rem;
 }
@@ -1108,12 +1109,14 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current > ol > li > .sector-flow-rank { transform:translateX(.2rem); }
 .sector-flow-week-current .sector-flow-columns span:nth-child(2),
 .sector-flow-week-current > ol > li > .sector-flow-change { transform:translateX(-.2rem); }
-.sector-flow-week-current > ol > li { min-height:2.8rem; }
+.sector-flow-week-current > ol > li {
+  position:relative;
+  min-height:2.8rem;
+}
 .sector-flow-week-current > ol > li > strong,
 .sector-flow-week-current .sector-flow-sector { font-size:.8rem; }
 .sector-flow-week-current .sector-flow-streak {
   justify-self:center;
-  width:100%;
   box-sizing:border-box;
   padding:.22rem .42rem;
   border:1px solid rgba(47,105,154,.12);
@@ -1147,13 +1150,9 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current .sector-flow-returns small { display:none; }
 /* 넓은 최신 카드의 정보 열만 짧은 점선으로 나눠 표가 무거워지지 않게 합니다. */
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4),
-.sector-flow-week-current .sector-flow-top-holding,
-.sector-flow-week-current .sector-flow-returns > span,
-.sector-flow-week-current .sector-flow-streak { position:relative; }
+.sector-flow-week-current .sector-flow-returns > span { position:relative; }
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4)::before,
-.sector-flow-week-current .sector-flow-top-holding::before,
-.sector-flow-week-current .sector-flow-returns > span::before,
-.sector-flow-week-current .sector-flow-streak::before {
+.sector-flow-week-current .sector-flow-returns > span::before {
   position:absolute;
   top:50%;
   left:-.33rem;
@@ -1163,7 +1162,18 @@ body:has(#app-shell:not(.hidden)) {
   content:"";
   transform:translateY(-50%);
 }
-.sector-flow-week-current .sector-flow-columns span:nth-child(5)::before { display:none; }
+.sector-flow-week-current .sector-flow-columns span:nth-child(4)::before { display:none; }
+/* 연속 배지는 원래 크기를 유지하고, 열 경계선은 행의 고정 열 너비를 기준으로 그립니다. */
+.sector-flow-week-current > ol > li::after {
+  position:absolute;
+  top:50%;
+  right:6.325rem;
+  width:1px;
+  height:1rem;
+  border-left:1px dashed rgba(47,105,154,.2);
+  content:"";
+  transform:translateY(-50%);
+}
 .sector-flow-top-holding {
   overflow:hidden;
   color:#7890a2;
