@@ -317,4 +317,6 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-sector \{ font-size:\.86rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.78rem; \}/);
   assert.match(styles, /sector-flow-week-current \{ min-width:48rem; \}/);
+  assert.match(charts, /섹터 <small class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/small>/);
+  assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.58rem;[\s\S]*font-weight:500;/);
 });

@@ -1105,6 +1105,13 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.74rem;
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(-n+2) { text-align:center; }
+.sector-flow-classification-note {
+  margin-left:.28rem;
+  color:#6f8799;
+  font-size:.58rem;
+  font-weight:500;
+  white-space:nowrap;
+}
 .sector-flow-week-current > ol > li > .sector-flow-rank,
 .sector-flow-week-current > ol > li > .sector-flow-change { justify-self:center; }
 .sector-flow-week-current > ol > li {
