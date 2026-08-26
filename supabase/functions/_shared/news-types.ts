@@ -1,4 +1,4 @@
-export type SourceName = "yonhap" | "maekyung";
+export type SourceName = "yonhap" | "maekyung" | "financial_news";
 
 export type Candidate = {
   source: SourceName;

@@ -13,6 +13,11 @@ const SOURCE_FETCH_TIMEOUT_MS = 30_000;
 const RSS_FEEDS: Record<SourceName, string[]> = {
   yonhap: ["https://www.yna.co.kr/rss/economy.xml", "https://www.yna.co.kr/rss/international.xml"],
   maekyung: ["https://www.mk.co.kr/rss/30100041/", "https://www.mk.co.kr/rss/30300018/", "https://www.mk.co.kr/rss/50200011/"],
+  financial_news: [
+    "https://www.fnnews.com/rss/r20/fn_realnews_economy.xml",
+    "https://www.fnnews.com/rss/r20/fn_realnews_finance.xml",
+    "https://www.fnnews.com/rss/r20/fn_realnews_international.xml",
+  ],
 };
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
@@ -38,7 +43,7 @@ async function fetchRss(source: SourceName, lookbackHours: number): Promise<Cand
 }
 function deduplicate(candidates: Candidate[]) { const seen = new Set<string>(); return candidates.filter((candidate) => !seen.has(candidate.itemHash) && Boolean(seen.add(candidate.itemHash))).sort((left, right) => `${left.publishedAt || ""}:${left.itemHash}`.localeCompare(`${right.publishedAt || ""}:${right.itemHash}`)); }
 async function collectCandidates(lookbackHours: number) {
-  const sources: SourceName[] = ["yonhap", "maekyung"];
+  const sources: SourceName[] = ["yonhap", "maekyung", "financial_news"];
   const results = await Promise.allSettled(sources.map((source) => fetchRss(source, lookbackHours)));
   return { candidates: deduplicate(results.flatMap((result) => result.status === "fulfilled" ? result.value : [])), errors: results.flatMap((result, index) => result.status === "rejected" ? [{ source: sources[index], error: String(result.reason) }] : []) };
 }
