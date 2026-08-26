@@ -50,7 +50,6 @@
     try {
       await window.MacroWatchAdminApi.invoke('resolve_policy_review', {
         meeting_date: article.dataset.policyReview,
-        action: article.dataset.policyAction,
         primary_reason: values.get('primary_reason'),
         reason_keyword: values.get('reason_keyword'),
         score: Number(values.get('score')),

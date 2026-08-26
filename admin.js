@@ -95,7 +95,7 @@
         Authorization: `Bearer ${await getAccessToken()}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ action, ...payload })
+      body: JSON.stringify({ ...payload, action })
     });
     const data = await response.json().catch(() => ({}));
     if (response.status === 401 && !retried) {

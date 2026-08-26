@@ -40,6 +40,8 @@ jobs:
             --file supabase/migrations/20260826_allow_uncertain_policy_admin_resolution.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260826_add_policy_normalization_reasons.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260826_allow_admin_policy_reason_override.sql
 
       - name: Deploy Edge Functions
         run: |

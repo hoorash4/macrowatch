@@ -158,6 +158,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('review_type: row.meeting_date === latestDate ? "latest"', policy_admin)
         self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
 
+    def test_admin_payload_cannot_override_api_action(self) -> None:
+        admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
+        policy_review = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
+        self.assertIn("JSON.stringify({ ...payload, action })", admin_client)
+        self.assertNotIn("action: article.dataset.policyAction", policy_review)
+
     def test_all_site_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
         helper = (ROOT / "autocomplete-off.js").read_text(encoding="utf-8")
         self.assertIn("function disableAutocomplete", helper)
