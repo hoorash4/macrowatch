@@ -67,7 +67,7 @@ def send_kakao_message(access_token: str, message: str) -> None:
 
 
 def message_for(decisive_count: int) -> str | None:
-    return "[MacroWatch] 오늘 결정적 뉴스가 감지되었습니다." if decisive_count else None
+    return f"[MacroWatch] 오늘의 결정적 뉴스가 {decisive_count}건 있습니다." if decisive_count else None
 
 
 def main() -> int:
