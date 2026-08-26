@@ -992,7 +992,6 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.66rem;
 }
 .sector-flow-holdings li em { color:#70899b; font-style:normal; }
-}
 .sector-flow-streak {
   color:#5e7890;
   font-size:.6rem;

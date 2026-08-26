@@ -266,4 +266,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /sort\(\)\.slice\(-6\)/);
   assert.match(charts, /market_sector_etf_holdings\(holding_name,weight_pct,weight_rank\)/);
   assert.match(charts, /주요 구성 종목/);
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.doesNotMatch(styles, /sector-flow-holdings li em[^\n]*\n\}/);
+  assert.match(styles, /\.sector-flow-streak \{[\s\S]*font-size:\.6rem/);
 });
