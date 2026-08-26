@@ -4,10 +4,11 @@ on:
   push:
     branches: [main]
   schedule:
-    # 01:00 KST, with two fallbacks after midnight.
-    - cron: "0 16 * * *"
+    # 00:30 KST, with two 40-minute fallbacks. Avoid the top of the hour,
+    # where GitHub scheduled events are more likely to be delayed or dropped.
+    - cron: "30 15 * * *"
     - cron: "10 16 * * *"
-    - cron: "20 16 * * *"
+    - cron: "50 16 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -52,12 +53,15 @@ jobs:
               --header "x-news-pipeline-secret: $NEWS_PIPELINE_SECRET" \
               --header "Content-Type: application/json" \
               --data "$payload") || status=000
-            cat "$response"
-            rm "$response"
             if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+              # 실패 응답은 command substitution에 가려지지 않도록 stderr에도 남긴다.
+              cat "$response" >&2
+              rm "$response"
               echo "news-pipeline request failed with HTTP $status" >&2
               return 1
             fi
+            cat "$response"
+            rm "$response"
           }
           offset=0
           limit=10

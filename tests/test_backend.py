@@ -184,6 +184,13 @@ class SourceContractTests(unittest.TestCase):
         for page in ("index.html", "admin.html"):
             self.assertIn('autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
 
+    def test_news_schedule_avoids_hour_boundary_and_logs_failed_response(self) -> None:
+        workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")
+        for cron in ('cron: "30 15 * * *"', 'cron: "10 16 * * *"', 'cron: "50 16 * * *"'):
+            self.assertIn(cron, workflow)
+        self.assertIn('cat "$response" >&2', workflow)
+        self.assertLess(workflow.index('cat "$response" >&2'), workflow.index('news-pipeline request failed with HTTP'))
+
 
 class EmergingIndexTests(unittest.TestCase):
     def test_index_uses_documented_weighted_components(self) -> None:
