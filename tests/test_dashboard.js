@@ -240,7 +240,7 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.match(charts, /sector-flow-change-new/);
   assert.match(charts, /sector-flow-change-move/);
   assert.match(styles, /sector-flow-change-new[\s\S]*font-size:\.42rem/);
-  assert.match(styles, /sector-flow-change-move[\s\S]*font-size:\.63rem/);
+  assert.match(styles, /sector-flow-change-move[\s\S]*font-size:\.60rem/);
   assert.match(styles, /sector-return-positive \{ color:#d5483f/);
   assert.match(styles, /sector-return-negative \{ color:#2870ba/);
   assert.match(charts, /sectorReturn\(row\.weekly_return_pct\).*sectorReturn\(row\.cumulative_return_pct\)/s);
