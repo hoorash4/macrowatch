@@ -149,6 +149,9 @@ class SourceContractTests(unittest.TestCase):
     def test_policy_admin_reviews_only_directional_decisions(self) -> None:
         policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
         self.assertIn('.neq("action", "hold")', policy_admin)
+        self.assertIn('"uncertain"]', policy_admin)
+        self.assertIn('String(rawScore).trim() === ""', policy_admin)
+        self.assertIn('reason !== "uncertain" && !keyword', policy_admin)
 
 
 class EmergingIndexTests(unittest.TestCase):

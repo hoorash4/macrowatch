@@ -2,7 +2,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recomputePolicyScores } from "./policy-score-store.ts";
 import type { PolicyReason } from "./policy-types.ts";
 
-const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing"]);
+const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing", "uncertain"]);
 type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
 
 export async function listPolicyReviews(admin: ServiceClient) {
@@ -30,16 +30,19 @@ export async function resolvePolicyReview(
   const meetingDate = String(body.meeting_date || "");
   const reason = String(body.primary_reason || "") as PolicyReason;
   const keyword = String(body.reason_keyword || "").trim();
+  const rawScore = body.score;
   const score = Number(body.score);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)) throw new Error("회의일이 올바르지 않습니다.");
   if (!ADMIN_REASONS.has(reason)) throw new Error("정규 이유를 선택해 주세요.");
-  if (!keyword || keyword.length > 80) throw new Error("이유 키워드를 80자 이내로 입력해 주세요.");
-  if (!Number.isFinite(score) || score < -1_000 || score > 1_000) throw new Error("점수는 -1000부터 1000 사이로 입력해 주세요.");
+  if (keyword.length > 80 || (reason !== "uncertain" && !keyword)) throw new Error("이유 키워드를 80자 이내로 입력해 주세요.");
+  if (rawScore === null || rawScore === undefined || String(rawScore).trim() === "" || !Number.isFinite(score) || score < -1_000 || score > 1_000) {
+    throw new Error("점수는 0을 포함해 -1000부터 1000 사이의 숫자로 직접 입력해 주세요.");
+  }
 
   const resolvedAt = new Date().toISOString();
   const { data, error } = await admin.from("central_bank_policy_events").update({
     admin_primary_reason: reason,
-    admin_reason_keyword: keyword,
+    admin_reason_keyword: keyword || null,
     admin_score_override: score,
     admin_resolved_at: resolvedAt,
     admin_resolved_by: userId,

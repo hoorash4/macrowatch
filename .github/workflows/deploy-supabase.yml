@@ -36,6 +36,8 @@ jobs:
         run: |
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260826_add_policy_previous_peak_scoring.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260826_allow_uncertain_policy_admin_resolution.sql
 
       - name: Deploy Edge Functions
         run: |
