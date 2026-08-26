@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { fetchKisDailyPrices, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -12,8 +13,11 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
     // 배포 기본값인 Supabase 게이트웨이 JWT 검증을 통과한 서버 요청만 여기까지 도달한다.
+    const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
+    const admin = createClient(supabaseUrl, serviceRole);
     const credentials = loadKisCredentials();
-    const token = await issueKisAccessToken(credentials);
+    const token = await getKisAccessToken(credentials, admin);
     const end = new Date();
     const start = new Date(end.getTime() - 14 * 86_400_000);
     const prices = await fetchKisDailyPrices(credentials, token, "069500", start, end);

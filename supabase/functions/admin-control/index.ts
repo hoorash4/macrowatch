@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy-admin.ts";
-import { fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const REPOSITORY = "hoorash4/macrowatch";
@@ -404,7 +404,7 @@ export default {
           return json({ item: data }, 200, origin);
         }
         const input = validateNewSectorEtf(body || {});
-        const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
+        const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
         const end = new Date(), start = new Date(end.getTime() - 10 * 7 * 86_400_000);
         const bundle = await fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end);
         const topHoldings = await fetchKisEtfTopHoldings(credentials, token, input.etf_ticker, 3);

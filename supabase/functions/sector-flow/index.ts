@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisDailyPrices, fetchKisEtfTopHoldings, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { fetchKisDailyPrices, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 import { calculateSectorRankings, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
 
 const REQUEST_INTERVAL_MS = 180;
@@ -93,7 +93,7 @@ Deno.serve(async (request) => {
     const holdingFailures: Array<{ ticker: string; error: string }> = [];
 
     if (!rebuildOnly) {
-      const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
+      const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
       for (const item of registry) {
         try {
           // 운영 중에는 당일만, 명시적인 초기화 요청에는 현재 보관 기준인 10주를 수집합니다.

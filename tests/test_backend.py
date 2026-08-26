@@ -113,6 +113,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("PRICE_RETENTION_WEEKS = 10", pipeline)
         self.assertIn("RANKING_RETENTION_WEEKS = 6", pipeline)
         self.assertIn("fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end)", pipeline)
+        self.assertIn("getKisAccessToken(credentials, admin)", pipeline)
         self.assertIn("backfill_history === true", pipeline)
         self.assertIn('fetchKisEtfTopHoldings(credentials, token, item.etf_ticker, 3)', pipeline)
         self.assertIn('.delete().lt("market_date", retentionStart)', pipeline)
@@ -147,6 +148,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("hts_kor_isnm", kis)
         self.assertIn("fetchKisEtfTopHoldings", control)
         self.assertIn("etf_cnfg_issu_rlim", kis)
+        self.assertIn('KIS_TOKEN_CACHE_KEY = "kis_access_token_prod"', kis)
+        self.assertIn("TOKEN_EXPIRY_MARGIN_MS = 10 * 60_000", kis)
+        self.assertIn('store.from("app_settings")', kis)
+        self.assertIn("expires_in", kis)
+        self.assertIn("getKisAccessToken(credentials, admin)", control)
 
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")

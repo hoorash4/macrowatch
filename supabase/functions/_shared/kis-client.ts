@@ -14,6 +14,11 @@ export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPric
 export type KisEtfHolding = { ticker: string; name: string; weightPct: number };
 
 type KisCredentials = { appKey: string; appSecret: string };
+type KisTokenStore = { from: (table: string) => any };
+type KisIssuedToken = { accessToken: string; expiresAt: string };
+
+const KIS_TOKEN_CACHE_KEY = "kis_access_token_prod";
+const TOKEN_EXPIRY_MARGIN_MS = 10 * 60_000;
 
 function requiredSecret(name: string) {
   const value = Deno.env.get(name)?.trim();
@@ -34,7 +39,7 @@ async function readJson(response: Response) {
   catch { throw new Error(`KIS가 JSON이 아닌 응답을 반환했습니다. (${response.status})`); }
 }
 
-export async function issueKisAccessToken(credentials: KisCredentials) {
+export async function issueKisAccessToken(credentials: KisCredentials): Promise<KisIssuedToken> {
   const response = await fetch(`${KIS_REAL_BASE_URL}/oauth2/tokenP`, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -51,7 +56,33 @@ export async function issueKisAccessToken(credentials: KisCredentials) {
     const message = String(payload.error_description || payload.msg1 || payload.error || "인증 실패");
     throw new Error(`KIS 토큰 발급 실패 (${response.status}): ${message}`);
   }
-  return token;
+  const expiresIn = Number(payload.expires_in);
+  const lifetimeMs = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn * 1000 : 24 * 3_600_000;
+  return { accessToken: token, expiresAt: new Date(Date.now() + lifetimeMs).toISOString() };
+}
+
+// 모든 Edge Function이 같은 토큰을 공유합니다. 만료 직전까지 DB 캐시를 재사용하고,
+// 새 토큰은 저장에 성공한 뒤에만 반환해 중복 발급 가능성을 낮춥니다.
+export async function getKisAccessToken(credentials: KisCredentials, store: KisTokenStore) {
+  const { data, error } = await store.from("app_settings")
+    .select("value").eq("key", KIS_TOKEN_CACHE_KEY).maybeSingle();
+  if (error) throw new Error(`KIS 토큰 캐시 조회 실패: ${error.message}`);
+  const value = data?.value && typeof data.value === "object" ? data.value as Record<string, unknown> : {};
+  const cachedToken = typeof value.access_token === "string" ? value.access_token : "";
+  const expiresAt = typeof value.expires_at === "string" ? Date.parse(value.expires_at) : Number.NaN;
+  if (cachedToken && Number.isFinite(expiresAt) && expiresAt - Date.now() > TOKEN_EXPIRY_MARGIN_MS) {
+    return cachedToken;
+  }
+
+  const issued = await issueKisAccessToken(credentials);
+  const { error: saveError } = await store.from("app_settings").upsert({
+    key: KIS_TOKEN_CACHE_KEY,
+    value: { access_token: issued.accessToken, expires_at: issued.expiresAt },
+    updated_at: new Date().toISOString(),
+    updated_by: null,
+  }, { onConflict: "key" });
+  if (saveError) throw new Error(`KIS 토큰 캐시 저장 실패: ${saveError.message}`);
+  return issued.accessToken;
 }
 
 function compactDate(date: Date) {
