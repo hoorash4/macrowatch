@@ -18,12 +18,8 @@ alter table public.central_bank_policy_events
     admin_primary_reason in ('inflation_fight', 'growth_overheat', 'recession_financial_stress', 'insurance_easing', 'normalization_hike', 'normalization_cut', 'uncertain')
   ),
   add constraint central_bank_policy_events_normalization_direction_check check (
-    (primary_reason <> 'normalization_hike' or action = 'hike')
-    and (primary_reason <> 'normalization_cut' or action = 'cut')
-    and (ai_primary_reason <> 'normalization_hike' or action = 'hike')
+    (ai_primary_reason <> 'normalization_hike' or action = 'hike')
     and (ai_primary_reason <> 'normalization_cut' or action = 'cut')
-    and (admin_primary_reason <> 'normalization_hike' or action = 'hike')
-    and (admin_primary_reason <> 'normalization_cut' or action = 'cut')
   );
 
 create table if not exists public.central_bank_policy_analysis_history (

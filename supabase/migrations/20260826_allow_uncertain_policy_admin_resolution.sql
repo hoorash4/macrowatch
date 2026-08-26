@@ -3,7 +3,7 @@ alter table public.central_bank_policy_events
 
 alter table public.central_bank_policy_events
   add constraint central_bank_policy_events_admin_primary_reason_check check (
-    admin_primary_reason in ('inflation_fight', 'growth_overheat', 'recession_financial_stress', 'insurance_easing', 'uncertain')
+    admin_primary_reason in ('inflation_fight', 'growth_overheat', 'recession_financial_stress', 'insurance_easing', 'normalization_hike', 'normalization_cut', 'uncertain')
   );
 
 alter table public.central_bank_policy_events
