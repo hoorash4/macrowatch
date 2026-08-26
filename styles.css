@@ -978,7 +978,7 @@ body:has(#app-shell:not(.hidden)) {
   color:#326e98;
   font-size:.72rem;
   font-style:normal;
-  font-weight:820;
+  font-weight:700;
   text-align:right;
   white-space:nowrap;
 }
