@@ -155,6 +155,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('"uncertain"]', policy_admin)
         self.assertIn('String(rawScore).trim() === ""', policy_admin)
         self.assertNotIn('reason !== "uncertain" && !keyword', policy_admin)
+        self.assertIn('review_type: row.meeting_date === latestDate ? "latest"', policy_admin)
+        self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
+
+    def test_admin_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
+        admin = (ROOT / "admin.js").read_text(encoding="utf-8")
+        self.assertIn("function disableAutocomplete", admin)
+        self.assertIn("new MutationObserver", admin)
 
 
 class EmergingIndexTests(unittest.TestCase):
