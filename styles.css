@@ -883,7 +883,7 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-columns,.sector-flow-week li {
   display:grid;
-  grid-template-columns:2.1rem minmax(0,1fr) 2rem auto;
+  grid-template-columns:2.5rem minmax(0,1fr) 2rem auto;
   gap:.35rem;
   align-items:center;
 }
@@ -917,16 +917,21 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-week li b {
   display:flex;
-  width:1.55rem;
-  height:1.25rem;
+  width:2.15rem;
+  min-height:1.55rem;
   min-width:0;
   align-items:center;
   justify-content:center;
+  gap:.08rem;
   border-radius:.25rem;
   background:#dcecf8;
   color:#175886;
   font-size:.66rem;
   font-weight:850;
+}
+.sector-flow-week li b small {
+  font-size:.42rem;
+  line-height:1;
 }
 .sector-flow-week li strong {
   overflow:hidden;

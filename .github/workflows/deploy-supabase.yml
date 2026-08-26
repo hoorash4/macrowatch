@@ -46,6 +46,8 @@ jobs:
             --file supabase/migrations/20260826_remove_admin_activation_state.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_seed_domestic_sector_etfs.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260827_add_sector_flow_prices.sql
 
       - name: Deploy Edge Functions
         run: |

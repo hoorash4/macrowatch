@@ -15,7 +15,7 @@ $python = if ($pythonCommand -and $pythonCommand.Source -notlike '*\WindowsApps\
 
 Push-Location $root
 try {
-  foreach ($file in @('script.js', 'admin.js', 'auth.js')) {
+  foreach ($file in @('script.js', 'dashboard-charts.js', 'frontend-core.js', 'admin.js', 'auth.js')) {
     & $node --check $file
   }
   # --test는 일부 제한 환경에서 자식 프로세스를 만들기 때문에 파일을 직접 실행한다.

@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.kis-market-test]
 verify_jwt = false
+
+[functions.sector-flow]
+verify_jwt = false

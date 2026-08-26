@@ -1007,6 +1007,65 @@ async function loadCreditStressComponentsDashboard() {
   }
 }
 
+// ===== 주도섹터 흐름 모듈 =====
+// 서버가 계산한 주차별 상위 순위만 읽습니다. 가격 원본과 순위 산식은 Edge Function에 남겨
+// 브라우저별 시간대나 부동소수점 차이로 순위가 달라지지 않도록 합니다.
+function sectorRankChange(row) {
+  if (row.is_new) return '<small class="text-teal-500">NEW</small>';
+  if (!row.previous_rank) return '';
+  const change = Number(row.previous_rank) - Number(row.rank);
+  if (change > 0) return `<small class="text-red-500">▲${change}</small>`;
+  if (change < 0) return `<small class="text-blue-500">▼${Math.abs(change)}</small>`;
+  return '<small class="text-slate-500">-</small>';
+}
+
+function sectorReturn(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return `${number > 0 ? '+' : ''}${number.toFixed(2)}%`;
+}
+
+function renderSectorFlow(rows) {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const list = grouped.get(row.week_start) || [];
+    list.push(row);
+    grouped.set(row.week_start, list);
+  });
+  const weeks = [...grouped.keys()].sort().slice(-4);
+  const cards = [...document.querySelectorAll('[data-sector-week-offset]')];
+  const firstDataCard = cards.length - weeks.length;
+  cards.forEach((card, index) => {
+    const week = weeks[index - firstDataCard], list = (grouped.get(week) || []).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 5);
+    const body = card.querySelector('ol');
+    if (!body) return;
+    const current = card.dataset.sectorWeekOffset === '0';
+    const returnHeading = card.querySelector('.sector-flow-columns span:last-child');
+    if (returnHeading) returnHeading.textContent = current ? '주간' : '주간 · 누적';
+    body.innerHTML = list.length ? list.map((row) => {
+      const sector = row.market_sector_etfs?.sector_name || '—';
+      const returns = current
+        ? sectorReturn(row.weekly_return_pct)
+        : `${sectorReturn(row.weekly_return_pct)} · ${sectorReturn(row.cumulative_return_pct)}`;
+      return `<li><b><span>${Number(row.rank)}</span>${sectorRankChange(row)}</b><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><em>${returns}</em></li>`;
+    }).join('') : '<li><b>—</b><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><em>—</em></li>';
+  });
+  const latestWeek = weeks.at(-1), latest = (grouped.get(latestWeek) || [])[0];
+  const note = document.getElementById('sector-flow-update-note');
+  if (note && latest) note.textContent = latest.price_stage === 'open'
+    ? '오늘 시가 기준 · 오후 3시 40분 종가 반영 예정'
+    : '오늘 종가 기준 · 매 영업일 오후 3시 40분 반영';
+}
+
+async function loadSectorFlowDashboard() {
+  if (!document.getElementById('sector-flow-dashboard') || !supabaseClient) return;
+  const { data, error } = await supabaseClient.from('market_sector_weekly_rankings')
+    .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,price_stage,market_sector_etfs(sector_name)')
+    .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(160);
+  if (error) return;
+  renderSectorFlow(data || []);
+}
+
 // 기존 대시보드 공개 계산 계약과 초기 로더 등록을 유지합니다.
 window.MacroWatchChartUtils = Object.freeze({ aggregateWeeklyDecisiveNews, calculateCorrelation, formatNewsDate });
 window.MacroWatchDashboard?.registerLoader(async () => {
@@ -1016,6 +1075,7 @@ window.MacroWatchDashboard?.registerLoader(async () => {
     loadCreditStressComponentsDashboard(),
     loadKoreaStressDashboard(),
     loadEmStressDashboard(),
+    loadSectorFlowDashboard(),
   ]);
 });
 })();

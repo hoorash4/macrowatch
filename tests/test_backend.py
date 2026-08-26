@@ -99,6 +99,17 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("market_sector_etfs_sector_name_uidx", migration)
         self.assertNotIn("글로벌AI사이버보안", migration)
 
+    def test_sector_flow_stores_open_close_and_server_rankings(self):
+        migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
+        pipeline = (ROOT / "supabase/functions/sector-flow/index.ts").read_text(encoding="utf-8")
+        scoring = (ROOT / "supabase/functions/_shared/sector-flow.ts").read_text(encoding="utf-8")
+        self.assertIn("market_sector_etf_prices", migration)
+        self.assertIn("market_sector_weekly_rankings", migration)
+        self.assertIn('body.stage === "open"', pipeline)
+        self.assertIn('body.stage === "close"', pipeline)
+        self.assertIn("endpointPrice / baseline.closePrice", scoring)
+        self.assertIn("latestPrice / baseline.closePrice", scoring)
+
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")
         self.assertIn('Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT")', adapter)

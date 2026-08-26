@@ -11,6 +11,9 @@ function json(body: unknown, status = 200) {
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
+    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+    if (!serviceRole || bearer !== serviceRole) return json({ ok: false, error: "서버 인증이 필요합니다." }, 401);
     const credentials = loadKisCredentials();
     const token = await issueKisAccessToken(credentials);
     const end = new Date();
