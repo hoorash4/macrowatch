@@ -158,10 +158,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('review_type: row.meeting_date === latestDate ? "latest"', policy_admin)
         self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
 
-    def test_admin_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
-        admin = (ROOT / "admin.js").read_text(encoding="utf-8")
-        self.assertIn("function disableAutocomplete", admin)
-        self.assertIn("new MutationObserver", admin)
+    def test_all_site_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
+        helper = (ROOT / "autocomplete-off.js").read_text(encoding="utf-8")
+        self.assertIn("function disableAutocomplete", helper)
+        self.assertIn("new MutationObserver", helper)
+        for page in ("index.html", "admin.html"):
+            self.assertIn('autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
 
 
 class EmergingIndexTests(unittest.TestCase):

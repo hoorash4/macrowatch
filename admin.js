@@ -3,17 +3,6 @@
   const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
   let scheduleTimes = ['08:00', '18:00'];
 
-  function disableAutocomplete(root = document) {
-    if (root.matches?.('form,input,select,textarea')) root.setAttribute('autocomplete', 'off');
-    root.querySelectorAll?.('form,input,select,textarea').forEach((element) => element.setAttribute('autocomplete', 'off'));
-  }
-
-  new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => mutation.addedNodes.forEach((node) => {
-      if (node.nodeType === Node.ELEMENT_NODE) disableAutocomplete(node);
-    }));
-  }).observe(document.documentElement, { childList: true, subtree: true });
-
   function defaultScheduleTime(index) {
     return ['08:00', '12:00', '16:00', '20:00'][index] || '08:00';
   }
@@ -424,7 +413,6 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    disableAutocomplete();
     document.getElementById('refresh-button').addEventListener('click', loadAll);
     document.getElementById('run-check-button').addEventListener('click', () => runWorkflow('check'));
     document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));
