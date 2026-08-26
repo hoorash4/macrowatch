@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=56">
+  <link rel="stylesheet" href="styles.css?v=57">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -28,11 +28,11 @@
     id="auth-screen"
     class="auth-canvas hidden min-h-[calc(100vh-2rem)] overflow-hidden"
   >
-  <div class="relative flex min-h-[calc(100vh-2rem)] flex-col bg-[#071b42] text-white">
-    <header class="flex items-center justify-between py-5">
-      <div class="flex items-center gap-3">
+  <div class="auth-layout relative flex min-h-[calc(100vh-2rem)] flex-col bg-[#071b42] text-white">
+    <header class="auth-header flex items-center justify-between py-5">
+      <div class="auth-brand-group flex items-center gap-3">
         <div class="evotive-source-logo h-12 shrink-0"></div>
-        <div>
+        <div class="auth-brand-copy">
           <p class="font-cinzel text-lg font-bold tracking-[.12em]">EVOTIVE RESEARCH</p>
           <p class="mt-1 text-[9px] font-semibold tracking-[.28em] text-[#d1a55d]">INDEPENDENT MACRO ADVISOR</p>
         </div>
@@ -40,16 +40,16 @@
       
           <span class="header-product-label">Macro Tracking &amp; Alerts</span>
 </header>
-    <div class="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[minmax(0,350px)_420px] lg:justify-center lg:gap-12">
-      <section class="max-w-2xl">
+    <div class="auth-content-grid grid flex-1 items-center gap-10 py-10 lg:grid-cols-[minmax(0,350px)_420px] lg:justify-center lg:gap-12">
+      <section class="auth-intro max-w-2xl">
         
         <h1 class="font-pretendard">
           <span class="main-title-line"><span class="main-title-word title-evolving">Evolving</span> <span class="main-title-word title-insight">Insight</span></span><span class="main-title-line text-[#d1a55d]"><span class="main-title-word title-adaptive">Adaptive</span> <span class="main-title-word title-shift">Shift</span></span>
         </h1>
-        <p class="mt-7 max-w-md text-sm leading-7 text-slate-300">EVOTIVE RESEARCH가 제공하는 MacroWatch는 관심 지표의<span class="mobile-space"> </span>중요한 변화를 놓치지 않도록 돕는 모니터링 도구입니다. <span class="inline-signal-dot" aria-label="monitoring active"></span></p>
+        <p class="auth-intro-description mt-7 max-w-md text-sm leading-7 text-slate-300">EVOTIVE RESEARCH가 제공하는 MacroWatch는 관심 지표의<span class="mobile-space"> </span>중요한 변화를 놓치지 않도록 돕는 모니터링 도구입니다. <span class="inline-signal-dot" aria-label="monitoring active"></span></p>
         
       </section>
-      <section class="flex justify-center lg:justify-end">
+      <section class="auth-form-region flex justify-center lg:justify-end">
         <div class="auth-panel">
             <div class="mb-8">
               <p class="text-[10px] font-bold tracking-[.22em] text-[#d1a55d]">WELCOME TO</p>
@@ -98,55 +98,59 @@
           </div>
       </section>
     </div>
-    <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-4 text-[10px] tracking-[.14em] text-slate-400 sm:px-10">
+    <footer class="auth-footer flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-4 text-[10px] tracking-[.14em] text-slate-400 sm:px-10">
       
     </footer>
   </div>
 </main>
 
-  <!-- ===== 로그인 화면 끝 / 대시보드 시작 ===== -->
+  <!-- ===== 03. 대시보드 시작 ===== -->
   <div
     id="app-shell"
     class="hidden max-w-3xl mx-auto"
   >
     <div class="dashboard-workspace">
+      <!-- 03-1. 메인 헤더: 로고·메뉴·사용자 동작을 담는 독립 레이아웃 모듈 -->
       <nav class="dashboard-nav" aria-label="대시보드 메뉴">
         <div class="dashboard-nav-inner">
-        <a class="dashboard-wordmark" href="#news" aria-label="MacroWatch 뉴스 흐름 분석">
-          <span class="dashboard-logo" aria-hidden="true"></span>
-          <span class="dashboard-wordmark-copy">
-            <strong>MacroWatch</strong>
-            <small>거시적 흐름을 읽는 도구</small>
-          </span>
-        </a>
-        <p class="dashboard-nav-label">WORKSPACE</p>
-        <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>플로우 분석</span></button>
-        <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
-        <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
-        <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
-        <button type="button" class="dashboard-nav-item" data-dashboard-view="policy"><i class="fa-solid fa-landmark"></i><span>통화정책 시그널</span></button>
-        <div class="dashboard-nav-actions">
-          <div id="db-status" class="hidden">DB 연결 확인 중...</div>
-          <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
-          <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" class="hidden"><i class="fa-solid fa-gear"></i></a>
-          <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃"><i class="fa-solid fa-right-from-bracket"></i></button>
-        </div>
+          <a class="dashboard-wordmark" href="#news" aria-label="MacroWatch 뉴스 흐름 분석">
+            <span class="dashboard-logo" aria-hidden="true"></span>
+            <span class="dashboard-wordmark-copy">
+              <strong>MacroWatch</strong>
+              <small>거시적 흐름을 읽는 도구</small>
+            </span>
+          </a>
+          <p class="dashboard-nav-label">WORKSPACE</p>
+          <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>플로우 분석</span></button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-view="policy"><i class="fa-solid fa-landmark"></i><span>통화정책 시그널</span></button>
+          <div class="dashboard-nav-actions">
+            <div id="db-status" class="hidden">DB 연결 확인 중...</div>
+            <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
+            <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" class="hidden"><i class="fa-solid fa-gear"></i></a>
+            <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃"><i class="fa-solid fa-right-from-bracket"></i></button>
+          </div>
         </div>
       </nav>
+
+      <!-- 03-2. 메인 콘텐츠: 메뉴별 분석 카드가 교체되는 영역 -->
       <div class="dashboard-main">
+    <!-- 04-1. 플로우 분석: 뉴스 흐름과 주도섹터 카드 -->
     <div class="dashboard-panels">
     <div class="market-overview" data-dashboard-panel="overview">
     <div class="dashboard-view-card">
     <div class="market-overview-grid">
     <!-- 최근 뉴스의 한국 주가지수 영향 분포를 가장 먼저 보여줍니다. -->
-    <section id="news-sentiment-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="news-sentiment-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <section id="news-sentiment-dashboard" class="analysis-card overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="news-sentiment-title">
+      <div class="analysis-card-header analysis-card-header-light analysis-card-header-flush">
         <div>
           <div class="flex items-center gap-2">
-            <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-chart-column text-sm"></i></span>
+            <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-chart-column text-sm"></i></span>
             <div>
               <p class="text-[10px] font-bold tracking-[.16em] text-sky-300">NEWS FLOW ANALYST</p>
-              <h2 id="news-sentiment-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">뉴스 흐름 분석</h2>
+              <h2 id="news-sentiment-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">뉴스 흐름 분석</h2>
             </div>
           </div>
           <p class="mt-6 text-[11px] text-slate-500">최근 24시간 동안 기사화된 뉴스의 긍정/부정 흐름을 분석합니다.</p>
@@ -159,16 +163,16 @@
           <span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-red-900"></i>긍정</span>
           <span class="inline-flex items-center gap-2"><i class="h-2 w-2 rounded-full bg-blue-900"></i>부정</span>
         </div>
-        <div class="flex items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">뉴스 분석 결과를 불러오는 중입니다.</div>
+        <div class="analysis-empty-state-light flex items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">뉴스 분석 결과를 불러오는 중입니다.</div>
       </div>
       <section id="news-extreme-signals" class="mx-5 mb-5 mt-8 overflow-hidden rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-[0_14px_34px_rgba(2,6,23,.28)]" aria-label="중장기 시장 전환 신호">
         <div class="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-bolt text-sm text-[#ffda8a]"></i>
-              <p class="decisive-news-title font-pretendard text-base font-semibold">결정적 뉴스</p>
+              <p class="decisive-news-title text-base font-semibold">결정적 뉴스</p>
             </div>
-            <p class="decisive-news-description font-pretendard mt-2 text-sm leading-relaxed">단기 변동보다 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스입니다. AI 판단이므로 실제 중요도와 다를 수 있습니다.</p>
+            <p class="decisive-news-description mt-2 text-sm leading-relaxed">단기 변동보다 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스입니다. AI 판단이므로 실제 중요도와 다를 수 있습니다.</p>
             <div id="decisive-news-keywords" class="mt-3 flex flex-wrap gap-2" aria-label="결정적 뉴스 키워드"></div>
           </div>
           <div class="min-h-14 shrink-0 rounded-md border border-violet-300/30 bg-violet-900/65 px-4 py-3 text-sm font-bold text-violet-100 shadow-sm">
@@ -185,13 +189,13 @@
     </div>
 
     <div class="dashboard-view-card sector-flow-view-card">
-    <section id="sector-flow-dashboard" class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="sector-flow-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <section id="sector-flow-dashboard" class="analysis-card overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="sector-flow-title">
+      <div class="analysis-card-header analysis-card-header-light analysis-card-header-flush">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-teal-400/20 bg-teal-400/10 text-teal-300"><i class="fa-solid fa-layer-group text-sm"></i></span>
+          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-teal-400/20 bg-teal-400/10 text-teal-300"><i class="fa-solid fa-layer-group text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-teal-300">SECTOR FLOW ANALYSIS</p>
-            <h2 id="sector-flow-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">주도섹터 흐름 분석</h2>
+            <h2 id="sector-flow-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">주도섹터 흐름 분석</h2>
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">주간 수익률 기준 상위 섹터의 변화를 최근 4주 흐름으로 보여줍니다.</p>
@@ -203,18 +207,19 @@
         <article class="sector-flow-week" data-sector-week-offset="-1"><header><span data-sector-week-period>—월</span><strong data-sector-week-label>—주차</strong></header><div class="sector-flow-columns"><span>순위</span><span>섹터</span><span>연속</span><span>주간 · 누적</span></div><ol><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li></ol></article>
         <article class="sector-flow-week sector-flow-week-current" data-sector-week-offset="0"><header><span data-sector-week-period>—월</span><strong data-sector-week-label>—주차</strong></header><div class="sector-flow-columns"><span>순위</span><span>섹터</span><span>연속</span><span>주간 · 누적</span></div><ol><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li><li><b>—</b><strong>수집 대기</strong><span class="sector-flow-streak">—주</span><em>— · —</em></li></ol></article>
       </div>
-      <p class="px-5 pb-5 text-right text-[11px] text-slate-500">정규시장 기준 · 이번 주는 현재 시점까지 누적</p>
+      <p class="sector-flow-note px-5 pb-5 text-right text-[11px] text-slate-500">정규시장 기준 · 이번 주는 현재 시점까지 누적</p>
     </section>
     </div>
     </div>
 
-    <section id="credit-stress-dashboard" data-dashboard-panel="credit" class="dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <!-- 04-2. 스트레스·통화정책 분석 카드 -->
+    <section id="credit-stress-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-title">
+      <div class="analysis-card-header">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
+          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">U.S. MARKET STRESS INDEX</p>
-            <h2 id="credit-stress-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">미국 시장 스트레스 지수</h2>
+            <h2 id="credit-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">미국 시장 스트레스 지수</h2>
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 주간 시장 스트레스 지수입니다.</p>
@@ -234,20 +239,20 @@
       <div class="px-5 pb-5 pt-0">
         <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>US-MSI</span>
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed" style="border-color:#d97706"></i>US-MSI 잠정치</span>
+          <span class="inline-flex items-center gap-2"><i class="chart-legend-line chart-legend-line-provisional"></i>US-MSI 잠정치</span>
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>S&amp;P 500 주간 종가</span>
           <span class="ml-auto inline-flex items-center gap-2"><span>(보조지표:</span><i class="h-0.5 w-5 bg-violet-800"></i><span>선행 긴장 시그널)</span></span>
         </div>
       </div>
     </section>
 
-    <section id="credit-stress-components-dashboard" data-dashboard-panel="credit" class="dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-components-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <section id="credit-stress-components-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-components-title">
+      <div class="analysis-card-header analysis-card-header-light">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-400/10 text-blue-300"><i class="fa-solid fa-chart-line text-sm"></i></span>
+          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-400/10 text-blue-300"><i class="fa-solid fa-chart-line text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-blue-300">U.S. CREDIT RISK</p>
-            <h2 id="credit-stress-components-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">미국 신용위험 추이</h2>
+            <h2 id="credit-stress-components-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">미국 신용위험 추이</h2>
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
@@ -255,18 +260,18 @@
       </div>
       <div class="px-5 pb-5 pt-5">
         <div id="credit-stress-components-chart" class="min-h-72">
-          <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
+          <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
         </div>
       </div>
     </section>
 
-    <section id="korea-stress-dashboard" data-dashboard-panel="korea" class="dashboard-view-card overflow-hidden" aria-labelledby="korea-stress-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <section id="korea-stress-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-stress-title">
+      <div class="analysis-card-header analysis-card-header-light">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
+          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">K-MSI · KOREA MARKET STRESS INDEX</p>
-            <h2 id="korea-stress-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">한국 시장 스트레스 지수</h2>
+            <h2 id="korea-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">한국 시장 스트레스 지수</h2>
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 월간 한국 시장 스트레스 지수입니다.</p>
@@ -276,30 +281,30 @@
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div id="korea-stress-chart" class="min-h-80">
-            <div class="korea-empty-state flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오는 중입니다.</div>
+            <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오는 중입니다.</div>
           </div>
           <div id="korea-fsi-chart" class="mt-2 min-h-52">
-            <div class="korea-empty-state flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국은행 FSI를 불러오는 중입니다.</div>
+            <div class="analysis-empty-state-light flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국은행 FSI를 불러오는 중입니다.</div>
           </div>
         </div>
       </div>
       <div class="px-5 pb-5 pt-0">
         <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>K-MSI</span>
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed" style="border-color:#d97706"></i>K-MSI 잠정치</span>
+          <span class="inline-flex items-center gap-2"><i class="chart-legend-line chart-legend-line-provisional"></i>K-MSI 잠정치</span>
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>코스피 주간 종가</span>
           <span class="ml-auto inline-flex items-center gap-2"><span>(보조지표:</span><i class="h-0.5 w-5 bg-violet-800"></i><span>한국은행 FSI)</span></span>
         </div>
       </div>
     </section>
 
-    <section id="em-stress-dashboard" data-dashboard-panel="em" class="dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <section id="em-stress-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
+      <div class="analysis-card-header analysis-card-header-light">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-earth-americas text-sm"></i></span>
+          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-earth-americas text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">EM-MSI · EMERGING MARKET STRESS INDEX</p>
-            <h2 id="em-stress-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">이머징 시장 스트레스 지수</h2>
+            <h2 id="em-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">이머징 시장 스트레스 지수</h2>
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
@@ -309,26 +314,26 @@
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div id="em-stress-chart" class="min-h-80">
-            <div class="em-empty-state flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 데이터를 불러오는 중입니다.</div>
+            <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 데이터를 불러오는 중입니다.</div>
           </div>
         </div>
       </div>
       <div class="px-5 pb-5 pt-0">
         <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>EM-MSI</span>
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed" style="border-color:#d97706"></i>EM-MSI 잠정치</span>
+          <span class="inline-flex items-center gap-2"><i class="chart-legend-line chart-legend-line-provisional"></i>EM-MSI 잠정치</span>
           <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-slate-500"></i>EEM 주간 종가</span>
         </div>
       </div>
     </section>
 
-    <section id="policy-signal-dashboard" data-dashboard-panel="policy" class="dashboard-view-card overflow-hidden" aria-labelledby="policy-signal-title">
-      <div class="border-b border-slate-800 px-5 py-5">
+    <section id="policy-signal-dashboard" data-dashboard-panel="policy" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="policy-signal-title">
+      <div class="analysis-card-header">
         <div class="flex items-center gap-2">
           <span class="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-landmark text-sm"></i></span>
           <div>
             <p class="text-[10px] font-bold tracking-[.16em] text-sky-300">MONETARY POLICY SIGNALS</p>
-            <h2 id="policy-signal-title" class="mt-0.5 text-lg font-bold tracking-tight text-white">통화정책 시그널</h2>
+            <h2 id="policy-signal-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">통화정책 시그널</h2>
           </div>
         </div>
         <p class="mt-6 text-[11px] text-slate-500">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
@@ -339,6 +344,7 @@
     </section>
 
     </div>
+    <!-- 05. 모든 분석 메뉴 아래에 공통으로 노출되는 지표 추적 카드 -->
     <div class="dashboard-tracker-card">
       <header class="dashboard-tracker-heading">
         <div class="dashboard-tracker-title-row">
@@ -351,12 +357,12 @@
         <p class="dashboard-tracker-description">지표를 추가하고 설정값을 지정하면 조건 충족 시 카카오톡 알림을 보내드립니다.</p>
       </header>
 
-    <!-- ===== 경제지표 추적 화면 시작 ===== -->
+    <!-- 05-1. 지표 등록·목록·탭 영역 -->
     <div id="tab-content-tracker" aria-label="지표 추적">
       
       <!-- 오른쪽: 경제지표 신규 등록 입력폼 -->
       
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
+      <div class="tracker-register-panel bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
         <h2 class="text-lg font-bold text-white mb-4 flex items-center">
           <i class="fa-solid fa-plus-circle mr-2 text-blue-500"></i> 지표 추적 신규 등록
         </h2>
@@ -438,7 +444,7 @@
 
 
       <!-- 왼쪽: 현재 추적 중인 지표 목록 -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
+      <div class="tracker-list-panel bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-lg font-bold text-white flex items-center">
             <i class="fa-solid fa-list-check mr-2 text-blue-500"></i> 추적 현황
@@ -664,6 +670,6 @@
 
   <!-- 지표 등록 / Tab / Drag & Drop 처리 스크립트 -->
   <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=146"></script>
+  <script src="script.js?v=147"></script>
 </body>
 </html>

@@ -1,128 +1,199 @@
-/* ===== 공통 기본 스타일 =====
-   숫자 입력창, 폰트, 공통 로고처럼 로그인/대시보드 양쪽에서 쓰는 기본 규칙입니다.
-*/
+/*
+ * MacroWatch 화면 스타일 구성
+ * --------------------------------------------------------------------------
+ * 01. 디자인 토큰과 전역 기본값
+ * 02. 로그인 화면
+ *     02-1 로그인 캔버스 / 02-2 브랜드 헤더 / 02-3 소개·인증 / 02-4 푸터
+ * 03. 대시보드
+ *     03-1 페이지 골격 / 03-2 메인 헤더·내비게이션 / 03-3 콘텐츠·공통 카드
+ * 04. 분석 카드와 그래프 주변 UI
+ * 05. 지표 추적, 탭, 드래그 앤 드롭
+ * 06. 반응형 보정
+ *
+ * 화면 전체의 색상·글꼴·간격 기준은 아래 토큰에서 관리합니다.
+ * 개별 컴포넌트에는 해당 컴포넌트에서만 필요한 값만 선언합니다.
+ * Tailwind 유틸리티는 HTML의 단순 배치에 사용하고, 서비스 고유 디자인은
+ * 이 파일의 의미 있는 클래스와 ID 규칙에서 관리합니다.
+ */
+/* ===== 01. 디자인 토큰과 전역 기본값 ===== */
+:root {
+  /* 기본 글꼴: 한글 UI는 Pretendard를 우선 사용합니다. */
+  --font-ui: 'Pretendard', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-brand: 'Cinzel', Georgia, serif;
+  /* 브랜드 색상 */
+  --color-brand-navy: #071b42;
+  --color-brand-navy-hover: #12366f;
+  --color-brand-gold: #d1a55d;
+  --color-brand-gold-dark: #a67531;
+  --color-brand-gold-soft: #f2d49c;
+  /* 밝은 대시보드 표면과 기본 글자 */
+  --color-surface-page: #e3e9ed;
+  --color-surface-card: rgba(246,250,252,.68);
+  --color-surface-paper: #f7f5f0;
+  --color-surface-soft: #f3f3f1;
+  --color-surface-muted: #e9eef1;
+  --color-text-primary: #161616;
+  --color-text-dashboard: #142433;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #82909c;
+  --color-text-description: #737069;
+  --color-border-light: #dedede;
+  /* 어두운 추적 카드와 입력 UI */
+  --color-dark-panel: #0f172a;
+  --color-dark-deep: #020617;
+  --color-dark-border: #1e293b;
+  --color-dark-input-border: #334155;
+  /* 상태 및 데이터 시각화 */
+  --color-status-danger: #ef4444;
+  --color-status-provisional: #d97706;
+  --color-chart-axis: #94a3b8;
+  /* 공통 형태 */
+  --radius-card: 1.25rem;
+  --radius-control: .55rem;
+  --shadow-card: 0 18px 45px rgba(47,66,80,.08);
+  /* 분석 카드의 공통 여백: 페이지 상단 내비게이션에는 적용하지 않습니다. */
+  --analysis-card-header-padding-x: 1.25rem;
+  --analysis-card-header-padding-y: 1.25rem;
+  --analysis-card-header-border: #1e293b;
+}
+/* 페이지 전체의 기본 글꼴입니다. 로고처럼 별도 서체가 필요한 곳만 예외 처리합니다. */
 body {
   padding: 1rem;
+  font-family: var(--font-ui);
 }
-
+/* Tailwind CDN이 뒤늦게 주입하는 .font-sans보다 우선하여 한글 UI 글꼴을 고정합니다. */
+body.font-sans {
+  font-family: var(--font-ui);
+}
 @media (min-width:640px) {
   body {
     padding: 1.5rem;
   }
 }
-
 input:focus::placeholder {
-color: transparent;
+  color: transparent;
 }
-
 /* 지표 이름을 제외한 코드·주소·로그인 입력란은 영문 IME를 우선합니다. */
 .latin-input {
   ime-mode: inactive;
-}#input-target-val,
-#edit-target-val {
-appearance: textfield;
+}
+#input-target-val, #edit-target-val {
+  appearance: textfield;
   -moz-appearance: textfield;
-}#input-target-val::-webkit-inner-spin-button,
-#input-target-val::-webkit-outer-spin-button,
-#edit-target-val::-webkit-inner-spin-button,
-#edit-target-val::-webkit-outer-spin-button {
--webkit-appearance: none;
+}
+#input-target-val::-webkit-inner-spin-button, #input-target-val::-webkit-outer-spin-button, #edit-target-val::-webkit-inner-spin-button, #edit-target-val::-webkit-outer-spin-button {
+  -webkit-appearance: none;
   margin: 0;
-}.font-cinzel {
-font-family: 'Cinzel', Georgia, serif;
-}.font-sans,
-.font-pretendard {
-font-family: 'Pretendard', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-}.evotive-source-logo {
-aspect-ratio: 1 / 1;
+}
+.font-cinzel {
+  font-family: var(--font-brand);
+}
+.font-sans, .font-pretendard {
+  font-family: var(--font-ui);
+}
+.evotive-source-logo {
+  aspect-ratio: 1 / 1;
   background: transparent url("./images/logo.png") center / contain no-repeat;
-}/* ===== 로그인 화면 =====
-   로그인 카드, 상단 브랜드 영역, 안내 문구, 로그인 버튼의 기본 디자인입니다.
-*/
+}
+/* ===== 02. 로그인 화면 =====
+ * 로그인 전 화면 전용 규칙입니다.
+ * 브랜드 헤더, 소개 문구, 인증 카드, 로그인 입력창과 푸터를 담당합니다.
+ * 대시보드가 열린 뒤에는 #auth-screen이 숨겨지므로 이 규칙이 대시보드에
+ * 영향을 주지 않도록 모든 선택자를 #auth-screen 또는 .auth-canvas로 제한합니다.
+ */
+/* ----- 02-1. 로그인 캔버스와 2열 골격 ----- */
 .auth-canvas {
-background: #ece9e2;
+  background: #ece9e2;
   border: 0;
-  border-radius: 1.75rem !important;
-  min-height: calc(100vh - 2rem) !important;
-}.auth-canvas > div {
-max-width: none;
+  border-radius: 1.75rem;
+  min-height: calc(100vh - 2rem);
+}
+#auth-screen .auth-layout {
+  max-width: none;
   min-height: calc(100vh - 2rem);
   grid-template-columns: minmax(0,1.15fr) minmax(360px,.85fr);
-}.auth-canvas > div > section:last-child {
-background: #e5e1d9;
-  position: relative;
-  padding: clamp(2rem,6vw,7rem);
-}.auth-canvas > div > section:last-child::before {
-content: "MACROWATCH / PRIVATE ACCESS";
-  position: absolute;
-  top: clamp(2rem,5vw,5.5rem);
-  right: clamp(2rem,6vw,7rem);
-  font: 600 .62rem/1 Pretendard,sans-serif;
-  letter-spacing: .2em;
-  color: #8e8a82;
-}#auth-screen {
-border-radius: 1.75rem;
+}
+#auth-screen {
+  border-radius: 1.75rem;
   overflow: hidden;
-}#auth-screen .auth-panel {
-max-width: 430px;
+}
+#auth-screen .auth-panel {
+  max-width: 430px;
   margin: auto;
   padding: clamp(2rem,4vw,3.5rem);
   border: 0;
-  background: #f7f5f0;
+  background: var(--color-surface-paper);
   box-shadow: 0 24px 64px rgba(0,0,0,.32);
-  color: #071b42;
+  color: var(--color-brand-navy);
   border-radius: 1.25rem;
-}.mobile-space {
-display: none;
-}#auth-screen .auth-panel h2 {
-font-size: 1.8rem;
+}
+.mobile-space {
+  display: none;
+}
+#auth-screen .auth-panel h2 {
+  font-size: 1.8rem;
   letter-spacing: -.04em;
-}#auth-screen .auth-panel .text-white {
-color: #071b42;
-}#auth-screen .auth-panel .text-slate-400,
-#auth-screen .auth-panel .text-slate-500 {
-color: #64748b;
-}#auth-screen .auth-panel input,
-#auth-screen .auth-panel select {
-background: #fff;
+}
+#auth-screen .auth-panel .text-white {
+  color: var(--color-brand-navy);
+}
+#auth-screen .auth-panel .text-slate-400, #auth-screen .auth-panel .text-slate-500 {
+  color: var(--color-text-secondary);
+}
+#auth-screen .auth-panel input, #auth-screen .auth-panel select {
+  background: #fff;
   border-color: #d8d2c7;
-  color: #071b42;
-}#auth-screen .auth-panel input::placeholder {
-color: #94a3b8;
-}#auth-screen .auth-panel .mt-4.flex.items-start {
-margin-top: 1.35rem;
-}#auth-screen .auth-panel > div.mb-8 {
-margin-bottom: .55rem;
-}.auth-divider-line {
+  color: var(--color-brand-navy);
+}
+#auth-screen .auth-panel input::placeholder {
+  color: var(--color-chart-axis);
+}
+#auth-screen .auth-panel .mt-4.flex.items-start {
+  margin-top: 1.35rem;
+}
+#auth-screen .auth-panel > div.mb-8 {
+  margin-bottom: .55rem;
+}
+.auth-divider-line {
   flex: 1 1 0%;
   height: 1px;
   background: #c8c1b5;
-}#password-login-button {
-background: #071b42;
-  border-color: #071b42;
+}
+#password-login-button {
+  background: var(--color-brand-navy);
+  border-color: var(--color-brand-navy);
   color: #fff;
   box-shadow: 0 8px 18px rgba(7,27,66,.18);
   margin-top: 1.5rem;
-}#password-login-button:hover {
-background: #12366f;
-  border-color: #12366f;
-}#password-login-form > p.pt-1 {
-text-align: center;
+}
+#password-login-button:hover {
+  background: var(--color-brand-navy-hover);
+  border-color: var(--color-brand-navy-hover);
+}
+#password-login-form > p.pt-1 {
+  text-align: center;
   margin-top: 1.5rem;
   padding-top: 0;
-}#signup-placeholder-button {
-color: #a67531;
-}#signup-placeholder-button:hover {
-color: #071b42;
-}#auth-screen > div > header {
-background: #f7f5f0;
+}
+#signup-placeholder-button {
+  color: var(--color-brand-gold-dark);
+}
+#signup-placeholder-button:hover {
+  color: var(--color-brand-navy);
+}
+/* ----- 02-2. 로그인 화면 브랜드 헤더 -----
+ * 대시보드의 .dashboard-nav와는 별개의 헤더입니다.
+ */
+#auth-screen .auth-header {
+  background: var(--color-surface-paper);
   border-bottom: 1px solid #ddd7cc;
   min-height: 96px;
   padding-top: 1.35rem;
   padding-bottom: 1.35rem;
   overflow: visible;
-}#auth-screen > div > header > div:first-child {
-display: flex;
+}
+#auth-screen .auth-brand-group {
+  display: flex;
   align-items: center;
   flex: 0 1 auto;
   width: auto;
@@ -130,49 +201,60 @@ display: flex;
   min-width: max-content;
   gap: .22rem;
   overflow: visible;
-}#auth-screen > div > header > div:first-child > div:last-child {
-flex-shrink: 1;
+}
+#auth-screen .auth-brand-copy {
+  flex-shrink: 1;
   min-width: max-content;
   overflow: visible;
-}#auth-screen > div > header .evotive-source-logo {
-background-color: #f7f5f0;
+}
+.auth-header .evotive-source-logo {
+  background-color: var(--color-surface-paper);
   border-radius: 0;
   z-index: 1;
   width: 56px;
   height: 43px;
   flex: none;
   margin-right: -.1rem;
-}#auth-screen > div > header .font-cinzel {
-color: #071b42;
+}
+.auth-header .font-cinzel {
+  color: var(--color-brand-navy);
   white-space: nowrap;
   overflow: visible;
   font-size: 1.16rem;
   letter-spacing: .03em;
-}#auth-screen > div > header .font-cinzel + p {
-font-size: .62rem;
+}
+.auth-header .font-cinzel + p {
+  font-size: .62rem;
   white-space: nowrap;
   font-weight: 400;
   letter-spacing: .14em;
   margin-top: -.02rem;
   line-height: 1.05;
-}#auth-screen > div > header .text-\[9px\] {
-color: #a67531;
+}
+.auth-header .text-\[9px\] {
+  color: var(--color-brand-gold-dark);
   white-space: nowrap;
   font-size: .46rem;
   letter-spacing: .08em;
-}.header-product-label {
-display: block;
-  font: 500 .63rem/1 Pretendard,sans-serif;
+}
+.header-product-label {
+  display: block;
+  font-size: .63rem;
+  font-weight: 500;
+  line-height: 1;
   letter-spacing: .16em;
   color: #8c8a84;
   white-space: nowrap;
-}#auth-screen .grid.flex-1 {
-padding-left: clamp(2.5rem,11vw,11rem);
+}
+/* ----- 02-3. 소개 영역과 인증 폼 ----- */
+#auth-screen .auth-content-grid {
+  padding-left: clamp(2.5rem,11vw,11rem);
   padding-right: clamp(2.5rem,11vw,11rem);
   column-gap: clamp(2rem,7vw,7rem);
   background-image: radial-gradient(rgba(247,245,240,.14) 1px,transparent 1px);
   background-size: 36px 36px;
-}/* 메인 타이틀 두 줄의 굵기를 각각 조절합니다. */
+}
+/* 메인 타이틀 두 줄의 굵기를 각각 조절합니다. */
 #auth-screen {
   --title-evolving-weight: 100;
   --title-insight-weight: 600;
@@ -198,14 +280,15 @@ padding-left: clamp(2.5rem,11vw,11rem);
 #auth-screen .title-shift {
   font-weight: var(--title-shift-weight);
 }
-#auth-screen .grid > section:first-child h1 {
-letter-spacing: -.03em;
+#auth-screen .auth-intro h1 {
+  letter-spacing: -.03em;
   max-width: none;
   white-space: normal;
   font-size: clamp(2.35rem,5.2vw,5.3rem);
   line-height: 1.28;
-}#auth-screen .grid > section:first-child > p:not(.mb-6) {
-line-height: 2;
+}
+#auth-screen .auth-intro-description {
+  line-height: 2;
   position: relative;
   padding-left: 1.15rem;
   max-width: 640px;
@@ -213,16 +296,18 @@ line-height: 2;
   font-size: .96rem;
   letter-spacing: -.01em;
   margin-top: clamp(1rem, 3.35vw, 3.35rem);
-}#auth-screen .grid > section:first-child > p:not(.mb-6)::before {
-content: "";
+}
+#auth-screen .auth-intro-description::before {
+  content: "";
   position: absolute;
   left: 0;
   top: .35rem;
   bottom: .35rem;
   width: 2px;
   background: rgba(201,170,114,.62);
-}#auth-screen .grid > section:first-child > p:not(.mb-6) .inline-signal-dot {
-display: inline-block;
+}
+#auth-screen .auth-intro-description .inline-signal-dot {
+  display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -233,152 +318,701 @@ display: inline-block;
   position: relative;
   top: -2px;
 }
-
-@keyframes macroPulse {0%,100% {
-opacity:.35; transform:scale(.85);
-}50% {
-opacity:1; transform:scale(1);
+@keyframes macroPulse {
+  0%,100% {
+    opacity:.35;
+    transform:scale(.85);
+  }
+  50% {
+    opacity:1;
+    transform:scale(1);
+  }
 }
-}#auth-screen > div > footer {
-justify-content: center;
+/* ----- 02-4. 로그인 화면 푸터 ----- */
+#auth-screen .auth-footer {
+  justify-content: center;
   text-align: center;
   background: #04132f;
   border-top-color: rgba(255,255,255,.12);
-}#auth-screen > div > footer::after {
-content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
-  color: #64748b;
+}
+#auth-screen .auth-footer::after {
+  content: "© 2026 EVOTIVE RESEARCH. All rights reserved.";
+  color: var(--color-text-secondary);
   margin: 0 auto;
-}/* ===== 대시보드 화면 ===== */
+}
+/* ===== 03. 대시보드 공통 골격과 내비게이션 =====
+ * 로그인 후 표시되는 전체 배경, 상단 내비게이션, 콘텐츠 폭과 공통 카드의
+ * 기본 형태를 관리합니다. 개별 분석 카드의 고유 색상과 그래프는 다음 모듈에서
+ * 정의하며, 여기에는 모든 카드가 공유하는 배치만 둡니다.
+ */
+/* ----- 03-1. 대시보드 페이지 배경과 최상위 골격 ----- */
 body:has(#app-shell:not(.hidden)) {
   padding: 0;
-  background:
-    repeating-linear-gradient(105deg, rgba(255,255,255,.11) 0 1px, rgba(35,58,76,.025) 1px 3px, transparent 3px 7px),
-    radial-gradient(circle at 78% -12%, rgba(116, 142, 163, .28), transparent 35rem),
-    linear-gradient(135deg, #f2f5f7 0%, #e3e9ed 52%, #d7e0e6 100%);
+  background: repeating-linear-gradient(105deg, rgba(255,255,255,.11) 0 1px, rgba(35,58,76,.025) 1px 3px, transparent 3px 7px), radial-gradient(circle at 78% -12%, rgba(116, 142, 163, .28), transparent 35rem), linear-gradient(135deg, #f2f5f7 0%, #e3e9ed 52%, #d7e0e6 100%);
 }
-
 #app-shell {
   --dashboard-pad: clamp(1.25rem, 4vw, 5.5rem);
   --dashboard-section-gap: 4rem;
-  width: 100%; max-width: none; margin: 0; padding: 1.5rem 0 0;
-  color: #161616; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --dashboard-header-max-width: 90rem;
+  --dashboard-header-gutter: 3rem;
+  --dashboard-header-padding-y: 1.2rem;
+  --dashboard-content-max-width: 64rem;
+  --dashboard-content-gutter: 2rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.5rem 0 0;
+  color: var(--color-text-primary);
 }
-#app-shell > * { min-width: 0; }
-.dashboard-workspace { display:grid; grid-template-columns:minmax(0, 1fr); gap:0; align-items:start; }
-.dashboard-nav { position:sticky; top:0; z-index:20; display:block; isolation:isolate; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
-.dashboard-nav::before { position:absolute; z-index:-1; top:0; right:0; bottom:0; left:0; content:""; opacity:0; background:rgba(225, 233, 238, .66); box-shadow:0 1px 0 rgba(20,36,51,.12); backdrop-filter:blur(12px); transition:opacity .2s ease; }
-.dashboard-is-scrolled .dashboard-nav::before { opacity:1; }
-.dashboard-nav-inner { display:flex; align-items:center; gap:clamp(.7rem, 1.35vw, 1.35rem); width:min(calc(100% - 3rem), 90rem); margin:0 auto; padding:1.2rem 0; }
-.dashboard-wordmark { display:flex; align-items:center; gap:.75rem; margin:0 clamp(1rem, 3vw, 3rem) 0 0; color:#161616; }
-.dashboard-logo { width:44px; height:44px; flex:none; background:url("./images/logo.png") center / contain no-repeat; }
-.dashboard-wordmark-copy { display:grid; gap:.12rem; line-height:1; }
-.dashboard-wordmark-copy strong { font-size:1.55rem; font-weight:850; letter-spacing:-.07em; }
-.dashboard-wordmark-copy small { color:#4e6679; font-size:.7rem; font-weight:650; letter-spacing:.01em; }
-.dashboard-nav-label { display:none; }
-.dashboard-nav-item { position:relative; display:flex; align-items:center; gap:.45rem; width:auto; padding:.42rem 0; border-radius:0; color:#8a8a8a; font-size:.8rem; font-weight:650; text-align:left; }
-.dashboard-nav-item::after { position:absolute; right:0; bottom:-.5rem; left:0; height:1px; content:""; background:#161616; transform:scaleX(0); transform-origin:center; transition:transform .16s ease; }
-.dashboard-nav-item:hover,.dashboard-nav-item.is-active { background:transparent; color:#8a8a8a; }.dashboard-nav-item.is-active::after { transform:scaleX(1); }.dashboard-nav:has(.dashboard-nav-item:hover:not(.is-active)) .dashboard-nav-item.is-active::after { transform:scaleX(0); }.dashboard-nav-item:hover:not(.is-active)::after { transform:scaleX(1); }.dashboard-nav-item.is-active::before { display:none; }.dashboard-nav-item i { display:none; }
-.dashboard-nav-actions { display:flex; gap:.15rem; margin:0 0 0 auto; }.dashboard-nav-actions button,.dashboard-nav-actions a { display:grid; width:2rem; height:2rem; place-items:center; border-radius:50%; color:#777; font-size:.75rem; }.dashboard-nav-actions button:hover,.dashboard-nav-actions a:hover { background:#161616; color:#fff; }
-#db-status { display:none !important; }
-.dashboard-main { display:grid; gap:1.5rem; width:min(calc(100% - 2rem), 64rem); min-width:0; margin:var(--dashboard-section-gap) auto 0; }.dashboard-panels { display:grid; gap:1.5rem; min-width:0; }.dashboard-view-card,.dashboard-tracker-card { padding:clamp(1.1rem, 2.2vw, 2rem); border:1px solid rgba(64,83,97,.14); border-radius:1.25rem; background:rgba(246,250,252,.68); box-shadow:0 18px 45px rgba(47,66,80,.08); }.dashboard-panel-hidden { display:none !important; }
-.dashboard-tracker-heading { margin:0 0 1.5rem; padding:0 0 1.2rem; border-bottom:1px solid rgba(20,36,51,.16); color:#161616; }.dashboard-tracker-title-row { display:flex; align-items:flex-start; gap:.65rem; }.dashboard-tracker-heading span { display:grid; width:2rem; height:2rem; margin-top:.1rem; place-items:center; border:1px solid #dedede; border-radius:.6rem; background:#f3f3f1; color:#282724; font-size:.8rem; }.dashboard-tracker-eyebrow { margin:0 0 .15rem; color:#4f8dc9; font-size:.625rem; font-weight:700; letter-spacing:.16em; }.dashboard-tracker-heading h2 { margin:0; font-size:1.15rem; font-weight:750; letter-spacing:-.03em; }.dashboard-tracker-description { margin:1.5rem 0 0; color:#737069; font-size:.7rem; }
-
-.market-overview { display:grid; gap:1.5rem; margin-bottom:0; }
-.market-overview-grid { display:grid; grid-template-columns:minmax(0, 1fr); padding-top:1.5rem; }
-.market-overview-grid #news-sentiment-dashboard, .sector-flow-view-card #sector-flow-dashboard { border:0 !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; }
-#sector-flow-dashboard { font-family:Pretendard, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
-#credit-stress-dashboard { margin-bottom:4rem; }
-#credit-stress-components-dashboard { margin-bottom:0; }.market-overview-grid > section > div:first-child, .sector-flow-view-card > section > div:first-child { padding:0 0 1.2rem !important; border-color:#161616 !important; }
-.market-overview-grid h2, .sector-flow-view-card h2, #credit-stress-components-dashboard h2, #korea-stress-dashboard h2, #em-stress-dashboard h2 { color:#161616 !important; font-size:1.15rem !important; }.market-overview-grid p, .sector-flow-view-card p, #credit-stress-components-dashboard p, #korea-stress-dashboard p, #em-stress-dashboard p { color:#737069 !important; }
-#news-extreme-signals .decisive-news-title { color:#ffe4ac !important; font-family:Pretendard, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important; font-size:1rem !important; font-weight:600 !important; letter-spacing:-.018em !important; }
-#news-extreme-signals .decisive-news-description { color:#f5f0e5 !important; font-family:Pretendard, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important; font-weight:300 !important; }
-#news-extreme-signals .decisive-news-count-label, #news-extreme-signals .decisive-news-count-value { color:#f5f3ff !important; font-family:Pretendard, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important; font-size:.9375rem !important; font-weight:750 !important; }
-#news-extreme-signals [data-extreme-signal-status] { color:#ddd6fe !important; font-family:Pretendard, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important; font-size:.75rem !important; font-weight:650 !important; }
-#news-sentiment-dashboard > div:first-child [class*="bg-sky"], #sector-flow-dashboard > div:first-child [class*="bg-teal"], #credit-stress-dashboard > div:first-child [class*="bg-amber"], #credit-stress-components-dashboard > div:first-child [class*="bg-blue"], #korea-stress-dashboard > div:first-child [class*="bg-amber"], #em-stress-dashboard > div:first-child [class*="bg-amber"] { border:1px solid #dedede; background:#f3f3f1 !important; color:#282724 !important; }
-#news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart, #korea-stress-chart, #em-stress-chart { padding:1.6rem 0 0 !important; }.market-overview-grid [class*="border-dashed"], #credit-stress-components-dashboard [class*="border-dashed"] { border-color:#dedede !important; border-radius:0 !important; background:transparent !important; }#korea-stress-dashboard .korea-empty-state, #em-stress-dashboard .em-empty-state { border-color:#dedede !important; border-radius:0 !important; background:transparent !important; }
-.sector-flow-preview { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; overflow:hidden; padding:1.6rem 0 1rem; }
-.sector-flow-week { min-width:0; overflow:hidden; border:1px solid rgba(22,71,111,.24); border-radius:.75rem; background:rgba(255,255,255,.72); box-shadow:0 4px 10px rgba(44,78,106,.08); }
-.sector-flow-week header { display:flex; align-items:center; gap:.55rem; min-height:3rem; padding:.5rem .65rem; background:linear-gradient(115deg,#087c9d,#1a5c9c); }
-.sector-flow-week header > span { display:grid; width:2.3rem; height:2rem; flex:none; place-items:center; border:1px solid rgba(255,255,255,.33); border-radius:.38rem; background:rgba(255,255,255,.12); color:#fff; font-size:.74rem; font-weight:800; letter-spacing:.02em; }
-.sector-flow-week header strong { color:#fff; font-size:.82rem; font-weight:800; }
-.sector-flow-columns,.sector-flow-week li { display:grid; grid-template-columns:2.1rem minmax(0,1fr) 2rem auto; gap:.35rem; align-items:center; }
-.sector-flow-columns { margin:.75rem .65rem .35rem; color:#225f90; font-size:.58rem; font-weight:800; }
-.sector-flow-columns span:nth-child(3),.sector-flow-columns span:last-child { text-align:right; }
-.sector-flow-week ol { display:grid; gap:0; margin:0 .65rem .55rem; padding:0; list-style:none; }
-.sector-flow-week li { min-height:2.05rem; border-bottom:1px solid rgba(47,105,154,.16); padding:.25rem .05rem; }
-.sector-flow-week li:last-child { border-bottom:0; }
-.sector-flow-week li b { display:flex; width:1.55rem; height:1.25rem; min-width:0; align-items:center; justify-content:center; border-radius:.25rem; background:#dcecf8; color:#175886; font-size:.66rem; font-weight:850; }
-.sector-flow-week li strong { overflow:hidden; color:#61798d; font-size:.72rem; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
-.sector-flow-streak { color:#5e7890; font-size:.6rem; font-weight:750; text-align:right; white-space:nowrap; }
-.sector-flow-week li em { color:#326e98; font-size:.62rem; font-style:normal; font-weight:700; text-align:right; white-space:nowrap; }
-.sector-flow-week-current { border-color:#c86b20; box-shadow:0 5px 12px rgba(190,104,35,.13); }
-.sector-flow-week-current header { background:linear-gradient(90deg,#db8335 0%,#d4772d 42%,#c96b25 100%); }
-.sector-flow-week-current li b { background:#fbe7d1; color:#ad5218; }
-.sentiment-segment-label { color:#fff !important; text-shadow:0 1px 2px rgba(0,0,0,.32); }
-
-#app-shell .text-white { color:#142433; } #app-shell .text-slate-400 { color:#647585; } #app-shell .text-slate-500 { color:#82909c; } #app-shell [class*="bg-slate-950"] { background:#e9eef1 !important; }.compact-mobile-summary { display:none !important; }
-#tab-content-tracker { display:grid; grid-template-columns:minmax(0, 1fr) 360px; column-gap:1.25rem; row-gap:0; align-items:start; margin-bottom:1.25rem; }
-#tab-content-tracker > * { margin-top:0 !important; }
-#tab-content-tracker > div:first-child,#tab-content-tracker > div:nth-child(2) { padding:1.25rem !important; border:1px solid #1e293b !important; border-radius:1rem !important; background:#0f172a !important; box-shadow:0 16px 32px rgba(15,23,42,.18) !important; }
-#tab-content-tracker > div:first-child { grid-column:2; grid-row:1; align-self:start; }#tab-content-tracker > div:nth-child(2) { grid-column:1; grid-row:1; align-self:start; border-radius:1rem 1rem 1rem 0 !important; }
-#tab-content-tracker .text-white { color:#fff !important; }#tab-content-tracker .text-slate-400 { color:#94a3b8 !important; }#tab-content-tracker .text-slate-500 { color:#64748b !important; }#tab-content-tracker .text-slate-300 { color:#cbd5e1 !important; }
-#tab-content-tracker [class*="bg-slate-950"] { background:#020617 !important; }#tab-content-tracker input,#tab-content-tracker select { border-color:#334155 !important; color:#fff !important; -webkit-text-fill-color:#fff; }#tab-content-tracker input::placeholder { color:#64748b; -webkit-text-fill-color:#64748b; }#tab-content-tracker select option { background:#020617; color:#fff; }
-#target-list { min-height:45rem; }#target-list > div[data-target-container] { border-color:#1e293b !important; }#target-list [data-target-row]:hover { background:#111c31 !important; }
-#tab-content-tracker > .sheet-tabs { grid-column:1; grid-row:2; width:100%; height:38px; padding:0; }
-#app-shell > .dashboard-copyright { margin:var(--dashboard-section-gap) 0 0; padding:1.3rem var(--dashboard-pad); border-top:1px solid rgba(20,36,51,.18) !important; border-color:rgba(20,36,51,.18) !important; background:transparent !important; color:#6e7f8d; }
-
-@media (max-width:1023px) { .dashboard-workspace { gap:0; }.dashboard-nav { overflow:auto; }.dashboard-nav-inner { width:max-content; min-width:100%; gap:1.2rem; padding:1.2rem 1rem; }.dashboard-wordmark { flex:none; margin:0 1rem 0 0; }.dashboard-nav-actions { display:none; }.dashboard-nav-item { width:auto; flex:none; }.market-overview-grid { gap:2rem; }#tab-content-tracker { grid-template-columns:1fr; column-gap:0; row-gap:0; }#tab-content-tracker > div:first-child,#tab-content-tracker > div:nth-child(2),#tab-content-tracker > .sheet-tabs { grid-column:1; grid-row:auto; }#tab-content-tracker > div:first-child { order:2; margin-top:2rem !important; padding:2rem 0 0 !important; border-top:1px solid #dedede !important; border-left:0 !important; } }
-@media (max-width:640px) { .market-overview-grid { padding-top:1.5rem; } }
-@media (max-width:640px) { .sector-flow-preview { gap:.25rem; overflow-x:auto; padding-bottom:1rem; }.sector-flow-week { min-width:12rem; padding:0 .35rem; } }
-
-@keyframes dashboardSpin {to {
-transform: rotate(360deg);
-} }
-
-@keyframes dashboardDots {0%,20% {
-content:"";
-}40% {
-content:".";
-}60% {
-content:"..";
-}80%,100% {
-content:"...";
+#app-shell > * {
+  min-width: 0;
 }
-}#target-list > p.loading-state {
-display: flex;
+.dashboard-workspace {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  gap:0;
+  align-items:start;
+}
+/* ----- 03-2. 메인 헤더: 로고·메뉴·우측 동작 버튼 -----
+ * 분석 카드 헤더와 공유하지 않는 독립 모듈입니다.
+ * sticky 동작, 스크롤 배경, 중앙 폭은 이 구역에서만 관리합니다.
+ */
+.dashboard-nav {
+  position:sticky;
+  top:0;
+  z-index:20;
+  display:block;
+  isolation:isolate;
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.dashboard-nav::before {
+  position:absolute;
+  z-index:-1;
+  top:0;
+  right:0;
+  bottom:0;
+  left:0;
+  content:"";
+  opacity:0;
+  background:rgba(225, 233, 238, .66);
+  box-shadow:0 1px 0 rgba(20,36,51,.12);
+  backdrop-filter:blur(12px);
+  transition:opacity .2s ease;
+}
+.dashboard-is-scrolled .dashboard-nav::before {
+  opacity:1;
+}
+.dashboard-nav-inner {
+  display:flex;
+  align-items:center;
+  gap:clamp(.7rem, 1.35vw, 1.35rem);
+  width:min(calc(100% - var(--dashboard-header-gutter)), var(--dashboard-header-max-width));
+  margin:0 auto;
+  padding:var(--dashboard-header-padding-y) 0;
+}
+.dashboard-wordmark {
+  display:flex;
+  align-items:center;
+  gap:.75rem;
+  margin:0 clamp(1rem, 3vw, 3rem) 0 0;
+  color:var(--color-text-primary);
+}
+.dashboard-logo {
+  width:44px;
+  height:44px;
+  flex:none;
+  background:url("./images/logo.png") center / contain no-repeat;
+}
+.dashboard-wordmark-copy {
+  display:grid;
+  gap:.12rem;
+  line-height:1;
+}
+.dashboard-wordmark-copy strong {
+  font-size:1.55rem;
+  font-weight:850;
+  letter-spacing:-.07em;
+}
+.dashboard-wordmark-copy small {
+  color:#4e6679;
+  font-size:.7rem;
+  font-weight:650;
+  letter-spacing:.01em;
+}
+.dashboard-nav-label {
+  display:none;
+}
+.dashboard-nav-item {
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  width:auto;
+  padding:.42rem 0;
+  border-radius:0;
+  color:#8a8a8a;
+  font-size:.8rem;
+  font-weight:650;
+  text-align:left;
+}
+.dashboard-nav-item::after {
+  position:absolute;
+  right:0;
+  bottom:-.5rem;
+  left:0;
+  height:1px;
+  content:"";
+  background:var(--color-text-primary);
+  transform:scaleX(0);
+  transform-origin:center;
+  transition:transform .16s ease;
+}
+.dashboard-nav-item:hover,.dashboard-nav-item.is-active {
+  background:transparent;
+  color:#8a8a8a;
+}
+.dashboard-nav-item.is-active::after {
+  transform:scaleX(1);
+}
+.dashboard-nav:has(.dashboard-nav-item:hover:not(.is-active)) .dashboard-nav-item.is-active::after {
+  transform:scaleX(0);
+}
+.dashboard-nav-item:hover:not(.is-active)::after {
+  transform:scaleX(1);
+}
+.dashboard-nav-item.is-active::before {
+  display:none;
+}
+.dashboard-nav-item i {
+  display:none;
+}
+.dashboard-nav-actions {
+  display:flex;
+  gap:.15rem;
+  margin:0 0 0 auto;
+}
+.dashboard-nav-actions button,.dashboard-nav-actions a {
+  display:grid;
+  width:2rem;
+  height:2rem;
+  place-items:center;
+  border-radius:50%;
+  color:#777;
+  font-size:.75rem;
+}
+.dashboard-nav-actions button:hover,.dashboard-nav-actions a:hover {
+  background:var(--color-text-primary);
+  color:#fff;
+}
+#db-status {
+  display:none;
+}
+/* ----- 03-3. 메인 콘텐츠 폭과 공통 카드 표면 ----- */
+.dashboard-main {
+  display:grid;
+  gap:1.5rem;
+  width:min(calc(100% - var(--dashboard-content-gutter)), var(--dashboard-content-max-width));
+  min-width:0;
+  margin:var(--dashboard-section-gap) auto 0;
+}
+.dashboard-panels {
+  display:grid;
+  gap:1.5rem;
+  min-width:0;
+}
+.dashboard-view-card,.dashboard-tracker-card {
+  padding:clamp(1.1rem, 2.2vw, 2rem);
+  border:1px solid rgba(64,83,97,.14);
+  border-radius:var(--radius-card);
+  background:var(--color-surface-card);
+  box-shadow:var(--shadow-card);
+}
+.dashboard-tracker-heading {
+  margin:0 0 1.5rem;
+  padding:0 0 1.2rem;
+  border-bottom:1px solid rgba(20,36,51,.16);
+  color:var(--color-text-primary);
+}
+.dashboard-tracker-title-row {
+  display:flex;
+  align-items:flex-start;
+  gap:.65rem;
+}
+.dashboard-tracker-heading span {
+  display:grid;
+  width:2rem;
+  height:2rem;
+  margin-top:.1rem;
+  place-items:center;
+  border:1px solid var(--color-border-light);
+  border-radius:.6rem;
+  background:var(--color-surface-soft);
+  color:#282724;
+  font-size:.8rem;
+}
+.dashboard-tracker-eyebrow {
+  margin:0 0 .15rem;
+  color:#4f8dc9;
+  font-size:.625rem;
+  font-weight:700;
+  letter-spacing:.16em;
+}
+.dashboard-tracker-heading h2 {
+  margin:0;
+  font-size:1.15rem;
+  font-weight:750;
+  letter-spacing:-.03em;
+}
+.dashboard-tracker-description {
+  margin:1.5rem 0 0;
+  color:var(--color-text-description);
+  font-size:.7rem;
+}
+/* ===== 04. 분석 카드와 그래프 주변 UI =====
+ * 뉴스 흐름, 주도섹터, 미국·한국·이머징 스트레스 카드에 공통으로 적용되는
+ * 제목 영역, 빈 상태, 차트 여백과 범례를 관리합니다.
+ */
+.market-overview {
+  display:grid;
+  gap:1.5rem;
+  margin-bottom:0;
+}
+/* 메뉴 전환 시 붙는 상태 클래스는 각 패널의 기본 display 선언보다 뒤에서 적용합니다. */
+.dashboard-panel-hidden {
+  display:none;
+}
+.market-overview-grid {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  padding-top:1.5rem;
+}
+.market-overview-grid #news-sentiment-dashboard, .sector-flow-view-card #sector-flow-dashboard {
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+#credit-stress-dashboard {
+  margin-bottom:4rem;
+}
+#credit-stress-components-dashboard {
+  margin-bottom:0;
+}
+/* 모든 분석 카드 헤더의 기본 여백과 구분선을 이 한 곳에서 관리합니다. */
+.analysis-card-header {
+  padding:var(--analysis-card-header-padding-y) var(--analysis-card-header-padding-x);
+  border-bottom:1px solid var(--analysis-card-header-border);
+}
+/* 밝은 분석 카드의 제목과 안내 문구 색상만 담당합니다. */
+#app-shell .analysis-card-header-light .analysis-card-title {
+  color:var(--color-text-primary);
+  font-size:1.15rem;
+}
+#app-shell .analysis-card-header-light p {
+  color:var(--color-text-description);
+}
+/* 뉴스와 주도섹터 카드는 헤더가 카드 본문과 이어지므로 바깥 패딩을 제거합니다. */
+.analysis-card-header-flush {
+  padding:0 0 1.2rem;
+  border-color:var(--color-text-primary);
+}
+/* 결정적 뉴스는 밝은 카드 안의 유일한 어두운 강조 패널이므로 색을 패널 내부에만 제한합니다. */
+#news-extreme-signals .decisive-news-title {
+  color:#ffe4ac;
+  font-size:1rem;
+  font-weight:600;
+  letter-spacing:-.018em;
+}
+#news-extreme-signals .decisive-news-description {
+  color:#f5f0e5;
+  font-weight:300;
+}
+#news-extreme-signals .decisive-news-count-label, #news-extreme-signals .decisive-news-count-value {
+  color:#f5f3ff;
+  font-size:.9375rem;
+  font-weight:750;
+}
+#news-extreme-signals [data-extreme-signal-status] {
+  color:#ddd6fe;
+  font-size:.75rem;
+  font-weight:650;
+}
+/* 분석 카드의 작은 아이콘 상자는 카드 종류와 관계없이 같은 표면을 사용합니다. */
+#app-shell .analysis-card-icon {
+  border:1px solid var(--color-border-light);
+  background:var(--color-surface-soft);
+  color:#282724;
+}
+#news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart, #korea-stress-chart, #em-stress-chart {
+  padding:1.6rem 0 0;
+}
+/* 밝은 카드에서 사용하는 데이터 대기·오류 상태입니다. */
+#app-shell .analysis-empty-state-light {
+  border-color:var(--color-border-light);
+  border-radius:0;
+  background:transparent;
+}
+/* 주도섹터 흐름: 네 개의 주차 카드를 같은 폭으로 배치합니다. */
+.sector-flow-preview {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:.75rem;
+  overflow:hidden;
+  padding:1.6rem 0 1rem;
+}
+.sector-flow-week {
+  min-width:0;
+  overflow:hidden;
+  border:1px solid rgba(22,71,111,.24);
+  border-radius:.75rem;
+  background:rgba(255,255,255,.72);
+  box-shadow:0 4px 10px rgba(44,78,106,.08);
+}
+.sector-flow-week header {
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+  min-height:3rem;
+  padding:.5rem .65rem;
+  background:linear-gradient(115deg,#087c9d,#1a5c9c);
+}
+.sector-flow-week header > span {
+  display:grid;
+  width:2.3rem;
+  height:2rem;
+  flex:none;
+  place-items:center;
+  border:1px solid rgba(255,255,255,.33);
+  border-radius:.38rem;
+  background:rgba(255,255,255,.12);
+  color:#fff;
+  font-size:.74rem;
+  font-weight:800;
+  letter-spacing:.02em;
+}
+.sector-flow-week header strong {
+  color:#fff;
+  font-size:.82rem;
+  font-weight:800;
+}
+.sector-flow-columns,.sector-flow-week li {
+  display:grid;
+  grid-template-columns:2.1rem minmax(0,1fr) 2rem auto;
+  gap:.35rem;
+  align-items:center;
+}
+.sector-flow-columns {
+  margin:.75rem .65rem .35rem;
+  color:#225f90;
+  font-size:.58rem;
+  font-weight:800;
+}
+/* 주도섹터 표의 수치 열만 우측 정렬합니다. 열의 의미가 고정된 표 구조이므로
+ * 위치 선택자는 이 모듈 안에서만 제한적으로 사용합니다.
+ */
+.sector-flow-columns span:nth-child(3),.sector-flow-columns span:last-child {
+  text-align:right;
+}
+.sector-flow-week ol {
+  display:grid;
+  gap:0;
+  margin:0 .65rem .55rem;
+  padding:0;
+  list-style:none;
+}
+.sector-flow-week li {
+  min-height:2.05rem;
+  border-bottom:1px solid rgba(47,105,154,.16);
+  padding:.25rem .05rem;
+}
+/* 마지막 행에는 구분선을 중복해서 그리지 않습니다. */
+.sector-flow-week li:last-child {
+  border-bottom:0;
+}
+.sector-flow-week li b {
+  display:flex;
+  width:1.55rem;
+  height:1.25rem;
+  min-width:0;
+  align-items:center;
+  justify-content:center;
+  border-radius:.25rem;
+  background:#dcecf8;
+  color:#175886;
+  font-size:.66rem;
+  font-weight:850;
+}
+.sector-flow-week li strong {
+  overflow:hidden;
+  color:#61798d;
+  font-size:.72rem;
+  font-weight:650;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.sector-flow-streak {
+  color:#5e7890;
+  font-size:.6rem;
+  font-weight:750;
+  text-align:right;
+  white-space:nowrap;
+}
+.sector-flow-week li em {
+  color:#326e98;
+  font-size:.62rem;
+  font-style:normal;
+  font-weight:700;
+  text-align:right;
+  white-space:nowrap;
+}
+.sector-flow-week-current {
+  border-color:#c86b20;
+  box-shadow:0 5px 12px rgba(190,104,35,.13);
+}
+.sector-flow-week-current header {
+  background:linear-gradient(90deg,#db8335 0%,#d4772d 42%,#c96b25 100%);
+}
+.sector-flow-week-current li b {
+  background:#fbe7d1;
+  color:#ad5218;
+}
+.sector-flow-note {
+  color:var(--color-text-description);
+}
+.sentiment-segment-label {
+  color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.32);
+}
+/* 그래프 범례의 공통 선 모양입니다. 잠정치는 주황색 점선으로 통일합니다. */
+.chart-legend-line {
+  display:inline-block;
+  width:1.25rem;
+  height:.125rem;
+}
+.chart-legend-line-provisional {
+  border-top:2px dashed var(--color-status-provisional);
+}
+/*
+ * Tailwind CDN 호환 계층입니다.
+ * 기존 HTML과 동적 템플릿의 색상 유틸리티를 밝은 대시보드 팔레트로 변환합니다.
+ * 새 컴포넌트는 가능한 한 의미 기반 클래스를 사용하고 이 계층을 확장하지 않습니다.
+ */
+#app-shell .text-white {
+  color:var(--color-text-dashboard);
+}
+#app-shell .text-slate-400 {
+  color:#647585;
+}
+#app-shell .text-slate-500 {
+  color:var(--color-text-muted);
+}
+#app-shell [class*="bg-slate-950"] {
+  background:var(--color-surface-muted);
+}
+#app-shell .compact-mobile-summary {
+  display:none;
+}
+/* ===== 05. 지표 추적 카드 기본 배치 =====
+ * 왼쪽 목록과 오른쪽 신규 등록 폼을 2열로 배치합니다.
+ * 탭과 드래그 상태는 아래의 전용 모듈에서 정의합니다.
+ */
+#tab-content-tracker {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 360px;
+  column-gap:1.25rem;
+  row-gap:0;
+  align-items:start;
+  margin-bottom:1.25rem;
+}
+#tab-content-tracker > * {
+  margin-top:0;
+}
+#tab-content-tracker > .tracker-register-panel, #tab-content-tracker > .tracker-list-panel {
+  padding:1.25rem;
+  border:1px solid var(--color-dark-border);
+  border-radius:1rem;
+  background:var(--color-dark-panel);
+  box-shadow:0 16px 32px rgba(15,23,42,.18);
+}
+#tab-content-tracker > .tracker-register-panel {
+  grid-column:2;
+  grid-row:1;
+  align-self:start;
+}
+#tab-content-tracker > .tracker-list-panel {
+  grid-column:1;
+  grid-row:1;
+  align-self:start;
+  border-radius:1rem 1rem 1rem 0;
+}
+#tab-content-tracker .text-white {
+  color:#fff;
+}
+#tab-content-tracker .text-slate-400 {
+  color:var(--color-chart-axis);
+}
+#tab-content-tracker .text-slate-500 {
+  color:var(--color-text-secondary);
+}
+#tab-content-tracker .text-slate-300 {
+  color:#cbd5e1;
+}
+/* 추적 카드 내부에서는 위 호환 계층의 밝은 표면을 다시 원래의 어두운 입력 표면으로 되돌립니다. */
+#tab-content-tracker [class*="bg-slate-950"] {
+  background:var(--color-dark-deep);
+}
+#tab-content-tracker input,#tab-content-tracker select {
+  border-color:var(--color-dark-input-border);
+  color:#fff;
+  -webkit-text-fill-color:#fff;
+}
+#tab-content-tracker input::placeholder {
+  color:var(--color-text-secondary);
+  -webkit-text-fill-color:var(--color-text-secondary);
+}
+#tab-content-tracker select option {
+  background:var(--color-dark-deep);
+  color:#fff;
+}
+#target-list {
+  min-height:45rem;
+}
+#target-list > div[data-target-container] {
+  border-color:var(--color-dark-border);
+}
+/* 목록의 첫 줄·마지막 줄은 카드 외곽선과 겹치는 테두리를 숨깁니다. */
+#target-list .target-container-first {
+  border-top-color:transparent;
+}
+#target-list .target-container-last {
+  border-bottom-color:transparent;
+}
+#target-list [data-target-row]:hover {
+  background:#111c31;
+}
+#app-shell > .dashboard-copyright {
+  margin:var(--dashboard-section-gap) 0 0;
+  padding:1.3rem var(--dashboard-pad);
+  border-top:1px solid rgba(20,36,51,.18);
+  background:transparent;
+  color:#6e7f8d;
+}
+@media (max-width:1023px) {
+  .dashboard-workspace {
+    gap:0;
+  }
+  .dashboard-nav {
+    overflow:auto;
+  }
+  .dashboard-nav-inner {
+    width:max-content;
+    min-width:100%;
+    gap:1.2rem;
+    padding:1.2rem 1rem;
+  }
+  .dashboard-wordmark {
+    flex:none;
+    margin:0 1rem 0 0;
+  }
+  .dashboard-nav-actions {
+    display:none;
+  }
+  .dashboard-nav-item {
+    width:auto;
+    flex:none;
+  }
+  .market-overview-grid {
+    gap:2rem;
+  }
+  #tab-content-tracker {
+    grid-template-columns:1fr;
+    column-gap:0;
+    row-gap:0;
+  }
+  #tab-content-tracker > .tracker-register-panel,#tab-content-tracker > .tracker-list-panel,#tab-content-tracker > .sheet-tabs {
+    grid-column:1;
+    grid-row:auto;
+  }
+  #tab-content-tracker > .tracker-register-panel {
+    order:2;
+    margin-top:2rem;
+    padding:2rem 0 0;
+    border-top:1px solid var(--color-border-light);
+    border-left:0;
+  }
+}
+@media (max-width:640px) {
+  .sector-flow-preview {
+    gap:.25rem;
+    overflow-x:auto;
+    padding-bottom:1rem;
+  }
+  .sector-flow-week {
+    min-width:12rem;
+    padding:0 .35rem;
+  }
+}
+@keyframes dashboardSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes dashboardDots {
+  0%,20% {
+    content:"";
+  }
+  40% {
+    content:".";
+  }
+  60% {
+    content:"..";
+  }
+  80%,100% {
+    content:"...";
+  }
+}
+#target-list > p.loading-state {
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: .6rem;
-  color: #aeb8c8;
-}#target-list > p.loading-state::before {
-content: "";
+  color: var(--color-text-secondary);
+}
+#target-list > p.loading-state::before {
+  content: "";
   width: 14px;
   height: 14px;
   border: 2px solid rgba(209,165,93,.28);
-  border-top-color: #d1a55d;
+  border-top-color: var(--color-brand-gold);
   border-radius: 50%;
   animation: dashboardSpin .8s linear infinite;
-}#target-list > p.loading-state::after {
-content: "";
+}
+#target-list > p.loading-state::after {
+  content: "";
   display: inline-block;
   width: 1.2em;
   text-align: left;
   animation: dashboardDots 1.2s steps(1,end) infinite;
-}#tab-content-news > div {
-background: #f7f5f0;
+}
+#tab-content-news > div {
+  background: var(--color-surface-paper);
   border-color: #d9d4ca;
-}/* ===== 마우스·터치 공통 드래그 표시 =====
+}
+/* ===== 05-1. 마우스·터치 공통 드래그 표시 =====
    마우스는 행 전체, 터치는 점 6개에서 시작하며 같은 미리보기를 사용합니다.
 */
 .touch-drag-handle {
   touch-action: none;
   user-select: none;
 }
-
 body.is-pointer-dragging {
   user-select: none;
 }
-
 .drag-preview {
   position: fixed;
   z-index: 100;
@@ -389,19 +1023,26 @@ body.is-pointer-dragging {
   border-radius: .55rem;
   box-shadow: 0 12px 24px rgba(0,0,0,.35);
 }
-
-#target-list [data-target-row],
-#target-list [data-target-row] * {
-  cursor: pointer !important;
+/* 드래그 원본과 삽입 위치는 JS가 상태 클래스만 바꾸고, 표현은 CSS가 담당합니다. */
+#target-list .is-drag-source {
+  opacity:.4;
 }
-
-/* ===== Drag & Drop 사용 안내 =====
+#target-list .drop-indicator-before {
+  box-shadow:inset 0 1px 0 #fff;
+}
+#target-list .drop-indicator-after {
+  box-shadow:inset 0 -1px 0 #fff;
+}
+#target-list [data-target-row], #target-list [data-target-row] * {
+  cursor: pointer;
+}
+/* ===== 05-2. Drag & Drop 사용 안내 =====
    리스트 제목 오른쪽에 보이는 "Drag & Drop 순서 변경 ?" 안내입니다.
    데스크톱에서는 마우스를 올리면 열리고,
    클릭/터치 환경에서는 JS가 .is-open 클래스를 붙여 열어 줍니다.
 */
 .track-help {
-position: relative;
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: .36rem;
@@ -413,12 +1054,14 @@ position: relative;
   font-size: .68rem;
   font-weight: 600;
   white-space: nowrap;
-}.track-help-icon {
-color: #d1a55d;
+}
+.track-help-icon {
+  color: var(--color-brand-gold);
   font-size: .62rem;
-}/* 평소에는 숨겨 두었다가 hover / focus / click 때 아래로 펼칩니다. */
+}
+/* 평소에는 숨겨 두었다가 hover / focus / click 때 아래로 펼칩니다. */
 .track-help-tooltip {
-position: absolute;
+  position: absolute;
   right: 0;
   top: calc(100% + 9px);
   z-index: 30;
@@ -426,37 +1069,40 @@ position: absolute;
   padding: .85rem .95rem;
   border: 1px solid rgba(209,165,93,.26);
   border-radius: .8rem;
-  background: #071b42;
+  background: var(--color-brand-navy);
   color: #d8dee8;
   box-shadow: 0 12px 28px rgba(0,0,0,.26);
   font-size: .69rem;
   font-weight: 400;
   line-height: 1.55;
   white-space: normal;
-
   opacity: 0;
   visibility: hidden;
   transform: translateY(-4px);
   transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
   pointer-events: none;
-}/* 안내창 위쪽의 작은 화살표 꼬리입니다. */
+}
+/* 안내창 위쪽의 작은 화살표 꼬리입니다. */
 .track-help-tooltip::before {
-content: "";
+  content: "";
   position: absolute;
   top: -5px;
   right: 12px;
   width: 9px;
   height: 9px;
-  background: #071b42;
+  background: var(--color-brand-navy);
   border-left: 1px solid rgba(209,165,93,.26);
   border-top: 1px solid rgba(209,165,93,.26);
   transform: rotate(45deg);
-}.track-help-tooltip p + p {
-margin-top: .7rem;
-}.track-help-tooltip strong {
-color: #f2d49c;
+}
+.track-help-tooltip p + p {
+  margin-top: .7rem;
+}
+.track-help-tooltip strong {
+  color: var(--color-brand-gold-soft);
   font-weight: 700;
-}/* 데스크톱 hover, 키보드 focus, 모바일 click 모두 같은 방식으로 안내창을 표시합니다. */
+}
+/* 데스크톱 hover, 키보드 focus, 모바일 click 모두 같은 방식으로 안내창을 표시합니다. */
 @media (hover: hover) and (pointer: fine) {
   .track-help:hover .track-help-tooltip {
     opacity: 1;
@@ -465,19 +1111,19 @@ color: #f2d49c;
     pointer-events: auto;
   }
 }
-
 .track-help.is-open .track-help-tooltip {
-opacity: 1;
+  opacity: 1;
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
-}/* ===== Track 탭 =====
+}
+/* ===== 05-3. Track 탭 =====
    Tab01~10 및 + Tab 탭의 크기와 위치를 담당합니다.
    비활성 탭은 살짝 작고 뒤에 있는 것처럼 보이며, 활성 탭은 흰색과 그림자로 앞으로 보이게 합니다.
    지표를 드래그하는 동안에는 다른 Track으로 옮길 수 있다는 안내도 여기서 표시합니다.
 */
 #tab-content-tracker > .sheet-tabs {
-grid-column: 1;
+  grid-column: 1;
   grid-row: 2;
   display: flex;
   align-items: flex-start;
@@ -489,8 +1135,9 @@ grid-column: 1;
   background: transparent;
   border: 0;
   overflow: visible;
-}#tab-content-tracker > .sheet-tabs .sheet-tab {
-position: relative;
+}
+#tab-content-tracker > .sheet-tabs .sheet-tab {
+  position: relative;
   z-index: 1;
   display: inline-flex;
   align-items: center;
@@ -501,55 +1148,56 @@ position: relative;
   padding: 0;
   margin-left: -10px;
   background: #ece8df;
-  color: #64748b;
+  color: var(--color-text-secondary);
   border: 1px solid #d0cbc1;
   border-top: 0;
   border-radius: 0 0 .55rem .55rem;
-  font: 700 .64rem/1 Pretendard,sans-serif;
+  font-size: .64rem;
+  font-weight: 700;
+  line-height: 1;
   transform: scale(.94);
   transform-origin: top center;
   cursor: pointer;
   transition: transform .15s ease, background .15s ease, color .15s ease;
-}#tab-content-tracker > .sheet-tabs .sheet-tab:first-child {
-margin-left: 0;
+}
+/* 첫 탭만 왼쪽 카드 모서리에 맞닿으므로 겹침 여백과 회전 기준을 초기화합니다. */
+#tab-content-tracker > .sheet-tabs .sheet-tab:first-child {
+  margin-left: 0;
   transform-origin: top left;
 }
-
 .tab-label-short {
   display: none;
 }
-
 #tab-content-tracker > .sheet-tabs.is-compact-label .tab-label-full {
   display: none;
 }
-
 #tab-content-tracker > .sheet-tabs.is-compact-label .tab-label-short {
   display: inline;
-}#tab-content-tracker > .sheet-tabs .sheet-tab.is-active {
-z-index: 3;
+}
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-active {
+  z-index: 3;
   background: #fff;
-  color: #071b42;
+  color: var(--color-brand-navy);
   transform: scale(1);
   box-shadow: 0 4px 10px rgba(0,0,0,.30);
-}#tab-content-tracker > .sheet-tabs .sheet-tab-add {
-z-index: 1;
-  background: #ece8df;
-  color: #64748b;
-}#tab-content-tracker > .sheet-tabs.is-dragging .sheet-tab:not(.sheet-tab-add) {
-border-color: rgba(209,165,93,.75);
 }
-
+#tab-content-tracker > .sheet-tabs .sheet-tab-add {
+  z-index: 1;
+  background: #ece8df;
+  color: var(--color-text-secondary);
+}
+#tab-content-tracker > .sheet-tabs.is-dragging .sheet-tab:not(.sheet-tab-add) {
+  border-color: rgba(209,165,93,.75);
+}
 /* 드래그 중 실제로 놓을 수 있는 탭만 벨 아이콘과 같은 금색으로 강조합니다. */
 #tab-content-tracker > .sheet-tabs .sheet-tab.is-drag-over {
-  border-color: #d1a55d !important;
-  background: #d1a55d !important;
-  color: #071b42 !important;
+  border-color: var(--color-brand-gold);
+  background: var(--color-brand-gold);
+  color: var(--color-brand-navy);
   box-shadow: 0 4px 10px rgba(209,165,93,.38);
 }
-
-#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-allowed::before,
-#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-forbidden::before {
-  display: block !important;
+#tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-allowed::before, #tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-forbidden::before {
+  display: block;
   position: absolute;
   left: 50%;
   bottom: calc(100% + 7px);
@@ -562,45 +1210,34 @@ border-color: rgba(209,165,93,.75);
   box-shadow: 0 5px 12px rgba(0,0,0,.22);
   pointer-events: none;
 }
-
 #tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-allowed::before {
-  content: "↓" !important;
-  background: #071b42;
-  color: #f2d49c;
+  content: "↓";
+  background: var(--color-brand-navy);
+  color: var(--color-brand-gold-soft);
 }
-
 #tab-content-tracker > .sheet-tabs .sheet-tab.is-drop-forbidden::before {
-  content: "" !important;
+  content: "";
   top: 50%;
   bottom: auto;
   width: 12px;
   height: 12px;
   padding: 0;
   transform: translate(-50%, -50%);
-  border: 1px solid #ef4444;
+  border: 1px solid var(--color-status-danger);
   border-radius: 50%;
-  background:
-    linear-gradient(
-      135deg,
-      transparent 43%,
-      #ef4444 44%,
-      #ef4444 56%,
-      transparent 57%
-    ),
-    #fff;
+  background: linear-gradient( 135deg, transparent 43%, var(--color-status-danger) 44%, var(--color-status-danger) 56%, transparent 57% ), #fff;
 }
 /* 큰 화면 헤더를 메인 콘텐츠와 같은 중앙 그리드에 맞춥니다. */
 @media (min-width:1024px) {
   /* 큰 화면에서는 두 헤더 콘텐츠 사이 간격만 화면 폭에 맞춰 넓힙니다. */
-  #auth-screen > div > header {
+  #auth-screen .auth-header {
     display: grid;
     grid-template-columns: auto auto;
     column-gap: clamp(24rem,40vw,64rem);
     justify-content: center;
   }
 }
-
-/* ===== 반응형 화면 =====
+/* ===== 06. 반응형 보정 =====
    데스크톱 기본 디자인은 위쪽 규칙을 사용합니다.
    아래에서는 화면 폭이 작아질 때 꼭 필요한 배치와 크기만 바꿉니다.
    반응형으로 작아지게 만들어서 소형 스마트폰인 320px 까지는 온전하게 표현 됨.
@@ -608,44 +1245,41 @@ border-color: rgba(209,165,93,.75);
   767 - 768이 아이패드 기준값. 767부터 타블릿으로 처리.
   스마트폰의 경우 적응형으로 작아지게 코딩했으므로 별도의 처리 불필요함.
 */
-
 @media (max-width:1023px) {
   /* 세로형에서는 로고·메인 콘텐츠·로그인 폼을 같은 중앙 폭에 맞춥니다. */
-  #auth-screen > div > header {
+  #auth-screen .auth-header {
     width: auto;
     margin-left: 0;
     margin-right: 0;
   }
-  #auth-screen > div > header > div:first-child {
+  #auth-screen .auth-brand-group {
     width: min(calc(100% - 3rem), 430px);
     margin-left: auto;
     margin-right: auto;
   }
-  #auth-screen .grid.flex-1 {
+  #auth-screen .auth-content-grid {
     width: min(calc(100% - 3rem), 430px);
     margin-left: auto;
     margin-right: auto;
     padding-left: 0;
     padding-right: 0;
   }
-  .auth-canvas { min-height: calc(100vh - 1.5rem) !important; }
+  .auth-canvas {
+    min-height: calc(100vh - 1.5rem);
+  }
   /* 세로형에서도 전체 높이를 유지하고 푸터를 최하단으로 밀어냅니다. */
-  .auth-canvas > div {
+  #auth-screen .auth-layout {
     display: flex;
     flex-direction: column;
     min-height: calc(100vh - 1.5rem);
   }
-  .auth-canvas > div > footer {
+  #auth-screen .auth-footer {
     margin-top: auto;
   }
-  .auth-canvas > div > section:last-child {
-    padding: 2.5rem 1.5rem 4rem;
+  #auth-screen .header-product-label {
+    display: none;
   }
-  .auth-canvas > div > section:last-child::before { display: none; }
-  #auth-screen .header-product-label { display: none; }
-
-
-  #auth-screen .grid > section:first-child h1 {
+  #auth-screen .auth-intro h1 {
     font-size: clamp(2.2rem,8vw,3.8rem);
     line-height: 1.22;
   }
@@ -656,39 +1290,32 @@ border-color: rgba(209,165,93,.75);
     margin-left: .22em;
   }
 }
-
 @media (max-width:767px) {
   /* 767px 이하에서만 로고 블럭 크기를 화면 폭에 맞춰 줄입니다. */
-  #auth-screen > div > header > div:first-child {
+  #auth-screen .auth-brand-group {
     transform: scale(clamp(.7, calc(100vw / 767px), 1));
     transform-origin: left center;
   }
-
-  .mobile-space { display: inline; }
-
-  #auth-screen > div > footer { font-size: 9px; }
-  
-  #auth-screen .grid > section:first-child > p:not(.mb-6) {
+  .mobile-space {
+    display: inline;
+  }
+  #auth-screen .auth-footer {
+    font-size: 9px;
+  }
+  #auth-screen .auth-intro-description {
     font-size: .9rem;
     padding-left: .95rem;
     line-height: 1.9;
   }
-
-  #auth-screen .grid > section:first-child > p:not(.mb-6)::before {
+  #auth-screen .auth-intro-description::before {
     top: 0;
     bottom: 0;
     height: auto;
   }
-
 }
-
-
-
 /* 425px 이하에서는 화면 가장자리에 맞춰 최외곽 라운드만 제거합니다. */
 @media (max-width:425px) {
-  #auth-screen,
-  .auth-canvas {
-    border-radius: 0 !important;
+  #auth-screen, .auth-canvas {
+    border-radius: 0;
   }
 }
-

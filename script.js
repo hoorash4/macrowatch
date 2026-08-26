@@ -110,7 +110,7 @@ function renderNewsSentiment(rows) {
 
   const data = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date)));
   if (!data.length) {
-    chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">다음 뉴스 분석 후 최근 3일 추이가 표시됩니다.</div>';
+    chart.innerHTML = '<div class="analysis-empty-state-light col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">다음 뉴스 분석 후 최근 3일 추이가 표시됩니다.</div>';
     return;
   }
 
@@ -169,7 +169,7 @@ async function loadNewsSentimentDashboard() {
     renderExtremeNewsSignals(newsSentimentRows);
     renderNewsSentiment(newsSentimentRows);
   } catch (error) {
-    chart.innerHTML = '<div class="col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">잠시 후 다시 시도해 주세요.</div>';
+    chart.innerHTML = '<div class="analysis-empty-state-light col-span-full flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-5 text-sm text-slate-500">잠시 후 다시 시도해 주세요.</div>';
   }
 }
 
@@ -720,7 +720,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart) return;
   if (!data.length) {
-    chart.innerHTML = '<div class="korea-empty-state flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
+    chart.innerHTML = '<div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 한국 시장 스트레스 지수가 표시됩니다.</div>';
     if (fsiChart) fsiChart.innerHTML = '';
     return;
   }
@@ -898,7 +898,7 @@ function renderCreditStressComponents(rows) {
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart) return;
   if (!rows.length) {
-    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 수집 후 장기 신용위험 추이가 표시됩니다.</div>';
+    chart.innerHTML = '<div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 수집 후 장기 신용위험 추이가 표시됩니다.</div>';
     return;
   }
   const data = addBankruptcyTrailingAverage(
@@ -987,7 +987,7 @@ async function loadCreditStressComponentsDashboard() {
     }
     renderCreditStressComponents(rows);
   } catch (error) {
-    chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
+    chart.innerHTML = '<div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오지 못했습니다.</div>';
   }
 }
 
@@ -1548,6 +1548,7 @@ function renderTrackTabs() {
 
     button.type = 'button';
     button.className = `sheet-tab${isActive ? ' is-active' : ''}`;
+    // 활성 탭과 가까운 탭이 위로 겹쳐 보이도록 탭 순서에 따라 동적으로 계산합니다.
     button.style.zIndex = String(20 - Math.abs(trackNumber - activeTrack));
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-selected', String(isActive));
@@ -1597,6 +1598,7 @@ function updateTrackTabSizing() {
   const fittedWidth = Math.floor((availableWidth + overlapWidth) / tabCount);
   const tabWidth = Math.max(38, Math.min(96, fittedWidth));
 
+  // 탭 개수와 실제 컨테이너 폭에 따라 달라지는 값이므로 CSS 변수에 런타임으로 전달합니다.
   tabsEl.style.setProperty('--sheet-tab-width', tabWidth + 'px');
   tabsEl.classList.toggle('is-compact-label', tabWidth < 58);
 }
@@ -1709,9 +1711,12 @@ async function checkOneTarget(targetId) {
   }
 }
 function renderTargetItem(item, globalIndex, isFirstVisible, isLastVisible) {
+  const edgeClasses = [
+    isFirstVisible ? 'target-container-first' : '',
+    isLastVisible ? 'target-container-last' : '',
+  ].filter(Boolean).join(' ');
   return `
-    <div data-target-container="${globalIndex}" class="py-3 border-b border-slate-800/80 first:border-t"
-         style="${isFirstVisible ? 'border-top-color: transparent;' : ''}${isLastVisible ? 'border-bottom-color: transparent;' : ''}">
+    <div data-target-container="${globalIndex}" class="${edgeClasses} py-3 border-b border-slate-800/80 first:border-t">
       <div data-target-row class="flex items-center justify-between gap-3 px-2 rounded-lg hover:bg-slate-800/30 transition">
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <i class="touch-drag-handle fa-solid fa-grip-vertical text-slate-600 hover:text-slate-400 px-1" aria-hidden="true"></i>
@@ -1992,10 +1997,11 @@ function beginPointerDrag(clientX, clientY) {
   pointerDragState.offsetX = pointerDragState.startX - sourceRect.left;
   pointerDragState.offsetY = pointerDragState.startY - sourceRect.top;
 
-  pointerDragState.sourceContainer.style.setProperty('opacity', '.4', 'important');
+  pointerDragState.sourceContainer.classList.add('is-drag-source');
 
   const preview = pointerDragState.sourceRow.cloneNode(true);
   preview.classList.add('drag-preview');
+  // 원본 항목과 같은 크기의 드래그 미리보기를 만들기 위한 실측값입니다.
   preview.style.width = sourceRect.width + 'px';
   preview.style.height = sourceRect.height + 'px';
   document.body.appendChild(preview);
@@ -2013,6 +2019,7 @@ function beginPointerDrag(clientX, clientY) {
 
 function moveDragPreview(clientX, clientY) {
   if (!pointerDragState.preview) return;
+  // 포인터를 따라 움직이는 좌표는 정적 CSS로 대체할 수 없는 런타임 값입니다.
   pointerDragState.preview.style.left = (clientX - pointerDragState.offsetX) + 'px';
   pointerDragState.preview.style.top = (clientY - pointerDragState.offsetY) + 'px';
 }
@@ -2164,15 +2171,15 @@ function setDropIndicator(globalInsertIndex) {
   const localInsertIndex = globalInsertIndex - getTrackStartIndex();
 
   if (localInsertIndex >= 0 && localInsertIndex < containers.length) {
-    containers[localInsertIndex]?.style.setProperty('box-shadow', 'inset 0 1px 0 white');
+    containers[localInsertIndex]?.classList.add('drop-indicator-before');
   } else if (containers.length > 0) {
-    containers[containers.length - 1]?.style.setProperty('box-shadow', 'inset 0 -1px 0 white');
+    containers[containers.length - 1]?.classList.add('drop-indicator-after');
   }
 }
 
 function clearDropIndicator() {
   document.querySelectorAll('[data-target-container]').forEach(container => {
-    container.style.removeProperty('box-shadow');
+    container.classList.remove('drop-indicator-before', 'drop-indicator-after');
   });
   dropIndicatorIndex = null;
 }
@@ -2181,7 +2188,7 @@ function cancelPointerDrag() {
   clearTimeout(pointerDragState.timer);
   stopDownwardAutoScroll();
   document.body.classList.remove('is-pointer-dragging');
-  pointerDragState.sourceContainer?.style.removeProperty('opacity');
+  pointerDragState.sourceContainer?.classList.remove('is-drag-source');
   pointerDragState.preview?.remove();
 
   document.querySelector('.sheet-tabs')?.classList.remove('is-dragging');
