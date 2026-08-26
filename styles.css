@@ -940,11 +940,11 @@ body:has(#app-shell:not(.hidden)) {
   line-height:1;
 }
 .sector-flow-change-move {
-  font-size:.78rem;
+  font-size:.63rem;
   line-height:1;
 }
 .sector-flow-change-flat {
-  font-size:.65rem;
+  font-size:.55rem;
   line-height:1;
 }
 .sector-flow-week li strong {
