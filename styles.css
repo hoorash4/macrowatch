@@ -677,6 +677,15 @@ body:has(#app-shell:not(.hidden)) {
 .news-sentiment-graph {
   width:100%;
 }
+/* 확장 화면은 30일 전체가 찼을 때의 간격을 고정하고, 빈 칸은 오른쪽에 남깁니다. */
+.news-sentiment-graph--expanded {
+  display:grid;
+  grid-template-columns:repeat(30,minmax(1.5rem,1fr));
+  align-items:end;
+}
+.news-sentiment-graph--expanded > .group {
+  justify-self:center;
+}
 .news-sentiment-toolbar {
   display:flex;
   align-items:center;

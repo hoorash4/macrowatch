@@ -141,8 +141,8 @@ function renderNewsSentiment(rows) {
   ].join('');
   const graphClass = view.layout === 'horizontal'
     ? 'flex h-60 min-w-0 flex-col justify-center gap-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6'
-    // 데이터가 기간을 채우기 전에는 왼쪽부터 쌓고, 가득 차면 자연스럽게 스크롤한다.
-    : `flex h-60 min-w-0 items-end justify-start ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
+    // 30일 화면은 완성 시점의 30칸 간격을 먼저 확보하고 왼쪽부터 하루씩 채운다.
+    : `${newsSentimentView === 'expanded' ? 'news-sentiment-graph--expanded' : 'flex'} h-60 min-w-0 items-end justify-start ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
   // 그래프 아래 한 줄에서 범례와 기간 전환을 양쪽에 배치해 차트 영역을 넓게 사용한다.
   chart.innerHTML = `<div${graphId} class="news-sentiment-graph ${graphClass}">${bars}</div><div class="news-sentiment-toolbar">${legend}<div class="news-sentiment-controls">${controls}</div></div>`;
