@@ -41,8 +41,6 @@ let newsSentimentView = 'recent';
 // ===== 뉴스 흐름 분석 모듈 =====
 // 일별 집계 데이터 조회, 긍정·부정 비율 계산, 기간별 막대 렌더링을 담당한다.
 // 기사 분류와 저장은 서버에서 수행하므로 이 구역은 읽기와 화면 표시만 맡는다.
-const DECISIVE_NEWS_KEYWORD_EXAMPLES = ['금융기관 부실', '신용시장 경색', '감염병 확산'];
-
 function normalizeDecisiveNewsKeywords(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((keyword) => String(keyword).trim()).filter(Boolean))].slice(0, 8);
@@ -50,10 +48,9 @@ function normalizeDecisiveNewsKeywords(value) {
 
 function renderDecisiveNewsKeywords(container, values) {
   if (!container) return;
-  const isExample = values.length === 0;
-  const keywords = isExample ? DECISIVE_NEWS_KEYWORD_EXAMPLES : values;
-  const label = isExample ? '<span class="decisive-news-keyword-label">표시 예시</span>' : '';
-  container.innerHTML = `${label}${keywords.map((keyword) => `<span class="decisive-news-keyword${isExample ? ' is-example' : ''}">#${escapeHtml(keyword)}</span>`).join('')}`;
+  container.innerHTML = values.length
+    ? values.map((keyword) => `<span class="decisive-news-keyword">#${escapeHtml(keyword)}</span>`).join('')
+    : '<span class="decisive-news-keyword-empty">아직 집계된 키워드가 없습니다.</span>';
 }
 
 function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
