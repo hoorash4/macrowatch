@@ -294,7 +294,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week-current header > strong \{ font-size:\.9rem; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size:\.66rem;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-sector \{ font-size:\.8rem; \}/);
-  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*font-size:\.78rem;[\s\S]*font-weight:650;/);
+  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*font-size:\.78rem;[\s\S]*font-weight:500;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns em \{ font-size:\.8rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\)[\s\S]*\.sector-flow-streak \{[\s\S]*justify-self:center;[\s\S]*text-align:center;/);
   assert.match(styles, /sector-flow-week-current > ol > li > \.sector-flow-rank \{ transform:translateX\(\.2rem\); \}/);
@@ -303,4 +303,9 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*border-bottom:1px dashed rgba\(47,105,154,\.2\);[\s\S]*color:#174f78;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*background:rgba\(47,105,154,\.07\)/);
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*color:#7890a2;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*width:100%;[\s\S]*box-sizing:border-box;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(5\)::before \{ display:none; \}/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:first-child em \{[\s\S]*border-radius:\.4rem;[\s\S]*text-align:center;/);
+  assert.match(styles, /span:first-child em\.sector-return-positive \{[\s\S]*background:rgba\(213,72,63,\.08\)/);
+  assert.match(styles, /span:first-child em\.sector-return-negative \{[\s\S]*background:rgba\(40,112,186,\.08\)/);
 });

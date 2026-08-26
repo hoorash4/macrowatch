@@ -1105,6 +1105,8 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current .sector-flow-sector { font-size:.8rem; }
 .sector-flow-week-current .sector-flow-streak {
   justify-self:center;
+  width:100%;
+  box-sizing:border-box;
   padding:.22rem .42rem;
   border:1px solid rgba(47,105,154,.12);
   border-radius:.4rem;
@@ -1117,6 +1119,23 @@ body:has(#app-shell:not(.hidden)) {
   justify-content:center;
 }
 .sector-flow-week-current .sector-flow-returns em { font-size:.8rem; }
+.sector-flow-week-current .sector-flow-returns > span:first-child em {
+  min-width:4.6rem;
+  padding:.22rem .42rem;
+  border:1px solid rgba(50,110,152,.12);
+  border-radius:.4rem;
+  background:rgba(50,110,152,.07);
+  box-sizing:border-box;
+  text-align:center;
+}
+.sector-flow-week-current .sector-flow-returns > span:first-child em.sector-return-positive {
+  border-color:rgba(213,72,63,.14);
+  background:rgba(213,72,63,.08);
+}
+.sector-flow-week-current .sector-flow-returns > span:first-child em.sector-return-negative {
+  border-color:rgba(40,112,186,.14);
+  background:rgba(40,112,186,.08);
+}
 .sector-flow-week-current .sector-flow-returns small { display:none; }
 /* 넓은 최신 카드의 정보 열만 짧은 점선으로 나눠 표가 무거워지지 않게 합니다. */
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4),
@@ -1136,11 +1155,12 @@ body:has(#app-shell:not(.hidden)) {
   content:"";
   transform:translateY(-50%);
 }
+.sector-flow-week-current .sector-flow-columns span:nth-child(5)::before { display:none; }
 .sector-flow-top-holding {
   overflow:hidden;
   color:#7890a2;
   font-size:.78rem;
-  font-weight:650;
+  font-weight:500;
   text-align:center;
   text-overflow:ellipsis;
   white-space:nowrap;
