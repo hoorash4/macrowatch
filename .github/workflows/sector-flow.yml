@@ -13,6 +13,11 @@ on:
         type: choice
         default: close
         options: [open, close]
+      backfill_history:
+        description: Refill the retained 10-week price window
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,10 +36,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || (github.event.schedule == '10 0 * * 1-5' && 'open' || 'close') }}
+          BACKFILL_HISTORY: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill_history || false }}
         run: |
           curl --fail-with-body --retry 2 --max-time 480 \
             --request POST "$SUPABASE_URL/functions/v1/sector-flow" \
             --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Content-Type: application/json" \
-            --data "{\"stage\":\"$PRICE_STAGE\"}"
+            --data "{\"stage\":\"$PRICE_STAGE\",\"backfill_history\":$BACKFILL_HISTORY}"

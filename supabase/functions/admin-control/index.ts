@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy-admin.ts";
-import { fetchKisDailyPriceBundle, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const REPOSITORY = "hoorash4/macrowatch";
@@ -405,10 +405,11 @@ export default {
         }
         const input = validateNewSectorEtf(body || {});
         const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
-        const end = new Date(), start = new Date(end.getTime() - 9 * 7 * 86_400_000);
+        const end = new Date(), start = new Date(end.getTime() - 10 * 7 * 86_400_000);
         const bundle = await fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end);
+        const topHoldings = await fetchKisEtfTopHoldings(credentials, token, input.etf_ticker, 3);
         if (!bundle.instrumentName) throw new Error("KIS에서 ETF 정식명을 확인하지 못했습니다.");
-        if (!bundle.prices.length) throw new Error("KIS에서 최근 9주 가격을 확인하지 못했습니다.");
+        if (!bundle.prices.length) throw new Error("KIS에서 최근 10주 가격을 확인하지 못했습니다.");
         const values = {
           ...input,
           etf_name: bundle.instrumentName,
@@ -426,8 +427,15 @@ export default {
             volume: price.volume, updated_at: new Date().toISOString(),
           })), { onConflict: "etf_id,market_date" });
           if (priceError) throw priceError;
+          if (topHoldings.length) {
+            const { error: holdingError } = await admin.from("market_sector_etf_holdings").insert(topHoldings.map((holding, index) => ({
+              etf_id: data.id, holding_ticker: holding.ticker, holding_name: holding.name,
+              weight_pct: holding.weightPct, weight_rank: index + 1, updated_at: new Date().toISOString(),
+            })));
+            if (holdingError) throw holdingError;
+          }
           await rebuildSectorRankings(supabaseUrl, serviceRoleKey);
-          return json({ item: data, price_rows: bundle.prices.length }, 201, origin);
+          return json({ item: data, price_rows: bundle.prices.length, holding_rows: topHoldings.length }, 201, origin);
         } catch (registrationError) {
           await admin.from("market_sector_etfs").delete().eq("id", data.id);
           throw registrationError;

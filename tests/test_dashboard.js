@@ -256,3 +256,14 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.doesNotMatch(html, /오전 9시 10분 시가 · 오후 3시 40분 종가/);
   assert.doesNotMatch(charts, /오후 3시 40분/);
 });
+
+test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변동 기준으로 조회한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  assert.match(html, /data-sector-week-offset="0"/);
+  assert.match(html, /data-sector-week-offset="-4"/);
+  assert.match(html, /class="sector-flow-history"/);
+  assert.match(charts, /sort\(\)\.slice\(-6\)/);
+  assert.match(charts, /market_sector_etf_holdings\(holding_name,weight_pct,weight_rank\)/);
+  assert.match(charts, /주요 구성 종목/);
+});

@@ -838,13 +838,17 @@ body:has(#app-shell:not(.hidden)) {
   border-radius:0;
   background:transparent;
 }
-/* 주도섹터 흐름: 네 개의 주차 카드를 같은 폭으로 배치합니다. */
+/* 주도섹터 흐름: 이번 주는 넓게 강조하고, 아래에는 과거 네 주를 같은 폭으로 배치합니다. */
 .sector-flow-preview {
+  display:grid;
+  gap:.75rem;
+  overflow:visible;
+  padding:1.6rem 0 1rem;
+}
+.sector-flow-history {
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:.75rem;
-  overflow:hidden;
-  padding:1.6rem 0 1rem;
 }
 .sector-flow-week {
   min-width:0;
@@ -947,13 +951,47 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.65rem;
   line-height:1;
 }
-.sector-flow-week li strong {
-  overflow:hidden;
+.sector-flow-sector {
+  position:relative;
+  display:block;
+  overflow:visible;
   color:#61798d;
   font-size:.72rem;
   font-weight:650;
   text-overflow:ellipsis;
   white-space:nowrap;
+  cursor:help;
+  outline:none;
+}
+.sector-flow-holdings {
+  position:absolute;
+  z-index:20;
+  left:0;
+  top:calc(100% + .4rem);
+  display:none;
+  width:12rem;
+  padding:.65rem .7rem;
+  border:1px solid rgba(51,101,139,.24);
+  border-radius:.55rem;
+  background:#fff;
+  box-shadow:0 8px 20px rgba(31,63,88,.18);
+  color:#526d82;
+  white-space:normal;
+}
+.sector-flow-sector:hover,.sector-flow-sector:focus { overflow:visible; }
+.sector-flow-sector:hover .sector-flow-holdings,.sector-flow-sector:focus .sector-flow-holdings { display:block; }
+.sector-flow-holdings > b { display:block; margin-bottom:.4rem; color:#1f5f8d; font-size:.68rem; }
+.sector-flow-holdings ol { display:grid; gap:.25rem; margin:0; }
+.sector-flow-holdings li {
+  display:flex;
+  min-height:0;
+  justify-content:space-between;
+  gap:.6rem;
+  border:0;
+  padding:0;
+  font-size:.66rem;
+}
+.sector-flow-holdings li em { color:#70899b; font-style:normal; }
 }
 .sector-flow-streak {
   color:#5e7890;
@@ -1004,6 +1042,11 @@ body:has(#app-shell:not(.hidden)) {
   background:#fbe7d1;
   color:#ad5218;
 }
+.sector-flow-week-current > ol {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  column-gap:1.3rem;
+}
+.sector-flow-week-current > ol > li:nth-last-child(-n+2) { border-bottom:0; }
 .sector-flow-note {
   color:var(--color-text-description);
 }
@@ -1179,6 +1222,9 @@ body:has(#app-shell:not(.hidden)) {
     min-width:12rem;
     padding:0 .35rem;
   }
+  .sector-flow-history { grid-template-columns:repeat(4,12rem); }
+  .sector-flow-week-current > ol { grid-template-columns:1fr; }
+  .sector-flow-week-current > ol > li:nth-last-child(2) { border-bottom:1px solid rgba(47,105,154,.16); }
 }
 @keyframes dashboardSpin {
   to {

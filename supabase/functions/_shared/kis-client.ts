@@ -11,6 +11,7 @@ export type KisDailyPrice = {
 };
 
 export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPrice[] };
+export type KisEtfHolding = { ticker: string; name: string; weightPct: number };
 
 type KisCredentials = { appKey: string; appSecret: string };
 
@@ -120,4 +121,44 @@ export async function fetchKisDailyPrices(
   end: Date,
 ): Promise<KisDailyPrice[]> {
   return (await fetchKisDailyPriceBundle(credentials, accessToken, ticker, start, end)).prices;
+}
+
+// KIS ETF 구성종목시세에서 국내 상장기업만 남기고 실제 편입비중 상위 종목을 반환합니다.
+export async function fetchKisEtfTopHoldings(
+  credentials: KisCredentials,
+  accessToken: string,
+  ticker: string,
+  limit = 3,
+): Promise<KisEtfHolding[]> {
+  if (!/^\d{6}$/.test(ticker)) throw new Error("ETF 종목코드는 6자리 숫자여야 합니다.");
+  const params = new URLSearchParams({
+    FID_COND_MRKT_DIV_CODE: "J",
+    FID_INPUT_ISCD: ticker,
+    FID_COND_SCR_DIV_CODE: "11216",
+  });
+  const response = await fetch(`${KIS_REAL_BASE_URL}/uapi/etfetn/v1/quotations/inquire-component-stock-price?${params}`, {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      appkey: credentials.appKey,
+      appsecret: credentials.appSecret,
+      tr_id: "FHKST121600C0",
+      custtype: "P",
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await readJson(response);
+  if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+    throw new Error(`KIS ETF 구성종목 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+  }
+  const rows = Array.isArray(payload.output2) ? payload.output2 : [];
+  return rows.flatMap((raw) => {
+    const row = raw as Record<string, unknown>;
+    const holdingTicker = String(row.stck_shrn_iscd || "").trim();
+    const name = String(row.hts_kor_isnm || "").trim();
+    const weightPct = numberValue(row.etf_cnfg_issu_rlim);
+    const marketCap = numberValue(row.hts_avls);
+    // 현금·선물·채권 등은 6자리 코드처럼 보여도 상장기업 시가총액이 없으므로 제외합니다.
+    if (!/^\d{6}$/.test(holdingTicker) || !name || weightPct === null || weightPct <= 0 || !marketCap || marketCap <= 0) return [];
+    return [{ ticker: holdingTicker, name, weightPct }];
+  }).sort((a, b) => b.weightPct - a.weightPct).slice(0, limit);
 }

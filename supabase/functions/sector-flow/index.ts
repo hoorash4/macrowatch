@@ -1,12 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisDailyPrices, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
-import { calculateSectorRankings, mondayOf, type SectorPrice } from "../_shared/sector-flow.ts";
+import { fetchKisDailyPrices, fetchKisEtfTopHoldings, issueKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { calculateSectorRankings, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
 
 const REQUEST_INTERVAL_MS = 180;
 const DATABASE_PAGE_SIZE = 1000;
-const RETENTION_WEEKS = 9;
+const PRICE_RETENTION_WEEKS = 10;
+const RANKING_RETENTION_WEEKS = 6;
 type StoredSectorPrice = { etf_id: string; market_date: string; open_price: number | string; close_price: number | string | null };
+type StoredRankingAnchor = { etf_id: string; rank: number | string; previous_rank: number | string | null; top10_streak: number | string };
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
@@ -34,6 +36,34 @@ async function loadSectorPriceHistory(admin: ReturnType<typeof createClient>, hi
   return allRows;
 }
 
+// 6주 재계산 전부터 이어진 TOP 10 기록과 직전 순위를 보관 구간의 첫 주에 연결합니다.
+function stitchRebuiltRankings(rankings: SectorRanking[], anchors: StoredRankingAnchor[]) {
+  const anchorByEtf = new Map(anchors.map((row) => [row.etf_id, row]));
+  const weeks = [...new Set(rankings.map((row) => row.weekStart))].sort();
+  let previousByEtf = new Map<string, SectorRanking>();
+  const stitched: SectorRanking[] = [];
+  weeks.forEach((week, weekIndex) => {
+    const currentByEtf = new Map<string, SectorRanking>();
+    rankings.filter((row) => row.weekStart === week).forEach((row) => {
+      const anchor = weekIndex === 0 ? anchorByEtf.get(row.etfId) : null;
+      const previous = previousByEtf.get(row.etfId);
+      const previousRank = anchor?.previous_rank !== null && anchor?.previous_rank !== undefined
+        ? Number(anchor.previous_rank)
+        : previous?.rank ?? row.previousRank;
+      const top10Streak = row.rank <= 10
+        ? anchor && Number(anchor.rank) <= 10
+          ? Number(anchor.top10_streak)
+          : previous && previous.rank <= 10 ? previous.top10Streak + 1 : 1
+        : 0;
+      const next = { ...row, previousRank, top10Streak, isNew: row.rank <= 10 && (previousRank === null || previousRank > 10) };
+      currentByEtf.set(row.etfId, next);
+      stitched.push(next);
+    });
+    previousByEtf = currentByEtf;
+  });
+  return stitched;
+}
+
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
@@ -41,6 +71,7 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stage = body.stage === "open" ? "open" : body.stage === "close" ? "close" : null;
     const rebuildOnly = body.rebuild_only === true;
+    const backfillHistory = body.backfill_history === true;
     if (!stage) return json({ error: "stage는 open 또는 close여야 합니다." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -53,16 +84,21 @@ Deno.serve(async (request) => {
 
     const today = kstDate(), end = new Date(`${today}T00:00:00Z`);
     const currentWeek = mondayOf(today);
-    const retentionStart = new Date(Date.parse(`${currentWeek}T00:00:00Z`) - (RETENTION_WEEKS - 1) * 7 * 86_400_000)
+    const retentionStart = new Date(Date.parse(`${currentWeek}T00:00:00Z`) - (PRICE_RETENTION_WEEKS - 1) * 7 * 86_400_000)
+      .toISOString().slice(0, 10);
+    const rankingRetentionStart = new Date(Date.parse(`${currentWeek}T00:00:00Z`) - (RANKING_RETENTION_WEEKS - 1) * 7 * 86_400_000)
       .toISOString().slice(0, 10);
     const collected: Record<string, unknown>[] = [], failures: Array<{ ticker: string; error: string }> = [];
+    const holdings: Record<string, unknown>[] = [], holdingRefreshIds: string[] = [];
+    const holdingFailures: Array<{ ticker: string; error: string }> = [];
 
     if (!rebuildOnly) {
       const credentials = loadKisCredentials(), token = await issueKisAccessToken(credentials);
       for (const item of registry) {
         try {
-          // 초기 이력은 이미 적재되어 있으므로 운영 중에는 당일 일봉만 갱신합니다.
-          const candles = await fetchKisDailyPrices(credentials, token, item.etf_ticker, end, end);
+          // 운영 중에는 당일만, 명시적인 초기화 요청에는 현재 보관 기준인 10주를 수집합니다.
+          const priceStart = backfillHistory ? new Date(`${retentionStart}T00:00:00Z`) : end;
+          const candles = await fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end);
           for (const candle of candles) {
             const isToday = candle.marketDate === today;
             collected.push({
@@ -77,6 +113,20 @@ Deno.serve(async (request) => {
         } catch (error) {
           failures.push({ ticker: item.etf_ticker, error: error instanceof Error ? error.message : String(error) });
         }
+        if (stage === "close") {
+          try {
+            const topHoldings = await fetchKisEtfTopHoldings(credentials, token, item.etf_ticker, 3);
+            if (topHoldings.length) {
+              holdingRefreshIds.push(item.id);
+              holdings.push(...topHoldings.map((holding, index) => ({
+                etf_id: item.id, holding_ticker: holding.ticker, holding_name: holding.name,
+                weight_pct: holding.weightPct, weight_rank: index + 1, updated_at: new Date().toISOString(),
+              })));
+            }
+          } catch (error) {
+            holdingFailures.push({ ticker: item.etf_ticker, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
         await new Promise((resolve) => setTimeout(resolve, REQUEST_INTERVAL_MS));
       }
       if (!collected.length) {
@@ -87,9 +137,15 @@ Deno.serve(async (request) => {
       const { error: priceError } = await admin.from("market_sector_etf_prices")
         .upsert(collected, { onConflict: "etf_id,market_date" });
       if (priceError) throw priceError;
+      if (holdingRefreshIds.length) {
+        const { error: holdingDeleteError } = await admin.from("market_sector_etf_holdings").delete().in("etf_id", holdingRefreshIds);
+        if (holdingDeleteError) throw holdingDeleteError;
+        const { error: holdingInsertError } = await admin.from("market_sector_etf_holdings").insert(holdings);
+        if (holdingInsertError) throw holdingInsertError;
+      }
     }
 
-    // 종가가 정상 반영된 뒤에만 9주 범위를 벗어난 원본 가격을 정리합니다.
+    // 종가가 정상 반영된 뒤에만 10주 범위를 벗어난 원본 가격을 정리합니다.
     if (stage === "close" && !rebuildOnly) {
       const { error: retentionError } = await admin.from("market_sector_etf_prices")
         .delete().lt("market_date", retentionStart);
@@ -108,7 +164,17 @@ Deno.serve(async (request) => {
       .select("etf_id,rank,top10_streak").eq("week_start", previousWeek);
     if (previousError) throw previousError;
     const previousByEtf = new Map((previousRows || []).map((row) => [row.etf_id, row]));
-    const persistedRows = rebuildOnly ? rankings : currentRows.map((row) => {
+    let rebuiltRows: SectorRanking[] = [];
+    if (rebuildOnly) {
+      const { data: anchorRows, error: anchorError } = await admin.from("market_sector_weekly_rankings")
+        .select("etf_id,rank,previous_rank,top10_streak").eq("week_start", rankingRetentionStart);
+      if (anchorError) throw anchorError;
+      rebuiltRows = stitchRebuiltRankings(
+        rankings.filter((row) => row.weekStart >= rankingRetentionStart),
+        (anchorRows || []) as StoredRankingAnchor[],
+      );
+    }
+    const persistedRows = rebuildOnly ? rebuiltRows : currentRows.map((row) => {
       const previous = previousByEtf.get(row.etfId);
       const previousRank = previous ? Number(previous.rank) : row.previousRank;
       const top10Streak = row.rank <= 10
@@ -131,7 +197,15 @@ Deno.serve(async (request) => {
       })));
       if (rankingError) throw rankingError;
     }
-    return json({ ok: true, stage, rebuild_only: rebuildOnly, registry_count: registry.length, price_rows: collected.length, ranking_rows: persistedRows.length, retention_start: retentionStart, failures });
+    if (stage === "close" && !rebuildOnly) {
+      const { error: oldRankingError } = await admin.from("market_sector_weekly_rankings").delete().lt("week_start", rankingRetentionStart);
+      if (oldRankingError) throw oldRankingError;
+    }
+    return json({
+      ok: true, stage, rebuild_only: rebuildOnly, backfill_history: backfillHistory,
+      registry_count: registry.length, price_rows: collected.length, holding_rows: holdings.length,
+      ranking_rows: persistedRows.length, retention_start: retentionStart, failures, holding_failures: holdingFailures,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ ok: false, error: message }, 500);

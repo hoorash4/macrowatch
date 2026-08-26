@@ -1046,6 +1046,16 @@ function setSectorWeekHeading(card, week, isLatest) {
   if (label) label.textContent = isLatest ? '이번 주' : `${Math.floor((date.getUTCDate() - 1) / 7) + 1}주차`;
 }
 
+function sectorHoldingsTooltip(etf) {
+  const holdings = [...(etf?.market_sector_etf_holdings || [])]
+    .sort((a, b) => Number(a.weight_rank) - Number(b.weight_rank))
+    .slice(0, 3);
+  const items = holdings.length
+    ? holdings.map((holding) => `<li><span>${escapeHtml(holding.holding_name)}</span><em>${Number(holding.weight_pct).toFixed(1)}%</em></li>`).join('')
+    : '<li><span>구성 종목 수집 대기</span></li>';
+  return `<span class="sector-flow-sector" tabindex="0"><span>${escapeHtml(etf?.sector_name || '—')}</span><span class="sector-flow-holdings" role="tooltip"><b>주요 구성 종목</b><ol>${items}</ol></span></span>`;
+}
+
 function renderSectorFlow(rows) {
   const grouped = new Map();
   rows.forEach((row) => {
@@ -1053,11 +1063,12 @@ function renderSectorFlow(rows) {
     list.push(row);
     grouped.set(row.week_start, list);
   });
-  const weeks = [...grouped.keys()].sort().slice(-4);
+  // 화면에는 최신 5주만 표시하지만, 그 앞의 한 주도 받아 맨 왼쪽 카드의 변동 기준을 보존합니다.
+  const weeks = [...grouped.keys()].sort().slice(-6);
   const cards = [...document.querySelectorAll('[data-sector-week-offset]')];
-  const firstDataCard = cards.length - weeks.length;
-  cards.forEach((card, index) => {
-    const week = weeks[index - firstDataCard], isLatestWeek = week === weeks.at(-1);
+  cards.forEach((card) => {
+    const offset = Number(card.dataset.sectorWeekOffset);
+    const week = weeks[weeks.length - 1 + offset], isLatestWeek = offset === 0;
     const list = (grouped.get(week) || []).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 6);
     const body = card.querySelector('ol');
     if (!body) return;
@@ -1065,8 +1076,8 @@ function renderSectorFlow(rows) {
     if (columns) columns.innerHTML = '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
-      const sector = row.market_sector_etfs?.sector_name || '—';
-      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
+      const etf = row.market_sector_etfs;
+      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}<span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
     }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
@@ -1076,8 +1087,8 @@ function renderSectorFlow(rows) {
 async function loadSectorFlowDashboard() {
   if (!document.getElementById('sector-flow-dashboard') || !supabaseClient) return;
   const { data, error } = await supabaseClient.from('market_sector_weekly_rankings')
-    .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,price_stage,market_sector_etfs(sector_name)')
-    .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(160);
+    .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,price_stage,market_sector_etfs(sector_name,market_sector_etf_holdings(holding_name,weight_pct,weight_rank))')
+    .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(240);
   if (error) return;
   renderSectorFlow(data || []);
 }
