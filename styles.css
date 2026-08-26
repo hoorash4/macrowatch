@@ -608,6 +608,11 @@ body:has(#app-shell:not(.hidden)) {
   padding:var(--analysis-card-header-padding-y) var(--analysis-card-header-padding-x);
   border-bottom:1px solid var(--analysis-card-header-border);
 }
+/* 분석 카드 제목 아래의 공통 안내 문구 크기를 이 한 곳에서 관리합니다. */
+#app-shell .analysis-card-header > p {
+  font-size:.75rem;
+  line-height:1.25rem;
+}
 /* 밝은 분석 카드의 제목과 안내 문구 색상만 담당합니다. */
 #app-shell .analysis-card-header-light .analysis-card-title {
   color:var(--color-text-primary);
