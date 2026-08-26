@@ -316,7 +316,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-columns \{ font-size:\.64rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-sector \{ font-size:\.86rem; \}/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns \{[\s\S]*border-radius:\.42rem;[\s\S]*background:rgba\(47,105,154,\.055\)/);
-  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns > span:nth-child\(2\) \{[\s\S]*border-left:1px solid rgba\(47,105,154,\.14\)/);
+  assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns > span:nth-child\(2\)::before \{[\s\S]*top:50%;[\s\S]*height:1rem;[\s\S]*transform:translateY\(-50%\)/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.7rem; \}/);
   assert.match(styles, /sector-flow-week-current \{ min-width:48rem; \}/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);

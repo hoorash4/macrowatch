@@ -932,8 +932,18 @@ body:has(#app-shell:not(.hidden)) {
   box-sizing:border-box;
 }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns > span:nth-child(2) {
+  position:relative;
   padding-left:.42rem;
-  border-left:1px solid rgba(47,105,154,.14);
+}
+.sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns > span:nth-child(2)::before {
+  position:absolute;
+  top:50%;
+  left:0;
+  width:1px;
+  height:1rem;
+  background:rgba(47,105,154,.14);
+  content:"";
+  transform:translateY(-50%);
 }
 .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns em { font-size:.7rem; }
 .sector-flow-week ol {
