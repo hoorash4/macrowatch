@@ -202,7 +202,7 @@
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 섹터 ETF가 없습니다.</p>';
       return;
     }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0 ${item.is_active ? '' : 'opacity-50'}"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_2fr_1fr_1fr_auto_auto]"><input data-sector-field="sector_name" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.sector_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_name" data-sector-id="${escapeHtml(item.id)}" maxlength="120" value="${escapeHtml(item.etf_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_ticker" data-sector-id="${escapeHtml(item.id)}" maxlength="24" value="${escapeHtml(item.etf_ticker)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs uppercase text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="issuer" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.issuer)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><label class="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-2 text-[11px] text-slate-300"><input data-sector-field="is_active" data-sector-id="${escapeHtml(item.id)}" type="checkbox" ${item.is_active ? 'checked' : ''}>활성</label><div class="flex gap-1"><button data-save-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-cyan-700/70 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-950/50">저장</button>${item.is_active ? `<button data-retire-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-amber-700/70 px-2 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-950/50">비활성화</button>` : ''}</div></div></article>`).join('');
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_2fr_1fr_1fr_auto]"><input data-sector-field="sector_name" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.sector_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_name" data-sector-id="${escapeHtml(item.id)}" maxlength="120" value="${escapeHtml(item.etf_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_ticker" data-sector-id="${escapeHtml(item.id)}" maxlength="24" value="${escapeHtml(item.etf_ticker)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs uppercase text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="issuer" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.issuer)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><div class="flex gap-1"><button data-save-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-cyan-700/70 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-950/50">저장</button><button data-delete-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-red-700/70 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`).join('');
     list.querySelectorAll('[data-save-sector-id]').forEach((button) => button.addEventListener('click', async () => {
       const id = button.dataset.saveSectorId;
       const value = (field) => list.querySelector(`[data-sector-id="${id}"][data-sector-field="${field}"]`);
@@ -213,16 +213,16 @@
           sector_name: value('sector_name').value,
           etf_name: value('etf_name').value,
           etf_ticker: value('etf_ticker').value,
-          issuer: value('issuer').value,
-          is_active: value('is_active').checked
+          issuer: value('issuer').value
         });
         await loadSectorEtfs();
       } catch (error) { showNotice('섹터 ETF 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
     }));
-    list.querySelectorAll('[data-retire-sector-id]').forEach((button) => button.addEventListener('click', async () => {
+    list.querySelectorAll('[data-delete-sector-id]').forEach((button) => button.addEventListener('click', async () => {
+      if (!window.confirm('이 섹터 ETF를 삭제할까요?')) return;
       button.disabled = true;
-      try { await invokeAdmin('retire_sector_etf', { id: button.dataset.retireSectorId }); await loadSectorEtfs(); }
-      catch (error) { showNotice('섹터 ETF 비활성화 실패', error.message || '변경하지 못했습니다.', true); button.disabled = false; }
+      try { await invokeAdmin('delete_sector_etf', { id: button.dataset.deleteSectorId }); await loadSectorEtfs(); }
+      catch (error) { showNotice('섹터 ETF 삭제 실패', error.message || '삭제하지 못했습니다.', true); button.disabled = false; }
     }));
   }
 
@@ -232,20 +232,21 @@
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 기준이 없습니다.</p>';
       return;
     }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0 ${item.is_active ? '' : 'opacity-50'}"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_auto]"><input data-extreme-field="phrase" data-extreme-id="${escapeHtml(item.id)}" maxlength="300" value="${escapeHtml(item.phrase)}" aria-label="결정적 뉴스 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><label class="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-2 text-[11px] text-slate-300"><input data-extreme-field="is_active" data-extreme-id="${escapeHtml(item.id)}" type="checkbox" ${item.is_active ? 'checked' : ''}>활성</label><div class="flex gap-1"><button data-save-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button>${item.is_active ? `<button data-retire-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-amber-700/70 px-2 py-1.5 text-xs font-bold text-amber-300 hover:bg-violet-950/50">비활성화</button>` : ''}</div></div></article>`).join('');
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]"><input data-extreme-field="phrase" data-extreme-id="${escapeHtml(item.id)}" maxlength="300" value="${escapeHtml(item.phrase)}" aria-label="결정적 뉴스 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><div class="flex gap-1"><button data-save-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button><button data-delete-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-red-700/70 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`).join('');
     list.querySelectorAll('[data-save-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
       const id = button.dataset.saveExtremeId;
       const value = (field) => list.querySelector(`[data-extreme-id="${id}"][data-extreme-field="${field}"]`);
       button.disabled = true;
       try {
-        await invokeAdmin('save_extreme_news_rule', { id, phrase: value('phrase').value, is_active: value('is_active').checked });
+        await invokeAdmin('save_extreme_news_rule', { id, phrase: value('phrase').value });
         await loadExtremeNewsRules();
       } catch (error) { showNotice('기준 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
     }));
-    list.querySelectorAll('[data-retire-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
+    list.querySelectorAll('[data-delete-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
+      if (!window.confirm('이 결정적 뉴스 기준을 삭제할까요?')) return;
       button.disabled = true;
-      try { await invokeAdmin('retire_extreme_news_rule', { id: button.dataset.retireExtremeId }); await loadExtremeNewsRules(); }
-      catch (error) { showNotice('기준 비활성화 실패', error.message || '처리하지 못했습니다.', true); button.disabled = false; }
+      try { await invokeAdmin('delete_extreme_news_rule', { id: button.dataset.deleteExtremeId }); await loadExtremeNewsRules(); }
+      catch (error) { showNotice('기준 삭제 실패', error.message || '삭제하지 못했습니다.', true); button.disabled = false; }
     }));
   }
 
@@ -263,7 +264,6 @@
     try {
       await invokeAdmin('save_extreme_news_rule', {
         phrase: document.getElementById('extreme-news-phrase-input').value,
-        is_active: true,
       });
       form.reset();
       await loadExtremeNewsRules();
@@ -287,8 +287,7 @@
         sector_name: document.getElementById('sector-name-input').value,
         etf_name: document.getElementById('sector-etf-name-input').value,
         etf_ticker: document.getElementById('sector-etf-ticker-input').value,
-        issuer: document.getElementById('sector-etf-issuer-input').value,
-        is_active: true
+        issuer: document.getElementById('sector-etf-issuer-input').value
       });
       form.reset();
       await loadSectorEtfs();

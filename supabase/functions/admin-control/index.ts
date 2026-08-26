@@ -104,12 +104,12 @@ function validateSectorEtf(body: Record<string, unknown>) {
     etf_name: requiredText(body.etf_name, "ETF명", 120),
     etf_ticker: requiredText(body.etf_ticker, "ETF 코드", 24).toUpperCase(),
     issuer: requiredText(body.issuer, "운용사", 80),
-    is_active: body.is_active !== false,
+    is_active: true,
   };
 }
 
 function validateExtremeNewsRule(body: Record<string, unknown>) {
-  return { signal: "decisive", phrase: requiredText(body?.phrase, "기준 문장", 300), is_active: body?.is_active !== false };
+  return { signal: "decisive", phrase: requiredText(body?.phrase, "기준 문장", 300), is_active: true };
 }
 
 function kstTimeToCron(time: string) {
@@ -313,8 +313,7 @@ export default {
 
       if (action === "list_sector_etfs") {
         const { data, error } = await admin.from("market_sector_etfs")
-          .select("id,sector_name,etf_name,etf_ticker,issuer,is_active,created_at,updated_at")
-          .order("is_active", { ascending: false })
+          .select("id,sector_name,etf_name,etf_ticker,issuer,created_at,updated_at")
           .order("sector_name", { ascending: true });
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
@@ -322,8 +321,7 @@ export default {
 
       if (action === "list_extreme_news_rules") {
         const { data, error } = await admin.from("news_extreme_rules")
-          .select("id,signal,phrase,is_active,created_at,updated_at")
-          .order("is_active", { ascending: false })
+          .select("id,signal,phrase,created_at,updated_at")
           .order("created_at", { ascending: true });
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
@@ -350,17 +348,17 @@ export default {
         return json({ item: data }, 201, origin);
       }
 
-      if (action === "retire_extreme_news_rule") {
+      if (action === "delete_extreme_news_rule") {
         const id = String(body?.id || "").trim();
         if (!id) return json({ error: "기준 항목 식별자가 필요합니다." }, 400, origin);
         const { data, error } = await admin.from("news_extreme_rules")
-          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .delete()
           .eq("id", id)
           .select("id")
           .maybeSingle();
         if (error) throw error;
         if (!data) return json({ error: "기준 항목을 찾을 수 없습니다." }, 404, origin);
-        return json({ retired: true }, 200, origin);
+        return json({ deleted: true }, 200, origin);
       }
 
       if (action === "save_sector_etf") {
@@ -384,17 +382,17 @@ export default {
         return json({ item: data }, 201, origin);
       }
 
-      if (action === "retire_sector_etf") {
+      if (action === "delete_sector_etf") {
         const id = String(body?.id || "").trim();
         if (!id) return json({ error: "등록 항목 식별자가 필요합니다." }, 400, origin);
         const { data, error } = await admin.from("market_sector_etfs")
-          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .delete()
           .eq("id", id)
           .select("id")
           .maybeSingle();
         if (error) throw error;
         if (!data) return json({ error: "등록 항목을 찾을 수 없습니다." }, 404, origin);
-        return json({ retired: true }, 200, origin);
+        return json({ deleted: true }, 200, origin);
       }
 
       if (action === "resolve_uncertain_news") {

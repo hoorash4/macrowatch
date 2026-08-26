@@ -164,6 +164,18 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("JSON.stringify({ ...payload, action })", admin_client)
         self.assertNotIn("action: article.dataset.policyAction", policy_review)
 
+    def test_admin_registries_use_delete_without_activation_controls(self) -> None:
+        admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_function = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
+        self.assertIn("data-delete-sector-id", admin_client)
+        self.assertIn("data-delete-extreme-id", admin_client)
+        self.assertNotIn("data-retire-sector-id", admin_client)
+        self.assertNotIn("data-retire-extreme-id", admin_client)
+        self.assertNotIn('data-sector-field="is_active"', admin_client)
+        self.assertNotIn('data-extreme-field="is_active"', admin_client)
+        self.assertIn('action === "delete_sector_etf"', admin_function)
+        self.assertIn('action === "delete_extreme_news_rule"', admin_function)
+
     def test_all_site_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
         helper = (ROOT / "autocomplete-off.js").read_text(encoding="utf-8")
         self.assertIn("function disableAutocomplete", helper)
