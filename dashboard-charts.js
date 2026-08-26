@@ -1043,7 +1043,7 @@ function setSectorWeekHeading(card, week, isLatest) {
   const period = card.querySelector('[data-sector-week-period]');
   const label = card.querySelector('[data-sector-week-label]');
   if (period) period.textContent = `${date.getUTCMonth() + 1}월`;
-  if (label) label.textContent = isLatest ? '이번 주 섹터 수익률 주간 순위' : `${Math.floor((date.getUTCDate() - 1) / 7) + 1}주차`;
+  if (label) label.textContent = isLatest ? '이번 주 섹터별 주간 수익률 순위' : `${Math.floor((date.getUTCDate() - 1) / 7) + 1}주차`;
 }
 
 function sectorHoldingsTooltip(etf) {

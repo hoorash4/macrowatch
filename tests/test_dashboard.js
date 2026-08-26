@@ -262,8 +262,8 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.match(html, /data-sector-week-offset="0"/);
-  assert.match(html, /이번 주 섹터 수익률 주간 순위/);
-  assert.match(charts, /isLatest \? '이번 주 섹터 수익률 주간 순위'/);
+  assert.match(html, /이번 주 섹터별 주간 수익률 순위/);
+  assert.match(charts, /isLatest \? '이번 주 섹터별 주간 수익률 순위'/);
   assert.match(html, /data-sector-week-offset="-4"/);
   assert.match(html, /class="sector-flow-history"/);
   assert.match(charts, /sort\(\)\.slice\(-6\)/);
