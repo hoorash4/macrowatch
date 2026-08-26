@@ -234,11 +234,14 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.match(styles, /grid-template-columns:1\.65rem 2\.15rem minmax\(0,1fr\) 2rem/);
   assert.match(styles, /grid-column:3 \/ 5/);
   assert.match(script, /Math\.floor\(\(weekStart\.getDate\(\) - 1\) \/ 7\) \+ 1/);
-  assert.match(charts, /setSectorWeekHeading\(card, week, week === weeks\.at\(-1\)\)/);
+  assert.match(charts, /setSectorWeekHeading\(card, week, isLatestWeek\)/);
   assert.match(charts, /sector-return-positive/);
   assert.match(charts, /sector-return-negative/);
   assert.match(charts, /sector-flow-change-new/);
   assert.match(charts, /sector-flow-change-move/);
+  assert.match(charts, /sectorRankChange\(row, showNew\)/);
+  assert.match(charts, /sectorRankChange\(row, isLatestWeek\)/);
+  assert.match(charts, /slice\(0, 6\)/);
   assert.match(styles, /sector-flow-change-new[\s\S]*font-size:\.42rem/);
   assert.match(styles, /sector-flow-change-move[\s\S]*font-size:\.60rem/);
   assert.match(styles, /sector-return-positive \{ color:#d5483f/);

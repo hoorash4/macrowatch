@@ -1010,8 +1010,8 @@ async function loadCreditStressComponentsDashboard() {
 // ===== 주도섹터 흐름 모듈 =====
 // 서버가 계산한 주차별 상위 순위만 읽습니다. 가격 원본과 순위 산식은 Edge Function에 남겨
 // 브라우저별 시간대나 부동소수점 차이로 순위가 달라지지 않도록 합니다.
-function sectorRankChange(row) {
-  if (row.is_new) return '<small class="sector-flow-change-new text-teal-500">NEW</small>';
+function sectorRankChange(row, showNew) {
+  if (showNew && row.is_new) return '<small class="sector-flow-change-new text-teal-500">NEW</small>';
   if (!row.previous_rank) return '';
   const change = Number(row.previous_rank) - Number(row.rank);
   if (change > 0) return `<small class="sector-flow-change-move text-red-500">▲${change}</small>`;
@@ -1057,15 +1057,16 @@ function renderSectorFlow(rows) {
   const cards = [...document.querySelectorAll('[data-sector-week-offset]')];
   const firstDataCard = cards.length - weeks.length;
   cards.forEach((card, index) => {
-    const week = weeks[index - firstDataCard], list = (grouped.get(week) || []).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 5);
+    const week = weeks[index - firstDataCard], isLatestWeek = week === weeks.at(-1);
+    const list = (grouped.get(week) || []).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 6);
     const body = card.querySelector('ol');
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
-    setSectorWeekHeading(card, week, week === weeks.at(-1));
+    setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
       const sector = row.market_sector_etfs?.sector_name || '—';
-      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row)}</span><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
+      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
     }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
