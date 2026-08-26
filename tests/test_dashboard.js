@@ -260,13 +260,17 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
 test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변동 기준으로 조회한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.match(html, /data-sector-week-offset="0"/);
   assert.match(html, /data-sector-week-offset="-4"/);
   assert.match(html, /class="sector-flow-history"/);
   assert.match(charts, /sort\(\)\.slice\(-6\)/);
   assert.match(charts, /market_sector_etf_holdings\(holding_name,weight_pct,weight_rank\)/);
-  assert.match(charts, /주요 구성 종목/);
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(charts, /섹터 대표 종목/);
+  assert.match(charts, /sector-flow-holdings-empty/);
+  assert.match(charts, /initializeSectorHoldingInteractions/);
+  assert.match(charts, /pointerout/);
+  assert.doesNotMatch(styles, /sector-flow-sector:hover \.sector-flow-holdings/);
   assert.doesNotMatch(styles, /sector-flow-holdings li em[^\n]*\n\}/);
   assert.match(styles, /\.sector-flow-streak \{[\s\S]*font-size:\.6rem/);
 });

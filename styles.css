@@ -851,8 +851,10 @@ body:has(#app-shell:not(.hidden)) {
   gap:.75rem;
 }
 .sector-flow-week {
+  position:relative;
+  z-index:1;
   min-width:0;
-  overflow:hidden;
+  overflow:visible;
   border:1px solid rgba(22,71,111,.24);
   border-radius:.75rem;
   background:rgba(255,255,255,.72);
@@ -865,6 +867,7 @@ body:has(#app-shell:not(.hidden)) {
   min-height:3rem;
   padding:.5rem .65rem;
   background:linear-gradient(115deg,#087c9d,#1a5c9c);
+  border-radius:.7rem .7rem 0 0;
 }
 .sector-flow-week header > span {
   display:grid;
@@ -954,7 +957,11 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-sector {
   position:relative;
   display:block;
+  width:100%;
   overflow:visible;
+  border:0;
+  padding:0;
+  background:transparent;
   color:#61798d;
   font-size:.72rem;
   font-weight:650;
@@ -962,6 +969,7 @@ body:has(#app-shell:not(.hidden)) {
   white-space:nowrap;
   cursor:help;
   outline:none;
+  text-align:left;
 }
 .sector-flow-holdings {
   position:absolute;
@@ -969,7 +977,7 @@ body:has(#app-shell:not(.hidden)) {
   left:0;
   top:calc(100% + .4rem);
   display:none;
-  width:12rem;
+  width:13rem;
   padding:.65rem .7rem;
   border:1px solid rgba(51,101,139,.24);
   border-radius:.55rem;
@@ -978,9 +986,21 @@ body:has(#app-shell:not(.hidden)) {
   color:#526d82;
   white-space:normal;
 }
-.sector-flow-sector:hover,.sector-flow-sector:focus { overflow:visible; }
-.sector-flow-sector:hover .sector-flow-holdings,.sector-flow-sector:focus .sector-flow-holdings { display:block; }
-.sector-flow-holdings > b { display:block; margin-bottom:.4rem; color:#1f5f8d; font-size:.68rem; }
+.sector-flow-sector.is-open { overflow:visible; }
+.sector-flow-sector.is-open .sector-flow-holdings { display:block; }
+.sector-flow-week-popover-open { z-index:50; }
+.sector-flow-holdings > b {
+  display:block;
+  width:auto;
+  min-height:0;
+  margin-bottom:.4rem;
+  border-radius:0;
+  background:transparent;
+  color:#1f5f8d;
+  font-size:.68rem;
+  line-height:1.3;
+  white-space:nowrap;
+}
 .sector-flow-holdings ol { display:grid; gap:.25rem; margin:0; }
 .sector-flow-holdings li {
   display:flex;
@@ -992,6 +1012,7 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.66rem;
 }
 .sector-flow-holdings li em { color:#70899b; font-style:normal; }
+.sector-flow-holdings-empty { color:#8a9aa7; }
 .sector-flow-streak {
   color:#5e7890;
   font-size:.6rem;

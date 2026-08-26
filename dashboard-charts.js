@@ -1050,10 +1050,46 @@ function sectorHoldingsTooltip(etf) {
   const holdings = [...(etf?.market_sector_etf_holdings || [])]
     .sort((a, b) => Number(a.weight_rank) - Number(b.weight_rank))
     .slice(0, 3);
+  const sectorName = escapeHtml(etf?.sector_name || '—');
   const items = holdings.length
     ? holdings.map((holding) => `<li><span>${escapeHtml(holding.holding_name)}</span><em>${Number(holding.weight_pct).toFixed(1)}%</em></li>`).join('')
-    : '<li><span>구성 종목 수집 대기</span></li>';
-  return `<span class="sector-flow-sector" tabindex="0"><span>${escapeHtml(etf?.sector_name || '—')}</span><span class="sector-flow-holdings" role="tooltip"><b>주요 구성 종목</b><ol>${items}</ol></span></span>`;
+    : '<li class="sector-flow-holdings-empty"><span>미수집</span></li>';
+  return `<button type="button" class="sector-flow-sector" aria-expanded="false"><span>${sectorName}</span><span class="sector-flow-holdings" role="tooltip"><b>섹터 대표 종목</b><ol>${items}</ol></span></button>`;
+}
+
+function closeSectorHoldings(trigger) {
+  if (!trigger) return;
+  trigger.classList.remove('is-open');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.closest('.sector-flow-week')?.classList.remove('sector-flow-week-popover-open');
+}
+
+// 구성 종목은 명시적인 클릭으로만 열고, 트리거와 팝업 영역을 벗어나면 즉시 닫습니다.
+function initializeSectorHoldingInteractions() {
+  const dashboard = document.getElementById('sector-flow-dashboard');
+  if (!dashboard || dashboard.dataset.holdingInteractionsReady) return;
+  dashboard.dataset.holdingInteractionsReady = 'true';
+  dashboard.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.sector-flow-sector');
+    dashboard.querySelectorAll('.sector-flow-sector.is-open').forEach((item) => {
+      if (item !== trigger) closeSectorHoldings(item);
+    });
+    if (!trigger) return;
+    const opening = !trigger.classList.contains('is-open');
+    closeSectorHoldings(trigger);
+    if (opening) {
+      trigger.classList.add('is-open');
+      trigger.setAttribute('aria-expanded', 'true');
+      trigger.closest('.sector-flow-week')?.classList.add('sector-flow-week-popover-open');
+    }
+  });
+  dashboard.addEventListener('pointerout', (event) => {
+    const trigger = event.target.closest('.sector-flow-sector.is-open');
+    if (trigger && !trigger.contains(event.relatedTarget)) closeSectorHoldings(trigger);
+  });
+  dashboard.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSectorHoldings(event.target.closest('.sector-flow-sector.is-open'));
+  });
 }
 
 function renderSectorFlow(rows) {
@@ -1086,6 +1122,7 @@ function renderSectorFlow(rows) {
 
 async function loadSectorFlowDashboard() {
   if (!document.getElementById('sector-flow-dashboard') || !supabaseClient) return;
+  initializeSectorHoldingInteractions();
   const { data, error } = await supabaseClient.from('market_sector_weekly_rankings')
     .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,price_stage,market_sector_etfs(sector_name,market_sector_etf_holdings(holding_name,weight_pct,weight_rank))')
     .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(240);
