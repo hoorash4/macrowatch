@@ -60,7 +60,7 @@ function renderExtremeNewsSignals(rows) {
   const latest = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date))).at(-1);
   if (!latest) return;
   decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
-  document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '오늘 기준 집계'; });
+  document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '자정 기준 집계'; });
 }
 
 function formatNewsDate(value) {
