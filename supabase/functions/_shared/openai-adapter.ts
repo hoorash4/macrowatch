@@ -9,7 +9,7 @@ function systemPrompt(extremeRules: ExtremeNewsRule[]) {
   if (!prompt) throw new Error("NEWS_ANALYSIS_SYSTEM_PROMPT가 설정되지 않았습니다.");
   const base = prompt.replace(/\{\{news_candidates\}\}/g, "").trim();
   const rules = extremeRules.map((rule) => `- ${rule.signal}: ${rule.phrase}`).join("\n");
-  return `${base}\n\n[치명적 악재·결정적 호재 감지]\n관리자가 등록한 아래 기준은 한국 주가지수 영향 판단과 별개의 최우선 감지 기준이다. 관리자가 등록한 기준과 문맥상 실질적으로 같은 사건이면, 한국 지수와의 전달 경로가 없거나 exclude_from_index=true인 기사라도 반드시 해당 extreme_signal을 반환하라. 정확한 키워드 일치는 요구하지 않지만, 단어 일부·막연한 관련성·단순 전망만으로는 분류하지 않는다. 기사 전체의 주체·행동·원인·파급 범위를 함께 확인한다. 기준이 없거나 어느 기준에도 해당하지 않으면 null이다. 동시에 상반된 기준에 해당하면 기사 내용상 더 직접적이고 우세한 하나만 선택하고, 우열을 판단할 수 없으면 null이다. extreme_signal 판단을 위해 exclude_from_index 또는 sentiment 값을 바꾸지 마라.\n${rules || "- 등록된 기준 없음: 모든 기사 extreme_signal=null"}\n\n출력 JSON의 각 항목에 extreme_signal을 반드시 포함한다. 허용값은 critical_negative, critical_positive, null뿐이다.`;
+  return `${base}\n\n[미국 주식시장 파급 경로 보완]\n일반 뉴스의 exclude_from_index 및 sentiment 판단에서 한국 지수 파급 경로뿐 아니라 미국 주가지수 파급 경로도 함께 검토하라. 미국의 금리·통화정책·고용·물가·신용·대형 금융기관·핵심 산업·원자재·글로벌 위험회피·국제 공급망에 직접 연결되는 사건은 한국 지수 경로가 기사에 명시되지 않았더라도 단순히 제3국 뉴스로 제외하지 않는다. 한국과 미국의 합리적 파급 방향이 충돌하고 우열을 판단할 핵심 사실이 없으면 uncertain을 사용한다. 이 보완 규칙은 기존의 모든 기사별 출력·중복 금지·사실 제한 규칙을 바꾸지 않는다.\n\n[치명적 악재·결정적 호재 감지]\n관리자가 등록한 아래 기준은 한국 주가지수 영향 판단과 별개의 최우선 감지 기준이다. 관리자가 등록한 기준과 문맥상 실질적으로 같은 사건이면, 한국 지수와의 전달 경로가 없거나 exclude_from_index=true인 기사라도 반드시 해당 extreme_signal을 반환하라. 정확한 키워드 일치는 요구하지 않지만, 단어 일부·막연한 관련성·단순 전망만으로는 분류하지 않는다. 기사 전체의 주체·행동·원인·파급 범위를 함께 확인한다. 기준이 없거나 어느 기준에도 해당하지 않으면 null이다. 동시에 상반된 기준에 해당하면 기사 내용상 더 직접적이고 우세한 하나만 선택하고, 우열을 판단할 수 없으면 null이다. extreme_signal 판단을 위해 exclude_from_index 또는 sentiment 값을 바꾸지 마라.\n${rules || "- 등록된 기준 없음: 모든 기사 extreme_signal=null"}\n\n출력 JSON의 각 항목에 extreme_signal을 반드시 포함한다. 허용값은 critical_negative, critical_positive, null뿐이다.`;
 }
 
 function candidatePrompt(candidates: Candidate[], marketContext: MarketContext | null) {
@@ -21,7 +21,7 @@ async function requestAnalysis(model: string, candidates: Candidate[], marketCon
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, reasoning: { effort: "low" }, max_output_tokens: 3_000, prompt_cache_key: "macrowatch-article-sentiment-v4", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt(extremeRules) }] }, { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext) }] }], text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } } }),
+    body: JSON.stringify({ model, reasoning: { effort: "low" }, max_output_tokens: 3_000, prompt_cache_key: "macrowatch-article-sentiment-v5", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt(extremeRules) }] }, { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext) }] }], text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();
