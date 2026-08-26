@@ -54,9 +54,10 @@
   /* 분석 카드의 공통 여백: 페이지 상단 내비게이션에는 적용하지 않습니다. */
   --analysis-card-header-padding-x: 1.25rem;
   --analysis-card-header-padding-y: 1.25rem;
-  --analysis-card-header-border: #1e293b;
+  --analysis-card-header-border: rgba(20,36,51,.16);
   --analysis-card-description-font-size: .75rem;
   --analysis-card-description-line-height: 1.25rem;
+  --analysis-card-description-color: #64748b;
 }
 /* 페이지 전체의 기본 글꼴입니다. 로고처럼 별도 서체가 필요한 곳만 예외 처리합니다. */
 body {
@@ -536,26 +537,7 @@ body:has(#app-shell:not(.hidden)) {
 }
 .dashboard-tracker-heading {
   margin:0 0 1.5rem;
-  padding:0 0 1.2rem;
-  border-bottom:1px solid rgba(20,36,51,.16);
   color:var(--color-text-primary);
-}
-.dashboard-tracker-title-row {
-  display:flex;
-  align-items:flex-start;
-  gap:.65rem;
-}
-.dashboard-tracker-heading span {
-  display:grid;
-  width:2rem;
-  height:2rem;
-  margin-top:.1rem;
-  place-items:center;
-  border:1px solid var(--color-border-light);
-  border-radius:.6rem;
-  background:var(--color-surface-soft);
-  color:#282724;
-  font-size:.8rem;
 }
 .dashboard-tracker-eyebrow {
   margin:0 0 .15rem;
@@ -563,16 +545,6 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.625rem;
   font-weight:700;
   letter-spacing:.16em;
-}
-.dashboard-tracker-heading h2 {
-  margin:0;
-  font-size:1.15rem;
-  font-weight:750;
-  letter-spacing:-.03em;
-}
-.dashboard-tracker-description {
-  margin:1.5rem 0 0;
-  color:var(--color-text-description);
 }
 /* ===== 04. 분석 카드와 그래프 주변 UI =====
  * 뉴스 흐름, 주도섹터, 미국·한국·이머징 스트레스 카드에 공통으로 적용되는
@@ -611,21 +583,17 @@ body:has(#app-shell:not(.hidden)) {
 }
 /* DOM 중첩과 관계없이 모든 분석 카드의 제목 아래 안내 문구를 한 곳에서 관리합니다. */
 #app-shell .analysis-card-description {
+  color:var(--analysis-card-description-color);
   font-size:var(--analysis-card-description-font-size);
   line-height:var(--analysis-card-description-line-height);
+}
+#app-shell .analysis-card-description--accent {
+  color:#b28331;
 }
 /* 밝은 분석 카드의 제목과 안내 문구 색상만 담당합니다. */
 #app-shell .analysis-card-header-light .analysis-card-title {
   color:var(--color-text-primary);
   font-size:1.15rem;
-}
-#app-shell .analysis-card-header-light p {
-  color:var(--color-text-description);
-}
-/* 뉴스와 주도섹터 카드는 헤더가 카드 본문과 이어지므로 바깥 패딩을 제거합니다. */
-.analysis-card-header-flush {
-  padding:0 0 1.2rem;
-  border-color:var(--color-text-primary);
 }
 /* 결정적 뉴스는 밝은 카드 안의 유일한 어두운 강조 패널이므로 색을 패널 내부에만 제한합니다. */
 #news-extreme-signals {
