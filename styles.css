@@ -573,7 +573,6 @@ body:has(#app-shell:not(.hidden)) {
 .dashboard-tracker-description {
   margin:1.5rem 0 0;
   color:var(--color-text-description);
-  font-size:.7rem;
 }
 /* ===== 04. 분석 카드와 그래프 주변 UI =====
  * 뉴스 흐름, 주도섹터, 미국·한국·이머징 스트레스 카드에 공통으로 적용되는
