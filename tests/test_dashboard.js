@@ -292,7 +292,8 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span \{\s*justify-content:center;/);
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*text-align:center;/);
   assert.match(styles, /sector-flow-week-current header > strong \{ font-size:\.9rem; \}/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size:\.66rem;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size:\.74rem;/);
+  assert.match(styles, /\.sector-flow-week li b \{[\s\S]*width:1\.45rem;[\s\S]*min-height:1\.35rem;[\s\S]*font-size:\.66rem;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-sector \{ font-size:\.88rem; \}/);
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*font-size:\.78rem;[\s\S]*font-weight:500;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns em \{ font-size:\.8rem; \}/);
