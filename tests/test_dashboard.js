@@ -133,3 +133,10 @@ test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰
   assert.match(styles, /--tracker-card-border-top-width:\s*5px/);
   assert.match(styles, /\.dashboard-tracker-card\s*\{[\s\S]*?margin-top:var\(--tracker-section-separation\);[\s\S]*?border:var\(--tracker-card-border-width\) solid var\(--tracker-card-accent\);[\s\S]*?border-top-width:var\(--tracker-card-border-top-width\);[\s\S]*?background:var\(--tracker-card-background\);/);
 });
+
+test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한다', () => {
+  const admin = fs.readFileSync(path.join(__dirname, '..', 'admin.html'), 'utf8');
+  assert.match(admin, /매일 01:00 KST/);
+  assert.match(admin, /01:10 · 01:20 자동 재시도/);
+  assert.doesNotMatch(admin, /매일 05:30 KST/);
+});
