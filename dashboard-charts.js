@@ -1022,7 +1022,8 @@ function sectorRankChange(row) {
 function sectorReturn(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
-  return `${number > 0 ? '+' : ''}${number.toFixed(2)}%`;
+  const formatted = Math.abs(number) < 10 ? number.toFixed(2) : Math.round(number).toString();
+  return `${number > 0 ? '+' : ''}${formatted}%`;
 }
 
 function renderSectorFlow(rows) {
@@ -1039,14 +1040,11 @@ function renderSectorFlow(rows) {
     const week = weeks[index - firstDataCard], list = (grouped.get(week) || []).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 5);
     const body = card.querySelector('ol');
     if (!body) return;
-    const current = card.dataset.sectorWeekOffset === '0';
     const returnHeading = card.querySelector('.sector-flow-columns span:last-child');
-    if (returnHeading) returnHeading.textContent = current ? '주간' : '주간 · 누적';
+    if (returnHeading) returnHeading.textContent = '주간 · 4주 누적';
     body.innerHTML = list.length ? list.map((row) => {
       const sector = row.market_sector_etfs?.sector_name || '—';
-      const returns = current
-        ? sectorReturn(row.weekly_return_pct)
-        : `${sectorReturn(row.weekly_return_pct)} · ${sectorReturn(row.cumulative_return_pct)}`;
+      const returns = `${sectorReturn(row.weekly_return_pct)} · ${sectorReturn(row.cumulative_return_pct)}`;
       return `<li><b><span>${Number(row.rank)}</span>${sectorRankChange(row)}</b><strong>${escapeHtml(sector)}</strong><span class="sector-flow-streak">${Number(row.top10_streak)}주</span><em>${returns}</em></li>`;
     }).join('') : '<li><b>—</b><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><em>—</em></li>';
   });

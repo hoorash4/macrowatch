@@ -108,7 +108,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('body.stage === "open"', pipeline)
         self.assertIn('body.stage === "close"', pipeline)
         self.assertIn("endpointPrice / baseline.closePrice", scoring)
-        self.assertIn("latestPrice / baseline.closePrice", scoring)
+        self.assertIn("fourWeekBaseline", scoring)
+        self.assertIn("endpointPrice / fourWeekBaseline.closePrice", scoring)
+        self.assertNotIn("latestPrice / baseline.closePrice", scoring)
 
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")

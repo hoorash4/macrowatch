@@ -47,18 +47,19 @@ export function calculateSectorRankings(prices: SectorPrice[], currentDate: stri
 
   for (const weekStart of weekStarts) {
     const weekEnd = isoDate(dateValue(weekStart) + 6 * DAY_MS);
+    const fourWeekStart = isoDate(dateValue(weekStart) - 3 * 7 * DAY_MS);
     const rows = [];
     for (const [etfId, history] of byEtf) {
       const baseline = [...history].reverse().find((item) => item.marketDate < weekStart && item.closePrice !== null);
+      const fourWeekBaseline = [...history].reverse().find((item) => item.marketDate < fourWeekStart && item.closePrice !== null);
       const endpoint = [...history].reverse().find((item) => item.marketDate <= weekEnd && item.marketDate <= currentDate && effectivePrice(item, currentDate) !== null);
-      const latest = [...history].reverse().find((item) => item.marketDate <= currentDate && effectivePrice(item, currentDate) !== null);
-      if (!baseline?.closePrice || !endpoint || !latest) continue;
-      const endpointPrice = effectivePrice(endpoint, currentDate), latestPrice = effectivePrice(latest, currentDate);
-      if (!endpointPrice || !latestPrice || endpoint.marketDate < weekStart) continue;
+      if (!baseline?.closePrice || !fourWeekBaseline?.closePrice || !endpoint) continue;
+      const endpointPrice = effectivePrice(endpoint, currentDate);
+      if (!endpointPrice || endpoint.marketDate < weekStart) continue;
       rows.push({
         etfId,
         weekly: (endpointPrice / baseline.closePrice - 1) * 100,
-        cumulative: (latestPrice / baseline.closePrice - 1) * 100,
+        cumulative: (endpointPrice / fourWeekBaseline.closePrice - 1) * 100,
         stage: endpoint.marketDate === currentDate && endpoint.closePrice === null ? "open" as const : "close" as const,
       });
     }

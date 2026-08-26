@@ -219,15 +219,18 @@ test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다',
   assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EEM/);
 });
 
-test('주도섹터는 시가와 종가를 구분하고 현재 주에는 주간 수익률만 표시한다', () => {
+test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/sector-flow.yml'), 'utf8');
   assert.match(workflow, /10 0 \* \* 1-5/);
   assert.match(workflow, /40 6 \* \* 1-5/);
-  assert.match(charts, /current \? '주간' : '주간 · 누적'/);
+  assert.match(charts, /returnHeading\.textContent = '주간 · 4주 누적'/);
+  assert.match(charts, /sectorReturn\(row\.weekly_return_pct\).*sectorReturn\(row\.cumulative_return_pct\)/s);
+  assert.match(charts, /Math\.abs\(number\) < 10 \? number\.toFixed\(2\) : Math\.round\(number\)\.toString\(\)/);
   assert.match(charts, /latest\.price_stage === 'open'/);
   assert.match(html, /매 영업일 시가·종가 반영/);
+  assert.match(html, /각 주를 끝점으로 한 최근 4주 수익률/);
   assert.doesNotMatch(html, /오전 9시 10분 시가 · 오후 3시 40분 종가/);
   assert.doesNotMatch(charts, /오후 3시 40분/);
 });
