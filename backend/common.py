@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Iterable
 from typing import Any
 
@@ -18,6 +19,18 @@ import requests
 DEFAULT_HTTP_TIMEOUT = 45
 FRED_OBSERVATIONS_URL = "https://api.stlouisfed.org/fred/series/observations"
 MACROWATCH_URL = "https://hoorash4.github.io/macrowatch/"
+
+
+FRED_HTTP_SESSION: requests.Session | None = None
+TRANSIENT_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def default_fred_session() -> requests.Session:
+    """FRED 호출 사이에 HTTP 연결을 재사용하는 지연 생성 세션을 반환한다."""
+    global FRED_HTTP_SESSION
+    if FRED_HTTP_SESSION is None:
+        FRED_HTTP_SESSION = requests.Session()
+    return FRED_HTTP_SESSION
 
 
 def require_env(name: str) -> str:
@@ -53,8 +66,23 @@ def fetch_fred_observations(
         params["observation_end"] = end
     if sort_order:
         params["sort_order"] = sort_order
-    client = session or requests
-    response = client.get(FRED_OBSERVATIONS_URL, params=params, headers=headers, timeout=timeout)
+    # 기본 호출은 연결 풀을 공유해 여러 FRED 시계열 수집의 TLS 연결 비용을 줄인다.
+    # 테스트나 특수 호출은 기존처럼 주입된 session을 우선한다.
+    client = session or default_fred_session()
+    response = None
+    for attempt in range(4):
+        response = client.get(FRED_OBSERVATIONS_URL, params=params, headers=headers, timeout=timeout)
+        status_code = getattr(response, "status_code", None)
+        if status_code not in TRANSIENT_HTTP_STATUSES or attempt == 3:
+            break
+        retry_after = getattr(response, "headers", {}).get("Retry-After")
+        try:
+            delay = max(float(retry_after), 0.0) if retry_after else float(2 ** attempt)
+        except (TypeError, ValueError):
+            delay = float(2 ** attempt)
+        time.sleep(min(delay, 30.0))
+    if response is None:
+        raise RuntimeError("FRED request did not produce a response")
     response.raise_for_status()
     observations = response.json().get("observations", [])
     return observations if isinstance(observations, list) else []
