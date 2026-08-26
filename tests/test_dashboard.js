@@ -283,4 +283,5 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /<span>연속<\/span><span>주간<\/span><span>누적<\/span>/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 4rem 6rem 6rem/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns \{ display:contents; \}/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(-n\+2\) \{ text-align:center; \}/);
 });
