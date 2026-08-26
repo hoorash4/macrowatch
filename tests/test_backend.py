@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -89,6 +90,15 @@ class CommonClientTests(unittest.TestCase):
 
 
 class SourceContractTests(unittest.TestCase):
+    def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
+        migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")
+        rows = re.findall(r"^\s*\('([^']+)',\s*'([^']+)',\s*'(\d{6})',\s*'([^']+)'\)", migration, re.MULTILINE)
+        self.assertEqual(len(rows), 39)
+        self.assertEqual(len({row[0] for row in rows}), 39)
+        self.assertEqual(len({row[2] for row in rows}), 39)
+        self.assertIn("market_sector_etfs_sector_name_uidx", migration)
+        self.assertNotIn("글로벌AI사이버보안", migration)
+
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")
         self.assertIn('Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT")', adapter)
