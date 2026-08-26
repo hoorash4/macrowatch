@@ -38,8 +38,11 @@ jobs:
         run: |
           node --check script.js
           node --check admin.js
+          node --check admin-policy-review.js
           node --check auth.js
+          node --check policy-chart.js
           node tests/test_dashboard.js
+          node tests/test_policy_scoring.ts
       - name: Check Python syntax and behavior contracts
         run: |
           python -m compileall -q backend
@@ -47,4 +50,7 @@ jobs:
       - name: Check Supabase Edge Function types
         # 현재 리팩터링 대상부터 엄격하게 검사한다. 기존 함수들의 타입 부채는
         # 기능별로 정리할 때 이 목록에 순차적으로 추가한다.
-        run: deno check supabase/functions/news-pipeline/index.ts
+        run: |
+          deno check supabase/functions/news-pipeline/index.ts
+          deno check supabase/functions/policy-pipeline/index.ts
+          deno check supabase/functions/admin-control/index.ts

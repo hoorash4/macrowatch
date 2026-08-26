@@ -89,6 +89,7 @@ const NEWS_SENTIMENT_VIEWS = {
 };
 let newsSentimentRows = [];
 let newsSentimentView = 'recent';
+const dashboardLoaders = [];
 
 // ===== 뉴스 흐름 분석 모듈 =====
 // 일별 집계 데이터 조회, 긍정·부정 비율 계산, 기간별 막대 렌더링을 담당한다.
@@ -2519,7 +2520,11 @@ window.MacroWatchDashboard = Object.freeze({
       loadCreditStressComponentsDashboard(),
       loadKoreaStressDashboard(),
       loadEmStressDashboard(),
+      ...dashboardLoaders.map((loader) => loader({ supabaseClient })),
     ]);
+  },
+  registerLoader(loader) {
+    if (typeof loader === 'function' && !dashboardLoaders.includes(loader)) dashboardLoaders.push(loader);
   },
   utils: Object.freeze({ calculateCorrelation, escapeHtml, formatNewsDate, getConditionText }),
 });

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy-admin.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const REPOSITORY = "hoorash4/macrowatch";
@@ -300,6 +301,14 @@ export default {
           .order("published_at", { ascending: false }).limit(100);
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "list_policy_reviews") {
+        return json({ items: await listPolicyReviews(admin) }, 200, origin);
+      }
+
+      if (action === "resolve_policy_review") {
+        return json({ item: await resolvePolicyReview(admin, user.id, body || {}) }, 200, origin);
       }
 
       if (action === "list_sector_etfs") {

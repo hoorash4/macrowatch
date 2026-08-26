@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recomputePolicyScores } from "../_shared/policy-score-store.ts";
 
 type Action = "hike" | "hold" | "cut";
 type Reason = "inflation_fight" | "growth_overheat" | "recession_financial_stress" | "insurance_easing" | "uncertain";
@@ -19,19 +20,8 @@ type EventRow = {
 };
 
 const FED_BASE = "https://www.federalreserve.gov";
-const SCORE_PROFILE_VERSION = "fed-policy-v1";
 const REASON_CONFIDENCE_THRESHOLD = 0.55;
 const UNCERTAIN_CONFIDENCE_MAX = 0.549;
-
-// Positive values raise the later MSI stress contribution.  The event impulse
-// is attenuated by the number of consecutive decisions in the same regime.
-const STRESS_BASE: Record<Reason, Record<Action, number>> = {
-  inflation_fight: { hike: 100, hold: 0, cut: 0 },
-  growth_overheat: { hike: -50, hold: 0, cut: 0 },
-  recession_financial_stress: { hike: 0, hold: 0, cut: 100 },
-  insurance_easing: { hike: 0, hold: 0, cut: -70 },
-  uncertain: { hike: 0, hold: 0, cut: 0 },
-};
 
 const RESPONSE_SCHEMA = {
   type: "object", additionalProperties: false,
@@ -172,28 +162,6 @@ function normalizeAnalysis(analysis: Analysis, previous: EventRow | null): Analy
   };
 }
 
-function regimeKey(row: Pick<EventRow, "action" | "primary_reason">) { return row.action && row.primary_reason ? `${row.action}:${row.primary_reason}` : null; }
-
-async function recomputeSegments(supabase: ReturnType<typeof createClient>) {
-  const { data, error } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,primary_reason,analysis_status,policy_segment,segment_sequence,is_emergency,change_bps").eq("central_bank", "fed").eq("analysis_status", "completed").order("meeting_date");
-  if (error) throw error;
-  let segment = 0, sequence = 0, activeKey: string | null = null;
-  const updates = (data || []).map((row: EventRow) => {
-    const key = regimeKey(row);
-    const hasLargeRateMove = Math.abs(Number(row.change_bps || 0)) >= 50;
-    const impactMultiplier = Number((1 + (row.is_emergency ? 0.25 : 0) + (hasLargeRateMove ? 0.25 : 0)).toFixed(2));
-    if (!key || row.action === "hold") { activeKey = null; sequence = 0; return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: null, segment_sequence: 0, policy_impulse: 0, policy_stress_contribution: 0, is_emergency: row.is_emergency === true, has_large_rate_move: hasLargeRateMove, impact_multiplier: impactMultiplier, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() }; }
-    if (key !== activeKey) { segment += 1; sequence = 1; activeKey = key; } else sequence += 1;
-    const base = STRESS_BASE[row.primary_reason!][row.action!];
-    return { central_bank: "fed", meeting_date: row.meeting_date, policy_segment: segment, segment_sequence: sequence, policy_impulse: Number(((base * impactMultiplier) / sequence).toFixed(3)), policy_stress_contribution: Number((base * impactMultiplier).toFixed(3)), is_emergency: row.is_emergency === true, has_large_rate_move: hasLargeRateMove, impact_multiplier: impactMultiplier, score_profile_version: SCORE_PROFILE_VERSION, updated_at: new Date().toISOString() };
-  });
-  for (const update of updates) {
-    const { central_bank, meeting_date, ...values } = update;
-    const { error: updateError } = await supabase.from("central_bank_policy_events").update(values).eq("central_bank", central_bank).eq("meeting_date", meeting_date);
-    if (updateError) throw updateError;
-  }
-}
-
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
@@ -204,6 +172,10 @@ Deno.serve(async (request) => {
     const url = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
     const supabase = createClient(url, serviceRole);
+    if (body.mode === "score") {
+      const scored = await recomputePolicyScores(supabase, "fed");
+      return json({ bank: "fed", mode: "score", scored: scored.length });
+    }
     const sources = await fedSources(mode);
     const selected = mode === "backfill" ? sources : sources.filter((source) => source.meetingDate >= `${new Date().getUTCFullYear() - 1}-01-01`);
     const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status").eq("central_bank", "fed");
@@ -226,7 +198,7 @@ Deno.serve(async (request) => {
         if (previousError) throw previousError;
         const previous = previousRows?.[0] as EventRow || null;
         const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous), previous);
-        const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, analyzed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() };
+        const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, ai_primary_reason: analysis.analysis.primary_reason, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, analyzed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() };
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert(row, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;
       } catch (error) {
@@ -235,7 +207,10 @@ Deno.serve(async (request) => {
         if (saveError) throw saveError;
       }
     }
-    await recomputeSegments(supabase);
+    const { count: scoredCount, error: scoredCountError } = await supabase.from("central_bank_policy_events")
+      .select("meeting_date", { count: "exact", head: true }).eq("central_bank", "fed").not("policy_index", "is", null);
+    if (scoredCountError) throw scoredCountError;
+    if ((scoredCount || 0) > 0) await recomputePolicyScores(supabase, "fed");
     const hasMore = selected.some((source) => {
       const saved = known.get(source.meetingDate);
       return !saved || saved.analysis_status !== "completed";

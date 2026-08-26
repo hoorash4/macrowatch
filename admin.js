@@ -109,6 +109,8 @@
     return data;
   }
 
+  window.MacroWatchAdminApi = Object.freeze({ invoke: invokeAdmin, notice: showNotice });
+
   function badgeState(run) {
     if (!run) return ['기록 없음', 'border-slate-700 bg-slate-800 text-slate-400'];
     if (run.status !== 'completed') return ['진행 중', 'border-blue-700/50 bg-blue-950/60 text-blue-400'];
@@ -402,6 +404,7 @@
       accessScreen.classList.add('hidden');
       document.getElementById('admin-shell').classList.remove('hidden');
       await loadAll();
+      window.dispatchEvent(new CustomEvent('macrowatch:admin-ready'));
     } catch (error) {
       accessMessage.textContent = error.message || '관리자 권한을 확인하지 못했습니다.';
       backLink.classList.remove('hidden');

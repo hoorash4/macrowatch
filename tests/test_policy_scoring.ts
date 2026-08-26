@@ -1,0 +1,88 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { scorePolicyHistory } from "../supabase/functions/_shared/policy-scoring.ts";
+import type { PolicyAction, PolicyReason, PolicyScoringInput } from "../supabase/functions/_shared/policy-types.ts";
+
+function rows(values: Array<[PolicyAction, PolicyReason, number?, boolean?]>): PolicyScoringInput[] {
+  return values.map(([action, reason, change_bps = action === "hold" ? 0 : action === "hike" ? 25 : -25, is_emergency = false], index) => ({
+    central_bank: "fed",
+    meeting_date: `2026-${String(index + 1).padStart(2, "0")}-01`,
+    action,
+    ai_primary_reason: reason,
+    change_bps,
+    is_emergency,
+  }));
+}
+
+test("물가 억제 첫 인상과 연속 결정은 첫 가중치 후 체감한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "inflation_fight"], ["hike", "inflation_fight"], ["hike", "inflation_fight"],
+  ]));
+  assert.deepEqual(result.map((row) => row.final_event_score), [110, 50, 33.333]);
+  assert.deepEqual(result.map((row) => row.policy_index), [1110, 1160, 1193.333]);
+  assert.equal(result.at(-1)?.trend_type, "confirmed");
+});
+
+test("보험성 인하는 두 번만 체감하고 세 번째부터 보류한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["cut", "insurance_easing"], ["cut", "insurance_easing"], ["cut", "insurance_easing", -50, true],
+  ]));
+  assert.deepEqual(result.map((row) => row.final_event_score), [-50, -25, 0]);
+});
+
+test("50bp와 긴급회의는 양수는 확대하고 음수는 상쇄한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "inflation_fight", 50, true],
+    ["hold", "uncertain"],
+    ["hold", "uncertain"],
+    ["hike", "growth_overheat", 50, true],
+  ]));
+  assert.equal(result[0].final_event_score, 160);
+  assert.equal(result[3].final_event_score, -25);
+});
+
+test("확정 연속 추세는 첫 동결부터 100점으로 체감한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "inflation_fight"], ["hike", "inflation_fight"], ["hike", "inflation_fight"],
+    ["hold", "inflation_fight"], ["hold", "inflation_fight"], ["hold", "inflation_fight"],
+  ]));
+  assert.deepEqual(result.slice(3).map((row) => row.final_event_score), [-100, -50, -33.333]);
+});
+
+test("두 번의 조정은 첫 동결부터 50점으로 체감한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["cut", "recession_financial_stress"], ["cut", "recession_financial_stress"],
+    ["hold", "recession_financial_stress"], ["hold", "recession_financial_stress"],
+  ]));
+  assert.deepEqual(result.slice(2).map((row) => row.final_event_score), [-50, -25]);
+});
+
+test("징검다리 확정 추세는 두 번째 연속 동결부터 종료 점수를 준다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "growth_overheat"], ["hold", "growth_overheat"],
+    ["hike", "growth_overheat"], ["hold", "growth_overheat"],
+    ["hike", "growth_overheat"], ["hold", "growth_overheat"],
+    ["hold", "growth_overheat"], ["hold", "growth_overheat"],
+  ]));
+  assert.deepEqual(result.slice(5).map((row) => row.final_event_score), [0, 100, 50]);
+});
+
+test("이유 변경은 방향 횟수를 유지하고 이유 횟수만 다시 시작한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "inflation_fight"], ["hike", "inflation_fight"], ["hike", "growth_overheat"],
+  ]));
+  assert.equal(result[2].direction_sequence, 3);
+  assert.equal(result[2].reason_sequence, 1);
+  assert.equal(result[2].first_decision_adjustment, 0);
+  assert.equal(result[2].final_event_score, -50);
+});
+
+test("관리자 점수는 해당 회의만 대체하고 1000 기준 지수에 누적한다", () => {
+  const input = rows([["hike", "uncertain"], ["hold", "uncertain"]]);
+  input[0].admin_primary_reason = "inflation_fight";
+  input[0].admin_score_override = 75;
+  const result = scorePolicyHistory(input);
+  assert.equal(result[0].final_event_score, 75);
+  assert.equal(result[0].policy_index, 1075);
+  assert.equal(result[1].policy_index, 1075);
+});

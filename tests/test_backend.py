@@ -120,9 +120,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("직전 정책 배경이 제공되지 않은 경우 not_confirmed가 아니라 uncertain", prompt)
         self.assertIn("reason_confidence가 0.55 미만이면 primary_reason=uncertain", prompt)
         self.assertIn("외부 입력이 성명문과 충돌하면 성명문을 우선", prompt)
-        self.assertIn("같은 방향의 인상 또는 인하가 동결 없이 2회 이상 연속", prompt)
+        self.assertIn("같은 방향의 인상 또는 인하가 동결 없이 3회 이상 연속", prompt)
+        self.assertIn("2회에서 동결로 끝나면 확정 추세가 아니라 단기 조정 종료", prompt)
         self.assertIn("징검다리 추세", prompt)
         self.assertIn("동결이 두 번 연속될 때 두 번째 동결", prompt)
+        self.assertIn("같은 방향에서 primary_reason만 바뀐 결정은 새로운 금리 방향의 첫 결정이 아니며", prompt)
         self.assertIn("이를 직접 판정하거나 출력하지 않는다", prompt)
         self.assertNotIn("연속 인상 중 첫번째 동결", prompt)
         self.assertIn("목표 범위 자체의 폭을 이번 회의의 인상·인하 폭으로 해석", prompt)
@@ -141,6 +143,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("const isFiniteNumber = (value: unknown): value is number", pipeline)
         self.assertIn("target_range_lower,target_range_upper,primary_reason", pipeline)
         self.assertIn("normalizeAnalysis(await analyzeStatement", pipeline)
+        self.assertIn('body.mode === "score"', pipeline)
+        self.assertIn('not("policy_index", "is", null)', pipeline)
 
 
 class EmergingIndexTests(unittest.TestCase):

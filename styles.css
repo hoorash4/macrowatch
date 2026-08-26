@@ -681,6 +681,25 @@ body:has(#app-shell:not(.hidden)) {
 #news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart, #korea-stress-chart, #em-stress-chart {
   padding:1.6rem 0 0;
 }
+.policy-chart-frame {
+  position:relative;
+  min-height:20rem;
+  overflow:hidden;
+  border:1px solid var(--color-border-light);
+  background:var(--color-surface-soft);
+}
+.policy-chart-svg {
+  display:block;
+  width:100%;
+  min-width:42rem;
+  height:auto;
+}
+.policy-chart-axis { stroke:#cbd5e1; stroke-width:1; }
+.policy-chart-line { fill:none; stroke:#1d4ed8; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+.policy-chart-point { fill:#1e40af; stroke:#fff; stroke-width:1.5; }
+.policy-chart-year { fill:#64748b; font-size:12px; font-weight:650; }
+.policy-chart-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
+.policy-chart-cursor.is-visible { opacity:.75; }
 /* 밝은 카드에서 사용하는 데이터 대기·오류 상태입니다. */
 #app-shell .analysis-empty-state-light {
   border-color:var(--color-border-light);
