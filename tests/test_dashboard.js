@@ -290,7 +290,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /isLatestWeek \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}` : `\$\{streak\}\$\{returns\}`/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*font-size:\.68rem;[\s\S]*text-align:center;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span \{\s*justify-content:center;/);
-  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*padding-right:\.2rem;[\s\S]*text-align:right;/);
+  assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*text-align:center;/);
   assert.match(styles, /sector-flow-week-current header > strong \{ font-size:\.9rem; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size:\.66rem;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-sector \{ font-size:\.88rem; \}/);

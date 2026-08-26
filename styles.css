@@ -1176,11 +1176,10 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-top-holding {
   overflow:hidden;
-  padding-right:.2rem;
   color:#7890a2;
   font-size:.78rem;
   font-weight:500;
-  text-align:right;
+  text-align:center;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
