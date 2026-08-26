@@ -146,3 +146,11 @@ test("징검다리 추세의 uncertain 연속 동결도 관리자 판단 없이 
   assert.equal(result[6].trend_type, "hold_scoring");
   assert.equal(result[6].final_event_score, 0);
 });
+
+test("정상화 인상과 인하는 모두 -50부터 이유별로 지속 체감한다", () => {
+  const result = scorePolicyHistory(rows([
+    ["hike", "normalization_hike"], ["hike", "normalization_hike"], ["hike", "normalization_hike"],
+    ["cut", "normalization_cut"], ["cut", "normalization_cut"], ["cut", "normalization_cut"],
+  ]));
+  assert.deepEqual(result.map((row) => row.final_event_score), [-50, -25, -16.667, -50, -25, -16.667]);
+});

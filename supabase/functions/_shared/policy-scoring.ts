@@ -23,6 +23,8 @@ function rawBase(reason: PolicyReason, action: Exclude<PolicyAction, "hold">) {
   if (reason === "growth_overheat" && action === "hike") return -50;
   if (reason === "recession_financial_stress" && action === "cut") return 100;
   if (reason === "insurance_easing" && action === "cut") return -50;
+  if (reason === "normalization_hike" && action === "hike") return -50;
+  if (reason === "normalization_cut" && action === "cut") return -50;
   return 0;
 }
 

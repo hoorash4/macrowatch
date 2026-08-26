@@ -1,5 +1,5 @@
 export type PolicyAction = "hike" | "hold" | "cut";
-export type PolicyReason = "inflation_fight" | "growth_overheat" | "recession_financial_stress" | "insurance_easing" | "uncertain";
+export type PolicyReason = "inflation_fight" | "growth_overheat" | "recession_financial_stress" | "insurance_easing" | "normalization_hike" | "normalization_cut" | "uncertain";
 export type PolicyTrendType = "none" | "single" | "adjustment" | "confirmed" | "bridge_pending" | "bridge_confirmed" | "hold_pending" | "hold_scoring";
 
 export type PolicyScoringInput = {

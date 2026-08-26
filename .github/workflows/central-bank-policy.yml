@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "latest, backfill, or score"
+        description: "latest, backfill, reanalyze, or score"
         required: false
         default: "latest"
         type: choice
-        options: [latest, backfill, score]
+        options: [latest, backfill, reanalyze, score]
 
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
               --header "Content-Type: application/json" \
               --data "{\"bank\":\"fed\",\"mode\":\"$MODE\",\"limit\":4}"
           }
-          if [ "$MODE" = "backfill" ]; then
+          if [ "$MODE" = "backfill" ] || [ "$MODE" = "reanalyze" ]; then
             while true; do
               response=$(run_batch)
               echo "$response"

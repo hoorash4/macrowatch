@@ -2,7 +2,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recomputePolicyScores } from "./policy-score-store.ts";
 import type { PolicyReason } from "./policy-types.ts";
 
-const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing", "uncertain"]);
+const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing", "normalization_hike", "normalization_cut", "uncertain"]);
 type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
 
 export async function listPolicyReviews(admin: ServiceClient) {
@@ -34,6 +34,9 @@ export async function resolvePolicyReview(
   const score = Number(body.score);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)) throw new Error("회의일이 올바르지 않습니다.");
   if (!ADMIN_REASONS.has(reason)) throw new Error("정규 이유를 선택해 주세요.");
+  if ((reason === "normalization_hike" && body.action !== "hike") || (reason === "normalization_cut" && body.action !== "cut")) {
+    throw new Error("금리 방향에 맞는 정상화 이유를 선택해 주세요.");
+  }
   if (keyword.length > 80) throw new Error("이유 키워드는 80자 이내로 입력해 주세요.");
   if (rawScore === null || rawScore === undefined || String(rawScore).trim() === "" || !Number.isFinite(score) || score < -1_000 || score > 1_000) {
     throw new Error("점수는 0을 포함해 -1000부터 1000 사이의 숫자로 직접 입력해 주세요.");
