@@ -124,3 +124,10 @@ test('분석 메뉴의 최상단 공간과 카드 간격은 공통 토큰을 사
   assert.doesNotMatch(styles, /#credit-stress-dashboard\s*\{[\s\S]*?margin-bottom:4rem/);
   assert.doesNotMatch(styles, /\.market-overview-grid\s*\{[\s\S]*?padding-top:1\.5rem/);
 });
+
+test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰을 사용한다', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(styles, /--tracker-section-separation:\s*1\.25rem/);
+  assert.match(styles, /--tracker-card-accent:\s*#8aa2b4/);
+  assert.match(styles, /\.dashboard-tracker-card\s*\{[\s\S]*?margin-top:var\(--tracker-section-separation\);[\s\S]*?border-top:3px solid var\(--tracker-card-accent\);[\s\S]*?background:var\(--tracker-card-background\);/);
+});

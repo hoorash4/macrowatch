@@ -54,6 +54,10 @@
   /* 분석 메뉴 레이아웃: 메뉴 첫 카드의 상단 공간과 카드 사이 간격을 여기서 관리합니다. */
   --dashboard-panel-top-space: 1.5rem;
   --dashboard-card-gap: 1.5rem;
+  /* 모든 메뉴 뒤에 따라오는 공통 추적 영역을 본 메뉴 카드와 구분하는 값입니다. */
+  --tracker-section-separation: 1.25rem;
+  --tracker-card-accent: #8aa2b4;
+  --tracker-card-background: rgba(247,249,250,.82);
   /* 분석 카드의 공통 여백: 페이지 상단 내비게이션에는 적용하지 않습니다. */
   --analysis-card-header-padding-x: 1.25rem;
   --analysis-card-header-padding-y: 1.25rem;
@@ -538,6 +542,12 @@ body:has(#app-shell:not(.hidden)) {
   border-radius:var(--radius-card);
   background:var(--color-surface-card);
   box-shadow:var(--shadow-card);
+}
+/* 공통 추적 영역은 카드 구조를 유지하되 간격·상단선·배경 톤으로 메뉴 콘텐츠와 구분합니다. */
+.dashboard-tracker-card {
+  margin-top:var(--tracker-section-separation);
+  border-top:3px solid var(--tracker-card-accent);
+  background:var(--tracker-card-background);
 }
 .dashboard-tracker-heading {
   margin:0 0 1.5rem;
