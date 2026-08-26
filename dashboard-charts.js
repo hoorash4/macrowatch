@@ -1110,16 +1110,17 @@ function renderSectorFlow(rows) {
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = isLatestWeek
-      ? '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span><span>주간</span><span>누적</span>'
+      ? '<span>순위</span><span>변동</span><span>섹터</span><span>주간 수익률</span><span>4주간 누적</span><span>연속 랭크</span>'
       : '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
       const etf = row.market_sector_etfs;
-      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}<span class="sector-flow-streak">${Number(row.top10_streak)}주</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
-    }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
+      const streakUnit = isLatestWeek ? '주차' : '주';
+      return `<li><b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}<span class="sector-flow-streak">${Number(row.top10_streak)}${streakUnit}</span><div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div></li>`;
+    }).join('') : `<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—${isLatestWeek ? '주차' : '주'}</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>`;
   });
   const note = document.getElementById('sector-flow-update-note');
-  if (note) note.textContent = '누적은 해당 주까지 4주간 수익률 | 매 영업일 시가·종가 반영';
+  if (note) note.textContent = '매 영업일 시가·종가 반영';
 }
 
 async function loadSectorFlowDashboard() {

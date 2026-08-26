@@ -1072,17 +1072,22 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current > ol > li:last-child { border-bottom:0; }
 .sector-flow-week-current .sector-flow-columns,
 .sector-flow-week-current > ol > li {
-  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 4rem 6rem 6rem;
+  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 7rem 7rem 5rem;
   gap:.65rem;
 }
-.sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:right; }
+.sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:center; }
 .sector-flow-week-current .sector-flow-columns { padding:0 .05rem; }
 .sector-flow-week-current .sector-flow-columns span:nth-child(-n+2) { text-align:center; }
 .sector-flow-week-current > ol > li { min-height:2.8rem; }
+.sector-flow-week-current .sector-flow-streak {
+  grid-column:6;
+  text-align:center;
+}
 .sector-flow-week-current .sector-flow-returns { display:contents; }
 .sector-flow-week-current .sector-flow-returns > span {
-  justify-content:flex-end;
+  justify-content:center;
 }
+.sector-flow-week-current .sector-flow-returns > span:nth-child(2) em { font-weight:500; }
 .sector-flow-week-current .sector-flow-returns small { display:none; }
 .sector-flow-note {
   color:var(--color-text-description);

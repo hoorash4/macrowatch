@@ -251,7 +251,7 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.doesNotMatch(charts, /오늘 (시가|종가) 기준/);
   assert.match(charts, /<small>누적<\/small>/);
   assert.doesNotMatch(charts, /<small>4주 누적<\/small>/);
-  assert.match(html, /누적은 해당 주까지 4주간 수익률 \| 매 영업일 시가·종가 반영/);
+  assert.match(html, /id="sector-flow-update-note"[^>]*>매 영업일 시가·종가 반영/);
   assert.match(html, /각 주를 끝점으로 한 최근 4주 수익률/);
   assert.doesNotMatch(html, /오전 9시 10분 시가 · 오후 3시 40분 종가/);
   assert.doesNotMatch(charts, /오후 3시 40분/);
@@ -280,8 +280,12 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-holdings \{[\s\S]*width:9rem;/);
   assert.match(styles, /\.sector-flow-week-current > ol \{\s*grid-template-columns:1fr;/);
   assert.match(styles, /sector-flow-week-current > ol > li:last-child \{ border-bottom:0; \}/);
-  assert.match(charts, /<span>연속<\/span><span>주간<\/span><span>누적<\/span>/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 4rem 6rem 6rem/);
+  assert.match(charts, /<span>주간 수익률<\/span><span>4주간 누적<\/span><span>연속 랭크<\/span>/);
+  assert.match(charts, /isLatestWeek \? '주차' : '주'/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 7rem 7rem 5rem/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns \{ display:contents; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(-n\+2\) \{ text-align:center; \}/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*grid-column:6;[\s\S]*text-align:center;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span \{\s*justify-content:center;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:nth-child\(2\) em \{ font-weight:500; \}/);
 });
