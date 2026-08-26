@@ -61,12 +61,14 @@ async function loadExtremeRules(supabase: ReturnType<typeof createClient>): Prom
     .map((item) => ({ id: String(item.id), signal: item.signal, phrase: String(item.phrase) }));
 }
 async function refreshDailySentiment(supabase: ReturnType<typeof createClient>, articleDate: string, excludedIncrement = 0) {
-  const { data, error } = await supabase.from("news_article_sentiments").select("ai_sentiment,admin_sentiment,extreme_signal").eq("article_date", articleDate);
+  const { data, error } = await supabase.from("news_article_sentiments").select("ai_sentiment,admin_sentiment").eq("article_date", articleDate);
   if (error) throw error;
   const counts = { positive: 0, neutral: 0, negative: 0, uncertain: 0 };
   for (const row of data || []) counts[(row.admin_sentiment || row.ai_sentiment) as keyof typeof counts] += 1;
+  const { data: extremeRows, error: extremeError } = await supabase.from("news_extreme_matches").select("extreme_signal").eq("article_date", articleDate);
+  if (extremeError) throw extremeError;
   const extremeCounts = { critical_negative: 0, critical_positive: 0 };
-  for (const row of data || []) if (row.extreme_signal === "critical_negative" || row.extreme_signal === "critical_positive") extremeCounts[row.extreme_signal] += 1;
+  for (const row of extremeRows || []) if (row.extreme_signal === "critical_negative" || row.extreme_signal === "critical_positive") extremeCounts[row.extreme_signal] += 1;
   const { data: existing, error: existingError } = await supabase.from("news_daily_article_sentiment").select("excluded_count").eq("article_date", articleDate).maybeSingle();
   if (existingError) throw existingError;
   const { error: upsertError } = await supabase.from("news_daily_article_sentiment").upsert({ article_date: articleDate, positive_count: counts.positive, negative_count: counts.negative, neutral_count: counts.neutral, uncertain_count: counts.uncertain, critical_negative_count: extremeCounts.critical_negative, critical_positive_count: extremeCounts.critical_positive, excluded_count: (existing?.excluded_count || 0) + excludedIncrement, analyzed_article_count: (data || []).length, generated_at: new Date().toISOString() });
@@ -85,6 +87,8 @@ async function persistAnalysis(outputs: ArticleSentiment[], candidates: Candidat
   // article_date is the collection day used for graph aggregation; published_at remains untouched.
   const rows = includedOutputs.filter((output) => { const existing = existingByHash.get(output.itemHash); return !existing || existing.article_date === articleDate; }).map((output) => { const candidate = candidatesByHash.get(output.itemHash), existing = existingByHash.get(output.itemHash); if (!candidate?.publishedAt) throw new Error("발행 시각이 없는 뉴스 후보가 있습니다."); const preserved = existing?.admin_sentiment ? existing : null; return { article_hash: output.itemHash, source_name: candidate.source, published_at: candidate.publishedAt, collected_at: now, article_date: articleDate, ai_sentiment: preserved ? "uncertain" : output.sentiment, derived_keywords: preserved ? existing.derived_keywords : output.keywords, uncertain_summary: preserved ? existing.uncertain_summary : output.uncertainSummary, extreme_signal: output.extremeSignal, admin_sentiment: preserved ? existing.admin_sentiment : null, updated_at: now }; });
   if (rows.length) { const { error } = await supabase.from("news_article_sentiments").upsert(rows, { onConflict: "article_hash" }); if (error) throw error; }
+  const extremeMatches = outputs.filter((output) => output.extremeSignal).map((output) => ({ article_date: articleDate, article_hash: output.itemHash, extreme_signal: output.extremeSignal, created_at: now }));
+  if (extremeMatches.length) { const { error } = await supabase.from("news_extreme_matches").upsert(extremeMatches, { onConflict: "article_date,article_hash" }); if (error) throw error; }
   const excludedCount = outputs.filter((item) => item.excludeFromIndex).length;
   await refreshDailySentiment(supabase, articleDate, excludedCount);
   return { articles: rows.length, excluded_articles: excludedCount, dates: [articleDate] };
