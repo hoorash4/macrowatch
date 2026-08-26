@@ -56,18 +56,33 @@ function renderDecisiveNewsKeywords(container, values) {
   container.innerHTML = `${label}${keywords.map((keyword) => `<span class="decisive-news-keyword${isExample ? ' is-example' : ''}">${escapeHtml(keyword)}</span>`).join('')}`;
 }
 
+function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
+  // 뉴스 분석일은 저장일보다 하루 앞서므로 화면에 사용하는 실제 기사일로 환산합니다.
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const kstToday = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate());
+  const mondayOffset = (new Date(kstToday).getUTCDay() + 6) % 7;
+  const weekStart = kstToday - mondayOffset * 24 * 60 * 60 * 1000;
+  const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+  const weeklyRows = rows.filter((row) => {
+    const storedDate = Date.parse(`${String(row.article_date || '')}T00:00:00Z`);
+    if (!Number.isFinite(storedDate)) return false;
+    const newsDate = storedDate - 24 * 60 * 60 * 1000;
+    return newsDate >= weekStart && newsDate < weekEnd;
+  });
+  return {
+    count: weeklyRows.reduce((sum, row) => sum + Number(row.decisive_news_count || 0), 0),
+    keywords: normalizeDecisiveNewsKeywords(weeklyRows.flatMap((row) => row.decisive_news_keywords || [])),
+  };
+}
+
 function renderExtremeNewsSignals(rows) {
   const decisive = document.getElementById('decisive-news-count');
   const keywords = document.getElementById('decisive-news-keywords');
   if (!decisive) return;
-  const latest = [...rows].sort((a, b) => String(a.article_date).localeCompare(String(b.article_date))).at(-1);
-  if (!latest) {
-    renderDecisiveNewsKeywords(keywords, []);
-    return;
-  }
-  decisive.textContent = `${Number(latest.decisive_news_count || 0)}건`;
-  renderDecisiveNewsKeywords(keywords, normalizeDecisiveNewsKeywords(latest.decisive_news_keywords));
-  document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '자정 기준 집계'; });
+  const weekly = aggregateWeeklyDecisiveNews(rows);
+  decisive.textContent = `${weekly.count}건`;
+  renderDecisiveNewsKeywords(keywords, weekly.keywords);
+  document.querySelectorAll('#news-extreme-signals [data-extreme-signal-status]').forEach((element) => { element.textContent = '(월요일 자정 초기화)'; });
 }
 
 function formatNewsDate(value) {
@@ -996,7 +1011,7 @@ async function loadCreditStressComponentsDashboard() {
 }
 
 // 기존 대시보드 공개 계산 계약과 초기 로더 등록을 유지합니다.
-window.MacroWatchChartUtils = Object.freeze({ calculateCorrelation, formatNewsDate });
+window.MacroWatchChartUtils = Object.freeze({ aggregateWeeklyDecisiveNews, calculateCorrelation, formatNewsDate });
 window.MacroWatchDashboard?.registerLoader(async () => {
   await Promise.all([
     loadNewsSentimentDashboard(),

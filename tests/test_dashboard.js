@@ -63,6 +63,18 @@ test('뉴스 표시일은 저장일보다 하루 앞선 날짜를 사용한다',
   assert.equal(dashboard.window.MacroWatchDashboard.utils.formatNewsDate('invalid'), '—');
 });
 
+test('결정적 뉴스는 한국시간 월요일부터 일요일까지 누적한다', () => {
+  const aggregate = dashboard.window.MacroWatchChartUtils.aggregateWeeklyDecisiveNews;
+  const result = aggregate([
+    { article_date: '2026-08-24', decisive_news_count: 9, decisive_news_keywords: ['지난주'] },
+    { article_date: '2026-08-25', decisive_news_count: 1, decisive_news_keywords: ['신용경색'] },
+    { article_date: '2026-08-27', decisive_news_count: 2, decisive_news_keywords: ['신용경색', '환율'] },
+    { article_date: '2026-09-01', decisive_news_count: 7, decisive_news_keywords: ['다음주'] },
+  ], new Date('2026-08-27T03:00:00Z'));
+  assert.equal(result.count, 3);
+  assert.deepEqual([...result.keywords], ['신용경색', '환율']);
+});
+
 test('상관계수 계산은 완전한 양·음의 관계를 보존한다', () => {
   const { calculateCorrelation } = dashboard.window.MacroWatchDashboard.utils;
   assert.equal(calculateCorrelation([[1, 2], [2, 4], [3, 6]]), 1);
