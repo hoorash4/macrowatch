@@ -14,11 +14,14 @@ type Source = { meetingDate: string; sourceUrl: string; isEmergency: boolean };
 type EventRow = {
   central_bank: string; meeting_date: string; action: Action | null; primary_reason: Reason | null;
   analysis_status: string; policy_segment: number | null; segment_sequence: number | null;
+  target_range_lower?: number | null; target_range_upper?: number | null;
   is_emergency?: boolean; change_bps?: number | null;
 };
 
 const FED_BASE = "https://www.federalreserve.gov";
 const SCORE_PROFILE_VERSION = "fed-policy-v1";
+const REASON_CONFIDENCE_THRESHOLD = 0.55;
+const UNCERTAIN_CONFIDENCE_MAX = 0.549;
 
 // Positive values raise the later MSI stress contribution.  The event impulse
 // is attenuated by the number of consecutive decisions in the same regime.
@@ -115,7 +118,7 @@ async function analyzeStatement(statement: string, meetingDate: string, previous
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   const input = {
     meeting_metadata: { central_bank: "fed", meeting_date: meetingDate, source: "Federal Reserve official FOMC statement" },
-    previous_policy_context: previous ? { meeting_date: previous.meeting_date, action: previous.action, primary_reason: previous.primary_reason, policy_segment: previous.policy_segment, segment_sequence: previous.segment_sequence } : null,
+    previous_policy_context: previous ? { meeting_date: previous.meeting_date, action: previous.action, target_range_lower: previous.target_range_lower, target_range_upper: previous.target_range_upper, primary_reason: previous.primary_reason, policy_segment: previous.policy_segment, segment_sequence: previous.segment_sequence } : null,
     fomc_statement: statement,
   };
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -127,6 +130,46 @@ async function analyzeStatement(statement: string, meetingDate: string, previous
   const output = typeof payload.output_text === "string" ? payload.output_text : payload.output?.flatMap((entry: { content?: Array<{ type?: string; text?: string }> }) => entry.content || []).find((entry: { type?: string }) => entry.type === "output_text")?.text;
   if (typeof output !== "string") throw new Error("OpenAI FOMC 응답에 output_text가 없습니다.");
   return JSON.parse(output) as Analysis;
+}
+
+// 금리 변동폭은 가능한 경우 현재·직전 목표금리 범위의 동일한 이동폭으로 계산한다.
+// 범위 체계 전환처럼 상·하단 이동폭이 다르면 직접 비교할 수 없으므로, 성명문을
+// 바탕으로 AI가 추출한 값만 방향을 정규화해 사용한다. 동결은 항상 0bp다.
+function normalizedChangeBps(current: Analysis["decision"], previous: EventRow | null) {
+  if (current.action === "hold") return 0;
+  const currentLower = current.target_range_lower;
+  const currentUpper = current.target_range_upper;
+  const previousLower = previous?.target_range_lower;
+  const previousUpper = previous?.target_range_upper;
+  const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+  if (isFiniteNumber(currentLower) && isFiniteNumber(currentUpper) && isFiniteNumber(previousLower) && isFiniteNumber(previousUpper)) {
+    const lowerChange = (currentLower - previousLower) * 100;
+    const upperChange = (currentUpper - previousUpper) * 100;
+    if (Math.abs(lowerChange - upperChange) < 0.01) return Math.round((lowerChange + upperChange) / 2);
+  }
+  if (Number.isInteger(current.change_bps) && current.change_bps !== 0) {
+    const magnitude = Math.abs(current.change_bps!);
+    return current.action === "hike" ? magnitude : -magnitude;
+  }
+  return null;
+}
+
+// 프롬프트 규칙을 저장 직전에도 보장해 낮은 신뢰도의 확정 분류와
+// uncertain인데 높은 신뢰도를 갖는 모순이 DB에 들어가지 않게 한다.
+function normalizeAnalysis(analysis: Analysis, previous: EventRow | null): Analysis {
+  let primaryReason = analysis.analysis.primary_reason;
+  let reasonConfidence = analysis.analysis.reason_confidence;
+  if (reasonConfidence < REASON_CONFIDENCE_THRESHOLD) primaryReason = "uncertain";
+  if (primaryReason === "uncertain") reasonConfidence = Math.min(reasonConfidence, UNCERTAIN_CONFIDENCE_MAX);
+  return {
+    decision: { ...analysis.decision, change_bps: normalizedChangeBps(analysis.decision, previous) },
+    analysis: {
+      ...analysis.analysis,
+      primary_reason: primaryReason,
+      reason_confidence: reasonConfidence,
+      transition_assessment: previous ? analysis.analysis.transition_assessment : "uncertain",
+    },
+  };
 }
 
 function regimeKey(row: Pick<EventRow, "action" | "primary_reason">) { return row.action && row.primary_reason ? `${row.action}:${row.primary_reason}` : null; }
@@ -179,9 +222,10 @@ Deno.serve(async (request) => {
       }
       processed += 1;
       try {
-        const { data: previousRows, error: previousError } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,primary_reason,analysis_status,policy_segment,segment_sequence").eq("central_bank", "fed").eq("analysis_status", "completed").lt("meeting_date", source.meetingDate).order("meeting_date", { ascending: false }).limit(1);
+        const { data: previousRows, error: previousError } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,target_range_lower,target_range_upper,primary_reason,analysis_status,policy_segment,segment_sequence").eq("central_bank", "fed").eq("analysis_status", "completed").lt("meeting_date", source.meetingDate).order("meeting_date", { ascending: false }).limit(1);
         if (previousError) throw previousError;
-        const analysis = await analyzeStatement(statement, source.meetingDate, previousRows?.[0] as EventRow || null);
+        const previous = previousRows?.[0] as EventRow || null;
+        const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous), previous);
         const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, analyzed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() };
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert(row, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;

@@ -114,6 +114,21 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Promise.allSettled", pipeline)
         self.assertIn("errors: results.flatMap", pipeline)
 
+    def test_fomc_prompt_has_stability_boundaries(self) -> None:
+        prompt = (ROOT / "supabase/prompts/fomc-policy-v0.2.txt").read_text(encoding="utf-8")
+        self.assertIn("그 강세가 정책 정상화·긴축 유지·추가 긴축의 실제 배경", prompt)
+        self.assertIn("직전 정책 배경이 제공되지 않은 경우 not_confirmed가 아니라 uncertain", prompt)
+        self.assertIn("reason_confidence가 0.55 미만이면 primary_reason=uncertain", prompt)
+        self.assertIn("외부 입력이 성명문과 충돌하면 성명문을 우선", prompt)
+
+    def test_fomc_pipeline_normalizes_ai_output_before_storage(self) -> None:
+        pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
+        self.assertIn("const REASON_CONFIDENCE_THRESHOLD = 0.55", pipeline)
+        self.assertIn("function normalizedChangeBps", pipeline)
+        self.assertIn("const isFiniteNumber = (value: unknown): value is number", pipeline)
+        self.assertIn("target_range_lower,target_range_upper,primary_reason", pipeline)
+        self.assertIn("normalizeAnalysis(await analyzeStatement", pipeline)
+
 
 class EmergingIndexTests(unittest.TestCase):
     def test_index_uses_documented_weighted_components(self) -> None:
