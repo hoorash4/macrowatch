@@ -108,11 +108,7 @@ function validateSectorEtf(body: Record<string, unknown>) {
 }
 
 function validateExtremeNewsRule(body: Record<string, unknown>) {
-  const signal = String(body?.signal || "");
-  if (signal !== "critical_negative" && signal !== "critical_positive") {
-    throw new Error("신호 유형은 치명적 악재 또는 결정적 호재여야 합니다.");
-  }
-  return { signal, phrase: requiredText(body?.phrase, "기준 문장", 300), is_active: body?.is_active !== false };
+  return { signal: "decisive", phrase: requiredText(body?.phrase, "기준 문장", 300), is_active: body?.is_active !== false };
 }
 
 function kstTimeToCron(time: string) {

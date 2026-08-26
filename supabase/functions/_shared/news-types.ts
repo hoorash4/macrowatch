@@ -1,5 +1,5 @@
 export type SourceName = "yonhap" | "maekyung" | "financial_news";
-export type ExtremeSignal = "critical_negative" | "critical_positive" | null;
+export type ExtremeSignal = "decisive" | null;
 
 export type ExtremeNewsRule = {
   id: string;

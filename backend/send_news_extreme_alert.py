@@ -66,24 +66,17 @@ def send_kakao_message(access_token: str, message: str) -> None:
     response.raise_for_status()
 
 
-def message_for(negative_count: int, positive_count: int) -> str | None:
-    if negative_count and positive_count:
-        return "[MacroWatch] 오늘 치명적 악재와 결정적 호재가 감지되었습니다."
-    if negative_count:
-        return "[MacroWatch] 오늘 치명적 악재가 감지되었습니다."
-    if positive_count:
-        return "[MacroWatch] 오늘 결정적 호재가 감지되었습니다."
-    return None
+def message_for(decisive_count: int) -> str | None:
+    return "[MacroWatch] 오늘 결정적 뉴스가 감지되었습니다." if decisive_count else None
 
 
 def main() -> int:
     db = SupabaseRest()
     article_date = datetime.now(KST).date().isoformat()
-    rows = db.request("GET", "news_daily_article_sentiment", params={"select": "critical_negative_count,critical_positive_count", "article_date": f"eq.{article_date}"}) or []
+    rows = db.request("GET", "news_daily_article_sentiment", params={"select": "decisive_news_count", "article_date": f"eq.{article_date}"}) or []
     row = rows[0] if rows else {}
-    negative_count = int(row.get("critical_negative_count") or 0)
-    positive_count = int(row.get("critical_positive_count") or 0)
-    message = message_for(negative_count, positive_count)
+    decisive_count = int(row.get("decisive_news_count") or 0)
+    message = message_for(decisive_count)
     if not message:
         print(f"No extreme news signal for {article_date}.")
         return 0
@@ -93,7 +86,7 @@ def main() -> int:
         print(f"Extreme news alert already sent for {article_date}.")
         return 0
 
-    payload = {"article_date": article_date, "critical_negative_count": negative_count, "critical_positive_count": positive_count, "status": "failed", "error_message": None, "sent_at": None, "updated_at": datetime.now(timezone.utc).isoformat()}
+    payload = {"article_date": article_date, "decisive_news_count": decisive_count, "status": "failed", "error_message": None, "sent_at": None, "updated_at": datetime.now(timezone.utc).isoformat()}
     try:
         send_kakao_message(refresh_kakao_access_token(), message)
         payload.update({"status": "sent", "sent_at": datetime.now(timezone.utc).isoformat()})

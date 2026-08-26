@@ -224,23 +224,19 @@
     }));
   }
 
-  function extremeSignalLabel(signal) {
-    return signal === 'critical_negative' ? '치명적 악재' : '결정적 호재';
-  }
-
   function renderExtremeNewsRules(items) {
     const list = document.getElementById('extreme-news-rule-list');
     if (!items.length) {
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 기준이 없습니다.</p>';
       return;
     }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0 ${item.is_active ? '' : 'opacity-50'}"><div class="grid grid-cols-1 gap-2 md:grid-cols-[150px_1fr_auto_auto]"><select data-extreme-field="signal" data-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><option value="critical_negative" ${item.signal === 'critical_negative' ? 'selected' : ''}>치명적 악재</option><option value="critical_positive" ${item.signal === 'critical_positive' ? 'selected' : ''}>결정적 호재</option></select><input data-extreme-field="phrase" data-extreme-id="${escapeHtml(item.id)}" maxlength="300" value="${escapeHtml(item.phrase)}" aria-label="${escapeHtml(extremeSignalLabel(item.signal))} 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><label class="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-2 text-[11px] text-slate-300"><input data-extreme-field="is_active" data-extreme-id="${escapeHtml(item.id)}" type="checkbox" ${item.is_active ? 'checked' : ''}>활성</label><div class="flex gap-1"><button data-save-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button>${item.is_active ? `<button data-retire-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-amber-700/70 px-2 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-950/50">비활성화</button>` : ''}</div></div></article>`).join('');
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0 ${item.is_active ? '' : 'opacity-50'}"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_auto]"><input data-extreme-field="phrase" data-extreme-id="${escapeHtml(item.id)}" maxlength="300" value="${escapeHtml(item.phrase)}" aria-label="결정적 뉴스 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><label class="flex items-center justify-center gap-1 rounded-lg border border-slate-700 px-2 text-[11px] text-slate-300"><input data-extreme-field="is_active" data-extreme-id="${escapeHtml(item.id)}" type="checkbox" ${item.is_active ? 'checked' : ''}>활성</label><div class="flex gap-1"><button data-save-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button>${item.is_active ? `<button data-retire-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-amber-700/70 px-2 py-1.5 text-xs font-bold text-amber-300 hover:bg-violet-950/50">비활성화</button>` : ''}</div></div></article>`).join('');
     list.querySelectorAll('[data-save-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
       const id = button.dataset.saveExtremeId;
       const value = (field) => list.querySelector(`[data-extreme-id="${id}"][data-extreme-field="${field}"]`);
       button.disabled = true;
       try {
-        await invokeAdmin('save_extreme_news_rule', { id, signal: value('signal').value, phrase: value('phrase').value, is_active: value('is_active').checked });
+        await invokeAdmin('save_extreme_news_rule', { id, phrase: value('phrase').value, is_active: value('is_active').checked });
         await loadExtremeNewsRules();
       } catch (error) { showNotice('기준 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
     }));
@@ -264,7 +260,6 @@
     submit.disabled = true;
     try {
       await invokeAdmin('save_extreme_news_rule', {
-        signal: document.getElementById('extreme-news-signal-input').value,
         phrase: document.getElementById('extreme-news-phrase-input').value,
         is_active: true,
       });
