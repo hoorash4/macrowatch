@@ -191,6 +191,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('cat "$response" >&2', workflow)
         self.assertLess(workflow.index('cat "$response" >&2'), workflow.index('news-pipeline request failed with HTTP'))
 
+    def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
+        initial = (ROOT / "supabase/migrations/20260824_article_sentiment_pipeline.sql").read_text(encoding="utf-8")
+        upgrade = (ROOT / "supabase/migrations/20260827_allow_financial_news_source.sql").read_text(encoding="utf-8")
+        for migration in (initial, upgrade):
+            self.assertIn("'financial_news'", migration)
+        self.assertIn("drop constraint if exists news_article_sentiments_source_name_check", upgrade)
+        self.assertIn("add constraint news_article_sentiments_source_name_check", upgrade)
+
 
 class EmergingIndexTests(unittest.TestCase):
     def test_index_uses_documented_weighted_components(self) -> None:

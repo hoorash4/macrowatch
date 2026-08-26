@@ -1,7 +1,7 @@
 -- Article text is analyzed in memory only and is never saved to this database.
 create table if not exists public.news_article_sentiments (
   id uuid primary key default gen_random_uuid(), article_hash text not null unique,
-  source_name text not null check (source_name in ('yonhap', 'maekyung')),
+  source_name text not null check (source_name in ('yonhap', 'maekyung', 'financial_news')),
   published_at timestamptz not null, article_date date not null,
   ai_sentiment text not null check (ai_sentiment in ('positive', 'negative', 'neutral', 'uncertain')),
   derived_keywords text[] not null default '{}', uncertain_summary text,
