@@ -129,5 +129,7 @@ test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.match(styles, /--tracker-section-separation:\s*1\.25rem/);
   assert.match(styles, /--tracker-card-accent:\s*#8aa2b4/);
-  assert.match(styles, /\.dashboard-tracker-card\s*\{[\s\S]*?margin-top:var\(--tracker-section-separation\);[\s\S]*?border-top:3px solid var\(--tracker-card-accent\);[\s\S]*?background:var\(--tracker-card-background\);/);
+  assert.match(styles, /--tracker-card-border-width:\s*2px/);
+  assert.match(styles, /--tracker-card-border-top-width:\s*5px/);
+  assert.match(styles, /\.dashboard-tracker-card\s*\{[\s\S]*?margin-top:var\(--tracker-section-separation\);[\s\S]*?border:var\(--tracker-card-border-width\) solid var\(--tracker-card-accent\);[\s\S]*?border-top-width:var\(--tracker-card-border-top-width\);[\s\S]*?background:var\(--tracker-card-background\);/);
 });
