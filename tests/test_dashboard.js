@@ -96,6 +96,7 @@ test('HTML inline 이벤트가 사용하는 핸들러만 명시적으로 공개�
 
 test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공한다', () => {
   const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-chart.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(chart, />\$\{year\}<\/text>/);
   assert.match(chart, /data-policy-cursor-period/);
@@ -103,6 +104,9 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /년 \$\{String\(row\.meeting_date\)\.slice\(5, 7\)\}월/);
   assert.match(chart, /TEN_YEARS_MS/);
   assert.match(chart, /frame\.scrollLeft = frame\.scrollWidth - frame\.clientWidth/);
+  assert.match(chart, /macrowatch:dashboard-view-changed/);
+  assert.match(chart, /detail\?\.view !== 'policy'/);
+  assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);
   assert.match(chart, /\.select\('meeting_date,action,change_bps,policy_index,final_event_score'\)/);
   assert.match(html, /rounded-xl border border-slate-200 bg-slate-50 p-3[\s\S]*id="policy-signal-chart"/);
 });

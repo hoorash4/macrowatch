@@ -64,6 +64,8 @@ function initializeDashboardNavigation() {
       button.toggleAttribute('aria-current', active);
     });
     panels.forEach((panel) => panel.classList.toggle('dashboard-panel-hidden', panel.dataset.dashboardPanel !== selectedView));
+    // 숨겨진 상태에서 크기를 계산한 차트가 메뉴 표시 직후 위치를 보정할 수 있도록 알립니다.
+    window.dispatchEvent(new CustomEvent('macrowatch:dashboard-view-changed', { detail: { view: selectedView } }));
     if (updateHash) {
       window.scrollTo(0, 0);
       if (location.hash !== hashByView[selectedView]) location.hash = hashByView[selectedView];

@@ -6,6 +6,12 @@
   const PADDING = { top: 24, right: 22, bottom: 42, left: 22 };
   const TEN_YEARS_MS = 10 * 365.25 * 24 * 60 * 60 * 1000;
 
+  function scrollToLatest(frame) {
+    if (!frame) return;
+    // 메뉴가 실제로 표시된 다음 레이아웃 폭이 확정된 시점에 최신 회의로 이동합니다.
+    window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
+  }
+
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2
     : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
@@ -51,7 +57,7 @@
     const cursor = container.querySelector('[data-policy-cursor]');
     const cursorPeriod = container.querySelector('[data-policy-cursor-period]');
     const cursorAction = container.querySelector('[data-policy-cursor-action]');
-    frame.scrollLeft = frame.scrollWidth - frame.clientWidth;
+    scrollToLatest(frame);
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
       const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;
@@ -72,6 +78,11 @@
       cursorAction.classList.remove('is-visible');
     });
   }
+
+  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
+    if (detail?.view !== 'policy') return;
+    scrollToLatest(document.querySelector('#policy-signal-chart .policy-chart-frame'));
+  });
 
   async function load({ supabaseClient }) {
     const container = document.getElementById('policy-signal-chart');
