@@ -1011,12 +1011,12 @@ async function loadCreditStressComponentsDashboard() {
 // 서버가 계산한 주차별 상위 순위만 읽습니다. 가격 원본과 순위 산식은 Edge Function에 남겨
 // 브라우저별 시간대나 부동소수점 차이로 순위가 달라지지 않도록 합니다.
 function sectorRankChange(row) {
-  if (row.is_new) return '<small class="text-teal-500">NEW</small>';
+  if (row.is_new) return '<small class="sector-flow-change-new text-teal-500">NEW</small>';
   if (!row.previous_rank) return '';
   const change = Number(row.previous_rank) - Number(row.rank);
-  if (change > 0) return `<small class="text-red-500">▲${change}</small>`;
-  if (change < 0) return `<small class="text-blue-500">▼${Math.abs(change)}</small>`;
-  return '<small class="text-slate-500">-</small>';
+  if (change > 0) return `<small class="sector-flow-change-move text-red-500">▲${change}</small>`;
+  if (change < 0) return `<small class="sector-flow-change-move text-blue-500">▼${Math.abs(change)}</small>`;
+  return '<small class="sector-flow-change-flat text-slate-500">-</small>';
 }
 
 function sectorReturn(value) {
@@ -1069,7 +1069,7 @@ function renderSectorFlow(rows) {
     }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
-  if (note) note.textContent = '누적은 최근 4주 수익률 · 매 영업일 시가·종가 반영';
+  if (note) note.textContent = '누적은 각 주차를 끝점으로 한 4주 누적수익률 | 매 영업일 시가·종가 반영';
 }
 
 async function loadSectorFlowDashboard() {

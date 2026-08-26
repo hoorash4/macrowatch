@@ -935,8 +935,16 @@ body:has(#app-shell:not(.hidden)) {
   font-weight:800;
   white-space:nowrap;
 }
-.sector-flow-change small {
+.sector-flow-change-new {
   font-size:.42rem;
+  line-height:1;
+}
+.sector-flow-change-move {
+  font-size:.78rem;
+  line-height:1;
+}
+.sector-flow-change-flat {
+  font-size:.65rem;
   line-height:1;
 }
 .sector-flow-week li strong {
