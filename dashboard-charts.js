@@ -1069,7 +1069,7 @@ function renderSectorFlow(rows) {
     }).join('') : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
-  if (note) note.textContent = '누적은 각 주차를 끝점으로 한 4주 누적수익률 | 매 영업일 시가·종가 반영';
+  if (note) note.textContent = '누적은 해당 주까지 4주간 수익률 | 매 영업일 시가·종가 반영';
 }
 
 async function loadSectorFlowDashboard() {

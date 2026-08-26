@@ -944,7 +944,7 @@ body:has(#app-shell:not(.hidden)) {
   line-height:1;
 }
 .sector-flow-change-flat {
-  font-size:.55rem;
+  font-size:.65rem;
   line-height:1;
 }
 .sector-flow-week li strong {
