@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 20
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_PROJECT_REF: xhghpywvthjuvespzdul
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +29,6 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-
-      - name: Apply database migrations
-        run: supabase db push --db-url "$SUPABASE_DB_URL" --include-all
 
       - name: Deploy Edge Functions
         run: |
