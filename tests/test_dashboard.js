@@ -86,6 +86,8 @@ test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나�
   assert.match(styles, /\.decisive-news-count-card\s*\{[\s\S]*?align-items:center;[\s\S]*?text-align:center;/);
   assert.match(styles, /\.decisive-news-ai-note\s*\{[\s\S]*?display:block;/);
   assert.match(styles, /\.decisive-news-keyword\.is-example\s*\{[\s\S]*?border-color:rgba\(203,213,225,\.52\)/);
+  assert.match(html, /decisive-news-keyword is-example">#금융기관 부실/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8'), /">#\$\{escapeHtml\(keyword\)\}<\/span>/);
 });
 
 test('상관계수 계산은 완전한 양·음의 관계를 보존한다', () => {

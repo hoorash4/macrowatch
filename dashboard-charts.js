@@ -53,7 +53,7 @@ function renderDecisiveNewsKeywords(container, values) {
   const isExample = values.length === 0;
   const keywords = isExample ? DECISIVE_NEWS_KEYWORD_EXAMPLES : values;
   const label = isExample ? '<span class="decisive-news-keyword-label">표시 예시</span>' : '';
-  container.innerHTML = `${label}${keywords.map((keyword) => `<span class="decisive-news-keyword${isExample ? ' is-example' : ''}">${escapeHtml(keyword)}</span>`).join('')}`;
+  container.innerHTML = `${label}${keywords.map((keyword) => `<span class="decisive-news-keyword${isExample ? ' is-example' : ''}">#${escapeHtml(keyword)}</span>`).join('')}`;
 }
 
 function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
