@@ -284,7 +284,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /<span>대표종목<\/span><span>주간 수익률<\/span><span>4주 누적 수익률<\/span><span>연속 랭킹 유지<\/span>/);
   assert.match(charts, /function sectorTopHolding\(etf\)/);
   assert.match(charts, /isLatestWeek \? '주차' : '주'/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) minmax\(7rem,1fr\) 7rem 8rem 6rem/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) minmax\(7rem,1fr\) repeat\(3,7rem\)/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns \{ display:contents; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(-n\+2\) \{ text-align:center; \}/);
   assert.match(charts, /isLatestWeek \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}` : `\$\{streak\}\$\{returns\}`/);
@@ -306,8 +306,9 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*color:#7890a2;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{\s*justify-self:center;\s*box-sizing:border-box;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(4\)::before \{ display:none; \}/);
-  assert.match(styles, /sector-flow-week-current > ol > li::after \{[\s\S]*right:6\.325rem;[\s\S]*border-left:1px dashed rgba\(47,105,154,\.2\)/);
+  assert.match(styles, /sector-flow-week-current > ol > li::after \{[\s\S]*right:7\.325rem;[\s\S]*border-left:1px dashed rgba\(47,105,154,\.2\)/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:first-child em \{[\s\S]*border-radius:\.4rem;[\s\S]*text-align:center;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:first-child em \{[\s\S]*min-width:4rem;[\s\S]*padding:\.16rem \.32rem;/);
   assert.match(styles, /span:first-child em\.sector-return-positive \{[\s\S]*background:rgba\(213,72,63,\.08\)/);
   assert.match(styles, /span:first-child em\.sector-return-negative \{[\s\S]*background:rgba\(40,112,186,\.08\)/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) header > strong \{ font-size:\.88rem; \}/);
