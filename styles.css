@@ -1067,10 +1067,9 @@ body:has(#app-shell:not(.hidden)) {
   color:#ad5218;
 }
 .sector-flow-week-current > ol {
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  column-gap:1.3rem;
+  grid-template-columns:1fr;
 }
-.sector-flow-week-current > ol > li:nth-last-child(-n+2) { border-bottom:0; }
+.sector-flow-week-current > ol > li:last-child { border-bottom:0; }
 .sector-flow-note {
   color:var(--color-text-description);
 }
@@ -1247,8 +1246,6 @@ body:has(#app-shell:not(.hidden)) {
     padding:0 .35rem;
   }
   .sector-flow-history { grid-template-columns:repeat(4,12rem); }
-  .sector-flow-week-current > ol { grid-template-columns:1fr; }
-  .sector-flow-week-current > ol > li:nth-last-child(2) { border-bottom:1px solid rgba(47,105,154,.16); }
 }
 @keyframes dashboardSpin {
   to {
