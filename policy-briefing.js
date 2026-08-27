@@ -12,7 +12,7 @@
     const [year, month, day] = String(row.meeting_date).split('-').map(Number);
     return {
       date: `${year}년 ${month}월 ${day}일`,
-      label: `${row.is_emergency ? '긴급' : '정례'} FOMC 회의 결과`,
+      label: `[${row.is_emergency ? '긴급' : '정례'}] FOMC 회의 결과`,
     };
   }
 
