@@ -80,7 +80,7 @@ jobs:
               --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
               --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
               --header "Content-Type: application/json" \
-              --data '{"bank":"fed","mode":"recent","years":2,"limit":4}')
+              --data '{"bank":"fed","mode":"recent","years":2,"limit":1}')
             echo "$response"
             [ "$(jq -r '.has_more // false' <<< "$response")" = "true" ] || break
           done
