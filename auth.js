@@ -152,6 +152,21 @@
     }
   }
 
+  async function loadProfileIdentity() {
+    elements.profileUsername.textContent = '확인 중';
+    try {
+      const { data: sessionData } = await authClient.auth.getSession();
+      const userId = sessionData.session?.user?.id;
+      if (!userId) throw new Error('로그인이 필요합니다.');
+      const { data, error } = await authClient.from('user_accounts')
+        .select('username').eq('user_id', userId).maybeSingle();
+      if (error) throw error;
+      elements.profileUsername.textContent = data?.username || '아이디 미등록 · 카카오 전용 계정';
+    } catch {
+      elements.profileUsername.textContent = '아이디를 확인하지 못했습니다.';
+    }
+  }
+
   async function initialize() {
     elements.authScreen = document.getElementById('auth-screen');
     elements.appShell = document.getElementById('app-shell');
@@ -161,6 +176,7 @@
     elements.spinner = document.getElementById('auth-spinner');
     elements.message = document.getElementById('auth-message');
     elements.profileModal = document.getElementById('profile-modal');
+    elements.profileUsername = document.getElementById('profile-username');
     elements.kakaoStatus = document.getElementById('kakao-connection-status');
     elements.kakaoBadge = document.getElementById('kakao-status-badge');
     elements.kakaoConnectButton = document.getElementById('kakao-connect-button');
@@ -209,7 +225,7 @@
     });
     document.getElementById('profile-button')?.addEventListener('click', async () => {
       elements.profileModal.classList.remove('hidden');
-      await loadKakaoStatus();
+      await Promise.all([loadProfileIdentity(), loadKakaoStatus()]);
     });
     document.getElementById('profile-close-button')?.addEventListener('click', () => {
       elements.profileModal.classList.add('hidden');

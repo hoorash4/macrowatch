@@ -105,6 +105,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("이미 사용 중인 아이디입니다", admin)
         self.assertIn("const form = event.currentTarget", admin_ui)
         self.assertIn("member-row-grid", admin_ui)
+        self.assertIn("profile-username", auth)
 
     def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")
