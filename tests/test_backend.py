@@ -98,6 +98,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("signInWithPassword", auth)
         self.assertIn('action === "create_member"', admin)
         self.assertNotIn("password text", migration.lower())
+        self.assertIn("requires_reauthentication", admin)
+        admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
+        self.assertIn("카카오 전용", admin_ui)
 
     def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")

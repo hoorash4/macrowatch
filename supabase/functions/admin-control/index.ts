@@ -301,18 +301,26 @@ export default {
         const memberId = String(body?.user_id || "");
         if (!memberId) return json({ error: "회원 식별자가 필요합니다." }, 400, origin);
         const username = validateUsername(body?.username);
+        const passwordChanged = Boolean(String(body?.password || ""));
         const authValues: Record<string, unknown> = {
           email: internalEmail(username), email_confirm: true,
           user_metadata: { auth_provider: "password", username },
         };
-        if (String(body?.password || "")) authValues.password = validatePassword(body.password);
+        if (passwordChanged) authValues.password = validatePassword(body.password);
         const { error: authError } = await admin.auth.admin.updateUserById(memberId, authValues);
         if (authError) throw authError;
         const { error } = await admin.from("user_accounts").update({
-          username, is_admin: body?.is_admin === true, updated_at: new Date().toISOString(),
+          username,
+          // 현재 관리자가 실수로 자신의 권한을 제거해 관리 화면에서 잠기는 것을 막는다.
+          is_admin: memberId === user.id ? true : body?.is_admin === true,
+          updated_at: new Date().toISOString(),
         }).eq("user_id", memberId);
         if (error) throw error;
-        return json({ updated: true }, 200, origin);
+        return json({
+          updated: true,
+          // 본인 비밀번호 변경은 기존 세션을 무효화하므로 클라이언트가 목록을 재요청하면 안 된다.
+          requires_reauthentication: memberId === user.id && passwordChanged,
+        }, 200, origin);
       }
 
       if (action === "delete_member") {

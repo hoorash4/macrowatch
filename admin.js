@@ -100,13 +100,19 @@
 
   function renderMembers(items) {
     const list = document.getElementById('member-list');
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto_auto]"><input name="username" value="${escapeHtml(item.username || '')}" required minlength="4" maxlength="32" autocomplete="off" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><input name="password" type="password" autocomplete="new-password" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><label class="flex items-center gap-2 px-2 text-xs"><input name="is_admin" type="checkbox" ${item.is_admin ? 'checked' : ''} class="accent-blue-500">관리자</label><span class="self-center text-xs ${item.kakao_connected ? 'text-yellow-400' : 'text-slate-600'}">카카오 ${item.kakao_connected ? '연결' : '미연결'}</span><div class="flex gap-1"><button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button><button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${item.is_current ? 'hidden' : ''}">탈퇴</button></div></form><p class="mt-1 text-[10px] text-slate-600">가입 ${escapeHtml(formatTime(item.created_at))}</p></article>`).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto_auto]"><input name="username" value="${escapeHtml(item.username || '')}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${item.username ? '아이디' : '아이디 없음 (카카오 전용)'}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm placeholder:text-yellow-600"><input name="password" type="password" autocomplete="new-password" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><label class="flex items-center gap-2 px-2 text-xs"><input name="is_admin" type="checkbox" ${item.is_admin ? 'checked' : ''} ${item.is_current ? 'disabled' : ''} class="accent-blue-500 disabled:opacity-60">관리자</label><span class="self-center rounded-full px-2 py-1 text-center text-xs ${item.kakao_connected ? 'bg-yellow-950/50 text-yellow-400' : 'text-slate-600'}">${item.kakao_connected ? (item.username ? '카카오 연결' : '카카오 전용') : '카카오 미연결'}</span><div class="flex gap-1"><button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button><button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${item.is_current ? 'hidden' : ''}">탈퇴</button></div></form><p class="mt-1 text-[10px] text-slate-600">가입 ${escapeHtml(formatTime(item.created_at))}${item.username ? '' : ' · ID/PW 미등록'}</p></article>`).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
     list.querySelectorAll('[data-member-id]').forEach((form) => {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const values = new FormData(form);
         try {
-          await invokeAdmin('update_member', { user_id: form.dataset.memberId, username: values.get('username'), password: values.get('password'), is_admin: values.get('is_admin') === 'on' });
+          const result = await invokeAdmin('update_member', { user_id: form.dataset.memberId, username: values.get('username'), password: values.get('password'), is_admin: values.get('is_admin') === 'on' });
+          if (result.requires_reauthentication) {
+            window.alert('비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인해 주세요.');
+            await db.auth.signOut({ scope: 'local' });
+            window.location.replace('./');
+            return;
+          }
           showNotice('회원 저장 완료', '회원 정보를 저장했습니다.'); await loadMembers();
         } catch (error) { showNotice('회원 저장 실패', error.message || '저장하지 못했습니다.', true); }
       });
