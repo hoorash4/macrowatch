@@ -201,6 +201,7 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
   assert.match(chart, /selectedYears === 'max'/);
   assert.match(chart, /updateVisibleScale/);
   assert.match(chart, /fiveDayAverage/);
+  assert.match(chart, /em-capacity-line--provisional[^>]*style="stroke:#6b7280"/);
   assert.match(pipeline, /HISTORY_YEARS = 3/);
   assert.match(pipeline, /"DELETE", "em_capital_capacity_daily"/);
 });
