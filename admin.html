@@ -11,9 +11,12 @@
   <style>
     /* 회원 상태 문구 길이와 관계없이 모든 행의 입력칸·동작 열을 같은 위치에 둔다. */
     @media (min-width: 768px) {
-      .member-row-grid {
+      form.member-row-grid {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 5rem 7rem 7rem;
       }
+    }
+    .member-row-grid > input {
+      min-width: 0;
     }
   </style>
 </head>
@@ -274,7 +277,7 @@
   <script src="config.js?v=1"></script>
   <script src="frontend-core.js?v=1"></script>
   <script src="autocomplete-off.js?v=1"></script>
-  <script src="admin.js?v=19"></script>
+  <script src="admin.js?v=20"></script>
   <script src="admin-policy-review.js?v=9"></script>
 </body>
 </html>

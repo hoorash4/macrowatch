@@ -100,11 +100,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("password text", migration.lower())
         self.assertIn("requires_reauthentication", admin)
         admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
         self.assertIn("카카오 전용", admin_ui)
         self.assertIn("data-admin-credential", admin_ui)
         self.assertIn("이미 사용 중인 아이디입니다", admin)
         self.assertIn("const form = event.currentTarget", admin_ui)
         self.assertIn("member-row-grid", admin_ui)
+        self.assertNotIn("md:grid-cols-[1fr_1fr_auto_auto_auto]", admin_ui)
+        self.assertIn("form.member-row-grid", admin_html)
         self.assertIn("profile-username", auth)
 
     def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
