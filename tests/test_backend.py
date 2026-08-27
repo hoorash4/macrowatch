@@ -111,6 +111,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("profile-username", auth)
 
     def test_collapsed_admin_lists_show_only_actionable_review_counts(self):
+        admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
         admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
         policy_ui = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
         self.assertIn("data-collapsible-count", admin_ui)
@@ -121,6 +122,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("setListAttentionCount('member-list'", admin_ui)
         self.assertNotIn("setListAttentionCount('sector-etf-list'", admin_ui)
         self.assertNotIn("setListAttentionCount('extreme-news-rule-list'", admin_ui)
+        self.assertLess(admin_html.index('id="uncertain-news-list"'), admin_html.index('id="policy-review-list"'))
 
     def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")
