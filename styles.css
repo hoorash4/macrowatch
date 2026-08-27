@@ -940,6 +940,10 @@ body:has(#app-shell:not(.hidden)) {
 /* 시장금리 기반 정책 기대는 0선을 경계로 인상·인하 방향을 색으로 분리합니다. */
 .policy-expectation-chart-frame { width:100%; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
 .policy-expectation-chart-svg { display:block; min-width:100%; height:320px; }
+.policy-expectation-range-controls { display:flex; justify-content:flex-end; gap:.3rem; padding:.1rem .15rem .35rem; }
+.policy-expectation-range-controls button { min-width:2.5rem; padding:.28rem .5rem; border:1px solid #cbd5e1; border-radius:.45rem; background:#fff; color:#64748b; font-size:.72rem; font-weight:700; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
+.policy-expectation-range-controls button:hover,.policy-expectation-range-controls button:focus-visible { border-color:#8293a8; color:#334155; }
+.policy-expectation-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
 .policy-expectation-year-guide { stroke:#e2e8f0; stroke-width:1; }
 .policy-expectation-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-expectation-zero-line { stroke:#64748b; stroke-width:1.2; }

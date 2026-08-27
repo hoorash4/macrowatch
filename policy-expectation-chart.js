@@ -4,16 +4,19 @@
   const HEIGHT = 320;
   const MIN_VIEWPORT_WIDTH = 680;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 24 };
-  const FIVE_YEARS_MS = 5 * 365.25 * 24 * 60 * 60 * 1000;
   const DATABASE_PAGE_SIZE = 1000;
+  const state = { rows: [], selectedYears: 5 };
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2
     : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
 
-  function scrollToLatest(frame) {
-    if (!frame) return;
-    window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
+  function rowsForSelectedRange(rows, selectedYears) {
+    if (selectedYears === 'max' || !rows.length) return rows;
+    const latestDate = new Date(`${rows[rows.length - 1].observation_date}T00:00:00Z`);
+    const cutoff = new Date(latestDate);
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - Number(selectedYears));
+    return rows.filter((row) => Date.parse(`${row.observation_date}T00:00:00Z`) >= cutoff.getTime());
   }
 
   function formatDate(period) {
@@ -27,8 +30,8 @@
     return `${numeric > 0 ? '+' : ''}${numeric.toFixed(1)}bp`;
   }
 
-  function render(container, rows) {
-    const datedRows = rows.map((row) => ({
+  function render(container, rows, selectedYears) {
+    const datedRows = rowsForSelectedRange(rows, selectedYears).map((row) => ({
       ...row,
       timestamp: Date.parse(`${row.observation_date}T00:00:00Z`),
       value: Number(row.expectation_spread_bps),
@@ -42,7 +45,7 @@
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, container.clientWidth || MIN_VIEWPORT_WIDTH);
-    const timelineWidth = Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / FIVE_YEARS_MS));
+    const timelineWidth = viewportWidth;
     const zeroY = scale(0, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
     const points = datedRows.map((row) => ({
       ...row,
@@ -77,7 +80,6 @@
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
     const cursorValue = container.querySelector('[data-policy-expectation-value]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
-    scrollToLatest(frame);
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
       const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;
@@ -113,17 +115,26 @@
     const container = document.getElementById('policy-expectation-chart');
     if (!container || !supabaseClient) return;
     try {
-      render(container, await fetchAllRows(supabaseClient));
+      state.rows = await fetchAllRows(supabaseClient);
+      render(container, state.rows, state.selectedYears);
+      const controls = document.querySelector('.policy-expectation-range-controls');
+      if (controls && controls.dataset.bound !== 'true') {
+        controls.dataset.bound = 'true';
+        controls.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-policy-expectation-range]');
+          if (!button) return;
+          state.selectedYears = button.dataset.policyExpectationRange === 'max'
+            ? 'max'
+            : Number(button.dataset.policyExpectationRange);
+          controls.querySelectorAll('[data-policy-expectation-range]').forEach((item) => item.classList.toggle('is-active', item === button));
+          render(container, state.rows, state.selectedYears);
+        });
+      }
     } catch (error) {
       console.error('Policy expectation chart load failed:', error);
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">정책금리 기대 스프레드를 불러오지 못했습니다.</div>';
     }
   }
-
-  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
-    if (detail?.view !== 'policy') return;
-    scrollToLatest(document.querySelector('#policy-expectation-chart .policy-expectation-chart-frame'));
-  });
 
   window.MacroWatchDashboard?.registerLoader(load);
 })();
