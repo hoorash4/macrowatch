@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=135">
+  <link rel="stylesheet" href="styles.css?v=136">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -346,6 +346,13 @@
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="analysis-chart-range-controls" data-policy-chart-ranges aria-label="통화정책 시그널 그래프 조회 기간">
+            <button type="button" data-policy-chart-range="1">1년</button>
+            <button type="button" data-policy-chart-range="2" class="is-active">2년</button>
+            <button type="button" data-policy-chart-range="5">5년</button>
+            <button type="button" data-policy-chart-range="10">10년</button>
+            <button type="button" data-policy-chart-range="max">MAX</button>
+          </div>
           <div id="policy-signal-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">FOMC 정책 점수를 불러오는 중입니다.</div></div>
         </div>
       </div>
@@ -364,10 +371,10 @@
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="policy-expectation-range-controls" aria-label="정책금리 기대 그래프 조회 기간">
+          <div class="analysis-chart-range-controls policy-expectation-range-controls" aria-label="정책금리 기대 그래프 조회 기간">
             <button type="button" data-policy-expectation-range="1">1년</button>
-            <button type="button" data-policy-expectation-range="2">2년</button>
-            <button type="button" data-policy-expectation-range="5" class="is-active">5년</button>
+            <button type="button" data-policy-expectation-range="2" class="is-active">2년</button>
+            <button type="button" data-policy-expectation-range="5">5년</button>
             <button type="button" data-policy-expectation-range="10">10년</button>
             <button type="button" data-policy-expectation-range="max">MAX</button>
           </div>
@@ -750,8 +757,9 @@
   <script src="indicator-terms.js?v=3"></script>
   <script src="script.js?v=157"></script>
   <script src="dashboard-charts.js?v=30"></script>
-  <script src="policy-chart.js?v=6"></script>
-  <script src="policy-expectation-chart.js?v=10"></script>
+  <script src="analysis-chart-utils.js?v=1"></script>
+  <script src="policy-chart.js?v=7"></script>
+  <script src="policy-expectation-chart.js?v=11"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>

@@ -6,25 +6,20 @@
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
   const DATABASE_PAGE_SIZE = 1000;
-  const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
-  const SCROLL_HISTORY_YEARS = 10;
-  const state = { rows: [], selectedYears: 5 };
+  const state = { rows: [], selectedYears: 2 };
+  const chartUtils = window.MacroWatchAnalysisChart;
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2
     : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
 
   function rowsForTimeline(rows, selectedYears) {
-    if (selectedYears === 'max' || !rows.length) return rows;
-    const latestDate = new Date(`${rows[rows.length - 1].observation_date}T00:00:00Z`);
-    const cutoff = new Date(latestDate);
-    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - SCROLL_HISTORY_YEARS);
-    return rows.filter((row) => Date.parse(`${row.observation_date}T00:00:00Z`) >= cutoff.getTime());
+    return chartUtils.rowsForRecentHistory(rows, 'observation_date', selectedYears);
   }
 
   function scrollToLatest(frame) {
     if (!frame) return;
-    window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
+    chartUtils.scrollToLatest(frame);
   }
 
   function formatMonthDay(period) {
@@ -32,19 +27,12 @@
     return `${month}월 ${day}일`;
   }
 
-  function niceStep(value) {
-    const magnitude = 10 ** Math.floor(Math.log10(Math.max(value, 1)));
-    const normalized = value / magnitude;
-    const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-    return factor * magnitude;
-  }
-
   function verticalScale(points) {
     const maximumObservedValue = Math.max(5, ...points.flatMap((point) => [
       Math.abs(point.value),
       Number.isFinite(point.fiveDayAverage) ? Math.abs(point.fiveDayAverage) : 0,
     ])) * 1.05;
-    const tickStep = niceStep(maximumObservedValue / 2);
+    const tickStep = chartUtils.niceStep(maximumObservedValue / 2);
     return { tickStep, maximumAbsoluteValue: tickStep * 2 };
   }
 
@@ -73,9 +61,7 @@
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
-    const timelineWidth = selectedYears === 'max' || selectedYears === 10
-      ? viewportWidth
-      : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
+    const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
     const points = datedRows.map((row) => ({
       ...row,
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right),

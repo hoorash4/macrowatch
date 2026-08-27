@@ -914,9 +914,13 @@ body:has(#app-shell:not(.hidden)) {
   border-color:#64748b;
   background:#e2e8f0;
 }
+.policy-chart-layout { display:flex; width:100%; min-width:0; }
+.policy-chart-y-axis { width:46px; height:320px; flex:none; background:#f8fafc; }
 .policy-chart-frame {
   position:relative;
   min-height:20rem;
+  min-width:0;
+  flex:1;
   overflow-x:auto;
   overflow-y:hidden;
 }
@@ -926,6 +930,9 @@ body:has(#app-shell:not(.hidden)) {
   height:auto;
 }
 .policy-chart-axis { stroke:#cbd5e1; stroke-width:1; }
+.policy-chart-y-grid { stroke:#e2e8f0; stroke-width:1; }
+.policy-chart-y-tick { stroke:#94a3b8; stroke-width:1; }
+.policy-chart-y-label { fill:#64748b; font-size:9px; font-weight:650; }
 .policy-chart-year-guide { stroke:#e2e8f0; stroke-width:1; }
 .policy-chart-line { fill:none; stroke:#1d4ed8; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
 .policy-chart-point { fill:#1e40af; stroke:#fff; stroke-width:1.5; }
@@ -942,10 +949,10 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-y-axis { width:46px; height:320px; flex:none; background:#f8fafc; }
 .policy-expectation-chart-frame { min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
 .policy-expectation-chart-svg { display:block; min-width:100%; height:320px; }
-.policy-expectation-range-controls { display:flex; justify-content:flex-end; gap:.3rem; padding:.1rem .15rem .35rem; }
-.policy-expectation-range-controls button { min-width:2.5rem; padding:.28rem .5rem; border:1px solid #cbd5e1; border-radius:.45rem; background:#fff; color:#64748b; font-size:.72rem; font-weight:700; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
-.policy-expectation-range-controls button:hover,.policy-expectation-range-controls button:focus-visible { border-color:#8293a8; color:#334155; }
-.policy-expectation-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
+.analysis-chart-range-controls { display:flex; justify-content:flex-end; gap:.3rem; padding:.1rem .15rem .35rem; }
+.analysis-chart-range-controls button { min-width:2.5rem; padding:.28rem .5rem; border:1px solid #cbd5e1; border-radius:.45rem; background:#fff; color:#64748b; font-size:.72rem; font-weight:700; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
+.analysis-chart-range-controls button:hover,.analysis-chart-range-controls button:focus-visible { border-color:#8293a8; color:#334155; }
+.analysis-chart-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
 .policy-expectation-year-guide { stroke:#e2e8f0; stroke-width:1; }
 .policy-expectation-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-expectation-zero-label { fill:#64748b; font-size:9px; font-weight:700; }

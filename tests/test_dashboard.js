@@ -146,12 +146,15 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-chart.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(chart, />\$\{year\}<\/text>/);
+  assert.match(chart, />\$\{label\}<\/text>/);
   assert.match(chart, /data-policy-cursor-period/);
   assert.match(chart, /data-policy-cursor-action/);
   assert.match(chart, /년 \$\{String\(row\.meeting_date\)\.slice\(5, 7\)\}월/);
-  assert.match(chart, /TEN_YEARS_MS/);
-  assert.match(chart, /frame\.scrollLeft = frame\.scrollWidth - frame\.clientWidth/);
+  assert.match(chart, /selectedYears: 2/);
+  assert.match(chart, /rowsForRecentHistory/);
+  assert.match(chart, /timelineWidth/);
+  assert.match(chart, /visibleStart = frame\.scrollLeft/);
+  assert.match(chart, /policy-chart-y-axis/);
   assert.match(chart, /macrowatch:dashboard-view-changed/);
   assert.match(chart, /detail\?\.view !== 'policy'/);
   assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);
@@ -159,22 +162,20 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(html, /rounded-xl border border-slate-200 bg-slate-50 p-3[\s\S]*id="policy-signal-chart"/);
 });
 
-test('시장 내재 정책금리 기대 그래프는 5년을 기본으로 기간별 조회를 제공한다', () => {
+test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간별 조회를 제공한다', () => {
   const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-expectation-chart.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(chart, /selectedYears: 5/);
+  assert.match(chart, /selectedYears: 2/);
   assert.match(chart, /function rowsForTimeline/);
-  assert.match(chart, /SCROLL_HISTORY_YEARS = 10/);
-  assert.match(chart, /selectedYears === 'max' \|\| selectedYears === 10/);
-  assert.match(chart, /Number\(selectedYears\) \* YEAR_MS/);
-  assert.match(chart, /frame\.scrollLeft = frame\.scrollWidth - frame\.clientWidth/);
+  assert.match(chart, /rowsForRecentHistory/);
+  assert.match(chart, /timelineWidth/);
   assert.match(chart, /function withFiveDayAverage/);
   assert.match(chart, /policy-expectation-line--raw/);
   assert.match(chart, /policy-expectation-line--average/);
   assert.match(chart, /function formatMonthDay/);
   assert.doesNotMatch(chart, /data-policy-expectation-value/);
   assert.match(chart, /selectedYears === 'max' \? String\(year\)\.slice\(-2\)/);
-  assert.match(chart, /function niceStep/);
+  assert.match(chart, /chartUtils\.niceStep/);
   assert.match(chart, /policy-expectation-y-label/);
   assert.match(chart, /policy-expectation-y-grid--zero/);
   assert.match(chart, /policy-expectation-chart-layout/);
@@ -185,8 +186,8 @@ test('시장 내재 정책금리 기대 그래프는 5년을 기본으로 기간
   assert.match(chart, /requestAnimationFrame\(updateVisibleScale\)/);
   assert.doesNotMatch(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
-  assert.match(html, /data-policy-expectation-range="5" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=10/);
+  assert.match(html, /data-policy-expectation-range="2" class="is-active"/);
+  assert.match(html, /policy-expectation-chart\.js\?v=11/);
 });
 
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
