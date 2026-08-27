@@ -15,10 +15,17 @@
     const values = points.map((point) => point.value).filter(Number.isFinite);
     const minimum = Math.min(...values);
     const maximum = Math.max(...values);
-    const tickStep = chartUtils.niceStep((Math.max(maximum - minimum, 1) * 1.2) / 4);
-    const center = (minimum + maximum) / 2;
-    const yMin = Math.floor((center - tickStep * 2) / tickStep) * tickStep;
-    return { tickStep, yMin, yMax: yMin + tickStep * 4 };
+    const span = Math.max(maximum - minimum, 1);
+    const margin = span * 0.1;
+    const tickStep = chartUtils.niceStep((span + margin * 2) / 4);
+    let yMin = Math.floor((minimum - margin) / tickStep) * tickStep;
+    let yMax = yMin + tickStep * 4;
+    // 눈금 반올림이 어느 한쪽으로 치우쳐도 실제 값과 여백이 축 밖으로 나가지 않게 맞춥니다.
+    if (yMax < maximum + margin) {
+      yMax = Math.ceil((maximum + margin) / tickStep) * tickStep;
+      yMin = yMax - tickStep * 4;
+    }
+    return { tickStep, yMin, yMax };
   }
 
   function render(container, rows, selectedYears) {

@@ -155,6 +155,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /timelineWidth/);
   assert.match(chart, /visibleStart = frame\.scrollLeft/);
   assert.match(chart, /policy-chart-y-axis/);
+  assert.match(chart, /yMax < maximum \+ margin/);
   assert.match(chart, /macrowatch:dashboard-view-changed/);
   assert.match(chart, /detail\?\.view !== 'policy'/);
   assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);
