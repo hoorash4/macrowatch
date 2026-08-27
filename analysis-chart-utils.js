@@ -31,5 +31,18 @@
     window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
   }
 
-  window.MacroWatchAnalysisChart = { niceStep, timelineWidth, rowsForRecentHistory, scrollToLatest };
+  // Supabase REST 조회는 프로젝트 설정과 무관하게 한 요청에서 반환되는 행 수가
+  // 제한될 수 있으므로, 장기 일별 시계열은 마지막 페이지까지 나누어 읽습니다.
+  async function loadAllRows(fetchPage, pageSize = 1000) {
+    const rows = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await fetchPage(from, from + pageSize - 1);
+      if (error) return { data: null, error };
+      const page = data || [];
+      rows.push(...page);
+      if (page.length < pageSize) return { data: rows, error: null };
+    }
+  }
+
+  window.MacroWatchAnalysisChart = { niceStep, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows };
 })();

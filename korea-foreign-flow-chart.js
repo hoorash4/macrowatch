@@ -112,7 +112,11 @@
   async function load({ supabaseClient }) {
     const container = document.getElementById('korea-foreign-flow-chart');
     if (!container || !supabaseClient) return;
-    const { data, error } = await supabaseClient.from('korea_foreign_flow_daily').select('observation_date,flow_index').order('observation_date');
+    const { data, error } = await chartUtils.loadAllRows((from, to) => supabaseClient
+      .from('korea_foreign_flow_daily')
+      .select('observation_date,flow_index')
+      .order('observation_date')
+      .range(from, to));
     if (error) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도을 불러오지 못했습니다.</div>';
       return;

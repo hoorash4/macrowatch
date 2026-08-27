@@ -73,6 +73,8 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   const chart = fs.readFileSync(path.join(__dirname, '..', 'korea-foreign-flow-chart.js'), 'utf8');
   for (const range of ['0.5', '1', '2', 'max']) assert.match(html, new RegExp(`data-korea-foreign-flow-range="${range}"`));
   assert.match(chart, /korea_foreign_flow_daily/);
+  assert.match(chart, /chartUtils\.loadAllRows/);
+  assert.match(chart, /\.range\(from, to\)/);
   assert.match(chart, /selectedYears === 'max'/);
   assert.match(html, /외국인 순매수 강도·원화 강도 각 50%/);
 });
