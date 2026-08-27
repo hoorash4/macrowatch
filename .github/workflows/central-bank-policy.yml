@@ -1,6 +1,9 @@
 name: Refresh central-bank policy signals
 
 on:
+  workflow_run:
+    workflows: ["Deploy Supabase changes"]
+    types: [completed]
   schedule:
     # Official FOMC statements are checked daily.  Existing statement hashes are
     # skipped, so days without a new decision do not make an OpenAI request.
@@ -23,6 +26,7 @@ concurrency:
 
 jobs:
   refresh-fed:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -31,7 +35,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MODE: ${{ inputs.mode || 'latest' }}
+          # 산식 코드가 배포된 직후에는 AI를 다시 호출하지 않고 전체 점수만 재계산합니다.
+          MODE: ${{ github.event_name == 'workflow_run' && 'score' || inputs.mode || 'latest' }}
         run: |
           run_batch() {
             curl --silent --show-error --fail-with-body --max-time 300 \

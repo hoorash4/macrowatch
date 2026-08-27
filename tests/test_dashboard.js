@@ -182,6 +182,9 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /yMax < maximum \+ margin/);
   assert.match(chart, /POLICY_CHART_MODE = 'oscillator'/);
   assert.match(chart, /OSCILLATOR_RETENTION = 0\.8/);
+  assert.match(chart, /pre_event_value: retainedValue/);
+  assert.match(chart, /point\.preValue/);
+  assert.match(chart, /L \$\{x\} \$\{postY\}/);
   assert.match(chart, /elapsedDays \/ STANDARD_MEETING_DAYS/);
   assert.match(chart, /POLICY_CHART_MODE === 'legacy'/);
   assert.match(chart, /yMin: -tickStep \* 2, yMax: tickStep \* 2/);

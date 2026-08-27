@@ -67,12 +67,13 @@ export async function resolvePolicyReview(
   if (rawScore === null || rawScore === undefined || String(rawScore).trim() === "" || !Number.isFinite(score) || score < -1_000 || score > 1_000) {
     throw new Error("점수는 0을 포함해 -1000부터 1000 사이의 숫자로 직접 입력해 주세요.");
   }
+  const normalizedScore = Math.sign(score) * Math.round(Math.abs(score));
 
   const resolvedAt = new Date().toISOString();
   const { data, error } = await admin.from("central_bank_policy_events").update({
     admin_primary_reason: reason,
     admin_reason_keyword: keyword || null,
-    admin_score_override: score,
+    admin_score_override: normalizedScore,
     admin_resolved_at: resolvedAt,
     admin_resolved_by: userId,
     primary_reason: reason,

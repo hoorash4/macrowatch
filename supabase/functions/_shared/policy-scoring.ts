@@ -1,7 +1,7 @@
 import type { PolicyAction, PolicyReason, PolicyScoringInput, PolicyScoringResult, PolicyTrendType } from "./policy-types.ts";
 
 export const POLICY_INDEX_BASE = 1_000;
-export const POLICY_SCORE_PROFILE = "fed-policy-v4";
+export const POLICY_SCORE_PROFILE = "fed-policy-v5";
 
 type DirectionState = {
   action: Exclude<PolicyAction, "hold">;
@@ -15,7 +15,8 @@ type DirectionState = {
   reasonSequence: number;
 };
 
-const round = (value: number) => Number(value.toFixed(3));
+// 정책 점수는 소수 첫째 자리에서 반올림해 모든 저장·합산 단위를 정수로 통일합니다.
+const round = (value: number) => Math.sign(value) * Math.round(Math.abs(value));
 const directional = (action: PolicyAction): action is Exclude<PolicyAction, "hold"> => action !== "hold";
 const largeMoveWeight = (changeBps: number | null | undefined) => {
   const extraSteps = Math.floor(Math.max(0, Math.abs(Number(changeBps || 0)) - 25) / 25);

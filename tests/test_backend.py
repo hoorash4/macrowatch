@@ -299,6 +299,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("FOMC_POLICY_PROMPT_V2", pipeline)
         self.assertIn("briefing: analysis.briefing", pipeline)
 
+    def test_fomc_scores_round_symmetrically_to_integers(self) -> None:
+        scoring = (ROOT / "supabase/functions/_shared/policy-scoring.ts").read_text(encoding="utf-8")
+        admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/central-bank-policy.yml").read_text(encoding="utf-8")
+        self.assertIn('POLICY_SCORE_PROFILE = "fed-policy-v5"', scoring)
+        self.assertIn("Math.sign(value) * Math.round(Math.abs(value))", scoring)
+        self.assertIn("Math.sign(score) * Math.round(Math.abs(score))", admin)
+        self.assertIn('workflows: ["Deploy Supabase changes"]', workflow)
+        self.assertIn("github.event_name == 'workflow_run' && 'score'", workflow)
+
     def test_fomc_v2_prompt_preserves_policy_rules_and_adds_briefing_contract(self) -> None:
         original = (ROOT / "supabase/prompts/fomc-policy-v1.2.txt").read_text(encoding="utf-8")
         prompt = (ROOT / "supabase/prompts/fomc-policy-v2.0.txt").read_text(encoding="utf-8")
