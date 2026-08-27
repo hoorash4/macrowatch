@@ -81,6 +81,8 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   assert.match(html, /10영업일 EWMA 자금 유출입/);
   assert.match(chart, /function calculateCumulativeRows/);
   assert.match(chart, /function calculateEwmaRows/);
+  assert.match(chart, /function applyHysteresis/);
+  assert.match(chart, /korea-foreign-flow-cumulative-state/);
   assert.match(chart, /EWMA_ALPHA = 2 \/ 11/);
   assert.match(chart, /value >= 0\.4/);
   assert.match(chart, /value <= 0\.15/);

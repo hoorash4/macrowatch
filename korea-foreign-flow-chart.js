@@ -145,7 +145,7 @@
 
   function calculateEwmaRows(rows) {
     const flowEwma = [], wonEwma = [];
-    let previousFlow = null, previousWon = null, regime = 'neutral';
+    let previousFlow = null, previousWon = null;
     return rows.flatMap((row, index) => {
       const ratio = Number(row.kospi_trading_value) > 0 ? Number(row.foreign_net_buy_amount) / Number(row.kospi_trading_value) : Number.NaN;
       const previousRate = index ? Number(rows[index - 1].usdkrw_rate) : Number.NaN;
@@ -156,13 +156,30 @@
       const flowZ = causalZScore(flowEwma, index), wonZ = causalZScore(wonEwma, index);
       if (flowZ === null || wonZ === null) return [];
       const value = (flowZ + wonZ) / 2;
+      return [{ ...row, flow_index: value }];
+    });
+  }
+
+  // 계산 방식과 무관하게 동일한 진입·해제 문턱을 사용해 상태 신호의 잦은 반전을 줄입니다.
+  function applyHysteresis(rows) {
+    let regime = 'neutral';
+    return rows.map((row) => {
+      const value = Number(row.flow_index);
       if (regime === 'neutral') {
         if (value >= 0.4) regime = 'strengthening';
         else if (value <= -0.4) regime = 'weakening';
       } else if (regime === 'strengthening' && value <= 0.15) regime = value <= -0.4 ? 'weakening' : 'neutral';
       else if (regime === 'weakening' && value >= -0.15) regime = value >= 0.4 ? 'strengthening' : 'neutral';
-      return [{ ...row, flow_index: value, regime }];
+      return { ...row, regime };
     });
+  }
+
+  function updateRegimeLabel(elementId, rows) {
+    const regime = rows.at(-1)?.regime || 'neutral';
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    element.textContent = regime === 'strengthening' ? '강화' : regime === 'weakening' ? '약화' : '중립';
+    element.className = `font-semibold ${regime === 'strengthening' ? 'text-rose-700' : regime === 'weakening' ? 'text-blue-700' : 'text-slate-600'}`;
   }
 
   function bindRangeControls({ controls, buttonSelector, datasetKey, stateKey, container, rows, gradientId, showAverage }) {
@@ -193,17 +210,13 @@
       return;
     }
     state.rows = data || [];
-    const cumulativeRows = calculateCumulativeRows(state.rows);
-    const ewmaRows = calculateEwmaRows(state.rows);
+    const cumulativeRows = applyHysteresis(calculateCumulativeRows(state.rows));
+    const ewmaRows = applyHysteresis(calculateEwmaRows(state.rows));
     render(container, state.rows, state.standardYears, 'korea-foreign-flow-line-gradient');
     if (cumulativeContainer) render(cumulativeContainer, cumulativeRows, state.cumulativeYears, 'korea-foreign-flow-cumulative-gradient', false);
     if (ewmaContainer) render(ewmaContainer, ewmaRows, state.ewmaYears, 'korea-foreign-flow-ewma-gradient', false);
-    const latestRegime = ewmaRows.at(-1)?.regime || 'neutral';
-    const regimeElement = document.getElementById('korea-foreign-flow-ewma-state');
-    if (regimeElement) {
-      regimeElement.textContent = latestRegime === 'strengthening' ? '강화' : latestRegime === 'weakening' ? '약화' : '중립';
-      regimeElement.className = `font-semibold ${latestRegime === 'strengthening' ? 'text-rose-700' : latestRegime === 'weakening' ? 'text-blue-700' : 'text-slate-600'}`;
-    }
+    updateRegimeLabel('korea-foreign-flow-cumulative-state', cumulativeRows);
+    updateRegimeLabel('korea-foreign-flow-ewma-state', ewmaRows);
     bindRangeControls({ controls: document.querySelector('[data-korea-foreign-flow-ranges]'), buttonSelector: '[data-korea-foreign-flow-range]', datasetKey: 'koreaForeignFlowRange', stateKey: 'standardYears', container, rows: state.rows, gradientId: 'korea-foreign-flow-line-gradient', showAverage: true });
     bindRangeControls({ controls: document.querySelector('[data-korea-foreign-flow-cumulative-ranges]'), buttonSelector: '[data-korea-foreign-flow-cumulative-range]', datasetKey: 'koreaForeignFlowCumulativeRange', stateKey: 'cumulativeYears', container: cumulativeContainer, rows: cumulativeRows, gradientId: 'korea-foreign-flow-cumulative-gradient', showAverage: false });
     bindRangeControls({ controls: document.querySelector('[data-korea-foreign-flow-ewma-ranges]'), buttonSelector: '[data-korea-foreign-flow-ewma-range]', datasetKey: 'koreaForeignFlowEwmaRange', stateKey: 'ewmaYears', container: ewmaContainer, rows: ewmaRows, gradientId: 'korea-foreign-flow-ewma-gradient', showAverage: false });
