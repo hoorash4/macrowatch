@@ -99,6 +99,26 @@ function requiredText(value: unknown, label: string, maxLength: number) {
   return text;
 }
 
+function validateUsername(value: unknown) {
+  const username = String(value || "").trim().toLowerCase();
+  if (!/^[a-z0-9._-]{4,32}$/.test(username)) {
+    throw new Error("아이디는 영문 소문자, 숫자, 마침표, 밑줄, 하이픈으로 4~32자여야 합니다.");
+  }
+  return username;
+}
+
+function validatePassword(value: unknown) {
+  const password = String(value || "");
+  if (password.length < 6 || password.length > 72) {
+    throw new Error("비밀번호는 6~72자로 입력해 주세요.");
+  }
+  return password;
+}
+
+function internalEmail(username: string) {
+  return `id-${username}@users.macrowatch.invalid`;
+}
+
 function validateSectorEtf(body: Record<string, unknown>) {
   return {
     sector_name: requiredText(body.sector_name, "섹터명", 80),
@@ -245,6 +265,64 @@ export default {
 
       const body = await request.json();
       const action = String(body?.action || "");
+
+      if (action === "list_members") {
+        const { data, error } = await admin.from("user_accounts")
+          .select("user_id,username,kakao_user_id,is_admin,created_at,updated_at")
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        return json({ items: (data || []).map((item) => ({
+          ...item,
+          kakao_connected: Boolean(item.kakao_user_id),
+          kakao_user_id: undefined,
+          is_current: item.user_id === user.id,
+        })) }, 200, origin);
+      }
+
+      if (action === "create_member") {
+        const username = validateUsername(body?.username);
+        const password = validatePassword(body?.password);
+        const { data: created, error: createError } = await admin.auth.admin.createUser({
+          email: internalEmail(username), password, email_confirm: true,
+          user_metadata: { auth_provider: "password", username },
+        });
+        if (createError || !created.user) throw createError || new Error("회원을 만들지 못했습니다.");
+        const { error: accountError } = await admin.from("user_accounts").insert({
+          user_id: created.user.id, username, is_admin: body?.is_admin === true,
+        });
+        if (accountError) {
+          await admin.auth.admin.deleteUser(created.user.id);
+          throw accountError;
+        }
+        return json({ created: true }, 201, origin);
+      }
+
+      if (action === "update_member") {
+        const memberId = String(body?.user_id || "");
+        if (!memberId) return json({ error: "회원 식별자가 필요합니다." }, 400, origin);
+        const username = validateUsername(body?.username);
+        const authValues: Record<string, unknown> = {
+          email: internalEmail(username), email_confirm: true,
+          user_metadata: { auth_provider: "password", username },
+        };
+        if (String(body?.password || "")) authValues.password = validatePassword(body.password);
+        const { error: authError } = await admin.auth.admin.updateUserById(memberId, authValues);
+        if (authError) throw authError;
+        const { error } = await admin.from("user_accounts").update({
+          username, is_admin: body?.is_admin === true, updated_at: new Date().toISOString(),
+        }).eq("user_id", memberId);
+        if (error) throw error;
+        return json({ updated: true }, 200, origin);
+      }
+
+      if (action === "delete_member") {
+        const memberId = String(body?.user_id || "");
+        if (!memberId) return json({ error: "회원 식별자가 필요합니다." }, 400, origin);
+        if (memberId === user.id) return json({ error: "현재 로그인한 관리자 계정은 여기서 삭제할 수 없습니다." }, 400, origin);
+        const { error } = await admin.auth.admin.deleteUser(memberId);
+        if (error) throw error;
+        return json({ deleted: true }, 200, origin);
+      }
 
       if (action === "workflow_status") {
         const kind = String(body?.kind || "");

@@ -79,6 +79,62 @@
 
   window.MacroWatchAdminApi = Object.freeze({ invoke: invokeAdmin, notice: showNotice });
 
+  // 긴 관리 목록은 동일한 접기 UI를 사용한다. 목록 자체의 id는 유지해 각 기능과 분리한다.
+  function initializeCollapsibleLists() {
+    const labels = {
+      'policy-review-list': 'FOMC 검토 목록', 'sector-etf-list': '섹터 ETF 목록',
+      'extreme-news-rule-list': '결정적 뉴스 기준 목록', 'uncertain-news-list': '불명확 뉴스 목록',
+      'error-list': '수집 오류 목록'
+    };
+    document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #uncertain-news-list, #error-list').forEach((list) => {
+      if (list.parentElement?.tagName === 'DETAILS') return;
+      const details = document.createElement('details');
+      details.className = 'group';
+      const summary = document.createElement('summary');
+      summary.className = 'mb-2 cursor-pointer select-none list-none rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-700';
+      summary.innerHTML = `<i class="fa-solid fa-chevron-right mr-2 transition group-open:rotate-90"></i>${escapeHtml(list.dataset.collapsibleLabel || labels[list.id] || '목록 펼치기')}`;
+      list.parentNode.insertBefore(details, list);
+      details.append(summary, list);
+    });
+  }
+
+  function renderMembers(items) {
+    const list = document.getElementById('member-list');
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto_auto]"><input name="username" value="${escapeHtml(item.username || '')}" required minlength="4" maxlength="32" autocomplete="off" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><input name="password" type="password" autocomplete="new-password" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><label class="flex items-center gap-2 px-2 text-xs"><input name="is_admin" type="checkbox" ${item.is_admin ? 'checked' : ''} class="accent-blue-500">관리자</label><span class="self-center text-xs ${item.kakao_connected ? 'text-yellow-400' : 'text-slate-600'}">카카오 ${item.kakao_connected ? '연결' : '미연결'}</span><div class="flex gap-1"><button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button><button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${item.is_current ? 'hidden' : ''}">탈퇴</button></div></form><p class="mt-1 text-[10px] text-slate-600">가입 ${escapeHtml(formatTime(item.created_at))}</p></article>`).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
+    list.querySelectorAll('[data-member-id]').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        try {
+          await invokeAdmin('update_member', { user_id: form.dataset.memberId, username: values.get('username'), password: values.get('password'), is_admin: values.get('is_admin') === 'on' });
+          showNotice('회원 저장 완료', '회원 정보를 저장했습니다.'); await loadMembers();
+        } catch (error) { showNotice('회원 저장 실패', error.message || '저장하지 못했습니다.', true); }
+      });
+      form.querySelector('[data-delete-member]')?.addEventListener('click', async () => {
+        if (!window.confirm('이 회원을 탈퇴 처리할까요? 회원 데이터도 함께 삭제됩니다.')) return;
+        try { await invokeAdmin('delete_member', { user_id: form.dataset.memberId }); await loadMembers(); }
+        catch (error) { showNotice('회원 탈퇴 실패', error.message || '처리하지 못했습니다.', true); }
+      });
+    });
+  }
+
+  async function loadMembers() {
+    try { renderMembers((await invokeAdmin('list_members')).items || []); }
+    catch (error) { document.getElementById('member-list').innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '회원 목록을 불러오지 못했습니다.')}</p>`; }
+  }
+
+  async function createMember(event) {
+    event.preventDefault();
+    try {
+      await invokeAdmin('create_member', {
+        username: document.getElementById('member-username').value,
+        password: document.getElementById('member-password').value,
+        is_admin: document.getElementById('member-is-admin').checked
+      });
+      event.currentTarget.reset(); await loadMembers(); showNotice('회원 추가 완료', '새 회원 계정을 만들었습니다.');
+    } catch (error) { showNotice('회원 추가 실패', error.message || '회원을 만들지 못했습니다.', true); }
+  }
+
   function badgeState(run) {
     if (!run) return ['기록 없음', 'border-slate-700 bg-slate-800 text-slate-400'];
     if (run.status !== 'completed') return ['진행 중', 'border-blue-700/50 bg-blue-950/60 text-blue-400'];
@@ -276,6 +332,7 @@
       await loadUncertainNews();
       await loadSectorEtfs();
       await loadExtremeNewsRules();
+      await loadMembers();
     } catch (error) {
       showNotice('불러오기 실패', error.message || '상태를 확인하지 못했습니다.', true);
     } finally {
@@ -378,6 +435,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    initializeCollapsibleLists();
     document.getElementById('refresh-button').addEventListener('click', loadAll);
     document.getElementById('run-check-button').addEventListener('click', () => runWorkflow('check'));
     document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));
@@ -390,6 +448,7 @@
     document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
+    document.getElementById('member-form').addEventListener('submit', createMember);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
     document.getElementById('operation-modal').addEventListener('click', (event) => {
       if (event.target === event.currentTarget) hideNotice();

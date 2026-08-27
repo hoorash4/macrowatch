@@ -114,11 +114,17 @@
     const { data, error } = await authClient.auth.getSession();
     if (error) throw error;
     const session = data.session;
-    if (session?.user?.user_metadata?.auth_provider === 'kakao') {
+    if (session) {
+      const { data: account } = await authClient.from('user_accounts')
+        .select('user_id').eq('user_id', session.user.id).maybeSingle();
+      if (!account) {
+        await authClient.auth.signOut({ scope: 'local' });
+        showLogin('등록된 회원 계정을 확인하지 못했습니다.');
+        return null;
+      }
       await showDashboard();
       return session;
     }
-    if (session) await authClient.auth.signOut({ scope: 'local' });
     showLogin();
     return null;
   }
@@ -130,6 +136,7 @@
       ? 'shrink-0 rounded-full border border-emerald-700/50 bg-emerald-950/60 px-2.5 py-1 text-[11px] font-semibold text-emerald-400'
       : 'shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400';
     elements.kakaoConnectButton.querySelector('span').textContent = '카카오 계정 다시 연결하기';
+    elements.kakaoUnlinkButton.classList.toggle('hidden', !connected);
   }
 
   async function loadKakaoStatus() {
@@ -157,10 +164,11 @@
     elements.kakaoStatus = document.getElementById('kakao-connection-status');
     elements.kakaoBadge = document.getElementById('kakao-status-badge');
     elements.kakaoConnectButton = document.getElementById('kakao-connect-button');
+    elements.kakaoUnlinkButton = document.getElementById('kakao-unlink-button');
 
     elements.form.addEventListener('submit', (event) => {
       event.preventDefault();
-      beginKakaoLogin();
+      showServicePreparing();
     });
     const showServicePreparing = () => {
       document.getElementById('service-preparing-modal')?.classList.remove('hidden');
@@ -169,9 +177,27 @@
     const hideServicePreparing = () => {
       document.getElementById('service-preparing-modal')?.classList.add('hidden');
     };
-    document.getElementById('password-login-form')?.addEventListener('submit', (event) => {
+    document.getElementById('password-login-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
-      showServicePreparing();
+      const button = document.getElementById('password-login-button');
+      const username = document.getElementById('login-id').value.trim().toLowerCase();
+      const password = document.getElementById('login-password').value;
+      if (!/^[a-z0-9._-]{4,32}$/.test(username) || !password) {
+        setMessage('아이디와 비밀번호를 확인해 주세요.');
+        return;
+      }
+      button.disabled = true;
+      setMessage('로그인 중입니다.');
+      try {
+        const { error } = await authClient.auth.signInWithPassword({
+          email: `id-${username}@users.macrowatch.invalid`, password
+        });
+        if (error) throw error;
+        await verifyCurrentSession();
+        setMessage();
+      } catch {
+        setMessage('아이디 또는 비밀번호가 올바르지 않습니다.');
+      } finally { button.disabled = false; }
     });
     document.getElementById('signup-placeholder-button')?.addEventListener('click', showServicePreparing);
     document.getElementById('service-preparing-close')?.addEventListener('click', hideServicePreparing);
@@ -188,7 +214,32 @@
     document.getElementById('profile-close-button')?.addEventListener('click', () => {
       elements.profileModal.classList.add('hidden');
     });
-    elements.kakaoConnectButton.addEventListener('click', beginKakaoLogin);
+    elements.kakaoConnectButton.addEventListener('click', showServicePreparing);
+    elements.kakaoUnlinkButton.addEventListener('click', async () => {
+      if (!window.confirm('카카오 알림 연결을 해제할까요? ID 계정은 유지됩니다.')) return;
+      elements.kakaoUnlinkButton.disabled = true;
+      try { await invokeKakao('unlink'); await loadKakaoStatus(); }
+      catch (error) { window.alert(error.message || '카카오 연결을 해제하지 못했습니다.'); }
+      finally { elements.kakaoUnlinkButton.disabled = false; }
+    });
+    document.getElementById('password-change-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const current = document.getElementById('current-password').value;
+      const next = document.getElementById('new-password').value;
+      const confirm = document.getElementById('confirm-password').value;
+      if (next.length < 6 || next !== confirm) {
+        window.alert(next.length < 6 ? '새 비밀번호는 6자 이상이어야 합니다.' : '새 비밀번호가 서로 다릅니다.');
+        return;
+      }
+      const { data: sessionData } = await authClient.auth.getSession();
+      const email = sessionData.session?.user?.email;
+      const verified = await authClient.auth.signInWithPassword({ email, password: current });
+      if (verified.error) { window.alert('현재 비밀번호가 올바르지 않습니다.'); return; }
+      const { error } = await authClient.auth.updateUser({ password: next });
+      if (error) { window.alert(error.message || '비밀번호를 변경하지 못했습니다.'); return; }
+      event.currentTarget.reset();
+      window.alert('비밀번호를 변경했습니다.');
+    });
     document.getElementById('account-delete-button')?.addEventListener('click', () => {
       document.getElementById('account-delete-modal')?.classList.remove('hidden');
     });
@@ -235,7 +286,7 @@
         session = await verifyCurrentSession();
       }
 
-      if (code && state && session?.user?.user_metadata?.auth_provider === 'kakao') {
+      if (code && state && session) {
         await showDashboard();
       } else if (code && state) {
         if (session) await authClient.auth.signOut();

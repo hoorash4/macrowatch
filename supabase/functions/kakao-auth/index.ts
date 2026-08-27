@@ -320,6 +320,24 @@ export default {
         }, 200, origin);
       }
 
+      if (action === "unlink") {
+        const { data: account } = await admin.from("user_accounts")
+          .select("username,kakao_user_id").eq("user_id", user.id).maybeSingle();
+        if (!account?.username) {
+          return json({ error: "아이디 로그인을 먼저 등록해야 카카오 연결을 해제할 수 있습니다." }, 400, origin);
+        }
+        const { data: channel } = await admin.from("notification_channels")
+          .select("config").eq("user_id", user.id).eq("channel", "kakao_self").maybeSingle();
+        const config = channel?.config && typeof channel.config === "object"
+          ? channel.config as Record<string, unknown> : {};
+        await unlinkKakaoAccount(config, kakaoClientId, kakaoClientSecret, tokenEncryptionSecret);
+        await admin.from("notification_channels").delete().eq("user_id", user.id).eq("channel", "kakao_self");
+        const { error } = await admin.from("user_accounts")
+          .update({ kakao_user_id: null, updated_at: new Date().toISOString() }).eq("user_id", user.id);
+        if (error) throw error;
+        return json({ unlinked: true }, 200, origin);
+      }
+
       if (action === "delete_account") {
         const { data: channel } = await admin
           .from("notification_channels")
