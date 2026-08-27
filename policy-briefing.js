@@ -60,6 +60,7 @@
       ${textSection('금리 결정의 핵심 이유', briefing.key_rate_reason, 'fa-bullseye', 'fomc-briefing-section--reason')}
       ${changesSection(briefing.changes_from_previous)}
       ${textSection('AI 종합 분석', briefing.ai_overall_analysis, 'fa-brain', 'fomc-briefing-section--analysis')}
+      <div class="fomc-briefing-close-row"><button type="button" data-fomc-close="${escapeHtml(row.meeting_date)}"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i> 브리핑 닫기</button></div>
     </div>`;
   }
 
@@ -96,6 +97,14 @@
     if (!container || container.dataset.bound === 'true') return;
     container.dataset.bound = 'true';
     container.addEventListener('click', (event) => {
+      const closeButton = event.target.closest('[data-fomc-close]');
+      if (closeButton) {
+        const meetingDate = closeButton.dataset.fomcClose;
+        state.openMeetingDate = null;
+        render();
+        window.requestAnimationFrame(() => document.querySelector(`[data-fomc-meeting-date="${meetingDate}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+        return;
+      }
       const toggle = event.target.closest('[data-fomc-meeting-date]');
       if (toggle) {
         const meetingDate = toggle.dataset.fomcMeetingDate;
