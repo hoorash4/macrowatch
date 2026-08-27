@@ -68,6 +68,15 @@ test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표�
   assert.ok(queries.includes('10-Year Treasury Constant Maturity Rate'));
 });
 
+test('Korea foreign flow chart has scrollable short ranges over a five-year series', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'korea-foreign-flow-chart.js'), 'utf8');
+  for (const range of ['0.5', '1', '2', 'max']) assert.match(html, new RegExp(`data-korea-foreign-flow-range="${range}"`));
+  assert.match(chart, /korea_foreign_flow_daily/);
+  assert.match(chart, /selectedYears === 'max'/);
+  assert.match(html, /외국인 순매수 강도·원화 강도 각 50%/);
+});
+
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const start = script.indexOf('async function handleAddTarget(e)');
@@ -209,14 +218,14 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 11);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 24);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 12);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 26);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 11);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 11);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 12);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 12);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);

@@ -412,5 +412,17 @@ class EmergingIndexTests(unittest.TestCase):
         self.assertFalse(rows[0]["is_provisional"])
 
 
+class KoreaForeignFlowTests(unittest.TestCase):
+    def test_pipeline_uses_normalized_equal_weight_components(self) -> None:
+        scoring = (ROOT / "supabase/functions/_shared/korea-foreign-flow.ts").read_text(encoding="utf-8")
+        pipeline = (ROOT / "supabase/functions/korea-foreign-flow/index.ts").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/korea-foreign-flow.yml").read_text(encoding="utf-8")
+        self.assertIn("foreignNetBuyAmount / row.kospiTradingValue", scoring)
+        self.assertIn("-(row.usdkrwRate / previousRate - 1)", scoring)
+        self.assertIn("(flowZ + wonZ) / 2", scoring)
+        self.assertIn("RETENTION_YEARS = 5", pipeline)
+        self.assertIn('cron: "0 8 * * 1-5"', workflow)
+
+
 if __name__ == "__main__":
     unittest.main()

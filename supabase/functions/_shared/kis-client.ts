@@ -1,5 +1,7 @@
 const KIS_REAL_BASE_URL = "https://openapi.koreainvestment.com:9443";
 const DAILY_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice";
+const DAILY_INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice";
+const MARKET_INVESTOR_PATH = "/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market";
 
 export type KisDailyPrice = {
   marketDate: string;
@@ -12,6 +14,7 @@ export type KisDailyPrice = {
 
 export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPrice[] };
 export type KisEtfHolding = { ticker: string | null; name: string | null; weightPct: number | null };
+export type KisMarketDay = { marketDate: string; tradingValue: number };
 
 type KisCredentials = { appKey: string; appSecret: string };
 type KisTokenStore = { from: (table: string) => any };
@@ -152,6 +155,46 @@ export async function fetchKisDailyPrices(
   end: Date,
 ): Promise<KisDailyPrice[]> {
   return (await fetchKisDailyPriceBundle(credentials, accessToken, ticker, start, end)).prices;
+}
+
+// 코스피 일봉의 거래대금은 외국인 순매수 금액을 시장 규모로 정규화할 때 사용합니다.
+export async function fetchKisKospiMarketDays(
+  credentials: KisCredentials, accessToken: string, start: Date, end: Date,
+): Promise<KisMarketDay[]> {
+  const params = new URLSearchParams({
+    FID_COND_MRKT_DIV_CODE: "U", FID_INPUT_ISCD: "0001",
+    FID_INPUT_DATE_1: compactDate(start), FID_INPUT_DATE_2: compactDate(end), FID_PERIOD_DIV_CODE: "D",
+  });
+  const response = await fetch(`${KIS_REAL_BASE_URL}${DAILY_INDEX_PATH}?${params}`, {
+    headers: { authorization: `Bearer ${accessToken}`, appkey: credentials.appKey, appsecret: credentials.appSecret, tr_id: "FHKUP03500100", custtype: "P" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await readJson(response);
+  if (!response.ok || String(payload.rt_cd ?? "0") !== "0") throw new Error(`KIS 코스피 일봉 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+  return (Array.isArray(payload.output2) ? payload.output2 : []).flatMap((raw) => {
+    const row = raw as Record<string, unknown>, date = String(row.stck_bsop_date || ""), tradingValue = numberValue(row.acml_tr_pbmn);
+    return /^\d{8}$/.test(date) && tradingValue !== null && tradingValue > 0
+      ? [{ marketDate: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`, tradingValue }] : [];
+  });
+}
+
+export async function fetchKisKospiForeignNetBuy(
+  credentials: KisCredentials, accessToken: string, marketDate: string,
+): Promise<number | null> {
+  const compact = marketDate.replaceAll("-", "");
+  const params = new URLSearchParams({
+    FID_COND_MRKT_DIV_CODE: "U", FID_INPUT_ISCD: "0001", FID_INPUT_DATE_1: compact,
+    FID_INPUT_ISCD_1: "KSP", FID_INPUT_DATE_2: compact, FID_INPUT_ISCD_2: "0001",
+  });
+  const response = await fetch(`${KIS_REAL_BASE_URL}${MARKET_INVESTOR_PATH}?${params}`, {
+    headers: { authorization: `Bearer ${accessToken}`, appkey: credentials.appKey, appsecret: credentials.appSecret, tr_id: "FHPTJ04040000", custtype: "P" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await readJson(response);
+  if (!response.ok || String(payload.rt_cd ?? "0") !== "0") throw new Error(`KIS 외국인 수급 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+  const rows = Array.isArray(payload.output) ? payload.output : Array.isArray(payload.output1) ? payload.output1 : [];
+  const row = rows.find((item) => String((item as Record<string, unknown>).stck_bsop_date || "") === compact) as Record<string, unknown> | undefined;
+  return row ? numberValue(row.frgn_ntby_tr_pbmn) : null;
 }
 
 // KIS ETF 구성종목시세에서 국내 상장기업만 남기고 실제 편입비중 상위 종목을 반환합니다.

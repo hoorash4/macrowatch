@@ -62,6 +62,8 @@ jobs:
             --file supabase/migrations/20260827_add_policy_expectation_spreads.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_em_capital_capacity.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260827_add_korea_foreign_flow.sql
 
       - name: Deploy Edge Functions
         run: |

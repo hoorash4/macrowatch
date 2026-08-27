@@ -8,3 +8,6 @@ verify_jwt = true
 
 [functions.sector-flow]
 verify_jwt = true
+
+[functions.korea-foreign-flow]
+verify_jwt = true

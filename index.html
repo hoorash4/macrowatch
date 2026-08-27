@@ -304,6 +304,26 @@
       </div>
     </section>
 
+    <section id="korea-foreign-flow-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-foreign-flow-title">
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-arrow-right-arrow-left text-sm"></i></span>
+          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA FOREIGN CAPITAL FLOW</p><h2 id="korea-foreign-flow-title" class="analysis-card-title">외국인 자금 유출입 강도</h2></div>
+        </div>
+        <p class="analysis-card-description">코스피 외국인 순매매 규모와 원화 가치 변화를 결합해 외국인 자금의 유입·유출 강도를 측정합니다.</p>
+        <p class="analysis-card-description">0 위는 유입 우위, 0 아래는 유출 우위를 뜻합니다.</p>
+      </div>
+      <div class="px-5 pb-5 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="analysis-chart-range-controls" data-korea-foreign-flow-ranges aria-label="외국인 자금 유출입 강도 그래프 조회 기간">
+            <button type="button" data-korea-foreign-flow-range="0.5">6개월</button><button type="button" data-korea-foreign-flow-range="1" class="is-active">1년</button><button type="button" data-korea-foreign-flow-range="2">2년</button><button type="button" data-korea-foreign-flow-range="max">MAX</button>
+          </div>
+          <div id="korea-foreign-flow-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">외국인 자금 유출입 강도를 불러오는 중입니다.</div></div>
+        </div>
+        <div class="policy-expectation-legend" aria-label="외국인 자금 유출입 강도 범례"><span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>5영업일 평균</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 우위</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유출 우위</span><span>외국인 순매수 강도·원화 강도 각 50%</span></div>
+      </div>
+    </section>
+
     <section id="em-stress-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
@@ -795,6 +815,7 @@
   <script src="policy-chart.js?v=8"></script>
   <script src="policy-expectation-chart.js?v=11"></script>
   <script src="em-capacity-chart.js?v=3"></script>
+  <script src="korea-foreign-flow-chart.js?v=1"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>
