@@ -240,6 +240,16 @@ test('프론트엔드 공통 기반과 차트 모듈은 운영 순서로 분리�
   assert.doesNotMatch(main, /function escapeHtml/);
 });
 
+test('관리자 톱니는 권한 확인 전 hidden 속성으로 감춘다', () => {
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const authJs = fs.readFileSync(path.join(__dirname, '..', 'auth.js'), 'utf8');
+  const stylesCss = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(indexHtml, /id="admin-page-link"[^>]*hidden/);
+  assert.match(authJs, /link\.hidden = true/);
+  assert.match(authJs, /data\?\.is_admin === true\) link\.hidden = false/);
+  assert.match(stylesCss, /\.dashboard-nav-actions \[hidden\]\s*\{\s*display:none/);
+});
+
 test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 공통 스타일을 사용한다', () => {
   const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');

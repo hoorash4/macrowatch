@@ -83,7 +83,7 @@
   async function updateAdminLink() {
     const link = document.getElementById('admin-page-link');
     if (!link) return;
-    link.classList.add('hidden');
+    link.hidden = true;
     const { data: sessionData } = await authClient.auth.getSession();
     const userId = sessionData.session?.user?.id;
     if (!userId) return;
@@ -92,7 +92,7 @@
       .select('is_admin')
       .eq('user_id', userId)
       .maybeSingle();
-    if (!error && data?.is_admin === true) link.classList.remove('hidden');
+    if (!error && data?.is_admin === true) link.hidden = false;
   }
 
   async function showDashboard() {
