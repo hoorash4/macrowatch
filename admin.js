@@ -98,9 +98,29 @@
     });
   }
 
+  // 브라우저 비밀번호 관리자는 autocomplete=off를 무시할 수 있다. 관리자 자격증명
+  // 입력칸은 사용자가 직접 선택할 때까지 읽기 전용으로 두고, 자동 주입값을 한 번 비운다.
+  function protectCredentialInputs(root = document) {
+    root.querySelectorAll('[data-admin-credential]').forEach((input) => {
+      if (input.dataset.credentialProtected === 'true') return;
+      input.dataset.credentialProtected = 'true';
+      const activate = () => {
+        if (input.dataset.clearOnActivate !== undefined && input.dataset.credentialActivated !== 'true') {
+          input.value = '';
+        }
+        input.dataset.credentialActivated = 'true';
+        input.readOnly = false;
+      };
+      input.addEventListener('pointerdown', activate, { once: true });
+      input.addEventListener('focus', activate, { once: true });
+      input.addEventListener('keydown', activate, { once: true });
+    });
+  }
+
   function renderMembers(items) {
     const list = document.getElementById('member-list');
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto_auto]"><input name="username" value="${escapeHtml(item.username || '')}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${item.username ? '아이디' : '아이디 없음 (카카오 전용)'}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm placeholder:text-yellow-600"><input name="password" type="password" autocomplete="new-password" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><label class="flex items-center gap-2 px-2 text-xs"><input name="is_admin" type="checkbox" ${item.is_admin ? 'checked' : ''} ${item.is_current ? 'disabled' : ''} class="accent-blue-500 disabled:opacity-60">관리자</label><span class="self-center rounded-full px-2 py-1 text-center text-xs ${item.kakao_connected ? 'bg-yellow-950/50 text-yellow-400' : 'text-slate-600'}">${item.kakao_connected ? (item.username ? '카카오 연결' : '카카오 전용') : '카카오 미연결'}</span><div class="flex gap-1"><button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button><button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${item.is_current ? 'hidden' : ''}">탈퇴</button></div></form><p class="mt-1 text-[10px] text-slate-600">가입 ${escapeHtml(formatTime(item.created_at))}${item.username ? '' : ' · ID/PW 미등록'}</p></article>`).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto_auto]"><input name="username" value="${escapeHtml(item.username || '')}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${item.username ? '아이디' : '아이디 없음 (카카오 전용)'}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm placeholder:text-yellow-600"><input name="password" type="password" readonly data-admin-credential data-clear-on-activate data-autocomplete-token="one-time-code" autocomplete="one-time-code" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><label class="flex items-center gap-2 px-2 text-xs"><input name="is_admin" type="checkbox" ${item.is_admin ? 'checked' : ''} ${item.is_current ? 'disabled' : ''} class="accent-blue-500 disabled:opacity-60">관리자</label><span class="self-center rounded-full px-2 py-1 text-center text-xs ${item.kakao_connected ? 'bg-yellow-950/50 text-yellow-400' : 'text-slate-600'}">${item.kakao_connected ? (item.username ? '카카오 연결' : '카카오 전용') : '카카오 미연결'}</span><div class="flex gap-1"><button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button><button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${item.is_current ? 'hidden' : ''}">탈퇴</button></div></form><p class="mt-1 text-[10px] text-slate-600">가입 ${escapeHtml(formatTime(item.created_at))}${item.username ? '' : ' · ID/PW 미등록'}</p></article>`).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
+    protectCredentialInputs(list);
     list.querySelectorAll('[data-member-id]').forEach((form) => {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -442,6 +462,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initializeCollapsibleLists();
+    protectCredentialInputs();
     document.getElementById('refresh-button').addEventListener('click', loadAll);
     document.getElementById('run-check-button').addEventListener('click', () => runWorkflow('check'));
     document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));

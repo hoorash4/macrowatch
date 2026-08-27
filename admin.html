@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="autocomplete-off.js?v=2"></script>
 </head>
 <body class="min-h-screen bg-slate-950 p-4 font-sans text-slate-100 sm:p-6">
   <div id="admin-access-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 p-4">
@@ -48,8 +49,8 @@
         <p class="mt-1 text-sm text-slate-400">관리자가 계정을 만들고 아이디·비밀번호·권한을 관리합니다.</p>
       </div>
       <form id="member-form" autocomplete="off" class="grid gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:grid-cols-[1fr_1fr_auto_auto]">
-        <input id="member-username" required minlength="4" maxlength="32" autocomplete="off" placeholder="아이디" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500">
-        <input id="member-password" required minlength="6" maxlength="72" type="password" autocomplete="new-password" placeholder="비밀번호" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500">
+        <input id="member-username" name="new-member-id" required minlength="4" maxlength="32" readonly data-admin-credential data-clear-on-activate data-autocomplete-token="one-time-code" autocomplete="one-time-code" placeholder="아이디" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500">
+        <input id="member-password" name="new-member-secret" required minlength="6" maxlength="72" type="password" readonly data-admin-credential data-clear-on-activate data-autocomplete-token="one-time-code" autocomplete="one-time-code" placeholder="비밀번호" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500">
         <label class="flex items-center gap-2 px-2 text-sm text-slate-300"><input id="member-is-admin" type="checkbox" class="accent-blue-500">관리자</label>
         <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold hover:bg-blue-500">회원 추가</button>
       </form>
@@ -265,7 +266,7 @@
   <script src="config.js?v=1"></script>
   <script src="frontend-core.js?v=1"></script>
   <script src="autocomplete-off.js?v=1"></script>
-  <script src="admin.js?v=17"></script>
+  <script src="admin.js?v=18"></script>
   <script src="admin-policy-review.js?v=9"></script>
 </body>
 </html>

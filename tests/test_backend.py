@@ -101,6 +101,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("requires_reauthentication", admin)
         admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
         self.assertIn("카카오 전용", admin_ui)
+        self.assertIn("data-admin-credential", admin_ui)
+        self.assertIn("이미 사용 중인 아이디입니다", admin)
 
     def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")

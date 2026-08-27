@@ -4,8 +4,10 @@
   const selector = 'form,input,select,textarea';
 
   function disableAutocomplete(root = document) {
-    if (root.matches?.(selector)) root.setAttribute('autocomplete', 'off');
-    root.querySelectorAll?.(selector).forEach((element) => element.setAttribute('autocomplete', 'off'));
+    if (root.matches?.(selector)) root.setAttribute('autocomplete', root.dataset.autocompleteToken || 'off');
+    root.querySelectorAll?.(selector).forEach((element) => {
+      element.setAttribute('autocomplete', element.dataset.autocompleteToken || 'off');
+    });
   }
 
   disableAutocomplete();
