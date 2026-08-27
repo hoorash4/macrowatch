@@ -333,6 +333,38 @@
       </div>
     </section>
 
+    <section id="em-capacity-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-capacity-title">
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-money-bill-transfer text-sm"></i></span>
+          <div>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">EM CAPITAL CAPACITY</p>
+            <h2 id="em-capacity-title" class="analysis-card-title">이머징 자금 유입 여건</h2>
+          </div>
+        </div>
+        <p class="analysis-card-description">달러·미국 실질금리·신용시장·금융여건을 바탕으로 미국 자금이 이머징으로 이동하기 유리한 환경인지 분석합니다.</p>
+        <p class="analysis-card-description">0 위는 유입에 유리한 환경, 0 아래는 자금 이동이 제약되는 환경을 뜻합니다.</p>
+      </div>
+      <div class="px-5 pb-5 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="analysis-chart-range-controls" data-em-capacity-ranges aria-label="이머징 자금 유입 여건 그래프 조회 기간">
+            <button type="button" data-em-capacity-range="0.5">6개월</button>
+            <button type="button" data-em-capacity-range="1" class="is-active">1년</button>
+            <button type="button" data-em-capacity-range="2">2년</button>
+            <button type="button" data-em-capacity-range="max">MAX</button>
+          </div>
+          <div id="em-capacity-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">이머징 자금 유입 여건을 불러오는 중입니다.</div></div>
+        </div>
+        <div class="policy-expectation-legend" aria-label="이머징 자금 유입 여건 범례">
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span>
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>5영업일 평균</span>
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 여건 우호적</span>
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유입 여건 제약</span>
+          <span>달러·실질금리·하이일드 OAS·NFCI 각 25%</span>
+        </div>
+      </div>
+    </section>
+
     <section id="policy-signal-dashboard" data-dashboard-panel="policy" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="policy-signal-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
@@ -760,6 +792,7 @@
   <script src="analysis-chart-utils.js?v=1"></script>
   <script src="policy-chart.js?v=8"></script>
   <script src="policy-expectation-chart.js?v=11"></script>
+  <script src="em-capacity-chart.js?v=1"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>

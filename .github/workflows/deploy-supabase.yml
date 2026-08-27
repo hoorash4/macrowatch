@@ -60,6 +60,8 @@ jobs:
             --file supabase/migrations/20260827_add_fomc_briefings.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_policy_expectation_spreads.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260827_add_em_capital_capacity.sql
 
       - name: Deploy Edge Functions
         run: |

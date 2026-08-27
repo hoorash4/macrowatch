@@ -1,0 +1,36 @@
+name: Refresh EM capital capacity
+
+on:
+  workflow_run:
+    workflows: ["Deploy Supabase changes"]
+    types: [completed]
+  schedule:
+    # 08:30 KST: 미국 일간 자료 갱신 이후, 07:30 정책금리 기대 작업과 분리합니다.
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-em-capital-capacity
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install HTTP client
+        run: pip install --disable-pip-version-check requests
+      - name: Collect and calculate EM capital capacity
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python backend/em_capital_capacity_pipeline.py --years 3

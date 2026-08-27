@@ -25,6 +25,7 @@ if "openpyxl" not in sys.modules:
 import check_targets  # noqa: E402
 import common  # noqa: E402
 import em_stress_pipeline as em  # noqa: E402
+import em_capital_capacity_pipeline as em_capacity  # noqa: E402
 import financial_stress_pipeline as us  # noqa: E402
 import korea_stress_pipeline as kr  # noqa: E402
 import policy_expectation_pipeline as policy_expectation  # noqa: E402
@@ -42,6 +43,13 @@ class TargetConditionTests(unittest.TestCase):
 
 
 class SharedCalculationTests(unittest.TestCase):
+    def test_em_capacity_is_equal_weighted_and_reverses_adverse_inputs(self) -> None:
+        periods = [f"2026-{month:02d}-{day:02d}" for month in (1, 2, 3) for day in range(1, 29)][:61]
+        rising = {period: float(index + 1) for index, period in enumerate(periods)}
+        rows = em_capacity.build_rows({key: dict(rising) for key in em_capacity.SERIES})
+        self.assertEqual(len(rows), 2)
+        self.assertLess(rows[-1]["capacity_index"], 0)
+
     def test_policy_expectation_spread_uses_complete_dates_and_70_30_weights(self) -> None:
         rows = policy_expectation.build_rows({
             "treasury_3m_rate": {"2026-08-25": 3.50, "2026-08-26": 3.60},
