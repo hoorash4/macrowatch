@@ -65,6 +65,7 @@
     const points = datedRows.map((row) => ({
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right), value: row.value,
       period: `${String(row.meeting_date).slice(2, 4)}년 ${String(row.meeting_date).slice(5, 7)}월`,
+      meetingDate: row.meeting_date,
       action: ({ hike: '인상', cut: '인하', hold: '동결' })[row.action] || row.action,
       changeBps: row.change_bps == null ? null : Math.abs(Number(row.change_bps)),
       eventScore: Number(row.final_event_score) || 0,
@@ -102,6 +103,8 @@
     const cursor = container.querySelector('[data-policy-cursor]');
     const cursorPeriod = container.querySelector('[data-policy-cursor-period]');
     const cursorAction = container.querySelector('[data-policy-cursor-action]');
+    const adminLink = document.getElementById('admin-page-link');
+    let selectedPoint = null;
     let scaleFrame = null;
     const updateVisibleScale = () => {
       scaleFrame = null;
@@ -130,13 +133,19 @@
       const bounds = svg.getBoundingClientRect();
       const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;
       const nearest = points.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest);
+      selectedPoint = nearest;
       cursor.setAttribute('x1', nearest.x); cursor.setAttribute('x2', nearest.x);
       cursorPeriod.setAttribute('x', nearest.x); cursorPeriod.textContent = nearest.period;
       cursorAction.setAttribute('x', nearest.x); cursorAction.textContent = `${nearest.action}${Number.isFinite(nearest.changeBps) ? `(${nearest.changeBps}bp)` : ''} · 점수 ${nearest.eventScore > 0 ? '+' : ''}${Number(nearest.eventScore.toFixed(1))}`;
       for (const element of [cursor, cursorPeriod, cursorAction]) element.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => {
+      selectedPoint = null;
       for (const element of [cursor, cursorPeriod, cursorAction]) element.classList.remove('is-visible');
+    });
+    svg.addEventListener('click', () => {
+      if (!selectedPoint || !adminLink || adminLink.hidden) return;
+      window.location.assign(`admin.html?policy_date=${encodeURIComponent(selectedPoint.meetingDate)}#policy-review-section`);
     });
   }
 

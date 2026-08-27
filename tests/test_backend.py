@@ -325,13 +325,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("recentCutoff.setUTCFullYear", pipeline)
         self.assertIn('mode === "recent" && (!saved.briefing', pipeline)
 
-    def test_policy_admin_reviews_only_directional_decisions(self) -> None:
+    def test_policy_admin_reviews_include_admin_selected_history(self) -> None:
         policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
         self.assertIn('.neq("action", "hold")', policy_admin)
         self.assertIn('"uncertain"]', policy_admin)
         self.assertIn('String(rawScore).trim() === ""', policy_admin)
         self.assertNotIn('reason !== "uncertain" && !keyword', policy_admin)
-        self.assertIn('review_type: row.meeting_date === latestDate ? "latest"', policy_admin)
+        self.assertIn('row.meeting_date === requestedMeetingDate ? "selected"', policy_admin)
+        self.assertIn('그래프에서\n  // 선택한 과거 회의도 관리자가 직접 교정', policy_admin)
         self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
