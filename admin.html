@@ -8,6 +8,14 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="autocomplete-off.js?v=2"></script>
+  <style>
+    /* 회원 상태 문구 길이와 관계없이 모든 행의 입력칸·동작 열을 같은 위치에 둔다. */
+    @media (min-width: 768px) {
+      .member-row-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 5rem 7rem 7rem;
+      }
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-slate-950 p-4 font-sans text-slate-100 sm:p-6">
   <div id="admin-access-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 p-4">
@@ -266,7 +274,7 @@
   <script src="config.js?v=1"></script>
   <script src="frontend-core.js?v=1"></script>
   <script src="autocomplete-off.js?v=1"></script>
-  <script src="admin.js?v=18"></script>
+  <script src="admin.js?v=19"></script>
   <script src="admin-policy-review.js?v=9"></script>
 </body>
 </html>
