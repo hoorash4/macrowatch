@@ -11,7 +11,7 @@ export type KisDailyPrice = {
 };
 
 export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPrice[] };
-export type KisEtfHolding = { ticker: string; name: string; weightPct: number };
+export type KisEtfHolding = { ticker: string | null; name: string | null; weightPct: number | null };
 
 type KisCredentials = { appKey: string; appSecret: string };
 type KisTokenStore = { from: (table: string) => any };
@@ -182,13 +182,13 @@ export async function fetchKisEtfTopHoldings(
     throw new Error(`KIS ETF 구성종목 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
   }
   const rows = Array.isArray(payload.output2) ? payload.output2 : [];
-  return rows.flatMap((raw) => {
+  return rows.map((raw) => {
     const row = raw as Record<string, unknown>;
-    const holdingTicker = String(row.stck_shrn_iscd || "").trim();
-    const name = String(row.hts_kor_isnm || "").trim();
-    const weightPct = numberValue(row.etf_cnfg_issu_rlim);
-    // 대표 종목 선정에는 KIS가 제공한 유효 종목코드·종목명·편입비중만 사용합니다.
-    if (!/^\d{6}$/.test(holdingTicker) || !name || weightPct === null || weightPct <= 0) return [];
-    return [{ ticker: holdingTicker, name, weightPct }];
-  }).sort((a, b) => b.weightPct - a.weightPct).slice(0, limit);
+    // KIS 원문을 검증·제외하지 않고 보존하며, 비중이 없는 행은 정렬의 마지막에 둡니다.
+    return {
+      ticker: String(row.stck_shrn_iscd || "").trim() || null,
+      name: String(row.hts_kor_isnm || "").trim() || null,
+      weightPct: numberValue(row.etf_cnfg_issu_rlim),
+    };
+  }).sort((a, b) => (b.weightPct ?? Number.NEGATIVE_INFINITY) - (a.weightPct ?? Number.NEGATIVE_INFINITY)).slice(0, limit);
 }

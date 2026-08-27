@@ -51,6 +51,8 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_sector_etf_holdings.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260827_allow_raw_sector_etf_holdings.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_closed_membership_accounts.sql
 
       - name: Deploy Edge Functions
