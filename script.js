@@ -721,13 +721,9 @@ async function checkOneTarget(targetId) {
     if (button) { button.disabled = false; button.textContent = '현재값 확인'; }
   }
 }
-function renderTargetItem(item, globalIndex, isFirstVisible, isLastVisible) {
-  const edgeClasses = [
-    isFirstVisible ? 'target-container-first' : '',
-    isLastVisible ? 'target-container-last' : '',
-  ].filter(Boolean).join(' ');
+function renderTargetItem(item, globalIndex) {
   return `
-    <div data-target-container="${globalIndex}" class="${edgeClasses} py-3 border-b border-slate-800/80 first:border-t">
+    <div data-target-container="${globalIndex}" class="py-3">
       <div data-target-row class="flex items-center justify-between gap-3 px-2 rounded-lg hover:bg-slate-800/30 transition">
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <i class="touch-drag-handle fa-solid fa-grip-vertical text-slate-600 hover:text-slate-400 px-1" aria-hidden="true"></i>
@@ -825,13 +821,8 @@ function renderTargets() {
 
   listEl.innerHTML = visibleTargets.map((item, localIndex) => {
     const globalIndex = startIndex + localIndex;
-    return renderTargetItem(
-    item,
-    globalIndex,
-    localIndex === 0,
-    localIndex === visibleTargets.length - 1
-  );
-}).join('');
+    return renderTargetItem(item, globalIndex);
+  }).join('');
 }
 
 // 지표 제목을 눌렀을 때 상세정보 영역을 펼치거나 접습니다.

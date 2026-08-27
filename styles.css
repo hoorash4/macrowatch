@@ -1297,13 +1297,6 @@ body:has(#app-shell:not(.hidden)) {
 #target-list > div[data-target-container] {
   border-color:var(--color-dark-border);
 }
-/* 목록의 첫 줄·마지막 줄은 카드 외곽선과 겹치는 테두리를 숨깁니다. */
-#target-list .target-container-first {
-  border-top-color:transparent;
-}
-#target-list .target-container-last {
-  border-bottom-color:transparent;
-}
 #target-list [data-target-row]:hover {
   background:#111c31;
 }

@@ -168,6 +168,17 @@ test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰
   assert.match(styles, /\.dashboard-tracker-card\s*\{[\s\S]*?margin-top:var\(--tracker-section-separation\);[\s\S]*?border:var\(--tracker-card-border-width\) solid var\(--tracker-card-accent\);[\s\S]*?border-top-width:var\(--tracker-card-border-top-width\);[\s\S]*?background:var\(--tracker-card-background\);/);
 });
 
+test('지표 추적 목록의 항목 구분선은 목록 컨테이너가 한 번만 그린다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+
+  assert.match(html, /id="target-list" class="divide-y divide-slate-800\/80"/);
+  assert.doesNotMatch(script, /data-target-container[^\n]*\bborder-(?:b|t)\b/);
+  assert.doesNotMatch(script, /target-container-(?:first|last)/);
+  assert.doesNotMatch(styles, /\.target-container-(?:first|last)/);
+});
+
 test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한다', () => {
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin.html'), 'utf8');
   assert.match(admin, /매일 00:30 KST/);
