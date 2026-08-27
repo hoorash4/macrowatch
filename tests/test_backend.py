@@ -90,6 +90,15 @@ class CommonClientTests(unittest.TestCase):
 
 
 class SourceContractTests(unittest.TestCase):
+    def test_closed_membership_keeps_passwords_in_supabase_auth(self):
+        migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
+        auth = (ROOT / "auth.js").read_text(encoding="utf-8")
+        admin = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
+        self.assertIn("add column if not exists username text", migration)
+        self.assertIn("signInWithPassword", auth)
+        self.assertIn('action === "create_member"', admin)
+        self.assertNotIn("password text", migration.lower())
+
     def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")
         rows = re.findall(r"^\s*\('([^']+)',\s*'([^']+)',\s*'(\d{6})',\s*'([^']+)'\)", migration, re.MULTILINE)
