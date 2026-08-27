@@ -5,7 +5,7 @@
   const HEIGHT = 320;
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 24, right: 22, bottom: 42, left: 12 };
-  const state = { rows: [], selectedYears: 2 };
+  const state = { rows: [], selectedYears: 5 };
   const chartUtils = window.MacroWatchAnalysisChart;
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2

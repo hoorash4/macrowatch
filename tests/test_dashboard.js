@@ -150,7 +150,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /data-policy-cursor-period/);
   assert.match(chart, /data-policy-cursor-action/);
   assert.match(chart, /년 \$\{String\(row\.meeting_date\)\.slice\(5, 7\)\}월/);
-  assert.match(chart, /selectedYears: 2/);
+  assert.match(chart, /selectedYears: 5/);
   assert.match(chart, /rowsForRecentHistory/);
   assert.match(chart, /timelineWidth/);
   assert.match(chart, /visibleStart = frame\.scrollLeft/);
