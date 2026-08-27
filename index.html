@@ -310,8 +310,8 @@
           <span class="analysis-card-icon"><i class="fa-solid fa-arrow-right-arrow-left text-sm"></i></span>
           <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA FOREIGN CAPITAL FLOW</p><h2 id="korea-foreign-flow-title" class="analysis-card-title">외국인 자금 유출입 강도</h2></div>
         </div>
-        <p class="analysis-card-description">코스피 외국인 순매매 규모와 원화 가치 변화를 결합해 외국인 자금의 유입·유출 강도를 측정합니다.</p>
-        <p class="analysis-card-description">0 위는 유입 우위, 0 아래는 유출 우위를 뜻합니다.</p>
+        <p class="analysis-card-description">최근 10영업일의 외국인 순매수액·거래대금과 원화 누적 등락률을 각각 최근 3년 분포로 표준화해 50%씩 결합합니다.</p>
+        <p class="analysis-card-description">0 위는 유입 우위, 0 아래는 유출 우위입니다. 히스테리시스 기준 현재 상태: <span id="korea-foreign-flow-state" class="font-semibold text-slate-600">계산 중</span></p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -320,47 +320,7 @@
           </div>
           <div id="korea-foreign-flow-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">외국인 자금 유출입 강도를 불러오는 중입니다.</div></div>
         </div>
-        <div class="policy-expectation-legend" aria-label="외국인 자금 유출입 강도 범례"><span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>5영업일 평균</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 우위</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유출 우위</span><span>외국인 순매수 강도·원화 강도 각 50%</span></div>
-      </div>
-    </section>
-
-    <section id="korea-foreign-flow-cumulative-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-foreign-flow-cumulative-title">
-      <div class="analysis-card-header">
-        <div class="analysis-card-heading-row">
-          <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
-          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA FOREIGN FLOW · 10-DAY CUMULATIVE</p><h2 id="korea-foreign-flow-cumulative-title" class="analysis-card-title">10영업일 누적 자금 유출입</h2></div>
-        </div>
-        <p class="analysis-card-description">최근 10영업일의 외국인 순매수액·거래대금과 원화 누적 등락률을 각각 최근 3년 분포로 표준화해 결합합니다.</p>
-        <p class="analysis-card-description">외국인 누적 수급과 원화 누적 강도를 동일하게 50%씩 반영합니다. 히스테리시스 기준 현재 상태: <span id="korea-foreign-flow-cumulative-state" class="font-semibold text-slate-600">계산 중</span></p>
-      </div>
-      <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="analysis-chart-range-controls" data-korea-foreign-flow-cumulative-ranges aria-label="10영업일 누적 자금 유출입 그래프 조회 기간">
-            <button type="button" data-korea-foreign-flow-cumulative-range="0.5">6개월</button><button type="button" data-korea-foreign-flow-cumulative-range="1" class="is-active">1년</button><button type="button" data-korea-foreign-flow-cumulative-range="2">2년</button><button type="button" data-korea-foreign-flow-cumulative-range="max">MAX</button>
-          </div>
-          <div id="korea-foreign-flow-cumulative-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">10영업일 누적 지표를 계산하는 중입니다.</div></div>
-        </div>
-        <div class="policy-expectation-legend" aria-label="10영업일 누적 자금 유출입 범례"><span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>10영업일 누적 합성지표</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 우위</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유출 우위</span></div>
-      </div>
-    </section>
-
-    <section id="korea-foreign-flow-ewma-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-foreign-flow-ewma-title">
-      <div class="analysis-card-header">
-        <div class="analysis-card-heading-row">
-          <span class="analysis-card-icon"><i class="fa-solid fa-chart-line text-sm"></i></span>
-          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA FOREIGN FLOW · 10-DAY EWMA</p><h2 id="korea-foreign-flow-ewma-title" class="analysis-card-title">10영업일 EWMA 자금 유출입</h2></div>
-        </div>
-        <p class="analysis-card-description">외국인 일별 수급률과 원화 일별 강도를 10영업일 EWMA로 평활한 뒤 각각 최근 3년 분포로 표준화해 50%씩 결합합니다.</p>
-        <p class="analysis-card-description">상태 신호는 ±0.40에서 진입하고 ±0.15에서 해제하는 히스테리시스를 적용합니다. 현재 상태: <span id="korea-foreign-flow-ewma-state" class="font-semibold text-slate-600">계산 중</span></p>
-      </div>
-      <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="analysis-chart-range-controls" data-korea-foreign-flow-ewma-ranges aria-label="10영업일 EWMA 자금 유출입 그래프 조회 기간">
-            <button type="button" data-korea-foreign-flow-ewma-range="0.5">6개월</button><button type="button" data-korea-foreign-flow-ewma-range="1" class="is-active">1년</button><button type="button" data-korea-foreign-flow-ewma-range="2">2년</button><button type="button" data-korea-foreign-flow-ewma-range="max">MAX</button>
-          </div>
-          <div id="korea-foreign-flow-ewma-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">10영업일 EWMA 지표를 계산하는 중입니다.</div></div>
-        </div>
-        <div class="policy-expectation-legend" aria-label="10영업일 EWMA 자금 유출입 범례"><span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>10영업일 EWMA 합성지표</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>강화</span><span class="text-slate-500">중립</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>약화</span></div>
+        <div class="policy-expectation-legend" aria-label="외국인 자금 유출입 강도 범례"><span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>10영업일 누적 합성지표</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 우위</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유출 우위</span></div>
       </div>
     </section>
 
@@ -436,7 +396,7 @@
             <h2 id="policy-signal-title" class="analysis-card-title">통화정책 시그널</h2>
           </div>
         </div>
-        <p class="analysis-card-description">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
+        <p class="analysis-card-description">회의별 정책 점수에 경과일 기준 감쇠를 적용합니다. 0 위는 금융시장 스트레스 정책 신호 우세, 0 아래는 완화·정상화 신호 우세를 뜻합니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -852,10 +812,10 @@
   <script src="script.js?v=157"></script>
   <script src="dashboard-charts.js?v=30"></script>
   <script src="analysis-chart-utils.js?v=2"></script>
-  <script src="policy-chart.js?v=8"></script>
+  <script src="policy-chart.js?v=9"></script>
   <script src="policy-expectation-chart.js?v=11"></script>
   <script src="em-capacity-chart.js?v=3"></script>
-  <script src="korea-foreign-flow-chart.js?v=7"></script>
+  <script src="korea-foreign-flow-chart.js?v=8"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>
