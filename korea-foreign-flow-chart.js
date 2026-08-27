@@ -109,18 +109,27 @@
     frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); detail.classList.remove('is-visible'); });
   }
 
-  // 같은 방향 사이에 낀 하루짜리 반대 수급은 규모와 관계없이 제거합니다.
+  // 같은 방향 사이에 낀 1~2영업일의 반대 수급 구간은 규모와 관계없이 제거합니다.
   // 실제 순매매액과 원화 강도는 수정하지 않으므로 비교 실험을 언제든 되돌릴 수 있습니다.
   function applyPersistenceFilter(rows) {
-    return rows.map((row, index) => {
-      if (index === 0 || index === rows.length - 1) return row;
-      const previousSign = Math.sign(Number(rows[index - 1].foreign_net_buy_amount));
-      const currentSign = Math.sign(Number(row.foreign_net_buy_amount));
-      const nextSign = Math.sign(Number(rows[index + 1].foreign_net_buy_amount));
-      const isolatedReversal = previousSign !== 0 && previousSign === nextSign && currentSign === -previousSign;
-      if (!isolatedReversal) return row;
-      return { ...row, flow_index: Number(row.won_strength_z) / 2, persistence_filtered: true };
-    });
+    const suppressedIndexes = new Set();
+    let start = 1;
+    while (start < rows.length - 1) {
+      const precedingSign = Math.sign(Number(rows[start - 1].foreign_net_buy_amount));
+      const reversalSign = Math.sign(Number(rows[start].foreign_net_buy_amount));
+      if (precedingSign === 0 || reversalSign !== -precedingSign) { start += 1; continue; }
+      let end = start + 1;
+      while (end < rows.length && Math.sign(Number(rows[end].foreign_net_buy_amount)) === reversalSign) end += 1;
+      const reversalLength = end - start;
+      const followingSign = end < rows.length ? Math.sign(Number(rows[end].foreign_net_buy_amount)) : 0;
+      if (reversalLength <= 2 && followingSign === precedingSign) {
+        for (let index = start; index < end; index += 1) suppressedIndexes.add(index);
+      }
+      start = end;
+    }
+    return rows.map((row, index) => suppressedIndexes.has(index)
+      ? { ...row, flow_index: Number(row.won_strength_z) / 2, persistence_filtered: true }
+      : row);
   }
 
   function bindRangeControls({ controls, buttonSelector, stateKey, container, rows, gradientId }) {
