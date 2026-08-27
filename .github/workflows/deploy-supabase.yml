@@ -58,15 +58,6 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_fomc_briefings.sql
 
-      - name: Publish versioned FOMC prompt
-        # The prompt is version-controlled non-secret configuration. Publishing it
-        # with the function prevents code/prompt version drift during deployment.
-        run: |
-          prompt_json="$(jq -Rs . < supabase/prompts/fomc-policy-v2.0.txt)"
-          supabase secrets set \
-            --project-ref "$SUPABASE_PROJECT_REF" \
-            FOMC_POLICY_SYSTEM_PROMPT="$prompt_json"
-
       - name: Deploy Edge Functions
         run: |
           for fn in supabase/functions/*; do

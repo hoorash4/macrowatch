@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recomputePolicyScores } from "../_shared/policy-score-store.ts";
 import { POLICY_SCORE_PROFILE } from "../_shared/policy-scoring.ts";
+import { FOMC_POLICY_PROMPT_V2 } from "./fomc-prompt-v2.ts";
 
 type Action = "hike" | "hold" | "cut";
 type Reason = "inflation_fight" | "growth_overheat" | "recession_financial_stress" | "insurance_easing" | "normalization_hike" | "normalization_cut" | "uncertain";
@@ -146,8 +147,10 @@ async function officialPdfAvailable(url: string) {
 
 function systemPrompt() {
   const storedPrompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
-  const prompt = storedPrompt?.startsWith('"') ? JSON.parse(storedPrompt) as string : storedPrompt;
-  if (!prompt) throw new Error("FOMC_POLICY_SYSTEM_PROMPT가 설정되지 않았습니다.");
+  const configuredPrompt = storedPrompt?.startsWith('"') ? JSON.parse(storedPrompt) as string : storedPrompt;
+  const prompt = configuredPrompt?.trimStart().startsWith(`FOMC 분석 프롬프트 ${POLICY_PROMPT_VERSION}`)
+    ? configuredPrompt
+    : FOMC_POLICY_PROMPT_V2;
   if (!prompt.trimStart().startsWith(`FOMC 분석 프롬프트 ${POLICY_PROMPT_VERSION}`)) {
     throw new Error(`FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신해야 합니다.`);
   }
