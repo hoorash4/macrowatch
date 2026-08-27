@@ -3,7 +3,8 @@
 
   const HEIGHT = 320;
   const MIN_VIEWPORT_WIDTH = 680;
-  const PADDING = { top: 28, right: 24, bottom: 42, left: 52 };
+  const Y_AXIS_WIDTH = 46;
+  const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
   const DATABASE_PAGE_SIZE = 1000;
   const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
   const SCROLL_HISTORY_YEARS = 10;
@@ -65,7 +66,7 @@
     const maximumAbsoluteValue = yTickStep * 2;
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
-    const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, container.clientWidth || MIN_VIEWPORT_WIDTH);
+    const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
     const timelineWidth = selectedYears === 'max' || selectedYears === 10
       ? viewportWidth
       : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
@@ -91,24 +92,26 @@
       const yearLabel = selectedYears === 'max' ? String(year).slice(-2) : String(year);
       return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${yearLabel}</text>`;
     }).join('');
-    const yTicks = [-2, -1, 0, 1, 2].map((multiple) => {
+    const yTickValues = [-2, -1, 0, 1, 2].map((multiple) => {
       const value = multiple * yTickStep;
       const y = scale(value, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
       const label = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
-      return `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' policy-expectation-y-grid--zero' : ''}"/><text x="${PADDING.left - 8}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`;
-    }).join('');
+      return { value, y, label };
+    });
+    const yGridLines = yTickValues.map(({ value, y }) => `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' policy-expectation-y-grid--zero' : ''}"/>`).join('');
+    const yAxisLabels = yTickValues.map(({ y, label }) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"/><text x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
-    container.innerHTML = `<div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
+    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${yAxisLabels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
       <defs><linearGradient id="policy-expectation-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs>
       <g>${yearGuides}</g>
-      <g>${yTicks}</g>
+      <g>${yGridLines}</g>
       <text x="${PADDING.left + 4}" y="${zeroY - 7}" class="policy-expectation-zero-label">현재 정책 수준</text>
       <path d="${rawPath}" class="policy-expectation-line policy-expectation-line--raw"/>
       <path d="${averagePath}" class="policy-expectation-line policy-expectation-line--average"/>
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
       <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
-    </svg></div>`;
+    </svg></div></div>`;
 
     const frame = container.querySelector('.policy-expectation-chart-frame');
     const svg = container.querySelector('.policy-expectation-chart-svg');
