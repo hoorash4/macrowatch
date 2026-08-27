@@ -183,6 +183,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /OSCILLATOR_RETENTION = 0\.8/);
   assert.match(chart, /elapsedDays \/ STANDARD_MEETING_DAYS/);
   assert.match(chart, /POLICY_CHART_MODE === 'legacy'/);
+  assert.match(chart, /yMin: -tickStep \* 2, yMax: tickStep \* 2/);
   assert.match(chart, /macrowatch:dashboard-view-changed/);
   assert.match(chart, /detail\?\.view !== 'policy'/);
   assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);

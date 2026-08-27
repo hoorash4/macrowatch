@@ -30,8 +30,13 @@
 
   function visibleVerticalScale(points) {
     const values = points.map((point) => point.value).filter(Number.isFinite);
-    const minimum = POLICY_CHART_MODE === 'oscillator' ? Math.min(0, ...values) : Math.min(...values);
-    const maximum = POLICY_CHART_MODE === 'oscillator' ? Math.max(0, ...values) : Math.max(...values);
+    if (POLICY_CHART_MODE === 'oscillator') {
+      const maximumAbsoluteValue = Math.max(1, ...values.map(Math.abs)) * 1.1;
+      const tickStep = chartUtils.niceStep(maximumAbsoluteValue / 2);
+      return { tickStep, yMin: -tickStep * 2, yMax: tickStep * 2 };
+    }
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
     const span = Math.max(maximum - minimum, 1);
     const margin = span * 0.1;
     const tickStep = chartUtils.niceStep((span + margin * 2) / 4);
