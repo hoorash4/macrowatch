@@ -188,6 +188,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /macrowatch_policy_review_dates/);
   assert.match(chart, /showNotice\('FOMC 수정 목록 등록'/);
   assert.doesNotMatch(chart, /window\.location\.assign/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'admin-policy-review.js'), 'utf8'), /article\.remove\(\)/);
   assert.match(chart, /macrowatch:dashboard-view-changed/);
   assert.match(chart, /detail\?\.view !== 'policy'/);
   assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);
