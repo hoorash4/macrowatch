@@ -27,7 +27,7 @@
       flowValues.push(tradingValue > 0 ? netBuy / tradingValue : Number.NaN);
       wonValues.push(previousRate > 0 ? -(currentRate / previousRate - 1) : Number.NaN);
       const flowZ = causalZScore(flowValues, index), wonZ = causalZScore(wonValues, index);
-      return flowZ === null || wonZ === null ? [] : [{ ...row, flow_index: (flowZ + wonZ) / 2 }];
+      return flowZ === null || wonZ === null ? [] : [{ ...row, daily_flow_index: Number(row.flow_index), flow_index: (flowZ + wonZ) / 2 }];
     });
   }
 
@@ -53,20 +53,21 @@
   }
 
   function verticalScale(points) {
-    const maximum = Math.max(0.1, ...points.map((point) => Math.abs(point.value))) * 1.05;
+    const values = points.map((point) => Math.abs(point.value)).filter(Number.isFinite);
+    const maximum = Math.max(0.1, ...values) * 1.05;
     const tickStep = chartUtils.niceStep(maximum / 2);
     return { tickStep, maximumAbsoluteValue: tickStep * 2 };
   }
 
   function render(container, rows, selectedYears) {
-    const points = rows.map((row) => ({ ...row, timestamp: Date.parse(`${row.observation_date}T00:00:00Z`), value: Number(row.flow_index) })).filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.value));
+    const points = rows.map((row) => ({ ...row, timestamp: Date.parse(`${row.observation_date}T00:00:00Z`), value: Number(row.flow_index), dailyValue: Number(row.daily_flow_index) })).filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.value));
     if (!points.length) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도 데이터가 아직 없습니다.</div>'; return; }
     const firstTimestamp = points[0].timestamp, lastTimestamp = points.at(-1).timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
     const timelineWidth = selectedYears === 'max' ? viewportWidth : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
-    const initialScale = verticalScale(points);
-    const pathFor = (maximum) => points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${scale(point.value, -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2)}`).join(' ');
+    const initialScale = verticalScale(points.flatMap((point) => [point, { value: point.dailyValue }]));
+    const pathFor = (maximum, key = 'value') => points.filter((point) => Number.isFinite(point[key])).map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2)}`).join(' ');
     const firstYear = new Date(firstTimestamp).getUTCFullYear(), lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
       const year = firstYear + index, timestamp = Date.UTC(year, 0, 1);
@@ -77,16 +78,17 @@
     const tickMultiples = [-2, -1, 0, 1, 2], yPosition = (multiple) => scale(multiple, -2, 2, HEIGHT - PADDING.bottom, PADDING.top);
     const grids = tickMultiples.map((multiple) => `<line x1="${PADDING.left}" y1="${yPosition(multiple)}" x2="${timelineWidth - PADDING.right}" y2="${yPosition(multiple)}" class="policy-expectation-y-grid${multiple === 0 ? ' policy-expectation-y-grid--zero' : ''}"/>`).join('');
     const labels = tickMultiples.map((multiple) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${yPosition(multiple)}" x2="${Y_AXIS_WIDTH}" y2="${yPosition(multiple)}" class="policy-expectation-y-tick"/><text data-korea-foreign-flow-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${yPosition(multiple) + 3}" text-anchor="end" class="policy-expectation-y-label">${Number((multiple * initialScale.tickStep).toFixed(2))}</text>`).join('');
-    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${labels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 한국 외국인 자금 유출입 강도"><defs><linearGradient id="korea-foreign-flow-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path data-korea-flow-line d="${pathFor(initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#korea-foreign-flow-line-gradient)"/><line data-korea-foreign-flow-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-foreign-flow-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg></div></div>`;
+    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${labels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 한국 외국인 자금 유출입 강도"><defs><linearGradient id="korea-foreign-flow-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path data-korea-daily-flow-line d="${pathFor(initialScale.maximumAbsoluteValue, 'dailyValue')}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#korea-foreign-flow-line-gradient)"/><path data-korea-flow-line d="${pathFor(initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#korea-foreign-flow-line-gradient)"/><line data-korea-foreign-flow-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-foreign-flow-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg></div></div>`;
     const frame = container.querySelector('.policy-expectation-chart-frame'), svg = container.querySelector('.policy-expectation-chart-svg');
-    const line = container.querySelector('[data-korea-flow-line]'), yLabels = [...container.querySelectorAll('[data-korea-foreign-flow-y-multiple]')];
+    const line = container.querySelector('[data-korea-flow-line]'), dailyLine = container.querySelector('[data-korea-daily-flow-line]'), yLabels = [...container.querySelectorAll('[data-korea-foreign-flow-y-multiple]')];
     const cursor = container.querySelector('[data-korea-foreign-flow-cursor]'), detail = container.querySelector('[data-korea-foreign-flow-detail]');
     let animationFrame = null;
     const updateVisibleScale = () => {
       animationFrame = null;
       const visiblePoints = points.filter((point) => point.x >= frame.scrollLeft && point.x <= frame.scrollLeft + frame.clientWidth);
       if (!visiblePoints.length) return;
-      const current = verticalScale(visiblePoints); line.setAttribute('d', pathFor(current.maximumAbsoluteValue));
+      const current = verticalScale(visiblePoints.flatMap((point) => [point, { value: point.dailyValue }]));
+      line.setAttribute('d', pathFor(current.maximumAbsoluteValue)); dailyLine.setAttribute('d', pathFor(current.maximumAbsoluteValue, 'dailyValue'));
       yLabels.forEach((label) => { const value = Number(label.dataset.koreaForeignFlowYMultiple) * current.tickStep; label.textContent = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`; });
     };
     frame.addEventListener('scroll', () => { if (animationFrame === null) animationFrame = window.requestAnimationFrame(updateVisibleScale); }, { passive: true });
@@ -104,7 +106,7 @@
   async function load({ supabaseClient }) {
     const container = document.getElementById('korea-foreign-flow-chart');
     if (!container || !supabaseClient) return;
-    const { data, error } = await chartUtils.loadAllRows((from, to) => supabaseClient.from('korea_foreign_flow_daily').select('observation_date,foreign_net_buy_amount,kospi_trading_value,usdkrw_rate').order('observation_date').range(from, to));
+    const { data, error } = await chartUtils.loadAllRows((from, to) => supabaseClient.from('korea_foreign_flow_daily').select('observation_date,foreign_net_buy_amount,kospi_trading_value,usdkrw_rate,flow_index').order('observation_date').range(from, to));
     if (error) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도를 불러오지 못했습니다.</div>'; return; }
     state.rows = applyHysteresis(calculateTenDayCumulative(data || []));
     updateRegimeLabel(state.rows); render(container, state.rows, state.selectedYears);
