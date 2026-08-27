@@ -49,7 +49,7 @@ function loadDashboardScript() {
   context.globalThis = context;
   vm.createContext(context);
   // 운영 HTML과 같은 순서로 공통 기반 → 페이지 셸/추적 → 차트 모듈을 불러온다.
-  for (const filename of ['frontend-core.js', 'script.js', 'dashboard-charts.js']) {
+  for (const filename of ['frontend-core.js', 'indicator-terms.js', 'script.js', 'dashboard-charts.js']) {
     const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8');
     vm.runInContext(source, context, { filename });
   }
@@ -57,6 +57,16 @@ function loadDashboardScript() {
 }
 
 const dashboard = loadDashboardScript();
+
+test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표현을 지원한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const queries = dashboard.window.MacroWatchDashboard.utils.buildFredSearchTerms('10년물');
+
+  assert.match(html, /id="indicator-search-query"[^>]*class="input-surface-light/);
+  assert.match(styles, /#tab-content-tracker input\.input-surface-light\s*\{[\s\S]*?color:#0f172a;[\s\S]*?-webkit-text-fill-color:#0f172a;/);
+  assert.ok(queries.includes('10-Year Treasury Constant Maturity Rate'));
+});
 
 test('뉴스 표시일은 저장일보다 하루 앞선 날짜를 사용한다', () => {
   assert.equal(dashboard.window.MacroWatchDashboard.utils.formatNewsDate('2026-08-26'), '8/25');

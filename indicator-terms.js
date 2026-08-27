@@ -4,8 +4,8 @@
  * 새 표현은 이 파일에만 추가하면 됩니다.
  */
 window.MACROWATCH_FRED_TERMS = Object.freeze([
-  { terms: ["미국 10년물 국채금리", "미국 10년물 금리"], queries: ["10-Year Treasury Constant Maturity Rate", "10-Year Treasury Rate", "10-Year Treasury Yield"] },
-  { terms: ["미국 2년물 국채금리", "미국 2년물 금리"], queries: ["2-Year Treasury Constant Maturity Rate", "2-Year Treasury Rate", "2-Year Treasury Yield"] },
+  { terms: ["미국 10년물 국채금리", "미국 10년물 금리", "10년물 국채금리", "10년물 금리", "10년물"], queries: ["10-Year Treasury Constant Maturity Rate", "10-Year Treasury Rate", "10-Year Treasury Yield"] },
+  { terms: ["미국 2년물 국채금리", "미국 2년물 금리", "2년물 국채금리", "2년물 금리", "2년물"], queries: ["2-Year Treasury Constant Maturity Rate", "2-Year Treasury Rate", "2-Year Treasury Yield"] },
   { terms: ["신규 실업수당 청구건수", "신규실업수당청구건수", "신규 실업 청구"], queries: ["Initial Claims", "Initial Unemployment Insurance Claims"] },
   { terms: ["계속 실업수당 청구건수", "계속실업수당청구건수", "연속 실업수당 청구"], queries: ["Continued Claims", "Continued Unemployment Insurance Claims"] },
   { terms: ["실업률", "실업율", "미국 실업률", "미국 실업율"], queries: ["Unemployment Rate", "Civilian Unemployment Rate"] },

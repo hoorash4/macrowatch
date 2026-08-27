@@ -1501,6 +1501,7 @@ window.MacroWatchDashboard = Object.freeze({
     if (typeof loader === 'function' && !dashboardLoaders.includes(loader)) dashboardLoaders.push(loader);
   },
   utils: Object.freeze({
+    buildFredSearchTerms,
     escapeHtml,
     getConditionText,
     calculateCorrelation: (...args) => window.MacroWatchChartUtils?.calculateCorrelation(...args),

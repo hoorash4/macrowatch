@@ -1342,6 +1342,17 @@ body:has(#app-shell:not(.hidden)) {
   color:var(--color-text-secondary);
   -webkit-text-fill-color:var(--color-text-secondary);
 }
+/* 밝은 보조 패널의 입력란은 추적 카드의 기본 다크 입력 규칙과 표면·글자색을 함께 전환합니다. */
+#tab-content-tracker input.input-surface-light {
+  background:#fff;
+  border-color:#cbd5e1;
+  color:#0f172a;
+  -webkit-text-fill-color:#0f172a;
+}
+#tab-content-tracker input.input-surface-light::placeholder {
+  color:#64748b;
+  -webkit-text-fill-color:#64748b;
+}
 #tab-content-tracker select option {
   background:var(--color-dark-deep);
   color:#fff;

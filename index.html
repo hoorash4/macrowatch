@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=113">
+  <link rel="stylesheet" href="styles.css?v=114">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -393,7 +393,7 @@
             <label for="indicator-search-query" class="text-xs font-semibold text-slate-700">지표 코드 찾기 (선택)</label>
             <p class="mt-1 text-[11px] leading-relaxed text-slate-500">위에서 선택한 데이터 소스에서만 후보를 찾습니다. FRED는 등록된 경제지표 용어 사전을 사용하며, 찾지 못한 표현은 영어로 검색할 수 있습니다.</p>
             <div class="mt-2 flex gap-2">
-              <input id="indicator-search-query" onkeydown="handleIndicatorSearchKeydown(event)" autocomplete="off" type="search" placeholder="예: 미국 신규 실업수당 청구건수" class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-900 outline-none focus:border-blue-500">
+              <input id="indicator-search-query" onkeydown="handleIndicatorSearchKeydown(event)" autocomplete="off" type="search" placeholder="예: 미국 신규 실업수당 청구건수" class="input-surface-light min-w-0 flex-1 rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-900 outline-none focus:border-blue-500">
               <button id="indicator-search-button" type="button" onclick="searchIndicators()" class="shrink-0 rounded-lg bg-slate-800 px-3 text-sm font-bold text-white transition hover:bg-slate-700">찾기</button>
             </div>
           </div>
@@ -696,8 +696,8 @@
   <script src="auth.js?v=17"></script>
 
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
-  <script src="indicator-terms.js?v=2"></script>
-  <script src="script.js?v=155"></script>
+  <script src="indicator-terms.js?v=3"></script>
+  <script src="script.js?v=156"></script>
   <script src="dashboard-charts.js?v=30"></script>
   <script src="policy-chart.js?v=6"></script>
 </body>
