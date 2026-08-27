@@ -26,15 +26,9 @@
     window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
   }
 
-  function formatDate(period) {
-    const [year, month, day] = String(period).split('-').map(Number);
-    return `${year}년 ${month}월 ${day}일`;
-  }
-
-  function formatBps(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return '—';
-    return `${numeric > 0 ? '+' : ''}${numeric.toFixed(1)}bp`;
+  function formatMonthDay(period) {
+    const [, month, day] = String(period).split('-').map(Number);
+    return `${month}월 ${day}일`;
   }
 
   function niceStep(value) {
@@ -113,14 +107,12 @@
       <path d="${rawPath}" class="policy-expectation-line policy-expectation-line--raw"/>
       <path d="${averagePath}" class="policy-expectation-line policy-expectation-line--average"/>
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
-      <text data-policy-expectation-value text-anchor="middle" y="${PADDING.top + 11}" class="policy-expectation-cursor-value"></text>
       <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
     </svg></div>`;
 
     const frame = container.querySelector('.policy-expectation-chart-frame');
     const svg = container.querySelector('.policy-expectation-chart-svg');
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
-    const cursorValue = container.querySelector('[data-policy-expectation-value]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
     scrollToLatest(frame);
     frame.addEventListener('pointermove', (event) => {
@@ -129,14 +121,12 @@
       const nearest = points.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest);
       cursor.setAttribute('x1', nearest.x);
       cursor.setAttribute('x2', nearest.x);
-      cursorValue.setAttribute('x', nearest.x);
-      cursorValue.textContent = `${formatDate(nearest.observation_date)} · 5일 평균 ${formatBps(nearest.fiveDayAverage)}`;
       cursorDetail.setAttribute('x', nearest.x);
-      cursorDetail.textContent = `일간 ${formatBps(nearest.value)} · 3개월 ${formatBps(nearest.near_term_spread_bps)} · 2년 ${formatBps(nearest.cycle_spread_bps)}`;
-      for (const element of [cursor, cursorValue, cursorDetail]) element.classList.add('is-visible');
+      cursorDetail.textContent = formatMonthDay(nearest.observation_date);
+      for (const element of [cursor, cursorDetail]) element.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => {
-      for (const element of [cursor, cursorValue, cursorDetail]) element.classList.remove('is-visible');
+      for (const element of [cursor, cursorDetail]) element.classList.remove('is-visible');
     });
   }
 

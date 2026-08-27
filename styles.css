@@ -954,10 +954,9 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-line--raw { opacity:.3; stroke-width:1.15; }
 .policy-expectation-line--average { stroke-width:2.5; }
 .policy-expectation-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
-.policy-expectation-cursor-value,.policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; }
-.policy-expectation-cursor-value { fill:#334155; font-size:10px; font-weight:750; }
+.policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; }
 .policy-expectation-cursor-detail { fill:#64748b; font-size:9px; font-weight:650; }
-.policy-expectation-cursor.is-visible,.policy-expectation-cursor-value.is-visible,.policy-expectation-cursor-detail.is-visible { opacity:1; }
+.policy-expectation-cursor.is-visible,.policy-expectation-cursor-detail.is-visible { opacity:1; }
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
 .policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
 .policy-expectation-legend-line { display:inline-block; width:1.25rem; height:2px; }
