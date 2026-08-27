@@ -159,6 +159,15 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(html, /rounded-xl border border-slate-200 bg-slate-50 p-3[\s\S]*id="policy-signal-chart"/);
 });
 
+test('시장 내재 정책금리 기대 그래프는 최근 5년 폭을 먼저 보여준다', () => {
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-expectation-chart.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(chart, /FIVE_YEARS_MS = 5 \* 365\.25/);
+  assert.match(chart, /lastTimestamp - firstTimestamp\) \/ FIVE_YEARS_MS/);
+  assert.match(chart, /frame\.scrollLeft = frame\.scrollWidth - frame\.clientWidth/);
+  assert.match(html, /policy-expectation-chart\.js\?v=2/);
+});
+
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');

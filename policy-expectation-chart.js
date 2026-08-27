@@ -4,7 +4,7 @@
   const HEIGHT = 320;
   const MIN_VIEWPORT_WIDTH = 680;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 24 };
-  const TEN_YEARS_MS = 10 * 365.25 * 24 * 60 * 60 * 1000;
+  const FIVE_YEARS_MS = 5 * 365.25 * 24 * 60 * 60 * 1000;
   const DATABASE_PAGE_SIZE = 1000;
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
@@ -42,7 +42,7 @@
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, container.clientWidth || MIN_VIEWPORT_WIDTH);
-    const timelineWidth = Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / TEN_YEARS_MS));
+    const timelineWidth = Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / FIVE_YEARS_MS));
     const zeroY = scale(0, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
     const points = datedRows.map((row) => ({
       ...row,
