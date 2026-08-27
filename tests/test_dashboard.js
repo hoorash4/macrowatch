@@ -186,8 +186,9 @@ test('지표 순서 변경은 들어 올린 행의 중앙으로 판정하고 삽
   assert.match(script, /function getDragPreviewCenterY\(pointerClientY\)/);
   assert.match(script, /document\.elementFromPoint\(clientX, dragCenterY\)/);
   assert.match(script, /dragCenterY < rect\.top \+ rect\.height \/ 2/);
+  assert.doesNotMatch(script, /targetIndex === draggedItemIndex/);
   assert.doesNotMatch(styles, /\.drop-indicator-(?:before|after)\s*\{[^}]*box-shadow/);
-  assert.match(styles, /\.drop-indicator-before::before,[\s\S]*?height:2px;[\s\S]*?background:#fff;/);
+  assert.match(styles, /\.drop-indicator-before::before,[\s\S]*?height:1px;[\s\S]*?background:#fff;/);
 });
 
 test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한다', () => {

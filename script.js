@@ -1120,11 +1120,6 @@ function updatePointerDropTarget(clientX, clientY) {
   }
 
   const targetIndex = Number(container.dataset.targetContainer);
-  if (targetIndex === draggedItemIndex) {
-    clearDropIndicator();
-    return;
-  }
-
   const row = container.querySelector('[data-target-row]') || container;
   const rect = row.getBoundingClientRect();
   setDropIndicator(

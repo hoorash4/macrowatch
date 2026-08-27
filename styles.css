@@ -1442,7 +1442,7 @@ body.is-pointer-dragging {
   z-index:2;
   left:0;
   right:0;
-  height:2px;
+  height:1px;
   background:#fff;
   pointer-events:none;
 }
