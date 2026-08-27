@@ -169,6 +169,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-chart.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.match(chart, />\$\{label\}<\/text>/);
   assert.match(chart, /data-policy-cursor-period/);
   assert.match(chart, /data-policy-cursor-action/);
@@ -189,6 +190,8 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /showNotice\('FOMC 수정 목록 등록'/);
   assert.doesNotMatch(chart, /window\.location\.assign/);
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'admin-policy-review.js'), 'utf8'), /article\.remove\(\)/);
+  assert.match(styles, /--color-chart-blue:\s*#2563a8/);
+  assert.match(styles, /\.policy-chart-line\s*\{[^}]*stroke:var\(--color-chart-blue\)/);
   assert.match(chart, /macrowatch:dashboard-view-changed/);
   assert.match(chart, /detail\?\.view !== 'policy'/);
   assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);

@@ -47,6 +47,7 @@
   --color-status-danger: #ef4444;
   --color-status-provisional: #d97706;
   --color-chart-axis: #94a3b8;
+  --color-chart-blue: #2563a8;
   /* 공통 형태 */
   --radius-card: 1.25rem;
   --radius-control: .55rem;
@@ -935,7 +936,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-chart-y-tick { stroke:#94a3b8; stroke-width:1; }
 .policy-chart-y-label { fill:#64748b; font-size:9px; font-weight:650; }
 .policy-chart-year-guide { stroke:#e2e8f0; stroke-width:1; }
-.policy-chart-line { fill:none; stroke:#1d4ed8; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+.policy-chart-line { fill:none; stroke:var(--color-chart-blue); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
 .policy-chart-point { fill:#1e40af; stroke:#fff; stroke-width:1.5; }
 .policy-chart-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-chart-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
