@@ -650,9 +650,9 @@ body:has(#app-shell:not(.hidden)) {
 }
 /* FOMC 브리핑은 회의 목록과 읽기 영역을 분리해 카드 전체 높이를 일정하게 유지합니다. */
 .fomc-briefing-list { min-width:0; }
-.fomc-briefing-items { overflow:hidden; border:1px solid rgba(48,25,32,.72); border-radius:.85rem; background:#432831; }
+.fomc-briefing-items { overflow:hidden; border:1px solid rgba(48,25,32,.72); border-radius:.85rem; background:#382129; }
 .fomc-briefing-item + .fomc-briefing-item { border-top:1px solid rgba(241,221,227,.18); }
-.fomc-briefing-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.15rem; border-left:3px solid transparent; background:#432831; color:#f1e8eb; text-align:left; transition:background-color .18s ease,border-color .18s ease; }
+.fomc-briefing-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.15rem; border-left:3px solid transparent; background:#382129; color:#f1e8eb; text-align:left; transition:background-color .18s ease,border-color .18s ease; }
 .fomc-briefing-toggle:hover,.fomc-briefing-toggle:focus-visible { border-left-color:#d7a5b2; background:#50313b; }
 .fomc-briefing-title-wrap { display:flex; align-items:center; gap:.75rem; min-width:0; }
 .fomc-briefing-title-mark { display:flex; width:2.15rem; height:2.15rem; flex:none; align-items:center; justify-content:center; border:1px solid rgba(242,190,82,.58); border-radius:.62rem; background:rgba(242,190,82,.16); color:#f2be52; }
@@ -662,7 +662,7 @@ body:has(#app-shell:not(.hidden)) {
 .fomc-briefing-title-label { margin-left:.45rem; color:#f1e8eb; }
 .fomc-briefing-toggle small { color:#ddcbd1; font-size:.79rem; font-weight:500; }
 .fomc-briefing-toggle > i { color:#cbb2ba; font-size:.72rem; transition:transform .2s ease; }
-.fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#e1b4bf; background:#382129; }
+.fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#e1b4bf; background:#50313b; }
 .fomc-briefing-item.is-open .fomc-briefing-toggle > i { color:#e5c5cd; transform:rotate(180deg); }
 .fomc-briefing-detail { border-top:1px solid rgba(71,85,105,.3); background:#f8fafc; }
 .fomc-briefing-detail-scroll { padding:1.25rem; }
