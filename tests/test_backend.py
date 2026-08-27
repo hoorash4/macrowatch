@@ -263,6 +263,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('not("policy_index", "is", null)', pipeline)
         self.assertIn("FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신", pipeline)
         self.assertIn("FOMC_POLICY_SYSTEM_PROMPT_BASE64", pipeline)
+        self.assertIn("FOMC_POLICY_SYSTEM_PROMPT_B64_${index + 1}", pipeline)
         self.assertIn("briefing: analysis.briefing", pipeline)
 
     def test_fomc_v2_prompt_preserves_policy_rules_and_adds_briefing_contract(self) -> None:

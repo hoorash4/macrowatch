@@ -145,7 +145,8 @@ async function officialPdfAvailable(url: string) {
 }
 
 function systemPrompt() {
-  const encodedPrompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT_BASE64");
+  const encodedPrompt = Array.from({ length: 6 }, (_, index) => Deno.env.get(`FOMC_POLICY_SYSTEM_PROMPT_B64_${index + 1}`) || "").join("")
+    || Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT_BASE64");
   const prompt = encodedPrompt
     ? new TextDecoder().decode(Uint8Array.from(atob(encodedPrompt), (character) => character.charCodeAt(0)))
     : Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
