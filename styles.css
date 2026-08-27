@@ -946,10 +946,10 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
 .policy-expectation-year-guide { stroke:#e2e8f0; stroke-width:1; }
 .policy-expectation-year { fill:#64748b; font-size:12px; font-weight:650; }
-.policy-expectation-x-axis { stroke:#94a3b8; stroke-width:1; }
-.policy-expectation-x-tick { stroke:#94a3b8; stroke-width:1; }
-.policy-expectation-zero-line { stroke:#64748b; stroke-width:1.2; }
 .policy-expectation-zero-label { fill:#64748b; font-size:9px; font-weight:700; }
+.policy-expectation-y-grid { stroke:#e2e8f0; stroke-width:1; }
+.policy-expectation-y-grid--zero { stroke:#64748b; stroke-width:1.2; }
+.policy-expectation-y-label { fill:#64748b; font-size:9px; font-weight:650; }
 .policy-expectation-line { fill:none; stroke:url(#policy-expectation-line-gradient); stroke-linecap:round; stroke-linejoin:round; }
 .policy-expectation-line--raw { opacity:.3; stroke-width:1.15; }
 .policy-expectation-line--average { stroke-width:2.5; }

@@ -3,7 +3,7 @@
 
   const HEIGHT = 320;
   const MIN_VIEWPORT_WIDTH = 680;
-  const PADDING = { top: 28, right: 24, bottom: 42, left: 24 };
+  const PADDING = { top: 28, right: 24, bottom: 42, left: 52 };
   const DATABASE_PAGE_SIZE = 1000;
   const state = { rows: [], selectedYears: 5 };
 
@@ -30,6 +30,13 @@
     return `${numeric > 0 ? '+' : ''}${numeric.toFixed(1)}bp`;
   }
 
+  function niceStep(value) {
+    const magnitude = 10 ** Math.floor(Math.log10(Math.max(value, 1)));
+    const normalized = value / magnitude;
+    const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return factor * magnitude;
+  }
+
   function withFiveDayAverage(rows) {
     return rows.map((row, index) => {
       if (index < 4) return { ...row, fiveDayAverage: null };
@@ -52,7 +59,9 @@
       return;
     }
 
-    const maximumAbsoluteValue = Math.max(25, ...datedRows.map((row) => Math.abs(row.value))) * 1.1;
+    const maximumObservedValue = Math.max(25, ...datedRows.map((row) => Math.abs(row.value))) * 1.05;
+    const yTickStep = niceStep(maximumObservedValue / 2);
+    const maximumAbsoluteValue = yTickStep * 2;
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, container.clientWidth || MIN_VIEWPORT_WIDTH);
@@ -77,16 +86,21 @@
       if (timestamp < firstTimestamp || timestamp > lastTimestamp) return '';
       const x = scale(timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right);
       const yearLabel = selectedYears === 'max' ? String(year).slice(-2) : String(year);
-      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><line x1="${x}" y1="${HEIGHT - PADDING.bottom}" x2="${x}" y2="${HEIGHT - PADDING.bottom + 5}" class="policy-expectation-x-tick"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${yearLabel}</text>`;
+      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${yearLabel}</text>`;
+    }).join('');
+    const yTicks = [-2, -1, 0, 1, 2].map((multiple) => {
+      const value = multiple * yTickStep;
+      const y = scale(value, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
+      const label = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
+      return `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' policy-expectation-y-grid--zero' : ''}"/><text x="${PADDING.left - 8}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`;
     }).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
     container.innerHTML = `<div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
       <defs><linearGradient id="policy-expectation-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs>
       <g>${yearGuides}</g>
-      <line x1="${PADDING.left}" y1="${HEIGHT - PADDING.bottom}" x2="${timelineWidth - PADDING.right}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-x-axis"/>
-      <line x1="${PADDING.left}" y1="${zeroY}" x2="${timelineWidth - PADDING.right}" y2="${zeroY}" class="policy-expectation-zero-line"/>
-      <text x="${PADDING.left + 4}" y="${zeroY - 7}" class="policy-expectation-zero-label">0 · 현재 정책 수준</text>
+      <g>${yTicks}</g>
+      <text x="${PADDING.left + 4}" y="${zeroY - 7}" class="policy-expectation-zero-label">현재 정책 수준</text>
       <path d="${rawPath}" class="policy-expectation-line policy-expectation-line--raw"/>
       <path d="${averagePath}" class="policy-expectation-line policy-expectation-line--average"/>
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
