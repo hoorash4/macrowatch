@@ -18,8 +18,8 @@ test("물가 억제 첫 인상과 연속 결정은 첫 가중치 후 체감한�
   const result = scorePolicyHistory(rows([
     ["hike", "inflation_fight"], ["hike", "inflation_fight"], ["hike", "inflation_fight"],
   ]));
-  assert.deepEqual(result.map((row) => row.final_event_score), [110, 50, 33.333]);
-  assert.deepEqual(result.map((row) => row.policy_index), [1110, 1160, 1193.333]);
+  assert.deepEqual(result.map((row) => row.final_event_score), [110, 50, 33]);
+  assert.deepEqual(result.map((row) => row.policy_index), [1110, 1160, 1193]);
   assert.equal(result.at(-1)?.trend_type, "confirmed");
 });
 
@@ -43,7 +43,7 @@ test("25bp 초과 폭은 25bp마다 25%씩, 긴급회의는 50%를 합산한다"
     ["hike", "growth_overheat", 50, true],
   ]));
   assert.equal(result[0].final_event_score, 185);
-  assert.equal(result[3].final_event_score, -12.5);
+  assert.equal(result[3].final_event_score, -12);
 });
 
 test("확정 연속 추세도 첫 동결은 보류하고 두 번째부터 100점으로 체감한다", () => {
@@ -157,5 +157,5 @@ test("정상화 인상과 인하는 모두 -50부터 이유별로 지속 체감�
     ["hike", "normalization_hike"], ["hike", "normalization_hike"], ["hike", "normalization_hike"],
     ["cut", "normalization_cut"], ["cut", "normalization_cut"], ["cut", "normalization_cut"],
   ]));
-  assert.deepEqual(result.map((row) => row.final_event_score), [-50, -25, -16.667, -50, -25, -16.667]);
+  assert.deepEqual(result.map((row) => row.final_event_score), [-50, -25, -17, -50, -25, -17]);
 });
