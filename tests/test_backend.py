@@ -27,6 +27,7 @@ import common  # noqa: E402
 import em_stress_pipeline as em  # noqa: E402
 import financial_stress_pipeline as us  # noqa: E402
 import korea_stress_pipeline as kr  # noqa: E402
+import policy_expectation_pipeline as policy_expectation  # noqa: E402
 
 
 class TargetConditionTests(unittest.TestCase):
@@ -41,6 +42,17 @@ class TargetConditionTests(unittest.TestCase):
 
 
 class SharedCalculationTests(unittest.TestCase):
+    def test_policy_expectation_spread_uses_complete_dates_and_70_30_weights(self) -> None:
+        rows = policy_expectation.build_rows({
+            "treasury_3m_rate": {"2026-08-25": 3.50, "2026-08-26": 3.60},
+            "treasury_2y_rate": {"2026-08-25": 3.25},
+            "effr_rate": {"2026-08-25": 3.75, "2026-08-26": 3.75},
+        })
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["near_term_spread_bps"], -25.0)
+        self.assertEqual(rows[0]["cycle_spread_bps"], -50.0)
+        self.assertEqual(rows[0]["expectation_spread_bps"], -32.5)
+
     def test_carry_forward_preserves_last_observed_value(self) -> None:
         periods = ["2026-01-02", "2026-01-09", "2026-01-16"]
         expected = {"2026-01-02": 1.0, "2026-01-09": 1.0, "2026-01-16": 3.0}

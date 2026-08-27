@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=128">
+  <link rel="stylesheet" href="styles.css?v=129">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -347,6 +347,29 @@
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div id="policy-signal-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">FOMC 정책 점수를 불러오는 중입니다.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="policy-expectation-dashboard" data-dashboard-panel="policy" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="policy-expectation-title">
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-arrow-trend-up text-sm"></i></span>
+          <div>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--sky">MARKET-IMPLIED POLICY PATH</p>
+            <h2 id="policy-expectation-title" class="analysis-card-title">시장 내재 정책금리 기대</h2>
+          </div>
+        </div>
+        <p class="analysis-card-description">미국채 3개월물과 2년물에 반영된 정책금리 경로를 실효연방기금금리(EFFR)와 비교합니다.</p>
+      </div>
+      <div class="px-5 pb-5 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div id="policy-expectation-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">시장 내재 정책금리 기대를 불러오는 중입니다.</div></div>
+        </div>
+        <div class="policy-expectation-legend" aria-label="정책금리 기대 스프레드 범례">
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 높은 금리 경로 기대</span>
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 낮은 금리 경로 기대</span>
+          <span>3개월물 70% · 2년물 30%</span>
         </div>
       </div>
     </section>
@@ -719,6 +742,7 @@
   <script src="script.js?v=157"></script>
   <script src="dashboard-charts.js?v=30"></script>
   <script src="policy-chart.js?v=6"></script>
+  <script src="policy-expectation-chart.js?v=1"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>

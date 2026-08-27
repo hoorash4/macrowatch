@@ -162,14 +162,14 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 8);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 18);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 10);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 21);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 8);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 8);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 10);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 10);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);

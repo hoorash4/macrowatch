@@ -1,0 +1,48 @@
+name: Refresh market-implied policy expectations
+
+on:
+  # 새 스키마가 먼저 적용된 뒤 최초 이력을 채워 배포 작업과의 경쟁을 막습니다.
+  workflow_run:
+    workflows: ["Deploy Supabase changes"]
+    types: [completed]
+  schedule:
+    # 07:30 KST: after U.S. daily rate releases and 30 minutes after the 07:00 job.
+    - cron: "30 22 * * *"
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Backfill starting year"
+        required: false
+        default: "2000"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-policy-expectation
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install HTTP client
+        run: pip install --disable-pip-version-check requests
+      - name: Collect and calculate daily policy expectations
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python backend/policy_expectation_pipeline.py --days 21
+          else
+            python backend/policy_expectation_pipeline.py --start-year "${{ inputs.start_year || '2000' }}"
+          fi

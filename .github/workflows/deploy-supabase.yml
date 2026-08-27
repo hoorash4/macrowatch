@@ -58,6 +58,8 @@ jobs:
             --file supabase/migrations/20260827_add_closed_membership_accounts.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_fomc_briefings.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260827_add_policy_expectation_spreads.sql
 
       - name: Deploy Edge Functions
         run: |

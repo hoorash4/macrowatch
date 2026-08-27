@@ -1,0 +1,129 @@
+(() => {
+  'use strict';
+
+  const HEIGHT = 320;
+  const MIN_VIEWPORT_WIDTH = 680;
+  const PADDING = { top: 28, right: 24, bottom: 42, left: 24 };
+  const TEN_YEARS_MS = 10 * 365.25 * 24 * 60 * 60 * 1000;
+  const DATABASE_PAGE_SIZE = 1000;
+
+  const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
+    ? (targetMin + targetMax) / 2
+    : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
+
+  function scrollToLatest(frame) {
+    if (!frame) return;
+    window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
+  }
+
+  function formatDate(period) {
+    const [year, month, day] = String(period).split('-').map(Number);
+    return `${year}년 ${month}월 ${day}일`;
+  }
+
+  function formatBps(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '—';
+    return `${numeric > 0 ? '+' : ''}${numeric.toFixed(1)}bp`;
+  }
+
+  function render(container, rows) {
+    const datedRows = rows.map((row) => ({
+      ...row,
+      timestamp: Date.parse(`${row.observation_date}T00:00:00Z`),
+      value: Number(row.expectation_spread_bps),
+    })).filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.value));
+    if (!datedRows.length) {
+      container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">정책금리 기대 스프레드 데이터가 아직 없습니다.</div>';
+      return;
+    }
+
+    const maximumAbsoluteValue = Math.max(25, ...datedRows.map((row) => Math.abs(row.value))) * 1.1;
+    const firstTimestamp = datedRows[0].timestamp;
+    const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
+    const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, container.clientWidth || MIN_VIEWPORT_WIDTH);
+    const timelineWidth = Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / TEN_YEARS_MS));
+    const zeroY = scale(0, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
+    const points = datedRows.map((row) => ({
+      ...row,
+      x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right),
+      y: scale(row.value, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
+    }));
+    const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+    const firstYear = new Date(firstTimestamp).getUTCFullYear();
+    const lastYear = new Date(lastTimestamp).getUTCFullYear();
+    const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
+      const year = firstYear + index;
+      const timestamp = Date.UTC(year, 0, 1);
+      if (timestamp < firstTimestamp || timestamp > lastTimestamp) return '';
+      const x = scale(timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right);
+      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${year}</text>`;
+    }).join('');
+    const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
+
+    container.innerHTML = `<div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
+      <defs><linearGradient id="policy-expectation-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs>
+      <g>${yearGuides}</g>
+      <line x1="${PADDING.left}" y1="${zeroY}" x2="${timelineWidth - PADDING.right}" y2="${zeroY}" class="policy-expectation-zero-line"/>
+      <text x="${PADDING.left + 4}" y="${zeroY - 7}" class="policy-expectation-zero-label">0 · 현재 정책 수준</text>
+      <path d="${path}" class="policy-expectation-line"/>
+      <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
+      <text data-policy-expectation-value text-anchor="middle" y="${PADDING.top + 11}" class="policy-expectation-cursor-value"></text>
+      <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
+    </svg></div>`;
+
+    const frame = container.querySelector('.policy-expectation-chart-frame');
+    const svg = container.querySelector('.policy-expectation-chart-svg');
+    const cursor = container.querySelector('[data-policy-expectation-cursor]');
+    const cursorValue = container.querySelector('[data-policy-expectation-value]');
+    const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
+    scrollToLatest(frame);
+    frame.addEventListener('pointermove', (event) => {
+      const bounds = svg.getBoundingClientRect();
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;
+      const nearest = points.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest);
+      cursor.setAttribute('x1', nearest.x);
+      cursor.setAttribute('x2', nearest.x);
+      cursorValue.setAttribute('x', nearest.x);
+      cursorValue.textContent = `${formatDate(nearest.observation_date)} · ${formatBps(nearest.value)}`;
+      cursorDetail.setAttribute('x', nearest.x);
+      cursorDetail.textContent = `3개월 ${formatBps(nearest.near_term_spread_bps)} · 2년 ${formatBps(nearest.cycle_spread_bps)}`;
+      for (const element of [cursor, cursorValue, cursorDetail]) element.classList.add('is-visible');
+    });
+    frame.addEventListener('pointerleave', () => {
+      for (const element of [cursor, cursorValue, cursorDetail]) element.classList.remove('is-visible');
+    });
+  }
+
+  async function fetchAllRows(supabaseClient) {
+    const rows = [];
+    for (let from = 0; ; from += DATABASE_PAGE_SIZE) {
+      const { data, error } = await supabaseClient.from('policy_expectation_spreads')
+        .select('observation_date,near_term_spread_bps,cycle_spread_bps,expectation_spread_bps')
+        .order('observation_date')
+        .range(from, from + DATABASE_PAGE_SIZE - 1);
+      if (error) throw error;
+      const page = data || [];
+      rows.push(...page);
+      if (page.length < DATABASE_PAGE_SIZE) return rows;
+    }
+  }
+
+  async function load({ supabaseClient }) {
+    const container = document.getElementById('policy-expectation-chart');
+    if (!container || !supabaseClient) return;
+    try {
+      render(container, await fetchAllRows(supabaseClient));
+    } catch (error) {
+      console.error('Policy expectation chart load failed:', error);
+      container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">정책금리 기대 스프레드를 불러오지 못했습니다.</div>';
+    }
+  }
+
+  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
+    if (detail?.view !== 'policy') return;
+    scrollToLatest(document.querySelector('#policy-expectation-chart .policy-expectation-chart-frame'));
+  });
+
+  window.MacroWatchDashboard?.registerLoader(load);
+})();
