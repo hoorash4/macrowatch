@@ -6,6 +6,7 @@ on:
     paths:
       - "supabase/functions/**"
       - "supabase/migrations/**"
+      - "supabase/prompts/**"
       - "supabase/config.toml"
   workflow_dispatch:
 
@@ -54,6 +55,16 @@ jobs:
             --file supabase/migrations/20260827_allow_raw_sector_etf_holdings.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_closed_membership_accounts.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260827_add_fomc_briefings.sql
+
+      - name: Publish versioned FOMC prompt
+        # The prompt is version-controlled non-secret configuration. Publishing it
+        # with the function prevents code/prompt version drift during deployment.
+        run: |
+          supabase secrets set \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            FOMC_POLICY_SYSTEM_PROMPT="$(cat supabase/prompts/fomc-policy-v2.0.txt)"
 
       - name: Deploy Edge Functions
         run: |

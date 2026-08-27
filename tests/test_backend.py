@@ -263,6 +263,28 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('not("policy_index", "is", null)', pipeline)
         self.assertIn("FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신", pipeline)
 
+    def test_fomc_v2_prompt_preserves_policy_rules_and_adds_briefing_contract(self) -> None:
+        original = (ROOT / "supabase/prompts/fomc-policy-v1.2.txt").read_text(encoding="utf-8")
+        prompt = (ROOT / "supabase/prompts/fomc-policy-v2.0.txt").read_text(encoding="utf-8")
+        original_rules = original.split("[출력 규칙]", 1)[0].replace("FOMC 분석 프롬프트 v1.2", "", 1).strip()
+        self.assertIn(original_rules, prompt)
+        self.assertIn("FOMC 분석 프롬프트 v2.0", prompt)
+        self.assertIn('"briefing"', prompt)
+        self.assertIn("previous_fomc_statement", prompt)
+        self.assertIn("press_conference_transcript", prompt)
+        self.assertIn("ai_overall_analysis", prompt)
+
+    def test_fomc_briefing_alerts_are_idempotent_and_use_exact_messages(self) -> None:
+        pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
+        sender = (ROOT / "backend/send_policy_briefing_alerts.py").read_text(encoding="utf-8")
+        migration = (ROOT / "supabase/migrations/20260827_add_fomc_briefings.sql").read_text(encoding="utf-8")
+        self.assertIn('const POLICY_PROMPT_VERSION = "v2.0"', pipeline)
+        self.assertIn("source_state_hash", pipeline)
+        self.assertIn("policy_briefing_alerts", pipeline)
+        self.assertIn("primary key (central_bank, meeting_date, revision)", migration)
+        self.assertIn("통화정책 시그널에 새로운 FOMC 브리핑이 등록되었습니다.", sender)
+        self.assertIn("통화정책 시그널에 업데이트된 FOMC 브리핑이 등록되었습니다.", sender)
+
     def test_policy_admin_reviews_only_directional_decisions(self) -> None:
         policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
         self.assertIn('.neq("action", "hold")', policy_admin)

@@ -10,6 +10,12 @@ type Transition = "confirmed" | "not_confirmed" | "uncertain";
 type Analysis = {
   decision: { action: Action; target_range_lower: number | null; target_range_upper: number | null; change_bps: number | null };
   analysis: { primary_reason: Reason; reason_confidence: number; transition_assessment: Transition; financial_stress_mentioned: boolean; growth_downside_mentioned: boolean; inflation_pressure_mentioned: boolean; summary: string };
+  briefing: {
+    statement_briefing: string; economy: string | null; inflation: string | null;
+    employment: string | null; other: string | null; key_rate_reason: string;
+    changes_from_previous: Array<{ title: string; change_type: "added" | "removed" | "strengthened" | "softened" | "reframed" | "maintained"; significance: "high" | "medium" | "low"; previous_expression: string | null; current_expression: string | null; explanation: string }>;
+    ai_overall_analysis: string;
+  };
 };
 
 type Source = { meetingDate: string; sourceUrl: string; isEmergency: boolean };
@@ -18,10 +24,11 @@ type EventRow = {
   analysis_status: string; policy_segment: number | null; segment_sequence: number | null;
   target_range_lower?: number | null; target_range_upper?: number | null;
   is_emergency?: boolean; change_bps?: number | null;
+  source_url?: string | null;
 };
 
 const FED_BASE = "https://www.federalreserve.gov";
-const POLICY_PROMPT_VERSION = "v1.2";
+const POLICY_PROMPT_VERSION = "v2.0";
 const REASON_CONFIDENCE_THRESHOLD = 0.55;
 const UNCERTAIN_CONFIDENCE_MAX = 0.549;
 
@@ -41,7 +48,21 @@ const RESPONSE_SCHEMA = {
       financial_stress_mentioned: { type: "boolean" }, growth_downside_mentioned: { type: "boolean" },
       inflation_pressure_mentioned: { type: "boolean" }, summary: { type: "string" },
     }, required: ["primary_reason", "reason_confidence", "transition_assessment", "financial_stress_mentioned", "growth_downside_mentioned", "inflation_pressure_mentioned", "summary"] },
-  }, required: ["decision", "analysis"],
+    briefing: { type: "object", additionalProperties: false, properties: {
+      statement_briefing: { type: "string" },
+      economy: { anyOf: [{ type: "string" }, { type: "null" }] },
+      inflation: { anyOf: [{ type: "string" }, { type: "null" }] },
+      employment: { anyOf: [{ type: "string" }, { type: "null" }] },
+      other: { anyOf: [{ type: "string" }, { type: "null" }] },
+      key_rate_reason: { type: "string" },
+      changes_from_previous: { type: "array", maxItems: 6, items: { type: "object", additionalProperties: false, properties: {
+        title: { type: "string" }, change_type: { type: "string", enum: ["added", "removed", "strengthened", "softened", "reframed", "maintained"] },
+        significance: { type: "string", enum: ["high", "medium", "low"] },
+        previous_expression: { anyOf: [{ type: "string" }, { type: "null" }] }, current_expression: { anyOf: [{ type: "string" }, { type: "null" }] }, explanation: { type: "string" },
+      }, required: ["title", "change_type", "significance", "previous_expression", "current_expression", "explanation"] } },
+      ai_overall_analysis: { type: "string" },
+    }, required: ["statement_briefing", "economy", "inflation", "employment", "other", "key_rate_reason", "changes_from_previous", "ai_overall_analysis"] },
+  }, required: ["decision", "analysis", "briefing"],
 };
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
@@ -99,26 +120,56 @@ async function getStatement(sourceUrl: string) {
   return statement;
 }
 
+function implementationNoteUrl(statementUrl: string) {
+  return /a\.htm$/i.test(statementUrl) ? statementUrl.replace(/a\.htm$/i, "a1.htm") : null;
+}
+
+function transcriptUrl(meetingDate: string) {
+  return `${FED_BASE}/mediacenter/files/FOMCpresconf${meetingDate.replaceAll("-", "")}.pdf`;
+}
+
+async function optionalOfficialText(url: string) {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) return null;
+    const text = normalizeText(await response.text());
+    return text.length >= 120 ? text : null;
+  } catch { return null; }
+}
+
+async function officialPdfAvailable(url: string) {
+  try {
+    const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+    return response.ok && (response.headers.get("content-type") || "").toLowerCase().includes("pdf");
+  } catch { return false; }
+}
+
 function systemPrompt() {
   const prompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
   if (!prompt) throw new Error("FOMC_POLICY_SYSTEM_PROMPT가 설정되지 않았습니다.");
   if (!prompt.trimStart().startsWith(`FOMC 분석 프롬프트 ${POLICY_PROMPT_VERSION}`)) {
     throw new Error(`FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신해야 합니다.`);
   }
-  return prompt.replace(/\{\{meeting_metadata\}\}|\{\{previous_policy_context\}\}|\{\{fomc_statement\}\}/g, "").trim();
+  return prompt.replace(/\{\{(?:meeting_metadata|previous_policy_context|fomc_statement|previous_fomc_statement|implementation_note|press_conference_transcript|liquidity_context)\}\}/g, "").trim();
 }
 
-async function analyzeStatement(statement: string, meetingDate: string, previous: EventRow | null): Promise<Analysis> {
+async function analyzeStatement(statement: string, meetingDate: string, previous: EventRow | null, previousStatement: string | null, implementationNote: string | null, pressConferenceUrl: string | null, liquidityContext: unknown): Promise<Analysis> {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   const input = {
     meeting_metadata: { central_bank: "fed", meeting_date: meetingDate, source: "Federal Reserve official FOMC statement" },
     previous_policy_context: previous ? { meeting_date: previous.meeting_date, action: previous.action, target_range_lower: previous.target_range_lower, target_range_upper: previous.target_range_upper, primary_reason: previous.primary_reason, policy_segment: previous.policy_segment, segment_sequence: previous.segment_sequence } : null,
     fomc_statement: statement,
+    previous_fomc_statement: previousStatement,
+    implementation_note: implementationNote,
+    press_conference_transcript: pressConferenceUrl ? "아래 첨부된 연준 공식 기자회견 녹취록 PDF" : null,
+    liquidity_context: liquidityContext,
   };
+  const userContent: Array<Record<string, unknown>> = [{ type: "input_text", text: JSON.stringify(input) }];
+  if (pressConferenceUrl) userContent.push({ type: "input_file", file_url: pressConferenceUrl });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna", reasoning: { effort: "low" }, max_output_tokens: 1_200, prompt_cache_key: "macrowatch-fomc-policy-v1.2", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify(input) }] }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
+    body: JSON.stringify({ model: Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna", reasoning: { effort: "low" }, max_output_tokens: 6_000, prompt_cache_key: "macrowatch-fomc-policy-v2.0", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: userContent }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI FOMC 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();
@@ -194,10 +245,15 @@ Deno.serve(async (request) => {
       });
     }
     const sources = await fedSources(mode === "latest" ? "latest" : "backfill");
-    const selected = mode === "latest" ? sources.filter((source) => source.meetingDate >= `${new Date().getUTCFullYear() - 1}-01-01`) : sources;
-    const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status,source_url,is_emergency,analysis_prompt_version").eq("central_bank", "fed");
+    // Daily runs only revisit the newest meeting. This is enough to discover the next
+    // statement and later transcript while preventing a v2 rollout from creating NEW
+    // notifications for every historical row at once. Historical briefing backfill is
+    // an explicit reanalyze operation.
+    const selected = mode === "latest" ? sources.slice(-1) : sources;
+    const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status,source_url,is_emergency,analysis_prompt_version,briefing,briefing_revision,briefing_source_state").eq("central_bank", "fed");
     if (existingError) throw existingError;
-    const known = new Map((existing || []).map((row: { meeting_date: string; statement_hash: string; analysis_status: string; source_url: string | null; is_emergency: boolean | null; analysis_prompt_version: string | null }) => [row.meeting_date, row]));
+    type SavedRow = { meeting_date: string; statement_hash: string; analysis_status: string; source_url: string | null; is_emergency: boolean | null; analysis_prompt_version: string | null; briefing: unknown; briefing_revision: number; briefing_source_state: Record<string, unknown> | null };
+    const known = new Map((existing || []).map((row: SavedRow) => [row.meeting_date, row]));
     let processed = 0, skipped = 0, failed = 0;
     for (const source of selected) {
       if (processed >= limit) break;
@@ -213,15 +269,29 @@ Deno.serve(async (request) => {
         skipped += 1;
         continue;
       }
-      if (mode === "reanalyze" && saved?.analysis_status === "completed" && saved.analysis_prompt_version === POLICY_PROMPT_VERSION) {
-        skipped += 1;
-        continue;
-      }
       const statement = await getStatement(source.sourceUrl);
       const statementHash = await sha256(statement);
-      if (saved?.statement_hash === statementHash && saved.analysis_status === "completed") {
+      const noteUrl = implementationNoteUrl(source.sourceUrl);
+      const implementationNote = noteUrl ? await optionalOfficialText(noteUrl) : null;
+      const candidateTranscriptUrl = transcriptUrl(source.meetingDate);
+      const pressConferenceUrl = await officialPdfAvailable(candidateTranscriptUrl) ? candidateTranscriptUrl : null;
+      const priorSourceState = saved?.briefing_source_state || {};
+      const sourceState = {
+        statement_hash: statementHash,
+        implementation_note_url: implementationNote ? noteUrl : null,
+        press_conference_url: pressConferenceUrl,
+        // Meeting-time liquidity data is immutable once supplied by the collector.
+        liquidity_context: priorSourceState.liquidity_context ?? null,
+      };
+      const sourceStateHash = await sha256(JSON.stringify(sourceState));
+      const priorSourceStateHash = typeof priorSourceState.source_state_hash === "string" ? priorSourceState.source_state_hash : null;
+      const briefingNeedsRefresh = !saved?.briefing || saved.analysis_prompt_version !== POLICY_PROMPT_VERSION || sourceStateHash !== priorSourceStateHash;
+      if (mode !== "reanalyze" && saved?.statement_hash === statementHash && saved.analysis_status === "completed" && !briefingNeedsRefresh) {
         const { error: metadataError } = await supabase.from("central_bank_policy_events").update({ source_url: source.sourceUrl, is_emergency: source.isEmergency, updated_at: new Date().toISOString() }).eq("central_bank", "fed").eq("meeting_date", source.meetingDate);
         if (metadataError) throw metadataError;
+        skipped += 1; continue;
+      }
+      if (mode === "reanalyze" && saved?.analysis_status === "completed" && !briefingNeedsRefresh) {
         skipped += 1; continue;
       }
       processed += 1;
@@ -239,13 +309,22 @@ Deno.serve(async (request) => {
           }, { onConflict: "central_bank,meeting_date,reanalyzed_to_version", ignoreDuplicates: true });
           if (historyError) throw historyError;
         }
-        const { data: previousRows, error: previousError } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,target_range_lower,target_range_upper,primary_reason,analysis_status,policy_segment,segment_sequence").eq("central_bank", "fed").eq("analysis_status", "completed").lt("meeting_date", source.meetingDate).order("meeting_date", { ascending: false }).limit(1);
+        const { data: previousRows, error: previousError } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,target_range_lower,target_range_upper,primary_reason,analysis_status,policy_segment,segment_sequence,source_url").eq("central_bank", "fed").eq("analysis_status", "completed").lt("meeting_date", source.meetingDate).order("meeting_date", { ascending: false }).limit(1);
         if (previousError) throw previousError;
         const previous = previousRows?.[0] as EventRow || null;
-        const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous), previous);
-        const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", analysis_prompt_version: POLICY_PROMPT_VERSION, action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, ai_primary_reason: analysis.analysis.primary_reason, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, analyzed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() };
+        const previousStatement = previousRows?.[0]?.source_url ? await getStatement(previousRows[0].source_url) : null;
+        const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous, previousStatement, implementationNote, pressConferenceUrl, sourceState.liquidity_context), previous);
+        const now = new Date().toISOString();
+        const isNewBriefing = !saved?.briefing;
+        const briefingRevision = isNewBriefing ? 0 : Number(saved?.briefing_revision || 0) + 1;
+        const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", analysis_prompt_version: POLICY_PROMPT_VERSION, action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, ai_primary_reason: analysis.analysis.primary_reason, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, briefing: analysis.briefing, briefing_revision: briefingRevision, briefing_source_state: { ...sourceState, source_state_hash: sourceStateHash }, briefing_published_at: isNewBriefing ? now : undefined, briefing_updated_at: now, analyzed_at: now, last_error: null, updated_at: now };
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert(row, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;
+        // Historical backfills do not notify; only the live latest-meeting flow does.
+        if (mode === "latest") {
+          const { error: alertError } = await supabase.from("policy_briefing_alerts").upsert({ central_bank: "fed", meeting_date: source.meetingDate, revision: briefingRevision, alert_kind: isNewBriefing ? "new" : "update", status: "pending", updated_at: now }, { onConflict: "central_bank,meeting_date,revision", ignoreDuplicates: true });
+          if (alertError) throw alertError;
+        }
       } catch (error) {
         failed += 1;
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert({ central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "failed", last_error: errorMessage(error).slice(0, 900), updated_at: new Date().toISOString() }, { onConflict: "central_bank,meeting_date" });
