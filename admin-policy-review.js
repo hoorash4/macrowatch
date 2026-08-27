@@ -17,6 +17,11 @@
   function render(items) {
     const list = document.getElementById('policy-review-list');
     if (!list) return;
+    // 최신 회의는 상시 수정용이므로 실제 검토 대기 건수에서는 제외합니다.
+    window.MacroWatchAdminApi?.setListAttentionCount(
+      'policy-review-list',
+      items.filter((item) => item.review_type !== 'latest').length
+    );
     if (!items.length) {
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">검토할 FOMC 정책 판단이 없습니다.</p>';
       return;
@@ -37,7 +42,10 @@
     if (!api || !list) return;
     list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">검토 목록을 불러오는 중입니다.</p>';
     try { render((await api.invoke('list_policy_reviews')).items || []); }
-    catch (error) { list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '검토 목록을 불러오지 못했습니다.')}</p>`; }
+    catch (error) {
+      api.setListAttentionCount('policy-review-list', 0);
+      list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '검토 목록을 불러오지 못했습니다.')}</p>`;
+    }
   }
 
   async function resolve(event) {
