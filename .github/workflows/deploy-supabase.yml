@@ -64,7 +64,7 @@ jobs:
         run: |
           supabase secrets set \
             --project-ref "$SUPABASE_PROJECT_REF" \
-            FOMC_POLICY_SYSTEM_PROMPT="$(cat supabase/prompts/fomc-policy-v2.0.txt)"
+            FOMC_POLICY_SYSTEM_PROMPT_BASE64="$(base64 -w 0 supabase/prompts/fomc-policy-v2.0.txt)"
 
       - name: Deploy Edge Functions
         run: |

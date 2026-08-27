@@ -145,7 +145,10 @@ async function officialPdfAvailable(url: string) {
 }
 
 function systemPrompt() {
-  const prompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
+  const encodedPrompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT_BASE64");
+  const prompt = encodedPrompt
+    ? new TextDecoder().decode(Uint8Array.from(atob(encodedPrompt), (character) => character.charCodeAt(0)))
+    : Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
   if (!prompt) throw new Error("FOMC_POLICY_SYSTEM_PROMPT가 설정되지 않았습니다.");
   if (!prompt.trimStart().startsWith(`FOMC 분석 프롬프트 ${POLICY_PROMPT_VERSION}`)) {
     throw new Error(`FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신해야 합니다.`);
@@ -220,6 +223,7 @@ function normalizeAnalysis(analysis: Analysis, previous: EventRow | null): Analy
       reason_confidence: reasonConfidence,
       transition_assessment: previous ? analysis.analysis.transition_assessment : "uncertain",
     },
+    briefing: analysis.briefing,
   };
 }
 
