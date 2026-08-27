@@ -650,17 +650,17 @@ body:has(#app-shell:not(.hidden)) {
 }
 /* FOMC 브리핑은 회의 목록과 읽기 영역을 분리해 카드 전체 높이를 일정하게 유지합니다. */
 .fomc-briefing-list { min-width:0; }
-.fomc-briefing-items { overflow:hidden; border:1px solid rgba(71,85,105,.42); border-radius:.85rem; background:rgba(15,23,42,.22); }
+.fomc-briefing-items { overflow:hidden; border:1px solid rgba(38,91,103,.26); border-radius:.85rem; background:#e7eff0; }
 .fomc-briefing-item + .fomc-briefing-item { border-top:1px solid rgba(71,85,105,.32); }
-.fomc-briefing-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.15rem; border-left:3px solid transparent; color:var(--color-text-primary); text-align:left; transition:background-color .18s ease,border-color .18s ease; }
-.fomc-briefing-toggle:hover,.fomc-briefing-toggle:focus-visible { border-left-color:#67a6b6; background:linear-gradient(90deg,rgba(14,116,144,.08),rgba(148,163,184,.035)); }
+.fomc-briefing-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.15rem; border-left:3px solid transparent; background:linear-gradient(105deg,#e1edef 0%,#ebf2f3 56%,#f4f7f7 100%); color:var(--color-text-primary); text-align:left; transition:background .18s ease,border-color .18s ease; }
+.fomc-briefing-toggle:hover,.fomc-briefing-toggle:focus-visible { border-left-color:#5595a3; background:linear-gradient(105deg,#d8e8ea 0%,#e4eef0 58%,#f0f5f5 100%); }
 .fomc-briefing-title-wrap { display:flex; align-items:center; gap:.75rem; min-width:0; }
 .fomc-briefing-title-mark { display:flex; width:2.15rem; height:2.15rem; flex:none; align-items:center; justify-content:center; border:1px solid rgba(14,116,144,.22); border-radius:.62rem; background:rgba(207,250,254,.5); color:#0e7490; }
 .fomc-briefing-title-text { display:grid; gap:.3rem; min-width:0; }
 .fomc-briefing-toggle strong { font-size:.95rem; font-weight:700; letter-spacing:-.018em; }
 .fomc-briefing-toggle small { color:#64748b; font-size:.79rem; font-weight:500; }
 .fomc-briefing-toggle > i { color:#64748b; font-size:.72rem; transition:transform .2s ease; }
-.fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#0e7490; background:linear-gradient(90deg,rgba(14,116,144,.11),rgba(148,163,184,.035)); }
+.fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#0e7490; background:linear-gradient(105deg,#cfe2e5 0%,#dce9eb 58%,#edf3f4 100%); }
 .fomc-briefing-item.is-open .fomc-briefing-toggle > i { color:#0e7490; transform:rotate(180deg); }
 .fomc-briefing-detail { border-top:1px solid rgba(71,85,105,.3); background:rgba(248,250,252,.72); }
 .fomc-briefing-detail-scroll { padding:1.25rem; }
