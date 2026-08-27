@@ -331,9 +331,26 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('"uncertain"]', policy_admin)
         self.assertIn('String(rawScore).trim() === ""', policy_admin)
         self.assertNotIn('reason !== "uncertain" && !keyword', policy_admin)
-        self.assertIn('row.meeting_date === requestedMeetingDate ? "selected"', policy_admin)
+        self.assertIn('selectedDates.includes(row.meeting_date) ? "selected"', policy_admin)
         self.assertIn('그래프에서\n  // 선택한 과거 회의도 관리자가 직접 교정', policy_admin)
         self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
+
+    def test_stress_pipelines_keep_only_thirty_seven_months(self):
+        common = (ROOT / "backend/common.py").read_text(encoding="utf-8")
+        us_pipeline = (ROOT / "backend/financial_stress_pipeline.py").read_text(encoding="utf-8")
+        korea_pipeline = (ROOT / "backend/korea_stress_pipeline.py").read_text(encoding="utf-8")
+        em_pipeline = (ROOT / "backend/em_stress_pipeline.py").read_text(encoding="utf-8")
+
+        self.assertIn("def month_start_months_ago", common)
+        self.assertIn("def delete_before", common)
+        for pipeline in (us_pipeline, korea_pipeline, em_pipeline):
+            self.assertIn("RETENTION_MONTHS = 37", pipeline)
+            self.assertIn("month_start_months_ago(today, RETENTION_MONTHS)", pipeline)
+        self.assertIn('delete_before("us_market_stress_index_monthly"', us_pipeline)
+        self.assertIn('delete_before("us_market_tension_weekly"', us_pipeline)
+        self.assertIn('delete_before("korea_market_stress_monthly"', korea_pipeline)
+        self.assertIn('delete_before("korea_market_stress_weekly"', korea_pipeline)
+        self.assertIn('"em_market_stress_weekly", "week", cutoff', em_pipeline)
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
         admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")

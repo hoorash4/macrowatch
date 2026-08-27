@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import date, timedelta
 
-from common import SupabaseRest, carry_forward, require_env, uncapped_score
+from common import SupabaseRest, carry_forward, month_start_months_ago, require_env, uncapped_score
 from financial_stress_sources import (
     TIMEOUT_SECONDS,
     collect_business_filings,
@@ -28,6 +28,7 @@ SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 INDEX_HISTORY_YEARS = 3
+RETENTION_MONTHS = 37
 MONTHLY_STRESS_COMPONENTS = (
     "excess_bond_premium",
     "corporate_bond_market_distress_index",
@@ -317,6 +318,12 @@ def main() -> None:
             "high_yield_oas_pct": latest_high_yield[1] if latest_high_yield else None,
             "financial_conditions_credit_index": latest_conditions[1] if latest_conditions else None,
         }, supabase_url, service_role_key)
+    # 모든 저장이 성공한 뒤에만 표시 범위보다 한 달 여유를 둔 원천 시계열을 정리한다.
+    cutoff = month_start_months_ago(today, RETENTION_MONTHS).isoformat()
+    database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    database.delete_before("us_credit_stress_monthly", "month", cutoff)
+    database.delete_before("us_market_stress_index_monthly", "month", cutoff)
+    database.delete_before("us_market_tension_weekly", "week", cutoff)
     print(
         f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "

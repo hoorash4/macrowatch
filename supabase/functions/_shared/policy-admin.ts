@@ -5,12 +5,13 @@ import type { PolicyReason } from "./policy-types.ts";
 const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing", "normalization_hike", "normalization_cut", "uncertain"]);
 type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
 
-export async function listPolicyReviews(admin: ServiceClient, requestedMeetingDate = "") {
+export async function listPolicyReviews(admin: ServiceClient, requestedMeetingDates: string[] = []) {
   const fields = "meeting_date,action,change_bps,ai_primary_reason,primary_reason,transition_assessment,admin_primary_reason,admin_reason_keyword,admin_score_override,final_event_score";
-  if (requestedMeetingDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedMeetingDate)) throw new Error("회의일이 올바르지 않습니다.");
-  const selectedQuery = requestedMeetingDate
-    ? admin.from("central_bank_policy_events").select(fields).eq("central_bank", "fed").eq("meeting_date", requestedMeetingDate).eq("analysis_status", "completed").maybeSingle()
-    : Promise.resolve({ data: null, error: null });
+  const selectedDates = [...new Set(requestedMeetingDates)].slice(0, 20);
+  if (selectedDates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) throw new Error("회의일이 올바르지 않습니다.");
+  const selectedQuery = selectedDates.length
+    ? admin.from("central_bank_policy_events").select(fields).eq("central_bank", "fed").in("meeting_date", selectedDates).eq("analysis_status", "completed")
+    : Promise.resolve({ data: [], error: null });
   const [{ data: unresolved, error: unresolvedError }, { data: latest, error: latestError }, { data: selected, error: selectedError }] = await Promise.all([
     admin.from("central_bank_policy_events")
       .select(fields)
@@ -27,14 +28,14 @@ export async function listPolicyReviews(admin: ServiceClient, requestedMeetingDa
   if (unresolvedError) throw unresolvedError;
   if (latestError) throw latestError;
   if (selectedError) throw selectedError;
-  if (requestedMeetingDate && !selected) throw new Error("선택한 FOMC 결과를 찾을 수 없습니다.");
+  if (selectedDates.length && (selected || []).length !== selectedDates.length) throw new Error("선택한 FOMC 결과 중 일부를 찾을 수 없습니다.");
   const latestDate = latest?.meeting_date;
-  const rows = [selected, latest, ...(unresolved || [])].filter((row, index, items) => row && items.findIndex((item) => item?.meeting_date === row.meeting_date) === index);
+  const rows = [...(selected || []), latest, ...(unresolved || [])].filter((row, index, items) => row && items.findIndex((item) => item?.meeting_date === row.meeting_date) === index);
   return rows.map((row) => ({
     meeting_date: row.meeting_date,
     action: row.action,
     change_bps: row.change_bps,
-    review_type: row.meeting_date === requestedMeetingDate ? "selected" : row.meeting_date === latestDate ? "latest" : row.ai_primary_reason === "uncertain" ? "uncertain" : "reason_transition",
+    review_type: selectedDates.includes(row.meeting_date) ? "selected" : row.meeting_date === latestDate ? "latest" : row.ai_primary_reason === "uncertain" ? "uncertain" : "reason_transition",
     primary_reason: row.admin_primary_reason || row.primary_reason || row.ai_primary_reason,
     reason_keyword: row.admin_reason_keyword || "",
     score: row.admin_score_override ?? row.final_event_score,

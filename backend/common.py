@@ -11,6 +11,7 @@ import json
 import os
 import time
 from collections.abc import Iterable
+from datetime import date
 from typing import Any
 
 import requests
@@ -107,6 +108,12 @@ def uncapped_score(value: float, floor: float, reference: float) -> float:
     return max(0.0, (value - floor) / (reference - floor) * 100.0)
 
 
+def month_start_months_ago(reference: date, months: int) -> date:
+    """reference가 속한 달에서 months개월 전의 월초를 반환한다."""
+    month_index = reference.year * 12 + reference.month - 1 - months
+    return date(month_index // 12, month_index % 12 + 1, 1)
+
+
 class SupabaseRest:
     """서비스 역할 키로 Supabase REST 테이블을 호출하는 공통 클라이언트."""
 
@@ -158,6 +165,15 @@ class SupabaseRest:
             params={"on_conflict": conflict},
             body=rows,
             prefer="resolution=merge-duplicates,return=minimal",
+        )
+
+    def delete_before(self, table: str, column: str, cutoff: str) -> None:
+        """보존 경계보다 오래된 시계열 행을 삭제한다."""
+        self.request(
+            "DELETE",
+            table,
+            params={column: f"lt.{cutoff}"},
+            prefer="return=minimal",
         )
 
 

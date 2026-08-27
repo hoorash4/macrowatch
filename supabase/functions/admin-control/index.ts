@@ -423,7 +423,7 @@ export default {
       }
 
       if (action === "list_policy_reviews") {
-        return json({ items: await listPolicyReviews(admin, String(body?.meeting_date || "")) }, 200, origin);
+        return json({ items: await listPolicyReviews(admin, Array.isArray(body?.meeting_dates) ? body.meeting_dates.map(String) : []) }, 200, origin);
       }
 
       if (action === "resolve_policy_review") {

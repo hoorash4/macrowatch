@@ -1501,6 +1501,9 @@ window.MacroWatchDashboard = Object.freeze({
   registerLoader(loader) {
     if (typeof loader === 'function' && !dashboardLoaders.includes(loader)) dashboardLoaders.push(loader);
   },
+  showNotice(title, message = '') {
+    showCenteredNotice(title, message);
+  },
   utils: Object.freeze({
     buildFredSearchTerms,
     escapeHtml,

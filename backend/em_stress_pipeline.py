@@ -7,13 +7,14 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import SupabaseRest, carry_forward as carry_forward_periods
+from common import SupabaseRest, carry_forward as carry_forward_periods, month_start_months_ago
 from common import fetch_fred_observations, require_env, uncapped_score
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
 TIMEOUT = 45
 HISTORY_YEARS = 3
+RETENTION_MONTHS = 37
 
 # All values are oriented so that a higher level means greater EM stress.
 SERIES = {
@@ -176,6 +177,11 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
     upsert(rows, supabase_url, service_key)
+    # 저장 성공 후 그래프에 필요한 3년과 한 달의 안전 여유만 유지한다.
+    cutoff = month_start_months_ago(today, RETENTION_MONTHS).isoformat()
+    SupabaseRest(url=supabase_url, service_key=service_key, timeout=TIMEOUT).delete_before(
+        "em_market_stress_weekly", "week", cutoff
+    )
     print("upserted_weeks={} eem={} ".format(len(rows), len(eem_values)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
 
 
