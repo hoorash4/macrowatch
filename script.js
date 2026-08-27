@@ -900,6 +900,7 @@ function createPointerDragState() {
     startY: 0,
     offsetX: 0,
     offsetY: 0,
+    previewHeight: 0,
     preview: null,
     scrollFrame: null,
     lastClientX: 0,
@@ -998,6 +999,7 @@ function beginPointerDrag(clientX, clientY) {
   document.body.classList.add('is-pointer-dragging');
   pointerDragState.offsetX = pointerDragState.startX - sourceRect.left;
   pointerDragState.offsetY = pointerDragState.startY - sourceRect.top;
+  pointerDragState.previewHeight = sourceRect.height;
 
   pointerDragState.sourceContainer.classList.add('is-drag-source');
 
@@ -1024,6 +1026,13 @@ function moveDragPreview(clientX, clientY) {
   // 포인터를 따라 움직이는 좌표는 정적 CSS로 대체할 수 없는 런타임 값입니다.
   pointerDragState.preview.style.left = (clientX - pointerDragState.offsetX) + 'px';
   pointerDragState.preview.style.top = (clientY - pointerDragState.offsetY) + 'px';
+}
+
+// 드롭 위치는 포인터가 아니라 들어 올린 행의 세로 중앙을 기준으로 판정합니다.
+function getDragPreviewCenterY(pointerClientY) {
+  return pointerClientY
+    - pointerDragState.offsetY
+    + pointerDragState.previewHeight / 2;
 }
 
 // 드래그 중 화면 하단에 가까워질 때 아래 방향으로만 자동 스크롤합니다.
@@ -1087,7 +1096,8 @@ function stopDownwardAutoScroll() {
 }
 
 function updatePointerDropTarget(clientX, clientY) {
-  const element = document.elementFromPoint(clientX, clientY);
+  const dragCenterY = getDragPreviewCenterY(clientY);
+  const element = document.elementFromPoint(clientX, dragCenterY);
   const tab = element?.closest('.sheet-tab');
   const container = element?.closest('[data-target-container]');
 
@@ -1117,7 +1127,9 @@ function updatePointerDropTarget(clientX, clientY) {
 
   const row = container.querySelector('[data-target-row]') || container;
   const rect = row.getBoundingClientRect();
-  setDropIndicator(clientY < rect.top + rect.height / 2 ? targetIndex : targetIndex + 1);
+  setDropIndicator(
+    dragCenterY < rect.top + rect.height / 2 ? targetIndex : targetIndex + 1
+  );
 }
 
 function moveDraggedItemWithinTrack(insertIndex) {

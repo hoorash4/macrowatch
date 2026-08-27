@@ -1295,6 +1295,7 @@ body:has(#app-shell:not(.hidden)) {
   min-height:45rem;
 }
 #target-list > div[data-target-container] {
+  position:relative;
   border-color:var(--color-dark-border);
 }
 #target-list [data-target-row]:hover {
@@ -1434,11 +1435,22 @@ body.is-pointer-dragging {
 #target-list .is-drag-source {
   opacity:.4;
 }
-#target-list .drop-indicator-before {
-  box-shadow:inset 0 1px 0 #fff;
+#target-list .drop-indicator-before::before,
+#target-list .drop-indicator-after::after {
+  content:"";
+  position:absolute;
+  z-index:2;
+  left:0;
+  right:0;
+  height:2px;
+  background:#fff;
+  pointer-events:none;
 }
-#target-list .drop-indicator-after {
-  box-shadow:inset 0 -1px 0 #fff;
+#target-list .drop-indicator-before::before {
+  top:-1px;
+}
+#target-list .drop-indicator-after::after {
+  bottom:-1px;
 }
 #target-list [data-target-row], #target-list [data-target-row] * {
   cursor: pointer;
