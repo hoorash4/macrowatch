@@ -24,12 +24,12 @@
       const retainedValue = previousDate === null ? 0 : previousValue * (OSCILLATOR_RETENTION ** (elapsedDays / STANDARD_MEETING_DAYS));
       const displayValue = retainedValue + (Number(row.final_event_score) || 0);
       previousValue = displayValue; previousDate = currentDate;
-      return { ...row, pre_event_value: retainedValue, display_value: displayValue };
+      return { ...row, display_value: displayValue };
     });
   }
 
   function visibleVerticalScale(points) {
-    const values = points.flatMap((point) => [point.preValue, point.value]).filter(Number.isFinite);
+    const values = points.map((point) => point.value).filter(Number.isFinite);
     if (POLICY_CHART_MODE === 'oscillator') {
       const maximumAbsoluteValue = Math.max(1, ...values.map(Math.abs)) * 1.1;
       const tickStep = chartUtils.niceStep(maximumAbsoluteValue / 2);
@@ -64,7 +64,6 @@
     const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
     const points = datedRows.map((row) => ({
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right), value: row.value,
-      preValue: Number(row.pre_event_value),
       period: `${String(row.meeting_date).slice(2, 4)}년 ${String(row.meeting_date).slice(5, 7)}월`,
       meetingDate: row.meeting_date,
       action: ({ hike: '인상', cut: '인하', hold: '동결' })[row.action] || row.action,
@@ -72,13 +71,7 @@
       eventScore: Number(row.final_event_score) || 0,
     }));
     const initialScale = visibleVerticalScale(points);
-    // 회의 사이 감쇠와 회의 당일 점수를 분리해 점수의 부호가 선 방향에 드러나게 합니다.
-    const pathFor = ({ yMin, yMax }) => points.map((point, index) => {
-      const x = point.x.toFixed(2);
-      const preY = scale(point.preValue, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2);
-      const postY = scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2);
-      return `${index ? 'L' : 'M'} ${x} ${preY} L ${x} ${postY}`;
-    }).join(' ');
+    const pathFor = ({ yMin, yMax }) => points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2)}`).join(' ');
     const circlesFor = ({ yMin, yMax }) => points.map((point) => `<circle cx="${point.x}" cy="${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top)}" r="3" class="policy-chart-point"/>`).join('');
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
