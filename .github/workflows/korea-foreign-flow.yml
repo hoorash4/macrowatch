@@ -22,12 +22,13 @@ permissions:
   contents: read
 concurrency:
   group: macrowatch-korea-foreign-flow
-  cancel-in-progress: false
+  # 코드 변경 직후의 백필은 이전 실행을 이어받으므로 중복 장기 실행을 남기지 않습니다.
+  cancel-in-progress: true
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Collect KOSPI foreign flow and recompute index
         env:
