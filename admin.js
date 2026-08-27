@@ -92,7 +92,7 @@
       details.className = 'group';
       const summary = document.createElement('summary');
       summary.className = 'mb-2 flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs font-bold text-slate-300 hover:border-slate-700';
-      summary.innerHTML = `<span><i class="fa-solid fa-chevron-right mr-2 transition group-open:rotate-90"></i>${escapeHtml(list.dataset.collapsibleLabel || labels[list.id] || '목록 펼치기')}</span><span data-collapsible-count class="hidden rounded-full border border-amber-700/60 bg-amber-950/50 px-2 py-0.5 text-[11px] text-amber-300"></span>`;
+      summary.innerHTML = `<span><i class="fa-solid fa-chevron-right mr-2 transition group-open:rotate-90"></i>${escapeHtml(list.dataset.collapsibleLabel || labels[list.id] || '목록 펼치기')}</span><span data-collapsible-count class="hidden rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-400"></span>`;
       list.parentNode.insertBefore(details, list);
       details.append(summary, list);
     });
@@ -103,8 +103,9 @@
     const badge = document.getElementById(listId)?.parentElement?.querySelector('[data-collapsible-count]');
     if (!badge) return;
     const normalizedCount = Math.max(0, Number(count) || 0);
-    badge.textContent = `확인 필요 ${normalizedCount}건`;
-    badge.classList.toggle('hidden', normalizedCount === 0);
+    const countClass = normalizedCount > 0 ? 'text-yellow-300' : 'text-slate-400';
+    badge.innerHTML = `확인 필요 <strong class="${countClass}">${normalizedCount}</strong>건`;
+    badge.classList.remove('hidden');
   }
 
   // 브라우저 비밀번호 관리자는 autocomplete=off를 무시할 수 있다. 관리자 자격증명

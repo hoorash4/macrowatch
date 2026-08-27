@@ -114,6 +114,8 @@ class SourceContractTests(unittest.TestCase):
         admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
         policy_ui = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
         self.assertIn("data-collapsible-count", admin_ui)
+        self.assertIn("normalizedCount > 0 ? 'text-yellow-300' : 'text-slate-400'", admin_ui)
+        self.assertIn("badge.classList.remove('hidden')", admin_ui)
         self.assertIn("setListAttentionCount('uncertain-news-list', items.length)", admin_ui)
         self.assertIn("item.review_type !== 'latest'", policy_ui)
         self.assertNotIn("setListAttentionCount('member-list'", admin_ui)
