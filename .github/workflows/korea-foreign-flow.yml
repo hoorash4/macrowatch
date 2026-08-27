@@ -1,6 +1,13 @@
 name: Refresh Korea foreign flow
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/korea-foreign-flow.yml"
+      - "supabase/functions/korea-foreign-flow/**"
+      - "supabase/functions/_shared/korea-foreign-flow.ts"
+      - "supabase/functions/_shared/kis-client.ts"
   schedule:
     - cron: "0 8 * * 1-5"
   workflow_dispatch:
@@ -26,7 +33,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BACKFILL: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill || false }}
+          BACKFILL: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.backfill) || false }}
         run: |
           if [ "$BACKFILL" = "true" ]; then
             # 표시 구간은 5년이지만 첫 화면 시점의 3년 이동 Z점수 계산을 위해 원자료는 8년을 확보합니다.
