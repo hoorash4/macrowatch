@@ -142,11 +142,27 @@ test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', (
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 8);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--)/g) || []).length, 18);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 18);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 8);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 8);
+  assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
+  assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
+  assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);
+  assert.doesNotMatch(styles, /analysis-card-header-light \.analysis-card-title/);
+});
+
+test('공용 대화상자는 하나의 오버레이 컴포넌트와 층위 수정자만 사용한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+
+  assert.equal((html.match(/class="modal-overlay[^\"]* hidden"/g) || []).length, 7);
+  assert.doesNotMatch(html, /class="hidden fixed inset-0[^\"]*bg-black/);
+  assert.match(styles, /\.modal-overlay:not\(\.hidden\)\s*\{\s*display:flex;/);
+  assert.match(styles, /\.modal-overlay--critical\s*\{[\s\S]*?z-index:80;/);
 });
 
 test('분석 메뉴의 최상단 공간과 카드 간격은 공통 토큰을 사용한다', () => {
@@ -187,10 +203,12 @@ test('지표 순서 변경은 들어 올린 행의 중앙으로 판정하고 삽
   assert.match(script, /document\.elementFromPoint\(clientX, dragCenterY\)/);
   assert.match(script, /dragCenterY < rect\.top \+ rect\.height \/ 2/);
   assert.doesNotMatch(script, /targetIndex === draggedItemIndex/);
-  assert.match(styles, /#target-list \.is-drag-source > \*\s*\{\s*opacity:\.4;/);
+  assert.match(styles, /--tracker-drag-source-opacity:\s*\.4/);
+  assert.match(styles, /#target-list \.is-drag-source > \*\s*\{\s*opacity:var\(--tracker-drag-source-opacity\);/);
   assert.doesNotMatch(styles, /#target-list \.is-drag-source\s*\{\s*opacity:/);
   assert.doesNotMatch(styles, /\.drop-indicator-(?:before|after)\s*\{[^}]*box-shadow/);
-  assert.match(styles, /\.drop-indicator-before::before,[\s\S]*?height:1px;[\s\S]*?background:#fff;/);
+  assert.match(styles, /--tracker-drop-indicator-height:\s*1px/);
+  assert.match(styles, /\.drop-indicator-before::before,[\s\S]*?height:var\(--tracker-drop-indicator-height\);[\s\S]*?background:var\(--tracker-drop-indicator-color\);/);
 });
 
 test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한다', () => {

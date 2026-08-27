@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=111">
+  <link rel="stylesheet" href="styles.css?v=112">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -144,19 +144,17 @@
     <div class="market-overview-grid">
     <!-- 최근 뉴스의 한국 주가지수 영향 분포를 가장 먼저 보여줍니다. -->
     <section id="news-sentiment-dashboard" class="analysis-card overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="news-sentiment-title">
-      <div class="analysis-card-header analysis-card-header-light">
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-chart-column text-sm"></i></span>
-            <div>
-              <p class="text-[10px] font-bold tracking-[.16em] text-sky-300">NEWS FLOW ANALYST</p>
-              <h2 id="news-sentiment-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">뉴스 흐름 분석</h2>
-            </div>
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-chart-column text-sm"></i></span>
+          <div>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--sky">NEWS FLOW ANALYST</p>
+            <h2 id="news-sentiment-title" class="analysis-card-title">뉴스 흐름 분석</h2>
           </div>
-          <p class="analysis-card-description mt-6">전일 24시간 동안 기사화된 뉴스의 긍정·부정 흐름을 분석합니다.</p>
-          <p class="analysis-card-description mt-0.5">중장기 과열·침체 국면에서는 역발상 관점을 반영합니다.</p>
-          <p class="analysis-card-description analysis-card-description--accent mt-0.5">매일 오전 1시경(KST) 업데이트됩니다.</p>
         </div>
+        <p class="analysis-card-description">전일 24시간 동안 기사화된 뉴스의 긍정·부정 흐름을 분석합니다.</p>
+        <p class="analysis-card-description">중장기 과열·침체 국면에서는 역발상 관점을 반영합니다.</p>
+        <p class="analysis-card-description analysis-card-description--accent">매일 오전 1시경(KST) 업데이트됩니다.</p>
       </div>
       <div id="news-sentiment-chart" class="grid min-h-52 grid-cols-1 gap-5 p-5 sm:grid-cols-[auto_1fr]">
         <div class="flex items-center gap-4 text-xs text-slate-400 sm:flex-col sm:items-start sm:justify-center sm:gap-3">
@@ -195,16 +193,16 @@
 
     <div class="dashboard-view-card sector-flow-view-card">
     <section id="sector-flow-dashboard" class="analysis-card overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl" aria-labelledby="sector-flow-title">
-      <div class="analysis-card-header analysis-card-header-light">
-        <div class="flex items-center gap-2">
-          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-teal-400/20 bg-teal-400/10 text-teal-300"><i class="fa-solid fa-layer-group text-sm"></i></span>
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-layer-group text-sm"></i></span>
           <div>
-            <p class="text-[10px] font-bold tracking-[.16em] text-teal-300">SECTOR FLOW ANALYSIS</p>
-            <h2 id="sector-flow-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">주도섹터 흐름 분석</h2>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--teal">SECTOR FLOW ANALYSIS</p>
+            <h2 id="sector-flow-title" class="analysis-card-title">주도섹터 흐름 분석</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">주간 수익률 기준 상위 섹터의 변화를 최근 4주 흐름으로 보여줍니다.</p>
-        <p class="analysis-card-description mt-0.5">순위는 해당 주 수익률을 기준으로 산정하며, 누적수익률은 각 주를 끝점으로 한 최근 4주 수익률입니다.</p>
+        <p class="analysis-card-description">주간 수익률 기준 상위 섹터의 변화를 최근 4주 흐름으로 보여줍니다.</p>
+        <p class="analysis-card-description">순위는 해당 주 수익률을 기준으로 산정하며, 누적수익률은 각 주를 끝점으로 한 최근 4주 수익률입니다.</p>
       </div>
       <div class="sector-flow-preview" aria-label="이번 주와 과거 4주의 주도섹터 순위">
         <article class="sector-flow-week sector-flow-week-current" data-sector-week-offset="0"><header><span data-sector-week-period>—월</span><strong data-sector-week-label>이번 주 섹터별 주간 수익률 순위</strong></header><div class="sector-flow-columns"><span>순위</span><span>변동</span><span>섹터</span><span>연속</span></div><ol><li><b>—</b><span>—</span><strong>수집 대기</strong><span>—주</span></li></ol></article>
@@ -223,16 +221,16 @@
     <!-- 04-2. 스트레스·통화정책 분석 카드 -->
     <section id="credit-stress-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-title">
       <div class="analysis-card-header">
-        <div class="flex items-center gap-2">
-          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
-            <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">U.S. MARKET STRESS INDEX</p>
-            <h2 id="credit-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">미국 시장 스트레스 지수</h2>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">U.S. MARKET STRESS INDEX</p>
+            <h2 id="credit-stress-title" class="analysis-card-title">미국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">MacroWatch가 개발한 주간 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description mt-0.5">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
-        <p class="analysis-card-description mt-0.5">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
+        <p class="analysis-card-description">MacroWatch가 개발한 주간 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -255,16 +253,16 @@
     </section>
 
     <section id="credit-stress-components-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-components-title">
-      <div class="analysis-card-header analysis-card-header-light">
-        <div class="flex items-center gap-2">
-          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-blue-400/20 bg-blue-400/10 text-blue-300"><i class="fa-solid fa-chart-line text-sm"></i></span>
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-chart-line text-sm"></i></span>
           <div>
-            <p class="text-[10px] font-bold tracking-[.16em] text-blue-300">U.S. CREDIT RISK</p>
-            <h2 id="credit-stress-components-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">미국 신용위험 추이</h2>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--blue">U.S. CREDIT RISK</p>
+            <h2 id="credit-stress-components-title" class="analysis-card-title">미국 신용위험 추이</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
-        <p class="analysis-card-description mt-0.5">서로 단위가 다른 세 지표의 추세를 함께 비교합니다.</p>
+        <p class="analysis-card-description">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
+        <p class="analysis-card-description">서로 단위가 다른 세 지표의 추세를 함께 비교합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div id="credit-stress-components-chart" class="min-h-72">
@@ -274,17 +272,17 @@
     </section>
 
     <section id="korea-stress-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-stress-title">
-      <div class="analysis-card-header analysis-card-header-light">
-        <div class="flex items-center gap-2">
-          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-wave-square text-sm"></i></span>
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
-            <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">K-MSI · KOREA MARKET STRESS INDEX</p>
-            <h2 id="korea-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">한국 시장 스트레스 지수</h2>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">K-MSI · KOREA MARKET STRESS INDEX</p>
+            <h2 id="korea-stress-title" class="analysis-card-title">한국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">MacroWatch가 개발한 월간 한국 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description mt-0.5">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
-        <p class="analysis-card-description mt-0.5">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
+        <p class="analysis-card-description">MacroWatch가 개발한 월간 한국 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -307,17 +305,17 @@
     </section>
 
     <section id="em-stress-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
-      <div class="analysis-card-header analysis-card-header-light">
-        <div class="flex items-center gap-2">
-          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/20 bg-amber-400/10 text-amber-300"><i class="fa-solid fa-earth-americas text-sm"></i></span>
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-earth-americas text-sm"></i></span>
           <div>
-            <p class="text-[10px] font-bold tracking-[.16em] text-amber-300">EM-MSI · EMERGING MARKET STRESS INDEX</p>
-            <h2 id="em-stress-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">이머징 시장 스트레스 지수</h2>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">EM-MSI · EMERGING MARKET STRESS INDEX</p>
+            <h2 id="em-stress-title" class="analysis-card-title">이머징 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description mt-0.5">높을수록 이머징 외화 신용시장과 통화의 스트레스가 높음을 뜻합니다.</p>
-        <p class="analysis-card-description mt-0.5">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
+        <p class="analysis-card-description">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description">높을수록 이머징 외화 신용시장과 통화의 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -337,14 +335,14 @@
 
     <section id="policy-signal-dashboard" data-dashboard-panel="policy" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="policy-signal-title">
       <div class="analysis-card-header">
-        <div class="flex items-center gap-2">
-          <span class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300"><i class="fa-solid fa-landmark text-sm"></i></span>
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-landmark text-sm"></i></span>
           <div>
-            <p class="text-[10px] font-bold tracking-[.16em] text-sky-300">MONETARY POLICY SIGNALS</p>
-            <h2 id="policy-signal-title" class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight text-white">통화정책 시그널</h2>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--sky">MONETARY POLICY SIGNALS</p>
+            <h2 id="policy-signal-title" class="analysis-card-title">통화정책 시그널</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
+        <p class="analysis-card-description">중앙은행의 금리 결정과 성명문 맥락을 바탕으로 정책 환경의 시장 신호를 분석합니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -357,14 +355,14 @@
     <!-- 05. 모든 분석 메뉴 아래에 공통으로 노출되는 지표 추적 카드 -->
     <div class="dashboard-tracker-card">
       <header class="analysis-card-header dashboard-tracker-heading">
-        <div class="flex items-center gap-2">
-          <span aria-hidden="true" class="analysis-card-icon flex h-8 w-8 items-center justify-center rounded-lg"><i class="fa-solid fa-bell text-sm"></i></span>
+        <div class="analysis-card-heading-row">
+          <span aria-hidden="true" class="analysis-card-icon"><i class="fa-solid fa-bell text-sm"></i></span>
           <div>
-          <p class="dashboard-tracker-eyebrow">MACRO TRACK &amp; ALERT</p>
-          <h2 class="analysis-card-title mt-0.5 text-lg font-bold tracking-tight">지표 추적 알림</h2>
+          <p class="analysis-card-eyebrow analysis-card-eyebrow--tracker">MACRO TRACK &amp; ALERT</p>
+          <h2 class="analysis-card-title">지표 추적 알림</h2>
           </div>
         </div>
-        <p class="analysis-card-description mt-6">지표를 추가하고 설정값을 지정하면 조건 충족 시 카카오톡 알림을 보내드립니다.</p>
+        <p class="analysis-card-description">지표를 추가하고 설정값을 지정하면 조건 충족 시 카카오톡 알림을 보내드립니다.</p>
       </header>
 
     <!-- 05-1. 지표 등록·목록·탭 영역 -->
@@ -521,7 +519,7 @@
   <!-- ===== 공용 안내창: 서비스 준비 중 / 등록 완료 ===== -->
   <div
     id="service-preparing-modal"
-    class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"
+    class="modal-overlay modal-overlay--notice hidden"
     role="dialog"
     aria-modal="true"
     aria-labelledby="service-preparing-title"
@@ -537,7 +535,7 @@
   </div>
 
   <!-- ===== 지표 후보 선택창 ===== -->
-  <div id="indicator-search-modal" class="hidden fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="indicator-search-title">
+  <div id="indicator-search-modal" class="modal-overlay modal-overlay--elevated hidden" role="dialog" aria-modal="true" aria-labelledby="indicator-search-title">
     <section class="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
       <header class="flex items-start justify-between border-b border-slate-700 px-5 py-4">
         <div>
@@ -556,7 +554,7 @@
   <!-- ===== 개인 설정창: 카카오톡 연결 / 회원 탈퇴 ===== -->
   <div
     id="profile-modal"
-    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+    class="modal-overlay hidden"
   >
     <section class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
       <div class="flex items-center justify-between">
@@ -587,7 +585,7 @@
   <!-- ===== 회원 탈퇴 최종 확인창 ===== -->
   <div
     id="account-delete-modal"
-    class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4"
+    class="modal-overlay modal-overlay--critical hidden"
   >
     <section class="w-full max-w-sm rounded-2xl border border-red-900/60 bg-slate-900 p-6 text-center shadow-2xl">
       <i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i>
@@ -603,7 +601,7 @@
   <!-- ===== 카카오톡 알림 상태 변경 확인창 ===== -->
   <div
     id="toggle-alert-modal"
-    class="hidden fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4"
+    class="modal-overlay modal-overlay--elevated hidden"
     role="dialog"
     aria-modal="true"
     aria-labelledby="toggle-alert-title"
@@ -622,7 +620,7 @@
   <!-- ===== 추적 지표 수정창 ===== -->
   <div
     id="edit-modal"
-    class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
+    class="modal-overlay hidden"
   >
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-lg space-y-4 shadow-2xl">
       <div class="flex justify-between items-center">
@@ -659,7 +657,7 @@
   <!-- ===== 추적 지표 삭제 확인창 ===== -->
   <div
     id="delete-modal"
-    class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
+    class="modal-overlay hidden"
   >
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-2xl">
       <div class="flex items-center gap-2 text-red-300">

@@ -67,6 +67,15 @@
   --analysis-card-description-font-size: .75rem;
   --analysis-card-description-line-height: 1.25rem;
   --analysis-card-description-color: #64748b;
+  --analysis-card-eyebrow-sky: #7dd3fc;
+  --analysis-card-eyebrow-teal: #5eead4;
+  --analysis-card-eyebrow-amber: #fcd34d;
+  --analysis-card-eyebrow-blue: #93c5fd;
+  --analysis-card-eyebrow-tracker: #4f8dc9;
+  /* 추적 목록의 드래그 표현은 위치와 관계없이 같은 값을 사용합니다. */
+  --tracker-drag-source-opacity: .4;
+  --tracker-drop-indicator-color: #fff;
+  --tracker-drop-indicator-height: 1px;
 }
 /* 페이지 전체의 기본 글꼴입니다. 로고처럼 별도 서체가 필요한 곳만 예외 처리합니다. */
 body {
@@ -556,13 +565,6 @@ body:has(#app-shell:not(.hidden)) {
   margin:0 0 1.5rem;
   color:var(--color-text-primary);
 }
-.dashboard-tracker-eyebrow {
-  margin:0 0 .15rem;
-  color:#4f8dc9;
-  font-size:.625rem;
-  font-weight:700;
-  letter-spacing:.16em;
-}
 /* ===== 04. 분석 카드와 그래프 주변 UI =====
  * 뉴스 흐름, 주도섹터, 미국·한국·이머징 스트레스 카드에 공통으로 적용되는
  * 제목 영역, 빈 상태, 차트 여백과 범례를 관리합니다.
@@ -594,8 +596,41 @@ body:has(#app-shell:not(.hidden)) {
   padding:var(--analysis-card-header-padding-y) var(--analysis-card-header-padding-x);
   border-bottom:1px solid var(--analysis-card-header-border);
 }
+.analysis-card-heading-row {
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+}
+.analysis-card-icon {
+  display:flex;
+  width:2rem;
+  height:2rem;
+  flex:none;
+  align-items:center;
+  justify-content:center;
+  border-radius:.5rem;
+}
+.analysis-card-eyebrow {
+  margin:0;
+  font-size:.625rem;
+  font-weight:700;
+  letter-spacing:.16em;
+}
+.analysis-card-eyebrow--sky { color:var(--analysis-card-eyebrow-sky); }
+.analysis-card-eyebrow--teal { color:var(--analysis-card-eyebrow-teal); }
+.analysis-card-eyebrow--amber { color:var(--analysis-card-eyebrow-amber); }
+.analysis-card-eyebrow--blue { color:var(--analysis-card-eyebrow-blue); }
+.analysis-card-eyebrow--tracker { color:var(--analysis-card-eyebrow-tracker); }
+.analysis-card-title {
+  margin:.125rem 0 0;
+  color:var(--color-text-primary);
+  font-size:1.15rem;
+  font-weight:700;
+  letter-spacing:-.025em;
+}
 /* DOM 중첩과 관계없이 모든 분석 카드의 제목 아래 안내 문구를 한 곳에서 관리합니다. */
 #app-shell .analysis-card-description {
+  margin:.125rem 0 0;
   color:var(--analysis-card-description-color);
   font-size:var(--analysis-card-description-font-size);
   line-height:var(--analysis-card-description-line-height);
@@ -603,14 +638,12 @@ body:has(#app-shell:not(.hidden)) {
 #app-shell .analysis-card-description--accent {
   color:#b28331;
 }
-/* 밝은 분석 카드의 제목과 안내 문구 색상만 담당합니다. */
-#app-shell .analysis-card-header-light .analysis-card-title {
-  color:var(--color-text-primary);
-  font-size:1.15rem;
-}
 /* 결정적 뉴스는 밝은 카드 안의 유일한 어두운 강조 패널이므로 색을 패널 내부에만 제한합니다. */
 #news-extreme-signals {
   box-shadow:0 3px 9px rgba(2,6,23,.16);
+}
+#app-shell .analysis-card-header > .analysis-card-description:first-of-type {
+  margin-top:1.5rem;
 }
 .decisive-news-content {
   padding:1.25rem 1.5rem;
@@ -717,6 +750,25 @@ body:has(#app-shell:not(.hidden)) {
   border:1px solid var(--color-border-light);
   background:var(--color-surface-soft);
   color:#282724;
+}
+/* 모든 대화상자의 화면 덮개는 공통 배치·배경을 사용하고, 필요한 층위만 수정자로 구분합니다. */
+.modal-overlay {
+  position:fixed;
+  inset:0;
+  z-index:50;
+  align-items:center;
+  justify-content:center;
+  padding:1rem;
+  background:rgba(0,0,0,.7);
+}
+.modal-overlay:not(.hidden) {
+  display:flex;
+}
+.modal-overlay--notice { z-index:70; }
+.modal-overlay--elevated { z-index:75; }
+.modal-overlay--critical {
+  z-index:80;
+  background:rgba(0,0,0,.75);
 }
 #news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart, #korea-stress-chart, #em-stress-chart {
   padding:1.6rem 0 0;
@@ -1433,7 +1485,7 @@ body.is-pointer-dragging {
 }
 /* 드래그 원본과 삽입 위치는 JS가 상태 클래스만 바꾸고, 표현은 CSS가 담당합니다. */
 #target-list .is-drag-source > * {
-  opacity:.4;
+  opacity:var(--tracker-drag-source-opacity);
 }
 #target-list .drop-indicator-before::before,
 #target-list .drop-indicator-after::after {
@@ -1442,8 +1494,8 @@ body.is-pointer-dragging {
   z-index:2;
   left:0;
   right:0;
-  height:1px;
-  background:#fff;
+  height:var(--tracker-drop-indicator-height);
+  background:var(--tracker-drop-indicator-color);
   pointer-events:none;
 }
 #target-list .drop-indicator-before::before {
