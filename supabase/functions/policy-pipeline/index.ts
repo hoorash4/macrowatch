@@ -145,11 +145,8 @@ async function officialPdfAvailable(url: string) {
 }
 
 function systemPrompt() {
-  const encodedPrompt = Array.from({ length: 2 }, (_, index) => Deno.env.get(`FOMC_POLICY_SYSTEM_PROMPT_B64_${index + 1}`) || "").join("")
-    || Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT_BASE64");
-  const prompt = encodedPrompt
-    ? new TextDecoder().decode(Uint8Array.from(atob(encodedPrompt), (character) => character.charCodeAt(0)))
-    : Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
+  const storedPrompt = Deno.env.get("FOMC_POLICY_SYSTEM_PROMPT");
+  const prompt = storedPrompt?.startsWith('"') ? JSON.parse(storedPrompt) as string : storedPrompt;
   if (!prompt) throw new Error("FOMC_POLICY_SYSTEM_PROMPT가 설정되지 않았습니다.");
   if (!prompt.trimStart().startsWith(`FOMC 분석 프롬프트 ${POLICY_PROMPT_VERSION}`)) {
     throw new Error(`FOMC_POLICY_SYSTEM_PROMPT를 ${POLICY_PROMPT_VERSION} 원문으로 갱신해야 합니다.`);

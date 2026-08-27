@@ -62,11 +62,10 @@ jobs:
         # The prompt is version-controlled non-secret configuration. Publishing it
         # with the function prevents code/prompt version drift during deployment.
         run: |
-          encoded_prompt="$(base64 -w 0 supabase/prompts/fomc-policy-v2.0.txt)"
+          prompt_json="$(jq -Rs . < supabase/prompts/fomc-policy-v2.0.txt)"
           supabase secrets set \
             --project-ref "$SUPABASE_PROJECT_REF" \
-            FOMC_POLICY_SYSTEM_PROMPT_B64_1="${encoded_prompt:0:18000}" \
-            FOMC_POLICY_SYSTEM_PROMPT_B64_2="${encoded_prompt:18000:18000}"
+            FOMC_POLICY_SYSTEM_PROMPT="$prompt_json"
 
       - name: Deploy Edge Functions
         run: |
