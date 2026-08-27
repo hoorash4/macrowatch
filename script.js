@@ -1343,11 +1343,12 @@ async function handleAddTarget(e) {
         return;
       }
       if (error) {
-        window.alert('등록 실패: ' + error.message);
+        showCenteredNotice('지표 등록 실패', error.message || '지표를 등록하지 못했습니다.');
         return;
       }
     } catch (error) {
       console.error(error);
+      showCenteredNotice('지표 등록 실패', error?.message || '지표를 등록하지 못했습니다.');
       return;
     }
   }

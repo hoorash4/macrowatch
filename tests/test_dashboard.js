@@ -68,6 +68,17 @@ test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표�
   assert.ok(queries.includes('10-Year Treasury Constant Maturity Rate'));
 });
 
+test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const start = script.indexOf('async function handleAddTarget(e)');
+  const end = script.indexOf('// ===== 지표 수정', start);
+  const handler = script.slice(start, end);
+
+  assert.ok(start >= 0 && end > start);
+  assert.match(handler, /showCenteredNotice\('지표 등록 실패'/);
+  assert.doesNotMatch(handler, /window\.alert\('등록 실패:/);
+});
+
 test('뉴스 표시일은 저장일보다 하루 앞선 날짜를 사용한다', () => {
   assert.equal(dashboard.window.MacroWatchDashboard.utils.formatNewsDate('2026-08-26'), '8/25');
   assert.equal(dashboard.window.MacroWatchDashboard.utils.formatNewsDate('invalid'), '—');
