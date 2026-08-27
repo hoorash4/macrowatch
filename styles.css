@@ -948,7 +948,9 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-expectation-zero-line { stroke:#64748b; stroke-width:1.2; }
 .policy-expectation-zero-label { fill:#64748b; font-size:9px; font-weight:700; }
-.policy-expectation-line { fill:none; stroke:url(#policy-expectation-line-gradient); stroke-width:2.35; stroke-linecap:round; stroke-linejoin:round; }
+.policy-expectation-line { fill:none; stroke:url(#policy-expectation-line-gradient); stroke-linecap:round; stroke-linejoin:round; }
+.policy-expectation-line--raw { opacity:.3; stroke-width:1.15; }
+.policy-expectation-line--average { stroke-width:2.5; }
 .policy-expectation-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
 .policy-expectation-cursor-value,.policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; }
 .policy-expectation-cursor-value { fill:#334155; font-size:10px; font-weight:750; }
@@ -959,6 +961,8 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-legend-line { display:inline-block; width:1.25rem; height:2px; }
 .policy-expectation-legend-line--hike { background:#b4535d; }
 .policy-expectation-legend-line--cut { background:#2563a8; }
+.policy-expectation-legend-line--raw { height:1px; background:#94a3b8; opacity:.55; }
+.policy-expectation-legend-line--average { background:#475569; }
 /* 밝은 카드에서 사용하는 데이터 대기·오류 상태입니다. */
 #app-shell .analysis-empty-state-light {
   border-color:var(--color-border-light);

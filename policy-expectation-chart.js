@@ -30,8 +30,19 @@
     return `${numeric > 0 ? '+' : ''}${numeric.toFixed(1)}bp`;
   }
 
+  function withFiveDayAverage(rows) {
+    return rows.map((row, index) => {
+      if (index < 4) return { ...row, fiveDayAverage: null };
+      const window = rows.slice(index - 4, index + 1).map((item) => Number(item.expectation_spread_bps));
+      const fiveDayAverage = window.every(Number.isFinite)
+        ? window.reduce((sum, value) => sum + value, 0) / window.length
+        : null;
+      return { ...row, fiveDayAverage };
+    });
+  }
+
   function render(container, rows, selectedYears) {
-    const datedRows = rowsForSelectedRange(rows, selectedYears).map((row) => ({
+    const datedRows = rowsForSelectedRange(withFiveDayAverage(rows), selectedYears).map((row) => ({
       ...row,
       timestamp: Date.parse(`${row.observation_date}T00:00:00Z`),
       value: Number(row.expectation_spread_bps),
@@ -52,7 +63,12 @@
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right),
       y: scale(row.value, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
     }));
-    const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+    const rawPath = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+    const averagePoints = points.filter((point) => Number.isFinite(point.fiveDayAverage)).map((point) => ({
+      ...point,
+      averageY: scale(point.fiveDayAverage, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
+    }));
+    const averagePath = averagePoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.averageY.toFixed(2)}`).join(' ');
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
@@ -69,7 +85,8 @@
       <g>${yearGuides}</g>
       <line x1="${PADDING.left}" y1="${zeroY}" x2="${timelineWidth - PADDING.right}" y2="${zeroY}" class="policy-expectation-zero-line"/>
       <text x="${PADDING.left + 4}" y="${zeroY - 7}" class="policy-expectation-zero-label">0 · 현재 정책 수준</text>
-      <path d="${path}" class="policy-expectation-line"/>
+      <path d="${rawPath}" class="policy-expectation-line policy-expectation-line--raw"/>
+      <path d="${averagePath}" class="policy-expectation-line policy-expectation-line--average"/>
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
       <text data-policy-expectation-value text-anchor="middle" y="${PADDING.top + 11}" class="policy-expectation-cursor-value"></text>
       <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
@@ -87,9 +104,9 @@
       cursor.setAttribute('x1', nearest.x);
       cursor.setAttribute('x2', nearest.x);
       cursorValue.setAttribute('x', nearest.x);
-      cursorValue.textContent = `${formatDate(nearest.observation_date)} · ${formatBps(nearest.value)}`;
+      cursorValue.textContent = `${formatDate(nearest.observation_date)} · 5일 평균 ${formatBps(nearest.fiveDayAverage)}`;
       cursorDetail.setAttribute('x', nearest.x);
-      cursorDetail.textContent = `3개월 ${formatBps(nearest.near_term_spread_bps)} · 2년 ${formatBps(nearest.cycle_spread_bps)}`;
+      cursorDetail.textContent = `일간 ${formatBps(nearest.value)} · 3개월 ${formatBps(nearest.near_term_spread_bps)} · 2년 ${formatBps(nearest.cycle_spread_bps)}`;
       for (const element of [cursor, cursorValue, cursorDetail]) element.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => {
