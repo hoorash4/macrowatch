@@ -37,6 +37,8 @@ jobs:
           BACKFILL: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.backfill) || false }}
         run: |
           if [ "$BACKFILL" = "true" ]; then
+            # 같은 커밋의 Edge Function 배포가 끝난 뒤 이어받기 백필을 시작합니다.
+            sleep 90
             # 표시 구간은 5년이지만 첫 화면 시점의 3년 이동 Z점수 계산을 위해 원자료는 8년을 확보합니다.
             start="$(date -u -d '8 years ago - 1 month' +%Y-%m-01)"
             final="$(date -u +%Y-%m-%d)"
@@ -44,9 +46,12 @@ jobs:
               end="$(date -u -d "$start + 1 month - 1 day" +%Y-%m-%d)"
               curl --fail-with-body --retry 2 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
                 --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-                --header "Content-Type: application/json" --data "{\"start\":\"$start\",\"end\":\"$end\"}"
+                --header "Content-Type: application/json" --data "{\"start\":\"$start\",\"end\":\"$end\",\"collect_only\":true}"
               start="$(date -u -d "$start + 1 month" +%Y-%m-01)"
             done
+            curl --fail-with-body --retry 2 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
+              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Content-Type: application/json" --data '{"finalize_only":true}'
           else
             curl --fail-with-body --retry 2 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
               --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \

@@ -48,38 +48,40 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const collectOnly = body.collect_only === true, finalizeOnly = body.finalize_only === true;
     const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
     const start = typeof body.start === "string" ? body.start : new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
     const end = typeof body.end === "string" ? body.end : today;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) return json({ error: "조회 날짜가 올바르지 않습니다." }, 400);
     const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
-    const admin = createClient(supabaseUrl, serviceRole), credentials = loadKisCredentials();
-    const token = await getKisAccessToken(credentials, admin);
-    const marketDays = await fetchKisKospiMarketDays(credentials, token, new Date(`${start}T00:00:00Z`), new Date(`${end}T00:00:00Z`));
-    const fx = await fetchFx(new Date(Date.parse(`${start}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10), end);
-    const { data: existing, error: existingError } = await admin.from("korea_foreign_flow_raw")
-      .select("observation_date").gte("observation_date", start).lte("observation_date", end);
-    if (existingError) throw existingError;
-    const existingDates = new Set((existing || []).map((row) => String(row.observation_date)));
+    const admin = createClient(supabaseUrl, serviceRole);
     const rawRows: KoreaFlowRaw[] = [], failures: Array<{ date: string; error: string }> = [];
-    for (const day of marketDays.sort((a, b) => a.marketDate.localeCompare(b.marketDate))) {
-      // 중단된 장기 백필을 재개할 때 이미 저장된 영업일은 외부 API를 다시 호출하지 않습니다.
-      if (existingDates.has(day.marketDate)) continue;
-      try {
-        const amount = await fetchKisKospiForeignNetBuy(credentials, token, day.marketDate);
-        // 환율 휴일과 거래소 영업일이 어긋나면 가장 최근 공시 환율을 이어 사용합니다.
-        const rate = latestFxOnOrBefore(fx, day.marketDate);
-        if (amount !== null && typeof rate === "number" && Number.isFinite(rate)) rawRows.push({ observationDate: day.marketDate, foreignNetBuyAmount: amount, kospiTradingValue: day.tradingValue, usdkrwRate: rate });
-      } catch (error) { failures.push({ date: day.marketDate, error: error instanceof Error ? error.message : String(error) }); }
-      await wait(WAIT_MS);
-    }
-    if (rawRows.length) {
-      const { error } = await admin.from("korea_foreign_flow_raw").upsert(rawRows.map((row) => ({
-        observation_date: row.observationDate, foreign_net_buy_amount: row.foreignNetBuyAmount,
-        kospi_trading_value: row.kospiTradingValue, usdkrw_rate: row.usdkrwRate, updated_at: new Date().toISOString(),
-      })), { onConflict: "observation_date" });
-      if (error) throw error;
+    if (!finalizeOnly) {
+      const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
+      const marketDays = await fetchKisKospiMarketDays(credentials, token, new Date(`${start}T00:00:00Z`), new Date(`${end}T00:00:00Z`));
+      const fx = await fetchFx(new Date(Date.parse(`${start}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10), end);
+      const { data: existing, error: existingError } = await admin.from("korea_foreign_flow_raw")
+        .select("observation_date").gte("observation_date", start).lte("observation_date", end);
+      if (existingError) throw existingError;
+      const existingDates = new Set((existing || []).map((row) => String(row.observation_date)));
+      for (const day of marketDays.sort((a, b) => a.marketDate.localeCompare(b.marketDate))) {
+        if (existingDates.has(day.marketDate)) continue;
+        try {
+          const amount = await fetchKisKospiForeignNetBuy(credentials, token, day.marketDate);
+          const rate = latestFxOnOrBefore(fx, day.marketDate);
+          if (amount !== null && typeof rate === "number" && Number.isFinite(rate)) rawRows.push({ observationDate: day.marketDate, foreignNetBuyAmount: amount, kospiTradingValue: day.tradingValue, usdkrwRate: rate });
+        } catch (error) { failures.push({ date: day.marketDate, error: error instanceof Error ? error.message : String(error) }); }
+        await wait(WAIT_MS);
+      }
+      if (rawRows.length) {
+        const { error } = await admin.from("korea_foreign_flow_raw").upsert(rawRows.map((row) => ({
+          observation_date: row.observationDate, foreign_net_buy_amount: row.foreignNetBuyAmount,
+          kospi_trading_value: row.kospiTradingValue, usdkrw_rate: row.usdkrwRate, updated_at: new Date().toISOString(),
+        })), { onConflict: "observation_date" });
+        if (error) throw error;
+      }
+      if (collectOnly) return json({ ok: true, start, end, collected: rawRows.length, failures });
     }
     const history = await loadRawHistory(admin, dateYearsAgo(CALCULATION_YEARS));
     const calculated = calculateKoreaForeignFlow(history.map((row) => ({ observationDate: String(row.observation_date),
