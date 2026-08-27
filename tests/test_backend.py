@@ -119,10 +119,13 @@ class SourceContractTests(unittest.TestCase):
         migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "supabase/functions/sector-flow/index.ts").read_text(encoding="utf-8")
         scoring = (ROOT / "supabase/functions/_shared/sector-flow.ts").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/sector-flow.yml").read_text(encoding="utf-8")
         self.assertIn("market_sector_etf_prices", migration)
         self.assertIn("market_sector_weekly_rankings", migration)
         self.assertIn('body.stage === "open"', pipeline)
         self.assertIn('body.stage === "close"', pipeline)
+        for schedule in ('10 0', '30 0', '40 6', '0 7'):
+            self.assertIn(f'cron: "{schedule} * * 1-5"', workflow)
         self.assertIn("DATABASE_PAGE_SIZE = 1000", pipeline)
         self.assertIn("PRICE_RETENTION_WEEKS = 10", pipeline)
         self.assertIn("RANKING_RETENTION_WEEKS = 6", pipeline)
