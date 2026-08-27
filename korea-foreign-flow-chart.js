@@ -109,7 +109,7 @@
     frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); detail.classList.remove('is-visible'); });
   }
 
-  // 같은 방향 사이에 낀 하루짜리 반대 수급 중 앞뒤 규모의 평균 이하인 값만 제거합니다.
+  // 같은 방향 사이에 낀 하루짜리 반대 수급은 규모와 관계없이 제거합니다.
   // 실제 순매매액과 원화 강도는 수정하지 않으므로 비교 실험을 언제든 되돌릴 수 있습니다.
   function applyPersistenceFilter(rows) {
     return rows.map((row, index) => {
@@ -117,10 +117,8 @@
       const previousSign = Math.sign(Number(rows[index - 1].foreign_net_buy_amount));
       const currentSign = Math.sign(Number(row.foreign_net_buy_amount));
       const nextSign = Math.sign(Number(rows[index + 1].foreign_net_buy_amount));
-      const surroundedReversal = previousSign !== 0 && previousSign === nextSign && currentSign === -previousSign;
-      const surroundingAverage = (Math.abs(Number(rows[index - 1].foreign_net_buy_amount)) + Math.abs(Number(rows[index + 1].foreign_net_buy_amount))) / 2;
-      const isMinorReversal = surroundedReversal && Math.abs(Number(row.foreign_net_buy_amount)) <= surroundingAverage;
-      if (!isMinorReversal) return row;
+      const isolatedReversal = previousSign !== 0 && previousSign === nextSign && currentSign === -previousSign;
+      if (!isolatedReversal) return row;
       return { ...row, flow_index: Number(row.won_strength_z) / 2, persistence_filtered: true };
     });
   }

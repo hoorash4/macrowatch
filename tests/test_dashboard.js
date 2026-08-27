@@ -80,7 +80,7 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   assert.match(html, /외국인 수급 연속성 반영 비교/);
   assert.match(chart, /function applyPersistenceFilter/);
   assert.match(chart, /previousSign === nextSign && currentSign === -previousSign/);
-  assert.match(chart, /Math\.abs\(Number\(row\.foreign_net_buy_amount\)\) <= surroundingAverage/);
+  assert.doesNotMatch(chart, /surroundingAverage/);
   assert.match(chart, /flow_index: Number\(row\.won_strength_z\) \/ 2/);
 });
 
