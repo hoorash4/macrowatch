@@ -28,14 +28,14 @@
     return `기준금리 ${range}${change}`;
   }
 
-  function textSection(title, text, className = '') {
+  function textSection(title, text, icon, className = '') {
     if (!text) return '';
-    return `<section class="fomc-briefing-section ${className}"><h4>${escapeHtml(title)}</h4><div class="fomc-briefing-copy">${escapeHtml(text)}</div></section>`;
+    return `<section class="fomc-briefing-section ${className}"><h4><span><i class="fa-solid ${icon}" aria-hidden="true"></i></span>${escapeHtml(title)}</h4><div class="fomc-briefing-copy">${escapeHtml(text)}</div></section>`;
   }
 
   function changesSection(changes) {
     if (!Array.isArray(changes) || !changes.length) return '';
-    return `<section class="fomc-briefing-section"><h4>이전 성명서와 달라진 점</h4><div class="fomc-briefing-changes">${changes.map((change) => `
+    return `<section class="fomc-briefing-section"><h4><span><i class="fa-solid fa-code-compare" aria-hidden="true"></i></span>이전 성명서와 달라진 점</h4><div class="fomc-briefing-changes">${changes.map((change) => `
       <article>
         <strong>${escapeHtml(change.title)}</strong>
         <p>${escapeHtml(change.explanation)}</p>
@@ -47,19 +47,19 @@
     const briefing = row.briefing || {};
     return `<div class="fomc-briefing-detail-scroll">
       <section class="fomc-briefing-result">
-        <h3>${escapeHtml(row.is_emergency ? '긴급 FOMC 결과' : '정례 FOMC 결과')}</h3>
+        <h3><span><i class="fa-solid fa-landmark" aria-hidden="true"></i></span>${escapeHtml(row.is_emergency ? '긴급 FOMC 결과' : '정례 FOMC 결과')}</h3>
         <p>${escapeHtml(rateDecision(row))}</p>
       </section>
-      ${textSection('FOMC 성명서 브리핑', briefing.statement_briefing, 'fomc-briefing-section--lead')}
+      ${textSection('FOMC 성명서 브리핑', briefing.statement_briefing, 'fa-file-lines', 'fomc-briefing-section--lead')}
       <div class="fomc-briefing-context-grid">
-        ${textSection('경기', briefing.economy)}
-        ${textSection('물가', briefing.inflation)}
-        ${textSection('고용', briefing.employment)}
-        ${textSection('기타', briefing.other)}
+        ${textSection('경기', briefing.economy, 'fa-chart-line')}
+        ${textSection('물가', briefing.inflation, 'fa-gauge-high')}
+        ${textSection('고용', briefing.employment, 'fa-user-group')}
+        ${textSection('기타', briefing.other, 'fa-ellipsis')}
       </div>
-      ${textSection('금리 결정의 핵심 이유', briefing.key_rate_reason, 'fomc-briefing-section--reason')}
+      ${textSection('금리 결정의 핵심 이유', briefing.key_rate_reason, 'fa-bullseye', 'fomc-briefing-section--reason')}
       ${changesSection(briefing.changes_from_previous)}
-      ${textSection('AI 종합 분석', briefing.ai_overall_analysis, 'fomc-briefing-section--analysis')}
+      ${textSection('AI 종합 분석', briefing.ai_overall_analysis, 'fa-brain', 'fomc-briefing-section--analysis')}
     </div>`;
   }
 
@@ -78,7 +78,7 @@
       const panelId = `fomc-briefing-${row.meeting_date}`;
       return `<article class="fomc-briefing-item${isOpen ? ' is-open' : ''}">
         <button type="button" class="fomc-briefing-toggle" data-fomc-meeting-date="${escapeHtml(row.meeting_date)}" aria-expanded="${isOpen}" aria-controls="${panelId}">
-          <span><strong>${escapeHtml(meetingTitle(row))}</strong><small>${escapeHtml(rateDecision(row))}</small></span>
+          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong>${escapeHtml(meetingTitle(row))}</strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
           <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
         </button>
         <div id="${panelId}" class="fomc-briefing-detail"${isOpen ? '' : ' hidden'}>${isOpen ? detailContent(row) : ''}</div>
@@ -101,6 +101,7 @@
         const meetingDate = toggle.dataset.fomcMeetingDate;
         state.openMeetingDate = state.openMeetingDate === meetingDate ? null : meetingDate;
         render();
+        if (state.openMeetingDate) window.requestAnimationFrame(() => document.querySelector(`[data-fomc-meeting-date="${meetingDate}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
         return;
       }
       const pager = event.target.closest('[data-fomc-page]');
