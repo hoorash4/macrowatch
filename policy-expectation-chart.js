@@ -5,18 +5,25 @@
   const MIN_VIEWPORT_WIDTH = 680;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 52 };
   const DATABASE_PAGE_SIZE = 1000;
+  const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
+  const SCROLL_HISTORY_YEARS = 10;
   const state = { rows: [], selectedYears: 5 };
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2
     : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
 
-  function rowsForSelectedRange(rows, selectedYears) {
+  function rowsForTimeline(rows, selectedYears) {
     if (selectedYears === 'max' || !rows.length) return rows;
     const latestDate = new Date(`${rows[rows.length - 1].observation_date}T00:00:00Z`);
     const cutoff = new Date(latestDate);
-    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - Number(selectedYears));
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - SCROLL_HISTORY_YEARS);
     return rows.filter((row) => Date.parse(`${row.observation_date}T00:00:00Z`) >= cutoff.getTime());
+  }
+
+  function scrollToLatest(frame) {
+    if (!frame) return;
+    window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
   }
 
   function formatDate(period) {
@@ -49,7 +56,7 @@
   }
 
   function render(container, rows, selectedYears) {
-    const datedRows = rowsForSelectedRange(withFiveDayAverage(rows), selectedYears).map((row) => ({
+    const datedRows = rowsForTimeline(withFiveDayAverage(rows), selectedYears).map((row) => ({
       ...row,
       timestamp: Date.parse(`${row.observation_date}T00:00:00Z`),
       value: Number(row.expectation_spread_bps),
@@ -65,7 +72,9 @@
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, container.clientWidth || MIN_VIEWPORT_WIDTH);
-    const timelineWidth = viewportWidth;
+    const timelineWidth = selectedYears === 'max' || selectedYears === 10
+      ? viewportWidth
+      : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
     const zeroY = scale(0, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
     const points = datedRows.map((row) => ({
       ...row,
@@ -113,6 +122,7 @@
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
     const cursorValue = container.querySelector('[data-policy-expectation-value]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
+    scrollToLatest(frame);
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
       const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;
@@ -168,6 +178,11 @@
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">정책금리 기대 스프레드를 불러오지 못했습니다.</div>';
     }
   }
+
+  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
+    if (detail?.view !== 'policy') return;
+    scrollToLatest(document.querySelector('#policy-expectation-chart .policy-expectation-chart-frame'));
+  });
 
   window.MacroWatchDashboard?.registerLoader(load);
 })();

@@ -163,7 +163,11 @@ test('시장 내재 정책금리 기대 그래프는 5년을 기본으로 기간
   const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-expectation-chart.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(chart, /selectedYears: 5/);
-  assert.match(chart, /function rowsForSelectedRange/);
+  assert.match(chart, /function rowsForTimeline/);
+  assert.match(chart, /SCROLL_HISTORY_YEARS = 10/);
+  assert.match(chart, /selectedYears === 'max' \|\| selectedYears === 10/);
+  assert.match(chart, /Number\(selectedYears\) \* YEAR_MS/);
+  assert.match(chart, /frame\.scrollLeft = frame\.scrollWidth - frame\.clientWidth/);
   assert.match(chart, /function withFiveDayAverage/);
   assert.match(chart, /policy-expectation-line--raw/);
   assert.match(chart, /policy-expectation-line--average/);
@@ -175,7 +179,7 @@ test('시장 내재 정책금리 기대 그래프는 5년을 기본으로 기간
   assert.doesNotMatch(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="5" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=6/);
+  assert.match(html, /policy-expectation-chart\.js\?v=7/);
 });
 
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
