@@ -39,6 +39,15 @@
     return factor * magnitude;
   }
 
+  function verticalScale(points) {
+    const maximumObservedValue = Math.max(5, ...points.flatMap((point) => [
+      Math.abs(point.value),
+      Number.isFinite(point.fiveDayAverage) ? Math.abs(point.fiveDayAverage) : 0,
+    ])) * 1.05;
+    const tickStep = niceStep(maximumObservedValue / 2);
+    return { tickStep, maximumAbsoluteValue: tickStep * 2 };
+  }
+
   function withFiveDayAverage(rows) {
     return rows.map((row, index) => {
       if (index < 4) return { ...row, fiveDayAverage: null };
@@ -61,27 +70,26 @@
       return;
     }
 
-    const maximumObservedValue = Math.max(25, ...datedRows.map((row) => Math.abs(row.value))) * 1.05;
-    const yTickStep = niceStep(maximumObservedValue / 2);
-    const maximumAbsoluteValue = yTickStep * 2;
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
     const timelineWidth = selectedYears === 'max' || selectedYears === 10
       ? viewportWidth
       : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
-    const zeroY = scale(0, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
     const points = datedRows.map((row) => ({
       ...row,
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right),
-      y: scale(row.value, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
     }));
-    const rawPath = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
-    const averagePoints = points.filter((point) => Number.isFinite(point.fiveDayAverage)).map((point) => ({
-      ...point,
-      averageY: scale(point.fiveDayAverage, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
-    }));
-    const averagePath = averagePoints.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.averageY.toFixed(2)}`).join(' ');
+    const initialVerticalScale = verticalScale(points);
+    const zeroY = scale(0, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
+    const pathFor = (sourcePoints, valueKey, maximumAbsoluteValue) => sourcePoints
+      .filter((point) => Number.isFinite(point[valueKey]))
+      .map((point, index) => {
+        const y = scale(point[valueKey], -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
+        return `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${y.toFixed(2)}`;
+      }).join(' ');
+    const rawPath = pathFor(points, 'value', initialVerticalScale.maximumAbsoluteValue);
+    const averagePath = pathFor(points, 'fiveDayAverage', initialVerticalScale.maximumAbsoluteValue);
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
@@ -93,13 +101,13 @@
       return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${yearLabel}</text>`;
     }).join('');
     const yTickValues = [-2, -1, 0, 1, 2].map((multiple) => {
-      const value = multiple * yTickStep;
-      const y = scale(value, -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
+      const value = multiple * initialVerticalScale.tickStep;
+      const y = scale(value, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
       const label = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
-      return { value, y, label };
+      return { multiple, value, y, label };
     });
     const yGridLines = yTickValues.map(({ value, y }) => `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' policy-expectation-y-grid--zero' : ''}"/>`).join('');
-    const yAxisLabels = yTickValues.map(({ y, label }) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"/><text x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`).join('');
+    const yAxisLabels = yTickValues.map(({ multiple, y, label }) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"/><text data-policy-expectation-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
     container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${yAxisLabels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
@@ -117,7 +125,30 @@
     const svg = container.querySelector('.policy-expectation-chart-svg');
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
+    const rawLine = container.querySelector('.policy-expectation-line--raw');
+    const averageLine = container.querySelector('.policy-expectation-line--average');
+    const yLabels = [...container.querySelectorAll('[data-policy-expectation-y-multiple]')];
+    let scaleFrame = null;
+    const updateVisibleScale = () => {
+      scaleFrame = null;
+      const visibleStart = frame.scrollLeft;
+      const visibleEnd = visibleStart + frame.clientWidth;
+      const visiblePoints = points.filter((point) => point.x >= visibleStart && point.x <= visibleEnd);
+      if (!visiblePoints.length) return;
+      const currentScale = verticalScale(visiblePoints);
+      rawLine.setAttribute('d', pathFor(points, 'value', currentScale.maximumAbsoluteValue));
+      averageLine.setAttribute('d', pathFor(points, 'fiveDayAverage', currentScale.maximumAbsoluteValue));
+      yLabels.forEach((label) => {
+        const value = Number(label.dataset.policyExpectationYMultiple) * currentScale.tickStep;
+        label.textContent = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
+      });
+    };
+    frame.addEventListener('scroll', () => {
+      if (scaleFrame !== null) return;
+      scaleFrame = window.requestAnimationFrame(updateVisibleScale);
+    }, { passive: true });
     scrollToLatest(frame);
+    window.requestAnimationFrame(updateVisibleScale);
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
       const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;

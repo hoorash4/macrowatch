@@ -180,10 +180,13 @@ test('시장 내재 정책금리 기대 그래프는 5년을 기본으로 기간
   assert.match(chart, /policy-expectation-chart-layout/);
   assert.match(chart, /policy-expectation-y-axis/);
   assert.match(chart, /Y_AXIS_WIDTH = 46/);
+  assert.match(chart, /function verticalScale/);
+  assert.match(chart, /visibleStart = frame\.scrollLeft/);
+  assert.match(chart, /requestAnimationFrame\(updateVisibleScale\)/);
   assert.doesNotMatch(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="5" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=9/);
+  assert.match(html, /policy-expectation-chart\.js\?v=10/);
 });
 
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
