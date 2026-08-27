@@ -226,10 +226,11 @@ function normalizeAnalysis(analysis: Analysis, previous: EventRow | null): Analy
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
-    const body = await request.json().catch(() => ({})) as { bank?: string; mode?: string; limit?: number };
+    const body = await request.json().catch(() => ({})) as { bank?: string; mode?: string; limit?: number; years?: number };
     if (body.bank && body.bank !== "fed") return json({ error: "현재는 Fed만 지원합니다." }, 400);
-    const mode = body.mode === "backfill" || body.mode === "reanalyze" ? body.mode : "latest";
+    const mode = body.mode === "backfill" || body.mode === "reanalyze" || body.mode === "recent" ? body.mode : "latest";
     const limit = Math.min(Math.max(Number(body.limit) || 4, 1), 8);
+    const recentYears = Math.min(Math.max(Number(body.years) || 2, 1), 5);
     const url = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
     const supabase = createClient(url, serviceRole);
@@ -244,12 +245,18 @@ Deno.serve(async (request) => {
         aged_peak_reaches: scored.filter((row) => row.previous_peak_adjustment === 100).length,
       });
     }
-    const sources = await fedSources(mode === "latest" ? "latest" : "backfill");
+    const sources = await fedSources(mode === "latest" || mode === "recent" ? "latest" : "backfill");
     // Daily runs only revisit the newest meeting. This is enough to discover the next
     // statement and later transcript while preventing a v2 rollout from creating NEW
     // notifications for every historical row at once. Historical briefing backfill is
     // an explicit reanalyze operation.
-    const selected = mode === "latest" ? sources.slice(-1) : sources;
+    const recentCutoff = new Date();
+    recentCutoff.setUTCFullYear(recentCutoff.getUTCFullYear() - recentYears);
+    const selected = mode === "latest"
+      ? sources.slice(-1)
+      : mode === "recent"
+        ? sources.filter((source) => source.meetingDate >= recentCutoff.toISOString().slice(0, 10))
+        : sources;
     const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status,source_url,is_emergency,analysis_prompt_version,briefing,briefing_revision,briefing_source_state").eq("central_bank", "fed");
     if (existingError) throw existingError;
     type SavedRow = { meeting_date: string; statement_hash: string; analysis_status: string; source_url: string | null; is_emergency: boolean | null; analysis_prompt_version: string | null; briefing: unknown; briefing_revision: number; briefing_source_state: Record<string, unknown> | null };
@@ -337,7 +344,9 @@ Deno.serve(async (request) => {
     if ((scoredCount || 0) > 0) await recomputePolicyScores(supabase, "fed");
     const hasMore = selected.some((source) => {
       const saved = known.get(source.meetingDate);
-      return !saved || saved.analysis_status !== "completed" || (mode === "reanalyze" && saved.analysis_prompt_version !== POLICY_PROMPT_VERSION);
+      return !saved || saved.analysis_status !== "completed"
+        || (mode === "reanalyze" && saved.analysis_prompt_version !== POLICY_PROMPT_VERSION)
+        || (mode === "recent" && (!saved.briefing || saved.analysis_prompt_version !== POLICY_PROMPT_VERSION));
     }) && processed >= limit;
     return json({ bank: "fed", mode, discovered: selected.length, processed, skipped, failed, has_more: hasMore });
   } catch (error) { return json({ error: errorMessage(error) }, 500); }

@@ -284,6 +284,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("primary key (central_bank, meeting_date, revision)", migration)
         self.assertIn("통화정책 시그널에 새로운 FOMC 브리핑이 등록되었습니다.", sender)
         self.assertIn("통화정책 시그널에 업데이트된 FOMC 브리핑이 등록되었습니다.", sender)
+        self.assertIn('body.mode === "recent"', pipeline)
+        self.assertIn('mode === "recent"', pipeline)
+        self.assertIn("recentCutoff.setUTCFullYear", pipeline)
+        self.assertIn('mode === "recent" && (!saved.briefing', pipeline)
 
     def test_policy_admin_reviews_only_directional_decisions(self) -> None:
         policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")

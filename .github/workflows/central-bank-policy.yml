@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "latest, backfill, reanalyze, or score"
+        description: "latest, recent, backfill, reanalyze, or score"
         required: false
         default: "latest"
         type: choice
-        options: [latest, backfill, reanalyze, score]
+        options: [latest, recent, backfill, reanalyze, score]
 
 permissions:
   contents: read

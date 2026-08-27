@@ -73,3 +73,22 @@ jobs:
             [ "$name" = "_shared" ] && continue
             supabase functions deploy "$name" --project-ref "$SUPABASE_PROJECT_REF"
           done
+
+      # One-time bootstrap requested on 2026-08-27. Remove this step after the
+      # recent two-year briefing archive has been populated successfully.
+      - name: One-time FOMC two-year briefing bootstrap
+        if: contains(github.event.head_commit.message, '[fomc-2y-bootstrap]')
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          while true; do
+            response=$(curl --silent --show-error --fail-with-body --max-time 600 \
+              --request POST "$SUPABASE_URL/functions/v1/policy-pipeline" \
+              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Content-Type: application/json" \
+              --data '{"bank":"fed","mode":"recent","years":2,"limit":4}')
+            echo "$response"
+            [ "$(jq -r '.has_more // false' <<< "$response")" = "true" ] || break
+          done
