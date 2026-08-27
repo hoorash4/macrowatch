@@ -18,13 +18,11 @@
   let requestedMeetingDates = [];
   try { requestedMeetingDates = JSON.parse(window.localStorage.getItem(storageKey) || '[]'); } catch (_) { requestedMeetingDates = []; }
   requestedMeetingDates = [...new Set([...(Array.isArray(requestedMeetingDates) ? requestedMeetingDates : []), ...(urlMeetingDate ? [urlMeetingDate] : [])])];
-  let focusedRequestedReview = false;
-
   function refreshAttentionCount() {
     const list = document.getElementById('policy-review-list');
     if (!list) return;
     const count = [...list.querySelectorAll('[data-policy-review]')]
-      .filter((item) => !['latest', 'selected'].includes(item.dataset.reviewType)).length;
+      .filter((item) => item.dataset.reviewType !== 'latest').length;
     window.MacroWatchAdminApi?.setListAttentionCount('policy-review-list', count);
   }
 
@@ -34,7 +32,7 @@
     // 최신 회의는 상시 수정용이므로 실제 검토 대기 건수에서는 제외합니다.
     window.MacroWatchAdminApi?.setListAttentionCount(
       'policy-review-list',
-      items.filter((item) => item.review_type !== 'latest' && item.review_type !== 'selected').length
+      items.filter((item) => item.review_type !== 'latest').length
     );
     if (!items.length) {
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">검토할 FOMC 정책 판단이 없습니다.</p>';
@@ -48,13 +46,6 @@
       return `<article class="border-b border-slate-800 p-4 last:border-0" data-policy-review="${escapeHtml(item.meeting_date)}" data-policy-action="${escapeHtml(item.action)}" data-review-type="${escapeHtml(item.review_type)}"><div class="mb-3 flex flex-wrap items-center justify-between gap-2"><div><strong class="text-sm text-slate-100">${escapeHtml(item.meeting_date)}</strong><span class="ml-2 text-xs font-semibold text-sky-300">${escapeHtml(actionLabel(item.action))}${Number.isFinite(Number(item.change_bps)) ? ` · ${Math.abs(Number(item.change_bps))}bp` : ''}</span></div><span class="rounded-full border border-amber-700/50 bg-amber-950/40 px-2 py-0.5 text-[11px] text-amber-300">${reviewLabel}</span></div><form autocomplete="off" class="policy-review-form grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_7rem_auto]"><select name="primary_reason" autocomplete="off" required class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"><option value="">정규 이유 선택</option>${options}</select><input name="reason_keyword" autocomplete="off" maxlength="80" value="${escapeHtml(item.reason_keyword)}" placeholder="이유 키워드 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"><input name="score" autocomplete="off" required type="number" step="1" min="-1000" max="1000" value="${escapeHtml(Math.round(Number(item.score) || 0))}" placeholder="점수 (0도 직접 입력)" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60">확정</button></form></article>`;
     }).join('');
     list.querySelectorAll('.policy-review-form').forEach((form) => form.addEventListener('submit', resolve));
-    if (requestedMeetingDates.length && !focusedRequestedReview) {
-      focusedRequestedReview = true;
-      const selected = list.querySelector(`[data-policy-review="${CSS.escape(requestedMeetingDates[0])}"]`);
-      const details = list.closest('details');
-      if (details) details.open = true;
-      window.requestAnimationFrame(() => selected?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-    }
   }
 
   async function load() {

@@ -155,7 +155,7 @@
       const storageKey = 'macrowatch_policy_review_dates';
       let dates = [];
       try { dates = JSON.parse(window.localStorage.getItem(storageKey) || '[]'); } catch (_) { dates = []; }
-      dates = [...new Set([...(Array.isArray(dates) ? dates : []), selectedPoint.meetingDate])].slice(-20);
+      dates = [...new Set([...(Array.isArray(dates) ? dates : []), selectedPoint.meetingDate])];
       window.localStorage.setItem(storageKey, JSON.stringify(dates));
       window.MacroWatchDashboard?.showNotice('FOMC 수정 목록 등록', `${selectedPoint.meetingDate} 회의를 관리자 수정 목록에 추가했습니다.`);
     });

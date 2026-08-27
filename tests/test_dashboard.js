@@ -190,6 +190,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /yMin: -tickStep \* 2, yMax: tickStep \* 2/);
   assert.match(chart, /adminLink\.hidden/);
   assert.match(chart, /macrowatch_policy_review_dates/);
+  assert.doesNotMatch(chart, /slice\(-20\)/);
   assert.match(chart, /showNotice\('FOMC 수정 목록 등록'/);
   assert.doesNotMatch(chart, /window\.location\.assign/);
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'admin-policy-review.js'), 'utf8'), /article\.remove\(\)/);

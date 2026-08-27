@@ -153,6 +153,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("badge.classList.remove('hidden')", admin_ui)
         self.assertIn("setListAttentionCount('uncertain-news-list', items.length)", admin_ui)
         self.assertIn("item.review_type !== 'latest'", policy_ui)
+        self.assertNotIn("item.review_type !== 'selected'", policy_ui)
+        self.assertNotIn("details.open = true", policy_ui)
         self.assertNotIn("setListAttentionCount('member-list'", admin_ui)
         self.assertNotIn("setListAttentionCount('sector-etf-list'", admin_ui)
         self.assertNotIn("setListAttentionCount('extreme-news-rule-list'", admin_ui)
@@ -342,6 +344,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('String(rawScore).trim() === ""', policy_admin)
         self.assertNotIn('reason !== "uncertain" && !keyword', policy_admin)
         self.assertIn('selectedDates.includes(row.meeting_date) ? "selected"', policy_admin)
+        self.assertIn("const rows = [latest, ...(selected || []), ...(unresolved || [])]", policy_admin)
+        self.assertIn('row.meeting_date === latestDate ? "latest"', policy_admin)
+        self.assertNotIn("slice(0, 20)", policy_admin)
         self.assertIn('그래프에서\n  // 선택한 과거 회의도 관리자가 직접 교정', policy_admin)
         self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
 
