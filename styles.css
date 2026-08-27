@@ -1432,7 +1432,7 @@ body.is-pointer-dragging {
   box-shadow: 0 12px 24px rgba(0,0,0,.35);
 }
 /* 드래그 원본과 삽입 위치는 JS가 상태 클래스만 바꾸고, 표현은 CSS가 담당합니다. */
-#target-list .is-drag-source {
+#target-list .is-drag-source > * {
   opacity:.4;
 }
 #target-list .drop-indicator-before::before,
