@@ -6,7 +6,7 @@
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
   const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
-  const state = { rows: [], selectedYears: 1 };
+  const state = { rows: [], standardYears: 1, persistenceYears: 1 };
   const chartUtils = window.MacroWatchAnalysisChart;
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2
@@ -33,7 +33,7 @@
     return { tickStep, maximumAbsoluteValue: tickStep * 2 };
   }
 
-  function render(container, rows, selectedYears) {
+  function render(container, rows, selectedYears, gradientId) {
     const points = withFiveDayAverage(rows).map((row) => ({
       ...row, timestamp: Date.parse(`${row.observation_date}T00:00:00Z`), value: Number(row.flow_index),
     })).filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.value));
@@ -70,7 +70,7 @@
     const yPosition = (multiple) => scale(multiple, -2, 2, HEIGHT - PADDING.bottom, PADDING.top);
     const grids = tickMultiples.map((multiple) => `<line x1="${PADDING.left}" y1="${yPosition(multiple)}" x2="${timelineWidth - PADDING.right}" y2="${yPosition(multiple)}" class="policy-expectation-y-grid${multiple === 0 ? ' policy-expectation-y-grid--zero' : ''}"/>`).join('');
     const labels = tickMultiples.map((multiple) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${yPosition(multiple)}" x2="${Y_AXIS_WIDTH}" y2="${yPosition(multiple)}" class="policy-expectation-y-tick"/><text data-korea-foreign-flow-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${yPosition(multiple) + 3}" text-anchor="end" class="policy-expectation-y-label">${Number((multiple * initialScale.tickStep).toFixed(2))}</text>`).join('');
-    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${labels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 한국 외국인 자금 유출입 강도"><defs><linearGradient id="korea-foreign-flow-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path d="${pathFor('value', initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#korea-foreign-flow-line-gradient)"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue, confirmedPoints)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#korea-foreign-flow-line-gradient)"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue, provisionalPoints)}" class="policy-expectation-line policy-expectation-line--average korea-foreign-flow-line--provisional" style="stroke:#6b7280"/><line data-korea-foreign-flow-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-foreign-flow-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg></div></div>`;
+    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${labels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 한국 외국인 자금 유출입 강도"><defs><linearGradient id="${gradientId}" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path d="${pathFor('value', initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#${gradientId})"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue, confirmedPoints)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#${gradientId})"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue, provisionalPoints)}" class="policy-expectation-line policy-expectation-line--average korea-foreign-flow-line--provisional" style="stroke:#6b7280"/><line data-korea-foreign-flow-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-foreign-flow-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg></div></div>`;
     const frame = container.querySelector('.policy-expectation-chart-frame');
     const svg = container.querySelector('.policy-expectation-chart-svg');
     const rawLine = container.querySelector('.policy-expectation-line--raw');
@@ -109,12 +109,42 @@
     frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); detail.classList.remove('is-visible'); });
   }
 
+  // 같은 방향 사이에 낀 하루짜리 반대 수급 중 앞뒤 규모의 평균 이하인 값만 제거합니다.
+  // 실제 순매매액과 원화 강도는 수정하지 않으므로 비교 실험을 언제든 되돌릴 수 있습니다.
+  function applyPersistenceFilter(rows) {
+    return rows.map((row, index) => {
+      if (index === 0 || index === rows.length - 1) return row;
+      const previousSign = Math.sign(Number(rows[index - 1].foreign_net_buy_amount));
+      const currentSign = Math.sign(Number(row.foreign_net_buy_amount));
+      const nextSign = Math.sign(Number(rows[index + 1].foreign_net_buy_amount));
+      const surroundedReversal = previousSign !== 0 && previousSign === nextSign && currentSign === -previousSign;
+      const surroundingAverage = (Math.abs(Number(rows[index - 1].foreign_net_buy_amount)) + Math.abs(Number(rows[index + 1].foreign_net_buy_amount))) / 2;
+      const isMinorReversal = surroundedReversal && Math.abs(Number(row.foreign_net_buy_amount)) <= surroundingAverage;
+      if (!isMinorReversal) return row;
+      return { ...row, flow_index: Number(row.won_strength_z) / 2, persistence_filtered: true };
+    });
+  }
+
+  function bindRangeControls({ controls, buttonSelector, stateKey, container, rows, gradientId }) {
+    if (!controls || controls.dataset.bound === 'true') return;
+    controls.dataset.bound = 'true';
+    controls.addEventListener('click', (event) => {
+      const button = event.target.closest(buttonSelector);
+      if (!button) return;
+      const range = button.dataset[stateKey === 'standardYears' ? 'koreaForeignFlowRange' : 'koreaForeignFlowPersistenceRange'];
+      state[stateKey] = range === 'max' ? 'max' : Number(range);
+      controls.querySelectorAll(buttonSelector).forEach((item) => item.classList.toggle('is-active', item === button));
+      render(container, rows, state[stateKey], gradientId);
+    });
+  }
+
   async function load({ supabaseClient }) {
     const container = document.getElementById('korea-foreign-flow-chart');
+    const persistenceContainer = document.getElementById('korea-foreign-flow-persistence-chart');
     if (!container || !supabaseClient) return;
     const { data, error } = await chartUtils.loadAllRows((from, to) => supabaseClient
       .from('korea_foreign_flow_daily')
-      .select('observation_date,flow_index')
+      .select('observation_date,foreign_net_buy_amount,won_strength_z,flow_index')
       .order('observation_date')
       .range(from, to));
     if (error) {
@@ -122,23 +152,18 @@
       return;
     }
     state.rows = data || [];
-    render(container, state.rows, state.selectedYears);
+    const persistenceRows = applyPersistenceFilter(state.rows);
+    render(container, state.rows, state.standardYears, 'korea-foreign-flow-line-gradient');
+    if (persistenceContainer) render(persistenceContainer, persistenceRows, state.persistenceYears, 'korea-foreign-flow-persistence-gradient');
     const controls = document.querySelector('[data-korea-foreign-flow-ranges]');
-    if (controls && controls.dataset.bound !== 'true') {
-      controls.dataset.bound = 'true';
-      controls.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-korea-foreign-flow-range]');
-        if (!button) return;
-        state.selectedYears = button.dataset.koreaForeignFlowRange === 'max' ? 'max' : Number(button.dataset.koreaForeignFlowRange);
-        controls.querySelectorAll('[data-korea-foreign-flow-range]').forEach((item) => item.classList.toggle('is-active', item === button));
-        render(container, state.rows, state.selectedYears);
-      });
-    }
+    bindRangeControls({ controls, buttonSelector: '[data-korea-foreign-flow-range]', stateKey: 'standardYears', container, rows: state.rows, gradientId: 'korea-foreign-flow-line-gradient' });
+    bindRangeControls({ controls: document.querySelector('[data-korea-foreign-flow-persistence-ranges]'), buttonSelector: '[data-korea-foreign-flow-persistence-range]', stateKey: 'persistenceYears', container: persistenceContainer, rows: persistenceRows, gradientId: 'korea-foreign-flow-persistence-gradient' });
   }
 
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
     if (detail?.view !== 'korea') return;
     chartUtils.scrollToLatest(document.querySelector('#korea-foreign-flow-chart .policy-expectation-chart-frame'));
+    chartUtils.scrollToLatest(document.querySelector('#korea-foreign-flow-persistence-chart .policy-expectation-chart-frame'));
   });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
