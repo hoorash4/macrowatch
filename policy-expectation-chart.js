@@ -76,13 +76,15 @@
       const timestamp = Date.UTC(year, 0, 1);
       if (timestamp < firstTimestamp || timestamp > lastTimestamp) return '';
       const x = scale(timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right);
-      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${year}</text>`;
+      const yearLabel = selectedYears === 'max' ? String(year).slice(-2) : String(year);
+      return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><line x1="${x}" y1="${HEIGHT - PADDING.bottom}" x2="${x}" y2="${HEIGHT - PADDING.bottom + 5}" class="policy-expectation-x-tick"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${yearLabel}</text>`;
     }).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
     container.innerHTML = `<div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
       <defs><linearGradient id="policy-expectation-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs>
       <g>${yearGuides}</g>
+      <line x1="${PADDING.left}" y1="${HEIGHT - PADDING.bottom}" x2="${timelineWidth - PADDING.right}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-x-axis"/>
       <line x1="${PADDING.left}" y1="${zeroY}" x2="${timelineWidth - PADDING.right}" y2="${zeroY}" class="policy-expectation-zero-line"/>
       <text x="${PADDING.left + 4}" y="${zeroY - 7}" class="policy-expectation-zero-label">0 · 현재 정책 수준</text>
       <path d="${rawPath}" class="policy-expectation-line policy-expectation-line--raw"/>

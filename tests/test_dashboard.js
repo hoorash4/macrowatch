@@ -168,9 +168,12 @@ test('시장 내재 정책금리 기대 그래프는 5년을 기본으로 기간
   assert.match(chart, /policy-expectation-line--raw/);
   assert.match(chart, /policy-expectation-line--average/);
   assert.match(chart, /5일 평균/);
+  assert.match(chart, /selectedYears === 'max' \? String\(year\)\.slice\(-2\)/);
+  assert.match(chart, /policy-expectation-x-axis/);
+  assert.match(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="5" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=4/);
+  assert.match(html, /policy-expectation-chart\.js\?v=5/);
 });
 
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
