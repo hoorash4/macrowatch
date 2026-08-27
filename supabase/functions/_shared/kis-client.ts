@@ -187,9 +187,8 @@ export async function fetchKisEtfTopHoldings(
     const holdingTicker = String(row.stck_shrn_iscd || "").trim();
     const name = String(row.hts_kor_isnm || "").trim();
     const weightPct = numberValue(row.etf_cnfg_issu_rlim);
-    const marketCap = numberValue(row.hts_avls);
-    // 현금·선물·채권 등은 6자리 코드처럼 보여도 상장기업 시가총액이 없으므로 제외합니다.
-    if (!/^\d{6}$/.test(holdingTicker) || !name || weightPct === null || weightPct <= 0 || !marketCap || marketCap <= 0) return [];
+    // 대표 종목 선정에는 KIS가 제공한 유효 종목코드·종목명·편입비중만 사용합니다.
+    if (!/^\d{6}$/.test(holdingTicker) || !name || weightPct === null || weightPct <= 0) return [];
     return [{ ticker: holdingTicker, name, weightPct }];
   }).sort((a, b) => b.weightPct - a.weightPct).slice(0, limit);
 }

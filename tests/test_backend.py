@@ -144,8 +144,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("market_sector_weekly_rankings", migration)
         self.assertIn('body.stage === "open"', pipeline)
         self.assertIn('body.stage === "close"', pipeline)
-        for schedule in ('10 0', '30 0', '40 6', '0 7'):
+        for schedule in ('10 0', '30 0', '30 3', '40 6', '0 7'):
             self.assertIn(f'cron: "{schedule} * * 1-5"', workflow)
+        self.assertIn("github.event.schedule == '30 3 * * 1-5'", workflow)
         self.assertIn("DATABASE_PAGE_SIZE = 1000", pipeline)
         self.assertIn("PRICE_RETENTION_WEEKS = 10", pipeline)
         self.assertIn("RANKING_RETENTION_WEEKS = 6", pipeline)
@@ -185,6 +186,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("hts_kor_isnm", kis)
         self.assertIn("fetchKisEtfTopHoldings", control)
         self.assertIn("etf_cnfg_issu_rlim", kis)
+        self.assertNotIn("hts_avls", kis)
         self.assertIn('KIS_TOKEN_CACHE_KEY = "kis_access_token_prod"', kis)
         self.assertIn("TOKEN_EXPIRY_MARGIN_MS = 10 * 60_000", kis)
         self.assertIn('store.from("app_settings")', kis)

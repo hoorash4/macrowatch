@@ -4,9 +4,11 @@ on:
   schedule:
     # GitHub 예약 이벤트가 드물게 누락될 수 있어 본 실행 20분 뒤 같은 단계를
     # 한 번 더 요청한다. DB는 ETF·거래일 기준 upsert라 중복 행이 생기지 않는다.
-    # UTC 00:10/00:30 = 09:10/09:30 KST, 06:40/07:00 = 15:40/16:00 KST.
+    # UTC 00:10/00:30/03:30 = 09:10/09:30/12:30 KST,
+    # 06:40/07:00 = 15:40/16:00 KST.
     - cron: "10 0 * * 1-5"
     - cron: "30 0 * * 1-5"
+    - cron: "30 3 * * 1-5"
     - cron: "40 6 * * 1-5"
     - cron: "0 7 * * 1-5"
   workflow_dispatch:
@@ -39,7 +41,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || ((github.event.schedule == '10 0 * * 1-5' || github.event.schedule == '30 0 * * 1-5') && 'open' || 'close') }}
+          PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || ((github.event.schedule == '10 0 * * 1-5' || github.event.schedule == '30 0 * * 1-5' || github.event.schedule == '30 3 * * 1-5') && 'open' || 'close') }}
           BACKFILL_HISTORY: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill_history || false }}
         run: |
           curl --fail-with-body --retry 2 --max-time 480 \
