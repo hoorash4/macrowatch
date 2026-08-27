@@ -77,12 +77,15 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   assert.match(chart, /\.range\(from, to\)/);
   assert.match(chart, /selectedYears === 'max'/);
   assert.match(html, /외국인 순매수 강도·원화 강도 각 50%/);
-  assert.match(html, /외국인 수급 연속성 반영 비교/);
-  assert.match(chart, /function applyPersistenceFilter/);
-  assert.match(chart, /reversalLength <= 2 && followingSign === precedingSign/);
-  assert.match(chart, /suppressedIndexes\.add\(index\)/);
-  assert.doesNotMatch(chart, /surroundingAverage/);
-  assert.match(chart, /flow_index: Number\(row\.won_strength_z\) \/ 2/);
+  assert.match(html, /10영업일 누적 자금 유출입/);
+  assert.match(html, /10영업일 EWMA 자금 유출입/);
+  assert.match(chart, /function calculateCumulativeRows/);
+  assert.match(chart, /function calculateEwmaRows/);
+  assert.match(chart, /EWMA_ALPHA = 2 \/ 11/);
+  assert.match(chart, /value >= 0\.4/);
+  assert.match(chart, /value <= 0\.15/);
+  assert.match(chart, /value <= -0\.4/);
+  assert.match(chart, /value >= -0\.15/);
 });
 
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
@@ -226,14 +229,14 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 13);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 28);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 14);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 30);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 13);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 13);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 14);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 14);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);
