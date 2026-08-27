@@ -60,14 +60,16 @@ def causal_z_scores(values: list[float]) -> list[float | None]:
 
 
 def build_rows(raw: dict[str, dict[str, float]]) -> list[dict]:
-    daily_keys = [key for key in SERIES if key != "nfci"]
-    dates = sorted(set.intersection(*(set(raw[key]) for key in daily_keys)))
+    # 실질금리와 HY OAS가 있는 최신 영업일까지 계산하고, 주간·지연 발표 자료는
+    # 직전 값을 이어 쓴다. 모든 원자료가 그 날짜까지 도착하면 잠정치는 확정된다.
+    dates = sorted(set(raw["real_yield_10y"]) & set(raw["us_high_yield_oas"]))
     carried = {key: carry_to_dates(values, dates) for key, values in raw.items()}
     complete_dates = [period for period in dates if all(period in carried[key] for key in SERIES)]
     if not complete_dates:
         return []
     aligned = {key: [carried[key][period] for period in complete_dates] for key in SERIES}
     standardized = {key: causal_z_scores(values) for key, values in aligned.items()}
+    confirmed_through = min(max(values) for values in raw.values() if values)
     updated_at = datetime.now(timezone.utc).isoformat()
     rows = []
     for index, period in enumerate(complete_dates):
@@ -80,6 +82,7 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict]:
             "observation_date": period,
             **{key: round(aligned[key][index], 6) for key in SERIES},
             "capacity_index": round(capacity_index, 6),
+            "is_provisional": period > confirmed_through,
             "updated_at": updated_at,
         })
     return rows

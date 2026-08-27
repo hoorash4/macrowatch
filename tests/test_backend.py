@@ -50,6 +50,20 @@ class SharedCalculationTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertLess(rows[-1]["capacity_index"], 0)
 
+    def test_em_capacity_carries_delayed_sources_and_marks_only_latest_tail_provisional(self) -> None:
+        periods = [f"2026-{month:02d}-{day:02d}" for month in (1, 2, 3) for day in range(1, 29)][:61]
+        daily = {period: float(index + 1) for index, period in enumerate(periods)}
+        delayed = dict(list(daily.items())[:-1])
+        rows = em_capacity.build_rows({
+            "em_dollar_index": delayed,
+            "real_yield_10y": daily,
+            "us_high_yield_oas": daily,
+            "nfci": delayed,
+        })
+        self.assertEqual(len(rows), 2)
+        self.assertFalse(rows[0]["is_provisional"])
+        self.assertTrue(rows[1]["is_provisional"])
+
     def test_policy_expectation_spread_uses_complete_dates_and_70_30_weights(self) -> None:
         rows = policy_expectation.build_rows({
             "treasury_3m_rate": {"2026-08-25": 3.50, "2026-08-26": 3.60},

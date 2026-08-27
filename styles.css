@@ -963,6 +963,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-line { fill:none; stroke:url(#policy-expectation-line-gradient); stroke-linecap:round; stroke-linejoin:round; }
 .policy-expectation-line--raw { opacity:.3; stroke-width:1.15; }
 .policy-expectation-line--average { stroke-width:2.5; }
+.em-capacity-line--provisional { stroke-dasharray:5 4; opacity:.9; }
 .policy-expectation-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
 .policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; }
 .policy-expectation-cursor-detail { fill:#64748b; font-size:9px; font-weight:650; }

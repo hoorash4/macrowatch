@@ -49,11 +49,14 @@
       : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
     const initialScale = verticalScale(points);
-    const pathFor = (key, maximum) => points.filter((point) => Number.isFinite(point[key])).map((point, index) => {
+    const pathFor = (key, maximum, sourcePoints = points) => sourcePoints.filter((point) => Number.isFinite(point[key])).map((point, index) => {
       const y = scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top);
       return `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${y.toFixed(2)}`;
     }).join(' ');
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
+    const firstProvisionalIndex = points.findIndex((point) => point.is_provisional);
+    const confirmedPoints = firstProvisionalIndex < 0 ? points : points.slice(0, firstProvisionalIndex);
+    const provisionalPoints = firstProvisionalIndex < 0 ? [] : points.slice(Math.max(0, firstProvisionalIndex - 1));
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
       const year = firstYear + index;
@@ -67,11 +70,12 @@
     const yPosition = (multiple) => scale(multiple, -2, 2, HEIGHT - PADDING.bottom, PADDING.top);
     const grids = tickMultiples.map((multiple) => `<line x1="${PADDING.left}" y1="${yPosition(multiple)}" x2="${timelineWidth - PADDING.right}" y2="${yPosition(multiple)}" class="policy-expectation-y-grid${multiple === 0 ? ' policy-expectation-y-grid--zero' : ''}"/>`).join('');
     const labels = tickMultiples.map((multiple) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${yPosition(multiple)}" x2="${Y_AXIS_WIDTH}" y2="${yPosition(multiple)}" class="policy-expectation-y-tick"/><text data-em-capacity-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${yPosition(multiple) + 3}" text-anchor="end" class="policy-expectation-y-label">${Number((multiple * initialScale.tickStep).toFixed(2))}</text>`).join('');
-    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${labels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 이머징 자금 유입 여건"><defs><linearGradient id="em-capacity-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path d="${pathFor('value', initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#em-capacity-line-gradient)"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#em-capacity-line-gradient)"/><line data-em-capacity-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-em-capacity-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg></div></div>`;
+    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${labels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 이머징 자금 유입 여건"><defs><linearGradient id="em-capacity-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path d="${pathFor('value', initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#em-capacity-line-gradient)"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue, confirmedPoints)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#em-capacity-line-gradient)"/><path d="${pathFor('fiveDayAverage', initialScale.maximumAbsoluteValue, provisionalPoints)}" class="policy-expectation-line policy-expectation-line--average em-capacity-line--provisional" style="stroke:url(#em-capacity-line-gradient)"/><line data-em-capacity-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-em-capacity-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg></div></div>`;
     const frame = container.querySelector('.policy-expectation-chart-frame');
     const svg = container.querySelector('.policy-expectation-chart-svg');
     const rawLine = container.querySelector('.policy-expectation-line--raw');
     const averageLine = container.querySelector('.policy-expectation-line--average');
+    const provisionalLine = container.querySelector('.em-capacity-line--provisional');
     const yLabels = [...container.querySelectorAll('[data-em-capacity-y-multiple]')];
     const cursor = container.querySelector('[data-em-capacity-cursor]');
     const detail = container.querySelector('[data-em-capacity-detail]');
@@ -82,7 +86,8 @@
       if (!visiblePoints.length) return;
       const current = verticalScale(visiblePoints);
       rawLine.setAttribute('d', pathFor('value', current.maximumAbsoluteValue));
-      averageLine.setAttribute('d', pathFor('fiveDayAverage', current.maximumAbsoluteValue));
+      averageLine.setAttribute('d', pathFor('fiveDayAverage', current.maximumAbsoluteValue, confirmedPoints));
+      provisionalLine.setAttribute('d', pathFor('fiveDayAverage', current.maximumAbsoluteValue, provisionalPoints));
       yLabels.forEach((label) => {
         const value = Number(label.dataset.emCapacityYMultiple) * current.tickStep;
         label.textContent = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
@@ -107,7 +112,7 @@
   async function load({ supabaseClient }) {
     const container = document.getElementById('em-capacity-chart');
     if (!container || !supabaseClient) return;
-    const { data, error } = await supabaseClient.from('em_capital_capacity_daily').select('observation_date,capacity_index').order('observation_date');
+    const { data, error } = await supabaseClient.from('em_capital_capacity_daily').select('observation_date,capacity_index,is_provisional').order('observation_date');
     if (error) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">이머징 자금 유입 여건을 불러오지 못했습니다.</div>';
       return;

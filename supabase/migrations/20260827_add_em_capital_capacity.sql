@@ -5,8 +5,12 @@ create table if not exists public.em_capital_capacity_daily (
   us_high_yield_oas numeric(9, 6) not null,
   nfci numeric(12, 6) not null,
   capacity_index numeric(12, 6) not null,
+  is_provisional boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+alter table public.em_capital_capacity_daily
+  add column if not exists is_provisional boolean not null default false;
 
 alter table public.em_capital_capacity_daily enable row level security;
 
