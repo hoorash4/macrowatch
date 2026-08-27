@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=114">
+  <link rel="stylesheet" href="styles.css?v=115">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -364,8 +364,8 @@
         <p class="analysis-card-description">AI가 공식 자료를 해석한 내용으로 실제 연준의 의도와 다를 수 있습니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div id="fomc-briefing-list" class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">
-          저장된 FOMC 브리핑을 불러오는 중입니다.
+        <div id="fomc-briefing-list" class="fomc-briefing-list">
+          <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">저장된 FOMC 브리핑을 불러오는 중입니다.</div>
         </div>
       </div>
     </section>
@@ -719,5 +719,6 @@
   <script src="script.js?v=157"></script>
   <script src="dashboard-charts.js?v=30"></script>
   <script src="policy-chart.js?v=6"></script>
+  <script src="policy-briefing.js?v=1"></script>
 </body>
 </html>
