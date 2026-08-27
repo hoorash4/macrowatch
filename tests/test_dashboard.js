@@ -225,6 +225,10 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="2" class="is-active"/);
   assert.match(html, /policy-expectation-chart\.js\?v=11/);
+  const utils = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
+  assert.match(utils, /FULL_HISTORY_SCROLL_RANGES = new Set\(\[5, 10\]\)/);
+  assert.match(utils, /if \(selectedYears === 'max'\) return viewportWidth/);
+  assert.match(utils, /FULL_HISTORY_SCROLL_RANGES\.has\(selectedYears\)/);
 });
 
 test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX로 조회한다', () => {

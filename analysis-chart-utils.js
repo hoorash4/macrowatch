@@ -3,6 +3,7 @@
 
   const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
   const SCROLL_HISTORY_YEARS = 10;
+  const FULL_HISTORY_SCROLL_RANGES = new Set([5, 10]);
 
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
   function niceStep(value) {
@@ -14,12 +15,14 @@
   }
 
   function timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears) {
-    if (selectedYears === 'max' || selectedYears === 10) return viewportWidth;
+    if (selectedYears === 'max') return viewportWidth;
     return Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
   }
 
   function rowsForRecentHistory(rows, dateKey, selectedYears) {
-    if (selectedYears === 'max' || !rows.length) return rows;
+    // 5년·10년은 선택 기간을 한 화면 폭으로 삼아 전체 이력을 탐색합니다.
+    // MAX는 전체 기간을 한 화면에 압축하고, 짧은 범위는 최근 10년만 그립니다.
+    if (selectedYears === 'max' || FULL_HISTORY_SCROLL_RANGES.has(selectedYears) || !rows.length) return rows;
     const latestDate = new Date(`${rows[rows.length - 1][dateKey]}T00:00:00Z`);
     const cutoff = new Date(latestDate);
     cutoff.setUTCFullYear(cutoff.getUTCFullYear() - SCROLL_HISTORY_YEARS);
