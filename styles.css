@@ -658,6 +658,8 @@ body:has(#app-shell:not(.hidden)) {
 .fomc-briefing-title-mark { display:flex; width:2.15rem; height:2.15rem; flex:none; align-items:center; justify-content:center; border:1px solid rgba(14,116,144,.22); border-radius:.62rem; background:rgba(207,250,254,.5); color:#0e7490; }
 .fomc-briefing-title-text { display:grid; gap:.3rem; min-width:0; }
 .fomc-briefing-toggle strong { font-size:.95rem; font-weight:700; letter-spacing:-.018em; }
+.fomc-briefing-title-date { color:#8c4052; }
+.fomc-briefing-title-label { margin-left:.45rem; color:#243b45; }
 .fomc-briefing-toggle small { color:#64748b; font-size:.79rem; font-weight:500; }
 .fomc-briefing-toggle > i { color:#64748b; font-size:.72rem; transition:transform .2s ease; }
 .fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#0e7490; background:linear-gradient(105deg,#cfe2e5 0%,#dce9eb 58%,#edf3f4 100%); }

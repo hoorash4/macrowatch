@@ -8,9 +8,12 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
   })[character]);
 
-  function meetingTitle(row) {
+  function meetingTitleParts(row) {
     const [year, month, day] = String(row.meeting_date).split('-').map(Number);
-    return `${year}년 ${month}월 ${day}일 ${row.is_emergency ? '긴급' : '정례'} FOMC 회의 결과`;
+    return {
+      date: `${year}년 ${month}월 ${day}일`,
+      label: `${row.is_emergency ? '긴급' : '정례'} FOMC 회의 결과`,
+    };
   }
 
   function rateDecision(row) {
@@ -77,9 +80,10 @@
     container.innerHTML = `<div class="fomc-briefing-items">${pageRows.map((row) => {
       const isOpen = state.openMeetingDate === row.meeting_date;
       const panelId = `fomc-briefing-${row.meeting_date}`;
+      const title = meetingTitleParts(row);
       return `<article class="fomc-briefing-item${isOpen ? ' is-open' : ''}">
         <button type="button" class="fomc-briefing-toggle" data-fomc-meeting-date="${escapeHtml(row.meeting_date)}" aria-expanded="${isOpen}" aria-controls="${panelId}">
-          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong>${escapeHtml(meetingTitle(row))}</strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
+          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong><span class="fomc-briefing-title-date">${escapeHtml(title.date)}</span><span class="fomc-briefing-title-label">${escapeHtml(title.label)}</span></strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
           <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
         </button>
         <div id="${panelId}" class="fomc-briefing-detail"${isOpen ? '' : ' hidden'}>${isOpen ? detailContent(row) : ''}</div>
