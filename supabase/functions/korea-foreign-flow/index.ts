@@ -58,8 +58,14 @@ Deno.serve(async (request) => {
     const token = await getKisAccessToken(credentials, admin);
     const marketDays = await fetchKisKospiMarketDays(credentials, token, new Date(`${start}T00:00:00Z`), new Date(`${end}T00:00:00Z`));
     const fx = await fetchFx(new Date(Date.parse(`${start}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10), end);
+    const { data: existing, error: existingError } = await admin.from("korea_foreign_flow_raw")
+      .select("observation_date").gte("observation_date", start).lte("observation_date", end);
+    if (existingError) throw existingError;
+    const existingDates = new Set((existing || []).map((row) => String(row.observation_date)));
     const rawRows: KoreaFlowRaw[] = [], failures: Array<{ date: string; error: string }> = [];
     for (const day of marketDays.sort((a, b) => a.marketDate.localeCompare(b.marketDate))) {
+      // 중단된 장기 백필을 재개할 때 이미 저장된 영업일은 외부 API를 다시 호출하지 않습니다.
+      if (existingDates.has(day.marketDate)) continue;
       try {
         const amount = await fetchKisKospiForeignNetBuy(credentials, token, day.marketDate);
         // 환율 휴일과 거래소 영업일이 어긋나면 가장 최근 공시 환율을 이어 사용합니다.
