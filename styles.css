@@ -664,7 +664,7 @@ body:has(#app-shell:not(.hidden)) {
 .fomc-briefing-toggle > i { color:#64748b; font-size:.72rem; transition:transform .2s ease; }
 .fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#8c4052; background:linear-gradient(105deg,#ddcfd4 0%,#e8dde1 58%,#f3eded 100%); }
 .fomc-briefing-item.is-open .fomc-briefing-toggle > i { color:#0e7490; transform:rotate(180deg); }
-.fomc-briefing-detail { border-top:1px solid rgba(71,85,105,.3); background:rgba(248,250,252,.72); }
+.fomc-briefing-detail { border-top:1px solid rgba(71,85,105,.3); background:#f8fafc; }
 .fomc-briefing-detail-scroll { padding:1.25rem; }
 .fomc-briefing-result { padding:1rem 1.1rem; border:1px solid rgba(14,116,144,.22); border-top:3px solid #0e7490; border-radius:.75rem; background:linear-gradient(135deg,rgba(236,254,255,.72),rgba(241,245,249,.62)); }
 .fomc-briefing-result h3,.fomc-briefing-section h4 { margin:0; color:#172033; font-weight:750; letter-spacing:-.02em; }
