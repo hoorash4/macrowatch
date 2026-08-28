@@ -1,0 +1,41 @@
+name: Refresh earnings market-cap universes
+
+on:
+  schedule:
+    # UTC 09:30/09:50 = 18:30/18:50 KST. The retry is harmless because the
+    # date snapshot is a complete idempotent replacement.
+    - cron: "30 9 * * 1-5"
+    - cron: "50 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      index_id:
+        description: Korean market-cap universe to refresh
+        required: true
+        type: choice
+        default: ALL_KR
+        options: [ALL_KR, KOSPI100, KOSDAQ50]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-earnings-universe
+  cancel-in-progress: false
+
+jobs:
+  refresh-korean-universes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refresh KIS market-cap snapshots
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INDEX_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.index_id || 'ALL_KR' }}
+        run: |
+          curl --fail-with-body --retry 2 --max-time 480 \
+            --request POST "$SUPABASE_URL/functions/v1/earnings-universe" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data "{\"index_id\":\"$INDEX_ID\"}"
