@@ -25,7 +25,7 @@ class SupabaseEarningsStore:
         service_role_key: str,
         *,
         session: Any | None = None,
-        timeout: int = 30,
+        timeout: int = 60,
     ) -> None:
         self.url = url.rstrip("/")
         self.service_role_key = service_role_key.strip()
@@ -62,8 +62,26 @@ class SupabaseEarningsStore:
             )
             response.raise_for_status()
             return response.json()
+        except requests.HTTPError as error:
+            # Preserve only provider-safe diagnostics. Never echo request
+            # headers, request bodies, URLs, or environment credentials.
+            status = getattr(error.response, "status_code", "unknown")
+            code = "unknown"
+            try:
+                payload = error.response.json()
+                if isinstance(payload, dict):
+                    code = str(payload.get("code") or "unknown")[:80]
+            except Exception:
+                pass
+            raise EarningsStoreError(
+                f"Earnings RPC failed: {name} (HTTP {status}, code {code})."
+            ) from None
+        except requests.RequestException as error:
+            raise EarningsStoreError(
+                f"Earnings RPC failed: {name} ({type(error).__name__})."
+            ) from None
         except Exception:
-            raise EarningsStoreError(f"Earnings RPC failed: {name}.") from None
+            raise EarningsStoreError(f"Earnings RPC failed: {name} (invalid response).") from None
 
     def list_active_korean_companies(self) -> list[dict[str, Any]]:
         endpoint = f"{self.url}/rest/v1/earnings_companies"

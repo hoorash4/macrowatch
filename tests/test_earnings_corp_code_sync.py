@@ -16,6 +16,23 @@ class LeakyStoreSession:
         raise RuntimeError(f"failed with {headers['Authorization']}")
 
 
+class RpcHttpErrorResponse:
+    status_code = 504
+
+    def raise_for_status(self):
+        response_error = __import__("requests").HTTPError("gateway body with a secret")
+        response_error.response = self
+        raise response_error
+
+    def json(self):
+        return {"code": "57014", "message": "secret-bearing database detail"}
+
+
+class RpcHttpErrorSession:
+    def post(self, url, *, json, headers, timeout):
+        return RpcHttpErrorResponse()
+
+
 class EarningsCorpCodeSyncTests(unittest.TestCase):
     def test_only_exact_listed_ticker_matches_are_saved(self) -> None:
         companies = [
@@ -52,6 +69,20 @@ class EarningsCorpCodeSyncTests(unittest.TestCase):
         with self.assertRaises(EarningsStoreError) as context:
             store.list_active_korean_companies()
         self.assertNotIn("service-role-secret", str(context.exception))
+
+    def test_rpc_error_keeps_safe_status_and_code_only(self) -> None:
+        store = SupabaseEarningsStore(
+            "https://example.supabase.co",
+            "service-role-secret",
+            session=RpcHttpErrorSession(),
+        )
+        with self.assertRaises(EarningsStoreError) as context:
+            store.enqueue_open_dart_backfill(as_of_year=2026)
+        message = str(context.exception)
+        self.assertIn("HTTP 504", message)
+        self.assertIn("code 57014", message)
+        self.assertNotIn("service-role-secret", message)
+        self.assertNotIn("secret-bearing", message)
 
 
 if __name__ == "__main__":

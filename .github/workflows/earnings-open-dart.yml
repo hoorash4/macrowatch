@@ -24,7 +24,10 @@ concurrency:
 jobs:
   sync-open-dart-identifiers:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A five-period backfill batch can require per-company fallback requests
+    # when OpenDART's multi-company response omits required accounts. Keep the
+    # batch cap for API safety, but allow enough time to finish and commit it.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
