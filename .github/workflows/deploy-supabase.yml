@@ -89,6 +89,8 @@ jobs:
             --file supabase/migrations/20260828_add_equity_bond_relative_value.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260829_add_earnings_growth_metrics.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260829_expand_market_index_prices.sql
 
       - name: Deploy Edge Functions
         run: |

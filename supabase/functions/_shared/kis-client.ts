@@ -18,6 +18,14 @@ export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPric
 export type KisEtfCurrentPrice = { current: number; open: number; volume: number | null };
 export type KisEtfHolding = { ticker: string | null; name: string | null; weightPct: number | null };
 export type KisMarketDay = { marketDate: string; tradingValue: number };
+export type KisIndexPrice = {
+  marketDate: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  volume: number | null;
+};
 export type KisMarketCapRow = {
   ticker: string;
   name: string;
@@ -367,6 +375,59 @@ export async function fetchKisKospiMarketDays(
     const row = raw as Record<string, unknown>, date = String(row.stck_bsop_date || ""), tradingValue = numberValue(row.acml_tr_pbmn);
     return /^\d{8}$/.test(date) && tradingValue !== null && tradingValue > 0
       ? [{ marketDate: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`, tradingValue }] : [];
+  });
+}
+
+/**
+ * 국내 대표지수의 기간별 봉을 가져옵니다. 지수 코드는 KRX 업종코드를 사용하며
+ * 월봉 조회는 분기 말 실제 거래일과 종가를 적은 호출 수로 백필할 때 사용합니다.
+ */
+export async function fetchKisDomesticIndexPrices(
+  credentials: KisCredentials,
+  accessToken: string,
+  indexCode: string,
+  start: Date,
+  end: Date,
+  period: "D" | "M" = "D",
+  runRequest: KisRequestRunner = createKisRequestRunner(),
+): Promise<KisIndexPrice[]> {
+  if (!/^\d{4}$/.test(indexCode)) throw new Error("KIS 국내 지수코드는 4자리여야 합니다.");
+  return await runRequest(async () => {
+    const params = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: "U",
+      FID_INPUT_ISCD: indexCode,
+      FID_INPUT_DATE_1: compactDate(start),
+      FID_INPUT_DATE_2: compactDate(end),
+      FID_PERIOD_DIV_CODE: period,
+    });
+    const response = await fetch(`${KIS_REAL_BASE_URL}${DAILY_INDEX_PATH}?${params}`, {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        appkey: credentials.appKey,
+        appsecret: credentials.appSecret,
+        tr_id: "FHKUP03500100",
+        custtype: "P",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = await readJson(response);
+    if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+      throw new Error(`KIS 국내 지수 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+    }
+    return (Array.isArray(payload.output2) ? payload.output2 : []).flatMap((raw) => {
+      const row = raw as Record<string, unknown>;
+      const compact = String(row.stck_bsop_date || "");
+      const close = numberValue(row.bstp_nmix_prpr);
+      if (!/^\d{8}$/.test(compact) || close === null || close <= 0) return [];
+      return [{
+        marketDate: `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`,
+        open: numberValue(row.bstp_nmix_oprc),
+        high: numberValue(row.bstp_nmix_hgpr),
+        low: numberValue(row.bstp_nmix_lwpr),
+        close,
+        volume: positiveInteger(row.acml_vol),
+      }];
+    });
   });
 }
 
