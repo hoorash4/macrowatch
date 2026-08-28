@@ -4,6 +4,7 @@ import type { PolicyReason } from "./policy-types.ts";
 
 const ADMIN_REASONS = new Set<PolicyReason>(["inflation_fight", "growth_overheat", "recession_financial_stress", "insurance_easing", "normalization_hike", "normalization_cut", "uncertain"]);
 type ServiceClient = SupabaseClient<any, "public", "public", any, any>;
+const isPresent = <T>(value: T | null | undefined): value is T => value != null;
 
 export async function listPolicyReviews(admin: ServiceClient, requestedMeetingDates: string[] = []) {
   const fields = "meeting_date,action,change_bps,ai_primary_reason,primary_reason,transition_assessment,admin_primary_reason,admin_reason_keyword,admin_score_override,final_event_score";
@@ -31,8 +32,9 @@ export async function listPolicyReviews(admin: ServiceClient, requestedMeetingDa
   if (selectedDates.length && (selected || []).length !== selectedDates.length) throw new Error("선택한 FOMC 결과 중 일부를 찾을 수 없습니다.");
   const latestDate = latest?.meeting_date;
   // 최신 회의는 언제나 첫 줄에 고정하고, 그래프에서 선택한 과거 회의와 자동 검토 대상을 뒤에 둡니다.
-  const rows = [latest, ...(selected || []), ...(unresolved || [])].filter((row, index, items) => row && items.findIndex((item) => item?.meeting_date === row.meeting_date) === index);
-  return rows.map((row) => ({
+  const rows = [latest, ...(selected || []), ...(unresolved || [])].filter(isPresent);
+  const uniqueRows = rows.filter((row, index, items) => items.findIndex((item) => item.meeting_date === row.meeting_date) === index);
+  return uniqueRows.map((row) => ({
     meeting_date: row.meeting_date,
     action: row.action,
     change_bps: row.change_bps,
