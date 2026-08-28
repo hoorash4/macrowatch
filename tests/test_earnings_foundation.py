@@ -8,6 +8,7 @@ OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.
 OPEN_DART_OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_ingestion_functions.sql"
 OPEN_DART_WORKER_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_financial_worker_functions.sql"
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-supabase.yml"
+OPEN_DART_WORKFLOW = ROOT / ".github/workflows/earnings-open-dart.yml"
 UNIVERSE_MIGRATION = ROOT / "supabase/migrations/20260828_define_market_cap_earnings_universes.sql"
 UNIVERSE_FUNCTION = ROOT / "supabase/functions/earnings-universe/index.ts"
 KIS_CLIENT = ROOT / "supabase/functions/_shared/kis-client.ts"
@@ -23,6 +24,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.open_dart_ops_migration = OPEN_DART_OPS_MIGRATION.read_text(encoding="utf-8")
         cls.open_dart_worker_migration = OPEN_DART_WORKER_MIGRATION.read_text(encoding="utf-8")
         cls.deploy_workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+        cls.open_dart_workflow = OPEN_DART_WORKFLOW.read_text(encoding="utf-8")
         cls.universe_migration = UNIVERSE_MIGRATION.read_text(encoding="utf-8")
         cls.universe_function = UNIVERSE_FUNCTION.read_text(encoding="utf-8")
         cls.kis_client = KIS_CLIENT.read_text(encoding="utf-8")
@@ -99,6 +101,8 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("fail_earnings_open_dart_job", self.open_dart_worker_migration)
         self.assertIn("to service_role", self.open_dart_worker_migration)
         self.assertIn(OPEN_DART_WORKER_MIGRATION.name, self.deploy_workflow)
+        self.assertIn("inputs.sync_identifiers == true", self.open_dart_workflow)
+        self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
 
     def test_universes_are_market_cap_rankings_not_official_indices(self) -> None:
         for name in (
