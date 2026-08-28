@@ -1,4 +1,7 @@
--- Initial domestic sector-flow registry.
+-- ONE-TIME BOOTSTRAP ONLY: initial domestic sector-flow registry.
+--
+-- Do not replay this data seed during deployment. After the initial bootstrap,
+-- the administrator-managed rows (including deletions) are authoritative.
 -- Names describe the representative ETF's actual exposure; they are not
 -- broader labels inherited from the dashboard planning list.
 create unique index if not exists market_sector_etfs_sector_name_uidx

@@ -160,8 +160,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("setListAttentionCount('extreme-news-rule-list'", admin_ui)
         self.assertLess(admin_html.index('id="uncertain-news-list"'), admin_html.index('id="policy-review-list"'))
 
-    def test_sector_registry_seeds_verified_domestic_etfs_once_per_sector(self):
+    def test_sector_registry_seed_is_bootstrap_only_and_never_replayed(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")
+        deploy = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
         rows = re.findall(r"^\s*\('([^']+)',\s*'([^']+)',\s*'(\d{6})',\s*'([^']+)'\)", migration, re.MULTILINE)
         self.assertEqual(len(rows), 39)
         self.assertEqual(len({row[0] for row in rows}), 39)
@@ -170,6 +171,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("글로벌AI사이버보안", migration)
         self.assertIn("do nothing", migration.lower())
         self.assertNotIn("do update set", migration.lower())
+        self.assertIn("ONE-TIME BOOTSTRAP ONLY", migration)
+        self.assertNotIn("--file supabase/migrations/20260827_seed_domestic_sector_etfs.sql", deploy)
 
     def test_sector_flow_stores_open_close_and_server_rankings(self):
         migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
