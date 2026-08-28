@@ -84,6 +84,7 @@ def _metric_facts(payload: dict[str, Any], metric: str) -> list[Fact]:
                 continue
             if (
                 start is None or end is None or filed is None or value is None
+                or start > end
                 or form not in {"10-Q", "10-Q/A", "10-K", "10-K/A"}
                 or fiscal_period not in {"Q1", "Q2", "Q3", "Q4", "FY"}
                 or not accession
@@ -167,12 +168,15 @@ def canonical_sec_quarters(
             annual = _annual_fact(facts, fiscal_year)
             earlier = [selected[quarter].get(metric) for quarter in range(1, 4)]
             if annual is not None and all(earlier):
+                q4_start = max(fact.end for fact in earlier if fact is not None) + timedelta(days=1)
+                if q4_start > annual.end:
+                    continue
                 selected[4][metric] = Fact(
                     metric=metric,
                     alias_priority=annual.alias_priority,
                     fiscal_year=fiscal_year,
                     fiscal_period="Q4",
-                    start=max(fact.end for fact in earlier if fact is not None) + timedelta(days=1),
+                    start=q4_start,
                     end=annual.end,
                     filed=annual.filed,
                     accession=annual.accession,
@@ -188,11 +192,18 @@ def canonical_sec_quarters(
             representative = max(metrics.values(), key=lambda fact: (fact.filed, fact.accession))
             period_start = min(fact.start for fact in metrics.values())
             period_end = max(fact.end for fact in metrics.values())
+            if period_start > period_end:
+                gaps.append((fiscal_year, quarter))
+                continue
             market_year = period_end.year
             market_quarter = _quarter_number(period_end)
             rows.append({
                 "filing": {
-                    "source_filing_id": representative.accession,
+                    # One annual filing can supply a derived Q4 and SEC
+                    # comparative facts can occasionally map one accession to
+                    # more than one fiscal key. Keep the official accession in
+                    # the URL while making the database filing key unambiguous.
+                    "source_filing_id": f"{representative.accession}:{fiscal_year}Q{quarter}",
                     "filing_kind": "amendment" if representative.form.endswith("/A")
                     else "annual" if quarter == 4 else "quarterly",
                     "fiscal_year": fiscal_year,

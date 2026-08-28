@@ -90,6 +90,7 @@ class SecEarningsTests(unittest.TestCase):
         self.assertEqual(gaps, [])
         self.assertEqual(len(rows), 4)
         self.assertEqual(rows[2]["filing"]["filing_kind"], "amendment")
+        self.assertEqual(rows[0]["filing"]["source_filing_id"], "0001-25-000001:2025Q1")
         self.assertEqual(rows[3]["quarter"]["revenue"], "140")
         self.assertEqual(rows[3]["quarter"]["operating_income"], "28")
         self.assertEqual(rows[3]["quarter"]["net_income"], "14")
@@ -102,6 +103,16 @@ class SecEarningsTests(unittest.TestCase):
         )
         self.assertEqual(rows, [])
         self.assertEqual(gaps, [(2025, 1), (2025, 2), (2025, 3), (2025, 4)])
+
+    def test_invalid_period_is_ignored_before_database_constraints(self):
+        payload = company_facts()
+        for metric in payload["facts"]["us-gaap"].values():
+            metric["units"]["USD"][0]["start"] = "2025-04-01"
+        rows, gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2025, years=1,
+        )
+        self.assertNotIn(1, [row["filing"]["fiscal_quarter"] for row in rows])
+        self.assertIn((2025, 1), gaps)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ or request environment variables.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -67,14 +68,22 @@ class SupabaseEarningsStore:
             # headers, request bodies, URLs, or environment credentials.
             status = getattr(error.response, "status_code", "unknown")
             code = "unknown"
+            diagnostic = ""
             try:
                 payload = error.response.json()
                 if isinstance(payload, dict):
                     code = str(payload.get("code") or "unknown")[:80]
+                    # Keep only a SQL identifier, never free-form provider text:
+                    # PostgREST details can echo rejected values supplied by a
+                    # caller and therefore must not be written to public logs.
+                    raw_message = str(payload.get("message") or "")
+                    match = re.search(r'constraint\s+["\']?([A-Za-z0-9_]+)', raw_message)
+                    diagnostic = f"constraint {match.group(1)}" if match else ""
             except Exception:
                 pass
             raise EarningsStoreError(
-                f"Earnings RPC failed: {name} (HTTP {status}, code {code})."
+                f"Earnings RPC failed: {name} (HTTP {status}, code {code}"
+                + (f", {diagnostic}" if diagnostic else "") + ")."
             ) from None
         except requests.RequestException as error:
             raise EarningsStoreError(
