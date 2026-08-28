@@ -163,6 +163,7 @@ export async function fetchKisOverseasMarketCapRanking(
   limit: number,
   runRequest: KisRequestRunner = createKisRequestRunner(),
   volumeRange = "0",
+  requireExactCount = true,
 ): Promise<KisMarketCapRow[]> {
   if (!Number.isInteger(limit) || limit < 1) throw new Error("시가총액 순위 개수는 양의 정수여야 합니다.");
   if (!/^[0-6]$/.test(volumeRange)) throw new Error("KIS 해외 거래량 조건이 올바르지 않습니다.");
@@ -222,7 +223,7 @@ export async function fetchKisOverseasMarketCapRanking(
 
   const result = [...collected.values()].sort((a, b) => a.rank - b.rank).slice(0, limit)
     .map((row, index) => ({ ...row, rank: index + 1 }));
-  if (result.length !== limit) {
+  if (requireExactCount && result.length !== limit) {
     throw new Error(`KIS ${exchange} 시가총액 순위가 ${result.length}/${limit}개만 반환되었습니다.`);
   }
   return result;
@@ -244,7 +245,7 @@ export async function fetchKisOverseasMarketCapCandidates(
   const candidates = new Map<string, KisMarketCapRow>();
   for (const volumeRange of volumeRanges) {
     const rows = await fetchKisOverseasMarketCapRanking(
-      credentials, accessToken, exchange, 100, runRequest, volumeRange,
+      credentials, accessToken, exchange, 100, runRequest, volumeRange, false,
     );
     rows.forEach((row) => candidates.set(row.ticker, row));
   }

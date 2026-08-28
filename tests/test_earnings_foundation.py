@@ -130,6 +130,7 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn('CURR_GB: "0"', self.kis_client)
         self.assertIn("fetchKisOverseasMarketCapCandidates", self.universe_function)
         self.assertIn('["0", "1", "2", "3", "4", "5", "6"]', self.universe_function)
+        self.assertIn("volumeRange, false", self.kis_client)
         self.assertIn('accessToken, "NYS", 100', self.universe_function)
         self.assertIn('admin.rpc("authorize_earnings_ingestion")', self.universe_function)
 
