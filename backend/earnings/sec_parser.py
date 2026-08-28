@@ -203,7 +203,7 @@ def canonical_sec_quarters(
                     # comparative facts can occasionally map one accession to
                     # more than one fiscal key. Keep the official accession in
                     # the URL while making the database filing key unambiguous.
-                    "source_filing_id": f"{representative.accession}:{fiscal_year}Q{quarter}",
+                    "source_filing_id": f"{cik}:{representative.accession}:{fiscal_year}Q{quarter}",
                     "filing_kind": "amendment" if representative.form.endswith("/A")
                     else "annual" if quarter == 4 else "quarterly",
                     "fiscal_year": fiscal_year,
@@ -232,4 +232,31 @@ def canonical_sec_quarters(
                     "source_updated_at": representative.filed.isoformat() + "T00:00:00Z",
                 },
             })
+    # SEC comparative columns can be re-filed with the newer report's fy/fp,
+    # producing two fiscal keys for one economic quarter. The filing closest
+    # to the period end is the original period identity; keep exactly one row
+    # per company/period_end to match the canonical database invariant.
+    by_period_end: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        period_end = date.fromisoformat(row["filing"]["period_end"])
+        filing_date = date.fromisoformat(row["filing"]["filing_date"])
+        delay = (filing_date - period_end).days
+        preference = (delay < 0, abs(delay), filing_date.toordinal())
+        current = by_period_end.get(period_end.isoformat())
+        if current is None or preference < current["_preference"]:
+            by_period_end[period_end.isoformat()] = {"row": row, "_preference": preference}
+    rows = sorted(
+        (item["row"] for item in by_period_end.values()),
+        key=lambda row: (row["filing"]["fiscal_year"], row["filing"]["fiscal_quarter"]),
+    )
+    complete_keys = {
+        (row["filing"]["fiscal_year"], row["filing"]["fiscal_quarter"])
+        for row in rows
+    }
+    gaps = [
+        (fiscal_year, quarter)
+        for fiscal_year in range(first_year, as_of_year + 1)
+        for quarter in range(1, 5)
+        if (fiscal_year, quarter) not in complete_keys
+    ]
     return rows, gaps

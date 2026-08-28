@@ -90,7 +90,7 @@ class SecEarningsTests(unittest.TestCase):
         self.assertEqual(gaps, [])
         self.assertEqual(len(rows), 4)
         self.assertEqual(rows[2]["filing"]["filing_kind"], "amendment")
-        self.assertEqual(rows[0]["filing"]["source_filing_id"], "0001-25-000001:2025Q1")
+        self.assertEqual(rows[0]["filing"]["source_filing_id"], "0000000001:0001-25-000001:2025Q1")
         self.assertEqual(rows[3]["quarter"]["revenue"], "140")
         self.assertEqual(rows[3]["quarter"]["operating_income"], "28")
         self.assertEqual(rows[3]["quarter"]["net_income"], "14")
@@ -113,6 +113,19 @@ class SecEarningsTests(unittest.TestCase):
         )
         self.assertNotIn(1, [row["filing"]["fiscal_quarter"] for row in rows])
         self.assertIn((2025, 1), gaps)
+
+    def test_comparative_fiscal_label_cannot_duplicate_one_period_end(self):
+        payload = company_facts()
+        for metric in payload["facts"]["us-gaap"].values():
+            comparative = dict(metric["units"]["USD"][0])
+            comparative.update({"fy": 2026, "filed": "2026-04-20"})
+            metric["units"]["USD"].append(comparative)
+        rows, gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2026, years=2,
+        )
+        period_ends = [row["filing"]["period_end"] for row in rows]
+        self.assertEqual(len(period_ends), len(set(period_ends)))
+        self.assertIn((2026, 1), gaps)
 
 
 if __name__ == "__main__":
