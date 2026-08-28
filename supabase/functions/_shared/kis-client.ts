@@ -26,6 +26,7 @@ export type KisIndexPrice = {
   close: number;
   volume: number | null;
 };
+export type KisQuarterlyPriceSource = { marketDate: string; close: number };
 export type KisMarketCapRow = {
   ticker: string;
   name: string;
@@ -320,6 +321,97 @@ export async function fetchKisDailyPrices(
   end: Date,
 ): Promise<KisDailyPrice[]> {
   return (await fetchKisDailyPriceBundle(credentials, accessToken, ticker, start, end)).prices;
+}
+
+/** 국내 종목 수정 월봉. 분기말 가격 백필은 일봉 전체를 저장하지 않는다. */
+export async function fetchKisDomesticAdjustedMonthlyPrices(
+  credentials: KisCredentials,
+  accessToken: string,
+  ticker: string,
+  start: Date,
+  end: Date,
+  runRequest: KisRequestRunner = createKisRequestRunner(),
+): Promise<KisQuarterlyPriceSource[]> {
+  return await runRequest(async () => {
+    const params = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: ticker,
+      FID_INPUT_DATE_1: compactDate(start),
+      FID_INPUT_DATE_2: compactDate(end),
+      FID_PERIOD_DIV_CODE: "M",
+      // KIS item-chart API defines 0 as corporate-action adjusted history.
+      FID_ORG_ADJ_PRC: "0",
+    });
+    const response = await fetch(`${KIS_REAL_BASE_URL}${DAILY_PRICE_PATH}?${params}`, {
+      headers: {
+        authorization: `Bearer ${accessToken}`, appkey: credentials.appKey,
+        appsecret: credentials.appSecret, tr_id: "FHKST03010100", custtype: "P",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = await readJson(response);
+    if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+      throw new Error(`KIS 국내 수정 월봉 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+    }
+    return (Array.isArray(payload.output2) ? payload.output2 : []).flatMap((raw) => {
+      const row = raw as Record<string, unknown>;
+      const compact = String(row.stck_bsop_date || ""), close = numberValue(row.stck_clpr);
+      return /^\d{8}$/.test(compact) && close !== null && close > 0
+        ? [{ marketDate: `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`, close }]
+        : [];
+    });
+  });
+}
+
+/** 해외 종목 수정 월봉. MODP=1 is the official adjusted-price option. */
+export async function fetchKisOverseasAdjustedMonthlyPrices(
+  credentials: KisCredentials,
+  accessToken: string,
+  ticker: string,
+  exchange: "NAS" | "NYS" | "AMS",
+  start: Date,
+  end: Date,
+  runRequest: KisRequestRunner = createKisRequestRunner(),
+): Promise<KisQuarterlyPriceSource[]> {
+  const collected = new Map<string, KisQuarterlyPriceSource>();
+  let bymd = compactDate(end), continuation = "";
+  for (let page = 0; page < 20; page += 1) {
+    const { response, payload } = await runRequest(async () => {
+      const params = new URLSearchParams({
+        AUTH: "", EXCD: exchange, SYMB: ticker, GUBN: "2", BYMD: bymd, MODP: "1",
+      });
+      const response = await fetch(`${KIS_REAL_BASE_URL}/uapi/overseas-price/v1/quotations/dailyprice?${params}`, {
+        headers: {
+          authorization: `Bearer ${accessToken}`, appkey: credentials.appKey,
+          appsecret: credentials.appSecret, tr_id: "HHDFS76240000", custtype: "P",
+          tr_cont: continuation,
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      const payload = await readJson(response);
+      if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+        throw new Error(`KIS 해외 수정 월봉 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+      }
+      return { response, payload };
+    });
+    const rows = Array.isArray(payload.output2) ? payload.output2 : [];
+    let oldest = "";
+    rows.forEach((raw) => {
+      const row = raw as Record<string, unknown>;
+      const compact = String(row.xymd || ""), close = numberValue(row.clos);
+      if (!/^\d{8}$/.test(compact) || close === null || close <= 0) return;
+      const marketDate = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+      collected.set(marketDate, { marketDate, close });
+      if (!oldest || compact < oldest) oldest = compact;
+    });
+    if (!oldest || oldest < compactDate(start)) break;
+    bymd = oldest;
+    const next = String(response.headers.get("tr_cont") || "").toUpperCase();
+    if (!new Set(["M", "F"]).has(next)) break;
+    continuation = "N";
+  }
+  return [...collected.values()].filter((row) => row.marketDate >= start.toISOString().slice(0, 10))
+    .sort((a, b) => a.marketDate.localeCompare(b.marketDate));
 }
 
 /** ETF/ETN 현재가 API로 장중 최신 체결가를 읽습니다. */

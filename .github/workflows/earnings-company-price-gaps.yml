@@ -1,0 +1,68 @@
+name: Refresh company earnings-price gaps
+
+on:
+  workflow_run:
+    workflows: ["Deploy Supabase changes"]
+    types: [completed]
+  schedule:
+    # 분기 종료 후 두 번째 날, 지수 분기말 가격 작업과 겹치지 않게 실행합니다.
+    - cron: "30 2 2 1,4,7,10 *"
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: Ten-year adjusted-price backfill start year
+        required: false
+        default: "2016"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-earnings-company-price-gaps
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install worker dependency
+        run: pip install -r backend/requirements.txt
+
+      - name: Wait for deployed price collector
+        if: github.event_name == 'workflow_run'
+        run: sleep 30
+
+      - name: Backfill adjusted quarter-end prices in rate-limited batches
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          START_YEAR: ${{ inputs.start_year || '2016' }}
+        run: |
+          offset=0
+          while true; do
+            response=$(curl --fail-with-body --retry 3 --retry-all-errors --max-time 120 --request POST \
+              "$SUPABASE_URL/functions/v1/earnings-company-prices" \
+              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              --header "Content-Type: application/json" \
+              --data "{\"offset\":$offset,\"limit\":5,\"start_year\":$START_YEAR}")
+            echo "$response" | jq -e '.failures | length == 0'
+            next=$(echo "$response" | jq -r '.next_offset // empty')
+            [ -z "$next" ] && break
+            offset="$next"
+          done
+
+      - name: Calculate normalized lines, gap and gap delta
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.calculate_company_price_gaps

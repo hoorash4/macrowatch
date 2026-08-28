@@ -282,7 +282,7 @@ class SupabaseEarningsStore:
                     endpoint,
                     params={
                         "select": (
-                            "company_id,fiscal_year,fiscal_quarter,revenue,"
+                            "company_id,fiscal_year,fiscal_quarter,period_end,revenue,"
                             "operating_income,net_income,currency,"
                             "consolidation_scope,canonical_version"
                         ),
@@ -304,6 +304,103 @@ class SupabaseEarningsStore:
             if len(payload) < page_size:
                 return rows
             offset += page_size
+
+    def list_current_price_companies(self) -> list[dict[str, Any]]:
+        result = self._rpc("list_current_earnings_price_companies", {})
+        if not isinstance(result, list):
+            raise EarningsStoreError("Earnings price company list returned an invalid result.")
+        return [row for row in result if isinstance(row, dict)]
+
+    def list_all_quarterly_prices(self, *, page_size: int = 1000) -> list[dict[str, Any]]:
+        endpoint = f"{self.url}/rest/v1/earnings_company_quarterly_prices"
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            try:
+                response = self.session.get(
+                    endpoint,
+                    params={
+                        "select": (
+                            "company_id,market_year,market_quarter,price_date,"
+                            "adjusted_close,currency,source"
+                        ),
+                        "order": "company_id.asc,market_year.asc,market_quarter.asc",
+                        "limit": str(page_size),
+                        "offset": str(offset),
+                    },
+                    headers=self._headers(), timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except Exception:
+                raise EarningsStoreError("Failed to list company quarterly prices.") from None
+            if not isinstance(payload, list):
+                raise EarningsStoreError("Company quarterly price response is not an array.")
+            rows.extend(row for row in payload if isinstance(row, dict))
+            if len(payload) < page_size:
+                return rows
+            offset += page_size
+
+    def _upsert_rows(
+        self, table: str, rows: list[dict[str, Any]], conflict: str, *, batch_size: int = 500
+    ) -> int:
+        endpoint = f"{self.url}/rest/v1/{table}"
+        stored = 0
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            try:
+                response = self.session.post(
+                    endpoint, params={"on_conflict": conflict}, json=batch,
+                    headers=self._headers(prefer="resolution=merge-duplicates,return=minimal"),
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except Exception:
+                raise EarningsStoreError(f"Failed to store {table} rows.") from None
+            stored += len(batch)
+        return stored
+
+    def upsert_quarterly_prices(self, rows: list[dict[str, Any]]) -> int:
+        return self._upsert_rows(
+            "earnings_company_quarterly_prices", rows,
+            "company_id,market_year,market_quarter",
+        )
+
+    def upsert_company_price_gaps(self, rows: list[dict[str, Any]]) -> int:
+        return self._upsert_rows(
+            "earnings_company_price_gaps", rows,
+            "company_id,market_year,market_quarter",
+        )
+
+    def get_app_setting(self, key: str) -> dict[str, Any] | None:
+        endpoint = f"{self.url}/rest/v1/app_settings"
+        try:
+            response = self.session.get(
+                endpoint,
+                params={"key": f"eq.{key}", "select": "value", "limit": "1"},
+                headers=self._headers(), timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            raise EarningsStoreError("Failed to read app setting.") from None
+        if not isinstance(payload, list) or not payload:
+            return None
+        value = payload[0].get("value") if isinstance(payload[0], dict) else None
+        return value if isinstance(value, dict) else None
+
+    def set_app_setting(self, key: str, value: dict[str, Any]) -> None:
+        endpoint = f"{self.url}/rest/v1/app_settings"
+        try:
+            response = self.session.post(
+                endpoint, params={"on_conflict": "key"},
+                json={"key": key, "value": value, "updated_at": datetime.now(timezone.utc).isoformat()},
+                headers=self._headers(prefer="resolution=merge-duplicates,return=minimal"),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except Exception:
+            raise EarningsStoreError("Failed to save app setting.") from None
 
     def upsert_growth_metrics(
         self,
