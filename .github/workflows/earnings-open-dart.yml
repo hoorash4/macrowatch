@@ -1,0 +1,38 @@
+name: Refresh Korean earnings from OpenDART
+
+on:
+  schedule:
+    # UTC 10:30/10:50 = 19:30/19:50 KST. The second run is an idempotent
+    # fallback for delayed disclosures or a transient provider failure.
+    - cron: "30 10 * * 1-5"
+    - cron: "50 10 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-earnings-open-dart
+  cancel-in-progress: false
+
+jobs:
+  sync-open-dart-identifiers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install worker dependency
+        run: pip install -r backend/requirements.txt
+
+      - name: Connect tracked companies to OpenDART
+        env:
+          PYTHONPATH: backend
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.sync_corp_codes

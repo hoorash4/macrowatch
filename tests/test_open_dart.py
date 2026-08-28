@@ -110,6 +110,17 @@ class OpenDartClientTests(unittest.TestCase):
         with self.assertRaises(OpenDartApiError):
             OpenDartClient("key", session=invalid).fetch_multi_accounts(["00126380"], 2026, "11014")
 
+    def test_provider_error_message_cannot_echo_the_api_key(self):
+        session = FakeSession([FakeResponse({
+            "status": "010",
+            "message": "invalid credential top-secret",
+        })])
+        with self.assertRaises(OpenDartApiError) as context:
+            OpenDartClient("top-secret", session=session).fetch_multi_accounts(
+                ["00126380"], 2026, "11014"
+            )
+        self.assertNotIn("top-secret", str(context.exception))
+
     def test_periodic_search_keeps_corrections_and_paginates(self):
         session = FakeSession([
             FakeResponse({"status": "000", "total_page": 2, "list": []}),

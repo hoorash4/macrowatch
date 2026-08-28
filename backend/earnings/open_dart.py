@@ -145,14 +145,18 @@ class OpenDartClient:
             # requests includes the fully expanded URL in transport errors.
             # Replacing it here prevents crtfc_key from reaching CI logs.
             raise OpenDartApiError("transport_error", f"{endpoint} request failed") from None
-        payload = response.json()
+        try:
+            payload = response.json()
+        except Exception:
+            raise OpenDartApiError("invalid_json", f"{endpoint} returned invalid JSON") from None
         if not isinstance(payload, dict):
             raise OpenDartApiError("invalid_json", "Response root must be an object")
         status = str(payload.get("status", ""))
         if status == OPEN_DART_NO_DATA:
             payload = {**payload, "list": []}
         elif status != "000":
-            raise OpenDartApiError(status or "unknown", str(payload.get("message", "Unknown error")))
+            message = str(payload.get("message", "Unknown error")).replace(self.api_key, "[redacted]")
+            raise OpenDartApiError(status or "unknown", message)
         return OpenDartResponse(endpoint, secret_free_params, payload)
 
     def fetch_corp_code_archive(self) -> OpenDartBinaryResponse:
