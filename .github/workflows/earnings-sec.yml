@@ -17,7 +17,10 @@ concurrency:
 jobs:
   refresh-sec-company-facts:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The official SEC endpoint can reject shared GitHub runner addresses. Its
+    # SEC-derived mirror fallback queries one CIK at a time and can take longer
+    # during the initial ten-year backfill, so do not cut off a healthy run.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
 

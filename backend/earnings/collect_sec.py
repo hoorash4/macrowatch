@@ -24,7 +24,7 @@ def main() -> None:
     mirror_client: SecCompanyFactsMirrorClient | None = None
     sec_blocked = False
 
-    for company in companies:
+    for index, company in enumerate(companies, start=1):
         company_id = str(company.get("company_id") or "").strip()
         cik = str(company.get("cik") or "").strip()
         ticker = str(company.get("ticker") or "").strip()
@@ -62,6 +62,14 @@ def main() -> None:
             totals["failed_companies"] += 1
             safe = " ".join(str(error).split())[:240]
             errors[f"{ticker or cik}: {type(error).__name__}: {safe}"] += 1
+        if index % 10 == 0 or index == len(companies):
+            print(json.dumps({
+                "progress": index,
+                "companies": len(companies),
+                "completed": totals["completed_companies"],
+                "failed": totals["failed_companies"],
+                "mirror": totals["mirror_companies"],
+            }, ensure_ascii=False), flush=True)
 
     store.save_checkpoint(
         source="sec_edgar",
