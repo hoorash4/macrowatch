@@ -49,7 +49,7 @@ export function parseOpenDartCorpCodeXml(xml: string): Map<string, KoreanListedC
 }
 
 export async function fetchOpenDartListedCompanies(): Promise<Map<string, KoreanListedCompany>> {
-  const apiKey = requiredSecret("OPEN_DART_API_KEY");
+  const apiKey = requiredSecret("OPENDART_API_KEY");
   const url = new URL(OPEN_DART_CORP_CODE_URL);
   url.searchParams.set("crtfc_key", apiKey);
   const response = await fetch(url, { signal: AbortSignal.timeout(45_000) });

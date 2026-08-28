@@ -96,9 +96,9 @@ class OpenDartClient:
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> "OpenDartClient":
-        key = os.getenv("OPEN_DART_API_KEY", "").strip()
+        key = os.getenv("OPENDART_API_KEY", "").strip()
         if not key:
-            raise RuntimeError("Missing required environment variable: OPEN_DART_API_KEY")
+            raise RuntimeError("Missing required environment variable: OPENDART_API_KEY")
         return cls(key, **kwargs)
 
     @staticmethod
