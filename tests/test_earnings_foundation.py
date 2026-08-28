@@ -61,8 +61,10 @@ class EarningsFoundationTests(unittest.TestCase):
     def test_contract_pauses_fully_exited_companies_and_fills_reentry_gaps(self) -> None:
         self.assertIn("모든 추적 지수에서 이탈하면", self.contract)
         self.assertIn("정기 공시 수집 대상에서는 제외", self.contract)
-        self.assertIn("최근 5년의 예상 회계분기와 저장된 표준 분기를 비교", self.contract)
-        self.assertIn("비어 있는 분기가 있으면 해당 분기만 자동 백필", self.contract)
+        self.assertIn("과거 추적 이력이 없는 완전 신규 기업", self.contract)
+        self.assertIn("최근 5년을 백필", self.contract)
+        self.assertIn("비어 있는 모든 분기를 기간 제한 없이 자동 백필", self.contract)
+        self.assertIn("7년 만의 재진입이면 최대 7년의 공백", self.contract)
         self.assertIn("소속 기간을 기준으로 계산", self.contract)
 
 
