@@ -38,6 +38,7 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("public.earnings_quarterly_financials", self.migration)
         self.assertIn("drop table if exists public.earnings_source_payloads", self.slim_storage_migration)
         self.assertIn("drop table if exists public.earnings_financial_facts", self.slim_storage_migration)
+        self.assertIn("drop column if exists eps", self.slim_storage_migration)
 
     def test_company_identity_and_membership_are_separate(self) -> None:
         self.assertIn("public.earnings_company_identifiers", self.migration)

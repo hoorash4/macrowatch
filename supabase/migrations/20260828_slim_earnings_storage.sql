@@ -2,6 +2,8 @@
 -- canonical row per company/quarter. Provider responses are parsed in worker
 -- memory and are intentionally not persisted.
 
+alter table public.earnings_quarterly_financials drop column if exists eps;
+
 create or replace function public.complete_earnings_open_dart_job(
   p_job_id bigint,
   p_filing jsonb,
@@ -94,7 +96,7 @@ begin
 
     insert into public.earnings_quarterly_financials (
       company_id, fiscal_year, fiscal_quarter, market_year, market_quarter,
-      period_start, period_end, revenue, operating_income, net_income, eps,
+      period_start, period_end, revenue, operating_income, net_income,
       currency, consolidation_scope, source_filing_id, quality_status,
       missing_metrics, canonical_version, source_updated_at, calculated_at, updated_at
     ) values (
@@ -102,7 +104,7 @@ begin
       (p_quarter->>'market_year')::integer, (p_quarter->>'market_quarter')::smallint,
       nullif(p_quarter->>'period_start', '')::date, (p_quarter->>'period_end')::date,
       (p_quarter->>'revenue')::numeric, (p_quarter->>'operating_income')::numeric,
-      (p_quarter->>'net_income')::numeric, nullif(p_quarter->>'eps', '')::numeric,
+      (p_quarter->>'net_income')::numeric,
       p_quarter->>'currency', p_quarter->>'consolidation_scope', v_filing_id,
       'complete', '{}'::text[], coalesce(v_existing_version, 0) + 1,
       (p_quarter->>'source_updated_at')::timestamptz, now(), now()
@@ -110,7 +112,7 @@ begin
       market_year = excluded.market_year, market_quarter = excluded.market_quarter,
       period_start = excluded.period_start, period_end = excluded.period_end,
       revenue = excluded.revenue, operating_income = excluded.operating_income,
-      net_income = excluded.net_income, eps = excluded.eps,
+      net_income = excluded.net_income,
       currency = excluded.currency, consolidation_scope = excluded.consolidation_scope,
       source_filing_id = excluded.source_filing_id, quality_status = 'complete',
       missing_metrics = '{}'::text[],
@@ -145,4 +147,4 @@ alter table public.earnings_filings drop column if exists source_payload_id;
 drop table if exists public.earnings_source_payloads;
 
 comment on table public.earnings_quarterly_financials is
-  'Compact canonical quarterly revenue, operating income, net income, and optional EPS used by Earnings Momentum.';
+  'Compact canonical quarterly revenue, operating income, and net income used by Earnings Momentum.';

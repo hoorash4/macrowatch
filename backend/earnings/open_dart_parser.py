@@ -24,22 +24,15 @@ ACCOUNT_ID_PRIORITIES: dict[str, tuple[str, ...]] = {
         "ifrs-full_profitloss",
         "ifrs-full_profitlossattributabletoownersofparent",
     ),
-    "eps": (
-        "ifrs-full_basicearningslosspershare",
-        "ifrs-full_basicearningspershare",
-    ),
 }
 
 ACCOUNT_NAME_ALIASES: dict[str, set[str]] = {
     "revenue": {"매출액", "영업수익", "수익매출액", "수익"},
     "operating_income": {"영업이익", "영업이익손실", "영업손익"},
     "net_income": {"당기순이익", "당기순이익손실", "분기순이익", "반기순이익"},
-    "eps": {"기본주당이익", "기본주당이익손실", "기본주당순이익"},
 }
 
-# Earnings Momentum requires the three income-statement totals below. EPS is
-# parsed when OpenDART supplies it, but it must never trigger an additional
-# provider request or block an otherwise complete quarter.
+# Earnings Momentum stores only the three income-statement totals below.
 REQUIRED_METRICS = ("revenue", "operating_income", "net_income")
 
 
@@ -104,7 +97,7 @@ def _parse_period(raw_value: Any) -> tuple[date | None, date | None]:
 
 
 def parse_account_rows(payload: dict[str, Any]) -> list[DartAccountFact]:
-    """Extract only the four metrics needed by Earnings Momentum."""
+    """Extract only revenue, operating income, and net income."""
     facts: list[DartAccountFact] = []
     rows = payload.get("list") or []
     if not isinstance(rows, list):
@@ -205,10 +198,8 @@ def standalone_quarter_value(
 
     OpenDART documents ``thstrm_amount`` as the three-month income-statement
     amount for interim reports, so it is preferred for Q2/Q3. When a standalone
-    Q4 value is unavailable, every metric -- including basic EPS -- uses the
-    same FY cumulative minus 9M cumulative rule. This deliberately favors a
-    continuous, consistently calculated momentum series over a share-count
-    adjusted accounting reconstruction.
+    Q4 value is unavailable, each collected income-statement metric uses the
+    same FY cumulative minus 9M cumulative rule.
     """
     quarter = fact.fiscal_quarter
     if quarter == 1:

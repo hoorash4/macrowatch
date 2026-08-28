@@ -134,7 +134,7 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(store.completions[0]["quarter"]["period_start"], "2026-01-01")
         self.assertNotIn("facts", store.completions[0])
 
-    def test_q1_complete_multi_company_response_updates_canonical_without_fallback(self):
+    def test_q1_complete_core_metrics_update_canonical_without_fallback(self):
         client = FakeClient({"status": "000", "list": rows_for_period()})
         store = FakeStore()
         worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
@@ -149,11 +149,15 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(result["completed"], 1)
         self.assertEqual(client.full_calls, [])
         self.assertEqual(store.failures, [])
-        self.assertEqual(store.completions[0]["quarter"]["eps"], "100")
+        self.assertNotIn("eps", store.completions[0]["quarter"])
         self.assertEqual(store.completions[0]["outcome"], "complete")
 
-    def test_missing_eps_does_not_trigger_fallback_or_block_quarter(self):
-        rows = rows_for_period()[:-1]
+    def test_eps_row_is_ignored_entirely(self):
+        rows = rows_for_period()
+        self.assertEqual(
+            {fact.metric for fact in parse_account_rows({"list": rows})},
+            {"revenue", "operating_income", "net_income"},
+        )
         client = FakeClient({"status": "000", "list": rows})
         store = FakeStore()
         worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
@@ -171,7 +175,7 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         }])
         self.assertEqual(result["completed"], 1)
         self.assertEqual(client.full_calls, [])
-        self.assertIsNone(store.completions[0]["quarter"]["eps"])
+        self.assertNotIn("eps", store.completions[0]["quarter"])
 
 
 if __name__ == "__main__":

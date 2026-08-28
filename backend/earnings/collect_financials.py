@@ -125,7 +125,6 @@ def build_canonical_quarter(
         "period_start": _date_text(period_start),
         "period_end": period_end.isoformat(),
         **{metric: _decimal_text(values[metric]) for metric in REQUIRED_METRICS},
-        "eps": _decimal_text(values.get("eps")),
         "currency": currency,
         "consolidation_scope": next(iter(scopes)),
         "missing_metrics": [],
