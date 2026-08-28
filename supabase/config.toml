@@ -9,5 +9,10 @@ verify_jwt = true
 [functions.sector-flow]
 verify_jwt = true
 
+[functions.sector-flow-scheduler]
+# pg_cron calls this narrow, time-gated dispatcher without a user JWT.
+# The protected sector-flow function itself still requires the service-role JWT.
+verify_jwt = false
+
 [functions.korea-foreign-flow]
 verify_jwt = true

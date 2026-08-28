@@ -212,6 +212,24 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("endpointPrice / fourWeekBaseline.closePrice", scoring)
         self.assertNotIn("latestPrice / baseline.closePrice", scoring)
 
+    def test_sector_flow_has_database_cron_with_idempotent_retry_dispatcher(self):
+        scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
+        migration = (ROOT / "supabase/migrations/20260828_schedule_sector_flow.sql").read_text(encoding="utf-8")
+        config = (ROOT / "supabase/config.toml").read_text(encoding="utf-8")
+        deploy = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
+
+        self.assertIn('[functions.sector-flow-scheduler]', config)
+        self.assertIn('verify_jwt = false', config.split('[functions.sector-flow-scheduler]', 1)[1].split('[functions.', 1)[0])
+        self.assertIn('skipped: "outside_schedule_window"', scheduler)
+        self.assertIn('skipped: "already_refreshed"', scheduler)
+        self.assertIn('.gte("calculated_at", slotStartedAt.toISOString())', scheduler)
+        self.assertIn('/functions/v1/sector-flow', scheduler)
+        self.assertIn('create extension if not exists pg_cron', migration)
+        self.assertIn('create extension if not exists pg_net', migration)
+        for schedule in ('10,25 0 * * 1-5', '30,45 3 * * 1-5', '40,55 6 * * 1-5'):
+            self.assertIn(schedule, migration)
+        self.assertIn('--file supabase/migrations/20260828_schedule_sector_flow.sql', deploy)
+
     def test_new_sector_etf_registration_resolves_metadata_and_backfills_prices(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
         admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
