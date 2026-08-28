@@ -58,6 +58,12 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("qoq_seasonally_adjusted_delta", self.contract)
         self.assertIn("분기 주가수익률 percentile 60%", self.contract)
 
+    def test_contract_keeps_collecting_exited_companies_and_fills_reentry_gaps(self) -> None:
+        self.assertIn("현재 지수에서 이탈해도 일일 공시 확인 대상에 계속 포함", self.contract)
+        self.assertIn("최근 5년의 예상 회계분기와 저장된 표준 분기를 비교", self.contract)
+        self.assertIn("비어 있는 분기가 있으면 해당 분기만 자동 백필", self.contract)
+        self.assertIn("소속 기간을 기준으로 계산", self.contract)
+
 
 if __name__ == "__main__":
     unittest.main()
