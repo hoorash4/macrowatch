@@ -81,3 +81,66 @@ drop policy if exists "Authenticated users can read earnings growth metrics"
   on public.earnings_quarterly_growth_metrics;
 create policy "Authenticated users can read earnings growth metrics"
   on public.earnings_quarterly_growth_metrics for select to authenticated using (true);
+
+-- Keep mathematically incomparable turn/loss periods out of acceleration and
+-- seasonal-adjustment outputs even if a future worker accidentally regresses.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'earnings_growth_revenue_state_values_ck'
+      and conrelid = 'public.earnings_quarterly_growth_metrics'::regclass
+  ) then
+    alter table public.earnings_quarterly_growth_metrics
+      add constraint earnings_growth_revenue_state_values_ck check (
+        (revenue_yoy_state = 'normal' or revenue_yoy_delta_pp is null)
+        and (
+          revenue_qoq_state = 'normal'
+          or (
+            revenue_qoq_seasonal_baseline_pct is null
+            and revenue_qoq_seasonally_adjusted_pct is null
+            and revenue_qoq_seasonally_adjusted_delta_pp is null
+          )
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'earnings_growth_operating_state_values_ck'
+      and conrelid = 'public.earnings_quarterly_growth_metrics'::regclass
+  ) then
+    alter table public.earnings_quarterly_growth_metrics
+      add constraint earnings_growth_operating_state_values_ck check (
+        (operating_income_yoy_state = 'normal' or operating_income_yoy_delta_pp is null)
+        and (
+          operating_income_qoq_state = 'normal'
+          or (
+            operating_income_qoq_seasonal_baseline_pct is null
+            and operating_income_qoq_seasonally_adjusted_pct is null
+            and operating_income_qoq_seasonally_adjusted_delta_pp is null
+          )
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'earnings_growth_net_state_values_ck'
+      and conrelid = 'public.earnings_quarterly_growth_metrics'::regclass
+  ) then
+    alter table public.earnings_quarterly_growth_metrics
+      add constraint earnings_growth_net_state_values_ck check (
+        (net_income_yoy_state = 'normal' or net_income_yoy_delta_pp is null)
+        and (
+          net_income_qoq_state = 'normal'
+          or (
+            net_income_qoq_seasonal_baseline_pct is null
+            and net_income_qoq_seasonally_adjusted_pct is null
+            and net_income_qoq_seasonally_adjusted_delta_pp is null
+          )
+        )
+      );
+  end if;
+end
+$$;
