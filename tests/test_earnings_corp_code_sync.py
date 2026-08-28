@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 import sys
 import unittest
@@ -7,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from earnings.corp_codes import DartCorporation  # noqa: E402
+from earnings.discover_backfill_filings import filing_window  # noqa: E402
 from earnings.supabase_rest import EarningsStoreError, SupabaseEarningsStore  # noqa: E402
 from earnings.sync_corp_codes import build_identifier_rows  # noqa: E402
 
@@ -34,6 +36,13 @@ class RpcHttpErrorSession:
 
 
 class EarningsCorpCodeSyncTests(unittest.TestCase):
+    def test_historical_filing_window_never_extends_past_today(self) -> None:
+        self.assertEqual(
+            filing_window(2026, date(2026, 8, 28)),
+            (date(2026, 1, 1), date(2026, 8, 28)),
+        )
+        self.assertIsNone(filing_window(2027, date(2026, 8, 28)))
+
     def test_only_exact_listed_ticker_matches_are_saved(self) -> None:
         companies = [
             {"id": "company-a", "ticker": "005930", "company_name": "삼성전자"},

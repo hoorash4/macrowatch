@@ -154,6 +154,12 @@ class SupabaseEarningsStore:
             and str(row.get("identifier_value") or "").strip()
         }
 
+    def list_open_dart_identity_gaps(self) -> list[dict[str, Any]]:
+        result = self._rpc("list_earnings_open_dart_identity_gaps", {})
+        if not isinstance(result, list):
+            raise EarningsStoreError("OpenDART filing-identity gap response is not an array.")
+        return [row for row in result if isinstance(row, dict)]
+
     def get_checkpoint(self, *, source: str, operation: str) -> dict[str, Any] | None:
         endpoint = f"{self.url}/rest/v1/earnings_collection_checkpoints"
         try:
