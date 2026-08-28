@@ -161,6 +161,22 @@ class OpenDartParserTests(unittest.TestCase):
         self.assertEqual(set(selected), {"revenue"})
         self.assertEqual(selected["revenue"].consolidation_scope, "CFS")
 
+    def test_complete_ofs_set_wins_over_incomplete_cfs_without_mixing(self):
+        rows = [
+            account_row(fs_div="CFS", account_id="ifrs-full_Revenue", account_nm="매출액"),
+            account_row(fs_div="OFS", account_id="ifrs-full_Revenue", account_nm="매출액"),
+            account_row(fs_div="OFS", account_id="dart_OperatingIncomeLoss", account_nm="영업이익"),
+            account_row(fs_div="OFS", account_id="ifrs-full_ProfitLoss", account_nm="당기순이익"),
+            account_row(
+                fs_div="OFS",
+                account_id="ifrs-full_BasicEarningsLossPerShare",
+                account_nm="기본주당이익",
+            ),
+        ]
+        selected = select_preferred_accounts(parse_account_rows({"list": rows}))["00126380"]
+        self.assertEqual(set(selected), {"revenue", "operating_income", "net_income", "eps"})
+        self.assertEqual({fact.consolidation_scope for fact in selected.values()}, {"OFS"})
+
     def test_interim_prefers_documented_three_month_value(self):
         fact = parse_account_rows({"list": [account_row()]})[0]
         self.assertEqual(standalone_quarter_value(fact, previous_cumulative=Decimal("2150")), Decimal("1250"))

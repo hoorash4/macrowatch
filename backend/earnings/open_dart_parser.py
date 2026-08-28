@@ -163,23 +163,42 @@ def _fact_priority(fact: DartAccountFact) -> tuple[int, int]:
 def select_preferred_accounts(
     facts: Iterable[DartAccountFact],
 ) -> dict[str, dict[str, DartAccountFact]]:
-    """Choose one non-mixed CFS-or-OFS account set for each company."""
+    """Choose one non-mixed CFS-or-OFS account set for each company.
+
+    A complete CFS set wins.  If CFS is present but incomplete while OFS has
+    all four required metrics, OFS wins as one complete set instead of mixing
+    the two scopes.  An incomplete set is returned only so the caller can
+    decide which full-statement fallback is still required.
+    """
     grouped: dict[str, list[DartAccountFact]] = {}
     for fact in facts:
         grouped.setdefault(fact.corp_code, []).append(fact)
 
     selected: dict[str, dict[str, DartAccountFact]] = {}
     for corp_code, company_facts in grouped.items():
-        available_scopes = {fact.consolidation_scope for fact in company_facts}
-        scope = "CFS" if "CFS" in available_scopes else "OFS" if "OFS" in available_scopes else "NA"
-        scoped_facts = [fact for fact in company_facts if fact.consolidation_scope == scope]
-        by_metric: dict[str, list[DartAccountFact]] = {}
-        for fact in scoped_facts:
-            by_metric.setdefault(fact.metric, []).append(fact)
-        selected[corp_code] = {
-            metric: sorted(candidates, key=_fact_priority)[0]
-            for metric, candidates in by_metric.items()
-        }
+        candidates_by_scope: dict[str, dict[str, DartAccountFact]] = {}
+        for scope in ("CFS", "OFS", "NA"):
+            by_metric: dict[str, list[DartAccountFact]] = {}
+            for fact in company_facts:
+                if fact.consolidation_scope == scope:
+                    by_metric.setdefault(fact.metric, []).append(fact)
+            if by_metric:
+                candidates_by_scope[scope] = {
+                    metric: sorted(candidates, key=_fact_priority)[0]
+                    for metric, candidates in by_metric.items()
+                }
+
+        complete_scope = next(
+            (scope for scope in ("CFS", "OFS", "NA")
+             if len(candidates_by_scope.get(scope, {})) == len(ACCOUNT_ID_PRIORITIES)),
+            None,
+        )
+        fallback_scope = next(
+            (scope for scope in ("CFS", "OFS", "NA") if scope in candidates_by_scope),
+            None,
+        )
+        scope = complete_scope or fallback_scope
+        selected[corp_code] = candidates_by_scope.get(scope or "", {})
     return selected
 
 

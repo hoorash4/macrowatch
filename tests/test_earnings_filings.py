@@ -39,13 +39,21 @@ class EarningsFilingDiscoveryTests(unittest.TestCase):
         self.assertFalse(filings[0].is_correction)
         self.assertTrue(filings[1].is_correction)
 
-    def test_checkpoint_window_overlaps_three_weekdays(self) -> None:
+    def test_checkpoint_window_overlaps_three_calendar_days(self) -> None:
         begin, end = discovery_window(
             date(2026, 8, 31),
             {"cursor": {"through_date": "2026-08-28"}},
         )
         self.assertEqual(begin, date(2026, 8, 25))
         self.assertEqual(end, date(2026, 8, 31))
+
+    def test_stale_checkpoint_preserves_entire_gap_after_long_holiday(self) -> None:
+        begin, end = discovery_window(
+            date(2026, 5, 18),
+            {"cursor": {"through_date": "2026-05-01"}},
+        )
+        self.assertEqual(begin, date(2026, 4, 28))
+        self.assertEqual(end, date(2026, 5, 18))
 
     def test_first_run_has_long_holiday_safe_lookback(self) -> None:
         begin, _ = discovery_window(date(2026, 8, 28), None)

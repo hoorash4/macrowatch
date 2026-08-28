@@ -13,24 +13,25 @@ from earnings.supabase_rest import SupabaseEarningsStore
 
 
 CHECKPOINT_OPERATION = "periodic_filings"
+INITIAL_LOOKBACK_DAYS = 14
+OVERLAP_CALENDAR_DAYS = 3
 
 
 def discovery_window(today: date, checkpoint: dict | None) -> tuple[date, date]:
-    """Overlap three weekdays while preserving every missed calendar date."""
+    """Overlap three calendar days while preserving every missed date.
+
+    A stale checkpoint is never shortened to the overlap window: the collector
+    resumes from the checkpoint and therefore recovers long holidays or outages
+    without needing a separate Korean holiday calendar.
+    """
     cursor = checkpoint.get("cursor") if isinstance(checkpoint, dict) else None
     through = cursor.get("through_date") if isinstance(cursor, dict) else None
     try:
         anchor = date.fromisoformat(str(through))
     except (TypeError, ValueError):
-        return today - timedelta(days=14), today
+        return today - timedelta(days=INITIAL_LOOKBACK_DAYS), today
 
-    begin = anchor
-    weekdays = 0
-    while weekdays < 3:
-        begin -= timedelta(days=1)
-        if begin.weekday() < 5:
-            weekdays += 1
-    return min(begin, today), today
+    return min(anchor - timedelta(days=OVERLAP_CALENDAR_DAYS), today), today
 
 
 def canonical_payload_hash(payload: dict) -> str:

@@ -166,14 +166,59 @@ class SupabaseEarningsStore:
         request_params: dict[str, Any],
         payload_sha256: str,
         payload: dict[str, Any],
-    ) -> None:
-        self._rpc("save_earnings_open_dart_payload", {
+    ) -> str:
+        result = self._rpc("save_earnings_open_dart_payload", {
             "p_operation": operation,
             "p_request_key": request_key,
             "p_request_params": request_params,
             "p_payload_sha256": payload_sha256,
             "p_response_payload": payload,
         })
+        if not isinstance(result, str) or not result:
+            raise EarningsStoreError("OpenDART payload save returned an invalid identifier.")
+        return result
+
+    def claim_open_dart_jobs(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        result = self._rpc("claim_earnings_open_dart_jobs", {"p_limit": limit})
+        if not isinstance(result, list):
+            raise EarningsStoreError("OpenDART job claim returned an invalid result.")
+        return [row for row in result if isinstance(row, dict)]
+
+    def complete_open_dart_job(
+        self,
+        *,
+        job_id: int,
+        source_payload_id: str | None,
+        filing: dict[str, Any],
+        facts: list[dict[str, Any]],
+        quarter: dict[str, Any] | None,
+        outcome: str,
+    ) -> dict[str, Any]:
+        result = self._rpc("complete_earnings_open_dart_job", {
+            "p_job_id": job_id,
+            "p_source_payload_id": source_payload_id,
+            "p_filing": filing,
+            "p_facts": facts,
+            "p_quarter": quarter,
+            "p_outcome": outcome,
+        })
+        if not isinstance(result, dict):
+            raise EarningsStoreError("OpenDART job completion returned an invalid result.")
+        return result
+
+    def fail_open_dart_job(
+        self,
+        *,
+        job_id: int,
+        error: str,
+        retry_delay_seconds: int = 300,
+    ) -> str | None:
+        result = self._rpc("fail_earnings_open_dart_job", {
+            "p_job_id": job_id,
+            "p_error": error,
+            "p_retry_delay_seconds": retry_delay_seconds,
+        })
+        return result if isinstance(result, str) else None
 
     def enqueue_open_dart_filings(self, filings: list[dict[str, Any]]) -> dict[str, Any]:
         result = self._rpc("enqueue_earnings_open_dart_filings", {"p_filings": filings})
