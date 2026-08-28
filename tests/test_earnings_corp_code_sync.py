@@ -1,4 +1,3 @@
-from datetime import date
 from pathlib import Path
 import sys
 import unittest
@@ -29,18 +28,16 @@ class EarningsCorpCodeSyncTests(unittest.TestCase):
         rows, unresolved = build_identifier_rows(
             companies,
             listed,
-            valid_from=date(2026, 8, 28),
         )
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["identifier_value"], "00126380")
-        self.assertEqual(rows[0]["valid_from"], "2026-08-28")
+        self.assertEqual(rows[0]["corp_code"], "00126380")
+        self.assertEqual(rows[0]["ticker"], "005930")
         self.assertEqual(unresolved, ["999999"])
 
     def test_output_rows_never_contain_api_credentials(self) -> None:
         rows, _ = build_identifier_rows(
             [{"id": "company-a", "ticker": "005930"}],
             {"005930": DartCorporation("00126380", "삼성전자", "005930", None)},
-            valid_from=date(2026, 8, 28),
         )
         serialized = repr(rows).lower()
         self.assertNotIn("crtfc_key", serialized)

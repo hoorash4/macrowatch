@@ -8,7 +8,8 @@ or request environment variables.
 from __future__ import annotations
 
 import os
-from typing import Any, Iterable
+from datetime import datetime, timezone
+from typing import Any
 
 import requests
 
@@ -51,6 +52,19 @@ class SupabaseEarningsStore:
             headers["Prefer"] = prefer
         return headers
 
+    def _rpc(self, name: str, body: dict[str, Any]) -> Any:
+        try:
+            response = self.session.post(
+                f"{self.url}/rest/v1/rpc/{name}",
+                json=body,
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            raise EarningsStoreError(f"Earnings RPC failed: {name}.") from None
+
     def list_active_korean_companies(self) -> list[dict[str, Any]]:
         endpoint = f"{self.url}/rest/v1/earnings_companies"
         try:
@@ -74,20 +88,117 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("Korean earnings company response is not an array.")
         return [row for row in payload if isinstance(row, dict)]
 
-    def upsert_identifiers(self, rows: Iterable[dict[str, Any]]) -> int:
-        payload = list(rows)
-        if not payload:
-            return 0
+    def sync_open_dart_identifiers(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        valid_from: str,
+    ) -> dict[str, Any]:
+        result = self._rpc("sync_earnings_open_dart_identifiers", {
+            "p_identifiers": rows,
+            "p_valid_from": valid_from,
+        })
+        if not isinstance(result, dict):
+            raise EarningsStoreError("OpenDART identifier sync returned an invalid result.")
+        return result
+
+    def enqueue_open_dart_backfill(self, *, as_of_year: int, years: int = 5) -> int:
+        result = self._rpc("enqueue_earnings_open_dart_backfill", {
+            "p_as_of_year": as_of_year,
+            "p_years": years,
+        })
+        if not isinstance(result, int):
+            raise EarningsStoreError("OpenDART backfill enqueue returned an invalid result.")
+        return result
+
+    def list_tracked_open_dart_codes(self) -> set[str]:
         endpoint = f"{self.url}/rest/v1/earnings_company_identifiers"
+        try:
+            response = self.session.get(
+                endpoint,
+                params={
+                    "identifier_type": "eq.dart_corp_code",
+                    "valid_to": "is.null",
+                    "select": "identifier_value",
+                },
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            raise EarningsStoreError("Failed to list tracked OpenDART identifiers.") from None
+        if not isinstance(payload, list):
+            raise EarningsStoreError("Tracked OpenDART identifier response is not an array.")
+        return {
+            str(row.get("identifier_value") or "").strip()
+            for row in payload if isinstance(row, dict)
+            and str(row.get("identifier_value") or "").strip()
+        }
+
+    def get_checkpoint(self, *, source: str, operation: str) -> dict[str, Any] | None:
+        endpoint = f"{self.url}/rest/v1/earnings_collection_checkpoints"
+        try:
+            response = self.session.get(
+                endpoint,
+                params={
+                    "source": f"eq.{source}",
+                    "operation": f"eq.{operation}",
+                    "select": "cursor,last_success_at",
+                    "limit": "1",
+                },
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            raise EarningsStoreError("Failed to read earnings collection checkpoint.") from None
+        if not isinstance(payload, list):
+            raise EarningsStoreError("Earnings checkpoint response is not an array.")
+        return payload[0] if payload and isinstance(payload[0], dict) else None
+
+    def save_source_payload(
+        self,
+        *,
+        operation: str,
+        request_key: str,
+        request_params: dict[str, Any],
+        payload_sha256: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self._rpc("save_earnings_open_dart_payload", {
+            "p_operation": operation,
+            "p_request_key": request_key,
+            "p_request_params": request_params,
+            "p_payload_sha256": payload_sha256,
+            "p_response_payload": payload,
+        })
+
+    def enqueue_open_dart_filings(self, filings: list[dict[str, Any]]) -> dict[str, Any]:
+        result = self._rpc("enqueue_earnings_open_dart_filings", {"p_filings": filings})
+        if not isinstance(result, dict):
+            raise EarningsStoreError("OpenDART filing enqueue returned an invalid result.")
+        return result
+
+    def save_checkpoint(self, *, source: str, operation: str, cursor: dict[str, Any]) -> None:
+        endpoint = f"{self.url}/rest/v1/earnings_collection_checkpoints"
+        row = {
+            "source": source,
+            "operation": operation,
+            "last_success_at": datetime.now(timezone.utc).isoformat(),
+            "cursor": cursor,
+            "consecutive_failures": 0,
+            "last_error": None,
+        }
         try:
             response = self.session.post(
                 endpoint,
-                params={"on_conflict": "company_id,identifier_type,identifier_value"},
-                json=payload,
+                params={"on_conflict": "source,operation"},
+                json=row,
                 headers=self._headers(prefer="resolution=merge-duplicates,return=minimal"),
                 timeout=self.timeout,
             )
             response.raise_for_status()
         except Exception:
-            raise EarningsStoreError("Failed to save OpenDART company identifiers.") from None
-        return len(payload)
+            raise EarningsStoreError("Failed to save earnings collection checkpoint.") from None
