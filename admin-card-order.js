@@ -1,15 +1,39 @@
 (() => {
   const CARD_SELECTOR = ':scope > [data-admin-card-id]';
+  const AUTO_SCROLL_EDGE_PX = 110;
+  const AUTO_SCROLL_MAX_STEP_PX = 16;
 
   function create({ container, anchor, saveOrder, reportError }) {
     let draggedCard = null;
     let dragArmed = false;
+    let dragPointerY = 0;
+    let autoScrollFrame = null;
 
     const cards = () => Array.from(container.querySelectorAll(CARD_SELECTOR));
     const order = () => cards().map((card) => card.dataset.adminCardId);
     const clearDropState = () => cards().forEach((card) => {
       card.classList.remove('admin-card-drop-before', 'admin-card-drop-after');
     });
+    const stopAutoScroll = () => {
+      if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
+      autoScrollFrame = null;
+    };
+    const autoScroll = () => {
+      if (!draggedCard) {
+        autoScrollFrame = null;
+        return;
+      }
+      const viewportHeight = window.innerHeight;
+      let step = 0;
+      if (dragPointerY < AUTO_SCROLL_EDGE_PX) {
+        step = -Math.ceil(AUTO_SCROLL_MAX_STEP_PX * (1 - dragPointerY / AUTO_SCROLL_EDGE_PX));
+      } else if (dragPointerY > viewportHeight - AUTO_SCROLL_EDGE_PX) {
+        const edgeDepth = dragPointerY - (viewportHeight - AUTO_SCROLL_EDGE_PX);
+        step = Math.ceil(AUTO_SCROLL_MAX_STEP_PX * edgeDepth / AUTO_SCROLL_EDGE_PX);
+      }
+      if (step) window.scrollBy({ top: step, behavior: 'auto' });
+      autoScrollFrame = requestAnimationFrame(autoScroll);
+    };
 
     cards().forEach((card) => {
       card.draggable = true;
@@ -28,8 +52,11 @@
           return;
         }
         draggedCard = card;
+        dragPointerY = event.clientY;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', card.dataset.adminCardId);
+        stopAutoScroll();
+        autoScrollFrame = requestAnimationFrame(autoScroll);
         requestAnimationFrame(() => card.classList.add('admin-card-dragging'));
       });
       card.addEventListener('dragover', (event) => {
@@ -46,11 +73,19 @@
         const moved = draggedCard;
         draggedCard = null;
         dragArmed = false;
+        stopAutoScroll();
         moved?.classList.remove('admin-card-dragging');
         clearDropState();
         try { await saveOrder(order()); }
         catch (error) { reportError(error); }
       });
+    });
+    // 기본 HTML 드래그는 화면 가장자리에서 일관되게 스크롤되지 않으므로 포인터가
+    // 위·아래 가장자리에 머무는 동안 프레임 단위로 페이지를 이동한다.
+    document.addEventListener('dragover', (event) => {
+      if (!draggedCard) return;
+      event.preventDefault();
+      dragPointerY = event.clientY;
     });
     document.addEventListener('pointerup', () => { if (!draggedCard) dragArmed = false; });
 
