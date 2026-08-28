@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy-admin.ts";
 import { createKisRequestRunner, fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { incompletePriceHistoryIds } from "../_shared/sector-flow.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const REPOSITORY = "hoorash4/macrowatch";
@@ -545,7 +546,26 @@ export default {
         const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
         const runKisRequest = createKisRequestRunner();
         const end = new Date(), start = new Date(end.getTime() - 10 * 7 * 86_400_000);
-        const bundle = await runKisRequest(() => fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end));
+        let bundle = await runKisRequest(() => fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end));
+        const historyStart = start.toISOString().slice(0, 10);
+        const { data: referenceRows, error: referenceError } = await admin.from("market_sector_etf_prices")
+          .select("etf_id,market_date").gte("market_date", historyStart);
+        if (referenceError) throw referenceError;
+        const candidateId = "new-etf";
+        const coverageRows = [
+          ...(referenceRows || []).map((row) => ({ etfId: row.etf_id, marketDate: row.market_date })),
+          ...bundle.prices.map((price) => ({ etfId: candidateId, marketDate: price.marketDate })),
+        ];
+        // KIS가 일시적으로 일부 일봉만 반환하면 등록 전에 한 번 더 요청해 합칩니다.
+        if (incompletePriceHistoryIds([candidateId], coverageRows).has(candidateId)) {
+          const retryBundle = await runKisRequest(() => fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end));
+          const pricesByDate = new Map(bundle.prices.map((price) => [price.marketDate, price]));
+          retryBundle.prices.forEach((price) => pricesByDate.set(price.marketDate, price));
+          bundle = {
+            instrumentName: bundle.instrumentName || retryBundle.instrumentName,
+            prices: [...pricesByDate.values()].sort((a, b) => a.marketDate.localeCompare(b.marketDate)),
+          };
+        }
         const topHoldings = await runKisRequest(() => fetchKisEtfTopHoldings(credentials, token, input.etf_ticker, 3));
         if (!bundle.instrumentName) throw new Error("KIS에서 ETF 정식명을 확인하지 못했습니다.");
         if (!bundle.prices.length) throw new Error("KIS에서 최근 10주 가격을 확인하지 못했습니다.");
@@ -575,7 +595,14 @@ export default {
             if (holdingError) throw holdingError;
           }
           await rebuildSectorRankings(supabaseUrl, serviceRoleKey);
-          return json({ item: data, price_rows: bundle.prices.length, holding_rows: topHoldings.length }, 201, origin);
+          const finalCoverageRows = [
+            ...(referenceRows || []).map((row) => ({ etfId: row.etf_id, marketDate: row.market_date })),
+            ...bundle.prices.map((price) => ({ etfId: candidateId, marketDate: price.marketDate })),
+          ];
+          return json({
+            item: data, price_rows: bundle.prices.length, holding_rows: topHoldings.length,
+            history_backfill_pending: incompletePriceHistoryIds([candidateId], finalCoverageRows).has(candidateId),
+          }, 201, origin);
         } catch (registrationError) {
           await admin.from("market_sector_etfs").delete().eq("id", data.id);
           throw registrationError;

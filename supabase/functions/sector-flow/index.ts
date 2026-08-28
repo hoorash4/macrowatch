@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createKisRequestRunner, fetchKisDailyPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
-import { calculateSectorRankings, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
+import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
 
 const DATABASE_PAGE_SIZE = 1000;
 const PRICE_RETENTION_WEEKS = 10;
@@ -97,14 +97,22 @@ Deno.serve(async (request) => {
     const collected: Record<string, unknown>[] = [], failures: Array<{ ticker: string; error: string }> = [];
     const holdings: Record<string, unknown>[] = [], holdingRefreshIds: string[] = [];
     const holdingFailures: Array<{ ticker: string; error: string }> = [];
+    // 등록 도중 KIS가 일부 일봉만 반환해도 다음 정기 수집에서 자동 복구합니다.
+    // 보관 구간의 국내 거래일 달력은 정상 수집된 다른 ETF들의 합집합을 사용합니다.
+    const existingPrices = await loadSectorPriceHistory(admin, retentionStart);
+    const autoBackfillIds = incompletePriceHistoryIds(
+      registry.map((item) => item.id),
+      existingPrices.map((row) => ({ etfId: row.etf_id, marketDate: row.market_date })),
+    );
 
     if (!rebuildOnly) {
       const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
       const runKisRequest = createKisRequestRunner();
       for (const item of registry) {
         try {
-          // 운영 중에는 당일만, 명시적인 초기화 요청에는 현재 보관 기준인 10주를 수집합니다.
-          const priceStart = backfillHistory ? new Date(`${retentionStart}T00:00:00Z`) : end;
+          // 정상 종목은 당일만 조회하고, 수동 백필 또는 이력 누락 종목은 10주를 다시 채웁니다.
+          const needsHistoryBackfill = backfillHistory || autoBackfillIds.has(item.id);
+          const priceStart = needsHistoryBackfill ? new Date(`${retentionStart}T00:00:00Z`) : end;
           const candles = await runKisRequest(() => fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end));
           const intradayQuote = stage === "intraday" && candles.some((candle) => candle.marketDate === today)
             ? await runKisRequest(() => fetchKisEtfCurrentPrice(credentials, token, item.etf_ticker))
@@ -218,6 +226,7 @@ Deno.serve(async (request) => {
     }
     return json({
       ok: true, stage, rebuild_only: rebuildOnly, backfill_history: backfillHistory,
+      auto_backfill_count: autoBackfillIds.size,
       registry_count: registry.length, price_rows: collected.length, holding_rows: holdings.length,
       ranking_rows: persistedRows.length, retention_start: retentionStart, failures, holding_failures: holdingFailures,
     });

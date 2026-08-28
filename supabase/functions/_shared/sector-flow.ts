@@ -19,6 +19,8 @@ export type SectorRanking = {
   priceStage: "open" | "intraday" | "close";
 };
 
+export type SectorPriceDate = { etfId: string; marketDate: string };
+
 const DAY_MS = 86_400_000;
 const dateValue = (value: string) => Date.parse(`${value}T00:00:00Z`);
 const isoDate = (value: number) => new Date(value).toISOString().slice(0, 10);
@@ -27,6 +29,28 @@ export function mondayOf(value: string) {
   const date = new Date(`${value}T00:00:00Z`);
   const offset = (date.getUTCDay() + 6) % 7;
   return isoDate(date.getTime() - offset * DAY_MS);
+}
+
+/**
+ * 같은 국내 거래소 ETF들이 공유하는 거래일 달력을 기준으로 이력이 덜 채워진
+ * 종목을 찾습니다. 신규 상장 ETF도 한동안 재조회될 수 있지만, 호출 횟수는
+ * 그대로이고 KIS가 돌려주는 실제 상장 이후 자료만 멱등 upsert됩니다.
+ */
+export function incompletePriceHistoryIds(etfIds: string[], prices: SectorPriceDate[]) {
+  const referenceDates = new Set(prices.map((row) => row.marketDate));
+  if (!referenceDates.size) return new Set(etfIds);
+  const datesByEtf = new Map<string, Set<string>>();
+  prices.forEach((row) => {
+    const dates = datesByEtf.get(row.etfId) || new Set<string>();
+    dates.add(row.marketDate);
+    datesByEtf.set(row.etfId, dates);
+  });
+  return new Set(etfIds.filter((etfId) => {
+    const dates = datesByEtf.get(etfId);
+    if (!dates) return true;
+    for (const marketDate of referenceDates) if (!dates.has(marketDate)) return true;
+    return false;
+  }));
 }
 
 function effectivePrice(row: SectorPrice, currentDate: string) {
