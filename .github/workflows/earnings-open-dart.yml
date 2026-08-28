@@ -64,7 +64,8 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.2"
+          OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.3"
+          OPEN_DART_FILING_WORKERS: "4"
         run: python -m earnings.discover_backfill_filings
 
       - name: Collect queued financial periods in multi-company batches
