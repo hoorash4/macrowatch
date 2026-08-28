@@ -8,6 +8,7 @@ OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.
 UNIVERSE_MIGRATION = ROOT / "supabase/migrations/20260828_define_market_cap_earnings_universes.sql"
 UNIVERSE_FUNCTION = ROOT / "supabase/functions/earnings-universe/index.ts"
 KIS_CLIENT = ROOT / "supabase/functions/_shared/kis-client.ts"
+UNIVERSE_SOURCES = ROOT / "supabase/functions/_shared/earnings-universe-sources.ts"
 CONTRACT = ROOT / "docs/earnings-momentum-data-contract.md"
 
 
@@ -19,6 +20,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.universe_migration = UNIVERSE_MIGRATION.read_text(encoding="utf-8")
         cls.universe_function = UNIVERSE_FUNCTION.read_text(encoding="utf-8")
         cls.kis_client = KIS_CLIENT.read_text(encoding="utf-8")
+        cls.universe_sources = UNIVERSE_SOURCES.read_text(encoding="utf-8")
         cls.contract = CONTRACT.read_text(encoding="utf-8")
 
     def test_schema_separates_raw_filing_fact_and_canonical_layers(self) -> None:
@@ -94,10 +96,11 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("authorize_earnings_ingestion", self.universe_migration)
         self.assertIn("jsonb_array_length(p_constituents) <> v_target_count", self.universe_migration)
 
-    def test_kis_market_cap_sync_fails_closed_on_short_provider_results(self) -> None:
-        self.assertIn("fetchKisDomesticMarketCapRanking", self.kis_client)
-        self.assertIn('FID_DIV_CLS_CODE: "1"', self.kis_client)
-        self.assertIn("result.length !== limit", self.kis_client)
+    def test_market_cap_sync_filters_korean_rows_through_open_dart(self) -> None:
+        self.assertIn("fetchOpenDartListedCompanies", self.universe_sources)
+        self.assertIn("parseNaverMarketCapHtml", self.universe_sources)
+        self.assertIn("if (!listed) continue", self.universe_sources)
+        self.assertIn("result.length !== limit", self.universe_sources)
         self.assertIn("fetchKisOverseasMarketCapRanking", self.kis_client)
         self.assertIn('admin.rpc("authorize_earnings_ingestion")', self.universe_function)
 

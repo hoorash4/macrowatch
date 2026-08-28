@@ -13,8 +13,8 @@ set index_name = case index_id
     constituent_source = case index_id
       when 'SP100' then 'S&P 500 constituents + KIS market cap'
       when 'NASDAQ100' then 'KIS overseas market-cap ranking'
-      when 'KOSPI100' then 'KIS domestic market-cap ranking'
-      when 'KOSDAQ50' then 'KIS domestic market-cap ranking'
+      when 'KOSPI100' then 'Naver Finance market cap (KRX data) + OpenDART'
+      when 'KOSDAQ50' then 'Naver Finance market cap (KRX data) + OpenDART'
       else constituent_source
     end,
     updated_at = now()
@@ -73,6 +73,7 @@ declare
   v_name text;
   v_rank integer;
   v_market_cap numeric;
+  v_dart_corp_code text;
   v_added integer := 0;
   v_removed integer := 0;
   v_removed_same_day integer := 0;
@@ -112,8 +113,12 @@ begin
     v_name := trim(v_item->>'name');
     v_rank := (v_item->>'rank')::integer;
     v_market_cap := (v_item->>'market_cap')::numeric;
+    v_dart_corp_code := trim(v_item->>'dart_corp_code');
     if v_ticker = '' or v_name = '' or v_rank < 1 or v_market_cap < 0 then
       raise exception 'Invalid constituent row in universe %', p_index_id;
+    end if;
+    if v_country = 'KR' and (v_dart_corp_code is null or v_dart_corp_code !~ '^\d{8}$') then
+      raise exception 'Missing OpenDART corp_code for ticker %', v_ticker;
     end if;
 
     select company_id into v_company_id
@@ -144,6 +149,21 @@ begin
           is_active = true,
           updated_at = now()
       where id = v_company_id;
+    end if;
+
+    if v_country = 'KR' then
+      insert into public.earnings_company_identifiers
+        (company_id, identifier_type, identifier_value, valid_from)
+      values (v_company_id, 'dart_corp_code', v_dart_corp_code, p_observed_on)
+      on conflict do nothing;
+      if not exists (
+        select 1 from public.earnings_company_identifiers
+        where company_id = v_company_id
+          and identifier_type = 'dart_corp_code'
+          and identifier_value = v_dart_corp_code
+      ) then
+        raise exception 'OpenDART corp_code % belongs to another company', v_dart_corp_code;
+      end if;
     end if;
 
     insert into pg_temp.incoming_earnings_universe (company_id, rank)

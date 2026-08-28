@@ -1,11 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  fetchKisDomesticMarketCapRanking,
-  getKisAccessToken,
-  loadKisCredentials,
-  type KisMarketCapRow,
-} from "../_shared/kis-client.ts";
+  fetchKoreanMarketCapUniverse,
+  fetchOpenDartListedCompanies,
+  type KoreanMarketCapRow,
+} from "../_shared/earnings-universe-sources.ts";
 
 type DomesticUniverse = {
   indexId: "KOSPI100" | "KOSDAQ50";
@@ -29,12 +28,13 @@ function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
-function snapshotRows(rows: KisMarketCapRow[]) {
+function snapshotRows(rows: KoreanMarketCapRow[]) {
   return rows.map((row) => ({
     ticker: row.ticker,
     name: row.name,
     rank: row.rank,
     market_cap: row.marketCap,
+    dart_corp_code: row.corpCode,
   }));
 }
 
@@ -59,32 +59,30 @@ Deno.serve(async (request) => {
 
     // Use the caller's server credential instead of comparing it with the Edge
     // runtime's possibly older key string. A service-role-only RPC proves the
-    // caller's capability before any KIS request or database mutation occurs.
+    // caller's capability before any provider request or database mutation occurs.
     const admin = createClient(supabaseUrl, apiKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
     const { data: authorized, error: authorizationError } = await admin.rpc("authorize_earnings_ingestion");
     if (authorizationError || authorized !== true) throw new Error("서비스 역할 요청만 허용됩니다.");
-    const credentials = loadKisCredentials();
-    const accessToken = await getKisAccessToken(credentials, admin);
+    const listedCompanies = await fetchOpenDartListedCompanies();
     const results: unknown[] = [];
 
     // Each provider result is validated to its exact target count before the
-    // atomic database function is called. A short or duplicated KIS page can
+    // atomic database function is called. A short or malformed provider page can
     // therefore never evict valid members from yesterday's universe.
     for (const target of targets) {
-      const ranking = await fetchKisDomesticMarketCapRanking(
-        credentials,
-        accessToken,
+      const ranking = await fetchKoreanMarketCapUniverse(
         target.market,
         target.limit,
+        listedCompanies,
       );
       const { data, error } = await admin.rpc("sync_earnings_market_cap_universe", {
         p_index_id: target.indexId,
         p_observed_on: observedOn,
         p_constituents: snapshotRows(ranking),
-        p_source: "KIS domestic market-cap ranking",
+        p_source: "Naver Finance market cap (KRX data) + OpenDART listed companies",
         p_source_reference: `${target.market}:${observedOn}`,
       });
       if (error) throw new Error(`${target.indexId} 저장 실패: ${error.message}`);
