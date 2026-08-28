@@ -22,9 +22,11 @@ def canonical_payload_hash(payload: dict) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def filing_window(year: int, today: date) -> tuple[date, date] | None:
-    begin = date(year, 1, 1)
-    end = min(date(year, 12, 31), today)
+def filing_window(years: list[int], today: date) -> tuple[date, date] | None:
+    if not years:
+        return None
+    begin = date(min(years), 1, 1)
+    end = min(date(max(years), 12, 31), today)
     return (begin, end) if begin <= end else None
 
 
@@ -43,36 +45,39 @@ def main() -> None:
         years = sorted({int(year) for year in gap.get("years") or []})
         if len(corp_code) != 8 or not corp_code.isdigit():
             continue
-        for year in years:
-            window = filing_window(year, today)
-            if window is None:
-                continue
-            begin, end = window
-            for page_number, response in enumerate(
-                client.iter_periodic_filings(begin, end, corp_code=corp_code),
-                start=1,
-            ):
-                pages += 1
-                store.save_source_payload(
-                    operation=OPERATION,
-                    request_key=(
-                        f"{corp_code}:{begin.isoformat()}:{end.isoformat()}:page:{page_number}"
-                    ),
-                    request_params=response.request_params,
-                    payload_sha256=canonical_payload_hash(response.payload),
-                    payload=response.payload,
-                )
-                parsed = [
-                    filing for filing in parse_periodic_filings(response.rows)
-                    if filing.corp_code == corp_code and filing.business_year == year
-                ]
-                result = store.enqueue_open_dart_filings([
-                    filing.as_payload() for filing in parsed
-                ])
-                filings += len(parsed)
-                queued += int(result.get("queued") or 0)
-                if interval:
-                    time.sleep(interval)
+        window = filing_window(years, today)
+        if window is None:
+            continue
+        begin, end = window
+        wanted_years = set(years)
+        # With corp_code supplied, OpenDART can return the company's entire
+        # multi-year disclosure range page by page. This avoids one request per
+        # company-year while preserving the exact official filing rows.
+        for page_number, response in enumerate(
+            client.iter_periodic_filings(begin, end, corp_code=corp_code),
+            start=1,
+        ):
+            pages += 1
+            store.save_source_payload(
+                operation=OPERATION,
+                request_key=(
+                    f"{corp_code}:{begin.isoformat()}:{end.isoformat()}:page:{page_number}"
+                ),
+                request_params=response.request_params,
+                payload_sha256=canonical_payload_hash(response.payload),
+                payload=response.payload,
+            )
+            parsed = [
+                filing for filing in parse_periodic_filings(response.rows)
+                if filing.corp_code == corp_code and filing.business_year in wanted_years
+            ]
+            result = store.enqueue_open_dart_filings([
+                filing.as_payload() for filing in parsed
+            ])
+            filings += len(parsed)
+            queued += int(result.get("queued") or 0)
+            if interval:
+                time.sleep(interval)
 
     print(json.dumps({
         "ok": True,
@@ -85,4 +90,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

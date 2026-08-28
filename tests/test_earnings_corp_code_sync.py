@@ -38,10 +38,10 @@ class RpcHttpErrorSession:
 class EarningsCorpCodeSyncTests(unittest.TestCase):
     def test_historical_filing_window_never_extends_past_today(self) -> None:
         self.assertEqual(
-            filing_window(2026, date(2026, 8, 28)),
-            (date(2026, 1, 1), date(2026, 8, 28)),
+            filing_window([2022, 2023, 2024, 2025, 2026], date(2026, 8, 28)),
+            (date(2022, 1, 1), date(2026, 8, 28)),
         )
-        self.assertIsNone(filing_window(2027, date(2026, 8, 28)))
+        self.assertIsNone(filing_window([], date(2026, 8, 28)))
 
     def test_only_exact_listed_ticker_matches_are_saved(self) -> None:
         companies = [
