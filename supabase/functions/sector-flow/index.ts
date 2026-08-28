@@ -1,12 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisDailyPrices, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { createKisRequestRunner, fetchKisDailyPrices, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 import { calculateSectorRankings, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
 
-// KIS는 가격과 구성종목 조회를 합산해 초당 호출 수를 제한한다. 모든 외부 호출의
-// 시작 간격을 한곳에서 제어하고, 일시적인 호출 제한만 제한적으로 재시도한다.
-const KIS_REQUEST_INTERVAL_MS = 350;
-const KIS_RATE_LIMIT_RETRY_DELAYS_MS = [900, 1_800, 3_600];
 const DATABASE_PAGE_SIZE = 1000;
 const PRICE_RETENTION_WEEKS = 10;
 const RANKING_RETENTION_WEEKS = 6;
@@ -19,32 +15,6 @@ function json(body: unknown, status = 200) {
 
 function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isKisRateLimitError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("초당 거래건수를 초과");
-}
-
-function createKisRequestRunner() {
-  let lastStartedAt = 0;
-  return async <T>(request: () => Promise<T>) => {
-    for (let attempt = 0;; attempt += 1) {
-      const intervalRemaining = KIS_REQUEST_INTERVAL_MS - (Date.now() - lastStartedAt);
-      if (intervalRemaining > 0) await wait(intervalRemaining);
-      lastStartedAt = Date.now();
-      try {
-        return await request();
-      } catch (error) {
-        if (!isKisRateLimitError(error) || attempt >= KIS_RATE_LIMIT_RETRY_DELAYS_MS.length) throw error;
-        await wait(KIS_RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
-      }
-    }
-  };
 }
 
 // Supabase Data API의 기본 행 제한을 넘는 가격 이력도 빠짐없이 읽습니다.

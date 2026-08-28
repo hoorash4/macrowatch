@@ -30,6 +30,10 @@ type KisIssuedToken = { accessToken: string; expiresAt: string };
 
 const KIS_TOKEN_CACHE_KEY = "kis_access_token_prod";
 const TOKEN_EXPIRY_MARGIN_MS = 10 * 60_000;
+// 가격·구성종목·수급 등 모든 KIS 호출이 같은 앱 키 한도를 공유한다. 호출자는
+// 이 실행기를 통해 요청 간격과 일시적인 초당 제한 재시도를 동일하게 적용한다.
+export const KIS_REQUEST_INTERVAL_MS = 500;
+export const KIS_RATE_LIMIT_RETRY_DELAYS_MS = [1_200, 2_500, 5_000];
 
 function requiredSecret(name: string) {
   const value = Deno.env.get(name)?.trim();
@@ -108,6 +112,36 @@ function numberValue(value: unknown) {
 function positiveInteger(value: unknown) {
   const parsed = numberValue(value);
   return parsed !== null && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isKisRateLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("초당 거래건수를 초과");
+}
+
+/**
+ * 한 Edge Function 실행 안의 KIS 요청을 직렬화한다. 서로 다른 실행이 순간적으로
+ * 겹쳐도 초당 제한 응답만 단계적으로 재시도하므로 수동 등록이 실패 상태에 고정되지 않는다.
+ */
+export function createKisRequestRunner() {
+  let lastStartedAt = 0;
+  return async <T>(request: () => Promise<T>) => {
+    for (let attempt = 0;; attempt += 1) {
+      const intervalRemaining = KIS_REQUEST_INTERVAL_MS - (Date.now() - lastStartedAt);
+      if (intervalRemaining > 0) await wait(intervalRemaining);
+      lastStartedAt = Date.now();
+      try {
+        return await request();
+      } catch (error) {
+        if (!isKisRateLimitError(error) || attempt >= KIS_RATE_LIMIT_RETRY_DELAYS_MS.length) throw error;
+        await wait(KIS_RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
+      }
+    }
+  };
 }
 
 /** Fetch one U.S. exchange's market-cap order for later universe composition. */

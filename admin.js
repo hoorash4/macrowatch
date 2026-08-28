@@ -3,6 +3,7 @@
   const { escapeHtml } = window.MacroWatchFrontend;
   const functionClient = window.MacroWatchFrontend.createFunctionClient(db);
   let scheduleTimes = ['08:00', '18:00'];
+  let adminCardOrder = null;
 
   function defaultScheduleTime(index) {
     return ['08:00', '12:00', '16:00', '20:00'][index] || '08:00';
@@ -75,6 +76,20 @@
     return functionClient.invoke('admin-control', { ...payload, action }, {
       errorMessage: (status) => `관리자 요청에 실패했습니다. (${status})`,
     });
+  }
+
+  function initializeAdminCardOrder() {
+    adminCardOrder = window.MacroWatchAdminCardOrder.create({
+      container: document.getElementById('admin-shell'),
+      anchor: document.getElementById('admin-footer'),
+      saveOrder: (order) => invokeAdmin('save_admin_card_order', { order }),
+      reportError: (error) => showNotice('카드 순서 저장 실패', error.message || '순서를 저장하지 못했습니다.', true),
+    });
+  }
+
+  async function loadAdminCardOrder() {
+    const result = await invokeAdmin('get_admin_card_order');
+    adminCardOrder?.apply(result.order || []);
   }
 
   window.MacroWatchAdminApi = Object.freeze({ invoke: invokeAdmin, notice: showNotice, setListAttentionCount });
@@ -477,6 +492,7 @@
       }
       accessScreen.classList.add('hidden');
       document.getElementById('admin-shell').classList.remove('hidden');
+      await loadAdminCardOrder();
       await loadAll();
       window.dispatchEvent(new CustomEvent('macrowatch:admin-ready'));
     } catch (error) {
@@ -487,6 +503,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    initializeAdminCardOrder();
     initializeCollapsibleLists();
     protectCredentialInputs();
     document.getElementById('refresh-button').addEventListener('click', loadAll);

@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy-admin.ts";
-import { fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { createKisRequestRunner, fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const REPOSITORY = "hoorash4/macrowatch";
@@ -9,6 +9,11 @@ const BRANCH = "main";
 const CHECK_WORKFLOW = "check-targets.yml";
 const BACKUP_WORKFLOW = "backup-database.yml";
 const NEWS_WORKFLOW = "news-pipeline.yml";
+const ADMIN_CARD_IDS = new Set([
+  "member-management", "index-registry", "sector-registry", "news-analysis",
+  "decisive-news", "uncertain-news", "policy-review", "target-collection",
+  "collection-errors", "integrations-backup",
+]);
 
 function corsHeaders(origin: string | null) {
   return {
@@ -133,6 +138,15 @@ function validateNewSectorEtf(body: Record<string, unknown>) {
   const ticker = requiredText(body.etf_ticker, "ETF 코드", 6);
   if (!/^\d{6}$/.test(ticker)) throw new Error("ETF 코드는 6자리 숫자여야 합니다.");
   return { sector_name: requiredText(body.sector_name, "섹터명", 80), etf_ticker: ticker };
+}
+
+function validateAdminCardOrder(value: unknown) {
+  if (!Array.isArray(value)) throw new Error("관리 카드 순서가 올바르지 않습니다.");
+  const order = value.map(String);
+  if (order.length !== new Set(order).size || order.some((id) => !ADMIN_CARD_IDS.has(id))) {
+    throw new Error("관리 카드 순서에 알 수 없는 항목이 있습니다.");
+  }
+  return order;
 }
 
 function issuerFromEtfName(name: string) {
@@ -413,6 +427,33 @@ export default {
         return json({ schedule: { times, timezone: "Asia/Seoul" } }, 200, origin);
       }
 
+      if (action === "get_admin_card_order") {
+        const key = `admin_card_order_${user.id}`;
+        const { data, error } = await admin.from("app_settings")
+          .select("value").eq("key", key).maybeSingle();
+        if (error) throw error;
+        const stored = data?.value && typeof data.value === "object"
+          ? (data.value as Record<string, unknown>).order
+          : [];
+        return json({
+          order: Array.isArray(stored)
+            ? stored.filter((id) => ADMIN_CARD_IDS.has(String(id))).map(String)
+            : [],
+        }, 200, origin);
+      }
+
+      if (action === "save_admin_card_order") {
+        const order = validateAdminCardOrder(body?.order);
+        const { error } = await admin.from("app_settings").upsert({
+          key: `admin_card_order_${user.id}`,
+          value: { order },
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: "key" });
+        if (error) throw error;
+        return json({ order }, 200, origin);
+      }
+
       if (action === "list_uncertain_news") {
         const { data, error } = await admin.from("news_article_sentiments")
           .select("id,published_at,source_name,derived_keywords,uncertain_summary")
@@ -495,9 +536,10 @@ export default {
         }
         const input = validateNewSectorEtf(body || {});
         const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
+        const runKisRequest = createKisRequestRunner();
         const end = new Date(), start = new Date(end.getTime() - 10 * 7 * 86_400_000);
-        const bundle = await fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end);
-        const topHoldings = await fetchKisEtfTopHoldings(credentials, token, input.etf_ticker, 3);
+        const bundle = await runKisRequest(() => fetchKisDailyPriceBundle(credentials, token, input.etf_ticker, start, end));
+        const topHoldings = await runKisRequest(() => fetchKisEtfTopHoldings(credentials, token, input.etf_ticker, 3));
         if (!bundle.instrumentName) throw new Error("KIS에서 ETF 정식명을 확인하지 못했습니다.");
         if (!bundle.prices.length) throw new Error("KIS에서 최근 10주 가격을 확인하지 못했습니다.");
         const values = {
