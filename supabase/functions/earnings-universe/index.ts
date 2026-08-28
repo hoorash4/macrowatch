@@ -10,6 +10,7 @@ import {
   type UsListedCompany,
 } from "../_shared/earnings-universe-sources.ts";
 import {
+  createKisRequestRunner,
   fetchKisOverseasMarketCapRanking,
   getKisAccessToken,
   loadKisCredentials,
@@ -152,19 +153,20 @@ Deno.serve(async (request) => {
     if (wantsSp || wantsNasdaq) {
       const credentials = loadKisCredentials();
       const accessToken = await getKisAccessToken(credentials, admin);
+      const runKisRequest = createKisRequestRunner();
       const secCompanies = await fetchSecListedCompanies();
       // These calls share the same KIS app-key quota. Keep exchanges serial so
       // the universe refresh cannot collide with itself at the per-second limit.
       const nasRankings = await fetchKisOverseasMarketCapRanking(
-        credentials, accessToken, "NAS", 300,
+        credentials, accessToken, "NAS", 300, runKisRequest,
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
       const nysRankings = await fetchKisOverseasMarketCapRanking(
-        credentials, accessToken, "NYS", 300,
+        credentials, accessToken, "NYS", 300, runKisRequest,
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
       const amsRankings = await fetchKisOverseasMarketCapRanking(
-        credentials, accessToken, "AMS", 100,
+        credentials, accessToken, "AMS", 100, runKisRequest,
       );
 
       if (wantsSp) {

@@ -25,6 +25,7 @@ export type KisMarketCapRow = {
   marketCap: number;
   exchange: string;
 };
+export type KisRequestRunner = <T>(request: () => Promise<T>) => Promise<T>;
 
 type KisCredentials = { appKey: string; appSecret: string };
 type KisTokenStore = { from: (table: string) => any };
@@ -160,6 +161,7 @@ export async function fetchKisOverseasMarketCapRanking(
   accessToken: string,
   exchange: "NAS" | "NYS" | "AMS",
   limit: number,
+  runRequest: KisRequestRunner = createKisRequestRunner(),
 ): Promise<KisMarketCapRow[]> {
   if (!Number.isInteger(limit) || limit < 1) throw new Error("시가총액 순위 개수는 양의 정수여야 합니다.");
   const collected = new Map<string, KisMarketCapRow>();
@@ -168,21 +170,24 @@ export async function fetchKisOverseasMarketCapRanking(
 
   for (let page = 0; page < 10 && collected.size < limit; page += 1) {
     const params = new URLSearchParams({ EXCD: exchange, VOL_RANG: "0", KEYB: keyBuffer, AUTH: "" });
-    const response = await fetch(`${KIS_REAL_BASE_URL}${OVERSEAS_MARKET_CAP_PATH}?${params}`, {
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        appkey: credentials.appKey,
-        appsecret: credentials.appSecret,
-        tr_id: "HHDFS76350100",
-        tr_cont: continuation,
-        custtype: "P",
-      },
-      signal: AbortSignal.timeout(30_000),
+    const { response, payload } = await runRequest(async () => {
+      const response = await fetch(`${KIS_REAL_BASE_URL}${OVERSEAS_MARKET_CAP_PATH}?${params}`, {
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          appkey: credentials.appKey,
+          appsecret: credentials.appSecret,
+          tr_id: "HHDFS76350100",
+          tr_cont: continuation,
+          custtype: "P",
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      const payload = await readJson(response);
+      if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+        throw new Error(`KIS 해외 시가총액 순위 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+      }
+      return { response, payload };
     });
-    const payload = await readJson(response);
-    if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
-      throw new Error(`KIS 해외 시가총액 순위 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
-    }
     const rows = Array.isArray(payload.output2) ? payload.output2 : [];
     const before = collected.size;
     rows.forEach((raw) => {
