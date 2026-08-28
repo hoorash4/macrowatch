@@ -281,6 +281,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("runKisRequest(() => fetchKisEtfTopHoldings", control)
         self.assertIn("incompletePriceHistoryIds", control)
         self.assertIn("history_backfill_pending", control)
+        self.assertIn("showNotice('섹터 ETF 등록 완료'", admin_js)
         self.assertIn('latest_price: price.close, price_stage: "close"', control)
         self.assertIn("const normalizedTicker = normalizeEtfTicker(ticker)", kis)
         self.assertIn("FID_INPUT_ISCD: normalizedTicker", kis)
