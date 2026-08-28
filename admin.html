@@ -171,7 +171,7 @@
 
       <form id="sector-etf-form" class="grid grid-cols-1 gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-4 md:grid-cols-[minmax(0,1fr)_10rem_auto]">
         <input id="sector-name-input" required maxlength="80" placeholder="섹터명" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500">
-        <input id="sector-etf-ticker-input" required maxlength="6" inputmode="numeric" pattern="[0-9]{6}" placeholder="ETF 코드 6자리" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500">
+        <input id="sector-etf-ticker-input" required maxlength="6" inputmode="text" pattern="[A-Za-z0-9]{6}" autocapitalize="characters" placeholder="ETF 코드 6자리" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm uppercase text-white outline-none focus:border-cyan-500">
         <button type="submit" class="rounded-lg bg-cyan-700 px-3 py-2 text-sm font-bold text-white transition hover:bg-cyan-600"><i class="fa-solid fa-plus mr-1"></i>추가</button>
       </form>
       <p class="mt-2 text-[11px] text-slate-500">ETF명·운용사, 최근 10주 가격과 주요 구성 종목은 코드 확인 후 자동 등록됩니다. 기존 대표 ETF를 바꿀 때는 행에서 수정 후 저장하세요.</p>

@@ -220,6 +220,8 @@ class SourceContractTests(unittest.TestCase):
 
         self.assertIn('id="sector-name-input"', admin_html)
         self.assertIn('id="sector-etf-ticker-input"', admin_html)
+        self.assertIn('pattern="[A-Za-z0-9]{6}"', admin_html)
+        self.assertNotIn('pattern="[0-9]{6}"', admin_html)
         self.assertNotIn('id="sector-etf-name-input"', admin_html)
         self.assertNotIn('id="sector-etf-issuer-input"', admin_html)
         self.assertIn("sector_name: document.getElementById('sector-name-input').value", admin_js)
@@ -230,6 +232,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("issuerFromEtfName(bundle.instrumentName)", control)
         self.assertIn("hts_kor_isnm", kis)
         self.assertIn("fetchKisEtfTopHoldings", control)
+        self.assertIn("etf_ticker: validateEtfTicker(body.etf_ticker)", control)
+        self.assertIn("/^[A-Z0-9]{6}$/.test(ticker)", control)
         self.assertIn("etf_cnfg_issu_rlim", kis)
         self.assertNotIn("hts_avls", kis)
         self.assertNotIn("!/^\\d{6}$/.test(holdingTicker)", kis)
@@ -245,6 +249,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("createKisRequestRunner", control)
         self.assertIn("runKisRequest(() => fetchKisDailyPriceBundle", control)
         self.assertIn("runKisRequest(() => fetchKisEtfTopHoldings", control)
+        self.assertIn("const normalizedTicker = normalizeEtfTicker(ticker)", kis)
+        self.assertIn("FID_INPUT_ISCD: normalizedTicker", kis)
+        self.assertNotIn("if (!/^\\d{6}$/.test(ticker))", kis)
 
     def test_admin_cards_are_reorderable_and_saved_per_admin(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")

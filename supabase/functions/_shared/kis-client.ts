@@ -35,6 +35,14 @@ const TOKEN_EXPIRY_MARGIN_MS = 10 * 60_000;
 export const KIS_REQUEST_INTERVAL_MS = 500;
 export const KIS_RATE_LIMIT_RETRY_DELAYS_MS = [1_200, 2_500, 5_000];
 
+function normalizeEtfTicker(value: string) {
+  const ticker = value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(ticker)) {
+    throw new Error("ETF 종목코드는 영문 대문자와 숫자로 구성된 6자리여야 합니다.");
+  }
+  return ticker;
+}
+
 function requiredSecret(name: string) {
   const value = Deno.env.get(name)?.trim();
   if (!value) throw new Error(`${name}가 설정되지 않았습니다.`);
@@ -209,10 +217,10 @@ export async function fetchKisDailyPriceBundle(
   start: Date,
   end: Date,
 ): Promise<KisDailyPriceBundle> {
-  if (!/^\d{6}$/.test(ticker)) throw new Error("ETF 종목코드는 6자리 숫자여야 합니다.");
+  const normalizedTicker = normalizeEtfTicker(ticker);
   const params = new URLSearchParams({
     FID_COND_MRKT_DIV_CODE: "J",
-    FID_INPUT_ISCD: ticker,
+    FID_INPUT_ISCD: normalizedTicker,
     FID_INPUT_DATE_1: compactDate(start),
     FID_INPUT_DATE_2: compactDate(end),
     FID_PERIOD_DIV_CODE: "D",
@@ -309,10 +317,10 @@ export async function fetchKisEtfTopHoldings(
   ticker: string,
   limit = 3,
 ): Promise<KisEtfHolding[]> {
-  if (!/^\d{6}$/.test(ticker)) throw new Error("ETF 종목코드는 6자리 숫자여야 합니다.");
+  const normalizedTicker = normalizeEtfTicker(ticker);
   const params = new URLSearchParams({
     FID_COND_MRKT_DIV_CODE: "J",
-    FID_INPUT_ISCD: ticker,
+    FID_INPUT_ISCD: normalizedTicker,
     FID_COND_SCR_DIV_CODE: "11216",
   });
   const response = await fetch(`${KIS_REAL_BASE_URL}/uapi/etfetn/v1/quotations/inquire-component-stock-price?${params}`, {

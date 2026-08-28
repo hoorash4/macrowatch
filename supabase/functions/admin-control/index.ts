@@ -124,20 +124,27 @@ function internalEmail(username: string) {
   return `id-${username}@users.macrowatch.invalid`;
 }
 
+function validateEtfTicker(value: unknown) {
+  const ticker = requiredText(value, "ETF 코드", 6).toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(ticker)) throw new Error("ETF 코드는 영문 대문자와 숫자로 구성된 6자리여야 합니다.");
+  return ticker;
+}
+
 function validateSectorEtf(body: Record<string, unknown>) {
   return {
     sector_name: requiredText(body.sector_name, "섹터명", 80),
     etf_name: requiredText(body.etf_name, "ETF명", 120),
-    etf_ticker: requiredText(body.etf_ticker, "ETF 코드", 24).toUpperCase(),
+    etf_ticker: validateEtfTicker(body.etf_ticker),
     issuer: requiredText(body.issuer, "운용사", 80),
     is_active: true,
   };
 }
 
 function validateNewSectorEtf(body: Record<string, unknown>) {
-  const ticker = requiredText(body.etf_ticker, "ETF 코드", 6);
-  if (!/^\d{6}$/.test(ticker)) throw new Error("ETF 코드는 6자리 숫자여야 합니다.");
-  return { sector_name: requiredText(body.sector_name, "섹터명", 80), etf_ticker: ticker };
+  return {
+    sector_name: requiredText(body.sector_name, "섹터명", 80),
+    etf_ticker: validateEtfTicker(body.etf_ticker),
+  };
 }
 
 function validateAdminCardOrder(value: unknown) {
