@@ -8,14 +8,28 @@ from .open_dart_parser import (
     select_preferred_accounts,
     standalone_quarter_value,
 )
+from .market_breadth import (
+    MarketEarningsBreadthResult,
+    MarketQuarter,
+    OperatingIncomeObservation,
+    calculate_market_earnings_breadth,
+    calculate_market_earnings_history,
+    observations_from_rows,
+)
 
 __all__ = [
     "DartAccountFact",
     "DartCorporation",
+    "MarketEarningsBreadthResult",
+    "MarketQuarter",
     "OpenDartApiError",
     "OpenDartBinaryResponse",
     "OpenDartClient",
     "OpenDartResponse",
+    "OperatingIncomeObservation",
+    "calculate_market_earnings_breadth",
+    "calculate_market_earnings_history",
+    "observations_from_rows",
     "parse_account_rows",
     "parse_corp_code_archive",
     "listed_corporations",
