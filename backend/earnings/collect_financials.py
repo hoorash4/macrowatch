@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from hashlib import sha256
@@ -152,6 +152,15 @@ class OpenDartFinancialWorker:
         self.request_interval_seconds = max(0.0, request_interval_seconds)
         self.sleeper = sleeper
         self._has_requested = False
+        self.error_counts: Counter[str] = Counter()
+
+    def _record_error(self, error: Exception) -> None:
+        """Keep actionable diagnostics while force-redacting both credentials."""
+        message = " ".join(str(error).split())[:300]
+        for secret in (self.client.api_key, self.store.service_role_key):
+            if secret:
+                message = message.replace(secret, "[redacted]")
+        self.error_counts[f"{type(error).__name__}: {message}"] += 1
 
     def _request(self, callback: Callable[[], OpenDartResponse]) -> OpenDartResponse:
         if self._has_requested and self.request_interval_seconds:
@@ -240,6 +249,7 @@ class OpenDartFinancialWorker:
                 response,
             )
         except Exception as error:
+            self._record_error(error)
             for job in jobs:
                 self.store.fail_open_dart_job(job_id=int(job["id"]), error=str(error))
                 result["failed"] += 1
@@ -269,6 +279,7 @@ class OpenDartFinancialWorker:
             else:
                 previous_by_company, previous_payload_ids = {}, {}
         except Exception as error:
+            self._record_error(error)
             for job in jobs:
                 self.store.fail_open_dart_job(job_id=int(job["id"]), error=str(error))
                 result["failed"] += 1
@@ -345,6 +356,7 @@ class OpenDartFinancialWorker:
                 )
                 result["completed" if outcome == "complete" else outcome] += 1
             except Exception as error:
+                self._record_error(error)
                 self.store.fail_open_dart_job(job_id=int(job["id"]), error=str(error))
                 result["failed"] += 1
         return result
@@ -365,8 +377,23 @@ def main() -> None:
         totals["batches"] += 1
         for key, value in batch_result.items():
             totals[key] += value
-    print(json.dumps({"ok": totals["failed"] == 0, **totals}, ensure_ascii=False))
+        print(json.dumps({
+            "batch": totals["batches"],
+            "jobs": len(jobs),
+            **batch_result,
+        }, ensure_ascii=False), flush=True)
+    summary = {
+        "ok": totals["failed"] == 0,
+        **totals,
+        "errors": dict(worker.error_counts.most_common(10)),
+    }
+    print(json.dumps(summary, ensure_ascii=False), flush=True)
     if totals["failed"]:
+        # GitHub exposes this deliberately secret-redacted summary through the
+        # check annotation API, so failures can be diagnosed without opening
+        # or downloading the full workflow log.
+        annotation = json.dumps(summary, ensure_ascii=False).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::error title=OpenDART financial worker::{annotation}", flush=True)
         raise SystemExit(1)
 
 

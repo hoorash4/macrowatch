@@ -61,6 +61,7 @@ class FakeClient:
 
 class FakeStore:
     def __init__(self):
+        self.service_role_key = "store-secret"
         self.completions = []
         self.failures = []
         self.payload_count = 0
@@ -79,6 +80,17 @@ class FakeStore:
 
 
 class EarningsFinancialWorkerTests(unittest.TestCase):
+    def test_diagnostic_errors_force_redact_both_credentials(self):
+        client = FakeClient({"status": "000", "list": []})
+        client.api_key = "dart-secret"
+        store = FakeStore()
+        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
+        worker._record_error(RuntimeError("dart-secret and store-secret must stay hidden"))
+        diagnostic = next(iter(worker.error_counts))
+        self.assertNotIn("dart-secret", diagnostic)
+        self.assertNotIn("store-secret", diagnostic)
+        self.assertIn("[redacted]", diagnostic)
+
     def test_canonical_q4_subtracts_previous_nine_month_cumulative(self):
         current = parse_account_rows({"list": rows_for_period(
             report_code="11011", current="500", cumulative="500"
