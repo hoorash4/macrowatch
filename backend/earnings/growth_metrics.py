@@ -10,9 +10,9 @@ from typing import Any, Iterable, Mapping
 
 METRICS = ("revenue", "operating_income", "net_income")
 HUNDRED = Decimal("100")
-CALCULATION_VERSION = 1
+CALCULATION_VERSION = 2
 BASELINE_YEARS = 5
-BASELINE_ELIGIBLE_STATES = frozenset({"normal", "negative_base"})
+BASELINE_ELIGIBLE_STATES = frozenset({"normal"})
 
 
 @dataclass(frozen=True)
@@ -169,7 +169,13 @@ def calculate_growth_metrics(financials: Iterable[QuarterlyFinancial]) -> list[G
 
     for current in derived:
         previous = by_metric_period.get((current.company_id, current.metric, current.ordinal - 1))
-        if current.yoy_pct is not None and previous is not None and previous.yoy_pct is not None:
+        if (
+            current.yoy_pct is not None
+            and current.yoy_state == "normal"
+            and previous is not None
+            and previous.yoy_pct is not None
+            and previous.yoy_state == "normal"
+        ):
             current.yoy_delta_pp = current.yoy_pct - previous.yoy_pct
 
         seasonal_samples = []
@@ -186,7 +192,11 @@ def calculate_growth_metrics(financials: Iterable[QuarterlyFinancial]) -> list[G
             ):
                 seasonal_samples.append(historical.qoq_raw_pct)
         current.qoq_seasonal_sample_count = len(seasonal_samples)
-        if current.qoq_raw_pct is not None and seasonal_samples:
+        if (
+            current.qoq_raw_pct is not None
+            and current.qoq_state == "normal"
+            and seasonal_samples
+        ):
             current.qoq_seasonal_baseline_pct = median(seasonal_samples)
             current.qoq_seasonally_adjusted_pct = (
                 current.qoq_raw_pct - current.qoq_seasonal_baseline_pct

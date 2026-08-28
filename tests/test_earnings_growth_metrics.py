@@ -95,6 +95,33 @@ class EarningsGrowthMetricTests(unittest.TestCase):
             "currency_mismatch",
         )
 
+    def test_loss_periods_and_turns_never_enter_seasonal_adjustment(self):
+        source = [
+            quarter(2020, 1, 100, -100, -100),
+            quarter(2020, 2, 120, -50, -50),
+            quarter(2021, 1, 100, -100, -100),
+            quarter(2021, 2, 120, -50, -50),
+            quarter(2022, 1, 100, -100, -100),
+            quarter(2022, 2, 120, 50, 50),
+        ]
+        results = calculate_growth_metrics(source)
+        target = metric_for(results, 2022, 2, "operating_income")
+        self.assertEqual(target.qoq_state, "black_turn")
+        self.assertEqual(target.qoq_seasonal_sample_count, 0)
+        self.assertIsNone(target.qoq_seasonal_baseline_pct)
+        self.assertIsNone(target.qoq_seasonally_adjusted_pct)
+
+    def test_yoy_delta_requires_two_ordinary_positive_base_growth_rates(self):
+        results = calculate_growth_metrics([
+            quarter(2023, 1, 100, -20, -20),
+            quarter(2023, 2, 100, -10, -10),
+            quarter(2024, 1, 110, -10, -10),
+            quarter(2024, 2, 120, 10, 10),
+        ])
+        target = metric_for(results, 2024, 2, "operating_income")
+        self.assertEqual(target.yoy_state, "black_turn")
+        self.assertIsNone(target.yoy_delta_pp)
+
     def test_persistence_pivots_three_metrics_into_one_quarter_row(self):
         metrics = calculate_growth_metrics([quarter(2025, 1, 100)])
         records = _compact_records(metrics, calculated_at="2026-08-29T00:00:00+00:00")
