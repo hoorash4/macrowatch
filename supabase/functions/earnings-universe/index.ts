@@ -29,11 +29,6 @@ function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
-function requireServiceRoleRequest(request: Request, serviceRole: string) {
-  const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  if (!bearer || bearer !== serviceRole) throw new Error("서비스 역할 요청만 허용됩니다.");
-}
-
 function snapshotRows(rows: KisMarketCapRow[]) {
   return rows.map((row) => ({
     ticker: row.ticker,
@@ -47,9 +42,10 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() || "";
-    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim() || "";
-    if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 환경변수가 없습니다.");
-    requireServiceRoleRequest(request, serviceRole);
+    if (!supabaseUrl) throw new Error("Supabase 서버 환경변수가 없습니다.");
+    const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+    const apiKey = request.headers.get("apikey")?.trim() || "";
+    if (!bearer || !apiKey) throw new Error("서비스 역할 요청만 허용됩니다.");
 
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const observedOn = typeof body.observed_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.observed_on)
@@ -61,9 +57,15 @@ Deno.serve(async (request) => {
       : DOMESTIC_UNIVERSES.filter((item) => item.indexId === requested);
     if (!targets.length) throw new Error(`지원하지 않는 한국 시총 유니버스입니다: ${requested}`);
 
-    const admin = createClient(supabaseUrl, serviceRole, {
+    // Use the caller's server credential instead of comparing it with the Edge
+    // runtime's possibly older key string. A service-role-only RPC proves the
+    // caller's capability before any KIS request or database mutation occurs.
+    const admin = createClient(supabaseUrl, apiKey, {
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
+    const { data: authorized, error: authorizationError } = await admin.rpc("authorize_earnings_ingestion");
+    if (authorizationError || authorized !== true) throw new Error("서비스 역할 요청만 허용됩니다.");
     const credentials = loadKisCredentials();
     const accessToken = await getKisAccessToken(credentials, admin);
     const results: unknown[] = [];

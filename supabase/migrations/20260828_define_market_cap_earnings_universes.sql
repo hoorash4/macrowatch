@@ -215,3 +215,17 @@ revoke all on function public.sync_earnings_market_cap_universe(text, date, json
   from public, anon, authenticated;
 grant execute on function public.sync_earnings_market_cap_universe(text, date, jsonb, text, text)
   to service_role;
+
+-- Edge Functions must accept both legacy JWT service keys and newer secret-key
+-- formats. Authorization is therefore capability-based instead of comparing
+-- two key strings that can legitimately differ during key rotation.
+create or replace function public.authorize_earnings_ingestion()
+returns boolean
+language sql
+stable
+security invoker
+set search_path = public
+as $$ select true $$;
+
+revoke all on function public.authorize_earnings_ingestion() from public, anon, authenticated;
+grant execute on function public.authorize_earnings_ingestion() to service_role;

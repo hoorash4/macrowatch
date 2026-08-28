@@ -91,6 +91,7 @@ class EarningsFoundationTests(unittest.TestCase):
             self.assertIn(name, self.universe_migration)
         self.assertIn("public.earnings_universe_snapshots", self.universe_migration)
         self.assertIn("sync_earnings_market_cap_universe", self.universe_migration)
+        self.assertIn("authorize_earnings_ingestion", self.universe_migration)
         self.assertIn("jsonb_array_length(p_constituents) <> v_target_count", self.universe_migration)
 
     def test_kis_market_cap_sync_fails_closed_on_short_provider_results(self) -> None:
@@ -98,7 +99,7 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn('FID_DIV_CLS_CODE: "1"', self.kis_client)
         self.assertIn("result.length !== limit", self.kis_client)
         self.assertIn("fetchKisOverseasMarketCapRanking", self.kis_client)
-        self.assertIn("서비스 역할 요청만 허용", self.universe_function)
+        self.assertIn('admin.rpc("authorize_earnings_ingestion")', self.universe_function)
 
 
 if __name__ == "__main__":
