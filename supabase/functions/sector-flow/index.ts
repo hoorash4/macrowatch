@@ -1,12 +1,19 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createKisRequestRunner, fetchKisDailyPrices, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { createKisRequestRunner, fetchKisDailyPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 import { calculateSectorRankings, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
 
 const DATABASE_PAGE_SIZE = 1000;
 const PRICE_RETENTION_WEEKS = 10;
 const RANKING_RETENTION_WEEKS = 6;
-type StoredSectorPrice = { etf_id: string; market_date: string; open_price: number | string; close_price: number | string | null };
+type StoredSectorPrice = {
+  etf_id: string;
+  market_date: string;
+  open_price: number | string;
+  close_price: number | string | null;
+  latest_price: number | string;
+  price_stage: "open" | "intraday" | "close";
+};
 type StoredRankingAnchor = { etf_id: string; rank: number | string; previous_rank: number | string | null; top10_streak: number | string };
 
 function json(body: unknown, status = 200) {
@@ -22,7 +29,7 @@ async function loadSectorPriceHistory(admin: ReturnType<typeof createClient>, hi
   const allRows: StoredSectorPrice[] = [];
   for (let from = 0;; from += DATABASE_PAGE_SIZE) {
     const { data, error } = await admin.from("market_sector_etf_prices")
-      .select("etf_id,market_date,open_price,close_price")
+      .select("etf_id,market_date,open_price,close_price,latest_price,price_stage")
       .gte("market_date", historyStart)
       .order("market_date", { ascending: true })
       .order("etf_id", { ascending: true })
@@ -68,10 +75,10 @@ Deno.serve(async (request) => {
   try {
     // 배포 기본값인 Supabase 게이트웨이 JWT 검증을 통과한 서버 요청만 여기까지 도달한다.
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    const stage = body.stage === "open" ? "open" : body.stage === "close" ? "close" : null;
+    const stage = body.stage === "open" ? "open" : body.stage === "intraday" ? "intraday" : body.stage === "close" ? "close" : null;
     const rebuildOnly = body.rebuild_only === true;
     const backfillHistory = body.backfill_history === true;
-    if (!stage) return json({ error: "stage는 open 또는 close여야 합니다." }, 400);
+    if (!stage) return json({ error: "stage는 open, intraday 또는 close여야 합니다." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
@@ -99,14 +106,22 @@ Deno.serve(async (request) => {
           // 운영 중에는 당일만, 명시적인 초기화 요청에는 현재 보관 기준인 10주를 수집합니다.
           const priceStart = backfillHistory ? new Date(`${retentionStart}T00:00:00Z`) : end;
           const candles = await runKisRequest(() => fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end));
+          const intradayQuote = stage === "intraday" && candles.some((candle) => candle.marketDate === today)
+            ? await runKisRequest(() => fetchKisEtfCurrentPrice(credentials, token, item.etf_ticker))
+            : null;
           for (const candle of candles) {
             const isToday = candle.marketDate === today;
+            // 장중 수집은 일봉으로 거래일을 확인한 뒤 ETF 현재가 API 값을 사용한다.
+            const latestPrice = isToday && intradayQuote ? intradayQuote.current
+              : isToday && stage === "open" ? candle.open : candle.close;
             collected.push({
               etf_id: item.id,
               market_date: candle.marketDate,
-              open_price: candle.open,
-              close_price: isToday && stage === "open" ? null : candle.close,
-              volume: candle.volume,
+              open_price: isToday && intradayQuote ? intradayQuote.open : candle.open,
+              close_price: isToday && stage !== "close" ? null : candle.close,
+              latest_price: latestPrice,
+              price_stage: isToday ? stage : "close",
+              volume: isToday && intradayQuote ? intradayQuote.volume : candle.volume,
               updated_at: new Date().toISOString(),
             });
           }
@@ -155,6 +170,7 @@ Deno.serve(async (request) => {
     const normalized: SectorPrice[] = prices.map((row) => ({
       etfId: row.etf_id, marketDate: row.market_date, openPrice: Number(row.open_price),
       closePrice: row.close_price === null ? null : Number(row.close_price),
+      latestPrice: Number(row.latest_price), priceStage: row.price_stage,
     }));
     const rankings = calculateSectorRankings(normalized, today);
     const currentRows = rankings.filter((row) => row.weekStart === currentWeek);

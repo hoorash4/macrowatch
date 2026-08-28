@@ -563,6 +563,7 @@ export default {
         try {
           const { error: priceError } = await admin.from("market_sector_etf_prices").upsert(bundle.prices.map((price) => ({
             etf_id: data.id, market_date: price.marketDate, open_price: price.open, close_price: price.close,
+            latest_price: price.close, price_stage: "close",
             volume: price.volume, updated_at: new Date().toISOString(),
           })), { onConflict: "etf_id,market_date" });
           if (priceError) throw priceError;

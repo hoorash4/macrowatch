@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-type PriceStage = "open" | "close";
+type PriceStage = "open" | "intraday" | "close";
 
 type ScheduleSlot = {
   name: string;
@@ -12,7 +12,7 @@ type ScheduleSlot = {
 
 const SLOTS: ScheduleSlot[] = [
   { name: "market-open", stage: "open", startMinute: 9 * 60 + 10, endMinute: 9 * 60 + 40 },
-  { name: "midday", stage: "open", startMinute: 12 * 60 + 30, endMinute: 13 * 60 },
+  { name: "midday", stage: "intraday", startMinute: 12 * 60 + 30, endMinute: 13 * 60 },
   { name: "market-close", stage: "close", startMinute: 15 * 60 + 40, endMinute: 16 * 60 + 10 },
 ];
 

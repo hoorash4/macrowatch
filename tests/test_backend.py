@@ -174,14 +174,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("ONE-TIME BOOTSTRAP ONLY", migration)
         self.assertNotIn("--file supabase/migrations/20260827_seed_domestic_sector_etfs.sql", deploy)
 
-    def test_sector_flow_stores_open_close_and_server_rankings(self):
+    def test_sector_flow_stores_open_intraday_close_and_server_rankings(self):
         migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
+        intraday_migration = (ROOT / "supabase/migrations/20260828_add_sector_intraday_prices.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "supabase/functions/sector-flow/index.ts").read_text(encoding="utf-8")
         scoring = (ROOT / "supabase/functions/_shared/sector-flow.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/sector-flow.yml").read_text(encoding="utf-8")
         self.assertIn("market_sector_etf_prices", migration)
         self.assertIn("market_sector_weekly_rankings", migration)
         self.assertIn('body.stage === "open"', pipeline)
+        self.assertIn('body.stage === "intraday"', pipeline)
         self.assertIn('body.stage === "close"', pipeline)
         for schedule in ('10 0', '30 0', '30 3', '40 6', '0 7'):
             self.assertIn(f'cron: "{schedule} * * 1-5"', workflow)
@@ -196,6 +198,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('message.includes("초당 거래건수를 초과")', kis_client)
         self.assertIn("KIS_RATE_LIMIT_RETRY_DELAYS_MS", kis_client)
         self.assertIn("fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end)", pipeline)
+        self.assertIn("fetchKisEtfCurrentPrice(credentials, token, item.etf_ticker)", pipeline)
+        self.assertIn('github.event.schedule == \'30 3 * * 1-5\' && \'intraday\'', workflow)
         self.assertIn("getKisAccessToken(credentials, admin)", pipeline)
         self.assertIn("backfill_history === true", pipeline)
         self.assertIn('fetchKisEtfTopHoldings(credentials, token, item.etf_ticker, 3)', pipeline)
@@ -210,7 +214,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("endpointPrice / baseline.closePrice", scoring)
         self.assertIn("fourWeekBaseline", scoring)
         self.assertIn("endpointPrice / fourWeekBaseline.closePrice", scoring)
-        self.assertNotIn("latestPrice / baseline.closePrice", scoring)
+        self.assertIn("return row.latestPrice", scoring)
+        self.assertIn("latest_price", intraday_migration)
+        self.assertIn("price_stage in ('open', 'intraday', 'close')", intraday_migration)
+        self.assertIn("--file supabase/migrations/20260828_add_sector_intraday_prices.sql", (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8"))
 
     def test_sector_flow_has_database_cron_with_idempotent_retry_dispatcher(self):
         scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
@@ -224,6 +231,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('skipped: "already_refreshed"', scheduler)
         self.assertIn('.gte("calculated_at", slotStartedAt.toISOString())', scheduler)
         self.assertIn('/functions/v1/sector-flow', scheduler)
+        self.assertIn('{ name: "midday", stage: "intraday"', scheduler)
         self.assertIn('create extension if not exists pg_cron', migration)
         self.assertIn('create extension if not exists pg_net', migration)
         for schedule in ('10,25 0 * * 1-5', '30,45 3 * * 1-5', '40,55 6 * * 1-5'):
@@ -267,6 +275,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("createKisRequestRunner", control)
         self.assertIn("runKisRequest(() => fetchKisDailyPriceBundle", control)
         self.assertIn("runKisRequest(() => fetchKisEtfTopHoldings", control)
+        self.assertIn('latest_price: price.close, price_stage: "close"', control)
         self.assertIn("const normalizedTicker = normalizeEtfTicker(ticker)", kis)
         self.assertIn("FID_INPUT_ISCD: normalizedTicker", kis)
         self.assertNotIn("if (!/^\\d{6}$/.test(ticker))", kis)

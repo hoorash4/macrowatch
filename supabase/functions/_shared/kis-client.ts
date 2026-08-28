@@ -1,5 +1,6 @@
 const KIS_REAL_BASE_URL = "https://openapi.koreainvestment.com:9443";
 const DAILY_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice";
+const ETF_CURRENT_PRICE_PATH = "/uapi/etfetn/v1/quotations/inquire-price";
 const DAILY_INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice";
 const MARKET_INVESTOR_PATH = "/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market";
 const OVERSEAS_MARKET_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap";
@@ -14,6 +15,7 @@ export type KisDailyPrice = {
 };
 
 export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPrice[] };
+export type KisEtfCurrentPrice = { current: number; open: number; volume: number | null };
 export type KisEtfHolding = { ticker: string | null; name: string | null; weightPct: number | null };
 export type KisMarketDay = { marketDate: string; tradingValue: number };
 export type KisMarketCapRow = {
@@ -268,6 +270,41 @@ export async function fetchKisDailyPrices(
   end: Date,
 ): Promise<KisDailyPrice[]> {
   return (await fetchKisDailyPriceBundle(credentials, accessToken, ticker, start, end)).prices;
+}
+
+/** ETF/ETN 현재가 API로 장중 최신 체결가를 읽습니다. */
+export async function fetchKisEtfCurrentPrice(
+  credentials: KisCredentials,
+  accessToken: string,
+  ticker: string,
+): Promise<KisEtfCurrentPrice> {
+  const normalizedTicker = normalizeEtfTicker(ticker);
+  const params = new URLSearchParams({
+    FID_COND_MRKT_DIV_CODE: "J",
+    FID_INPUT_ISCD: normalizedTicker,
+  });
+  const response = await fetch(`${KIS_REAL_BASE_URL}${ETF_CURRENT_PRICE_PATH}?${params}`, {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      appkey: credentials.appKey,
+      appsecret: credentials.appSecret,
+      tr_id: "FHPST02400000",
+      custtype: "P",
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await readJson(response);
+  if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+    throw new Error(`KIS ETF 현재가 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+  }
+  const output = payload.output && typeof payload.output === "object"
+    ? payload.output as Record<string, unknown>
+    : {};
+  const current = numberValue(output.stck_prpr), open = numberValue(output.stck_oprc);
+  if (current === null || current <= 0 || open === null || open <= 0) {
+    throw new Error("KIS ETF 현재가 응답에 유효한 현재가 또는 시가가 없습니다.");
+  }
+  return { current, open, volume: numberValue(output.acml_vol) };
 }
 
 // 코스피 일봉의 거래대금은 외국인 순매수 금액을 시장 규모로 정규화할 때 사용합니다.

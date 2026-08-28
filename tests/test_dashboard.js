@@ -390,6 +390,7 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/sector-flow.yml'), 'utf8');
   assert.match(workflow, /10 0 \* \* 1-5/);
   assert.match(workflow, /30 3 \* \* 1-5/);
+  assert.match(workflow, /30 3 \* \* 1-5'[\s\S]*'intraday'/);
   assert.match(workflow, /40 6 \* \* 1-5/);
   assert.match(charts, /<span>순위<\/span><span>변동<\/span><span>섹터<\/span><span>연속<\/span>/);
   assert.match(charts, /sector-flow-rank/);
@@ -406,6 +407,7 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.match(charts, /sectorRankChange\(row, showNew\)/);
   assert.match(charts, /sectorRankChange\(row, isLatestWeek\)/);
   assert.match(charts, /slice\(0, 6\)/);
+  assert.match(charts, /\.limit\(1000\)/);
   assert.match(styles, /sector-flow-change-new[\s\S]*font-size:\.42rem/);
   assert.match(styles, /sector-flow-change-move[\s\S]*font-size:\.60rem/);
   assert.match(styles, /sector-return-positive \{ color:#d5483f/);

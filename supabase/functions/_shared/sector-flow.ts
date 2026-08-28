@@ -3,6 +3,8 @@ export type SectorPrice = {
   marketDate: string;
   openPrice: number;
   closePrice: number | null;
+  latestPrice: number;
+  priceStage: "open" | "intraday" | "close";
 };
 
 export type SectorRanking = {
@@ -14,7 +16,7 @@ export type SectorRanking = {
   top10Streak: number;
   weeklyReturnPct: number;
   cumulativeReturnPct: number;
-  priceStage: "open" | "close";
+  priceStage: "open" | "intraday" | "close";
 };
 
 const DAY_MS = 86_400_000;
@@ -28,7 +30,7 @@ export function mondayOf(value: string) {
 }
 
 function effectivePrice(row: SectorPrice, currentDate: string) {
-  if (row.marketDate === currentDate && row.closePrice === null) return row.openPrice;
+  if (row.marketDate === currentDate && row.closePrice === null) return row.latestPrice;
   return row.closePrice;
 }
 
@@ -43,7 +45,7 @@ export function calculateSectorRankings(prices: SectorPrice[], currentDate: stri
 
   const currentWeek = mondayOf(currentDate);
   const weekStarts = Array.from({ length: 14 }, (_, index) => isoDate(dateValue(currentWeek) - (13 - index) * 7 * DAY_MS));
-  const rawByWeek = new Map<string, Array<{ etfId: string; weekly: number; cumulative: number; stage: "open" | "close" }>>();
+  const rawByWeek = new Map<string, Array<{ etfId: string; weekly: number; cumulative: number; stage: "open" | "intraday" | "close" }>>();
 
   for (const weekStart of weekStarts) {
     const weekEnd = isoDate(dateValue(weekStart) + 6 * DAY_MS);
@@ -60,7 +62,7 @@ export function calculateSectorRankings(prices: SectorPrice[], currentDate: stri
         etfId,
         weekly: (endpointPrice / baseline.closePrice - 1) * 100,
         cumulative: (endpointPrice / fourWeekBaseline.closePrice - 1) * 100,
-        stage: endpoint.marketDate === currentDate && endpoint.closePrice === null ? "open" as const : "close" as const,
+        stage: endpoint.marketDate === currentDate ? endpoint.priceStage : "close" as const,
       });
     }
     rows.sort((a, b) => b.weekly - a.weekly || a.etfId.localeCompare(b.etfId));

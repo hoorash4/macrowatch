@@ -18,7 +18,7 @@ on:
         required: true
         type: choice
         default: close
-        options: [open, close]
+        options: [open, intraday, close]
       backfill_history:
         description: Refill the retained 10-week price window
         required: false
@@ -41,7 +41,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || ((github.event.schedule == '10 0 * * 1-5' || github.event.schedule == '30 0 * * 1-5' || github.event.schedule == '30 3 * * 1-5') && 'open' || 'close') }}
+          PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || ((github.event.schedule == '10 0 * * 1-5' || github.event.schedule == '30 0 * * 1-5') && 'open' || (github.event.schedule == '30 3 * * 1-5' && 'intraday' || 'close')) }}
           BACKFILL_HISTORY: ${{ github.event_name == 'workflow_dispatch' && inputs.backfill_history || false }}
         run: |
           curl --fail-with-body --retry 2 --max-time 480 \

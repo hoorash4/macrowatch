@@ -1138,7 +1138,8 @@ async function loadSectorFlowDashboard() {
   initializeSectorHoldingInteractions();
   const { data, error } = await supabaseClient.from('market_sector_weekly_rankings')
     .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,price_stage,market_sector_etfs(sector_name,market_sector_etf_holdings(holding_name,weight_pct,weight_rank))')
-    .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(240);
+    // 전체 순위를 6주 보관하므로 현재 등록 규모보다 넉넉하게 읽고 화면에서 주차별 TOP 6만 추린다.
+    .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(1000);
   if (error) return;
   renderSectorFlow(data || []);
 }
