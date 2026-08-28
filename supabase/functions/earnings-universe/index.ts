@@ -11,6 +11,7 @@ import {
 } from "../_shared/earnings-universe-sources.ts";
 import {
   createKisRequestRunner,
+  fetchKisOverseasMarketCapCandidates,
   fetchKisOverseasMarketCapRanking,
   getKisAccessToken,
   loadKisCredentials,
@@ -161,8 +162,8 @@ Deno.serve(async (request) => {
       // not expose a usable continuation key. Top 100 from each exchange is
       // nevertheless sufficient for a combined U.S. top 100: a constituent
       // ranked below 100 on its own exchange cannot enter the combined 100.
-      const nasRankings = await fetchKisOverseasMarketCapRanking(
-        credentials, accessToken, "NAS", 100, runKisRequest,
+      const nasRankings = await fetchKisOverseasMarketCapCandidates(
+        credentials, accessToken, "NAS", ["0", "1", "2", "3", "4", "5", "6"], runKisRequest,
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
       const nysRankings = await fetchKisOverseasMarketCapRanking(

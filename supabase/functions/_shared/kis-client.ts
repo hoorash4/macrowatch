@@ -162,8 +162,10 @@ export async function fetchKisOverseasMarketCapRanking(
   exchange: "NAS" | "NYS" | "AMS",
   limit: number,
   runRequest: KisRequestRunner = createKisRequestRunner(),
+  volumeRange = "0",
 ): Promise<KisMarketCapRow[]> {
   if (!Number.isInteger(limit) || limit < 1) throw new Error("시가총액 순위 개수는 양의 정수여야 합니다.");
+  if (!/^[0-6]$/.test(volumeRange)) throw new Error("KIS 해외 거래량 조건이 올바르지 않습니다.");
   const collected = new Map<string, KisMarketCapRow>();
   let continuation = "";
   let keyBuffer = "";
@@ -175,7 +177,7 @@ export async function fetchKisOverseasMarketCapRanking(
     const params = new URLSearchParams({
       EXCD: exchange,
       CURR_GB: "0",
-      VOL_RANG: "0",
+      VOL_RANG: volumeRange,
       KEYB: keyBuffer,
       AUTH: "",
     });
@@ -224,6 +226,31 @@ export async function fetchKisOverseasMarketCapRanking(
     throw new Error(`KIS ${exchange} 시가총액 순위가 ${result.length}/${limit}개만 반환되었습니다.`);
   }
   return result;
+}
+
+/**
+ * KIS exposes only the first 100 overseas market-cap rows and no effective
+ * continuation key. Querying its documented volume bands produces overlapping
+ * ranked windows; their union supplies the next large-cap operating companies
+ * that would otherwise sit behind ETFs or non-SEC foreign listings.
+ */
+export async function fetchKisOverseasMarketCapCandidates(
+  credentials: KisCredentials,
+  accessToken: string,
+  exchange: "NAS" | "NYS" | "AMS",
+  volumeRanges: string[],
+  runRequest: KisRequestRunner = createKisRequestRunner(),
+) {
+  const candidates = new Map<string, KisMarketCapRow>();
+  for (const volumeRange of volumeRanges) {
+    const rows = await fetchKisOverseasMarketCapRanking(
+      credentials, accessToken, exchange, 100, runRequest, volumeRange,
+    );
+    rows.forEach((row) => candidates.set(row.ticker, row));
+  }
+  return [...candidates.values()]
+    .sort((a, b) => b.marketCap - a.marketCap || a.ticker.localeCompare(b.ticker))
+    .map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
 export async function fetchKisDailyPriceBundle(
