@@ -56,8 +56,8 @@ insert into public.earnings_indices
 values
   ('SP100', 'S&P 500 시가총액 상위 100', 'US', 100, 'S&P 500 constituents + KIS market cap'),
   ('NASDAQ100', 'NASDAQ 시가총액 상위 100', 'US', 100, 'KIS overseas market-cap ranking'),
-  ('KOSPI100', 'KOSPI 시가총액 상위 100', 'KR', 100, 'Naver Finance market cap (KRX data) + OpenDART'),
-  ('KOSDAQ50', 'KOSDAQ 시가총액 상위 50', 'KR', 50, 'Naver Finance market cap (KRX data) + OpenDART')
+  ('KOSPI100', 'KOSPI 시가총액 상위 100', 'KR', 100, 'KIS downloadable market master'),
+  ('KOSDAQ50', 'KOSDAQ 시가총액 상위 50', 'KR', 50, 'KIS downloadable market master')
 on conflict (index_id) do nothing;
 
 create table if not exists public.earnings_index_memberships (

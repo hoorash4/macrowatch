@@ -134,12 +134,17 @@ class OpenDartClient:
 
     def _get_json(self, endpoint: str, params: dict[str, str]) -> OpenDartResponse:
         secret_free_params = dict(params)
-        response = self.session.get(
-            f"{OPEN_DART_BASE_URL}/{endpoint}",
-            params={"crtfc_key": self.api_key, **params},
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        try:
+            response = self.session.get(
+                f"{OPEN_DART_BASE_URL}/{endpoint}",
+                params={"crtfc_key": self.api_key, **params},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except Exception:
+            # requests includes the fully expanded URL in transport errors.
+            # Replacing it here prevents crtfc_key from reaching CI logs.
+            raise OpenDartApiError("transport_error", f"{endpoint} request failed") from None
         payload = response.json()
         if not isinstance(payload, dict):
             raise OpenDartApiError("invalid_json", "Response root must be an object")
@@ -152,12 +157,15 @@ class OpenDartClient:
 
     def fetch_corp_code_archive(self) -> OpenDartBinaryResponse:
         """Download the official corp_code/stock_code mapping archive."""
-        response = self.session.get(
-            f"{OPEN_DART_BASE_URL}/corpCode.xml",
-            params={"crtfc_key": self.api_key},
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        try:
+            response = self.session.get(
+                f"{OPEN_DART_BASE_URL}/corpCode.xml",
+                params={"crtfc_key": self.api_key},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except Exception:
+            raise OpenDartApiError("transport_error", "corpCode.xml request failed") from None
         content = bytes(response.content)
         if not content:
             raise OpenDartApiError("empty_archive", "OpenDART corp-code archive is empty")

@@ -13,8 +13,8 @@ set index_name = case index_id
     constituent_source = case index_id
       when 'SP100' then 'S&P 500 constituents + KIS market cap'
       when 'NASDAQ100' then 'KIS overseas market-cap ranking'
-      when 'KOSPI100' then 'Naver Finance market cap (KRX data) + OpenDART'
-      when 'KOSDAQ50' then 'Naver Finance market cap (KRX data) + OpenDART'
+      when 'KOSPI100' then 'KIS downloadable market master'
+      when 'KOSDAQ50' then 'KIS downloadable market master'
       else constituent_source
     end,
     updated_at = now()
@@ -117,8 +117,8 @@ begin
     if v_ticker = '' or v_name = '' or v_rank < 1 or v_market_cap < 0 then
       raise exception 'Invalid constituent row in universe %', p_index_id;
     end if;
-    if v_country = 'KR' and (v_dart_corp_code is null or v_dart_corp_code !~ '^\d{8}$') then
-      raise exception 'Missing OpenDART corp_code for ticker %', v_ticker;
+    if v_dart_corp_code is not null and v_dart_corp_code !~ '^\d{8}$' then
+      raise exception 'Invalid OpenDART corp_code for ticker %', v_ticker;
     end if;
 
     select company_id into v_company_id
@@ -151,7 +151,7 @@ begin
       where id = v_company_id;
     end if;
 
-    if v_country = 'KR' then
+    if v_country = 'KR' and v_dart_corp_code is not null then
       insert into public.earnings_company_identifiers
         (company_id, identifier_type, identifier_value, valid_from)
       values (v_company_id, 'dart_corp_code', v_dart_corp_code, p_observed_on)

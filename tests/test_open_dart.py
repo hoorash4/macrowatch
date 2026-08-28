@@ -47,6 +47,11 @@ class FakeSession:
         return self.responses.pop(0)
 
 
+class LeakyFailingSession:
+    def get(self, url, *, params, timeout):
+        raise RuntimeError(f"failed URL {url}?crtfc_key={params['crtfc_key']}")
+
+
 def account_row(**overrides):
     row = {
         "rcept_no": "20260828000001",
@@ -67,6 +72,12 @@ def account_row(**overrides):
 
 
 class OpenDartClientTests(unittest.TestCase):
+    def test_transport_errors_never_expose_the_api_key(self):
+        client = OpenDartClient("top-secret", session=LeakyFailingSession())
+        with self.assertRaises(OpenDartApiError) as context:
+            client.fetch_corp_code_archive()
+        self.assertNotIn("top-secret", str(context.exception))
+
     def test_batches_deduplicate_and_never_exceed_one_hundred(self):
         codes = [f"{number:08d}" for number in range(1, 102)] + ["00000001"]
         batches = chunk_company_codes(codes)

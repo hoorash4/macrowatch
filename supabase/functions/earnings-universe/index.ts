@@ -2,7 +2,6 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   fetchKoreanMarketCapUniverse,
-  fetchOpenDartListedCompanies,
   type KoreanMarketCapRow,
 } from "../_shared/earnings-universe-sources.ts";
 
@@ -34,7 +33,6 @@ function snapshotRows(rows: KoreanMarketCapRow[]) {
     name: row.name,
     rank: row.rank,
     market_cap: row.marketCap,
-    dart_corp_code: row.corpCode,
   }));
 }
 
@@ -66,7 +64,6 @@ Deno.serve(async (request) => {
     });
     const { data: authorized, error: authorizationError } = await admin.rpc("authorize_earnings_ingestion");
     if (authorizationError || authorized !== true) throw new Error("서비스 역할 요청만 허용됩니다.");
-    const listedCompanies = await fetchOpenDartListedCompanies();
     const results: unknown[] = [];
 
     // Each provider result is validated to its exact target count before the
@@ -76,13 +73,12 @@ Deno.serve(async (request) => {
       const ranking = await fetchKoreanMarketCapUniverse(
         target.market,
         target.limit,
-        listedCompanies,
       );
       const { data, error } = await admin.rpc("sync_earnings_market_cap_universe", {
         p_index_id: target.indexId,
         p_observed_on: observedOn,
         p_constituents: snapshotRows(ranking),
-        p_source: "Naver Finance market cap (KRX data) + OpenDART listed companies",
+        p_source: "KIS downloadable market master",
         p_source_reference: `${target.market}:${observedOn}`,
       });
       if (error) throw new Error(`${target.indexId} 저장 실패: ${error.message}`);

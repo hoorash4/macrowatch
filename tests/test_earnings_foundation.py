@@ -96,10 +96,11 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("authorize_earnings_ingestion", self.universe_migration)
         self.assertIn("jsonb_array_length(p_constituents) <> v_target_count", self.universe_migration)
 
-    def test_market_cap_sync_filters_korean_rows_through_open_dart(self) -> None:
-        self.assertIn("fetchOpenDartListedCompanies", self.universe_sources)
-        self.assertIn("parseNaverMarketCapHtml", self.universe_sources)
-        self.assertIn("if (!listed) continue", self.universe_sources)
+    def test_market_cap_sync_filters_korean_master_instrument_types(self) -> None:
+        self.assertIn("parseKisKoreanMaster", self.universe_sources)
+        self.assertIn("etpIndex", self.universe_sources)
+        self.assertIn("spacIndex", self.universe_sources)
+        self.assertIn("preferredIndex", self.universe_sources)
         self.assertIn("result.length !== limit", self.universe_sources)
         self.assertIn("fetchKisOverseasMarketCapRanking", self.kis_client)
         self.assertIn('admin.rpc("authorize_earnings_ingestion")', self.universe_function)
