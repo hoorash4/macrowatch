@@ -2,6 +2,8 @@ const KIS_REAL_BASE_URL = "https://openapi.koreainvestment.com:9443";
 const DAILY_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice";
 const DAILY_INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice";
 const MARKET_INVESTOR_PATH = "/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market";
+const DOMESTIC_MARKET_CAP_PATH = "/uapi/domestic-stock/v1/ranking/market-cap";
+const OVERSEAS_MARKET_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap";
 
 export type KisDailyPrice = {
   marketDate: string;
@@ -15,6 +17,13 @@ export type KisDailyPrice = {
 export type KisDailyPriceBundle = { instrumentName: string; prices: KisDailyPrice[] };
 export type KisEtfHolding = { ticker: string | null; name: string | null; weightPct: number | null };
 export type KisMarketDay = { marketDate: string; tradingValue: number };
+export type KisMarketCapRow = {
+  ticker: string;
+  name: string;
+  rank: number;
+  marketCap: number;
+  exchange: string;
+};
 
 type KisCredentials = { appKey: string; appSecret: string };
 type KisTokenStore = { from: (table: string) => any };
@@ -95,6 +104,141 @@ function compactDate(date: Date) {
 function numberValue(value: unknown) {
   const parsed = Number(String(value ?? "").replaceAll(",", ""));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function positiveInteger(value: unknown) {
+  const parsed = numberValue(value);
+  return parsed !== null && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * Fetch a complete KOSPI or KOSDAQ market-cap ranking.
+ *
+ * KIS returns ranking pages and signals continuation in the `tr_cont` header.
+ * We retain only common shares and stop once the requested count is complete.
+ * Duplicate-page detection protects scheduled jobs if a provider continuation
+ * token is temporarily ignored.
+ */
+export async function fetchKisDomesticMarketCapRanking(
+  credentials: KisCredentials,
+  accessToken: string,
+  market: "KOSPI" | "KOSDAQ",
+  limit: number,
+): Promise<KisMarketCapRow[]> {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error("시가총액 순위 개수는 양의 정수여야 합니다.");
+  const marketCode = market === "KOSPI" ? "0001" : "1001";
+  const collected = new Map<string, KisMarketCapRow>();
+  let continuation = "";
+
+  for (let page = 0; page < 10 && collected.size < limit; page += 1) {
+    const params = new URLSearchParams({
+      FID_INPUT_PRICE_2: "",
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_COND_SCR_DIV_CODE: "20174",
+      FID_DIV_CLS_CODE: "1",
+      FID_INPUT_ISCD: marketCode,
+      FID_TRGT_CLS_CODE: "0",
+      FID_TRGT_EXLS_CLS_CODE: "0",
+      FID_INPUT_PRICE_1: "",
+      FID_VOL_CNT: "",
+    });
+    const response = await fetch(`${KIS_REAL_BASE_URL}${DOMESTIC_MARKET_CAP_PATH}?${params}`, {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        appkey: credentials.appKey,
+        appsecret: credentials.appSecret,
+        tr_id: "FHPST01740000",
+        tr_cont: continuation,
+        custtype: "P",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = await readJson(response);
+    if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+      throw new Error(`KIS 국내 시가총액 순위 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+    }
+    const rows = Array.isArray(payload.output) ? payload.output : [];
+    const before = collected.size;
+    rows.forEach((raw) => {
+      const row = raw as Record<string, unknown>;
+      const ticker = String(row.mksc_shrn_iscd || "").trim();
+      const name = String(row.hts_kor_isnm || "").trim();
+      const rank = positiveInteger(row.data_rank);
+      const marketCap = numberValue(row.stck_avls);
+      if (!/^\d{6}$/.test(ticker) || !name || rank === null || marketCap === null || marketCap < 0) return;
+      collected.set(ticker, { ticker, name, rank, marketCap, exchange: market });
+    });
+
+    const next = String(response.headers.get("tr_cont") || "").toUpperCase();
+    if (!new Set(["M", "F"]).has(next) || collected.size === before) break;
+    continuation = "N";
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+
+  const result = [...collected.values()].sort((a, b) => a.rank - b.rank).slice(0, limit)
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+  if (result.length !== limit) {
+    throw new Error(`KIS ${market} 시가총액 순위가 ${result.length}/${limit}개만 반환되었습니다.`);
+  }
+  return result;
+}
+
+/** Fetch one U.S. exchange's market-cap order for later universe composition. */
+export async function fetchKisOverseasMarketCapRanking(
+  credentials: KisCredentials,
+  accessToken: string,
+  exchange: "NAS" | "NYS" | "AMS",
+  limit: number,
+): Promise<KisMarketCapRow[]> {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error("시가총액 순위 개수는 양의 정수여야 합니다.");
+  const collected = new Map<string, KisMarketCapRow>();
+  let continuation = "";
+  let keyBuffer = "";
+
+  for (let page = 0; page < 10 && collected.size < limit; page += 1) {
+    const params = new URLSearchParams({ EXCD: exchange, VOL_RANG: "0", KEYB: keyBuffer, AUTH: "" });
+    const response = await fetch(`${KIS_REAL_BASE_URL}${OVERSEAS_MARKET_CAP_PATH}?${params}`, {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        appkey: credentials.appKey,
+        appsecret: credentials.appSecret,
+        tr_id: "HHDFS76350100",
+        tr_cont: continuation,
+        custtype: "P",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = await readJson(response);
+    if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+      throw new Error(`KIS 해외 시가총액 순위 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+    }
+    const rows = Array.isArray(payload.output2) ? payload.output2 : [];
+    const before = collected.size;
+    rows.forEach((raw) => {
+      const row = raw as Record<string, unknown>;
+      const ticker = String(row.symb || "").trim().toUpperCase();
+      const name = String(row.name || row.ename || "").trim();
+      const rank = positiveInteger(row.rank) ?? collected.size + 1;
+      const marketCap = numberValue(row.tomv ?? row.mcap);
+      if (!ticker || !name || marketCap === null || marketCap < 0) return;
+      collected.set(ticker, { ticker, name, rank, marketCap, exchange });
+    });
+    const pageInfo = payload.output1 && typeof payload.output1 === "object"
+      ? payload.output1 as Record<string, unknown>
+      : {};
+    keyBuffer = String(pageInfo.keyb || pageInfo.KEYB || "").trim();
+    const next = String(response.headers.get("tr_cont") || "").toUpperCase();
+    if (!new Set(["M", "F"]).has(next) || collected.size === before) break;
+    continuation = "N";
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+
+  const result = [...collected.values()].sort((a, b) => a.rank - b.rank).slice(0, limit)
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+  if (result.length !== limit) {
+    throw new Error(`KIS ${exchange} 시가총액 순위가 ${result.length}/${limit}개만 반환되었습니다.`);
+  }
+  return result;
 }
 
 export async function fetchKisDailyPriceBundle(

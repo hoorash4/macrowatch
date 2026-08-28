@@ -68,6 +68,8 @@ jobs:
             --file supabase/migrations/20260828_add_earnings_foundation.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_add_earnings_ingestion_ops.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260828_define_market_cap_earnings_universes.sql
 
       - name: Deploy Edge Functions
         run: |

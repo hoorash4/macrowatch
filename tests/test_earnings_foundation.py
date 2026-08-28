@@ -5,6 +5,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_foundation.sql"
 OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.sql"
+UNIVERSE_MIGRATION = ROOT / "supabase/migrations/20260828_define_market_cap_earnings_universes.sql"
+UNIVERSE_FUNCTION = ROOT / "supabase/functions/earnings-universe/index.ts"
+KIS_CLIENT = ROOT / "supabase/functions/_shared/kis-client.ts"
 CONTRACT = ROOT / "docs/earnings-momentum-data-contract.md"
 
 
@@ -13,6 +16,9 @@ class EarningsFoundationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.migration = MIGRATION.read_text(encoding="utf-8")
         cls.ops_migration = OPS_MIGRATION.read_text(encoding="utf-8")
+        cls.universe_migration = UNIVERSE_MIGRATION.read_text(encoding="utf-8")
+        cls.universe_function = UNIVERSE_FUNCTION.read_text(encoding="utf-8")
+        cls.kis_client = KIS_CLIENT.read_text(encoding="utf-8")
         cls.contract = CONTRACT.read_text(encoding="utf-8")
 
     def test_schema_separates_raw_filing_fact_and_canonical_layers(self) -> None:
@@ -74,6 +80,25 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("public.earnings_ingestion_jobs", self.ops_migration)
         self.assertIn("where status in ('pending', 'running', 'retry')", self.ops_migration)
         self.assertIn("enable row level security", self.ops_migration)
+
+    def test_universes_are_market_cap_rankings_not_official_indices(self) -> None:
+        for name in (
+            "S&P 500 시가총액 상위 100",
+            "NASDAQ 시가총액 상위 100",
+            "KOSPI 시가총액 상위 100",
+            "KOSDAQ 시가총액 상위 50",
+        ):
+            self.assertIn(name, self.universe_migration)
+        self.assertIn("public.earnings_universe_snapshots", self.universe_migration)
+        self.assertIn("sync_earnings_market_cap_universe", self.universe_migration)
+        self.assertIn("jsonb_array_length(p_constituents) <> v_target_count", self.universe_migration)
+
+    def test_kis_market_cap_sync_fails_closed_on_short_provider_results(self) -> None:
+        self.assertIn("fetchKisDomesticMarketCapRanking", self.kis_client)
+        self.assertIn('FID_DIV_CLS_CODE: "1"', self.kis_client)
+        self.assertIn("result.length !== limit", self.kis_client)
+        self.assertIn("fetchKisOverseasMarketCapRanking", self.kis_client)
+        self.assertIn("서비스 역할 요청만 허용", self.universe_function)
 
 
 if __name__ == "__main__":

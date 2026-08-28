@@ -54,10 +54,10 @@ create table if not exists public.earnings_indices (
 insert into public.earnings_indices
   (index_id, index_name, country, target_count, constituent_source)
 values
-  ('SP100', 'S&P 100', 'US', 100, 'S&P Dow Jones Indices'),
-  ('NASDAQ100', 'Nasdaq-100', 'US', 100, 'Nasdaq'),
-  ('KOSPI100', 'KOSPI 100', 'KR', 100, 'KRX'),
-  ('KOSDAQ50', 'KOSDAQ 50', 'KR', 50, 'KRX')
+  ('SP100', 'S&P 500 시가총액 상위 100', 'US', 100, 'S&P 500 constituents + KIS market cap'),
+  ('NASDAQ100', 'NASDAQ 시가총액 상위 100', 'US', 100, 'KIS overseas market-cap ranking'),
+  ('KOSPI100', 'KOSPI 시가총액 상위 100', 'KR', 100, 'KIS domestic market-cap ranking'),
+  ('KOSDAQ50', 'KOSDAQ 시가총액 상위 50', 'KR', 50, 'KIS domestic market-cap ranking')
 on conflict (index_id) do nothing;
 
 create table if not exists public.earnings_index_memberships (
