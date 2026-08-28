@@ -4,7 +4,11 @@ const KIS_MASTER_URLS = {
   KOSPI: "https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip",
   KOSDAQ: "https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip",
 } as const;
-const SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
+// SEC's Akamai edge rejects some serverless egress ranges even with the
+// required identifying User-Agent. This repository is an automated daily
+// mirror of the SEC ticker/CIK mapping, allowing ingestion to remain
+// deterministic while the financial facts themselves still come from SEC.
+const SEC_TICKERS_URL = "https://raw.githubusercontent.com/jadchaar/sec-cik-mapper/main/mappings/stocks/mappings.csv";
 const NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt";
 const SP500_CONSTITUENTS_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv";
 const PUBLIC_DATA_USER_AGENT = "MacroWatch hoorash4@users.noreply.github.com";
@@ -123,18 +127,16 @@ async function fetchPublicText(url: string) {
 
 /** SEC CIK is the durable company identity shared by both U.S. universes. */
 export async function fetchSecListedCompanies() {
-  const payload = JSON.parse(await fetchPublicText(SEC_TICKERS_URL)) as {
-    fields?: unknown[];
-    data?: unknown[][];
-  };
-  const fields = (payload.fields || []).map(String);
-  const indexes = Object.fromEntries(fields.map((field, index) => [field, index]));
+  const lines = (await fetchPublicText(SEC_TICKERS_URL)).split(/\r?\n/).filter(Boolean);
+  const fields = parseCsvLine(lines.shift() || "");
+  const indexes = Object.fromEntries(fields.map((field, index) => [field.toLowerCase(), index]));
   const result = new Map<string, UsListedCompany>();
-  for (const values of payload.data || []) {
-    const ticker = normalizeUsTicker(String(values[indexes.ticker] ?? ""));
+  for (const line of lines) {
+    const values = parseCsvLine(line);
+    const ticker = normalizeUsTicker(values[indexes.ticker] || "");
     const cikNumber = Number(values[indexes.cik]);
-    const name = String(values[indexes.name] ?? "").trim();
-    const exchange = String(values[indexes.exchange] ?? "").trim().toUpperCase();
+    const name = (values[indexes.name] || "").trim();
+    const exchange = (values[indexes.exchange] || "").trim().toUpperCase();
     if (!ticker || !name || !Number.isInteger(cikNumber) || cikNumber <= 0) continue;
     result.set(ticker, {
       ticker,

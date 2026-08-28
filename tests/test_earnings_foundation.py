@@ -132,6 +132,7 @@ class EarningsFoundationTests(unittest.TestCase):
     def test_us_universes_are_separate_and_explicitly_exclude_nasdaq_etfs(self) -> None:
         self.assertIn("fetchNasdaqOperatingSymbols", self.universe_sources)
         self.assertIn('values[etfIndex] !== "N"', self.universe_sources)
+        self.assertIn("sec-cik-mapper/main/mappings/stocks/mappings.csv", self.universe_sources)
         self.assertIn('p_index_id: "SP100"', self.universe_function)
         self.assertIn('p_index_id: "NASDAQ100"', self.universe_function)
         self.assertIn("list_current_sec_earnings_companies", self.sec_migration)
