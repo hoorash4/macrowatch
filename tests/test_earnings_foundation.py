@@ -128,6 +128,8 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("result.length !== limit", self.universe_sources)
         self.assertIn("fetchKisOverseasMarketCapRanking", self.kis_client)
         self.assertIn('CURR_GB: "0"', self.kis_client)
+        self.assertIn('accessToken, "NAS", 100', self.universe_function)
+        self.assertIn('accessToken, "NYS", 100', self.universe_function)
         self.assertIn('admin.rpc("authorize_earnings_ingestion")', self.universe_function)
 
     def test_us_universes_are_separate_and_explicitly_exclude_nasdaq_etfs(self) -> None:

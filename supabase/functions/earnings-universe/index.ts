@@ -157,12 +157,16 @@ Deno.serve(async (request) => {
       const secCompanies = await fetchSecListedCompanies();
       // These calls share the same KIS app-key quota. Keep exchanges serial so
       // the universe refresh cannot collide with itself at the per-second limit.
+      // The ranking endpoint returns at most 100 rows per exchange and does
+      // not expose a usable continuation key. Top 100 from each exchange is
+      // nevertheless sufficient for a combined U.S. top 100: a constituent
+      // ranked below 100 on its own exchange cannot enter the combined 100.
       const nasRankings = await fetchKisOverseasMarketCapRanking(
-        credentials, accessToken, "NAS", 300, runKisRequest,
+        credentials, accessToken, "NAS", 100, runKisRequest,
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
       const nysRankings = await fetchKisOverseasMarketCapRanking(
-        credentials, accessToken, "NYS", 300, runKisRequest,
+        credentials, accessToken, "NYS", 100, runKisRequest,
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
       const amsRankings = await fetchKisOverseasMarketCapRanking(
