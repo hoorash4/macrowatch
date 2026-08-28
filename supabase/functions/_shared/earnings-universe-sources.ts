@@ -4,6 +4,10 @@ const KIS_MASTER_URLS = {
   KOSPI: "https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip",
   KOSDAQ: "https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip",
 } as const;
+const SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
+const NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt";
+const SP500_CONSTITUENTS_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv";
+const PUBLIC_DATA_USER_AGENT = "MacroWatch hoorash4@users.noreply.github.com";
 const WON_PER_MASTER_MARKET_CAP_UNIT = 100_000_000;
 
 export type KoreanMarketCapRow = {
@@ -12,6 +16,13 @@ export type KoreanMarketCapRow = {
   rank: number;
   marketCap: number;
   exchange: "KOSPI" | "KOSDAQ";
+};
+
+export type UsListedCompany = {
+  ticker: string;
+  name: string;
+  cik: string;
+  exchange: string;
 };
 
 type MasterLayout = {
@@ -75,6 +86,118 @@ function fieldBytes(tail: Uint8Array, widths: number[], fieldIndex: number) {
 
 function decode(bytes: Uint8Array) {
   return new TextDecoder("euc-kr").decode(bytes).trim();
+}
+
+function normalizeUsTicker(value: string) {
+  return value.trim().toUpperCase().replaceAll(".", "-").replaceAll("/", "-");
+}
+
+function parseCsvLine(line: string) {
+  const fields: string[] = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        value += '"';
+        index += 1;
+      } else quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      fields.push(value.trim());
+      value = "";
+    } else value += char;
+  }
+  fields.push(value.trim());
+  return fields;
+}
+
+async function fetchPublicText(url: string) {
+  const response = await fetch(url, {
+    headers: { "User-Agent": PUBLIC_DATA_USER_AGENT },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!response.ok) throw new Error(`공개 종목 기준자료 조회 실패 (${response.status})`);
+  return await response.text();
+}
+
+/** SEC CIK is the durable company identity shared by both U.S. universes. */
+export async function fetchSecListedCompanies() {
+  const payload = JSON.parse(await fetchPublicText(SEC_TICKERS_URL)) as {
+    fields?: unknown[];
+    data?: unknown[][];
+  };
+  const fields = (payload.fields || []).map(String);
+  const indexes = Object.fromEntries(fields.map((field, index) => [field, index]));
+  const result = new Map<string, UsListedCompany>();
+  for (const values of payload.data || []) {
+    const ticker = normalizeUsTicker(String(values[indexes.ticker] ?? ""));
+    const cikNumber = Number(values[indexes.cik]);
+    const name = String(values[indexes.name] ?? "").trim();
+    const exchange = String(values[indexes.exchange] ?? "").trim().toUpperCase();
+    if (!ticker || !name || !Number.isInteger(cikNumber) || cikNumber <= 0) continue;
+    result.set(ticker, {
+      ticker,
+      name,
+      cik: String(cikNumber).padStart(10, "0"),
+      exchange,
+    });
+  }
+  return result;
+}
+
+/** Nasdaq's official directory supplies an explicit ETF flag. */
+export async function fetchNasdaqOperatingSymbols() {
+  const lines = (await fetchPublicText(NASDAQ_LISTED_URL)).split(/\r?\n/).filter(Boolean);
+  const headers = (lines.shift() || "").split("|");
+  const symbolIndex = headers.indexOf("Symbol");
+  const testIndex = headers.indexOf("Test Issue");
+  const etfIndex = headers.indexOf("ETF");
+  const nextSharesIndex = headers.indexOf("NextShares");
+  if ([symbolIndex, testIndex, etfIndex].some((index) => index < 0)) {
+    throw new Error("Nasdaq 종목 디렉터리 형식이 예상과 다릅니다.");
+  }
+  const symbols = new Set<string>();
+  for (const line of lines) {
+    if (line.startsWith("File Creation Time")) continue;
+    const values = line.split("|");
+    if (values[testIndex] !== "N" || values[etfIndex] !== "N") continue;
+    if (nextSharesIndex >= 0 && values[nextSharesIndex] === "Y") continue;
+    const ticker = normalizeUsTicker(values[symbolIndex] || "");
+    if (ticker) symbols.add(ticker);
+  }
+  return symbols;
+}
+
+/** Public S&P 500 membership data; CIK prevents duplicate share classes. */
+export async function fetchSp500Companies() {
+  const lines = (await fetchPublicText(SP500_CONSTITUENTS_URL)).split(/\r?\n/).filter(Boolean);
+  const headers = parseCsvLine(lines.shift() || "");
+  const symbolIndex = headers.indexOf("Symbol");
+  const nameIndex = headers.indexOf("Security");
+  const cikIndex = headers.indexOf("CIK");
+  if ([symbolIndex, nameIndex, cikIndex].some((index) => index < 0)) {
+    throw new Error("S&P 500 구성종목 자료 형식이 예상과 다릅니다.");
+  }
+  const companies = new Map<string, UsListedCompany>();
+  for (const line of lines) {
+    const values = parseCsvLine(line);
+    const ticker = normalizeUsTicker(values[symbolIndex] || "");
+    const cikNumber = Number(values[cikIndex]);
+    const name = String(values[nameIndex] || "").trim();
+    if (!ticker || !name || !Number.isInteger(cikNumber) || cikNumber <= 0) continue;
+    companies.set(ticker, {
+      ticker,
+      name,
+      cik: String(cikNumber).padStart(10, "0"),
+      exchange: "US",
+    });
+  }
+  return companies;
+}
+
+export function normalizedUsTicker(value: string) {
+  return normalizeUsTicker(value);
 }
 
 function isTruthyFlag(value: string) {

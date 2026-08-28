@@ -161,6 +161,26 @@ class SupabaseEarningsStore:
             and str(row.get("identifier_value") or "").strip()
         }
 
+    def list_current_sec_companies(self) -> list[dict[str, Any]]:
+        result = self._rpc("list_current_sec_earnings_companies", {})
+        if not isinstance(result, list):
+            raise EarningsStoreError("SEC company list returned an invalid result.")
+        return [row for row in result if isinstance(row, dict)]
+
+    def upsert_sec_company_quarters(
+        self,
+        *,
+        company_id: str,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        result = self._rpc("upsert_sec_company_quarters", {
+            "p_company_id": company_id,
+            "p_rows": rows,
+        })
+        if not isinstance(result, dict):
+            raise EarningsStoreError("SEC quarter upsert returned an invalid result.")
+        return result
+
     def list_open_dart_identity_gaps(self) -> list[dict[str, Any]]:
         result = self._rpc("list_earnings_open_dart_identity_gaps", {})
         if not isinstance(result, list):

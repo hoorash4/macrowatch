@@ -1,0 +1,38 @@
+name: Refresh U.S. earnings from SEC
+
+on:
+  schedule:
+    # UTC 04:30 Tue-Sat = 13:30 KST Tue-Sat. This follows the preceding
+    # U.S. session and avoids the Korean OpenDART collection window.
+    - cron: "30 4 * * 2-6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-earnings-sec
+  cancel-in-progress: false
+
+jobs:
+  refresh-sec-company-facts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install worker dependency
+        run: pip install -r backend/requirements.txt
+
+      - name: Refresh SEC company facts
+        env:
+          PYTHONPATH: backend
+          SEC_USER_AGENT: "MacroWatch hoorash4@users.noreply.github.com"
+          SEC_REQUEST_INTERVAL_SECONDS: "0.2"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.collect_sec

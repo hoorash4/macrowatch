@@ -74,6 +74,8 @@ declare
   v_rank integer;
   v_market_cap numeric;
   v_dart_corp_code text;
+  v_sec_cik text;
+  v_exchange text;
   v_added integer := 0;
   v_removed integer := 0;
   v_removed_same_day integer := 0;
@@ -114,28 +116,41 @@ begin
     v_rank := (v_item->>'rank')::integer;
     v_market_cap := (v_item->>'market_cap')::numeric;
     v_dart_corp_code := trim(v_item->>'dart_corp_code');
+    v_sec_cik := trim(v_item->>'sec_cik');
+    v_exchange := upper(trim(coalesce(v_item->>'exchange', '')));
     if v_ticker = '' or v_name = '' or v_rank < 1 or v_market_cap < 0 then
       raise exception 'Invalid constituent row in universe %', p_index_id;
     end if;
     if v_dart_corp_code is not null and v_dart_corp_code !~ '^\d{8}$' then
       raise exception 'Invalid OpenDART corp_code for ticker %', v_ticker;
     end if;
+    if v_country = 'US' and (v_sec_cik is null or v_sec_cik !~ '^\d{10}$') then
+      raise exception 'Valid SEC CIK is required for ticker %', v_ticker;
+    end if;
 
-    select company_id into v_company_id
-    from public.earnings_company_identifiers
-    where identifier_type = v_identifier_type and identifier_value = v_ticker;
+    v_company_id := null;
+    if v_country = 'US' then
+      select company_id into v_company_id
+      from public.earnings_company_identifiers
+      where identifier_type = 'sec_cik' and identifier_value = v_sec_cik;
+    end if;
+    if v_company_id is null then
+      select company_id into v_company_id
+      from public.earnings_company_identifiers
+      where identifier_type = v_identifier_type and identifier_value = v_ticker;
+    end if;
 
     if v_company_id is null then
       insert into public.earnings_companies
         (country, company_name, ticker, exchange, reporting_currency)
       values
         (v_country, v_name, v_ticker,
-         case
+         coalesce(nullif(v_exchange, ''), case
            when p_index_id = 'KOSPI100' then 'KOSPI'
            when p_index_id = 'KOSDAQ50' then 'KOSDAQ'
            when p_index_id = 'NASDAQ100' then 'NASDAQ'
            else 'US'
-         end,
+         end),
          v_currency)
       returning id into v_company_id;
 
@@ -145,7 +160,8 @@ begin
     else
       update public.earnings_companies
       set company_name = v_name,
-          ticker = v_ticker,
+          ticker = case when v_country = 'US' and ticker is not null then ticker else v_ticker end,
+          exchange = coalesce(nullif(v_exchange, ''), exchange),
           is_active = true,
           updated_at = now()
       where id = v_company_id;
@@ -163,6 +179,23 @@ begin
           and identifier_value = v_dart_corp_code
       ) then
         raise exception 'OpenDART corp_code % belongs to another company', v_dart_corp_code;
+      end if;
+    end if;
+
+    if v_country = 'US' then
+      insert into public.earnings_company_identifiers
+        (company_id, identifier_type, identifier_value, valid_from)
+      values
+        (v_company_id, 'us_ticker', v_ticker, p_observed_on),
+        (v_company_id, 'sec_cik', v_sec_cik, p_observed_on)
+      on conflict do nothing;
+      if not exists (
+        select 1 from public.earnings_company_identifiers
+        where company_id = v_company_id
+          and identifier_type = 'sec_cik'
+          and identifier_value = v_sec_cik
+      ) then
+        raise exception 'SEC CIK % belongs to another company', v_sec_cik;
       end if;
     end if;
 

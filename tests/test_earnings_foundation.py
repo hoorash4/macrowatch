@@ -8,8 +8,10 @@ OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.
 OPEN_DART_OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_ingestion_functions.sql"
 OPEN_DART_WORKER_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_financial_worker_functions.sql"
 SLIM_STORAGE_MIGRATION = ROOT / "supabase/migrations/20260828_slim_earnings_storage.sql"
+SEC_MIGRATION = ROOT / "supabase/migrations/20260828_add_sec_earnings_functions.sql"
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-supabase.yml"
 OPEN_DART_WORKFLOW = ROOT / ".github/workflows/earnings-open-dart.yml"
+SEC_WORKFLOW = ROOT / ".github/workflows/earnings-sec.yml"
 UNIVERSE_MIGRATION = ROOT / "supabase/migrations/20260828_define_market_cap_earnings_universes.sql"
 UNIVERSE_FUNCTION = ROOT / "supabase/functions/earnings-universe/index.ts"
 KIS_CLIENT = ROOT / "supabase/functions/_shared/kis-client.ts"
@@ -25,8 +27,10 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.open_dart_ops_migration = OPEN_DART_OPS_MIGRATION.read_text(encoding="utf-8")
         cls.open_dart_worker_migration = OPEN_DART_WORKER_MIGRATION.read_text(encoding="utf-8")
         cls.slim_storage_migration = SLIM_STORAGE_MIGRATION.read_text(encoding="utf-8")
+        cls.sec_migration = SEC_MIGRATION.read_text(encoding="utf-8")
         cls.deploy_workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
         cls.open_dart_workflow = OPEN_DART_WORKFLOW.read_text(encoding="utf-8")
+        cls.sec_workflow = SEC_WORKFLOW.read_text(encoding="utf-8")
         cls.universe_migration = UNIVERSE_MIGRATION.read_text(encoding="utf-8")
         cls.universe_function = UNIVERSE_FUNCTION.read_text(encoding="utf-8")
         cls.kis_client = KIS_CLIENT.read_text(encoding="utf-8")
@@ -124,6 +128,16 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("result.length !== limit", self.universe_sources)
         self.assertIn("fetchKisOverseasMarketCapRanking", self.kis_client)
         self.assertIn('admin.rpc("authorize_earnings_ingestion")', self.universe_function)
+
+    def test_us_universes_are_separate_and_explicitly_exclude_nasdaq_etfs(self) -> None:
+        self.assertIn("fetchNasdaqOperatingSymbols", self.universe_sources)
+        self.assertIn('values[etfIndex] !== "N"', self.universe_sources)
+        self.assertIn('p_index_id: "SP100"', self.universe_function)
+        self.assertIn('p_index_id: "NASDAQ100"', self.universe_function)
+        self.assertIn("list_current_sec_earnings_companies", self.sec_migration)
+        self.assertIn("upsert_sec_company_quarters", self.sec_migration)
+        self.assertIn(SEC_MIGRATION.name, self.deploy_workflow)
+        self.assertIn('cron: "30 4 * * 2-6"', self.sec_workflow)
 
 
 if __name__ == "__main__":
