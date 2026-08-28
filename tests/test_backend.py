@@ -272,6 +272,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('action === "save_admin_card_order"', control)
         self.assertIn('`admin_card_order_${user.id}`', control)
 
+    def test_optional_kakao_failure_does_not_fail_target_collection(self):
+        checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
+        alert_block = checker[checker.index("    if alerts:"):checker.index("    print(f\"Finished:")]
+        self.assertLess(alert_block.index("        try:"), alert_block.index("access_token = refresh_kakao_access_token()"))
+        self.assertIn('record_alerts(db, alerts, "failed", message)', alert_block)
+        self.assertNotIn("failures += 1", alert_block)
+
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")
         self.assertIn('Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT")', adapter)

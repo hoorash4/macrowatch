@@ -290,20 +290,24 @@ def main() -> int:
             )
 
     if alerts:
-        access_token = refresh_kakao_access_token()
-        if not access_token:
-            record_alerts(db, alerts, "skipped", "Kakao secrets are not configured.")
-            print("Kakao notification skipped: secrets are not configured.")
-        else:
-            try:
+        # 지표 수집과 카카오 전송은 서로 다른 책임이다. 토큰 만료나 카카오
+        # 장애가 발생해도 이미 끝난 지표 수집 실행까지 실패로 바꾸지 않는다.
+        try:
+            access_token = refresh_kakao_access_token()
+            if not access_token:
+                record_alerts(db, alerts, "skipped", "Kakao secrets are not configured.")
+                print("Kakao notification skipped: secrets are not configured.")
+            else:
                 send_kakao_message(access_token, alerts)
                 record_alerts(db, alerts, "sent")
                 print(f"Kakao notification sent for {len(alerts)} target(s).")
-            except Exception as exc:
-                message = str(exc)[:1000]
+        except Exception as exc:
+            message = str(exc)[:1000]
+            try:
                 record_alerts(db, alerts, "failed", message)
-                print(f"Kakao notification failed: {message}", file=sys.stderr)
-                failures += 1
+            except Exception as record_error:
+                print(f"Kakao alert failure record failed: {str(record_error)[:1000]}", file=sys.stderr)
+            print(f"Kakao notification failed: {message}", file=sys.stderr)
 
     print(f"Finished: {len(targets)} target(s), {len(alerts)} alert(s), {failures} failure(s).")
     # A source failure is recorded on the target and must not block the other targets
