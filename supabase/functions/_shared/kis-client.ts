@@ -169,7 +169,16 @@ export async function fetchKisOverseasMarketCapRanking(
   let keyBuffer = "";
 
   for (let page = 0; page < 10 && collected.size < limit; page += 1) {
-    const params = new URLSearchParams({ EXCD: exchange, VOL_RANG: "0", KEYB: keyBuffer, AUTH: "" });
+    // KIS began validating CURR_GB on the live ranking gateway before the
+    // published sample was updated. "0" requests all currencies; U.S.
+    // exchanges still return USD-denominated market caps.
+    const params = new URLSearchParams({
+      EXCD: exchange,
+      CURR_GB: "0",
+      VOL_RANG: "0",
+      KEYB: keyBuffer,
+      AUTH: "",
+    });
     const { response, payload } = await runRequest(async () => {
       const response = await fetch(`${KIS_REAL_BASE_URL}${OVERSEAS_MARKET_CAP_PATH}?${params}`, {
         headers: {
