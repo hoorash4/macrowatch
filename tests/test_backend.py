@@ -18,6 +18,7 @@ sys.path.insert(0, str(BACKEND))
 if "requests" not in sys.modules:
     requests_stub = types.ModuleType("requests")
     requests_stub.Session = object
+    requests_stub.HTTPError = type("HTTPError", (Exception,), {})
     sys.modules["requests"] = requests_stub
 if "openpyxl" not in sys.modules:
     sys.modules["openpyxl"] = types.ModuleType("openpyxl")

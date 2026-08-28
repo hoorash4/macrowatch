@@ -13,6 +13,12 @@ on:
         required: false
         type: boolean
         default: false
+      max_batches:
+        description: "수동 백필에서 처리할 최대 분기 배치 수"
+        required: false
+        type: choice
+        default: "20"
+        options: ["3", "10", "20"]
 
 permissions:
   contents: read
@@ -74,8 +80,9 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Three worst-case historical periods fit inside the 60-minute job
-          # lease; the daily fallback run continues the remaining queue.
-          OPEN_DART_MAX_BATCHES: "3"
+          # Scheduled checks keep the conservative three-batch cap. A manual
+          # historical backfill may process more batches within the same
+          # 60-minute lease so a newly admitted universe does not take weeks.
+          OPEN_DART_MAX_BATCHES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_batches || '3' }}
           OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.2"
         run: python -m earnings.collect_financials

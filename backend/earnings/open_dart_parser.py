@@ -153,7 +153,7 @@ def select_preferred_accounts(
     """Choose one non-mixed CFS-or-OFS account set for each company.
 
     A complete CFS set wins.  If CFS is present but incomplete while OFS has
-    all four required metrics, OFS wins as one complete set instead of mixing
+    all three required metrics, OFS wins as one complete set instead of mixing
     the two scopes.  An incomplete set is returned only so the caller can
     decide which full-statement fallback is still required.
     """

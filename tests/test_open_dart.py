@@ -174,14 +174,14 @@ class OpenDartParserTests(unittest.TestCase):
             ),
         ]
         selected = select_preferred_accounts(parse_account_rows({"list": rows}))["00126380"]
-        self.assertEqual(set(selected), {"revenue", "operating_income", "net_income", "eps"})
+        self.assertEqual(set(selected), {"revenue", "operating_income", "net_income"})
         self.assertEqual({fact.consolidation_scope for fact in selected.values()}, {"OFS"})
 
     def test_interim_prefers_documented_three_month_value(self):
         fact = parse_account_rows({"list": [account_row()]})[0]
         self.assertEqual(standalone_quarter_value(fact, previous_cumulative=Decimal("2150")), Decimal("1250"))
 
-    def test_q4_subtracts_nine_months_for_operating_income_and_basic_eps(self):
+    def test_q4_subtracts_nine_months_for_operating_income(self):
         operating = parse_account_rows({"list": [account_row(
             reprt_code="11011", thstrm_amount="5,000", thstrm_add_amount=""
         )]})[0]
@@ -189,16 +189,8 @@ class OpenDartParserTests(unittest.TestCase):
             standalone_quarter_value(operating, previous_cumulative=Decimal("3400")),
             Decimal("1600"),
         )
-        eps = parse_account_rows({"list": [account_row(
-            reprt_code="11011",
-            account_id="ifrs-full_BasicEarningsLossPerShare",
-            account_nm="기본주당이익",
-            thstrm_amount="500",
-        )]})[0]
-        self.assertEqual(
-            standalone_quarter_value(eps, previous_cumulative=Decimal("320")),
-            Decimal("180"),
-        )
+        # EPS is intentionally not collected; all retained income-statement
+        # metrics follow the same annual-minus-nine-month calculation.
 
     def test_corp_code_archive_maps_only_listed_six_digit_codes(self):
         xml = """<?xml version="1.0" encoding="UTF-8"?>
