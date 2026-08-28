@@ -45,6 +45,7 @@ jobs:
           node tests/test_policy_scoring.ts
       - name: Check Python syntax and behavior contracts
         run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
           python -m compileall -q backend
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check Supabase Edge Function types

@@ -30,6 +30,8 @@ import em_capital_capacity_pipeline as em_capacity  # noqa: E402
 import financial_stress_pipeline as us  # noqa: E402
 import korea_stress_pipeline as kr  # noqa: E402
 import policy_expectation_pipeline as policy_expectation  # noqa: E402
+import equity_bond_model as equity_bond  # noqa: E402
+import equity_bond_pipeline as equity_bond_pipeline  # noqa: E402
 
 
 class TargetConditionTests(unittest.TestCase):
@@ -90,6 +92,66 @@ class SharedCalculationTests(unittest.TestCase):
     def test_completed_quarter_boundary(self) -> None:
         self.assertEqual(us.latest_completed_quarter_end(date(2026, 8, 26)), date(2026, 6, 30))
         self.assertEqual(us.latest_completed_quarter_end(date(2026, 1, 2)), date(2025, 12, 31))
+
+    def test_equity_bond_features_use_fixed_calendar_lags(self) -> None:
+        monthly = []
+        month = date(2020, 1, 1)
+        for index in range(60):
+            current = equity_bond.shift_month(month, index)
+            monthly.append(equity_bond.MonthlyInputs(
+                month=current,
+                spy_adjusted_close=100.0 + index * 2.0,
+                tlt_adjusted_close=100.0 + index * 0.3,
+                real_yield_10y=-0.5 + index * 0.02,
+                yield_curve_10y_2y=-1.0 + index * 0.03,
+                baa_spread=2.0 + index * 0.01,
+                nfci_level=-0.2 + index * 0.005,
+                source_through_date=current,
+            ))
+        rows = equity_bond.build_feature_rows(monthly)
+        self.assertEqual(rows[0].month, date(2022, 12, 1))
+        self.assertEqual(rows[0].target_end_month, date(2023, 12, 1))
+        self.assertAlmostEqual(rows[0].features[3], 0.03)
+        self.assertEqual(rows[-1].future_relative_return_pct, None)
+
+    def test_equity_bond_walk_forward_purges_unfinished_labels(self) -> None:
+        monthly = []
+        start = date(2018, 1, 1)
+        for index in range(72):
+            month = equity_bond.shift_month(start, index)
+            cycle_month = index % 24
+            stock_level = 100.0 + (cycle_month if cycle_month <= 12 else 24 - cycle_month) * 5.0
+            monthly.append(equity_bond.MonthlyInputs(
+                month=month,
+                spy_adjusted_close=stock_level,
+                tlt_adjusted_close=100.0 * (1.002 ** index) * (1.01 if index % 5 < 2 else 0.995),
+                real_yield_10y=float(index % 19) / 10.0,
+                yield_curve_10y_2y=float((index % 13) - 6) / 10.0,
+                baa_spread=2.0 + float(index % 11) / 20.0,
+                nfci_level=float((index % 17) - 8) / 20.0,
+                source_through_date=month,
+            ))
+        features = equity_bond.build_feature_rows(monthly)
+        forecasts = equity_bond.walk_forward_forecasts(features, minimum_training_samples=12)
+        self.assertTrue(forecasts)
+        first = forecasts[0]
+        self.assertLessEqual(equity_bond.shift_month(first.training_end_month, 12), first.month)
+        self.assertAlmostEqual(first.stock_probability + (1.0 - first.stock_probability), 1.0)
+
+    def test_equity_bond_source_storage_excludes_existing_dfii10_and_nfci(self) -> None:
+        observed = {date(2026, 7, 31): 1.5}
+        raw = {
+            "spy_adjusted_close": observed,
+            "tlt_adjusted_close": observed,
+            "yield_curve_10y_2y": observed,
+            "baa_spread": observed,
+            "real_yield_10y": observed,
+            "nfci_level": observed,
+        }
+        rows = equity_bond_pipeline.source_rows(raw, "2026-08-28T00:00:00+00:00")
+        self.assertEqual({row["series_code"] for row in rows}, {
+            "SPY_ADJUSTED_CLOSE", "TLT_ADJUSTED_CLOSE", "T10Y2Y", "BAA10Y",
+        })
 
 
 class CommonClientTests(unittest.TestCase):
