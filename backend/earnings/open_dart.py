@@ -42,6 +42,15 @@ class OpenDartResponse:
         return [row for row in rows if isinstance(row, dict)]
 
 
+@dataclass(frozen=True)
+class OpenDartBinaryResponse:
+    """One binary response plus its secret-free request identity."""
+
+    endpoint: str
+    request_params: dict[str, str]
+    content: bytes
+
+
 def _unique_company_codes(corp_codes: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -140,6 +149,19 @@ class OpenDartClient:
         elif status != "000":
             raise OpenDartApiError(status or "unknown", str(payload.get("message", "Unknown error")))
         return OpenDartResponse(endpoint, secret_free_params, payload)
+
+    def fetch_corp_code_archive(self) -> OpenDartBinaryResponse:
+        """Download the official corp_code/stock_code mapping archive."""
+        response = self.session.get(
+            f"{OPEN_DART_BASE_URL}/corpCode.xml",
+            params={"crtfc_key": self.api_key},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        content = bytes(response.content)
+        if not content:
+            raise OpenDartApiError("empty_archive", "OpenDART corp-code archive is empty")
+        return OpenDartBinaryResponse("corpCode.xml", {}, content)
 
     def fetch_multi_accounts(
         self,

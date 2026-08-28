@@ -4,6 +4,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_foundation.sql"
+OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.sql"
 CONTRACT = ROOT / "docs/earnings-momentum-data-contract.md"
 
 
@@ -11,6 +12,7 @@ class EarningsFoundationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.migration = MIGRATION.read_text(encoding="utf-8")
+        cls.ops_migration = OPS_MIGRATION.read_text(encoding="utf-8")
         cls.contract = CONTRACT.read_text(encoding="utf-8")
 
     def test_schema_separates_raw_filing_fact_and_canonical_layers(self) -> None:
@@ -66,6 +68,12 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("비어 있는 모든 분기를 기간 제한 없이 자동 백필", self.contract)
         self.assertIn("7년 만의 재진입이면 최대 7년의 공백", self.contract)
         self.assertIn("소속 기간을 기준으로 계산", self.contract)
+
+    def test_ingestion_jobs_are_resumable_and_service_role_only(self) -> None:
+        self.assertIn("public.earnings_collection_checkpoints", self.ops_migration)
+        self.assertIn("public.earnings_ingestion_jobs", self.ops_migration)
+        self.assertIn("where status in ('pending', 'running', 'retry')", self.ops_migration)
+        self.assertIn("enable row level security", self.ops_migration)
 
 
 if __name__ == "__main__":

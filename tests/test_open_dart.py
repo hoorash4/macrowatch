@@ -1,8 +1,10 @@
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 import sys
 import unittest
+from zipfile import ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,12 +20,14 @@ from earnings.open_dart_parser import (  # noqa: E402
     select_preferred_accounts,
     standalone_quarter_value,
 )
+from earnings.corp_codes import listed_corporations, parse_corp_code_archive  # noqa: E402
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload=None, status_code=200, content=b""):
         self.payload = payload
         self.status_code = status_code
+        self.content = content
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -77,6 +81,14 @@ class OpenDartClientTests(unittest.TestCase):
         self.assertEqual(session.calls[0]["params"]["crtfc_key"], "top-secret")
         self.assertNotIn("crtfc_key", response.request_params)
         self.assertEqual(response.request_params["corp_code"], "00126380,00164779")
+
+    def test_corp_code_archive_download_keeps_secret_out_of_response_metadata(self):
+        session = FakeSession([FakeResponse(content=b"zip-content")])
+        response = OpenDartClient("top-secret", session=session).fetch_corp_code_archive()
+        self.assertTrue(session.calls[0]["url"].endswith("/corpCode.xml"))
+        self.assertEqual(session.calls[0]["params"]["crtfc_key"], "top-secret")
+        self.assertEqual(response.request_params, {})
+        self.assertEqual(response.content, b"zip-content")
 
     def test_no_data_is_an_empty_success_and_other_statuses_raise(self):
         no_data = FakeSession([FakeResponse({"status": "013", "message": "조회된 데이터가 없습니다."})])
@@ -149,6 +161,21 @@ class OpenDartParserTests(unittest.TestCase):
             standalone_quarter_value(eps, previous_cumulative=Decimal("320")),
             Decimal("180"),
         )
+
+    def test_corp_code_archive_maps_only_listed_six_digit_codes(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <result>
+          <list><corp_code>00126380</corp_code><corp_name>삼성전자</corp_name><stock_code>005930</stock_code><modify_date>20260828</modify_date></list>
+          <list><corp_code>00000001</corp_code><corp_name>비상장회사</corp_name><stock_code> </stock_code><modify_date>20260827</modify_date></list>
+        </result>""".encode("utf-8")
+        archive_buffer = BytesIO()
+        with ZipFile(archive_buffer, "w") as archive:
+            archive.writestr("CORPCODE.xml", xml)
+        companies = parse_corp_code_archive(archive_buffer.getvalue())
+        listed = listed_corporations(companies)
+        self.assertEqual(len(companies), 2)
+        self.assertEqual(list(listed), ["005930"])
+        self.assertEqual(listed["005930"].corp_code, "00126380")
 
 
 if __name__ == "__main__":
