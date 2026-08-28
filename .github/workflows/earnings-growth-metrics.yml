@@ -1,6 +1,12 @@
 name: Recalculate earnings growth metrics
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/earnings/growth_metrics.py"
+      - "backend/earnings/calculate_growth_metrics.py"
+      - "backend/earnings/supabase_rest.py"
   workflow_run:
     workflows: ["Deploy Supabase changes"]
     types: [completed]
@@ -16,7 +22,7 @@ concurrency:
 jobs:
   recalculate:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name != 'workflow_run' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
