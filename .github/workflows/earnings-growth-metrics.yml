@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/workflows/earnings-growth-metrics.yml"
       - "backend/earnings/growth_metrics.py"
       - "backend/earnings/calculate_growth_metrics.py"
       - "backend/earnings/supabase_rest.py"
