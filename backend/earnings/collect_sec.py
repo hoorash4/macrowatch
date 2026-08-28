@@ -7,7 +7,9 @@ from datetime import datetime
 import json
 from zoneinfo import ZoneInfo
 
-from earnings.sec_edgar import SecEdgarClient
+import requests
+
+from earnings.sec_edgar import SecCompanyFactsMirrorClient, SecEdgarClient
 from earnings.sec_parser import canonical_sec_quarters
 from earnings.supabase_rest import SupabaseEarningsStore
 
@@ -19,13 +21,32 @@ def main() -> None:
     companies = store.list_current_sec_companies()
     totals = Counter(companies=len(companies))
     errors: Counter[str] = Counter()
+    mirror_client: SecCompanyFactsMirrorClient | None = None
+    sec_blocked = False
 
     for company in companies:
         company_id = str(company.get("company_id") or "").strip()
         cik = str(company.get("cik") or "").strip()
         ticker = str(company.get("ticker") or "").strip()
         try:
-            payload = client.fetch_company_facts(cik)
+            if sec_blocked:
+                if mirror_client is None:
+                    mirror_client = SecCompanyFactsMirrorClient()
+                payload = mirror_client.fetch_company_facts(cik, first_year=today.year - 9)
+                totals["mirror_companies"] += 1
+            else:
+                try:
+                    payload = client.fetch_company_facts(cik)
+                except requests.HTTPError as error:
+                    if error.response is None or error.response.status_code != 403:
+                        raise
+                    # SEC commonly blocks GitHub's shared runner addresses even
+                    # with a compliant identity. Switch once, then keep all
+                    # remaining companies on the nightly SEC-derived mirror.
+                    sec_blocked = True
+                    mirror_client = SecCompanyFactsMirrorClient()
+                    payload = mirror_client.fetch_company_facts(cik, first_year=today.year - 9)
+                    totals["mirror_companies"] += 1
             rows, gaps = canonical_sec_quarters(
                 payload,
                 cik=cik,
