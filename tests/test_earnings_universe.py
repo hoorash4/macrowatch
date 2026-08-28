@@ -46,14 +46,14 @@ class EarningsUniverseTests(unittest.TestCase):
         self.assertEqual(plan.exits[0].ticker, "000004")
         self.assertEqual(plan.exits[0].effective_to, date(2026, 8, 31))
 
-    def test_new_company_gets_five_years_and_cross_index_gets_no_backfill(self):
+    def test_new_company_gets_ten_years_and_cross_index_gets_no_backfill(self):
         periods = backfill_periods(as_of_year=2026, kind="new_company")
-        self.assertEqual(len(periods), 20)
-        self.assertEqual(periods[0], (2022, "11013"))
+        self.assertEqual(len(periods), 40)
+        self.assertEqual(periods[0], (2017, "11013"))
         self.assertEqual(periods[-1], (2026, "11011"))
         self.assertEqual(backfill_periods(as_of_year=2026, kind="cross_index_addition"), [])
 
-    def test_reentry_fills_the_entire_gap_even_when_longer_than_five_years(self):
+    def test_reentry_fills_the_entire_gap_even_when_longer_than_ten_years(self):
         periods = backfill_periods(
             as_of_year=2026,
             kind="reentry",

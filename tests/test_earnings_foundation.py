@@ -64,8 +64,9 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("API 키", self.contract)
         self.assertIn("DB·로그에 남기지 않는다", self.contract)
 
-    def test_contract_uses_five_year_backfill_and_preserves_adjusted_qoq(self) -> None:
-        self.assertIn("최근 5년 분기재무를 백필", self.contract)
+    def test_contract_uses_ten_year_backfill_and_preserves_adjusted_qoq(self) -> None:
+        self.assertIn("최근 10년 분기재무를 백필", self.contract)
+        self.assertIn("p_years integer default 10", self.open_dart_ops_migration)
         self.assertIn("qoq_raw", self.contract)
         self.assertIn("qoq_seasonally_adjusted", self.contract)
         self.assertIn("qoq_seasonally_adjusted_delta", self.contract)
@@ -75,7 +76,7 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("모든 추적 지수에서 이탈하면", self.contract)
         self.assertIn("정기 공시 수집 대상에서는 제외", self.contract)
         self.assertIn("과거 추적 이력이 없는 완전 신규 기업", self.contract)
-        self.assertIn("최근 5년을 백필", self.contract)
+        self.assertIn("최근 10년을 백필", self.contract)
         self.assertIn("비어 있는 모든 분기를 기간 제한 없이 자동 백필", self.contract)
         self.assertIn("7년 만의 재진입이면 최대 7년의 공백", self.contract)
         self.assertIn("소속 기간을 기준으로 계산", self.contract)
@@ -116,6 +117,8 @@ class EarningsFoundationTests(unittest.TestCase):
     def test_market_cap_sync_filters_korean_master_instrument_types(self) -> None:
         self.assertIn("parseKisKoreanMaster", self.universe_sources)
         self.assertIn("etpIndex", self.universe_sources)
+        self.assertIn("hasClassification(etp)", self.universe_sources)
+        self.assertNotIn("isTruthyFlag(etp)", self.universe_sources)
         self.assertIn("spacIndex", self.universe_sources)
         self.assertIn("preferredIndex", self.universe_sources)
         self.assertIn("result.length !== limit", self.universe_sources)

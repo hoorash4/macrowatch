@@ -66,7 +66,7 @@ grant execute on function public.sync_earnings_open_dart_identifiers(jsonb, date
 
 create or replace function public.enqueue_earnings_open_dart_backfill(
   p_as_of_year integer,
-  p_years integer default 5
+  p_years integer default 10
 )
 returns integer
 language plpgsql

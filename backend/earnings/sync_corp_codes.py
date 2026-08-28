@@ -42,7 +42,7 @@ def main() -> None:
     korean_today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     rows, unresolved = build_identifier_rows(companies, listed)
     sync_result = store.sync_open_dart_identifiers(rows, valid_from=korean_today.isoformat())
-    backfill_queued = store.enqueue_open_dart_backfill(as_of_year=korean_today.year, years=5)
+    backfill_queued = store.enqueue_open_dart_backfill(as_of_year=korean_today.year, years=10)
 
     # Only aggregate counts and stock codes are emitted. Provider URLs, request
     # parameters, headers, and secrets never enter the workflow log.

@@ -81,6 +81,10 @@ function isTruthyFlag(value: string) {
   return new Set(["Y", "1"]).has(value.toUpperCase());
 }
 
+function hasClassification(value: string) {
+  return !new Set(["", "0", "N"]).has(value.toUpperCase());
+}
+
 export function parseKisKoreanMaster(
   content: Uint8Array,
   exchange: "KOSPI" | "KOSDAQ",
@@ -99,7 +103,10 @@ export function parseKisKoreanMaster(
     const preferred = decode(fieldBytes(tail, layout.widths, layout.preferredIndex));
     const marketCapUnits = Number(decode(fieldBytes(tail, layout.widths, layout.marketCapIndex)));
     if (!/^\d{6}$/.test(ticker) || !name || !Number.isFinite(marketCapUnits) || marketCapUnits < 0) continue;
-    if (isTruthyFlag(etp) || isTruthyFlag(spac) || !new Set(["", "0", "N"]).has(preferred.toUpperCase())) continue;
+    // ETP is a classification code rather than a boolean flag. KIS currently
+    // marks ETFs with "2", so checking only Y/1 would incorrectly admit large
+    // ETFs into the operating-company market-cap universe.
+    if (hasClassification(etp) || isTruthyFlag(spac) || hasClassification(preferred)) continue;
     rows.push({ ticker, name, rank: 0, marketCap: marketCapUnits * WON_PER_MASTER_MARKET_CAP_UNIT, exchange });
   }
   return rows;

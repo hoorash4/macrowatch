@@ -128,7 +128,7 @@ def backfill_periods(
     *,
     as_of_year: int,
     kind: str,
-    new_company_years: int = 5,
+    new_company_years: int = 10,
     last_complete_period: tuple[int, str] | None = None,
 ) -> list[tuple[int, str]]:
     """Plan candidate DART periods; no-data responses are harmless and resumable.

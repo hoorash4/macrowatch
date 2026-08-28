@@ -90,9 +90,16 @@ class SupabaseEarningsStore:
                 endpoint,
                 params={
                     "country": "eq.KR",
-                    "is_active": "eq.true",
                     "ticker": "not.is.null",
-                    "select": "id,ticker,company_name",
+                    # Current index membership, rather than the durable company
+                    # master flag, defines the collection universe. Companies
+                    # that leave every tracked ranking keep their history but
+                    # must not remain in identifier sync or regular collection.
+                    "earnings_index_memberships.effective_to": "is.null",
+                    "select": (
+                        "id,ticker,company_name,"
+                        "earnings_index_memberships!inner(index_id)"
+                    ),
                     "order": "ticker.asc",
                 },
                 headers=self._headers(),
@@ -120,7 +127,7 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("OpenDART identifier sync returned an invalid result.")
         return result
 
-    def enqueue_open_dart_backfill(self, *, as_of_year: int, years: int = 5) -> int:
+    def enqueue_open_dart_backfill(self, *, as_of_year: int, years: int = 10) -> int:
         result = self._rpc("enqueue_earnings_open_dart_backfill", {
             "p_as_of_year": as_of_year,
             "p_years": years,
