@@ -51,6 +51,13 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("API 키", self.contract)
         self.assertIn("DB·로그·원본 요청 파라미터에 남기지 않는다", self.contract)
 
+    def test_contract_uses_five_year_backfill_and_preserves_adjusted_qoq(self) -> None:
+        self.assertIn("최근 5년 분기재무를 백필", self.contract)
+        self.assertIn("qoq_raw", self.contract)
+        self.assertIn("qoq_seasonally_adjusted", self.contract)
+        self.assertIn("qoq_seasonally_adjusted_delta", self.contract)
+        self.assertIn("분기 주가수익률 percentile 60%", self.contract)
+
 
 if __name__ == "__main__":
     unittest.main()
