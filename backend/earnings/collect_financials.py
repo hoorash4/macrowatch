@@ -34,7 +34,13 @@ def canonical_payload_hash(payload: dict[str, Any]) -> str:
 
 
 def batch_request_key(business_year: int, report_code: str, corp_codes: Iterable[str]) -> str:
-    return f"{business_year}:{report_code}:{','.join(sorted(set(corp_codes)))}"
+    # One hundred eight-digit codes exceed the source table's 240-character
+    # request-key limit. The sorted list remains in secret-free request_params;
+    # its digest gives the compact key a stable, collision-resistant identity.
+    unique_codes = sorted(set(corp_codes))
+    normalized = ",".join(unique_codes)
+    digest = sha256(normalized.encode("ascii")).hexdigest()
+    return f"{business_year}:{report_code}:{len(unique_codes)}:{digest}"
 
 
 def _decimal_text(value: Decimal | None) -> str | None:

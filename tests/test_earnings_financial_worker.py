@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from earnings.collect_financials import (  # noqa: E402
     OpenDartFinancialWorker,
+    batch_request_key,
     build_canonical_quarter,
     facts_for_storage,
 )
@@ -80,6 +81,14 @@ class FakeStore:
 
 
 class EarningsFinancialWorkerTests(unittest.TestCase):
+    def test_batch_request_key_is_stable_and_fits_database_limit(self):
+        codes = [f"{number:08d}" for number in range(1, 101)]
+        forward = batch_request_key(2026, "11013", codes)
+        reverse = batch_request_key(2026, "11013", reversed(codes))
+        self.assertEqual(forward, reverse)
+        self.assertLessEqual(len(forward), 240)
+        self.assertTrue(forward.startswith("2026:11013:100:"))
+
     def test_diagnostic_errors_force_redact_both_credentials(self):
         client = FakeClient({"status": "000", "list": []})
         client.api_key = "dart-secret"
