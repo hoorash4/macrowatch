@@ -191,26 +191,6 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("Earnings checkpoint response is not an array.")
         return payload[0] if payload and isinstance(payload[0], dict) else None
 
-    def save_source_payload(
-        self,
-        *,
-        operation: str,
-        request_key: str,
-        request_params: dict[str, Any],
-        payload_sha256: str,
-        payload: dict[str, Any],
-    ) -> str:
-        result = self._rpc("save_earnings_open_dart_payload", {
-            "p_operation": operation,
-            "p_request_key": request_key,
-            "p_request_params": request_params,
-            "p_payload_sha256": payload_sha256,
-            "p_response_payload": payload,
-        })
-        if not isinstance(result, str) or not result:
-            raise EarningsStoreError("OpenDART payload save returned an invalid identifier.")
-        return result
-
     def claim_open_dart_jobs(self, *, limit: int = 100) -> list[dict[str, Any]]:
         result = self._rpc("claim_earnings_open_dart_jobs", {"p_limit": limit})
         if not isinstance(result, list):
@@ -221,17 +201,13 @@ class SupabaseEarningsStore:
         self,
         *,
         job_id: int,
-        source_payload_id: str | None,
         filing: dict[str, Any],
-        facts: list[dict[str, Any]],
         quarter: dict[str, Any] | None,
         outcome: str,
     ) -> dict[str, Any]:
         result = self._rpc("complete_earnings_open_dart_job", {
             "p_job_id": job_id,
-            "p_source_payload_id": source_payload_id,
             "p_filing": filing,
-            "p_facts": facts,
             "p_quarter": quarter,
             "p_outcome": outcome,
         })

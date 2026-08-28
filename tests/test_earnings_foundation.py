@@ -7,6 +7,7 @@ MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_foundation.sql"
 OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.sql"
 OPEN_DART_OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_ingestion_functions.sql"
 OPEN_DART_WORKER_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_financial_worker_functions.sql"
+SLIM_STORAGE_MIGRATION = ROOT / "supabase/migrations/20260828_slim_earnings_storage.sql"
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-supabase.yml"
 OPEN_DART_WORKFLOW = ROOT / ".github/workflows/earnings-open-dart.yml"
 UNIVERSE_MIGRATION = ROOT / "supabase/migrations/20260828_define_market_cap_earnings_universes.sql"
@@ -23,6 +24,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.ops_migration = OPS_MIGRATION.read_text(encoding="utf-8")
         cls.open_dart_ops_migration = OPEN_DART_OPS_MIGRATION.read_text(encoding="utf-8")
         cls.open_dart_worker_migration = OPEN_DART_WORKER_MIGRATION.read_text(encoding="utf-8")
+        cls.slim_storage_migration = SLIM_STORAGE_MIGRATION.read_text(encoding="utf-8")
         cls.deploy_workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
         cls.open_dart_workflow = OPEN_DART_WORKFLOW.read_text(encoding="utf-8")
         cls.universe_migration = UNIVERSE_MIGRATION.read_text(encoding="utf-8")
@@ -31,14 +33,11 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.universe_sources = UNIVERSE_SOURCES.read_text(encoding="utf-8")
         cls.contract = CONTRACT.read_text(encoding="utf-8")
 
-    def test_schema_separates_raw_filing_fact_and_canonical_layers(self) -> None:
-        for table in (
-            "earnings_source_payloads",
-            "earnings_filings",
-            "earnings_financial_facts",
-            "earnings_quarterly_financials",
-        ):
-            self.assertIn(f"public.{table}", self.migration)
+    def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
+        self.assertIn("public.earnings_filings", self.migration)
+        self.assertIn("public.earnings_quarterly_financials", self.migration)
+        self.assertIn("drop table if exists public.earnings_source_payloads", self.slim_storage_migration)
+        self.assertIn("drop table if exists public.earnings_financial_facts", self.slim_storage_migration)
 
     def test_company_identity_and_membership_are_separate(self) -> None:
         self.assertIn("public.earnings_company_identifiers", self.migration)
@@ -46,14 +45,9 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("unique (identifier_type, identifier_value)", self.migration)
         self.assertIn("where effective_to is null", self.migration)
 
-    def test_raw_tables_are_service_role_only(self) -> None:
-        for table in (
-            "earnings_source_payloads",
-            "earnings_filings",
-            "earnings_financial_facts",
-        ):
-            self.assertIn(f"alter table public.{table} enable row level security", self.migration)
-            self.assertNotIn(f"read {table}", self.migration.lower())
+    def test_filing_history_is_service_role_only(self) -> None:
+        self.assertIn("alter table public.earnings_filings enable row level security", self.migration)
+        self.assertNotIn("read earnings_filings", self.migration.lower())
 
     def test_contract_uses_open_dart_multi_company_as_primary_path(self) -> None:
         self.assertIn("fnlttMultiAcnt.json", self.contract)
@@ -67,7 +61,7 @@ class EarningsFoundationTests(unittest.TestCase):
 
     def test_contract_forbids_secret_persistence(self) -> None:
         self.assertIn("API 키", self.contract)
-        self.assertIn("DB·로그·원본 요청 파라미터에 남기지 않는다", self.contract)
+        self.assertIn("DB·로그에 남기지 않는다", self.contract)
 
     def test_contract_uses_five_year_backfill_and_preserves_adjusted_qoq(self) -> None:
         self.assertIn("최근 5년 분기재무를 백필", self.contract)
@@ -93,7 +87,7 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("sync_earnings_open_dart_identifiers", self.open_dart_ops_migration)
         self.assertIn("enqueue_earnings_open_dart_backfill", self.open_dart_ops_migration)
         self.assertIn("enqueue_earnings_open_dart_filings", self.open_dart_ops_migration)
-        self.assertIn("save_earnings_open_dart_payload", self.open_dart_ops_migration)
+        self.assertIn("drop function if exists public.save_earnings_open_dart_payload", self.slim_storage_migration)
         self.assertIn("to service_role", self.open_dart_ops_migration)
         self.assertIn("claim_earnings_open_dart_jobs", self.open_dart_worker_migration)
         self.assertIn("for update skip locked", self.open_dart_worker_migration.lower())
@@ -101,6 +95,7 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("fail_earnings_open_dart_job", self.open_dart_worker_migration)
         self.assertIn("to service_role", self.open_dart_worker_migration)
         self.assertIn(OPEN_DART_WORKER_MIGRATION.name, self.deploy_workflow)
+        self.assertIn(SLIM_STORAGE_MIGRATION.name, self.deploy_workflow)
         self.assertIn("inputs.sync_identifiers == true", self.open_dart_workflow)
         self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
 

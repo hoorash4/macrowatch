@@ -7,7 +7,6 @@ from calendar import monthrange
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
-from hashlib import sha256
 import json
 import os
 import re
@@ -16,9 +15,9 @@ from typing import Any, Callable, Iterable
 
 from earnings.open_dart import OpenDartClient, OpenDartResponse
 from earnings.open_dart_parser import (
-    ACCOUNT_ID_PRIORITIES,
     DartAccountFact,
     REPORT_QUARTERS,
+    REQUIRED_METRICS,
     parse_account_rows,
     select_preferred_accounts,
     standalone_quarter_value,
@@ -26,25 +25,9 @@ from earnings.open_dart_parser import (
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
-REQUIRED_METRICS = tuple(ACCOUNT_ID_PRIORITIES)
 PREVIOUS_REPORT_CODE = {"11012": "11013", "11014": "11012", "11011": "11014"}
 FILING_KIND = {"11013": "q1", "11012": "half_year", "11014": "q3", "11011": "annual"}
 REPORT_END_MONTH = {"11013": 3, "11012": 6, "11014": 9, "11011": 12}
-
-
-def canonical_payload_hash(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def batch_request_key(business_year: int, report_code: str, corp_codes: Iterable[str]) -> str:
-    # One hundred eight-digit codes exceed the source table's 240-character
-    # request-key limit. The sorted list remains in secret-free request_params;
-    # its digest gives the compact key a stable, collision-resistant identity.
-    unique_codes = sorted(set(corp_codes))
-    normalized = ",".join(unique_codes)
-    digest = sha256(normalized.encode("ascii")).hexdigest()
-    return f"{business_year}:{report_code}:{len(unique_codes)}:{digest}"
 
 
 def _decimal_text(value: Decimal | None) -> str | None:
@@ -91,41 +74,6 @@ def attach_reporting_period(
     ) for fact in facts]
 
 
-def facts_for_storage(
-    facts: Iterable[DartAccountFact],
-    payload_ids: dict[str, str],
-) -> list[dict[str, Any]]:
-    """Preserve current-period and cumulative source fields as separate facts."""
-    rows: list[dict[str, Any]] = []
-    for fact in facts:
-        if fact.period_end is None:
-            continue
-        fields = (
-            ("thstrm_amount", fact.current_amount, "fy" if fact.fiscal_quarter == 4 else "quarter"),
-            ("thstrm_add_amount", fact.cumulative_amount, "fy" if fact.fiscal_quarter == 4 else "ytd"),
-        )
-        for source_field, value, value_kind in fields:
-            if value is None:
-                continue
-            rows.append({
-                "metric": fact.metric,
-                "source_account_id": fact.account_id,
-                "source_account_name": fact.account_name,
-                "statement_type": fact.statement_type,
-                "consolidation_scope": fact.consolidation_scope,
-                "period_start": _date_text(fact.period_start),
-                "period_end": fact.period_end.isoformat(),
-                "value_kind": value_kind,
-                "value": _decimal_text(value),
-                "currency": fact.currency,
-                "source_field": source_field,
-                "source_row_key": f"{fact.source_row_key}:{source_field}",
-                "raw_row": fact.raw_row,
-                "source_payload_id": payload_ids.get(fact.source_row_key),
-            })
-    return rows
-
-
 def build_canonical_quarter(
     selected: dict[str, DartAccountFact],
     previous_selected: dict[str, DartAccountFact] | None,
@@ -148,9 +96,9 @@ def build_canonical_quarter(
         if previous and previous.consolidation_scope == fact.consolidation_scope:
             previous_cumulative = previous.cumulative_amount
         value = standalone_quarter_value(fact, previous_cumulative=previous_cumulative)
-        if value is None:
+        if value is None and metric in REQUIRED_METRICS:
             missing.append(metric)
-        else:
+        elif value is not None:
             values[metric] = value
     if missing:
         return None, sorted(set(missing))
@@ -177,6 +125,7 @@ def build_canonical_quarter(
         "period_start": _date_text(period_start),
         "period_end": period_end.isoformat(),
         **{metric: _decimal_text(values[metric]) for metric in REQUIRED_METRICS},
+        "eps": _decimal_text(values.get("eps")),
         "currency": currency,
         "consolidation_scope": next(iter(scopes)),
         "missing_metrics": [],
@@ -217,39 +166,22 @@ class OpenDartFinancialWorker:
         self._has_requested = True
         return response
 
-    def _save_response(self, operation: str, request_key: str, response: OpenDartResponse) -> str:
-        return self.store.save_source_payload(
-            operation=operation,
-            request_key=request_key,
-            request_params=response.request_params,
-            payload_sha256=canonical_payload_hash(response.payload),
-            payload=response.payload,
-        )
-
     def _augment_company_facts(
         self,
         corp_code: str,
         business_year: int,
         report_code: str,
         facts: list[DartAccountFact],
-        payload_ids: dict[str, str],
     ) -> list[DartAccountFact]:
         """Use full CFS then OFS only until one complete scope exists."""
         for scope in ("CFS", "OFS"):
             selected = select_preferred_accounts(facts).get(corp_code, {})
-            if len(selected) == len(REQUIRED_METRICS):
+            if all(metric in selected for metric in REQUIRED_METRICS):
                 break
             response = self._request(lambda scope=scope: self.client.fetch_single_all_accounts(
                 corp_code, business_year, report_code, scope
             ))
-            payload_id = self._save_response(
-                "financial_accounts_full",
-                f"{business_year}:{report_code}:{corp_code}:{scope}",
-                response,
-            )
-            parsed = parse_account_rows(response.payload)
-            facts.extend(parsed)
-            payload_ids.update({fact.source_row_key: payload_id for fact in parsed})
+            facts.extend(parse_account_rows(response.payload))
         return facts
 
     def _fetch_previous(
@@ -257,24 +189,17 @@ class OpenDartFinancialWorker:
         corp_codes: list[str],
         business_year: int,
         report_code: str,
-    ) -> tuple[dict[str, list[DartAccountFact]], dict[str, str]]:
+    ) -> dict[str, list[DartAccountFact]]:
         previous_code = PREVIOUS_REPORT_CODE.get(report_code)
         if not previous_code:
-            return {}, {}
+            return {}
         response = self._request(lambda: self.client.fetch_multi_accounts(
             corp_codes, business_year, previous_code
         ))
-        payload_id = self._save_response(
-            "financial_accounts_previous",
-            batch_request_key(business_year, previous_code, corp_codes),
-            response,
-        )
         grouped: dict[str, list[DartAccountFact]] = defaultdict(list)
-        payload_ids: dict[str, str] = {}
         for fact in parse_account_rows(response.payload):
             grouped[fact.corp_code].append(fact)
-            payload_ids[fact.source_row_key] = payload_id
-        return dict(grouped), payload_ids
+        return dict(grouped)
 
     def process_batch(self, jobs: list[dict[str, Any]]) -> dict[str, int]:
         if not jobs:
@@ -291,11 +216,6 @@ class OpenDartFinancialWorker:
             response = self._request(lambda: self.client.fetch_multi_accounts(
                 corp_codes, business_year, report_code
             ))
-            main_payload_id = self._save_response(
-                "financial_accounts_multi",
-                batch_request_key(business_year, report_code, corp_codes),
-                response,
-            )
         except Exception as error:
             self._record_error(error)
             for job in jobs:
@@ -304,10 +224,8 @@ class OpenDartFinancialWorker:
             return result
 
         current_by_company: dict[str, list[DartAccountFact]] = defaultdict(list)
-        current_payload_ids: dict[str, str] = {}
         for fact in parse_account_rows(response.payload):
             current_by_company[fact.corp_code].append(fact)
-            current_payload_ids[fact.source_row_key] = main_payload_id
 
         # Q4 always needs 9M cumulative data. Interim reports usually expose a
         # reliable three-month amount, so avoid an extra provider call unless
@@ -317,15 +235,16 @@ class OpenDartFinancialWorker:
         )
         needs_previous_batch = report_code == "11011" or any(
             standalone_quarter_value(fact) is None
-            for selected in preliminary.values() for fact in selected.values()
+            for selected in preliminary.values()
+            for metric, fact in selected.items() if metric in REQUIRED_METRICS
         )
         try:
             if needs_previous_batch:
-                previous_by_company, previous_payload_ids = self._fetch_previous(
+                previous_by_company = self._fetch_previous(
                     corp_codes, business_year, report_code
                 )
             else:
-                previous_by_company, previous_payload_ids = {}, {}
+                previous_by_company = {}
         except Exception as error:
             self._record_error(error)
             for job in jobs:
@@ -338,12 +257,11 @@ class OpenDartFinancialWorker:
             try:
                 current_facts = self._augment_company_facts(
                     corp_code, business_year, report_code,
-                    list(current_by_company.get(corp_code, [])), current_payload_ids,
+                    list(current_by_company.get(corp_code, [])),
                 )
                 if not current_facts:
                     self.store.complete_open_dart_job(
-                        job_id=int(job["id"]), source_payload_id=main_payload_id,
-                        filing={}, facts=[], quarter=None, outcome="no_data",
+                        job_id=int(job["id"]), filing={}, quarter=None, outcome="no_data",
                     )
                     result["no_data"] += 1
                     continue
@@ -363,16 +281,17 @@ class OpenDartFinancialWorker:
                     report_code=previous_code,
                 ) if previous_code else []
                 needs_previous = any(
-                    standalone_quarter_value(fact) is None for fact in selected.values()
+                    standalone_quarter_value(fact) is None
+                    for metric, fact in selected.items() if metric in REQUIRED_METRICS
                 )
                 if needs_previous and report_code in PREVIOUS_REPORT_CODE:
                     if not previous_by_company:
-                        previous_by_company, previous_payload_ids = self._fetch_previous(
+                        previous_by_company = self._fetch_previous(
                             corp_codes, business_year, report_code
                         )
                     previous_facts = self._augment_company_facts(
                         corp_code, business_year, PREVIOUS_REPORT_CODE[report_code],
-                        previous_facts, previous_payload_ids,
+                        previous_facts,
                     )
                     previous_facts = attach_reporting_period(
                         previous_facts,
@@ -413,9 +332,8 @@ class OpenDartFinancialWorker:
                     },
                 }
                 self.store.complete_open_dart_job(
-                    job_id=int(job["id"]), source_payload_id=main_payload_id,
+                    job_id=int(job["id"]),
                     filing=filing,
-                    facts=facts_for_storage(current_facts, current_payload_ids),
                     quarter=quarter, outcome=outcome,
                 )
                 result["completed" if outcome == "complete" else outcome] += 1

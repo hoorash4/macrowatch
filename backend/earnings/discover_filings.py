@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from hashlib import sha256
 import json
 from zoneinfo import ZoneInfo
 
@@ -34,11 +33,6 @@ def discovery_window(today: date, checkpoint: dict | None) -> tuple[date, date]:
     return min(anchor - timedelta(days=OVERLAP_CALENDAR_DAYS), today), today
 
 
-def canonical_payload_hash(payload: dict) -> str:
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
 def main() -> None:
     client = OpenDartClient.from_env()
     store = SupabaseEarningsStore.from_env()
@@ -51,13 +45,6 @@ def main() -> None:
 
     for response in client.iter_periodic_filings(begin, end):
         page_count += 1
-        store.save_source_payload(
-            operation=CHECKPOINT_OPERATION,
-            request_key=f"{begin.isoformat()}:{end.isoformat()}:page:{page_count}",
-            request_params=response.request_params,
-            payload_sha256=canonical_payload_hash(response.payload),
-            payload=response.payload,
-        )
         discovered.extend(
             filing for filing in parse_periodic_filings(response.rows)
             if filing.corp_code in tracked_codes

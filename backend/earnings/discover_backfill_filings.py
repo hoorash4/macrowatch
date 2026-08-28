@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
-from hashlib import sha256
 import json
 import os
 from threading import local
@@ -16,13 +15,7 @@ from earnings.open_dart import OpenDartClient
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
-OPERATION = "backfill_periodic_filings"
 _worker_state = local()
-
-
-def canonical_payload_hash(payload: dict) -> str:
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def filing_window(years: list[int], today: date) -> tuple[date, date] | None:
@@ -83,17 +76,8 @@ def main() -> None:
         ]
         for future in as_completed(futures):
             corp_code, year, begin, end, responses = future.result()
-            for page_number, response in enumerate(responses, start=1):
+            for response in responses:
                 pages += 1
-                store.save_source_payload(
-                    operation=OPERATION,
-                    request_key=(
-                        f"{corp_code}:{begin.isoformat()}:{end.isoformat()}:page:{page_number}"
-                    ),
-                    request_params=response.request_params,
-                    payload_sha256=canonical_payload_hash(response.payload),
-                    payload=response.payload,
-                )
                 parsed = [
                     filing for filing in parse_periodic_filings(response.rows)
                     if filing.corp_code == corp_code and filing.business_year == year

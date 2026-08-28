@@ -78,6 +78,8 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_add_open_dart_backfill_filing_identity.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260828_slim_earnings_storage.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_add_sector_intraday_prices.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_schedule_sector_flow.sql

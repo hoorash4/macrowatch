@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from earnings.discover_filings import canonical_payload_hash, discovery_window  # noqa: E402
+from earnings.discover_filings import discovery_window  # noqa: E402
 from earnings.filings import parse_periodic_filings  # noqa: E402
 
 
@@ -58,10 +58,6 @@ class EarningsFilingDiscoveryTests(unittest.TestCase):
     def test_first_run_has_long_holiday_safe_lookback(self) -> None:
         begin, _ = discovery_window(date(2026, 8, 28), None)
         self.assertEqual(begin, date(2026, 8, 14))
-
-    def test_payload_hash_is_stable_across_key_order(self) -> None:
-        self.assertEqual(canonical_payload_hash({"a": 1, "b": 2}), canonical_payload_hash({"b": 2, "a": 1}))
-
 
 if __name__ == "__main__":
     unittest.main()

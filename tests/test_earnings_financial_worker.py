@@ -11,9 +11,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from earnings.collect_financials import (  # noqa: E402
     OpenDartFinancialWorker,
     attach_reporting_period,
-    batch_request_key,
     build_canonical_quarter,
-    facts_for_storage,
     reporting_period_bounds,
 )
 from earnings.open_dart import OpenDartResponse  # noqa: E402
@@ -67,11 +65,6 @@ class FakeStore:
         self.service_role_key = "store-secret"
         self.completions = []
         self.failures = []
-        self.payload_count = 0
-
-    def save_source_payload(self, **kwargs):
-        self.payload_count += 1
-        return f"00000000-0000-0000-0000-{self.payload_count:012d}"
 
     def complete_open_dart_job(self, **kwargs):
         self.completions.append(kwargs)
@@ -83,14 +76,6 @@ class FakeStore:
 
 
 class EarningsFinancialWorkerTests(unittest.TestCase):
-    def test_batch_request_key_is_stable_and_fits_database_limit(self):
-        codes = [f"{number:08d}" for number in range(1, 101)]
-        forward = batch_request_key(2026, "11013", codes)
-        reverse = batch_request_key(2026, "11013", reversed(codes))
-        self.assertEqual(forward, reverse)
-        self.assertLessEqual(len(forward), 240)
-        self.assertTrue(forward.startswith("2026:11013:100:"))
-
     def test_diagnostic_errors_force_redact_both_credentials(self):
         client = FakeClient({"status": "000", "list": []})
         client.api_key = "dart-secret"
@@ -118,14 +103,6 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(missing, [])
         self.assertEqual(quarter["revenue"], "180")
         self.assertEqual(quarter["period_start"], "2026-10-01")
-
-    def test_source_current_and_cumulative_values_are_both_preserved(self):
-        facts = parse_account_rows({"list": rows_for_period()[:1]})
-        stored = facts_for_storage(facts, {facts[0].source_row_key: "payload-id"})
-        self.assertEqual({row["source_field"] for row in stored}, {
-            "thstrm_amount", "thstrm_add_amount"
-        })
-        self.assertEqual({row["source_payload_id"] for row in stored}, {"payload-id"})
 
     def test_reporting_period_uses_official_report_name_when_multi_rows_omit_dates(self):
         start, end = reporting_period_bounds(2026, "11012", "반기보고서 (2025.06)")
@@ -155,7 +132,7 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(store.failures, [])
         self.assertEqual(store.completions[0]["filing"]["period_end"], "2026-03-31")
         self.assertEqual(store.completions[0]["quarter"]["period_start"], "2026-01-01")
-        self.assertEqual(len(store.completions[0]["facts"]), 8)
+        self.assertNotIn("facts", store.completions[0])
 
     def test_q1_complete_multi_company_response_updates_canonical_without_fallback(self):
         client = FakeClient({"status": "000", "list": rows_for_period()})
@@ -174,6 +151,27 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(store.failures, [])
         self.assertEqual(store.completions[0]["quarter"]["eps"], "100")
         self.assertEqual(store.completions[0]["outcome"], "complete")
+
+    def test_missing_eps_does_not_trigger_fallback_or_block_quarter(self):
+        rows = rows_for_period()[:-1]
+        client = FakeClient({"status": "000", "list": rows})
+        store = FakeStore()
+        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
+        result = worker.process_batch([{
+            "id": 1,
+            "company_id": "company-id",
+            "business_year": 2026,
+            "report_code": "11013",
+            "corp_code": "00126380",
+            "metadata": {
+                "receipt_no": "20260515000001",
+                "filed_on": "2026-05-15",
+                "report_name": "분기보고서 (2026.03)",
+            },
+        }])
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual(client.full_calls, [])
+        self.assertIsNone(store.completions[0]["quarter"]["eps"])
 
 
 if __name__ == "__main__":

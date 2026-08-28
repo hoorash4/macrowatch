@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
-import hashlib
-import json
 import re
 from typing import Any, Iterable
 
@@ -39,6 +37,11 @@ ACCOUNT_NAME_ALIASES: dict[str, set[str]] = {
     "eps": {"기본주당이익", "기본주당이익손실", "기본주당순이익"},
 }
 
+# Earnings Momentum requires the three income-statement totals below. EPS is
+# parsed when OpenDART supplies it, but it must never trigger an additional
+# provider request or block an otherwise complete quarter.
+REQUIRED_METRICS = ("revenue", "operating_income", "net_income")
+
 
 @dataclass(frozen=True)
 class DartAccountFact:
@@ -57,8 +60,6 @@ class DartAccountFact:
     current_amount: Decimal | None
     cumulative_amount: Decimal | None
     currency: str | None
-    source_row_key: str
-    raw_row: dict[str, Any]
 
 
 def parse_amount(raw_value: Any) -> Decimal | None:
@@ -102,11 +103,6 @@ def _parse_period(raw_value: Any) -> tuple[date | None, date | None]:
     return (parsed[0], parsed[-1]) if len(parsed) > 1 else (None, parsed[0])
 
 
-def _row_key(row: dict[str, Any]) -> str:
-    encoded = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
 def parse_account_rows(payload: dict[str, Any]) -> list[DartAccountFact]:
     """Extract only the four metrics needed by Earnings Momentum."""
     facts: list[DartAccountFact] = []
@@ -146,8 +142,6 @@ def parse_account_rows(payload: dict[str, Any]) -> list[DartAccountFact]:
             current_amount=parse_amount(raw.get("thstrm_amount")),
             cumulative_amount=parse_amount(raw.get("thstrm_add_amount")),
             currency=currency,
-            source_row_key=_row_key(raw),
-            raw_row=dict(raw),
         ))
     return facts
 
@@ -190,7 +184,7 @@ def select_preferred_accounts(
 
         complete_scope = next(
             (scope for scope in ("CFS", "OFS", "NA")
-             if len(candidates_by_scope.get(scope, {})) == len(ACCOUNT_ID_PRIORITIES)),
+             if all(metric in candidates_by_scope.get(scope, {}) for metric in REQUIRED_METRICS)),
             None,
         )
         fallback_scope = next(
