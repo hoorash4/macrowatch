@@ -188,12 +188,14 @@ def standalone_quarter_value(
     *,
     previous_cumulative: Decimal | None = None,
 ) -> Decimal | None:
-    """Return a standalone quarter value without unsafe assumptions.
+    """Return the standalone-quarter value used by Earnings Momentum.
 
     OpenDART documents ``thstrm_amount`` as the three-month income-statement
-    amount for interim reports, so it is preferred for Q2/Q3. Q4 EPS cannot be
-    produced by subtracting cumulative EPS because weighted-average shares may
-    differ; it remains missing until a defensible source is available.
+    amount for interim reports, so it is preferred for Q2/Q3. When a standalone
+    Q4 value is unavailable, every metric -- including basic EPS -- uses the
+    same FY cumulative minus 9M cumulative rule. This deliberately favors a
+    continuous, consistently calculated momentum series over a share-count
+    adjusted accounting reconstruction.
     """
     quarter = fact.fiscal_quarter
     if quarter == 1:
@@ -205,8 +207,6 @@ def standalone_quarter_value(
             return fact.cumulative_amount - previous_cumulative
         return None
     if quarter == 4:
-        if fact.metric == "eps":
-            return None
         annual_amount = fact.current_amount if fact.current_amount is not None else fact.cumulative_amount
         if annual_amount is None or previous_cumulative is None:
             return None

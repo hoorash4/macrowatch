@@ -131,7 +131,7 @@ class OpenDartParserTests(unittest.TestCase):
         fact = parse_account_rows({"list": [account_row()]})[0]
         self.assertEqual(standalone_quarter_value(fact, previous_cumulative=Decimal("2150")), Decimal("1250"))
 
-    def test_q4_subtracts_nine_months_but_never_subtracts_eps(self):
+    def test_q4_subtracts_nine_months_for_operating_income_and_basic_eps(self):
         operating = parse_account_rows({"list": [account_row(
             reprt_code="11011", thstrm_amount="5,000", thstrm_add_amount=""
         )]})[0]
@@ -145,7 +145,10 @@ class OpenDartParserTests(unittest.TestCase):
             account_nm="기본주당이익",
             thstrm_amount="500",
         )]})[0]
-        self.assertIsNone(standalone_quarter_value(eps, previous_cumulative=Decimal("320")))
+        self.assertEqual(
+            standalone_quarter_value(eps, previous_cumulative=Decimal("320")),
+            Decimal("180"),
+        )
 
 
 if __name__ == "__main__":
