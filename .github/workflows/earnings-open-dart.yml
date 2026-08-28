@@ -64,6 +64,8 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          OPEN_DART_MAX_BATCHES: "5"
+          # Three worst-case historical periods fit inside the 60-minute job
+          # lease; the daily fallback run continues the remaining queue.
+          OPEN_DART_MAX_BATCHES: "3"
           OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.2"
         run: python -m earnings.collect_financials
