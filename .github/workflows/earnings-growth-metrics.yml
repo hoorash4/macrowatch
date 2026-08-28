@@ -1,0 +1,38 @@
+name: Recalculate earnings growth metrics
+
+on:
+  workflow_run:
+    workflows: ["Deploy Supabase changes"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-earnings-growth-metrics
+  cancel-in-progress: false
+
+jobs:
+  recalculate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install worker dependency
+        run: pip install -r backend/requirements.txt
+
+      - name: Calculate from existing canonical quarters
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.calculate_growth_metrics

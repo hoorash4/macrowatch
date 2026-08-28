@@ -271,6 +271,108 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("OpenDART filing enqueue returned an invalid result.")
         return result
 
+    def list_all_quarterly_financials(self, *, page_size: int = 1000) -> list[dict[str, Any]]:
+        """Read the compact canonical quarters without fetching filing payloads."""
+        endpoint = f"{self.url}/rest/v1/earnings_quarterly_financials"
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            try:
+                response = self.session.get(
+                    endpoint,
+                    params={
+                        "select": (
+                            "company_id,fiscal_year,fiscal_quarter,revenue,"
+                            "operating_income,net_income,currency,"
+                            "consolidation_scope,canonical_version"
+                        ),
+                        "order": "company_id.asc,fiscal_year.asc,fiscal_quarter.asc",
+                        "limit": str(page_size),
+                        "offset": str(offset),
+                    },
+                    headers=self._headers(),
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except Exception:
+                raise EarningsStoreError("Failed to list canonical quarterly financials.") from None
+            if not isinstance(payload, list):
+                raise EarningsStoreError("Canonical quarterly financial response is not an array.")
+            page = [row for row in payload if isinstance(row, dict)]
+            rows.extend(page)
+            if len(payload) < page_size:
+                return rows
+            offset += page_size
+
+    def upsert_growth_metrics(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        batch_size: int = 500,
+    ) -> int:
+        """Persist compact recalculable metrics in bounded PostgREST batches."""
+        endpoint = f"{self.url}/rest/v1/earnings_quarterly_growth_metrics"
+        stored = 0
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            try:
+                response = self.session.post(
+                    endpoint,
+                    params={"on_conflict": "company_id,fiscal_year,fiscal_quarter"},
+                    json=batch,
+                    headers=self._headers(prefer="resolution=merge-duplicates,return=minimal"),
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except Exception:
+                raise EarningsStoreError("Failed to store quarterly growth metrics.") from None
+            stored += len(batch)
+        return stored
+
+    def list_growth_metric_versions(self, *, page_size: int = 1000) -> dict[tuple[str, int, int], tuple[int, int]]:
+        """Return only version fingerprints needed to avoid unchanged writes."""
+        endpoint = f"{self.url}/rest/v1/earnings_quarterly_growth_metrics"
+        versions: dict[tuple[str, int, int], tuple[int, int]] = {}
+        offset = 0
+        while True:
+            try:
+                response = self.session.get(
+                    endpoint,
+                    params={
+                        "select": (
+                            "company_id,fiscal_year,fiscal_quarter,"
+                            "source_canonical_version,calculation_version"
+                        ),
+                        "order": "company_id.asc,fiscal_year.asc,fiscal_quarter.asc",
+                        "limit": str(page_size),
+                        "offset": str(offset),
+                    },
+                    headers=self._headers(),
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except Exception:
+                raise EarningsStoreError("Failed to list growth metric versions.") from None
+            if not isinstance(payload, list):
+                raise EarningsStoreError("Growth metric version response is not an array.")
+            for row in payload:
+                if not isinstance(row, dict):
+                    continue
+                key = (
+                    str(row["company_id"]),
+                    int(row["fiscal_year"]),
+                    int(row["fiscal_quarter"]),
+                )
+                versions[key] = (
+                    int(row["source_canonical_version"]),
+                    int(row["calculation_version"]),
+                )
+            if len(payload) < page_size:
+                return versions
+            offset += page_size
+
     def save_checkpoint(self, *, source: str, operation: str, cursor: dict[str, Any]) -> None:
         endpoint = f"{self.url}/rest/v1/earnings_collection_checkpoints"
         row = {

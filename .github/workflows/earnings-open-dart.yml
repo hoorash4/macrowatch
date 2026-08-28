@@ -86,3 +86,10 @@ jobs:
           OPEN_DART_MAX_BATCHES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_batches || '3' }}
           OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.2"
         run: python -m earnings.collect_financials
+
+      - name: Recalculate compact earnings growth metrics
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.calculate_growth_metrics
