@@ -38,7 +38,8 @@ def main() -> None:
     gaps = store.list_open_dart_identity_gaps()
     pages = 0
     filings = 0
-    queued = 0
+    updated = 0
+    unmatched = 0
 
     for gap in gaps:
         corp_code = str(gap.get("corp_code") or "").strip()
@@ -71,11 +72,12 @@ def main() -> None:
                 filing for filing in parse_periodic_filings(response.rows)
                 if filing.corp_code == corp_code and filing.business_year in wanted_years
             ]
-            result = store.enqueue_open_dart_filings([
+            result = store.attach_open_dart_backfill_filings([
                 filing.as_payload() for filing in parsed
             ])
             filings += len(parsed)
-            queued += int(result.get("queued") or 0)
+            updated += int(result.get("updated") or 0)
+            unmatched += int(result.get("unmatched") or 0)
             if interval:
                 time.sleep(interval)
 
@@ -84,7 +86,8 @@ def main() -> None:
         "companies": len(gaps),
         "pages": pages,
         "filings": filings,
-        "queued": queued,
+        "updated": updated,
+        "unmatched": unmatched,
     }, ensure_ascii=False))
 
 

@@ -160,6 +160,15 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("OpenDART filing-identity gap response is not an array.")
         return [row for row in result if isinstance(row, dict)]
 
+    def attach_open_dart_backfill_filings(self, filings: list[dict[str, Any]]) -> dict[str, Any]:
+        result = self._rpc(
+            "attach_earnings_open_dart_backfill_filings",
+            {"p_filings": filings},
+        )
+        if not isinstance(result, dict):
+            raise EarningsStoreError("OpenDART backfill filing attachment returned an invalid result.")
+        return result
+
     def get_checkpoint(self, *, source: str, operation: str) -> dict[str, Any] | None:
         endpoint = f"{self.url}/rest/v1/earnings_collection_checkpoints"
         try:
