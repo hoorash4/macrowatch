@@ -10,9 +10,11 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from earnings.collect_financials import (  # noqa: E402
     OpenDartFinancialWorker,
+    attach_reporting_period,
     batch_request_key,
     build_canonical_quarter,
     facts_for_storage,
+    reporting_period_bounds,
 )
 from earnings.open_dart import OpenDartResponse  # noqa: E402
 from earnings.open_dart_parser import parse_account_rows, select_preferred_accounts  # noqa: E402
@@ -124,6 +126,36 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
             "thstrm_amount", "thstrm_add_amount"
         })
         self.assertEqual({row["source_payload_id"] for row in stored}, {"payload-id"})
+
+    def test_reporting_period_uses_official_report_name_when_multi_rows_omit_dates(self):
+        start, end = reporting_period_bounds(2026, "11012", "반기보고서 (2025.06)")
+        self.assertEqual(start, date(2025, 4, 1))
+        self.assertEqual(end, date(2025, 6, 30))
+
+    def test_multi_company_rows_without_dates_complete_from_filing_metadata(self):
+        rows = rows_for_period()
+        for row in rows:
+            row.pop("thstrm_dt")
+        client = FakeClient({"status": "000", "list": rows})
+        store = FakeStore()
+        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
+        result = worker.process_batch([{
+            "id": 1,
+            "company_id": "company-id",
+            "business_year": 2026,
+            "report_code": "11013",
+            "corp_code": "00126380",
+            "metadata": {
+                "receipt_no": "20260515000001",
+                "filed_on": "2026-05-15",
+                "report_name": "분기보고서 (2026.03)",
+            },
+        }])
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual(store.failures, [])
+        self.assertEqual(store.completions[0]["filing"]["period_end"], "2026-03-31")
+        self.assertEqual(store.completions[0]["quarter"]["period_start"], "2026-01-01")
+        self.assertEqual(len(store.completions[0]["facts"]), 8)
 
     def test_q1_complete_multi_company_response_updates_canonical_without_fallback(self):
         client = FakeClient({"status": "000", "list": rows_for_period()})

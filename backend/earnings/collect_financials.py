@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from calendar import monthrange
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from hashlib import sha256
 import json
 import os
+import re
 import time
 from typing import Any, Callable, Iterable
 
@@ -26,6 +29,7 @@ from earnings.supabase_rest import SupabaseEarningsStore
 REQUIRED_METRICS = tuple(ACCOUNT_ID_PRIORITIES)
 PREVIOUS_REPORT_CODE = {"11012": "11013", "11014": "11012", "11011": "11014"}
 FILING_KIND = {"11013": "q1", "11012": "half_year", "11014": "q3", "11011": "annual"}
+REPORT_END_MONTH = {"11013": 3, "11012": 6, "11014": 9, "11011": 12}
 
 
 def canonical_payload_hash(payload: dict[str, Any]) -> str:
@@ -49,6 +53,42 @@ def _decimal_text(value: Decimal | None) -> str | None:
 
 def _date_text(value: date | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def reporting_period_bounds(
+    business_year: int,
+    report_code: str,
+    report_name: str | None = None,
+) -> tuple[date, date]:
+    """Recover quarter bounds omitted by OpenDART's multi-company endpoint.
+
+    Filing discovery preserves the official report name, whose ``(YYYY.MM)``
+    suffix identifies the reporting period.  The report code is the official
+    fallback for older queued jobs that predate that metadata field.
+    """
+    year = int(business_year)
+    month = REPORT_END_MONTH[report_code]
+    match = re.search(r"\((\d{4})\.(03|06|09|12)\)", str(report_name or ""))
+    if match:
+        year, month = (int(value) for value in match.groups())
+    quarter_start_month = month - 2
+    return date(year, quarter_start_month, 1), date(year, month, monthrange(year, month)[1])
+
+
+def attach_reporting_period(
+    facts: Iterable[DartAccountFact],
+    *,
+    business_year: int,
+    report_code: str,
+    report_name: str | None = None,
+) -> list[DartAccountFact]:
+    """Fill only dates absent from multi-company rows; preserve supplied dates."""
+    period_start, period_end = reporting_period_bounds(business_year, report_code, report_name)
+    return [replace(
+        fact,
+        period_start=fact.period_start or period_start,
+        period_end=fact.period_end or period_end,
+    ) for fact in facts]
 
 
 def facts_for_storage(
@@ -119,7 +159,9 @@ def build_canonical_quarter(
     period_end = representative.period_end
     if period_end is None:
         return None, list(REQUIRED_METRICS)
-    period_start = representative.period_start
+    # Canonical rows always describe the standalone quarter, even when the
+    # provider's source field is cumulative from the beginning of the year.
+    period_start = date(period_end.year, period_end.month - 2, 1)
     previous_periods = [fact.period_end for fact in (previous_selected or {}).values() if fact.period_end]
     if representative.fiscal_quarter > 1 and previous_periods:
         period_start = max(previous_periods) + timedelta(days=1)
@@ -306,8 +348,20 @@ class OpenDartFinancialWorker:
                     result["no_data"] += 1
                     continue
 
+                metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+                current_facts = attach_reporting_period(
+                    current_facts,
+                    business_year=business_year,
+                    report_code=report_code,
+                    report_name=metadata.get("report_name"),
+                )
                 selected = select_preferred_accounts(current_facts).get(corp_code, {})
-                previous_facts = list(previous_by_company.get(corp_code, []))
+                previous_code = PREVIOUS_REPORT_CODE.get(report_code)
+                previous_facts = attach_reporting_period(
+                    list(previous_by_company.get(corp_code, [])),
+                    business_year=business_year,
+                    report_code=previous_code,
+                ) if previous_code else []
                 needs_previous = any(
                     standalone_quarter_value(fact) is None for fact in selected.values()
                 )
@@ -320,9 +374,13 @@ class OpenDartFinancialWorker:
                         corp_code, business_year, PREVIOUS_REPORT_CODE[report_code],
                         previous_facts, previous_payload_ids,
                     )
+                    previous_facts = attach_reporting_period(
+                        previous_facts,
+                        business_year=business_year,
+                        report_code=PREVIOUS_REPORT_CODE[report_code],
+                    )
                 previous_selected = select_preferred_accounts(previous_facts).get(corp_code, {})
 
-                metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
                 receipt = str(metadata.get("receipt_no") or "").strip()
                 if not receipt:
                     receipt = next((fact.receipt_number for fact in current_facts if fact.receipt_number), "")
@@ -401,6 +459,10 @@ def main() -> None:
         annotation = json.dumps(summary, ensure_ascii=False).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         print(f"::error title=OpenDART financial worker::{annotation}", flush=True)
         raise SystemExit(1)
+    # Expose only aggregate counts so a live success can be verified through
+    # the check API without downloading credential-bearing workflow logs.
+    annotation = json.dumps(summary, ensure_ascii=False).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::notice title=OpenDART financial worker::{annotation}", flush=True)
 
 
 if __name__ == "__main__":
