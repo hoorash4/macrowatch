@@ -30,6 +30,7 @@ _TABLE_TAG = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _ARCHIVE_UNIT = re.compile(
     r"단위\s*[:：]\s*(백만원|천원|원|USD|달러)", re.IGNORECASE
 )
+MAX_TREE_DIAGNOSTIC_ROWS = 80
 
 
 class DartRevenueDerivationError(ValueError):
@@ -542,7 +543,9 @@ def derive_gross_revenue_from_archive(
                                     and row.values[debug_column] is not None
                                     else None,
                                 )
-                                for row in _operating_section(debug_rows)[-80:]
+                                for row in _operating_section(debug_rows)[
+                                    -MAX_TREE_DIAGNOSTIC_ROWS:
+                                ]
                             ]
                             if len(candidate_tree_sample) > len(tree_sample):
                                 tree_sample = candidate_tree_sample
