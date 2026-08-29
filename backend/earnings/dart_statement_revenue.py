@@ -314,8 +314,8 @@ def _classification(label: str, *, has_child: bool, value: Decimal) -> str | Non
         or "배당" in label
     )
     expense_word = any(token in label for token in (
-        "비용", "손실", "매출원가", "영업원가", "전입액", "관리비", "인건비",
-        "손상차손",
+        "비용", "손실", "매출원가", "영업원가", "전입", "관리비", "인건비",
+        "손상차손", "상각비", "대손",
     ))
     if has_child and is_net:
         return "net_parent"

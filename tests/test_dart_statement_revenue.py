@@ -404,5 +404,19 @@ class DartStatementRevenueTests(unittest.TestCase):
 
 
 
+    def test_financial_provision_without_amount_suffix_is_expense(self):
+        page = statement([
+            ("영업수익", "300"),
+            ("신용손실충당금전입", "200"),
+            ("영업이익", "100"),
+        ], unit="원")
+        result = derive_gross_revenue(
+            page, operating_current=Decimal("100"), operating_cumulative=None,
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
+        self.assertEqual(result.current_expense, Decimal("200"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
