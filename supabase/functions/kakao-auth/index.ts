@@ -105,6 +105,49 @@ async function decryptToken(value: unknown, secret: string) {
   return new TextDecoder().decode(plaintext);
 }
 
+function kakaoError(payload: Record<string, unknown>, fallback: string) {
+  return String(payload.error_description || payload.msg || payload.error || fallback);
+}
+
+async function refreshKakaoTokens(refreshToken: string, clientId: string, clientSecret: string) {
+  if (!refreshToken) throw new Error("카카오 연결을 다시 해주세요. 갱신 토큰이 없습니다.");
+  const tokenBody = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: clientId,
+    refresh_token: refreshToken,
+  });
+  if (clientSecret) tokenBody.set("client_secret", clientSecret);
+  const response = await fetch("https://kauth.kakao.com/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" },
+    body: tokenBody,
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok || typeof payload.access_token !== "string") {
+    throw new Error(kakaoError(payload, "카카오 연결이 만료되었습니다. 카카오에 다시 연결해 주세요."));
+  }
+  return payload;
+}
+
+async function sendKakaoMemo(accessToken: string, text: string) {
+  const template = {
+    object_type: "text",
+    text,
+    link: { web_url: REDIRECT_URI, mobile_web_url: REDIRECT_URI },
+  };
+  const response = await fetch("https://kapi.kakao.com/v2/api/talk/memo/default/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: new URLSearchParams({ template_object: JSON.stringify(template) }),
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  return {
+    ok: response.ok && payload.result_code === 0,
+    status: response.status,
+    error: kakaoError(payload, "카카오 메시지를 보내지 못했습니다."),
+  };
+}
+
 async function unlinkKakaoAccount(
   config: Record<string, unknown>,
   clientId: string,
@@ -122,22 +165,8 @@ async function unlinkKakaoAccount(
 
   let response = accessToken ? await unlink(accessToken) : null;
   if ((!response || response.status === 401) && refreshToken) {
-    const tokenBody = new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: clientId,
-      refresh_token: refreshToken,
-    });
-    if (clientSecret) tokenBody.set("client_secret", clientSecret);
-    const refreshResponse = await fetch("https://kauth.kakao.com/oauth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" },
-      body: tokenBody,
-    });
-    const refreshed = await refreshResponse.json();
-    if (!refreshResponse.ok || !refreshed.access_token) {
-      throw new Error("카카오 연결을 해제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
-    }
-    accessToken = refreshed.access_token;
+    const refreshed = await refreshKakaoTokens(refreshToken, clientId, clientSecret);
+    accessToken = String(refreshed.access_token);
     response = await unlink(accessToken);
   }
   if (response && !response.ok) {
@@ -176,6 +205,93 @@ export default {
       const action = String(body?.action || "");
       const stateSecret = kakaoClientSecret || serviceRoleKey;
       const tokenEncryptionSecret = Deno.env.get("KAKAO_TOKEN_ENCRYPTION_KEY") || serviceRoleKey;
+
+      if (action === "send_internal") {
+        if (request.headers.get("Authorization") !== `Bearer ${serviceRoleKey}`) {
+          return json({ error: "내부 알림 호출 권한이 없습니다." }, 403, origin);
+        }
+        const userId = String(body?.user_id || "").trim();
+        const text = String(body?.text || "").trim();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+          return json({ error: "알림 대상 사용자가 올바르지 않습니다." }, 400, origin);
+        }
+        if (!text || text.length > 1800) {
+          return json({ error: "카카오 알림 본문은 1~1800자여야 합니다." }, 400, origin);
+        }
+
+        const { data: channel, error: channelReadError } = await admin
+          .from("notification_channels")
+          .select("config,is_active")
+          .eq("user_id", userId)
+          .eq("channel", "kakao_self")
+          .maybeSingle();
+        if (channelReadError) throw channelReadError;
+        let config = channel?.config && typeof channel.config === "object"
+          ? channel.config as Record<string, unknown>
+          : {};
+        if (!channel || channel.is_active === false || config.connected !== true || config.wants_kakao === false) {
+          return json({ error: "카카오 알림 채널이 연결되어 있지 않습니다." }, 409, origin);
+        }
+
+        let accessToken = await decryptToken(config.access_token, tokenEncryptionSecret);
+        let refreshToken = await decryptToken(config.refresh_token, tokenEncryptionSecret);
+        const persistRefresh = async (refreshed: Record<string, unknown>) => {
+          accessToken = String(refreshed.access_token || "");
+          if (typeof refreshed.refresh_token === "string" && refreshed.refresh_token) {
+            refreshToken = refreshed.refresh_token;
+          }
+          const now = Date.now();
+          config = {
+            ...config,
+            connected: true,
+            wants_kakao: true,
+            access_token: await encryptToken(accessToken, tokenEncryptionSecret),
+            refresh_token: await encryptToken(refreshToken, tokenEncryptionSecret),
+            access_expires_at: new Date(now + Number(refreshed.expires_in || 0) * 1000).toISOString(),
+            refresh_expires_at: refreshed.refresh_token_expires_in
+              ? new Date(now + Number(refreshed.refresh_token_expires_in) * 1000).toISOString()
+              : config.refresh_expires_at || null,
+            last_error: null,
+          };
+          const { error: tokenUpdateError } = await admin
+            .from("notification_channels")
+            .update({ config, updated_at: new Date().toISOString() })
+            .eq("user_id", userId)
+            .eq("channel", "kakao_self");
+          if (tokenUpdateError) throw tokenUpdateError;
+        };
+        const refresh = async () => {
+          try {
+            const refreshed = await refreshKakaoTokens(
+              refreshToken,
+              kakaoClientId,
+              kakaoClientSecret,
+            );
+            await persistRefresh(refreshed);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "카카오 연결을 갱신하지 못했습니다.";
+            config = { ...config, connected: false, last_error: message };
+            await admin
+              .from("notification_channels")
+              .update({ config, updated_at: new Date().toISOString() })
+              .eq("user_id", userId)
+              .eq("channel", "kakao_self");
+            throw error;
+          }
+        };
+
+        const expiresAt = Date.parse(String(config.access_expires_at || ""));
+        if (!accessToken || (Number.isFinite(expiresAt) && expiresAt <= Date.now() + 5 * 60_000)) {
+          await refresh();
+        }
+        let delivery = await sendKakaoMemo(accessToken, text);
+        if (!delivery.ok && delivery.status === 401) {
+          await refresh();
+          delivery = await sendKakaoMemo(accessToken, text);
+        }
+        if (!delivery.ok) return json({ error: delivery.error }, 502, origin);
+        return json({ sent: true }, 200, origin);
+      }
 
       if (action === "start") {
         const state = await createState(stateSecret);

@@ -44,6 +44,47 @@ class TargetConditionTests(unittest.TestCase):
         self.assertTrue(check_targets.condition_met(target, Decimal("9"), Decimal("11")))
         self.assertFalse(check_targets.condition_met(target, Decimal("11"), Decimal("12")))
 
+    def test_failed_target_alert_is_retried_and_marked_sent(self) -> None:
+        event = {
+            "id": 42,
+            "target_id": 3,
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "previous_value": "4.6",
+            "current_value": "4.7",
+            "condition_type": "changed",
+            "target_value": None,
+            "status": "failed",
+            "attempt_count": 1,
+            "created_at": "2026-08-29T00:00:00+00:00",
+        }
+
+        class Database:
+            def __init__(self) -> None:
+                self.patches = []
+
+            def request(self, method, table, **kwargs):
+                if method == "GET" and table == "alert_events":
+                    return [event]
+                if method == "PATCH" and table == "alert_events":
+                    self.patches.append(kwargs)
+                    return None
+                raise AssertionError((method, table, kwargs))
+
+            def invoke_function(self, name, body):
+                self.assertion = (name, body)
+                return {"sent": True}
+
+        db = Database()
+        delivered, failures = check_targets.deliver_queued_alerts(
+            db,
+            [{"id": 3, "title": "미국 10년물 국채 금리"}],
+        )
+        self.assertEqual((delivered, failures), (1, 0))
+        self.assertEqual(db.assertion[0], "kakao-auth")
+        self.assertIn("4.6 → 4.7", db.assertion[1]["text"])
+        self.assertEqual(db.patches[0]["body"]["status"], "sent")
+        self.assertEqual(db.patches[0]["body"]["attempt_count"], 2)
+
 
 class SharedCalculationTests(unittest.TestCase):
     def test_em_capacity_is_equal_weighted_and_reverses_adverse_inputs(self) -> None:
@@ -368,12 +409,24 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('action === "save_admin_card_order"', control)
         self.assertIn('`admin_card_order_${user.id}`', control)
 
-    def test_optional_kakao_failure_does_not_fail_target_collection(self):
+    def test_target_alerts_use_db_tokens_retry_queue_and_visible_failures(self):
         checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
-        alert_block = checker[checker.index("    if alerts:"):checker.index("    print(f\"Finished:")]
-        self.assertLess(alert_block.index("        try:"), alert_block.index("access_token = refresh_kakao_access_token()"))
-        self.assertIn('record_alerts(db, alerts, "failed", message)', alert_block)
-        self.assertNotIn("failures += 1", alert_block)
+        workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")
+        kakao_auth = (ROOT / "supabase/functions/kakao-auth/index.ts").read_text(encoding="utf-8")
+        migration = (ROOT / "supabase/migrations/20260829_make_target_alerts_retryable.sql").read_text(encoding="utf-8")
+        self.assertIn('"status": "pending"', checker)
+        self.assertIn('"status": "in.(pending,failed)"', checker)
+        self.assertIn('"attempt_count": "lt.5"', checker)
+        self.assertIn('db.invoke_function(', checker)
+        self.assertIn('return 1 if notification_failures else 0', checker)
+        self.assertNotIn("KAKAO_REFRESH_TOKEN", workflow)
+        self.assertIn('action === "send_internal"', kakao_auth)
+        self.assertIn('request.headers.get("Authorization") !== `Bearer ${serviceRoleKey}`', kakao_auth)
+        self.assertIn("Date.now() + 5 * 60_000", kakao_auth)
+        self.assertIn("delivery.status === 401", kakao_auth)
+        self.assertIn("await persistRefresh(refreshed)", kakao_auth)
+        self.assertIn("connected: false, last_error: message", kakao_auth)
+        self.assertIn("'pending', 'sent', 'failed', 'skipped'", migration)
 
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")

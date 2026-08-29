@@ -167,6 +167,24 @@ class SupabaseRest:
             prefer="resolution=merge-duplicates,return=minimal",
         )
 
+    def invoke_function(self, name: str, body: Any) -> Any:
+        """서비스 역할 자격으로 내부 Supabase Edge Function을 호출한다."""
+        response = self.session.post(
+            f"{self.url}/functions/v1/{name}",
+            headers=self.headers,
+            json=body,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            detail = response.text[:500]
+            try:
+                payload = response.json()
+                detail = str(payload.get("error") or payload.get("message") or detail)
+            except (TypeError, ValueError):
+                pass
+            raise RuntimeError(f"Supabase function {name}: {response.status_code} {detail}")
+        return response.json() if response.content else None
+
     def delete_before(self, table: str, column: str, cutoff: str) -> None:
         """보존 경계보다 오래된 시계열 행을 삭제한다."""
         self.request(

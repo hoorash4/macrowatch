@@ -5,6 +5,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from collections import defaultdict
 from typing import Any
 from urllib.parse import quote
 
@@ -13,9 +14,7 @@ import requests
 from common import (
     SupabaseRest,
     fetch_fred_observations,
-    refresh_kakao_access_token as refresh_shared_kakao_token,
     require_env,
-    send_kakao_text,
 )
 
 
@@ -195,11 +194,7 @@ def condition_label(condition: str) -> str:
     }.get(condition, condition)
 
 
-def refresh_kakao_access_token() -> str | None:
-    return refresh_shared_kakao_token(required=False)
-
-
-def send_kakao_message(access_token: str, results: list[CheckResult]) -> None:
+def kakao_message(results: list[CheckResult]) -> str:
     lines = ["[MacroWatch] 알림 조건을 충족했습니다."]
     for result in results:
         condition = str(result.target.get("condition_type") or "")
@@ -211,17 +206,15 @@ def send_kakao_message(access_token: str, results: list[CheckResult]) -> None:
                 condition_label(condition),
             ]
         )
-    send_kakao_text(access_token, "\n".join(lines))
+    return "\n".join(lines)
 
 
-def record_alerts(
+def enqueue_alerts(
     db: SupabaseRest,
     results: list[CheckResult],
-    status: str,
-    error_message: str | None = None,
-) -> None:
+ ) -> list[dict[str, Any]]:
     if not results:
-        return
+        return []
     rows = []
     for result in results:
         target = result.target
@@ -234,11 +227,128 @@ def record_alerts(
                 "condition_type": target.get("condition_type") or "changed",
                 "target_value": target.get("target_value"),
                 "channel": "kakao_self",
-                "status": status,
-                "error_message": error_message,
+                "status": "pending",
+                "error_message": None,
             }
         )
-    db.request("POST", "alert_events", body=rows, prefer="return=minimal")
+    return db.request("POST", "alert_events", body=rows, prefer="return=representation") or []
+
+
+def queued_alerts(db: SupabaseRest) -> list[dict[str, Any]]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    return db.request(
+        "GET",
+        "alert_events",
+        params={
+            "select": "id,target_id,user_id,previous_value,current_value,condition_type,target_value,status,attempt_count,created_at",
+            "status": "in.(pending,failed)",
+            "attempt_count": "lt.5",
+            "created_at": f"gte.{cutoff}",
+            "order": "created_at.asc",
+            "limit": "100",
+        },
+    ) or []
+
+
+def result_from_event(event: dict[str, Any], target_titles: dict[Any, str]) -> CheckResult:
+    target_id = event.get("target_id")
+    target = {
+        "id": target_id,
+        "user_id": event.get("user_id"),
+        "title": target_titles.get(target_id) or f"지표 {target_id}",
+        "condition_type": event.get("condition_type") or "changed",
+        "target_value": event.get("target_value"),
+    }
+    previous = parse_decimal(event["previous_value"]) if event.get("previous_value") not in (None, "") else None
+    return CheckResult(target, previous, parse_decimal(event["current_value"]), True)
+
+
+def alert_chunks(events: list[dict[str, Any]], target_titles: dict[Any, str], max_chars: int = 1600) -> list[tuple[list[dict[str, Any]], str]]:
+    chunks: list[tuple[list[dict[str, Any]], str]] = []
+    current: list[dict[str, Any]] = []
+    for event in events:
+        candidate = [*current, event]
+        message = kakao_message([result_from_event(item, target_titles) for item in candidate])
+        if current and len(message) > max_chars:
+            chunks.append((current, kakao_message([result_from_event(item, target_titles) for item in current])))
+            current = [event]
+        else:
+            current = candidate
+    if current:
+        chunks.append((current, kakao_message([result_from_event(item, target_titles) for item in current])))
+    return chunks
+
+
+def update_delivery_events(
+    db: SupabaseRest,
+    events: list[dict[str, Any]],
+    *,
+    status: str,
+    error_message: str | None,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    for event in events:
+        body: dict[str, Any] = {
+            "status": status,
+            "error_message": error_message,
+            "last_attempt_at": now,
+            "attempt_count": int(event.get("attempt_count") or 0) + 1,
+        }
+        if status == "sent":
+            body["sent_at"] = now
+        db.request(
+            "PATCH",
+            "alert_events",
+            params={"id": f"eq.{event['id']}"},
+            body=body,
+            prefer="return=minimal",
+        )
+
+
+def deliver_queued_alerts(db: SupabaseRest, targets: list[dict[str, Any]]) -> tuple[int, int]:
+    events = queued_alerts(db)
+    if not events:
+        return 0, 0
+
+    target_titles = {target["id"]: str(target.get("title") or f"지표 {target['id']}") for target in targets}
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    undeliverable: list[dict[str, Any]] = []
+    for event in events:
+        user_id = str(event.get("user_id") or "").strip()
+        if user_id:
+            grouped[user_id].append(event)
+        else:
+            undeliverable.append(event)
+
+    failures = 0
+    delivered = 0
+    if undeliverable:
+        update_delivery_events(
+            db,
+            undeliverable,
+            status="skipped",
+            error_message="알림 대상 사용자 정보가 없습니다.",
+        )
+        failures += 1
+
+    for user_id, user_events in grouped.items():
+        for chunk, message in alert_chunks(user_events, target_titles):
+            try:
+                response = db.invoke_function(
+                    "kakao-auth",
+                    {"action": "send_internal", "user_id": user_id, "text": message},
+                )
+                if not isinstance(response, dict) or response.get("sent") is not True:
+                    raise RuntimeError("카카오 전송 함수가 성공을 확인하지 않았습니다.")
+                update_delivery_events(db, chunk, status="sent", error_message=None)
+                delivered += len(chunk)
+                print(f"Kakao notification sent for {len(chunk)} target(s).")
+            except Exception as exc:
+                failures += 1
+                message_text = str(exc)[:1000]
+                update_delivery_events(db, chunk, status="failed", error_message=message_text)
+                print(f"Kakao notification failed: {message_text}", file=sys.stderr)
+    return delivered, failures
 
 
 def main() -> int:
@@ -289,30 +399,17 @@ def main() -> int:
                 prefer="return=minimal",
             )
 
-    if alerts:
-        # 지표 수집과 카카오 전송은 서로 다른 책임이다. 토큰 만료나 카카오
-        # 장애가 발생해도 이미 끝난 지표 수집 실행까지 실패로 바꾸지 않는다.
-        try:
-            access_token = refresh_kakao_access_token()
-            if not access_token:
-                record_alerts(db, alerts, "skipped", "Kakao secrets are not configured.")
-                print("Kakao notification skipped: secrets are not configured.")
-            else:
-                send_kakao_message(access_token, alerts)
-                record_alerts(db, alerts, "sent")
-                print(f"Kakao notification sent for {len(alerts)} target(s).")
-        except Exception as exc:
-            message = str(exc)[:1000]
-            try:
-                record_alerts(db, alerts, "failed", message)
-            except Exception as record_error:
-                print(f"Kakao alert failure record failed: {str(record_error)[:1000]}", file=sys.stderr)
-            print(f"Kakao notification failed: {message}", file=sys.stderr)
+    enqueue_alerts(db, alerts)
+    delivered, notification_failures = deliver_queued_alerts(db, targets)
 
-    print(f"Finished: {len(targets)} target(s), {len(alerts)} alert(s), {failures} failure(s).")
+    print(
+        f"Finished: {len(targets)} target(s), {len(alerts)} new alert(s), "
+        f"{delivered} delivered alert(s), {failures} source failure(s), "
+        f"{notification_failures} notification failure(s)."
+    )
     # A source failure is recorded on the target and must not block the other targets
     # or mark the twice-daily collection job itself as broken.
-    return 0
+    return 1 if notification_failures else 0
 
 
 if __name__ == "__main__":
