@@ -13,6 +13,14 @@ METRIC_ALIASES = {
         # Banks and broker-dealers commonly use this total after interest
         # expense instead of an industrial-company sales tag.
         "RevenuesNetOfInterestExpense",
+        "TotalRevenuesNetOfInterestExpense",
+        "TotalRevenueNetOfInterestExpense",
+        "OperatingRevenues",
+        "RegulatedAndUnregulatedOperatingRevenue",
+        "SalesAndOtherOperatingRevenue",
+        "RevenuesAndOtherIncome",
+        "TotalRevenuesAndOtherIncome",
+        "NetSales",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "Revenues",
         "SalesRevenueNet",
@@ -20,11 +28,16 @@ METRIC_ALIASES = {
     ),
     "operating_income": (
         "OperatingIncomeLoss",
+        "IncomeLossBeforeIncomeTaxes",
+        "IncomeFromContinuingOperationsBeforeTaxes",
+        "IncomeLossFromContinuingOperationsBeforeTaxes",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
     ),
     "net_income": (
         "NetIncomeLoss",
+        "NetIncome",
+        "NetIncomeAttributableToParent",
         "ProfitLoss",
         "NetIncomeLossAvailableToCommonStockholdersBasic",
     ),
@@ -64,39 +77,44 @@ def _decimal(value: Any) -> Decimal | None:
 
 
 def _metric_facts(payload: dict[str, Any], metric: str) -> list[Fact]:
-    taxonomy = payload.get("facts", {}).get("us-gaap", {})
+    taxonomies = payload.get("facts", {})
+    if not isinstance(taxonomies, dict):
+        return []
     result: list[Fact] = []
     for priority, alias in enumerate(METRIC_ALIASES[metric]):
-        units = taxonomy.get(alias, {}).get("units", {})
-        rows = units.get("USD", []) if isinstance(units, dict) else []
-        for raw in rows if isinstance(rows, list) else []:
-            if not isinstance(raw, dict):
+        for taxonomy in taxonomies.values():
+            if not isinstance(taxonomy, dict):
                 continue
-            start, end, filed = (
-                _parsed_date(raw.get("start")),
-                _parsed_date(raw.get("end")),
-                _parsed_date(raw.get("filed")),
-            )
-            value = _decimal(raw.get("val"))
-            form = str(raw.get("form") or "").upper()
-            fiscal_period = str(raw.get("fp") or "").upper()
-            accession = str(raw.get("accn") or "").strip()
-            try:
-                fiscal_year = int(raw.get("fy"))
-            except (TypeError, ValueError):
-                continue
-            if (
-                start is None or end is None or filed is None or value is None
-                or start > end
-                or form not in {"10-Q", "10-Q/A", "10-K", "10-K/A"}
-                or fiscal_period not in {"Q1", "Q2", "Q3", "Q4", "FY"}
-                or not accession
-            ):
-                continue
-            result.append(Fact(
-                metric, priority, fiscal_year, fiscal_period,
-                start, end, filed, accession, form, value,
-            ))
+            units = taxonomy.get(alias, {}).get("units", {})
+            rows = units.get("USD", []) if isinstance(units, dict) else []
+            for raw in rows if isinstance(rows, list) else []:
+                if not isinstance(raw, dict):
+                    continue
+                start, end, filed = (
+                    _parsed_date(raw.get("start")),
+                    _parsed_date(raw.get("end")),
+                    _parsed_date(raw.get("filed")),
+                )
+                value = _decimal(raw.get("val"))
+                form = str(raw.get("form") or "").upper()
+                fiscal_period = str(raw.get("fp") or "").upper()
+                accession = str(raw.get("accn") or "").strip()
+                try:
+                    fiscal_year = int(raw.get("fy"))
+                except (TypeError, ValueError):
+                    continue
+                if (
+                    start is None or end is None or filed is None or value is None
+                    or start > end
+                    or form not in {"10-Q", "10-Q/A", "10-K", "10-K/A"}
+                    or fiscal_period not in {"Q1", "Q2", "Q3", "Q4", "FY"}
+                    or not accession
+                ):
+                    continue
+                result.append(Fact(
+                    metric, priority, fiscal_year, fiscal_period,
+                    start, end, filed, accession, form, value,
+                ))
     return result
 
 

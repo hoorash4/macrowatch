@@ -181,5 +181,15 @@ class SecEarningsTests(unittest.TestCase):
         self.assertEqual(rows[0]["filing"]["market_quarter"], 1)
 
 
+    def test_company_extension_namespace_can_supply_canonical_metrics(self):
+        payload = company_facts()
+        payload["facts"]["issuer"] = payload["facts"].pop("us-gaap")
+        rows, gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2025, years=1,
+        )
+        self.assertEqual(gaps, [])
+        self.assertEqual(len(rows), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
