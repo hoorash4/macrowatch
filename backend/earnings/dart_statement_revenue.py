@@ -460,6 +460,7 @@ def derive_gross_revenue_from_archive(
     table_count = candidate_count = 0
     failures: list[str] = []
     operating_samples: list[str] = []
+    tree_sample: list[tuple[int, str, str | None]] = []
     for document in documents:
         for table in _TABLE.finditer(document):
             table_count += 1
@@ -508,6 +509,32 @@ def derive_gross_revenue_from_archive(
                 except DartRevenueDerivationError as error:
                     if str(error) not in failures and len(failures) < 3:
                         failures.append(str(error))
+                    if (
+                        not tree_sample
+                        and "do not reconcile" in str(error)
+                    ):
+                        try:
+                            debug_rows, _debug_unit = parse_statement_rows(candidate)
+                            debug_column = next(
+                                column
+                                for row in debug_rows
+                                if _is_operating_income(row.normalized_label)
+                                for column, value in enumerate(row.values)
+                                if value == target
+                            )
+                            tree_sample = [
+                                (
+                                    row.depth,
+                                    row.normalized_label,
+                                    str(row.values[debug_column])
+                                    if debug_column < len(row.values)
+                                    and row.values[debug_column] is not None
+                                    else None,
+                                )
+                                for row in _operating_section(debug_rows)[-80:]
+                            ]
+                        except (DartRevenueDerivationError, StopIteration):
+                            pass
                     continue
                 if target_kind == "current" and amounts.current_revenue is not None:
                     current_matches[amounts.current_revenue] = amounts
@@ -518,6 +545,7 @@ def derive_gross_revenue_from_archive(
             "No income-statement table in the OpenDART archive reconciles to operating income "
             f"(tables={table_count}, candidates={candidate_count}, reasons={failures}, "
             f"operating_samples={operating_samples}, "
+            f"tree_sample={tree_sample}, "
             f"targets={[str(operating_current), str(operating_cumulative)]})."
         )
     if len(current_matches) > 1 or len(cumulative_matches) > 1:
