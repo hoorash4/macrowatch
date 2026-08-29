@@ -232,6 +232,22 @@ class OpenDartFinancialWorker:
             print(json.dumps({
                 "event": "dart_full_income_account_sample",
                 "receipt_no": receipt,
+                "row_count": len(full_accounts.rows),
+                "fs_divs": sorted({
+                    str(row.get("fs_div") or "") for row in full_accounts.rows
+                }),
+                "sj_divs": sorted({
+                    str(row.get("sj_div") or "") for row in full_accounts.rows
+                }),
+                "first_rows": [
+                    {
+                        "fs_div": row.get("fs_div"),
+                        "sj_div": row.get("sj_div"),
+                        "ord": row.get("ord"),
+                        "account_nm": row.get("account_nm"),
+                    }
+                    for row in full_accounts.rows[:8]
+                ],
                 "rows": income_rows[:120],
             }, ensure_ascii=False), flush=True)
         except OpenDartApiError as error:
