@@ -226,7 +226,7 @@ def _unit_multiplier(text: str) -> Decimal:
     }[unit]
 
 
-def _balanced_tables(document: str) -> Iterable[tuple[int, str]]:
+def _balanced_tables(document: str) -> Iterable[tuple[int, int, str]]:
     """Yield complete tables even when DART XML nests layout tables."""
     starts: list[int] = []
     for match in _TABLE_TAG.finditer(document):
@@ -234,7 +234,7 @@ def _balanced_tables(document: str) -> Iterable[tuple[int, str]]:
             if not starts:
                 continue
             start = starts.pop()
-            yield start, document[start:match.end()]
+            yield start, match.end(), document[start:match.end()]
         else:
             starts.append(match.start())
 
@@ -478,7 +478,8 @@ def derive_gross_revenue_from_archive(
     # without logging the complete filing archive.
     tree_sample: list[tuple[int, str, str | None]] = []
     for document in documents:
-        for table_start, fragment in _balanced_tables(document):
+        lowered_document = document.lower()
+        for table_start, table_end, fragment in _balanced_tables(document):
             table_count += 1
             normalized = _normalized_label(re.sub(r"<[^>]+>", " ", fragment))
             if not any(label in normalized for label in ("영업이익", "영업손익")):
@@ -515,13 +516,22 @@ def derive_gross_revenue_from_archive(
             for target_kind, target in targets:
                 if target is None:
                     continue
-                try:
-                    amounts = derive_gross_revenue(
-                        candidate,
-                        operating_current=target if target_kind == "current" else None,
-                        operating_cumulative=target if target_kind == "cumulative" else None,
-                    )
-                except DartRevenueDerivationError as error:
+                amounts = None
+                error = None
+                title_start = lowered_document.rfind("<title", 0, table_start)
+                combined = document[title_start:table_end] if title_start >= 0 else candidate
+                for statement_candidate in (candidate, combined):
+                    try:
+                        amounts = derive_gross_revenue(
+                            statement_candidate,
+                            operating_current=target if target_kind == "current" else None,
+                            operating_cumulative=target if target_kind == "cumulative" else None,
+                        )
+                        break
+                    except DartRevenueDerivationError as candidate_error:
+                        error = candidate_error
+                if amounts is None:
+                    assert error is not None
                     if str(error) not in failures and len(failures) < 3:
                         failures.append(str(error))
                     if "do not reconcile" in str(error):
