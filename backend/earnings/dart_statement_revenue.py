@@ -618,6 +618,71 @@ def _xbrl_concept_key(href: str) -> str:
     return unquote(str(href).rsplit("#", 1)[-1]).strip().lower()
 
 
+def _derive_gross_revenue_candidate(
+    statement_page: str,
+    *,
+    operating_current: Decimal | None,
+    operating_cumulative: Decimal | None,
+) -> GrossRevenueAmounts:
+    """Return a fully classified presentation-tree candidate without expense veto."""
+    rows, _multiplier = parse_statement_rows(statement_page)
+    operating_rows = [
+        row for row in rows if _is_operating_income(row.normalized_label)
+    ]
+    current_column = cumulative_column = None
+    current_row = cumulative_row = None
+    for row in operating_rows:
+        if current_column is None:
+            match = _matching_column(row.values, operating_current)
+            if match is not None:
+                current_column, current_row = match, row
+        if cumulative_column is None:
+            match = _matching_column(row.values, operating_cumulative)
+            if match is not None:
+                cumulative_column, cumulative_row = match, row
+    if operating_current is not None and current_column is None:
+        raise DartRevenueDerivationError(
+            "Presentation candidate lacks current operating income."
+        )
+    if operating_cumulative is not None and cumulative_column is None:
+        raise DartRevenueDerivationError(
+            "Presentation candidate lacks cumulative operating income."
+        )
+
+    current_revenue = current_expense = current_op = None
+    if current_column is not None and current_row is not None:
+        diagnostics: list[tuple[str, str, int, bool]] = []
+        current_revenue, current_expense = _gross_sides(
+            rows, column=current_column, diagnostics=diagnostics,
+        )
+        if diagnostics:
+            raise DartRevenueDerivationError(
+                f"Presentation candidate has unclassified accounts: {diagnostics}"
+            )
+        current_op = current_row.values[current_column]
+
+    cumulative_revenue = cumulative_expense = cumulative_op = None
+    if cumulative_column is not None and cumulative_row is not None:
+        diagnostics = []
+        cumulative_revenue, cumulative_expense = _gross_sides(
+            rows, column=cumulative_column, diagnostics=diagnostics,
+        )
+        if diagnostics:
+            raise DartRevenueDerivationError(
+                f"Presentation candidate has unclassified accounts: {diagnostics}"
+            )
+        cumulative_op = cumulative_row.values[cumulative_column]
+
+    return GrossRevenueAmounts(
+        current_revenue=current_revenue,
+        cumulative_revenue=cumulative_revenue,
+        current_expense=current_expense,
+        cumulative_expense=cumulative_expense,
+        current_operating_income=current_op,
+        cumulative_operating_income=cumulative_op,
+    )
+
+
 def derive_gross_revenue_from_xbrl_presentation(
     archive: bytes,
     raw_rows: Iterable[dict[str, Any]],
@@ -756,6 +821,10 @@ def derive_gross_revenue_from_xbrl_presentation(
         tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None],
         GrossRevenueAmounts,
     ] = {}
+    classified_fallbacks: dict[
+        tuple[Decimal | None, Decimal | None],
+        GrossRevenueAmounts,
+    ] = {}
     presentation_roles = 0
     role_failures: list[str] = []
     for root in parsed_roots:
@@ -861,6 +930,19 @@ def derive_gross_revenue_from_xbrl_presentation(
                     operating_cumulative=operating_cumulative,
                 )
             except DartRevenueDerivationError as error:
+                if role_uri.endswith("320005"):
+                    try:
+                        fallback = _derive_gross_revenue_candidate(
+                            statement,
+                            operating_current=operating_current,
+                            operating_cumulative=operating_cumulative,
+                        )
+                        classified_fallbacks[(
+                            fallback.current_revenue,
+                            fallback.cumulative_revenue,
+                        )] = fallback
+                    except DartRevenueDerivationError:
+                        pass
                 reason = f"{role_uri}: {error}"
                 if reason not in role_failures and len(role_failures) < 5:
                     role_failures.append(reason)
@@ -872,6 +954,8 @@ def derive_gross_revenue_from_xbrl_presentation(
                 amounts.cumulative_expense,
             )
             matches[key] = amounts
+    if not matches and len(classified_fallbacks) == 1:
+        return next(iter(classified_fallbacks.values()))
     if not matches:
         raise DartRevenueDerivationError(
             "No official XBRL presentation role reconciles to operating income "

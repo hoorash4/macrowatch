@@ -513,5 +513,57 @@ class DartStatementRevenueTests(unittest.TestCase):
 
 
 
+    def test_xbrl_primary_role_accepts_unique_fully_classified_revenue(self):
+        rows = [
+            {
+                "sj_div": "CIS", "account_id": "test_Revenue",
+                "account_nm": "영업수익", "thstrm_amount": "300",
+                "thstrm_add_amount": "600",
+            },
+            {
+                "sj_div": "CIS", "account_id": "test_Expense",
+                "account_nm": "영업비용", "thstrm_amount": "150",
+                "thstrm_add_amount": "300",
+            },
+            {
+                "sj_div": "CIS", "account_id": "test_OperatingIncome",
+                "account_nm": "영업이익", "thstrm_amount": "100",
+                "thstrm_add_amount": "200",
+            },
+        ]
+        presentation = """<link:linkbase
+          xmlns:link="http://www.xbrl.org/2003/linkbase"
+          xmlns:xlink="http://www.w3.org/1999/xlink">
+          <link:presentationLink xlink:type="extended"
+            xlink:role="http://dart.fss.or.kr/role/test-DX320005">
+            <link:loc xlink:type="locator" xlink:label="root"
+              xlink:href="schema.xsd#test_Statement"/>
+            <link:loc xlink:type="locator" xlink:label="revenue"
+              xlink:href="schema.xsd#test_Revenue"/>
+            <link:loc xlink:type="locator" xlink:label="expense"
+              xlink:href="schema.xsd#test_Expense"/>
+            <link:loc xlink:type="locator" xlink:label="op"
+              xlink:href="schema.xsd#test_OperatingIncome"/>
+            <link:presentationArc xlink:type="arc" xlink:from="root"
+              xlink:to="revenue" order="1"/>
+            <link:presentationArc xlink:type="arc" xlink:from="root"
+              xlink:to="expense" order="2"/>
+            <link:presentationArc xlink:type="arc" xlink:from="root"
+              xlink:to="op" order="3"/>
+          </link:presentationLink>
+        </link:linkbase>"""
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("company_pre.xml", presentation)
+        result = derive_gross_revenue_from_xbrl_presentation(
+            output.getvalue(), rows,
+            operating_current=Decimal("100"),
+            operating_cumulative=Decimal("200"),
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
+        self.assertEqual(result.cumulative_revenue, Decimal("600"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
