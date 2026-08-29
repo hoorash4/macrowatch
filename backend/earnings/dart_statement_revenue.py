@@ -134,20 +134,40 @@ class _StatementTableParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.rows: list[list[str]] = []
+        self.row_depths: list[int | None] = []
         self.all_text: list[str] = []
         self._in_row = False
         self._in_cell = False
         self._row: list[str] = []
         self._cell: list[str] = []
+        self._row_depth: int | None = None
 
-    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+    def _capture_depth(self, attrs: list[tuple[str, str | None]]) -> None:
+        if not self._in_cell or self._row:
+            return
+        values = {str(key).lower(): str(value or "") for key, value in attrs}
+        for key in ("aindent", "indent", "level", "depth"):
+            match = re.search(r"\d+", values.get(key, ""))
+            if match:
+                self._row_depth = int(match.group(0))
+                return
+        style = values.get("style", "")
+        match = re.search(r"(?:padding|margin)-left\s*:\s*(\d+)", style, re.IGNORECASE)
+        if match:
+            self._row_depth = int(match.group(1)) // 20
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         lowered = tag.lower()
         if lowered == "tr":
             self._in_row = True
             self._row = []
+            self._row_depth = None
         elif lowered in {"td", "th"} and self._in_row:
             self._in_cell = True
             self._cell = []
+            self._capture_depth(attrs)
+        elif lowered in {"p", "span"}:
+            self._capture_depth(attrs)
         elif lowered == "br" and self._in_cell:
             self._cell.append(" ")
 
@@ -164,6 +184,7 @@ class _StatementTableParser(HTMLParser):
         elif lowered == "tr" and self._in_row:
             if self._row:
                 self.rows.append(self._row)
+                self.row_depths.append(self._row_depth)
             self._in_row = False
 
 
@@ -209,7 +230,7 @@ def parse_statement_rows(statement_page: str) -> tuple[list[StatementRow], Decim
     parser.feed(statement_page)
     multiplier = _unit_multiplier(" ".join(parser.all_text))
     result: list[StatementRow] = []
-    for cells in parser.rows:
+    for row_index, cells in enumerate(parser.rows):
         if len(cells) < 2:
             continue
         raw_label = cells[0].replace("\xa0", " ")
@@ -221,7 +242,8 @@ def parse_statement_rows(statement_page: str) -> tuple[list[StatementRow], Decim
         # older filings use pairs of non-breaking/ASCII spaces instead.
         ideographic = prefix.count("\u3000")
         remaining = len(prefix.replace("\u3000", ""))
-        depth = ideographic + remaining // 2
+        explicit_depth = parser.row_depths[row_index]
+        depth = explicit_depth if explicit_depth is not None else ideographic + remaining // 2
         values = tuple(
             amount * multiplier if amount is not None else None
             for amount in (_parse_amount(cell) for cell in cells[1:])
@@ -427,12 +449,16 @@ def derive_gross_revenue_from_archive(
         ) from None
 
     matches: dict[tuple[Decimal | None, Decimal | None], GrossRevenueAmounts] = {}
+    table_count = candidate_count = 0
+    failures: list[str] = []
     for document in documents:
         for table in _TABLE.finditer(document):
+            table_count += 1
             fragment = table.group(0)
             normalized = _normalized_label(re.sub(r"<[^>]+>", " ", fragment))
             if not any(label in normalized for label in ("영업이익", "영업손익")):
                 continue
+            candidate_count += 1
             # The unit caption normally sits just before the table rather than
             # inside it. Copy only the nearest caption so an earlier table
             # cannot contaminate the candidate's row tree.
@@ -445,12 +471,15 @@ def derive_gross_revenue_from_archive(
                     operating_current=operating_current,
                     operating_cumulative=operating_cumulative,
                 )
-            except DartRevenueDerivationError:
+            except DartRevenueDerivationError as error:
+                if str(error) not in failures and len(failures) < 3:
+                    failures.append(str(error))
                 continue
             matches[(amounts.current_revenue, amounts.cumulative_revenue)] = amounts
     if not matches:
         raise DartRevenueDerivationError(
-            "No income-statement table in the OpenDART archive reconciles to operating income."
+            "No income-statement table in the OpenDART archive reconciles to operating income "
+            f"(tables={table_count}, candidates={candidate_count}, reasons={failures})."
         )
     if len(matches) > 1:
         raise DartRevenueDerivationError(

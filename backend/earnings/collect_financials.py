@@ -216,9 +216,14 @@ class OpenDartFinancialWorker:
                 operating_current=operating.current_amount,
                 operating_cumulative=operating.cumulative_amount,
             )
-        except DartRevenueDerivationError:
+        except DartRevenueDerivationError as error:
             # A layout that cannot be reconciled remains an explicit partial
             # quarter. Never guess a top line or retry a deterministic mismatch.
+            print(json.dumps({
+                "event": "dart_revenue_derivation_skipped",
+                "receipt_no": receipt,
+                "reason": str(error),
+            }, ensure_ascii=False), flush=True)
             return facts
         if amounts.current_revenue is None and amounts.cumulative_revenue is None:
             return facts

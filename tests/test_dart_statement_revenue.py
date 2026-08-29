@@ -70,6 +70,21 @@ class DartStatementRevenueTests(unittest.TestCase):
         self.assertEqual(result.cumulative_revenue, Decimal("1300000000"))
         self.assertEqual(result.cumulative_expense, Decimal("1100000000"))
 
+    def test_original_xml_aindent_preserves_the_account_tree(self):
+        page = """
+          <DOCUMENT>(단위 : 원)<TABLE>
+            <TR><TD><P AINDENT="0">순이자이익</P></TD><TD>50</TD></TR>
+            <TR><TD><P AINDENT="1">이자수익</P></TD><TD>100</TD></TR>
+            <TR><TD><P AINDENT="1">이자비용</P></TD><TD>50</TD></TR>
+            <TR><TD><P AINDENT="0">영업이익</P></TD><TD>50</TD></TR>
+          </TABLE></DOCUMENT>
+        """
+        result = derive_gross_revenue(
+            page, operating_current=Decimal("50"), operating_cumulative=None,
+        )
+        self.assertEqual(result.current_revenue, Decimal("100"))
+        self.assertEqual(result.current_expense, Decimal("50"))
+
     def test_insurance_revenue_descends_past_net_results(self):
         page = statement([
             ("보험손익", "200"),
