@@ -760,9 +760,9 @@ def derive_gross_revenue_from_xbrl_presentation(
             statement_rows: list[str] = []
             for depth, concept in ordered:
                 raw = raw_by_concept.get(concept)
-                label = concept_labels.get(concept, (99, ""))[1] or (
+                label = (
                     str(raw.get("account_nm") or concept)
-                    if raw else concept
+                    if raw else concept_labels.get(concept, (99, concept))[1]
                 )
                 local = concept_local(concept)
                 current_value = (
