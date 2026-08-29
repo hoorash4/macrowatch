@@ -346,6 +346,7 @@ def _gross_sides(
     rows: list[StatementRow],
     *,
     column: int,
+    diagnostics: list[tuple[str, str, int, bool]] | None = None,
 ) -> tuple[Decimal, Decimal]:
     revenue = Decimal(0)
     expense = Decimal(0)
@@ -361,6 +362,10 @@ def _gross_sides(
             continue
         has_child = index + 1 < len(section) and section[index + 1].depth > row.depth
         kind = _classification(row.normalized_label, has_child=has_child, value=value)
+        if kind is None and diagnostics is not None and len(diagnostics) < 30:
+            diagnostics.append((
+                row.normalized_label, str(value), row.depth, has_child,
+            ))
         if kind in {"subtotal", "net_parent", None}:
             continue
         if kind == "revenue":
@@ -419,23 +424,41 @@ def derive_gross_revenue(
 
     current_revenue = current_expense = None
     if current_column is not None and current_row is not None:
-        current_revenue, current_expense = _gross_sides(rows, column=current_column)
+        current_diagnostics: list[tuple[str, str, int, bool]] = []
+        current_revenue, current_expense = _gross_sides(
+            rows, column=current_column, diagnostics=current_diagnostics,
+        )
         current_op = current_row.values[current_column]
         assert current_op is not None
-        _validate_reconciliation(
-            current_revenue, current_expense, current_op, unit_multiplier=multiplier
-        )
+        try:
+            _validate_reconciliation(
+                current_revenue, current_expense, current_op,
+                unit_multiplier=multiplier,
+            )
+        except DartRevenueDerivationError as error:
+            raise DartRevenueDerivationError(
+                f"{error} unclassified={current_diagnostics}"
+            ) from None
     else:
         current_op = None
 
     cumulative_revenue = cumulative_expense = None
     if cumulative_column is not None and cumulative_row is not None:
-        cumulative_revenue, cumulative_expense = _gross_sides(rows, column=cumulative_column)
+        cumulative_diagnostics: list[tuple[str, str, int, bool]] = []
+        cumulative_revenue, cumulative_expense = _gross_sides(
+            rows, column=cumulative_column, diagnostics=cumulative_diagnostics,
+        )
         cumulative_op = cumulative_row.values[cumulative_column]
         assert cumulative_op is not None
-        _validate_reconciliation(
-            cumulative_revenue, cumulative_expense, cumulative_op, unit_multiplier=multiplier
-        )
+        try:
+            _validate_reconciliation(
+                cumulative_revenue, cumulative_expense, cumulative_op,
+                unit_multiplier=multiplier,
+            )
+        except DartRevenueDerivationError as error:
+            raise DartRevenueDerivationError(
+                f"{error} unclassified={cumulative_diagnostics}"
+            ) from None
     else:
         cumulative_op = None
 
