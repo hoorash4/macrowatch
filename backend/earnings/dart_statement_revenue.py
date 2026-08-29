@@ -15,7 +15,7 @@ from html import unescape
 from html.parser import HTMLParser
 from io import BytesIO
 import re
-from typing import Iterable
+from typing import Any, Iterable
 from zipfile import BadZipFile, ZipFile
 
 
@@ -442,6 +442,115 @@ def derive_gross_revenue(
         cumulative_expense=cumulative_expense,
         current_operating_income=current_op,
         cumulative_operating_income=cumulative_op,
+    )
+
+
+
+_ACCOUNT_ROW_EXCLUDED_ID_PARTS = (
+    "comprehensiveincomeattributable",
+    "profitloss",
+    "profitlossbeforetax",
+    "incometaxexpense",
+    "nonoperatingprofitloss",
+    "shareofprofitloss",
+    "basicearningsloss",
+    "dilutedearningsloss",
+)
+_ACCOUNT_ROW_EXCLUDED_ID_PREFIXES = (
+    "ifrs-full_comprehensiveincome",
+    "ifrs-full_othercomprehensiveincome",
+    "dart_othercomprehensiveincomenetoftax",
+)
+
+
+def _gross_sides_from_account_rows(
+    raw_rows: Iterable[dict[str, Any]],
+    *,
+    amount_field: str,
+    operating_income: Decimal,
+) -> tuple[Decimal, Decimal]:
+    """Sum gross CIS sides while suppressing net parents with components."""
+    prepared: list[tuple[str, str, Decimal]] = []
+    for raw in raw_rows:
+        if str(raw.get("sj_div") or "").strip().upper() not in {"IS", "CIS"}:
+            continue
+        label = _normalized_label(str(raw.get("account_nm") or ""))
+        account_id = str(raw.get("account_id") or "").strip().lower()
+        amount = _parse_amount(str(raw.get(amount_field) or ""))
+        if not label or amount is None or _is_operating_income(label):
+            continue
+        if account_id.startswith(_ACCOUNT_ROW_EXCLUDED_ID_PREFIXES):
+            continue
+        if any(token in account_id for token in _ACCOUNT_ROW_EXCLUDED_ID_PARTS):
+            continue
+        prepared.append((label, account_id, amount))
+
+    explicit: list[tuple[str, Decimal, str]] = []
+    net_rows: list[tuple[str, Decimal]] = []
+    for label, _account_id, amount in prepared:
+        if "손익" in label or "수익(비용)" in label:
+            net_rows.append((label, amount))
+            continue
+        kind = _classification(label, has_child=False, value=amount)
+        if kind in {"revenue", "expense"}:
+            explicit.append((label, amount, kind))
+
+    revenue = sum(
+        (abs(amount) for _label, amount, kind in explicit if kind == "revenue"),
+        Decimal(0),
+    )
+    expense = sum(
+        (abs(amount) for _label, amount, kind in explicit if kind == "expense"),
+        Decimal(0),
+    )
+    explicit_labels = [label for label, _amount, _kind in explicit]
+    for label, amount in net_rows:
+        stem = label.removeprefix("순").replace("손익", "").replace("관련", "")
+        has_components = len(stem) >= 2 and any(
+            stem in explicit_label for explicit_label in explicit_labels
+        )
+        if has_components:
+            continue
+        if amount >= 0:
+            revenue += amount
+        else:
+            expense += abs(amount)
+
+    _validate_reconciliation(
+        revenue, expense, operating_income, unit_multiplier=Decimal(1)
+    )
+    return revenue, expense
+
+
+def derive_gross_revenue_from_account_rows(
+    raw_rows: Iterable[dict[str, Any]],
+    *,
+    operating_current: Decimal | None,
+    operating_cumulative: Decimal | None,
+) -> GrossRevenueAmounts:
+    """Derive gross financial revenue from scoped OpenDART CIS account rows."""
+    rows = list(raw_rows)
+    current_revenue = current_expense = None
+    if operating_current is not None:
+        current_revenue, current_expense = _gross_sides_from_account_rows(
+            rows,
+            amount_field="thstrm_amount",
+            operating_income=operating_current,
+        )
+    cumulative_revenue = cumulative_expense = None
+    if operating_cumulative is not None:
+        cumulative_revenue, cumulative_expense = _gross_sides_from_account_rows(
+            rows,
+            amount_field="thstrm_add_amount",
+            operating_income=operating_cumulative,
+        )
+    return GrossRevenueAmounts(
+        current_revenue=current_revenue,
+        cumulative_revenue=cumulative_revenue,
+        current_expense=current_expense,
+        cumulative_expense=cumulative_expense,
+        current_operating_income=operating_current,
+        cumulative_operating_income=operating_cumulative,
     )
 
 

@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterable
 from earnings.open_dart import OpenDartApiError, OpenDartClient, OpenDartResponse
 from earnings.dart_statement_revenue import (
     DartRevenueDerivationError,
+    derive_gross_revenue_from_account_rows,
     derive_gross_revenue_from_archive,
 )
 from earnings.open_dart_parser import (
@@ -197,7 +198,7 @@ class OpenDartFinancialWorker:
         corp_code: str,
         facts: list[DartAccountFact],
     ) -> list[DartAccountFact]:
-        """Append one reconciled financial-company revenue fact when needed."""
+        """Append one exactly reconciled financial-company revenue fact."""
         selected = select_preferred_accounts(facts).get(corp_code, {})
         if "revenue" in selected or "operating_income" not in selected:
             return facts
@@ -207,6 +208,8 @@ class OpenDartFinancialWorker:
         )
         if not receipt or operating.consolidation_scope not in {"CFS", "OFS"}:
             return facts
+
+        amounts = None
         try:
             full_accounts = self._request(
                 lambda: self.client.fetch_single_all_accounts(
@@ -216,37 +219,16 @@ class OpenDartFinancialWorker:
                     operating.consolidation_scope,
                 )
             )
-            income_rows = [
-                {
-                    "ord": row.get("ord"),
-                    "account_id": row.get("account_id"),
-                    "account_nm": row.get("account_nm"),
-                    "thstrm_amount": row.get("thstrm_amount"),
-                    "thstrm_add_amount": row.get("thstrm_add_amount"),
-                }
-                for row in full_accounts.rows
-                if str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
-            ]
+            amounts = derive_gross_revenue_from_account_rows(
+                full_accounts.rows,
+                operating_current=operating.current_amount,
+                operating_cumulative=operating.cumulative_amount,
+            )
+        except DartRevenueDerivationError as error:
             print(json.dumps({
-                "event": "dart_full_income_account_sample",
+                "event": "dart_account_revenue_derivation_skipped",
                 "receipt_no": receipt,
-                "row_count": len(full_accounts.rows),
-                "fs_divs": sorted({
-                    str(row.get("fs_div") or "") for row in full_accounts.rows
-                }),
-                "sj_divs": sorted({
-                    str(row.get("sj_div") or "") for row in full_accounts.rows
-                }),
-                "first_rows": [
-                    {
-                        "fs_div": row.get("fs_div"),
-                        "sj_div": row.get("sj_div"),
-                        "ord": row.get("ord"),
-                        "account_nm": row.get("account_nm"),
-                    }
-                    for row in full_accounts.rows[:8]
-                ],
-                "rows": income_rows[:120],
+                "reason": str(error),
             }, ensure_ascii=False), flush=True)
         except OpenDartApiError as error:
             print(json.dumps({
@@ -254,41 +236,41 @@ class OpenDartFinancialWorker:
                 "receipt_no": receipt,
                 "status": error.status,
             }, ensure_ascii=False), flush=True)
-        try:
-            archive_response = self._request(
-                lambda: self.client.fetch_filing_archive(receipt)
-            )
-            amounts = derive_gross_revenue_from_archive(
-                archive_response.content,
-                operating_current=operating.current_amount,
-                operating_cumulative=operating.cumulative_amount,
-                consolidation_scope=operating.consolidation_scope,
-            )
-        except OpenDartApiError as error:
-            if error.status != "014":
-                raise
-            print(json.dumps({
-                "event": "dart_revenue_archive_unavailable",
-                "receipt_no": receipt,
-                "status": error.status,
-            }, ensure_ascii=False), flush=True)
-            return facts
-        except DartRevenueDerivationError as error:
-            # A layout that cannot be reconciled remains an explicit partial
-            # quarter. Never guess a top line or retry a deterministic mismatch.
-            print(json.dumps({
-                "event": "dart_revenue_derivation_skipped",
-                "receipt_no": receipt,
-                "reason": str(error),
-            }, ensure_ascii=False), flush=True)
-            return facts
+
+        if amounts is None:
+            try:
+                archive_response = self._request(
+                    lambda: self.client.fetch_filing_archive(receipt)
+                )
+                amounts = derive_gross_revenue_from_archive(
+                    archive_response.content,
+                    operating_current=operating.current_amount,
+                    operating_cumulative=operating.cumulative_amount,
+                    consolidation_scope=operating.consolidation_scope,
+                )
+            except OpenDartApiError as error:
+                if error.status != "014":
+                    raise
+                print(json.dumps({
+                    "event": "dart_revenue_archive_unavailable",
+                    "receipt_no": receipt,
+                    "status": error.status,
+                }, ensure_ascii=False), flush=True)
+                return facts
+            except DartRevenueDerivationError as error:
+                print(json.dumps({
+                    "event": "dart_revenue_derivation_skipped",
+                    "receipt_no": receipt,
+                    "reason": str(error),
+                }, ensure_ascii=False), flush=True)
+                return facts
         if amounts.current_revenue is None and amounts.cumulative_revenue is None:
             return facts
         facts.append(replace(
             operating,
             metric="revenue",
             account_id="derived-gross-operating-revenue",
-            account_name="총영업수익(공시 트리 합산)",
+            account_name="총영업수익(공시 계정 합산)",
             current_amount=amounts.current_revenue,
             cumulative_amount=amounts.cumulative_revenue,
         ))

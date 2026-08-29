@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from earnings.dart_statement_revenue import (  # noqa: E402
     DartRevenueDerivationError,
     derive_gross_revenue,
+    derive_gross_revenue_from_account_rows,
     derive_gross_revenue_from_archive,
     find_income_statement_document,
 )
@@ -268,6 +269,66 @@ class DartStatementRevenueTests(unittest.TestCase):
             operating_cumulative=None, consolidation_scope="CFS",
         )
         self.assertEqual(result.current_revenue, Decimal("300"))
+
+
+
+    def test_full_account_rows_reconcile_shinhan_financial_revenue(self):
+        def row(name, current, cumulative, account_id="custom"):
+            return {
+                "sj_div": "CIS",
+                "account_id": account_id,
+                "account_nm": name,
+                "thstrm_amount": str(current),
+                "thstrm_add_amount": str(cumulative),
+            }
+
+        rows = [
+            row("기타포괄손익-공정가치측정유가증권 처분손익", -7323, 13743),
+            row("당기손익-공정가치측정금융상품 관련손익", 2136947, 2725906),
+            row("보험금융손익", -1963797, -2387378),
+            row("보험금융비용", 1965577, 2408119),
+            row("보험금융수익", 1780, 20741),
+            row("순수수료손익", 1188929, 2129755),
+            row("수수료비용", 473598, 894651),
+            row("수수료수익", 1662527, 3024406),
+            row("상각후원가측정유가증권 처분손익", -5, -19),
+            row("당기손익-공정가치측정지정금융상품 관련손익", -134215, -14292),
+            row("일반관리비", 1670691, 3216096),
+            row("신용손실충당금 전입액", 456313, 976425),
+            row("순보험손익", 153042, 429439),
+            row("재보험서비스비용", 43658, 90911),
+            row("재보험수익", 56281, 108475),
+            row("보험수익", 916355, 1797939),
+            row("보험서비스비용", 775936, 1386064),
+            row("순이자손익", 3134361, 6158504),
+            row("이자비용", 4147606, 8195594),
+            row("이자수익", 7281967, 14354098),
+            row("외환거래손익", 556020, 645039),
+            row("기타영업손익", -526849, -1014478),
+            row("배당수익", 66175, 137036),
+            row(
+                "반기순이익", 1846651, 3495799,
+                "ifrs-full_ProfitLoss",
+            ),
+            row(
+                "법인세비용차감전순이익", 2515975, 4737357,
+                "ifrs-full_ProfitLossBeforeTax",
+            ),
+            row("영업이익", 2476281, 4630734),
+            row(
+                "관계기업 이익에 대한 지분", 2344, 51183,
+                "ifrs-full_ShareOfProfitLossOfAssociates",
+            ),
+        ]
+        result = derive_gross_revenue_from_account_rows(
+            rows,
+            operating_current=Decimal("2476281"),
+            operating_cumulative=Decimal("4630734"),
+        )
+        self.assertEqual(result.current_revenue, Decimal("12678052"))
+        self.assertEqual(result.current_expense, Decimal("10201771"))
+        self.assertEqual(result.cumulative_revenue, Decimal("22827383"))
+        self.assertEqual(result.cumulative_expense, Decimal("18196649"))
 
 
 
