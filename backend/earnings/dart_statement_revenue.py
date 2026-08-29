@@ -26,7 +26,7 @@ _NODE_FIELD = {
 }
 _NUMBER = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
 _LEADING_NUMBER = re.compile(r"^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫIVXLC\d.()\s]+")
-_TABLE = re.compile(r"<table\b[^>]*>.*?</table>", re.IGNORECASE | re.DOTALL)
+_TABLE_TAG = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _ARCHIVE_UNIT = re.compile(
     r"단위\s*[:：]\s*(백만원|천원|원|USD|달러)", re.IGNORECASE
 )
@@ -223,6 +223,19 @@ def _unit_multiplier(text: str) -> Decimal:
         "USD": Decimal("1"),
         "달러": Decimal("1"),
     }[unit]
+
+
+def _balanced_tables(document: str) -> Iterable[tuple[int, str]]:
+    """Yield complete tables even when DART XML nests layout tables."""
+    starts: list[int] = []
+    for match in _TABLE_TAG.finditer(document):
+        if match.group(0).lstrip().startswith("</"):
+            if not starts:
+                continue
+            start = starts.pop()
+            yield start, document[start:match.end()]
+        else:
+            starts.append(match.start())
 
 
 def parse_statement_rows(statement_page: str) -> tuple[list[StatementRow], Decimal]:
@@ -464,9 +477,8 @@ def derive_gross_revenue_from_archive(
     # without logging the complete filing archive.
     tree_sample: list[tuple[int, str, str | None]] = []
     for document in documents:
-        for table in _TABLE.finditer(document):
+        for table_start, fragment in _balanced_tables(document):
             table_count += 1
-            fragment = table.group(0)
             normalized = _normalized_label(re.sub(r"<[^>]+>", " ", fragment))
             if not any(label in normalized for label in ("영업이익", "영업손익")):
                 continue
@@ -474,7 +486,7 @@ def derive_gross_revenue_from_archive(
             # The unit caption normally sits just before the table rather than
             # inside it. Copy only the nearest caption so an earlier table
             # cannot contaminate the candidate's row tree.
-            prefix = document[max(0, table.start() - 3000):table.start()]
+            prefix = document[max(0, table_start - 3000):table_start]
             prefix_text = _normalized_label(re.sub(r"<[^>]+>", " ", prefix))
             headings = re.findall(r"(연결)?(?:포괄)?손익계산서", prefix_text)
             if headings and consolidation_scope in {"CFS", "OFS"}:
