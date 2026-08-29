@@ -435,7 +435,13 @@ def derive_gross_revenue_from_archive(
     operating_current: Decimal | None,
     operating_cumulative: Decimal | None,
 ) -> GrossRevenueAmounts:
-    """Find the uniquely reconciling income-statement table in a DART ZIP."""
+    """Find uniquely reconciling periods in a DART ZIP.
+
+    Interim original filings may present only the year-to-date column even
+    though the account API also supplies a standalone three-month amount.
+    Each available period is therefore reconciled independently; the worker
+    subtracts the previously reconciled cumulative revenue when necessary.
+    """
     try:
         with ZipFile(BytesIO(archive)) as zipped:
             documents = [
