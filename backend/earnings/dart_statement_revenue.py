@@ -11,11 +11,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from html import unescape
+from html import escape, unescape
 from html.parser import HTMLParser
 from io import BytesIO
 import re
 from typing import Any, Iterable
+from urllib.parse import unquote
+import xml.etree.ElementTree as ET
 from zipfile import BadZipFile, ZipFile
 
 
@@ -553,6 +555,163 @@ def derive_gross_revenue_from_account_rows(
         current_operating_income=operating_current,
         cumulative_operating_income=operating_cumulative,
     )
+
+
+
+_XLINK = "{http://www.w3.org/1999/xlink}"
+
+
+def _xbrl_concept_key(href: str) -> str:
+    return unquote(str(href).rsplit("#", 1)[-1]).strip().lower()
+
+
+def derive_gross_revenue_from_xbrl_presentation(
+    archive: bytes,
+    raw_rows: Iterable[dict[str, Any]],
+    *,
+    operating_current: Decimal | None,
+    operating_cumulative: Decimal | None,
+) -> GrossRevenueAmounts:
+    """Use the official XBRL presentation tree to remove child duplicates."""
+    rows = list(raw_rows)
+    raw_by_concept = {
+        str(row.get("account_id") or "").strip().lower(): row
+        for row in rows
+        if str(row.get("account_id") or "").strip()
+    }
+    operating_concepts = {
+        account_id
+        for account_id, row in raw_by_concept.items()
+        if _is_operating_income(
+            _normalized_label(str(row.get("account_nm") or ""))
+        )
+    }
+    if not operating_concepts:
+        raise DartRevenueDerivationError(
+            "OpenDART XBRL rows lack an operating-income concept."
+        )
+    try:
+        with ZipFile(BytesIO(archive)) as zipped:
+            documents = [
+                zipped.read(name)
+                for name in zipped.namelist()
+                if name.lower().endswith((".xml", ".xbrl"))
+            ]
+    except (BadZipFile, OSError, RuntimeError):
+        raise DartRevenueDerivationError(
+            "OpenDART financial XBRL archive is not a readable ZIP."
+        ) from None
+
+    matches: dict[
+        tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None],
+        GrossRevenueAmounts,
+    ] = {}
+    presentation_roles = 0
+    for content in documents:
+        try:
+            root = ET.fromstring(content)
+        except ET.ParseError:
+            continue
+        for link in root.iter():
+            if link.tag.rsplit("}", 1)[-1] != "presentationLink":
+                continue
+            presentation_roles += 1
+            locators: dict[str, str] = {}
+            arcs: list[tuple[str, str, Decimal]] = []
+            for element in list(link):
+                local = element.tag.rsplit("}", 1)[-1]
+                if local == "loc":
+                    label = str(element.attrib.get(f"{_XLINK}label") or "")
+                    href = str(element.attrib.get(f"{_XLINK}href") or "")
+                    if label and href:
+                        locators[label] = _xbrl_concept_key(href)
+                elif local == "presentationArc":
+                    source = str(element.attrib.get(f"{_XLINK}from") or "")
+                    target = str(element.attrib.get(f"{_XLINK}to") or "")
+                    try:
+                        order = Decimal(str(element.attrib.get("order") or "0"))
+                    except InvalidOperation:
+                        order = Decimal(0)
+                    if source and target:
+                        arcs.append((source, target, order))
+            if not operating_concepts.intersection(locators.values()):
+                continue
+            children: dict[str, list[tuple[Decimal, str]]] = {}
+            targets: set[str] = set()
+            for source, target, order in arcs:
+                children.setdefault(source, []).append((order, target))
+                targets.add(target)
+            roots = [
+                label for label in locators
+                if label not in targets
+            ]
+            ordered: list[tuple[int, str]] = []
+            visited: set[str] = set()
+
+            def walk(locator: str, depth: int) -> None:
+                if locator in visited:
+                    return
+                visited.add(locator)
+                concept = locators.get(locator)
+                if concept:
+                    ordered.append((depth, concept))
+                for _order, child in sorted(children.get(locator, [])):
+                    walk(child, depth + 1)
+
+            for root_locator in roots:
+                walk(root_locator, 0)
+            for locator in locators:
+                walk(locator, 0)
+
+            statement_rows: list[str] = []
+            for depth, concept in ordered:
+                raw = raw_by_concept.get(concept)
+                label = (
+                    str(raw.get("account_nm") or concept)
+                    if raw else concept
+                )
+                current = str(raw.get("thstrm_amount") or "-") if raw else "-"
+                cumulative = (
+                    str(raw.get("thstrm_add_amount") or "-") if raw else "-"
+                )
+                statement_rows.append(
+                    "<TR><TD>"
+                    + ("  " * depth)
+                    + escape(label)
+                    + "</TD><TD>"
+                    + escape(current)
+                    + "</TD><TD>"
+                    + escape(cumulative)
+                    + "</TD></TR>"
+                )
+            if not statement_rows:
+                continue
+            statement = "(단위 : 원)<TABLE>" + "".join(statement_rows) + "</TABLE>"
+            try:
+                amounts = derive_gross_revenue(
+                    statement,
+                    operating_current=operating_current,
+                    operating_cumulative=operating_cumulative,
+                )
+            except DartRevenueDerivationError:
+                continue
+            key = (
+                amounts.current_revenue,
+                amounts.cumulative_revenue,
+                amounts.current_expense,
+                amounts.cumulative_expense,
+            )
+            matches[key] = amounts
+    if not matches:
+        raise DartRevenueDerivationError(
+            "No official XBRL presentation role reconciles to operating income "
+            f"(roles={presentation_roles})."
+        )
+    if len(matches) > 1:
+        raise DartRevenueDerivationError(
+            "Multiple XBRL presentation roles produce different gross revenue values."
+        )
+    return next(iter(matches.values()))
 
 
 def derive_gross_revenue_from_archive(

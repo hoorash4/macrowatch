@@ -14,6 +14,7 @@ from earnings.dart_statement_revenue import (  # noqa: E402
     derive_gross_revenue,
     derive_gross_revenue_from_account_rows,
     derive_gross_revenue_from_archive,
+    derive_gross_revenue_from_xbrl_presentation,
     find_income_statement_document,
 )
 
@@ -337,6 +338,69 @@ class DartStatementRevenueTests(unittest.TestCase):
         self.assertEqual(result.current_expense, Decimal("10201771"))
         self.assertEqual(result.cumulative_revenue, Decimal("22827383"))
         self.assertEqual(result.cumulative_expense, Decimal("18196649"))
+
+
+
+    def test_xbrl_presentation_tree_removes_child_account_duplicates(self):
+        rows = [
+            {
+                "sj_div": "CIS", "account_id": "test_NetInterest",
+                "account_nm": "순이자손익", "thstrm_amount": "100",
+                "thstrm_add_amount": "200",
+            },
+            {
+                "sj_div": "CIS", "account_id": "test_InterestRevenue",
+                "account_nm": "이자수익", "thstrm_amount": "300",
+                "thstrm_add_amount": "600",
+            },
+            {
+                "sj_div": "CIS", "account_id": "test_InterestExpense",
+                "account_nm": "이자비용", "thstrm_amount": "200",
+                "thstrm_add_amount": "400",
+            },
+            {
+                "sj_div": "CIS", "account_id": "test_OperatingIncome",
+                "account_nm": "영업이익", "thstrm_amount": "100",
+                "thstrm_add_amount": "200",
+            },
+        ]
+        presentation = """<?xml version="1.0" encoding="UTF-8"?>
+          <link:linkbase
+            xmlns:link="http://www.xbrl.org/2003/linkbase"
+            xmlns:xlink="http://www.w3.org/1999/xlink">
+            <link:presentationLink xlink:type="extended" xlink:role="test">
+              <link:loc xlink:type="locator" xlink:label="root"
+                xlink:href="schema.xsd#test_Statement"/>
+              <link:loc xlink:type="locator" xlink:label="net"
+                xlink:href="schema.xsd#test_NetInterest"/>
+              <link:loc xlink:type="locator" xlink:label="revenue"
+                xlink:href="schema.xsd#test_InterestRevenue"/>
+              <link:loc xlink:type="locator" xlink:label="expense"
+                xlink:href="schema.xsd#test_InterestExpense"/>
+              <link:loc xlink:type="locator" xlink:label="op"
+                xlink:href="schema.xsd#test_OperatingIncome"/>
+              <link:presentationArc xlink:type="arc" xlink:from="root"
+                xlink:to="net" order="1"/>
+              <link:presentationArc xlink:type="arc" xlink:from="net"
+                xlink:to="revenue" order="1"/>
+              <link:presentationArc xlink:type="arc" xlink:from="net"
+                xlink:to="expense" order="2"/>
+              <link:presentationArc xlink:type="arc" xlink:from="root"
+                xlink:to="op" order="2"/>
+            </link:presentationLink>
+          </link:linkbase>
+        """
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("company_pre.xml", presentation)
+        result = derive_gross_revenue_from_xbrl_presentation(
+            output.getvalue(), rows,
+            operating_current=Decimal("100"),
+            operating_cumulative=Decimal("200"),
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
+        self.assertEqual(result.current_expense, Decimal("200"))
+        self.assertEqual(result.cumulative_revenue, Decimal("600"))
 
 
 

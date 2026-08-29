@@ -18,6 +18,7 @@ from earnings.dart_statement_revenue import (
     DartRevenueDerivationError,
     derive_gross_revenue_from_account_rows,
     derive_gross_revenue_from_archive,
+    derive_gross_revenue_from_xbrl_presentation,
 )
 from earnings.open_dart_parser import (
     DartAccountFact,
@@ -210,6 +211,7 @@ class OpenDartFinancialWorker:
             return facts
 
         amounts = None
+        full_account_rows: list[dict[str, Any]] = []
         try:
             full_accounts = self._request(
                 lambda: self.client.fetch_single_all_accounts(
@@ -219,8 +221,9 @@ class OpenDartFinancialWorker:
                     operating.consolidation_scope,
                 )
             )
+            full_account_rows = full_accounts.rows
             amounts = derive_gross_revenue_from_account_rows(
-                full_accounts.rows,
+                full_account_rows,
                 operating_current=operating.current_amount,
                 operating_cumulative=operating.cumulative_amount,
             )
@@ -236,6 +239,26 @@ class OpenDartFinancialWorker:
                 "receipt_no": receipt,
                 "status": error.status,
             }, ensure_ascii=False), flush=True)
+
+        if amounts is None:
+            try:
+                xbrl_response = self._request(
+                    lambda: self.client.fetch_financial_xbrl_archive(
+                        receipt, operating.report_code
+                    )
+                )
+                amounts = derive_gross_revenue_from_xbrl_presentation(
+                    xbrl_response.content,
+                    full_account_rows,
+                    operating_current=operating.current_amount,
+                    operating_cumulative=operating.cumulative_amount,
+                )
+            except (OpenDartApiError, DartRevenueDerivationError) as error:
+                print(json.dumps({
+                    "event": "dart_xbrl_revenue_derivation_skipped",
+                    "receipt_no": receipt,
+                    "reason": str(error),
+                }, ensure_ascii=False), flush=True)
 
         if amounts is None:
             try:

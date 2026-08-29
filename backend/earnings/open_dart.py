@@ -203,6 +203,48 @@ class OpenDartClient:
             "document.xml", {"rcept_no": receipt}, content
         )
 
+    def fetch_financial_xbrl_archive(
+        self,
+        receipt_number: str,
+        report_code: str,
+    ) -> OpenDartBinaryResponse:
+        """Download the official XBRL financial-statement ZIP."""
+        receipt = self._validate_receipt_number(receipt_number)
+        _year, code = self._validate_period(2015, report_code)
+        try:
+            response = self.session.get(
+                f"{OPEN_DART_BASE_URL}/fnlttXbrl.xml",
+                params={
+                    "crtfc_key": self.api_key,
+                    "rcept_no": receipt,
+                    "reprt_code": code,
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except Exception:
+            raise OpenDartApiError(
+                "transport_error", "fnlttXbrl.xml request failed"
+            ) from None
+        content = bytes(response.content)
+        if not content.startswith(b"PK"):
+            decoded = content.decode("utf-8", errors="replace")
+            status_match = re.search(r"<status>([^<]+)</status>", decoded)
+            message_match = re.search(r"<message>([^<]+)</message>", decoded)
+            status = status_match.group(1) if status_match else "invalid_archive"
+            message = (
+                message_match.group(1)
+                if message_match else "fnlttXbrl.xml returned no ZIP file"
+            )
+            raise OpenDartApiError(
+                status, message.replace(self.api_key, "[redacted]")
+            )
+        return OpenDartBinaryResponse(
+            "fnlttXbrl.xml",
+            {"rcept_no": receipt, "reprt_code": code},
+            content,
+        )
+
     def fetch_multi_accounts(
         self,
         corp_codes: Sequence[str],
