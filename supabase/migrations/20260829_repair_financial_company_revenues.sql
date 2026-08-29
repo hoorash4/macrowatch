@@ -193,3 +193,6 @@ where companies.country = 'KR'
       and jobs.reason = 'repair'
       and coalesce((jobs.metadata->>'revenue_repair')::boolean, false)
   );
+
+-- Replaying this migration is safe: the metadata predicate above preserves
+-- the first repair job for each company-period instead of enqueueing duplicates.
