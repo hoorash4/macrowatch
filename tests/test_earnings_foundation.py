@@ -107,6 +107,8 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn(PARTIAL_FINANCIALS_MIGRATION.name, self.deploy_workflow)
         self.assertIn("inputs.sync_identifiers == true", self.open_dart_workflow)
         self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
+        self.assertIn('"backend/earnings/**"', self.open_dart_workflow)
+        self.assertIn("github.event_name == 'push' && '20'", self.open_dart_workflow)
 
     def test_partial_financial_company_metrics_are_persisted_and_repaired(self) -> None:
         self.assertIn("quality_status = excluded.quality_status", self.partial_financials_migration)
