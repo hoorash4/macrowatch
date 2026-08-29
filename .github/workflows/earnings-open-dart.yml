@@ -32,7 +32,9 @@ permissions:
 
 concurrency:
   group: macrowatch-earnings-open-dart
-  cancel-in-progress: false
+  # A collector code fix must replace a stale run that is still retrying the
+  # old provider path. Database leases make the replacement safe to resume.
+  cancel-in-progress: true
 
 jobs:
   sync-open-dart-identifiers:
