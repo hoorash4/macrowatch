@@ -203,6 +203,16 @@ class OpenDartFinancialWorker:
         selected = select_preferred_accounts(facts).get(corp_code, {})
         if "operating_income" not in selected:
             return facts
+        # Ordinary industrial-company revenue is already the requested top
+        # line. Rebuild only a missing top line or a financial-company style
+        # operating-revenue label, which can represent just one branch.
+        existing_revenue = selected.get("revenue")
+        if existing_revenue is not None:
+            revenue_label = re.sub(r"\\s+", "", existing_revenue.account_name)
+            if not any(label in revenue_label for label in (
+                "영업수익", "보험수익", "순영업수익",
+            )):
+                return facts
         operating = selected["operating_income"]
         receipt = operating.receipt_number or next(
             (fact.receipt_number for fact in selected.values() if fact.receipt_number), ""
