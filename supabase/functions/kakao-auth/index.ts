@@ -36,6 +36,21 @@ function fromBase64UrlBytes(value: string) {
   return Uint8Array.from(fromBase64Url(value), (character) => character.charCodeAt(0));
 }
 
+function isServiceRoleRequest(request: Request, serviceRoleKey: string) {
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  if (token === serviceRoleKey) return true;
+  try {
+    // The Supabase gateway verifies this JWT before the function runs. The
+    // claim check supports legacy and rotated service-role keys whose literal
+    // values can differ from the runtime's current service-role secret.
+    const payload = JSON.parse(fromBase64Url(token.split(".")[1] || ""));
+    return payload.role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
 async function signState(payload: string, secret: string) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -207,7 +222,7 @@ export default {
       const tokenEncryptionSecret = Deno.env.get("KAKAO_TOKEN_ENCRYPTION_KEY") || serviceRoleKey;
 
       if (action === "send_internal") {
-        if (request.headers.get("Authorization") !== `Bearer ${serviceRoleKey}`) {
+        if (!isServiceRoleRequest(request, serviceRoleKey)) {
           return json({ error: "내부 알림 호출 권한이 없습니다." }, 403, origin);
         }
         const userId = String(body?.user_id || "").trim();
