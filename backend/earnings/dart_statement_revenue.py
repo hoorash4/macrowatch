@@ -383,7 +383,9 @@ def _validate_reconciliation(
     tolerance = max(unit_multiplier, abs(operating_income) * Decimal("0.000000001"))
     if abs(residual) > tolerance:
         raise DartRevenueDerivationError(
-            "DART gross revenue and expense do not reconcile to operating income."
+            "DART gross revenue and expense do not reconcile to operating income "
+            f"(revenue={revenue}, expense={expense}, "
+            f"operating_income={operating_income}, residual={residual})."
         )
 
 
@@ -607,6 +609,7 @@ def derive_gross_revenue_from_xbrl_presentation(
         GrossRevenueAmounts,
     ] = {}
     presentation_roles = 0
+    role_failures: list[str] = []
     for content in documents:
         try:
             root = ET.fromstring(content)
@@ -693,7 +696,10 @@ def derive_gross_revenue_from_xbrl_presentation(
                     operating_current=operating_current,
                     operating_cumulative=operating_cumulative,
                 )
-            except DartRevenueDerivationError:
+            except DartRevenueDerivationError as error:
+                reason = str(error)
+                if reason not in role_failures and len(role_failures) < 5:
+                    role_failures.append(reason)
                 continue
             key = (
                 amounts.current_revenue,
@@ -705,7 +711,7 @@ def derive_gross_revenue_from_xbrl_presentation(
     if not matches:
         raise DartRevenueDerivationError(
             "No official XBRL presentation role reconciles to operating income "
-            f"(roles={presentation_roles})."
+            f"(roles={presentation_roles}, reasons={role_failures})."
         )
     if len(matches) > 1:
         raise DartRevenueDerivationError(

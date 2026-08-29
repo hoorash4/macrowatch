@@ -201,7 +201,7 @@ class OpenDartFinancialWorker:
     ) -> list[DartAccountFact]:
         """Append one exactly reconciled financial-company revenue fact."""
         selected = select_preferred_accounts(facts).get(corp_code, {})
-        if "revenue" in selected or "operating_income" not in selected:
+        if "operating_income" not in selected:
             return facts
         operating = selected["operating_income"]
         receipt = operating.receipt_number or next(
@@ -289,6 +289,7 @@ class OpenDartFinancialWorker:
                 return facts
         if amounts.current_revenue is None and amounts.cumulative_revenue is None:
             return facts
+        facts = [fact for fact in facts if fact.metric != "revenue"]
         facts.append(replace(
             operating,
             metric="revenue",
