@@ -619,6 +619,7 @@ def derive_gross_revenue_from_xbrl_presentation(
             if link.tag.rsplit("}", 1)[-1] != "presentationLink":
                 continue
             presentation_roles += 1
+            role_uri = str(link.attrib.get(f"{_XLINK}role") or "")
             locators: dict[str, str] = {}
             arcs: list[tuple[str, str, Decimal]] = []
             for element in list(link):
@@ -697,7 +698,7 @@ def derive_gross_revenue_from_xbrl_presentation(
                     operating_cumulative=operating_cumulative,
                 )
             except DartRevenueDerivationError as error:
-                reason = str(error)
+                reason = f"{role_uri}: {error}"
                 if reason not in role_failures and len(role_failures) < 5:
                     role_failures.append(reason)
                 continue
