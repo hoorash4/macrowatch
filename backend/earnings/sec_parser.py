@@ -157,7 +157,11 @@ def canonical_sec_quarters(
     rows: list[dict[str, Any]] = []
     gaps: list[tuple[int, int]] = []
 
-    for fiscal_year in range(first_year, as_of_year + 1):
+    # A January/February fiscal year-end labels periods by the year in which
+    # the fiscal year ends. During calendar 2026, for example, CRWD and TJX
+    # already file fiscal 2027 quarters. Scan one fiscal label ahead while
+    # keeping the missing-period contract anchored to calendar as_of_year.
+    for fiscal_year in range(first_year, as_of_year + 2):
         selected: dict[int, dict[str, Fact]] = {quarter: {} for quarter in range(1, 5)}
         for metric, facts in by_metric.items():
             for quarter in range(1, 4):

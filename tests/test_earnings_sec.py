@@ -161,5 +161,25 @@ class SecEarningsTests(unittest.TestCase):
         self.assertIn((2026, 1), gaps)
 
 
+    def test_current_calendar_period_accepts_next_fiscal_year_label(self):
+        payload = company_facts()
+        for metric in payload["facts"]["us-gaap"].values():
+            for fact in metric["units"]["USD"]:
+                if fact["fp"] == "Q1":
+                    fact["fy"] = 2026
+                    fact["start"] = "2025-11-01"
+                    fact["end"] = "2026-01-31"
+                    fact["filed"] = "2026-03-15"
+                else:
+                    fact["fy"] = 1900
+        rows, _gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2025, years=1,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["filing"]["fiscal_year"], 2026)
+        self.assertEqual(rows[0]["filing"]["market_year"], 2026)
+        self.assertEqual(rows[0]["filing"]["market_quarter"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
