@@ -16,7 +16,11 @@ from earnings.collect_financials import (  # noqa: E402
     build_canonical_quarter,
     reporting_period_bounds,
 )
-from earnings.open_dart import OpenDartBinaryResponse, OpenDartResponse  # noqa: E402
+from earnings.open_dart import (  # noqa: E402
+    OpenDartApiError,
+    OpenDartBinaryResponse,
+    OpenDartResponse,
+)
 from earnings.open_dart_parser import parse_account_rows, select_preferred_accounts  # noqa: E402
 
 
@@ -54,6 +58,7 @@ class FakeClient:
     def __init__(self, payload, *, archive=None):
         self.payload = payload
         self.archive = archive
+        self.api_key = "fake-dart-key"
         self.multi_calls = []
         self.full_calls = []
 
@@ -68,6 +73,9 @@ class FakeClient:
     def fetch_single_all_accounts(self, corp_code, business_year, report_code, scope):
         self.full_calls.append((corp_code, business_year, report_code, scope))
         return OpenDartResponse("fnlttSinglAcntAll.json", {}, {"status": "013", "list": []})
+
+    def fetch_financial_xbrl_archive(self, receipt_number, report_code):
+        raise OpenDartApiError("014", "No test XBRL archive")
 
     def fetch_filing_archive(self, receipt_number):
         if self.archive is None:
