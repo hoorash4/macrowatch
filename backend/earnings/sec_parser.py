@@ -13,6 +13,10 @@ METRIC_ALIASES = {
         # Banks and broker-dealers commonly use this total after interest
         # expense instead of an industrial-company sales tag.
         "RevenuesNetOfInterestExpense",
+        "TotalRevenue",
+        "TotalRevenues",
+        "NetRevenue",
+        "NetRevenues",
         "TotalRevenuesNetOfInterestExpense",
         "TotalRevenueNetOfInterestExpense",
         "OperatingRevenues",
@@ -28,6 +32,11 @@ METRIC_ALIASES = {
     ),
     "operating_income": (
         "OperatingIncomeLoss",
+        "IncomeFromOperations",
+        "LossFromOperations",
+        "IncomeBeforeProvisionForIncomeTaxes",
+        "IncomeLossBeforeProvisionForIncomeTaxes",
+        "IncomeBeforeIncomeTaxes",
         "IncomeLossBeforeIncomeTaxes",
         "IncomeFromContinuingOperationsBeforeTaxes",
         "IncomeLossFromContinuingOperationsBeforeTaxes",
@@ -38,6 +47,7 @@ METRIC_ALIASES = {
         "NetIncomeLoss",
         "NetIncome",
         "NetIncomeAttributableToParent",
+        "NetIncomeAttributableToCompany",
         "ProfitLoss",
         "NetIncomeLossAvailableToCommonStockholdersBasic",
     ),

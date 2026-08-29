@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 import requests
 
+from earnings.sec_parser import METRIC_ALIASES
+
 
 SEC_COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 DOLTHUB_QUERY_URL = "https://www.dolthub.com/api/v1alpha1/deeleeramone/sec-company-facts/main"
@@ -170,18 +172,18 @@ class SecCompanyFactsMirrorClient:
         }
         candidate_tags: list[str] = []
         if expanded:
+            expanded_names = tuple(dict.fromkeys(
+                alias
+                for aliases in METRIC_ALIASES.values()
+                for alias in aliases
+            ))
+            quoted = ",".join(
+                "'" + tag.replace("'", "''") + "'"
+                for tag in expanded_names
+            )
             rows = self._query(
-                "SELECT DISTINCT tags.tag_id, tags.namespace, tags.tag "
-                "FROM xbrl_tags tags JOIN facts_enc facts ON facts.tag_id = tags.tag_id "
-                f"WHERE facts.cik = '{normalized}' AND facts.end >= '{first_year}-01-01' "
-                "AND facts.unit = 'USD' "
-                "AND facts.form IN ('10-Q','10-Q/A','10-K','10-K/A') AND ("
-                "LOWER(tags.tag) LIKE '%revenue%' "
-                "OR LOWER(tags.tag) LIKE '%sales%' "
-                "OR LOWER(tags.tag) LIKE '%operatingincome%' "
-                "OR LOWER(tags.tag) LIKE '%incomeloss%' "
-                "OR LOWER(tags.tag) LIKE '%netincome%' "
-                "OR LOWER(tags.tag) LIKE '%profitloss%')"
+                "SELECT tag_id, namespace, tag FROM xbrl_tags "
+                f"WHERE tag IN ({quoted})"
             )
             for row in rows:
                 tag_id = int(row["tag_id"])

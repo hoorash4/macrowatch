@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: macrowatch-earnings-sec
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   refresh-sec-company-facts:
