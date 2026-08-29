@@ -10,8 +10,42 @@ from zoneinfo import ZoneInfo
 import requests
 
 from earnings.sec_edgar import SecCompanyFactsMirrorClient, SecEdgarClient
-from earnings.sec_parser import canonical_sec_quarters
+from earnings.sec_parser import METRIC_ALIASES, canonical_sec_quarters
 from earnings.supabase_rest import SupabaseEarningsStore
+
+
+def _metric_diagnostics(payload: dict) -> dict:
+    """Compact recent raw SEC facts for unresolved metric selection."""
+    taxonomies = payload.get("facts", {})
+    result = {}
+    for metric, aliases in METRIC_ALIASES.items():
+        observations = []
+        for namespace, taxonomy in taxonomies.items():
+            if not isinstance(taxonomy, dict):
+                continue
+            for alias in aliases:
+                concept = taxonomy.get(alias, {})
+                units = concept.get("units", {}) if isinstance(concept, dict) else {}
+                rows = units.get("USD", []) if isinstance(units, dict) else []
+                for raw in rows if isinstance(rows, list) else []:
+                    if not isinstance(raw, dict):
+                        continue
+                    observations.append({
+                        "concept": f"{namespace}:{alias}",
+                        "fy": raw.get("fy"),
+                        "fp": raw.get("fp"),
+                        "start": raw.get("start"),
+                        "end": raw.get("end"),
+                        "filed": raw.get("filed"),
+                        "form": raw.get("form"),
+                    })
+        observations.sort(key=lambda row: (
+            str(row.get("end") or ""),
+            str(row.get("filed") or ""),
+            str(row.get("concept") or ""),
+        ))
+        result[metric] = observations[-8:]
+    return result
 
 
 def main() -> None:
@@ -78,6 +112,7 @@ def main() -> None:
                         row["filing"]["market_year"] == today.year
                         for row in expanded_rows
                     ),
+                    "metric_diagnostics": _metric_diagnostics(expanded_payload),
                 }, ensure_ascii=False), flush=True)
                 if len(expanded_rows) > len(rows):
                     rows, gaps = expanded_rows, expanded_gaps
