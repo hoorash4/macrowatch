@@ -456,6 +456,8 @@ def derive_gross_revenue_from_archive(
     though the account API also supplies a standalone three-month amount.
     Each available period is therefore reconciled independently; the worker
     subtracts the previously reconciled cumulative revenue when necessary.
+    Account lines split across sibling layout tables are recombined from their
+    nearest statement title before the same reconciliation is applied.
     """
     try:
         with ZipFile(BytesIO(archive)) as zipped:
