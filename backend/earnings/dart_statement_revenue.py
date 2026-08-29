@@ -548,7 +548,10 @@ def derive_gross_revenue_from_archive(
                         failures.append(str(error))
                     if "do not reconcile" in str(error):
                         try:
-                            debug_rows, _debug_unit = parse_statement_rows(candidate)
+                            # Prefer the recombined section in diagnostics: the
+                            # single table often contains only the operating-income
+                            # subtotal, while account rows live in sibling tables.
+                            debug_rows, _debug_unit = parse_statement_rows(combined)
                             debug_column = next(
                                 column
                                 for row in debug_rows
