@@ -448,6 +448,7 @@ def derive_gross_revenue(
 
 _ACCOUNT_ROW_EXCLUDED_ID_PARTS = (
     "comprehensiveincomeattributable",
+    "shareofothercomprehensiveincome",
     "profitloss",
     "profitlossbeforetax",
     "incometaxexpense",

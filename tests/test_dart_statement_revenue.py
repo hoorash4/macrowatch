@@ -307,6 +307,14 @@ class DartStatementRevenueTests(unittest.TestCase):
             row("기타영업손익", -526849, -1014478),
             row("배당수익", 66175, 137036),
             row(
+                "관계기업의 기타포괄손익에 대한 지분", 221, 1276,
+                "ifrs-full_ShareOfOtherComprehensiveIncomeOfAssociates",
+            ),
+            row(
+                "관계기업의 기타포괄손익에 대한 지분", 5, 2,
+                "ifrs-full_ShareOfOtherComprehensiveIncomeNotReclassified",
+            ),
+            row(
                 "반기순이익", 1846651, 3495799,
                 "ifrs-full_ProfitLoss",
             ),
