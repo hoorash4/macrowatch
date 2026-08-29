@@ -154,11 +154,42 @@ class SecCompanyFactsMirrorClient:
             result.update({int(row["accn_id"]): str(row["accn"]) for row in rows})
         return result
 
-    def fetch_company_facts(self, cik: str, *, first_year: int) -> dict[str, Any]:
+    def fetch_company_facts(
+        self,
+        cik: str,
+        *,
+        first_year: int,
+        expanded: bool = False,
+    ) -> dict[str, Any]:
         normalized = cik.strip().zfill(10)
         if len(normalized) != 10 or not normalized.isdigit():
             raise ValueError("SEC CIK must be ten digits.")
-        tag_ids = self._load_tag_ids()
+        tag_ids: dict[int, tuple[str, str]] = {
+            tag_id: ("us-gaap", tag)
+            for tag_id, tag in self._load_tag_ids().items()
+        }
+        candidate_tags: list[str] = []
+        if expanded:
+            rows = self._query(
+                "SELECT DISTINCT tags.tag_id, tags.namespace, tags.tag "
+                "FROM xbrl_tags tags JOIN facts_enc facts ON facts.tag_id = tags.tag_id "
+                f"WHERE facts.cik = '{normalized}' AND facts.end >= '{first_year}-01-01' "
+                "AND facts.unit = 'USD' "
+                "AND facts.form IN ('10-Q','10-Q/A','10-K','10-K/A') AND ("
+                "LOWER(tags.tag) LIKE '%revenue%' "
+                "OR LOWER(tags.tag) LIKE '%sales%' "
+                "OR LOWER(tags.tag) LIKE '%operatingincome%' "
+                "OR LOWER(tags.tag) LIKE '%incomeloss%' "
+                "OR LOWER(tags.tag) LIKE '%netincome%' "
+                "OR LOWER(tags.tag) LIKE '%profitloss%')"
+            )
+            for row in rows:
+                tag_id = int(row["tag_id"])
+                namespace = str(row.get("namespace") or "us-gaap")
+                tag = str(row["tag"])
+                tag_ids[tag_id] = (namespace, tag)
+                candidate_tags.append(f"{namespace}:{tag}")
+
         facts: list[dict[str, Any]] = []
         last_id = 0
         while True:
@@ -178,26 +209,28 @@ class SecCompanyFactsMirrorClient:
                 break
 
         accession_map = self._accessions({int(row["accn_id"]) for row in facts if row.get("accn_id")})
-        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for row in facts:
             accession_id = int(row["accn_id"])
             accession = accession_map.get(accession_id)
             if not accession:
                 continue
-            tag = tag_ids.get(int(row["tag_id"]))
-            if not tag:
+            tag_identity = tag_ids.get(int(row["tag_id"]))
+            if not tag_identity:
                 continue
-            grouped[tag].append({
+            grouped[tag_identity].append({
                 key: row.get(key)
                 for key in ("start", "end", "val", "fy", "fp", "form", "filed", "frame")
             } | {"accn": accession})
+        taxonomies: dict[str, dict[str, Any]] = defaultdict(dict)
+        for (namespace, tag), rows in grouped.items():
+            taxonomies[namespace][tag] = {"units": {"USD": rows}}
         return {
             "cik": int(normalized),
-            "facts": {
-                "us-gaap": {
-                    tag: {"units": {"USD": rows}}
-                    for tag, rows in grouped.items()
-                },
+            "facts": dict(taxonomies),
+            "metadata": {
+                "transport": "dolthub_sec_company_facts_mirror",
+                "expanded": expanded,
+                "candidate_tags": sorted(candidate_tags),
             },
-            "metadata": {"transport": "dolthub_sec_company_facts_mirror"},
         }

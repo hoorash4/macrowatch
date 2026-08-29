@@ -53,6 +53,34 @@ def main() -> None:
                 as_of_year=today.year,
                 years=10,
             )
+            if (
+                mirror_client is not None
+                and not any(
+                    row["filing"]["market_year"] == today.year
+                    for row in rows
+                )
+            ):
+                expanded_payload = mirror_client.fetch_company_facts(
+                    cik, first_year=today.year - 9, expanded=True
+                )
+                expanded_rows, expanded_gaps = canonical_sec_quarters(
+                    expanded_payload,
+                    cik=cik,
+                    as_of_year=today.year,
+                    years=10,
+                )
+                print(json.dumps({
+                    "event": "sec_expanded_metric_scan",
+                    "ticker": ticker,
+                    "cik": cik,
+                    "candidate_tags": expanded_payload.get("metadata", {}).get("candidate_tags", []),
+                    "current_year_rows": sum(
+                        row["filing"]["market_year"] == today.year
+                        for row in expanded_rows
+                    ),
+                }, ensure_ascii=False), flush=True)
+                if len(expanded_rows) > len(rows):
+                    rows, gaps = expanded_rows, expanded_gaps
             result = store.upsert_sec_company_quarters(company_id=company_id, rows=rows)
             totals["quarters_seen"] += int(result.get("seen") or 0)
             totals["quarters_changed"] += int(result.get("changed") or 0)
