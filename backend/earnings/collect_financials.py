@@ -225,9 +225,7 @@ class OpenDartFinancialWorker:
                     "thstrm_add_amount": row.get("thstrm_add_amount"),
                 }
                 for row in full_accounts.rows
-                if str(row.get("fs_div") or "").upper()
-                == operating.consolidation_scope
-                and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+                if str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
             ]
             print(json.dumps({
                 "event": "dart_full_income_account_sample",
