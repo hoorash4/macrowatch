@@ -14,6 +14,7 @@ SEC_COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.jso
 DOLTHUB_QUERY_URL = "https://www.dolthub.com/api/v1alpha1/deeleeramone/sec-company-facts/main"
 
 SEC_TAGS = (
+    "RevenuesNetOfInterestExpense",
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "Revenues",
     "SalesRevenueNet",

@@ -1,6 +1,13 @@
 name: Refresh U.S. earnings from SEC
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/earnings/sec_edgar.py"
+      - "backend/earnings/sec_parser.py"
+      - "backend/earnings/collect_sec.py"
+      - ".github/workflows/earnings-sec.yml"
   schedule:
     # UTC 04:30 Tue-Sat = 13:30 KST Tue-Sat. This follows the preceding
     # U.S. session and avoids the Korean OpenDART collection window.

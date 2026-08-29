@@ -101,6 +101,26 @@ class OpenDartClientTests(unittest.TestCase):
         self.assertEqual(response.request_params, {})
         self.assertEqual(response.content, b"zip-content")
 
+    def test_public_statement_requests_never_send_the_api_key(self):
+        session = FakeSession([
+            FakeResponse(content=b"filing"),
+            FakeResponse(content=b"statement"),
+        ])
+        client = OpenDartClient("top-secret", session=session)
+        filing = client.fetch_filing_page("20260814004200")
+        statement = client.fetch_statement_page(
+            "20260814004200",
+            document_number="11540191",
+            element_id="19",
+            offset="2452331",
+            length="73146",
+        )
+        self.assertEqual(filing.content, b"filing")
+        self.assertEqual(statement.content, b"statement")
+        self.assertNotIn("crtfc_key", session.calls[0]["params"])
+        self.assertNotIn("crtfc_key", session.calls[1]["params"])
+        self.assertTrue(session.calls[1]["url"].endswith("/report/viewer.do"))
+
     def test_no_data_is_an_empty_success_and_other_statuses_raise(self):
         no_data = FakeSession([FakeResponse({"status": "013", "message": "조회된 데이터가 없습니다."})])
         self.assertEqual(OpenDartClient("key", session=no_data).fetch_multi_accounts(

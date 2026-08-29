@@ -30,6 +30,7 @@ class MirrorSession:
         self.queries.append(query)
         if "FROM xbrl_tags" in query:
             rows = [{"tag_id": index + 1, "tag": tag} for index, tag in enumerate((
+                "RevenuesNetOfInterestExpense",
                 "RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues",
                 "SalesRevenueNet", "SalesRevenueGoodsNet", "OperatingIncomeLoss",
                 "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
@@ -78,7 +79,7 @@ class SecEarningsTests(unittest.TestCase):
         session = MirrorSession()
         client = SecCompanyFactsMirrorClient(session=session, sleeper=lambda _seconds: None)
         payload = client.fetch_company_facts("1", first_year=2025)
-        fact = payload["facts"]["us-gaap"]["RevenueFromContractWithCustomerExcludingAssessedTax"]["units"]["USD"][0]
+        fact = payload["facts"]["us-gaap"]["RevenuesNetOfInterestExpense"]["units"]["USD"][0]
         self.assertEqual(fact["accn"], "0001-25-000007")
         self.assertEqual(fact["val"], "100")
         self.assertIn("id > 0", session.queries[1])
@@ -95,6 +96,38 @@ class SecEarningsTests(unittest.TestCase):
         self.assertEqual(rows[3]["quarter"]["operating_income"], "28")
         self.assertEqual(rows[3]["quarter"]["net_income"], "14")
         self.assertNotIn("eps", rows[0]["quarter"])
+
+    def test_financial_company_net_interest_revenue_is_a_canonical_top_line(self):
+        payload = company_facts()
+        payload["facts"]["us-gaap"].pop(
+            "RevenueFromContractWithCustomerExcludingAssessedTax"
+        )
+        payload["facts"]["us-gaap"]["RevenuesNetOfInterestExpense"] = {
+            "units": {"USD": [
+                {
+                    "fy": 2025, "fp": fp, "start": start, "end": end,
+                    "form": form, "accn": accession,
+                    "filed": "2026-02-15" if fp == "FY" else end,
+                    "val": value,
+                }
+                for value, (fp, start, end, form, accession) in zip(
+                    [300, 330, 360, 1350],
+                    [
+                        ("Q1", "2025-01-01", "2025-03-31", "10-Q", "0001-25-000001"),
+                        ("Q2", "2025-04-01", "2025-06-30", "10-Q", "0001-25-000002"),
+                        ("Q3", "2025-07-01", "2025-09-30", "10-Q", "0001-25-000003"),
+                        ("FY", "2025-01-01", "2025-12-31", "10-K", "0001-26-000004"),
+                    ],
+                )
+            ]}
+        }
+        rows, gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2025, years=1,
+        )
+        self.assertEqual(gaps, [])
+        self.assertEqual([row["quarter"]["revenue"] for row in rows], [
+            "300", "330", "360", "360",
+        ])
 
     def test_missing_core_metric_is_a_gap_not_a_null_canonical_row(self):
         rows, gaps = canonical_sec_quarters(

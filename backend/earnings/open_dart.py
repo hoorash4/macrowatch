@@ -14,6 +14,7 @@ from typing import Any, Iterable, Iterator, Sequence
 
 
 OPEN_DART_BASE_URL = "https://opendart.fss.or.kr/api"
+DART_BASE_URL = "https://dart.fss.or.kr"
 OPEN_DART_MAX_COMPANIES = 100
 OPEN_DART_REPORT_CODES = {"11013", "11012", "11014", "11011"}
 OPEN_DART_NO_DATA = "013"
@@ -222,6 +223,65 @@ class OpenDartClient:
                 "reprt_code": code,
                 "fs_div": scope,
             },
+        )
+
+    @staticmethod
+    def _validate_receipt_number(receipt_number: str) -> str:
+        receipt = str(receipt_number).strip()
+        if len(receipt) != 14 or not receipt.isdigit():
+            raise ValueError("DART receipt_number must contain fourteen digits.")
+        return receipt
+
+    def _get_public_document(
+        self,
+        endpoint: str,
+        params: dict[str, str],
+    ) -> OpenDartBinaryResponse:
+        """Read one public DART filing page without putting credentials in its URL."""
+        try:
+            response = self.session.get(
+                f"{DART_BASE_URL}/{endpoint}",
+                params=params,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except Exception:
+            raise OpenDartApiError(
+                "transport_error", f"{endpoint} request failed"
+            ) from None
+        content = bytes(response.content)
+        if not content:
+            raise OpenDartApiError("empty_document", f"{endpoint} returned an empty document")
+        return OpenDartBinaryResponse(endpoint, dict(params), content)
+
+    def fetch_filing_page(self, receipt_number: str) -> OpenDartBinaryResponse:
+        """Fetch the public filing index that identifies statement document nodes."""
+        receipt = self._validate_receipt_number(receipt_number)
+        return self._get_public_document("dsaf001/main.do", {"rcpNo": receipt})
+
+    def fetch_statement_page(
+        self,
+        receipt_number: str,
+        *,
+        document_number: str,
+        element_id: str,
+        offset: str,
+        length: str,
+        dtd: str = "dart4.xsd",
+    ) -> OpenDartBinaryResponse:
+        """Fetch one rendered financial-statement node from a public filing."""
+        receipt = self._validate_receipt_number(receipt_number)
+        numeric = {
+            "dcmNo": str(document_number).strip(),
+            "eleId": str(element_id).strip(),
+            "offset": str(offset).strip(),
+            "length": str(length).strip(),
+        }
+        if any(not value.isdigit() for value in numeric.values()):
+            raise ValueError("DART statement document parameters must be numeric.")
+        return self._get_public_document(
+            "report/viewer.do",
+            {"rcpNo": receipt, **numeric, "dtd": str(dtd).strip() or "dart4.xsd"},
         )
 
     def iter_periodic_filings(

@@ -10,6 +10,9 @@ from typing import Any, Iterable
 
 METRIC_ALIASES = {
     "revenue": (
+        # Banks and broker-dealers commonly use this total after interest
+        # expense instead of an industrial-company sales tag.
+        "RevenuesNetOfInterestExpense",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "Revenues",
         "SalesRevenueNet",

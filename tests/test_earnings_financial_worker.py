@@ -14,7 +14,7 @@ from earnings.collect_financials import (  # noqa: E402
     build_canonical_quarter,
     reporting_period_bounds,
 )
-from earnings.open_dart import OpenDartResponse  # noqa: E402
+from earnings.open_dart import OpenDartBinaryResponse, OpenDartResponse  # noqa: E402
 from earnings.open_dart_parser import parse_account_rows, select_preferred_accounts  # noqa: E402
 
 
@@ -42,8 +42,10 @@ def rows_for_period(report_code="11013", year="2026", current="100", cumulative=
 
 
 class FakeClient:
-    def __init__(self, payload):
+    def __init__(self, payload, *, filing_page=None, statement_page=None):
         self.payload = payload
+        self.filing_page = filing_page
+        self.statement_page = statement_page
         self.multi_calls = []
         self.full_calls = []
 
@@ -58,6 +60,20 @@ class FakeClient:
     def fetch_single_all_accounts(self, corp_code, business_year, report_code, scope):
         self.full_calls.append((corp_code, business_year, report_code, scope))
         return OpenDartResponse("fnlttSinglAcntAll.json", {}, {"status": "013", "list": []})
+
+    def fetch_filing_page(self, receipt_number):
+        if self.filing_page is None:
+            raise AssertionError("Unexpected DART filing-page request")
+        return OpenDartBinaryResponse(
+            "dsaf001/main.do", {"rcpNo": receipt_number}, self.filing_page.encode()
+        )
+
+    def fetch_statement_page(self, receipt_number, **_kwargs):
+        if self.statement_page is None:
+            raise AssertionError("Unexpected DART statement-page request")
+        return OpenDartBinaryResponse(
+            "report/viewer.do", {"rcpNo": receipt_number}, self.statement_page.encode()
+        )
 
 
 class FakeStore:
@@ -188,9 +204,31 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(quarter["operating_income"], "100")
         self.assertEqual(quarter["net_income"], "100")
 
-    def test_worker_persists_partial_quarter_for_review_instead_of_discarding_it(self):
-        rows = [row for row in rows_for_period() if row["account_nm"] != "매출액"]
-        client = FakeClient({"status": "000", "list": rows})
+    def test_missing_financial_revenue_is_derived_only_after_statement_reconciliation(self):
+        rows = [
+            row for row in rows_for_period(current="100", cumulative="100")
+            if row["account_nm"] != "매출액"
+        ]
+        filing_page = """
+        node3['text'] = "2-2. 연결 포괄손익계산서";
+        node3['dcmNo'] = "10";
+        node3['eleId'] = "19";
+        node3['offset'] = "20";
+        node3['length'] = "30";
+        node3['dtd'] = "dart4.xsd";
+        """
+        statement_page = """
+        <html><body>(단위 : 원)<table>
+          <tr><td>영업수익</td><td>300</td></tr>
+          <tr><td>영업비용</td><td>200</td></tr>
+          <tr><td>영업이익</td><td>100</td></tr>
+        </table></body></html>
+        """
+        client = FakeClient(
+            {"status": "000", "list": rows},
+            filing_page=filing_page,
+            statement_page=statement_page,
+        )
         store = FakeStore()
         worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
         result = worker.process_batch([{
@@ -199,12 +237,44 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
             "business_year": 2026,
             "report_code": "11013",
             "corp_code": "00126380",
-            "metadata": {"filed_on": "2026-05-15"},
+            "metadata": {
+                "receipt_no": "20260515000001",
+                "filed_on": "2026-05-15",
+                "report_name": "분기보고서 (2026.03)",
+            },
+        }])
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual(store.completions[0]["quarter"]["revenue"], "300")
+        self.assertEqual(store.completions[0]["quarter"]["missing_metrics"], [])
+
+    def test_unreconciled_financial_revenue_remains_a_partial_review_row(self):
+        rows = [row for row in rows_for_period() if row["account_nm"] != "매출액"]
+        client = FakeClient(
+            {"status": "000", "list": rows},
+            filing_page="""
+              node3['text'] = "2-2. 연결 포괄손익계산서";
+              node3['dcmNo'] = "10"; node3['eleId'] = "19";
+              node3['offset'] = "20"; node3['length'] = "30";
+            """,
+            statement_page="""
+              <html><body>(단위 : 원)<table>
+                <tr><td>영업수익</td><td>300</td></tr>
+                <tr><td>영업비용</td><td>100</td></tr>
+                <tr><td>영업이익</td><td>100</td></tr>
+              </table></body></html>
+            """,
+        )
+        store = FakeStore()
+        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
+        result = worker.process_batch([{
+            "id": 1, "company_id": "company-id", "business_year": 2026,
+            "report_code": "11013", "corp_code": "00126380",
+            "metadata": {"receipt_no": "20260515000001", "filed_on": "2026-05-15"},
         }])
         self.assertEqual(result["review_required"], 1)
-        self.assertIsNotNone(store.completions[0]["quarter"])
-        self.assertEqual(store.completions[0]["quarter"]["missing_metrics"], ["revenue"])
-        self.assertEqual(store.completions[0]["outcome"], "review_required")
+        quarter = store.completions[0]["quarter"]
+        self.assertIsNone(quarter["revenue"])
+        self.assertEqual(quarter["missing_metrics"], ["revenue"])
 
 
 if __name__ == "__main__":

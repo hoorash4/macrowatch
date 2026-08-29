@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/earnings/**"
       - "supabase/migrations/*earnings*.sql"
+      - "supabase/migrations/*financial*revenue*"
       - ".github/workflows/earnings-open-dart.yml"
   schedule:
     # UTC 10:30/10:50 = 19:30/19:50 KST. The second run is an idempotent

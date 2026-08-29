@@ -14,6 +14,12 @@ import time
 from typing import Any, Callable, Iterable
 
 from earnings.open_dart import OpenDartClient, OpenDartResponse
+from earnings.dart_statement_revenue import (
+    DartRevenueDerivationError,
+    derive_gross_revenue,
+    filing_html,
+    find_income_statement_document,
+)
 from earnings.open_dart_parser import (
     DartAccountFact,
     REPORT_QUARTERS,
@@ -80,11 +86,7 @@ def build_canonical_quarter(
     *,
     filed_on: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """Build a non-mixed canonical quarter, retaining valid partial metrics.
-
-    Financial companies often do not publish one manufacturing-style revenue
-    total.  A missing top line must not discard their operating or net income.
-    """
+    """Build one non-mixed canonical quarter, preserving valid partial metrics."""
     missing = [metric for metric in REQUIRED_METRICS if metric not in selected]
     if not selected:
         return None, missing
@@ -106,9 +108,11 @@ def build_canonical_quarter(
             values[metric] = value
     missing = sorted(set(missing))
     if not values:
-        return None, list(REQUIRED_METRICS)
+        return None, missing
 
-    representative = next(selected[metric] for metric in REQUIRED_METRICS if metric in selected)
+    representative = next(
+        selected[metric] for metric in REQUIRED_METRICS if metric in selected
+    )
     period_end = representative.period_end
     if period_end is None:
         return None, list(REQUIRED_METRICS)
@@ -129,8 +133,7 @@ def build_canonical_quarter(
         "market_quarter": representative.fiscal_quarter,
         "period_start": _date_text(period_start),
         "period_end": period_end.isoformat(),
-        **{metric: _decimal_text(values[metric]) if metric in values else None
-           for metric in REQUIRED_METRICS},
+        **{metric: _decimal_text(values.get(metric)) for metric in REQUIRED_METRICS},
         "currency": currency,
         "consolidation_scope": next(iter(scopes)),
         "missing_metrics": missing,
@@ -178,15 +181,69 @@ class OpenDartFinancialWorker:
         report_code: str,
         facts: list[DartAccountFact],
     ) -> list[DartAccountFact]:
-        """Use full CFS then OFS only until one complete scope exists."""
+        """Use full CFS then OFS until core profit facts support a safe result."""
         for scope in ("CFS", "OFS"):
             selected = select_preferred_accounts(facts).get(corp_code, {})
-            if all(metric in selected for metric in REQUIRED_METRICS):
+            if all(metric in selected for metric in REQUIRED_METRICS) or all(
+                metric in selected for metric in ("operating_income", "net_income")
+            ):
                 break
             response = self._request(lambda scope=scope: self.client.fetch_single_all_accounts(
                 corp_code, business_year, report_code, scope
             ))
             facts.extend(parse_account_rows(response.payload))
+        return facts
+
+    def _derive_missing_revenue(
+        self,
+        corp_code: str,
+        facts: list[DartAccountFact],
+    ) -> list[DartAccountFact]:
+        """Append one reconciled financial-company revenue fact when needed."""
+        selected = select_preferred_accounts(facts).get(corp_code, {})
+        if "revenue" in selected or "operating_income" not in selected:
+            return facts
+        operating = selected["operating_income"]
+        receipt = operating.receipt_number or next(
+            (fact.receipt_number for fact in selected.values() if fact.receipt_number), ""
+        )
+        if not receipt or operating.consolidation_scope not in {"CFS", "OFS"}:
+            return facts
+        try:
+            filing_response = self._request(
+                lambda: self.client.fetch_filing_page(receipt)
+            )
+            document = find_income_statement_document(
+                filing_html(filing_response.content),
+                consolidation_scope=operating.consolidation_scope,
+            )
+            statement_response = self._request(lambda: self.client.fetch_statement_page(
+                receipt,
+                document_number=document.document_number,
+                element_id=document.element_id,
+                offset=document.offset,
+                length=document.length,
+                dtd=document.dtd,
+            ))
+            amounts = derive_gross_revenue(
+                filing_html(statement_response.content),
+                operating_current=operating.current_amount,
+                operating_cumulative=operating.cumulative_amount,
+            )
+        except DartRevenueDerivationError:
+            # A layout that cannot be reconciled remains an explicit partial
+            # quarter. Never guess a top line or retry a deterministic mismatch.
+            return facts
+        if amounts.current_revenue is None and amounts.cumulative_revenue is None:
+            return facts
+        facts.append(replace(
+            operating,
+            metric="revenue",
+            account_id="derived-gross-operating-revenue",
+            account_name="총영업수익(공시 트리 합산)",
+            current_amount=amounts.current_revenue,
+            cumulative_amount=amounts.cumulative_revenue,
+        ))
         return facts
 
     def _fetch_previous(
@@ -278,6 +335,7 @@ class OpenDartFinancialWorker:
                     report_code=report_code,
                     report_name=metadata.get("report_name"),
                 )
+                current_facts = self._derive_missing_revenue(corp_code, current_facts)
                 selected = select_preferred_accounts(current_facts).get(corp_code, {})
                 previous_code = PREVIOUS_REPORT_CODE.get(report_code)
                 previous_facts = attach_reporting_period(
@@ -303,6 +361,7 @@ class OpenDartFinancialWorker:
                         business_year=business_year,
                         report_code=PREVIOUS_REPORT_CODE[report_code],
                     )
+                    previous_facts = self._derive_missing_revenue(corp_code, previous_facts)
                 previous_selected = select_preferred_accounts(previous_facts).get(corp_code, {})
 
                 receipt = str(metadata.get("receipt_no") or "").strip()
@@ -334,6 +393,13 @@ class OpenDartFinancialWorker:
                     "metadata": {
                         "report_name": metadata.get("report_name"),
                         "missing_metrics": missing,
+                        "revenue_method": (
+                            "dart_statement_gross_operating_revenue"
+                            if selected.get("revenue") is not None
+                            and selected["revenue"].account_id
+                            == "derived-gross-operating-revenue"
+                            else "open_dart_account"
+                        ),
                     },
                 }
                 self.store.complete_open_dart_job(
