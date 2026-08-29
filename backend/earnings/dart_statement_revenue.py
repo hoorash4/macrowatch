@@ -374,6 +374,34 @@ def _gross_sides(
             expense += abs(value)
         if has_child:
             skip_descendants_of = row.depth
+
+    # A net parent can disclose only part of its gross children. Preserve the
+    # disclosed gross branches, then allocate the exact undisclosed remainder
+    # by the parent's sign so the expanded tree still equals its published net.
+    for index, row in enumerate(section):
+        value = row.values[column] if column < len(row.values) else None
+        has_child = (
+            index + 1 < len(section)
+            and section[index + 1].depth > row.depth
+        )
+        if value is None or not has_child:
+            continue
+        kind = _classification(
+            row.normalized_label, has_child=True, value=value
+        )
+        if kind != "net_parent":
+            continue
+        end = index + 1
+        while end < len(section) and section[end].depth > row.depth:
+            end += 1
+        child_revenue, child_expense = _gross_sides(
+            section[index + 1:end], column=column
+        )
+        undisclosed = value - (child_revenue - child_expense)
+        if undisclosed > 0:
+            revenue += undisclosed
+        elif undisclosed < 0:
+            expense += abs(undisclosed)
     return revenue, expense
 
 

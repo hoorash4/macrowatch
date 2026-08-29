@@ -498,5 +498,20 @@ class DartStatementRevenueTests(unittest.TestCase):
 
 
 
+    def test_net_parent_allocates_undisclosed_child_remainder(self):
+        page = statement([
+            ("영업수익", "100"),
+            ("순기타손익", "-50"),
+            ("　기타영업비용", "20"),
+            ("영업이익", "50"),
+        ], unit="원")
+        result = derive_gross_revenue(
+            page, operating_current=Decimal("50"), operating_cumulative=None,
+        )
+        self.assertEqual(result.current_revenue, Decimal("100"))
+        self.assertEqual(result.current_expense, Decimal("50"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
