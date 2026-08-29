@@ -91,6 +91,46 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   assert.match(chart, /value >= -0\.15/);
 });
 
+test('KOSPI 100 earnings card aggregates amounts before calculating growth and delta', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'korea-earnings-chart.js'), 'utf8');
+  const context = {
+    console, Math, Number, String, Array, Set, Map,
+    window: {
+      MacroWatchAnalysisChart: { niceStep: () => 1, scrollToLatest: () => {}, loadAllRows: () => {} },
+      MacroWatchDashboard: { registerLoader: () => {} },
+      addEventListener: () => {},
+    },
+    document: { querySelector: () => null, querySelectorAll: () => [], getElementById: () => null },
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
+  const financialRows = [];
+  const addCompany = (companyId, currency, scope, values) => values.forEach(([year, quarter, revenue]) => financialRows.push({
+    company_id: companyId, fiscal_year: year, fiscal_quarter: quarter, period_end: `${year}-${quarter * 3 < 10 ? '0' : ''}${quarter * 3}-28`,
+    revenue, operating_income: revenue, net_income: revenue, currency, consolidation_scope: scope,
+  }));
+  addCompany('kr', 'KRW', 'CFS', [[2024, 1, 90], [2024, 2, 100], [2025, 1, 99], [2025, 2, 120]]);
+  addCompany('kr-na', 'KRW', 'NA', [[2024, 1, 45], [2024, 2, 50], [2025, 1, 49.5], [2025, 2, 60]]);
+  addCompany('usd', 'USD', 'NA', [[2024, 1, 10], [2024, 2, 10], [2025, 1, 11], [2025, 2, 12]]);
+  const series = context.window.MacroWatchKoreaEarnings.calculateSeries(financialRows, 100);
+  const latest = series.at(-1).metrics.revenue;
+  assert.equal(latest.coverage, 2);
+  assert.ok(Math.abs(latest.yoyPct - 20) < 1e-9);
+  assert.ok(Math.abs(latest.yoyDeltaPp - 10) < 1e-9);
+  assert.match(html, /id="korea-earnings-dashboard"/);
+  assert.match(html, /data-korea-earnings-metric="revenue"/);
+  assert.match(html, /data-korea-earnings-metric="operating_income"/);
+  assert.match(html, /data-korea-earnings-metric="net_income"/);
+  assert.match(html, /동일기업 기준으로 합산/);
+  assert.match(source, /earnings_universe_snapshots/);
+  assert.match(source, /earnings_quarterly_financials/);
+  assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);
+  assert.match(styles, /\.korea-earnings-line--delta[^}]*stroke-dasharray/);
+});
+
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const start = script.indexOf('async function handleAddTarget(e)');
@@ -251,14 +291,14 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 12);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 26);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 13);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 28);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 12);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 12);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 13);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 13);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);

@@ -80,9 +80,13 @@ def build_canonical_quarter(
     *,
     filed_on: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """Build one complete, non-mixed canonical quarter or return missing metrics."""
+    """Build a non-mixed canonical quarter, retaining valid partial metrics.
+
+    Financial companies often do not publish one manufacturing-style revenue
+    total.  A missing top line must not discard their operating or net income.
+    """
     missing = [metric for metric in REQUIRED_METRICS if metric not in selected]
-    if missing:
+    if not selected:
         return None, missing
 
     scopes = {fact.consolidation_scope for fact in selected.values()}
@@ -100,10 +104,11 @@ def build_canonical_quarter(
             missing.append(metric)
         elif value is not None:
             values[metric] = value
-    if missing:
-        return None, sorted(set(missing))
+    missing = sorted(set(missing))
+    if not values:
+        return None, list(REQUIRED_METRICS)
 
-    representative = selected["revenue"]
+    representative = next(selected[metric] for metric in REQUIRED_METRICS if metric in selected)
     period_end = representative.period_end
     if period_end is None:
         return None, list(REQUIRED_METRICS)
@@ -124,12 +129,13 @@ def build_canonical_quarter(
         "market_quarter": representative.fiscal_quarter,
         "period_start": _date_text(period_start),
         "period_end": period_end.isoformat(),
-        **{metric: _decimal_text(values[metric]) for metric in REQUIRED_METRICS},
+        **{metric: _decimal_text(values[metric]) if metric in values else None
+           for metric in REQUIRED_METRICS},
         "currency": currency,
         "consolidation_scope": next(iter(scopes)),
-        "missing_metrics": [],
+        "missing_metrics": missing,
         "source_updated_at": f"{filed_on}T00:00:00+09:00",
-    }, []
+    }, missing
 
 
 class OpenDartFinancialWorker:
@@ -312,7 +318,7 @@ class OpenDartFinancialWorker:
                 quarter, missing = build_canonical_quarter(
                     selected, previous_selected, filed_on=filed_on
                 )
-                outcome = "complete" if quarter is not None else "review_required"
+                outcome = "complete" if quarter is not None and not missing else "review_required"
                 filing = {
                     "source_filing_id": receipt,
                     "filing_kind": FILING_KIND[report_code],

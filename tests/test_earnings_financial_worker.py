@@ -177,6 +177,35 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(client.full_calls, [])
         self.assertNotIn("eps", store.completions[0]["quarter"])
 
+    def test_missing_financial_company_revenue_keeps_other_core_metrics(self):
+        rows = [row for row in rows_for_period() if row["account_nm"] != "매출액"]
+        selected = select_preferred_accounts(parse_account_rows({"list": rows}))["00126380"]
+        quarter, missing = build_canonical_quarter(
+            selected, previous_selected=None, filed_on="2026-05-15",
+        )
+        self.assertEqual(missing, ["revenue"])
+        self.assertIsNone(quarter["revenue"])
+        self.assertEqual(quarter["operating_income"], "100")
+        self.assertEqual(quarter["net_income"], "100")
+
+    def test_worker_persists_partial_quarter_for_review_instead_of_discarding_it(self):
+        rows = [row for row in rows_for_period() if row["account_nm"] != "매출액"]
+        client = FakeClient({"status": "000", "list": rows})
+        store = FakeStore()
+        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
+        result = worker.process_batch([{
+            "id": 1,
+            "company_id": "company-id",
+            "business_year": 2026,
+            "report_code": "11013",
+            "corp_code": "00126380",
+            "metadata": {"filed_on": "2026-05-15"},
+        }])
+        self.assertEqual(result["review_required"], 1)
+        self.assertIsNotNone(store.completions[0]["quarter"])
+        self.assertEqual(store.completions[0]["quarter"]["missing_metrics"], ["revenue"])
+        self.assertEqual(store.completions[0]["outcome"], "review_required")
+
 
 if __name__ == "__main__":
     unittest.main()

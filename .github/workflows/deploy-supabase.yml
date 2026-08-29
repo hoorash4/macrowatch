@@ -95,6 +95,8 @@ jobs:
             --file supabase/migrations/20260829_add_company_earnings_price_gaps.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260829_make_target_alerts_retryable.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260829_allow_partial_open_dart_financials.sql
 
       - name: Deploy Edge Functions
         run: |
