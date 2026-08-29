@@ -585,13 +585,19 @@ def derive_gross_revenue_from_archive(
                             debug_rows, _debug_unit = parse_statement_rows(
                                 max(statement_candidates, key=len)
                             )
-                            debug_column = next(
-                                column
-                                for row in debug_rows
+                            debug_row_index, debug_column = next(
+                                (row_index, column)
+                                for row_index, row in enumerate(debug_rows)
                                 if _is_operating_income(row.normalized_label)
                                 for column, value in enumerate(row.values)
                                 if value == target
                             )
+                            nearby_rows = debug_rows[
+                                max(
+                                    0,
+                                    debug_row_index - MAX_TREE_DIAGNOSTIC_ROWS,
+                                ):debug_row_index + 1
+                            ]
                             candidate_tree_sample = [
                                 (
                                     row.depth,
@@ -601,9 +607,7 @@ def derive_gross_revenue_from_archive(
                                     and row.values[debug_column] is not None
                                     else None,
                                 )
-                                for row in _operating_section(debug_rows)[
-                                    -MAX_TREE_DIAGNOSTIC_ROWS:
-                                ]
+                                for row in nearby_rows
                             ]
                             if len(candidate_tree_sample) > len(tree_sample):
                                 tree_sample = candidate_tree_sample
