@@ -1,6 +1,9 @@
 name: Check macro targets
 
 on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/check-targets.yml"]
   schedule:
     # GitHub Actions cron uses UTC. Managed from MacroWatch admin.
     - cron: "0 22 * * *"
