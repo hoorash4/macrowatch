@@ -208,6 +208,39 @@ class OpenDartFinancialWorker:
         if not receipt or operating.consolidation_scope not in {"CFS", "OFS"}:
             return facts
         try:
+            full_accounts = self._request(
+                lambda: self.client.fetch_single_all_accounts(
+                    corp_code,
+                    operating.business_year,
+                    operating.report_code,
+                    operating.consolidation_scope,
+                )
+            )
+            income_rows = [
+                {
+                    "ord": row.get("ord"),
+                    "account_id": row.get("account_id"),
+                    "account_nm": row.get("account_nm"),
+                    "thstrm_amount": row.get("thstrm_amount"),
+                    "thstrm_add_amount": row.get("thstrm_add_amount"),
+                }
+                for row in full_accounts.rows
+                if str(row.get("fs_div") or "").upper()
+                == operating.consolidation_scope
+                and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+            ]
+            print(json.dumps({
+                "event": "dart_full_income_account_sample",
+                "receipt_no": receipt,
+                "rows": income_rows[:120],
+            }, ensure_ascii=False), flush=True)
+        except OpenDartApiError as error:
+            print(json.dumps({
+                "event": "dart_full_income_accounts_unavailable",
+                "receipt_no": receipt,
+                "status": error.status,
+            }, ensure_ascii=False), flush=True)
+        try:
             archive_response = self._request(
                 lambda: self.client.fetch_filing_archive(receipt)
             )
