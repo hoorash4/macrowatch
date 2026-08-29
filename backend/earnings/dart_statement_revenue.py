@@ -32,6 +32,7 @@ _ARCHIVE_UNIT = re.compile(
 )
 _STATEMENT_HEADING = re.compile(r"(?:연결\s*)?(?:포괄\s*)?손익계산서")
 MAX_TREE_DIAGNOSTIC_ROWS = 80
+MAX_STATEMENT_HEADING_CANDIDATES = 24
 
 
 class DartRevenueDerivationError(ValueError):
@@ -524,15 +525,24 @@ def derive_gross_revenue_from_archive(
                 statement_headings = list(
                     _STATEMENT_HEADING.finditer(document, 0, table_start)
                 )
-                if statement_headings:
-                    section_start = statement_headings[-1].start()
-                else:
-                    section_start = lowered_document.rfind("<title", 0, table_start)
-                combined = (
-                    document[section_start:table_end]
-                    if section_start >= 0 else candidate
-                )
-                for statement_candidate in (candidate, combined):
+                section_starts = [
+                    heading.start()
+                    for heading in statement_headings[
+                        -MAX_STATEMENT_HEADING_CANDIDATES:
+                    ]
+                ]
+                if not section_starts:
+                    title_start = lowered_document.rfind("<title", 0, table_start)
+                    if title_start >= 0:
+                        section_starts.append(title_start)
+                statement_candidates = [candidate]
+                for section_start in reversed(section_starts):
+                    combined = document[section_start:table_end]
+                    if units and not _ARCHIVE_UNIT.search(combined):
+                        combined = f"(단위 : {units[-1]}){combined}"
+                    if combined not in statement_candidates:
+                        statement_candidates.append(combined)
+                for statement_candidate in statement_candidates:
                     try:
                         amounts = derive_gross_revenue(
                             statement_candidate,
@@ -551,7 +561,9 @@ def derive_gross_revenue_from_archive(
                             # Prefer the recombined section in diagnostics: the
                             # single table often contains only the operating-income
                             # subtotal, while account rows live in sibling tables.
-                            debug_rows, _debug_unit = parse_statement_rows(combined)
+                            debug_rows, _debug_unit = parse_statement_rows(
+                                max(statement_candidates, key=len)
+                            )
                             debug_column = next(
                                 column
                                 for row in debug_rows
