@@ -13,7 +13,7 @@ import re
 import time
 from typing import Any, Callable, Iterable
 
-from earnings.open_dart import OpenDartClient, OpenDartResponse
+from earnings.open_dart import OpenDartApiError, OpenDartClient, OpenDartResponse
 from earnings.dart_statement_revenue import (
     DartRevenueDerivationError,
     derive_gross_revenue_from_archive,
@@ -216,6 +216,15 @@ class OpenDartFinancialWorker:
                 operating_current=operating.current_amount,
                 operating_cumulative=operating.cumulative_amount,
             )
+        except OpenDartApiError as error:
+            if error.status != "014":
+                raise
+            print(json.dumps({
+                "event": "dart_revenue_archive_unavailable",
+                "receipt_no": receipt,
+                "status": error.status,
+            }, ensure_ascii=False), flush=True)
+            return facts
         except DartRevenueDerivationError as error:
             # A layout that cannot be reconciled remains an explicit partial
             # quarter. Never guess a top line or retry a deterministic mismatch.

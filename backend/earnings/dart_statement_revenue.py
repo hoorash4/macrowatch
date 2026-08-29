@@ -451,6 +451,7 @@ def derive_gross_revenue_from_archive(
     matches: dict[tuple[Decimal | None, Decimal | None], GrossRevenueAmounts] = {}
     table_count = candidate_count = 0
     failures: list[str] = []
+    operating_samples: list[str] = []
     for document in documents:
         for table in _TABLE.finditer(document):
             table_count += 1
@@ -465,6 +466,18 @@ def derive_gross_revenue_from_archive(
             prefix = document[max(0, table.start() - 3000):table.start()]
             units = _ARCHIVE_UNIT.findall(prefix)
             candidate = f"(단위 : {units[-1]}){fragment}" if units else fragment
+            if len(operating_samples) < 3:
+                try:
+                    sample_rows, _sample_unit = parse_statement_rows(candidate)
+                    sample_values = [
+                        [str(value) if value is not None else None for value in row.values[:6]]
+                        for row in sample_rows
+                        if _is_operating_income(row.normalized_label)
+                    ][:2]
+                    if sample_values:
+                        operating_samples.append(str(sample_values))
+                except DartRevenueDerivationError:
+                    pass
             try:
                 amounts = derive_gross_revenue(
                     candidate,
@@ -479,7 +492,9 @@ def derive_gross_revenue_from_archive(
     if not matches:
         raise DartRevenueDerivationError(
             "No income-statement table in the OpenDART archive reconciles to operating income "
-            f"(tables={table_count}, candidates={candidate_count}, reasons={failures})."
+            f"(tables={table_count}, candidates={candidate_count}, reasons={failures}, "
+            f"operating_samples={operating_samples}, "
+            f"targets={[str(operating_current), str(operating_cumulative)]})."
         )
     if len(matches) > 1:
         raise DartRevenueDerivationError(
