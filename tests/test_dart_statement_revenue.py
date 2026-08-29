@@ -418,5 +418,85 @@ class DartStatementRevenueTests(unittest.TestCase):
 
 
 
+    def test_xbrl_instance_supplies_company_extension_accounts(self):
+        rows = [
+            {
+                "sj_div": "CIS", "account_id": "test_Revenue",
+                "account_nm": "영업수익", "thstrm_amount": "300",
+                "thstrm_add_amount": "600",
+            },
+            {
+                "sj_div": "CIS", "account_id": "test_OperatingIncome",
+                "account_nm": "영업이익", "thstrm_amount": "100",
+                "thstrm_add_amount": "200",
+            },
+        ]
+        presentation = """<link:linkbase
+          xmlns:link="http://www.xbrl.org/2003/linkbase"
+          xmlns:xlink="http://www.w3.org/1999/xlink">
+          <link:presentationLink xlink:type="extended" xlink:role="test">
+            <link:loc xlink:type="locator" xlink:label="root"
+              xlink:href="schema.xsd#test_Statement"/>
+            <link:loc xlink:type="locator" xlink:label="revenue"
+              xlink:href="schema.xsd#test_Revenue"/>
+            <link:loc xlink:type="locator" xlink:label="expense"
+              xlink:href="schema.xsd#test_ExtensionExpense"/>
+            <link:loc xlink:type="locator" xlink:label="op"
+              xlink:href="schema.xsd#test_OperatingIncome"/>
+            <link:presentationArc xlink:type="arc" xlink:from="root"
+              xlink:to="revenue" order="1"/>
+            <link:presentationArc xlink:type="arc" xlink:from="root"
+              xlink:to="expense" order="2"/>
+            <link:presentationArc xlink:type="arc" xlink:from="root"
+              xlink:to="op" order="3"/>
+          </link:presentationLink>
+        </link:linkbase>"""
+        labels = """<link:linkbase
+          xmlns:link="http://www.xbrl.org/2003/linkbase"
+          xmlns:xlink="http://www.w3.org/1999/xlink">
+          <link:labelLink xlink:type="extended">
+            <link:loc xlink:type="locator" xlink:label="expense-loc"
+              xlink:href="schema.xsd#test_ExtensionExpense"/>
+            <link:label xlink:type="resource" xlink:label="expense-label"
+              xlink:role="http://www.xbrl.org/2003/role/label"
+              xml:lang="ko">기타영업비용</link:label>
+            <link:labelArc xlink:type="arc" xlink:from="expense-loc"
+              xlink:to="expense-label"/>
+          </link:labelLink>
+        </link:linkbase>"""
+        instance = """<xbrli:xbrl
+          xmlns:xbrli="http://www.xbrl.org/2003/instance"
+          xmlns:test="http://example.com/test">
+          <xbrli:context id="current"><xbrli:entity>
+            <xbrli:identifier scheme="test">1</xbrli:identifier>
+          </xbrli:entity><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant>
+          </xbrli:period></xbrli:context>
+          <xbrli:context id="cumulative"><xbrli:entity>
+            <xbrli:identifier scheme="test">1</xbrli:identifier>
+          </xbrli:entity><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant>
+          </xbrli:period></xbrli:context>
+          <test:Revenue contextRef="current">300</test:Revenue>
+          <test:ExtensionExpense contextRef="current">200</test:ExtensionExpense>
+          <test:OperatingIncome contextRef="current">100</test:OperatingIncome>
+          <test:Revenue contextRef="cumulative">600</test:Revenue>
+          <test:ExtensionExpense contextRef="cumulative">400</test:ExtensionExpense>
+          <test:OperatingIncome contextRef="cumulative">200</test:OperatingIncome>
+        </xbrli:xbrl>"""
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("company_pre.xml", presentation)
+            zipped.writestr("company_lab-ko.xml", labels)
+            zipped.writestr("company.xbrl", instance)
+        result = derive_gross_revenue_from_xbrl_presentation(
+            output.getvalue(), rows,
+            operating_current=Decimal("100"),
+            operating_cumulative=Decimal("200"),
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
+        self.assertEqual(result.current_expense, Decimal("200"))
+        self.assertEqual(result.cumulative_revenue, Decimal("600"))
+
+
+
 if __name__ == "__main__":
     unittest.main()

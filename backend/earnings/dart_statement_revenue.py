@@ -574,7 +574,7 @@ def derive_gross_revenue_from_xbrl_presentation(
     operating_current: Decimal | None,
     operating_cumulative: Decimal | None,
 ) -> GrossRevenueAmounts:
-    """Use the official XBRL presentation tree to remove child duplicates."""
+    """Use official XBRL facts, labels and presentation relationships."""
     rows = list(raw_rows)
     raw_by_concept = {
         str(row.get("account_id") or "").strip().lower(): row
@@ -604,17 +604,110 @@ def derive_gross_revenue_from_xbrl_presentation(
             "OpenDART financial XBRL archive is not a readable ZIP."
         ) from None
 
+    parsed_roots: list[ET.Element] = []
+    for content in documents:
+        try:
+            parsed_roots.append(ET.fromstring(content))
+        except ET.ParseError:
+            continue
+
+    def concept_local(concept: str) -> str:
+        for separator in ("_", ":"):
+            if separator in concept:
+                return concept.split(separator, 1)[1].lower()
+        return concept.lower()
+
+    # Label linkbases cover company extension concepts omitted from the JSON
+    # all-accounts response. Prefer a Korean standard label when several exist.
+    concept_labels: dict[str, tuple[int, str]] = {}
+    for root in parsed_roots:
+        for link in root.iter():
+            if link.tag.rsplit("}", 1)[-1] != "labelLink":
+                continue
+            locators: dict[str, str] = {}
+            resources: dict[str, tuple[int, str]] = {}
+            arcs: list[tuple[str, str]] = []
+            for element in list(link):
+                local = element.tag.rsplit("}", 1)[-1]
+                xlink_label = str(element.attrib.get(f"{_XLINK}label") or "")
+                if local == "loc":
+                    href = str(element.attrib.get(f"{_XLINK}href") or "")
+                    if xlink_label and href:
+                        locators[xlink_label] = _xbrl_concept_key(href)
+                elif local == "label":
+                    language = str(element.attrib.get(
+                        "{http://www.w3.org/XML/1998/namespace}lang"
+                    ) or "")
+                    role = str(element.attrib.get(f"{_XLINK}role") or "")
+                    value = " ".join("".join(element.itertext()).split())
+                    score = (
+                        0 if language.lower().startswith("ko") else 10
+                    ) + (0 if role.endswith("/label") else 1)
+                    if xlink_label and value:
+                        resources[xlink_label] = (score, value)
+                elif local == "labelArc":
+                    source = str(element.attrib.get(f"{_XLINK}from") or "")
+                    target = str(element.attrib.get(f"{_XLINK}to") or "")
+                    if source and target:
+                        arcs.append((source, target))
+            for source, target in arcs:
+                concept = locators.get(source)
+                resource = resources.get(target)
+                if concept and resource and (
+                    concept not in concept_labels
+                    or resource[0] < concept_labels[concept][0]
+                ):
+                    concept_labels[concept] = resource
+
+    # Locate current and cumulative contexts by the reported operating-income
+    # fact itself. This avoids guessing context dates or dimensional members.
+    fact_values: dict[tuple[str, str], Decimal] = {}
+    context_fact_counts: dict[str, int] = {}
+    for root in parsed_roots:
+        for element in root.iter():
+            context = str(element.attrib.get("contextRef") or "")
+            if not context or element.text is None:
+                continue
+            value = _parse_amount(element.text)
+            if value is None:
+                continue
+            scale_text = str(element.attrib.get("scale") or "0")
+            try:
+                scale = int(scale_text)
+            except ValueError:
+                scale = 0
+            if scale:
+                value *= Decimal(10) ** scale
+            local = element.tag.rsplit("}", 1)[-1].lower()
+            fact_values[(local, context)] = value
+            context_fact_counts[context] = context_fact_counts.get(context, 0) + 1
+
+    operating_locals = {concept_local(value) for value in operating_concepts}
+
+    def target_context(target: Decimal | None) -> str | None:
+        if target is None:
+            return None
+        candidates = {
+            context
+            for (local, context), value in fact_values.items()
+            if local in operating_locals and value == target
+        }
+        return max(
+            candidates,
+            key=lambda context: context_fact_counts.get(context, 0),
+            default=None,
+        )
+
+    current_context = target_context(operating_current)
+    cumulative_context = target_context(operating_cumulative)
+
     matches: dict[
         tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None],
         GrossRevenueAmounts,
     ] = {}
     presentation_roles = 0
     role_failures: list[str] = []
-    for content in documents:
-        try:
-            root = ET.fromstring(content)
-        except ET.ParseError:
-            continue
+    for root in parsed_roots:
         for link in root.iter():
             if link.tag.rsplit("}", 1)[-1] != "presentationLink":
                 continue
@@ -645,10 +738,7 @@ def derive_gross_revenue_from_xbrl_presentation(
             for source, target, order in arcs:
                 children.setdefault(source, []).append((order, target))
                 targets.add(target)
-            roots = [
-                label for label in locators
-                if label not in targets
-            ]
+            roots = [label for label in locators if label not in targets]
             ordered: list[tuple[int, str]] = []
             visited: set[str] = set()
 
@@ -670,22 +760,44 @@ def derive_gross_revenue_from_xbrl_presentation(
             statement_rows: list[str] = []
             for depth, concept in ordered:
                 raw = raw_by_concept.get(concept)
-                label = (
+                label = concept_labels.get(concept, (99, ""))[1] or (
                     str(raw.get("account_nm") or concept)
                     if raw else concept
                 )
-                current = str(raw.get("thstrm_amount") or "-") if raw else "-"
+                local = concept_local(concept)
+                current_value = (
+                    fact_values.get((local, current_context))
+                    if current_context else None
+                )
+                cumulative_value = (
+                    fact_values.get((local, cumulative_context))
+                    if cumulative_context else None
+                )
+                if raw:
+                    if current_value is None:
+                        current_value = _parse_amount(
+                            str(raw.get("thstrm_amount") or "")
+                        )
+                    if cumulative_value is None:
+                        cumulative_value = _parse_amount(
+                            str(raw.get("thstrm_add_amount") or "")
+                        )
+                current = (
+                    format(current_value, "f")
+                    if current_value is not None else "-"
+                )
                 cumulative = (
-                    str(raw.get("thstrm_add_amount") or "-") if raw else "-"
+                    format(cumulative_value, "f")
+                    if cumulative_value is not None else "-"
                 )
                 statement_rows.append(
                     "<TR><TD>"
                     + ("  " * depth)
                     + escape(label)
                     + "</TD><TD>"
-                    + escape(current)
+                    + current
                     + "</TD><TD>"
-                    + escape(cumulative)
+                    + cumulative
                     + "</TD></TR>"
                 )
             if not statement_rows:
