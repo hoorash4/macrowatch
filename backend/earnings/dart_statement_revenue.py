@@ -30,6 +30,7 @@ _TABLE_TAG = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _ARCHIVE_UNIT = re.compile(
     r"단위\s*[:：]\s*(백만원|천원|원|USD|달러)", re.IGNORECASE
 )
+_STATEMENT_HEADING = re.compile(r"(?:연결\s*)?(?:포괄\s*)?손익계산서")
 MAX_TREE_DIAGNOSTIC_ROWS = 80
 
 
@@ -520,8 +521,17 @@ def derive_gross_revenue_from_archive(
                     continue
                 amounts = None
                 error = None
-                title_start = lowered_document.rfind("<title", 0, table_start)
-                combined = document[title_start:table_end] if title_start >= 0 else candidate
+                statement_headings = list(
+                    _STATEMENT_HEADING.finditer(document, 0, table_start)
+                )
+                if statement_headings:
+                    section_start = statement_headings[-1].start()
+                else:
+                    section_start = lowered_document.rfind("<title", 0, table_start)
+                combined = (
+                    document[section_start:table_end]
+                    if section_start >= 0 else candidate
+                )
                 for statement_candidate in (candidate, combined):
                     try:
                         amounts = derive_gross_revenue(
