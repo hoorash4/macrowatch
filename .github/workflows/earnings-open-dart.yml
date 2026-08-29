@@ -1,6 +1,12 @@
 name: Refresh Korean earnings from OpenDART
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/earnings/**"
+      - "supabase/migrations/*earnings*.sql"
+      - ".github/workflows/earnings-open-dart.yml"
   schedule:
     # UTC 10:30/10:50 = 19:30/19:50 KST. The second run is an idempotent
     # fallback for delayed disclosures or a transient provider failure.
@@ -83,7 +89,7 @@ jobs:
           # Scheduled checks keep the conservative three-batch cap. A manual
           # historical backfill may process more batches within the same
           # 60-minute lease so a newly admitted universe does not take weeks.
-          OPEN_DART_MAX_BATCHES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_batches || '3' }}
+          OPEN_DART_MAX_BATCHES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_batches || github.event_name == 'push' && '20' || '3' }}
           OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.2"
         run: python -m earnings.collect_financials
 
