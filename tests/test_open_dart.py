@@ -101,6 +101,19 @@ class OpenDartClientTests(unittest.TestCase):
         self.assertEqual(response.request_params, {})
         self.assertEqual(response.content, b"zip-content")
 
+    def test_filing_archive_uses_official_api_and_redacts_credential_metadata(self):
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("report.xml", "<DOCUMENT />")
+        session = FakeSession([FakeResponse(content=output.getvalue())])
+        response = OpenDartClient("top-secret", session=session).fetch_filing_archive(
+            "20260814004200"
+        )
+        self.assertTrue(session.calls[0]["url"].endswith("/document.xml"))
+        self.assertEqual(session.calls[0]["params"]["crtfc_key"], "top-secret")
+        self.assertNotIn("crtfc_key", response.request_params)
+        self.assertEqual(response.request_params["rcept_no"], "20260814004200")
+
     def test_public_statement_requests_never_send_the_api_key(self):
         session = FakeSession([
             FakeResponse(content=b"filing"),

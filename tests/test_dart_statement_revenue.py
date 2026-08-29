@@ -1,7 +1,9 @@
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 import sys
 import unittest
+from zipfile import ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from earnings.dart_statement_revenue import (  # noqa: E402
     DartRevenueDerivationError,
     derive_gross_revenue,
+    derive_gross_revenue_from_archive,
     find_income_statement_document,
 )
 
@@ -113,6 +116,26 @@ class DartStatementRevenueTests(unittest.TestCase):
             derive_gross_revenue(
                 page, operating_current=Decimal("70"), operating_cumulative=None,
             )
+
+    def test_official_archive_selects_only_the_reconciling_statement_table(self):
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("report.xml", """
+              <DOCUMENT>(단위 : 원)
+                <TABLE><TR><TD>영업수익</TD><TD>999</TD></TR>
+                  <TR><TD>영업이익</TD><TD>10</TD></TR></TABLE>
+                (단위 : 원)
+                <TABLE><TR><TD>영업수익</TD><TD>300</TD></TR>
+                  <TR><TD>영업비용</TD><TD>200</TD></TR>
+                  <TR><TD>영업이익</TD><TD>100</TD></TR></TABLE>
+              </DOCUMENT>
+            """)
+        result = derive_gross_revenue_from_archive(
+            output.getvalue(),
+            operating_current=Decimal("100"),
+            operating_cumulative=None,
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
 
 
 if __name__ == "__main__":

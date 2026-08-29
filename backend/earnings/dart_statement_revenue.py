@@ -13,8 +13,10 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from html.parser import HTMLParser
+from io import BytesIO
 import re
 from typing import Iterable
+from zipfile import BadZipFile, ZipFile
 
 
 _NODE_TEXT = re.compile(r"node\d+\['text'\]\s*=\s*\"([^\"]+)\"")
@@ -24,6 +26,10 @@ _NODE_FIELD = {
 }
 _NUMBER = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
 _LEADING_NUMBER = re.compile(r"^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫIVXLC\d.()\s]+")
+_TABLE = re.compile(r"<table\b[^>]*>.*?</table>", re.IGNORECASE | re.DOTALL)
+_ARCHIVE_UNIT = re.compile(
+    r"단위\s*[:：]\s*(백만원|천원|원|USD|달러)", re.IGNORECASE
+)
 
 
 class DartRevenueDerivationError(ValueError):
@@ -399,6 +405,58 @@ def derive_gross_revenue(
         current_operating_income=current_op,
         cumulative_operating_income=cumulative_op,
     )
+
+
+def derive_gross_revenue_from_archive(
+    archive: bytes,
+    *,
+    operating_current: Decimal | None,
+    operating_cumulative: Decimal | None,
+) -> GrossRevenueAmounts:
+    """Find the uniquely reconciling income-statement table in a DART ZIP."""
+    try:
+        with ZipFile(BytesIO(archive)) as zipped:
+            documents = [
+                _decode_document(zipped.read(name))
+                for name in zipped.namelist()
+                if name.lower().endswith((".xml", ".html", ".htm"))
+            ]
+    except (BadZipFile, OSError, RuntimeError):
+        raise DartRevenueDerivationError(
+            "OpenDART filing archive is not a readable ZIP."
+        ) from None
+
+    matches: dict[tuple[Decimal | None, Decimal | None], GrossRevenueAmounts] = {}
+    for document in documents:
+        for table in _TABLE.finditer(document):
+            fragment = table.group(0)
+            normalized = _normalized_label(re.sub(r"<[^>]+>", " ", fragment))
+            if not any(label in normalized for label in ("영업이익", "영업손익")):
+                continue
+            # The unit caption normally sits just before the table rather than
+            # inside it. Copy only the nearest caption so an earlier table
+            # cannot contaminate the candidate's row tree.
+            prefix = document[max(0, table.start() - 3000):table.start()]
+            units = _ARCHIVE_UNIT.findall(prefix)
+            candidate = f"(단위 : {units[-1]}){fragment}" if units else fragment
+            try:
+                amounts = derive_gross_revenue(
+                    candidate,
+                    operating_current=operating_current,
+                    operating_cumulative=operating_cumulative,
+                )
+            except DartRevenueDerivationError:
+                continue
+            matches[(amounts.current_revenue, amounts.cumulative_revenue)] = amounts
+    if not matches:
+        raise DartRevenueDerivationError(
+            "No income-statement table in the OpenDART archive reconciles to operating income."
+        )
+    if len(matches) > 1:
+        raise DartRevenueDerivationError(
+            "Multiple OpenDART statement tables produce different gross revenue values."
+        )
+    return next(iter(matches.values()))
 
 
 def selected_labels(rows: Iterable[StatementRow]) -> tuple[str, ...]:

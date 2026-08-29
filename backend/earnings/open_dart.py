@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 import os
+import re
 from typing import Any, Iterable, Iterator, Sequence
 
 
@@ -175,6 +176,32 @@ class OpenDartClient:
         if not content:
             raise OpenDartApiError("empty_archive", "OpenDART corp-code archive is empty")
         return OpenDartBinaryResponse("corpCode.xml", {}, content)
+
+    def fetch_filing_archive(self, receipt_number: str) -> OpenDartBinaryResponse:
+        """Download an official filing archive through the authenticated API."""
+        receipt = self._validate_receipt_number(receipt_number)
+        try:
+            response = self.session.get(
+                f"{OPEN_DART_BASE_URL}/document.xml",
+                params={"crtfc_key": self.api_key, "rcept_no": receipt},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except Exception:
+            raise OpenDartApiError(
+                "transport_error", "document.xml request failed"
+            ) from None
+        content = bytes(response.content)
+        if not content.startswith(b"PK"):
+            decoded = content.decode("utf-8", errors="replace")
+            status_match = re.search(r"<status>([^<]+)</status>", decoded)
+            message_match = re.search(r"<message>([^<]+)</message>", decoded)
+            status = status_match.group(1) if status_match else "invalid_archive"
+            message = message_match.group(1) if message_match else "document.xml returned no ZIP file"
+            raise OpenDartApiError(status, message.replace(self.api_key, "[redacted]"))
+        return OpenDartBinaryResponse(
+            "document.xml", {"rcept_no": receipt}, content
+        )
 
     def fetch_multi_accounts(
         self,

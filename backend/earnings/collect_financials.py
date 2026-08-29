@@ -16,9 +16,7 @@ from typing import Any, Callable, Iterable
 from earnings.open_dart import OpenDartClient, OpenDartResponse
 from earnings.dart_statement_revenue import (
     DartRevenueDerivationError,
-    derive_gross_revenue,
-    filing_html,
-    find_income_statement_document,
+    derive_gross_revenue_from_archive,
 )
 from earnings.open_dart_parser import (
     DartAccountFact,
@@ -210,23 +208,11 @@ class OpenDartFinancialWorker:
         if not receipt or operating.consolidation_scope not in {"CFS", "OFS"}:
             return facts
         try:
-            filing_response = self._request(
-                lambda: self.client.fetch_filing_page(receipt)
+            archive_response = self._request(
+                lambda: self.client.fetch_filing_archive(receipt)
             )
-            document = find_income_statement_document(
-                filing_html(filing_response.content),
-                consolidation_scope=operating.consolidation_scope,
-            )
-            statement_response = self._request(lambda: self.client.fetch_statement_page(
-                receipt,
-                document_number=document.document_number,
-                element_id=document.element_id,
-                offset=document.offset,
-                length=document.length,
-                dtd=document.dtd,
-            ))
-            amounts = derive_gross_revenue(
-                filing_html(statement_response.content),
+            amounts = derive_gross_revenue_from_archive(
+                archive_response.content,
                 operating_current=operating.current_amount,
                 operating_cumulative=operating.cumulative_amount,
             )
