@@ -385,7 +385,7 @@ class OpenDartFinancialWorker:
                         "report_name": metadata.get("report_name"),
                         "missing_metrics": missing,
                         "revenue_method": (
-                            "dart_statement_gross_operating_revenue"
+                            "dart_statement_gross_operating_revenue_v2"
                             if selected.get("revenue") is not None
                             and selected["revenue"].account_id
                             == "derived-gross-operating-revenue"
