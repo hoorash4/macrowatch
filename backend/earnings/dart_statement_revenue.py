@@ -483,7 +483,10 @@ def derive_gross_revenue_from_archive(
     tree_sample: list[tuple[int, str, str | None]] = []
     for document in documents:
         lowered_document = document.lower()
-        for table_start, table_end, fragment in _balanced_tables(document):
+        table_spans = sorted(
+            _balanced_tables(document), key=lambda span: (span[0], span[1])
+        )
+        for table_index, (table_start, table_end, fragment) in enumerate(table_spans):
             table_count += 1
             normalized = _normalized_label(re.sub(r"<[^>]+>", " ", fragment))
             if not any(label in normalized for label in ("영업이익", "영업손익")):
@@ -535,6 +538,13 @@ def derive_gross_revenue_from_archive(
                     title_start = lowered_document.rfind("<title", 0, table_start)
                     if title_start >= 0:
                         section_starts.append(title_start)
+                # Original XML can place account rows in many sibling layout
+                # tables before a repeated statement title. Expand backwards
+                # geometrically; the exact operating-income reconciliation
+                # rejects a window that includes unrelated statement rows.
+                for table_window in (4, 8, 16, 32, 64, 128, 256):
+                    window_start = max(0, table_index - table_window)
+                    section_starts.append(table_spans[window_start][0])
                 statement_candidates = [candidate]
                 for section_start in reversed(section_starts):
                     combined = document[section_start:table_end]

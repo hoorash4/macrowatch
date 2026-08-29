@@ -247,5 +247,29 @@ class DartStatementRevenueTests(unittest.TestCase):
 
 
 
+    def test_archive_expands_to_account_tables_before_repeated_title(self):
+        output = BytesIO()
+        layout = "".join(
+            f"<TABLE><TR><TD>레이아웃{index}</TD><TD>-</TD></TR></TABLE>"
+            for index in range(30)
+        )
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr(
+                "report.xml",
+                "(단위 : 원)"
+                "<TABLE><TR><TD>영업수익</TD><TD>300</TD></TR></TABLE>"
+                + layout
+                + "<TITLE>연결 손익계산서</TITLE>"
+                "<TABLE><TR><TD>영업비용</TD><TD>200</TD></TR></TABLE>"
+                "<TABLE><TR><TD>영업이익</TD><TD>100</TD></TR></TABLE>",
+            )
+        result = derive_gross_revenue_from_archive(
+            output.getvalue(), operating_current=Decimal("100"),
+            operating_cumulative=None, consolidation_scope="CFS",
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
