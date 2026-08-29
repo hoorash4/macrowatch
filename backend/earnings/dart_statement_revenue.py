@@ -460,6 +460,8 @@ def derive_gross_revenue_from_archive(
     table_count = candidate_count = 0
     failures: list[str] = []
     operating_samples: list[str] = []
+    # Bounded public-statement diagnostics make a new layout debuggable
+    # without logging the complete filing archive.
     tree_sample: list[tuple[int, str, str | None]] = []
     for document in documents:
         for table in _TABLE.finditer(document):
