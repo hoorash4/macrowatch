@@ -516,12 +516,23 @@ def derive_gross_revenue_from_archive(
                         operating_samples.append(str(sample_values))
                 except DartRevenueDerivationError:
                     pass
+            try:
+                target_rows, _target_unit = parse_statement_rows(candidate)
+                candidate_operating_values = {
+                    value
+                    for row in target_rows
+                    if _is_operating_income(row.normalized_label)
+                    for value in row.values
+                    if value is not None
+                }
+            except DartRevenueDerivationError:
+                candidate_operating_values = set()
             targets = (
                 ("current", operating_current),
                 ("cumulative", operating_cumulative),
             )
             for target_kind, target in targets:
-                if target is None:
+                if target is None or target not in candidate_operating_values:
                     continue
                 amounts = None
                 error = None
