@@ -240,6 +240,7 @@ class OpenDartFinancialWorker:
                 "status": error.status,
             }, ensure_ascii=False), flush=True)
 
+        xbrl_available = False
         if amounts is None:
             try:
                 xbrl_response = self._request(
@@ -247,6 +248,7 @@ class OpenDartFinancialWorker:
                         receipt, operating.report_code
                     )
                 )
+                xbrl_available = True
                 amounts = derive_gross_revenue_from_xbrl_presentation(
                     xbrl_response.content,
                     full_account_rows,
@@ -259,6 +261,9 @@ class OpenDartFinancialWorker:
                     "receipt_no": receipt,
                     "reason": str(error),
                 }, ensure_ascii=False), flush=True)
+
+        if amounts is None and xbrl_available:
+            return facts
 
         if amounts is None:
             try:
