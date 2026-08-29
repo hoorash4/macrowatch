@@ -448,7 +448,8 @@ def derive_gross_revenue_from_archive(
             "OpenDART filing archive is not a readable ZIP."
         ) from None
 
-    matches: dict[tuple[Decimal | None, Decimal | None], GrossRevenueAmounts] = {}
+    current_matches: dict[Decimal, GrossRevenueAmounts] = {}
+    cumulative_matches: dict[Decimal, GrossRevenueAmounts] = {}
     table_count = candidate_count = 0
     failures: list[str] = []
     operating_samples: list[str] = []
@@ -478,29 +479,50 @@ def derive_gross_revenue_from_archive(
                         operating_samples.append(str(sample_values))
                 except DartRevenueDerivationError:
                     pass
-            try:
-                amounts = derive_gross_revenue(
-                    candidate,
-                    operating_current=operating_current,
-                    operating_cumulative=operating_cumulative,
-                )
-            except DartRevenueDerivationError as error:
-                if str(error) not in failures and len(failures) < 3:
-                    failures.append(str(error))
-                continue
-            matches[(amounts.current_revenue, amounts.cumulative_revenue)] = amounts
-    if not matches:
+            targets = (
+                ("current", operating_current),
+                ("cumulative", operating_cumulative),
+            )
+            for target_kind, target in targets:
+                if target is None:
+                    continue
+                try:
+                    amounts = derive_gross_revenue(
+                        candidate,
+                        operating_current=target if target_kind == "current" else None,
+                        operating_cumulative=target if target_kind == "cumulative" else None,
+                    )
+                except DartRevenueDerivationError as error:
+                    if str(error) not in failures and len(failures) < 3:
+                        failures.append(str(error))
+                    continue
+                if target_kind == "current" and amounts.current_revenue is not None:
+                    current_matches[amounts.current_revenue] = amounts
+                if target_kind == "cumulative" and amounts.cumulative_revenue is not None:
+                    cumulative_matches[amounts.cumulative_revenue] = amounts
+    if not current_matches and not cumulative_matches:
         raise DartRevenueDerivationError(
             "No income-statement table in the OpenDART archive reconciles to operating income "
             f"(tables={table_count}, candidates={candidate_count}, reasons={failures}, "
             f"operating_samples={operating_samples}, "
             f"targets={[str(operating_current), str(operating_cumulative)]})."
         )
-    if len(matches) > 1:
+    if len(current_matches) > 1 or len(cumulative_matches) > 1:
         raise DartRevenueDerivationError(
             "Multiple OpenDART statement tables produce different gross revenue values."
         )
-    return next(iter(matches.values()))
+    current = next(iter(current_matches.values()), None)
+    cumulative = next(iter(cumulative_matches.values()), None)
+    return GrossRevenueAmounts(
+        current_revenue=current.current_revenue if current else None,
+        cumulative_revenue=cumulative.cumulative_revenue if cumulative else None,
+        current_expense=current.current_expense if current else None,
+        cumulative_expense=cumulative.cumulative_expense if cumulative else None,
+        current_operating_income=current.current_operating_income if current else None,
+        cumulative_operating_income=(
+            cumulative.cumulative_operating_income if cumulative else None
+        ),
+    )
 
 
 def selected_labels(rows: Iterable[StatementRow]) -> tuple[str, ...]:

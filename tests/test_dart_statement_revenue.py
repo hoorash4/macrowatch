@@ -152,6 +152,24 @@ class DartStatementRevenueTests(unittest.TestCase):
         )
         self.assertEqual(result.current_revenue, Decimal("300"))
 
+    def test_archive_accepts_cumulative_only_interim_statement(self):
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("report.xml", """
+              <DOCUMENT>(단위 : 원)<TABLE>
+                <TR><TD>영업수익</TD><TD>900</TD><TD>700</TD></TR>
+                <TR><TD>영업비용</TD><TD>700</TD><TD>600</TD></TR>
+                <TR><TD>영업이익</TD><TD>200</TD><TD>100</TD></TR>
+              </TABLE></DOCUMENT>
+            """)
+        result = derive_gross_revenue_from_archive(
+            output.getvalue(),
+            operating_current=Decimal("125"),
+            operating_cumulative=Decimal("200"),
+        )
+        self.assertIsNone(result.current_revenue)
+        self.assertEqual(result.cumulative_revenue, Decimal("900"))
+
 
 if __name__ == "__main__":
     unittest.main()
