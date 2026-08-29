@@ -1,4 +1,5 @@
 name: Check macro targets
+# Verification run after service-role authorization fix
 
 on:
   push:
