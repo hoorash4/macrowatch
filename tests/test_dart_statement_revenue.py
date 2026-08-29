@@ -170,6 +170,27 @@ class DartStatementRevenueTests(unittest.TestCase):
         self.assertIsNone(result.current_revenue)
         self.assertEqual(result.cumulative_revenue, Decimal("900"))
 
+    def test_archive_scope_excludes_separate_statement_with_same_operating_income(self):
+        output = BytesIO()
+        with ZipFile(output, "w") as zipped:
+            zipped.writestr("report.xml", """
+              <DOCUMENT>
+                연결 포괄손익계산서 (단위 : 원)
+                <TABLE><TR><TD>영업수익</TD><TD>300</TD></TR>
+                  <TR><TD>영업비용</TD><TD>200</TD></TR>
+                  <TR><TD>영업이익</TD><TD>100</TD></TR></TABLE>
+                포괄손익계산서 (단위 : 원)
+                <TABLE><TR><TD>영업수익</TD><TD>250</TD></TR>
+                  <TR><TD>영업비용</TD><TD>150</TD></TR>
+                  <TR><TD>영업이익</TD><TD>100</TD></TR></TABLE>
+              </DOCUMENT>
+            """)
+        result = derive_gross_revenue_from_archive(
+            output.getvalue(), operating_current=Decimal("100"),
+            operating_cumulative=None, consolidation_scope="CFS",
+        )
+        self.assertEqual(result.current_revenue, Decimal("300"))
+
 
 if __name__ == "__main__":
     unittest.main()

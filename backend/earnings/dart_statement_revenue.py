@@ -434,6 +434,7 @@ def derive_gross_revenue_from_archive(
     *,
     operating_current: Decimal | None,
     operating_cumulative: Decimal | None,
+    consolidation_scope: str | None = None,
 ) -> GrossRevenueAmounts:
     """Find uniquely reconciling periods in a DART ZIP.
 
@@ -471,6 +472,12 @@ def derive_gross_revenue_from_archive(
             # inside it. Copy only the nearest caption so an earlier table
             # cannot contaminate the candidate's row tree.
             prefix = document[max(0, table.start() - 3000):table.start()]
+            prefix_text = _normalized_label(re.sub(r"<[^>]+>", " ", prefix))
+            headings = re.findall(r"(연결)?(?:포괄)?손익계산서", prefix_text)
+            if headings and consolidation_scope in {"CFS", "OFS"}:
+                is_consolidated = bool(headings[-1])
+                if (consolidation_scope == "CFS") != is_consolidated:
+                    continue
             units = _ARCHIVE_UNIT.findall(prefix)
             candidate = f"(단위 : {units[-1]}){fragment}" if units else fragment
             if len(operating_samples) < 3:

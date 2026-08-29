@@ -215,6 +215,7 @@ class OpenDartFinancialWorker:
                 archive_response.content,
                 operating_current=operating.current_amount,
                 operating_cumulative=operating.cumulative_amount,
+                consolidation_scope=operating.consolidation_scope,
             )
         except OpenDartApiError as error:
             if error.status != "014":
