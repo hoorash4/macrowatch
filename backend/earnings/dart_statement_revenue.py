@@ -523,10 +523,7 @@ def derive_gross_revenue_from_archive(
                 except DartRevenueDerivationError as error:
                     if str(error) not in failures and len(failures) < 3:
                         failures.append(str(error))
-                    if (
-                        not tree_sample
-                        and "do not reconcile" in str(error)
-                    ):
+                    if "do not reconcile" in str(error):
                         try:
                             debug_rows, _debug_unit = parse_statement_rows(candidate)
                             debug_column = next(
@@ -536,7 +533,7 @@ def derive_gross_revenue_from_archive(
                                 for column, value in enumerate(row.values)
                                 if value == target
                             )
-                            tree_sample = [
+                            candidate_tree_sample = [
                                 (
                                     row.depth,
                                     row.normalized_label,
@@ -547,6 +544,8 @@ def derive_gross_revenue_from_archive(
                                 )
                                 for row in _operating_section(debug_rows)[-80:]
                             ]
+                            if len(candidate_tree_sample) > len(tree_sample):
+                                tree_sample = candidate_tree_sample
                         except (DartRevenueDerivationError, StopIteration):
                             pass
                     continue
