@@ -1,10 +1,6 @@
 name: Check macro targets
-# Verification run after service-role authorization fix
 
 on:
-  push:
-    branches: [main]
-    paths: [".github/workflows/check-targets.yml"]
   schedule:
     # GitHub Actions cron uses UTC. Managed from MacroWatch admin.
     - cron: "0 22 * * *"
