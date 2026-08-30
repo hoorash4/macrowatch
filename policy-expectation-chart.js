@@ -68,12 +68,12 @@
     }));
     const initialVerticalScale = verticalScale(points);
     const zeroY = scale(0, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
-    const pathFor = (sourcePoints, valueKey, maximumAbsoluteValue) => sourcePoints
+    const pathFor = (sourcePoints, valueKey, maximumAbsoluteValue) => window.MacroWatchAnalysisChart.monotonePath(sourcePoints
       .filter((point) => Number.isFinite(point[valueKey]))
-      .map((point, index) => {
-        const y = scale(point[valueKey], -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
-        return `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${y.toFixed(2)}`;
-      }).join(' ');
+      .map((point) => ({
+        x: point.x,
+        y: scale(point[valueKey], -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
+      })));
     const rawPath = pathFor(points, 'value', initialVerticalScale.maximumAbsoluteValue);
     const averagePath = pathFor(points, 'fiveDayAverage', initialVerticalScale.maximumAbsoluteValue);
     const firstYear = new Date(firstTimestamp).getUTCFullYear();

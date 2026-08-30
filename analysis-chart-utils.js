@@ -47,5 +47,52 @@
     }
   }
 
-  window.MacroWatchAnalysisChart = { niceStep, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows };
+  // Monotone cubic Hermite interpolation keeps every observed point while
+  // preventing the artificial peaks and troughs that a generic spline can
+  // create between economic time-series observations.
+  function monotonePath(points) {
+    const clean = (points || []).filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+    if (!clean.length) return '';
+    if (clean.length === 1) return `M ${clean[0].x.toFixed(2)} ${clean[0].y.toFixed(2)}`;
+
+    const slopes = clean.slice(1).map((point, index) => {
+      const dx = point.x - clean[index].x;
+      return dx > 0 ? (point.y - clean[index].y) / dx : 0;
+    });
+    const tangents = clean.map((_, index) => {
+      if (index === 0) return slopes[0];
+      if (index === clean.length - 1) return slopes.at(-1);
+      return (slopes[index - 1] + slopes[index]) / 2;
+    });
+
+    slopes.forEach((slope, index) => {
+      if (slope === 0) {
+        tangents[index] = 0;
+        tangents[index + 1] = 0;
+        return;
+      }
+      let left = tangents[index] / slope;
+      let right = tangents[index + 1] / slope;
+      if (left < 0) tangents[index] = left = 0;
+      if (right < 0) tangents[index + 1] = right = 0;
+      const magnitude = Math.hypot(left, right);
+      if (magnitude > 3) {
+        const scale = 3 / magnitude;
+        tangents[index] = scale * left * slope;
+        tangents[index + 1] = scale * right * slope;
+      }
+    });
+
+    return clean.slice(1).reduce((path, point, index) => {
+      const previous = clean[index];
+      const dx = point.x - previous.x;
+      const c1x = previous.x + dx / 3;
+      const c1y = previous.y + tangents[index] * dx / 3;
+      const c2x = point.x - dx / 3;
+      const c2y = point.y - tangents[index + 1] * dx / 3;
+      return `${path} C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    }, `M ${clean[0].x.toFixed(2)} ${clean[0].y.toFixed(2)}`);
+  }
+
+  window.MacroWatchAnalysisChart = { niceStep, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath };
 })();

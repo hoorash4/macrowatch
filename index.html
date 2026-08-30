@@ -328,7 +328,7 @@
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-chart-column text-sm"></i></span>
-          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOSPI TOP 100 · AGGREGATE EARNINGS</p><h2 id="korea-earnings-title" class="analysis-card-title">KOSPI 100 합산 실적 모멘텀</h2></div>
+          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOSPI TOP 100 · AVERAGE EARNINGS</p><h2 id="korea-earnings-title" class="analysis-card-title">KOSPI 시총 상위기업 평균 실적 모멘텀</h2></div>
         </div>
         <p class="analysis-card-description">각 분기 당시 KOSPI 시가총액 상위 100개 기업의 매출과 이익을 합산합니다.</p>
         <p class="analysis-card-description">실선은 전년동기 증가율, 점선은 직전 분기 대비 증가율 변화폭입니다. OpenDART 원화 공시 실적만 합산합니다.</p>
@@ -336,17 +336,17 @@
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="korea-earnings-toolbar">
-            <div class="korea-earnings-tabs" role="tablist" aria-label="합산 실적 지표 선택">
+            <div class="korea-earnings-tabs" role="tablist" aria-label="평균 실적 지표 선택">
               <button type="button" role="tab" aria-selected="true" class="is-active" data-korea-earnings-metric="revenue">매출</button>
               <button type="button" role="tab" aria-selected="false" data-korea-earnings-metric="operating_income">영업이익</button>
               <button type="button" role="tab" aria-selected="false" data-korea-earnings-metric="net_income">순이익</button>
             </div>
-            <div class="analysis-chart-range-controls" data-korea-earnings-ranges aria-label="합산 실적 그래프 조회 기간">
+            <div class="analysis-chart-range-controls" data-korea-earnings-ranges aria-label="평균 실적 그래프 조회 기간">
               <button type="button" data-korea-earnings-range="5" class="is-active">5년</button><button type="button" data-korea-earnings-range="10">10년</button><button type="button" data-korea-earnings-range="max">MAX</button>
             </div>
           </div>
           <div id="korea-earnings-summary" class="korea-earnings-summary" aria-live="polite"></div>
-          <div id="korea-earnings-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 합산 실적을 불러오는 중입니다.</div></div>
+          <div id="korea-earnings-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 시총 상위기업 평균 실적을 불러오는 중입니다.</div></div>
         </div>
         <div class="policy-expectation-legend" aria-label="KOSPI 100 합산 실적 범례">
           <span><i class="korea-earnings-legend-line korea-earnings-legend-line--growth"></i>전년동기 증가율</span>
@@ -842,13 +842,13 @@
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="indicator-terms.js?v=3"></script>
   <script src="script.js?v=158"></script>
-  <script src="dashboard-charts.js?v=30"></script>
-  <script src="analysis-chart-utils.js?v=3"></script>
-  <script src="policy-chart.js?v=15"></script>
-  <script src="policy-expectation-chart.js?v=11"></script>
-  <script src="em-capacity-chart.js?v=3"></script>
-  <script src="korea-foreign-flow-chart.js?v=9"></script>
-  <script src="korea-earnings-chart.js?v=3"></script>
+  <script src="analysis-chart-utils.js?v=4"></script>
+  <script src="dashboard-charts.js?v=31"></script>
+  <script src="policy-chart.js?v=16"></script>
+  <script src="policy-expectation-chart.js?v=12"></script>
+  <script src="em-capacity-chart.js?v=4"></script>
+  <script src="korea-foreign-flow-chart.js?v=10"></script>
+  <script src="korea-earnings-chart.js?v=4"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>

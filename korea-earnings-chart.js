@@ -10,7 +10,7 @@
   function periodLabel(row) { return `${row.fiscalYear} Q${row.fiscalQuarter}`; }
   function formatSigned(value, unit) { return Number.isFinite(value) ? `${value > 0 ? '+' : ''}${value.toFixed(1)}${unit}` : '—'; }
 
-  // The browser only reshapes compact, precomputed server rows. Signed sums,
+  // The browser only reshapes compact, precomputed server rows. Simple averages,
   // comparable cohorts, transition states and deltas are worker responsibilities.
   function seriesFromMetricRows(rows) {
     const periods = new Map();
@@ -23,7 +23,8 @@
         yoyDeltaPp: finite(row.yoy_delta_pp),
         yoyState: row.yoy_state,
         coverage: Number(row.comparable_company_count) || 0,
-        currentTotal: finite(row.current_total),
+        currentAverage: finite(row.current_average),
+        universeBasis: row.universe_basis,
       };
       periods.set(key, period);
     });
@@ -35,11 +36,10 @@
   }
 
   function path(points, key, yMin, yMax, width) {
-    return points.map((point, index) => {
-      const x = scale(index, 0, Math.max(points.length - 1, 1), PADDING.left, width - PADDING.right);
-      const y = scale(point[key], yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top);
-      return `${index ? 'L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    }).join(' ');
+    return window.MacroWatchAnalysisChart.monotonePath(points.map((point, index) => ({
+      x: scale(index, 0, Math.max(points.length - 1, 1), PADDING.left, width - PADDING.right),
+      y: scale(point[key], yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top),
+    })));
   }
 
   function updateSummary(points) {
@@ -47,7 +47,10 @@
     const latest = points.at(-1);
     if (!element || !latest) return;
     const metric = latest.metrics[state.metric];
-    element.innerHTML = `<strong>${LABELS[state.metric]} ${periodLabel(latest)}</strong><span>증가율 ${formatSigned(metric.yoyPct, '%')}</span><span>델타 ${formatSigned(metric.yoyDeltaPp, '%p')}</span><span>실적 반영 ${metric.coverage}/${latest.universeCount}사</span><span>해당 분기 시총 순위 기준</span>`;
+    const basis = metric.universeBasis === 'point_in_time_market_cap_snapshot'
+      ? '해당 분기 시총 순위 기준'
+      : '과거 순위 미확보 · 대체 유니버스 평균';
+    element.innerHTML = `<strong>${LABELS[state.metric]} ${periodLabel(latest)}</strong><span>증가율 ${formatSigned(metric.yoyPct, '%')}</span><span>델타 ${formatSigned(metric.yoyDeltaPp, '%p')}</span><span>실적 반영 ${metric.coverage}/${latest.universeCount}사</span><span>${basis}</span>`;
   }
 
   function render() {
@@ -56,7 +59,7 @@
     const usable = state.series.filter((row) => Number.isFinite(row.metrics[state.metric]?.yoyPct) && Number.isFinite(row.metrics[state.metric]?.yoyDeltaPp));
     const points = state.years === 'max' ? usable : usable.slice(-Number(state.years) * 4);
     if (!points.length) {
-      container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">비교 가능한 KOSPI 100 합산 실적이 아직 없습니다.</div>';
+      container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">비교 가능한 KOSPI 시총 상위기업 평균 실적이 아직 없습니다.</div>';
       return;
     }
     updateSummary(points);
@@ -74,7 +77,7 @@
     const periodLabels = points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1 ? `<text x="${x(index)}" y="${HEIGHT - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>` : '').join('');
     const metricPoints = points.map((point) => ({ ...point, yoyPct: point.metrics[state.metric].yoyPct, yoyDeltaPp: point.metrics[state.metric].yoyDeltaPp }));
     const dots = metricPoints.map((point, index) => `<circle cx="${x(index)}" cy="${y(point.yoyPct)}" r="2.8" class="korea-earnings-point korea-earnings-point--growth"/><circle cx="${x(index)}" cy="${y(point.yoyDeltaPp)}" r="2.5" class="korea-earnings-point korea-earnings-point--delta"/>`).join('');
-    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${yAxis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${HEIGHT}" viewBox="0 0 ${chartWidth} ${HEIGHT}" role="img" aria-label="${LABELS[state.metric]} 합산 전년동기 증가율과 증가율 델타">${grids}${periodLabels}<path d="${path(metricPoints, 'yoyPct', yMin, yMax, chartWidth)}" class="korea-earnings-line korea-earnings-line--growth"/><path d="${path(metricPoints, 'yoyDeltaPp', yMin, yMax, chartWidth)}" class="korea-earnings-line korea-earnings-line--delta"/>${dots}<line data-korea-earnings-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text><rect x="0" y="0" width="${chartWidth}" height="${HEIGHT}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
+    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${yAxis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${HEIGHT}" viewBox="0 0 ${chartWidth} ${HEIGHT}" role="img" aria-label="${LABELS[state.metric]} 평균 전년동기 증가율과 증가율 델타">${grids}${periodLabels}<path d="${path(metricPoints, 'yoyPct', yMin, yMax, chartWidth)}" class="korea-earnings-line korea-earnings-line--growth"/><path d="${path(metricPoints, 'yoyDeltaPp', yMin, yMax, chartWidth)}" class="korea-earnings-line korea-earnings-line--delta"/>${dots}<line data-korea-earnings-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text><rect x="0" y="0" width="${chartWidth}" height="${HEIGHT}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
     const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     hit.addEventListener('pointermove', (event) => {
@@ -94,9 +97,8 @@
     if (!container || !supabaseClient) return;
     const response = await window.MacroWatchAnalysisChart.loadAllRows((from, to) => supabaseClient
       .from('earnings_market_quarterly_metrics')
-      .select('fiscal_year,fiscal_quarter,metric,universe_company_count,comparable_company_count,current_total,yoy_pct,yoy_state,yoy_delta_pp')
+      .select('fiscal_year,fiscal_quarter,metric,universe_basis,universe_company_count,comparable_company_count,current_average,yoy_pct,yoy_state,yoy_delta_pp')
       .eq('index_id', 'KOSPI100')
-      .eq('universe_basis', 'point_in_time_market_cap_snapshot')
       .order('fiscal_year').order('fiscal_quarter').order('metric').range(from, to));
     if (response.error) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 집계 실적을 불러오지 못했습니다.</div>'; return; }
     state.series = seriesFromMetricRows(response.data || []);

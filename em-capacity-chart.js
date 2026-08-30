@@ -49,10 +49,12 @@
       : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
     const initialScale = verticalScale(points);
-    const pathFor = (key, maximum, sourcePoints = points) => sourcePoints.filter((point) => Number.isFinite(point[key])).map((point, index) => {
-      const y = scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top);
-      return `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${y.toFixed(2)}`;
-    }).join(' ');
+    const pathFor = (key, maximum, sourcePoints = points) => window.MacroWatchAnalysisChart.monotonePath(sourcePoints
+      .filter((point) => Number.isFinite(point[key]))
+      .map((point) => ({
+        x: point.x,
+        y: scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top),
+      })));
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const firstProvisionalIndex = points.findIndex((point) => point.is_provisional);
     const confirmedPoints = firstProvisionalIndex < 0 ? points : points.slice(0, firstProvisionalIndex);

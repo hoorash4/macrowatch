@@ -15,6 +15,7 @@ class QuarterlyUniverse:
     period: MarketQuarter
     observed_on: date
     company_ids: frozenset[str]
+    basis: str = "point_in_time_market_cap_snapshot"
 
 
 def quarterly_universes_from_rows(
@@ -58,12 +59,13 @@ def backfill_before_earliest_snapshot(
     universes_by_period: Mapping[MarketQuarter, QuarterlyUniverse],
     periods: Iterable[MarketQuarter],
 ) -> dict[MarketQuarter, QuarterlyUniverse]:
-    """Fill only pre-history with the oldest known ranked universe.
+    """Fill only pre-history with an explicitly labelled fallback universe.
 
     Actual point-in-time snapshots remain authoritative wherever available.
     Periods strictly earlier than the oldest snapshot reuse that oldest
-    constituent set, giving the historical earnings backfill a stable universe
-    until real market-cap snapshots begin accumulating.
+    constituent set only when an actual historical ranking is unavailable.
+    The fallback label is persisted with derived rows, so it can never be
+    mistaken for a point-in-time market-cap ranking.
     """
 
     result = dict(universes_by_period)
@@ -81,5 +83,6 @@ def backfill_before_earliest_snapshot(
             period=period,
             observed_on=earliest.observed_on,
             company_ids=earliest.company_ids,
+            basis="oldest_available_universe_average_fallback",
         )
     return result

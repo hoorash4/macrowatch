@@ -382,6 +382,7 @@ def calculate_market_earnings_history(
     universes_by_period: Mapping[MarketQuarter, Iterable[str]],
     observations: Iterable[OperatingIncomeObservation],
     universe_basis: str = "point_in_time_market_cap_snapshot",
+    universe_basis_by_period: Mapping[MarketQuarter, str] | None = None,
 ) -> list[MarketEarningsBreadthResult]:
     """Reconstruct history from each quarter's actual market-cap universe.
 
@@ -402,7 +403,7 @@ def calculate_market_earnings_history(
             prior_universe_company_ids=universes_by_period[target.shift(-4)],
             previous_universe_company_ids=universes_by_period.get(target.shift(-1), ()),
             observations=rows,
-            universe_basis=universe_basis,
+            universe_basis=(universe_basis_by_period or {}).get(target, universe_basis),
         )
         for target in targets
     ]

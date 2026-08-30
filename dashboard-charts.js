@@ -8,6 +8,48 @@ const { escapeHtml } = window.MacroWatchFrontend;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
+function monotoneSeriesPath(rows, xFor, yFor) {
+  const paths = [];
+  let segment = [];
+  const flush = () => {
+    if (segment.length) paths.push(window.MacroWatchAnalysisChart.monotonePath(segment));
+    segment = [];
+  };
+  rows.forEach((row, index) => {
+    const x = Number(xFor(row, index)), y = Number(yFor(row, index));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { flush(); return; }
+    segment.push({ x, y });
+  });
+  flush();
+  return paths.join(' ');
+}
+
+function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
+  const output = [];
+  let points = [], style = null;
+  const flush = () => {
+    if (points.length < 2 || !style) { points = []; return; }
+    output.push(`<path d="${window.MacroWatchAnalysisChart.monotonePath(points)}" fill="none" stroke="${style.stroke}" stroke-width="${style.width || 3.25}" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity ? ` stroke-opacity="${style.opacity}"` : ''}/>`);
+    points = [];
+  };
+  rows.slice(1).forEach((row, index) => {
+    const previous = rows[index];
+    const nextStyle = styleForPair(previous, row);
+    const before = { x: Number(xFor(previous, index)), y: Number(yFor(previous, index)) };
+    const current = { x: Number(xFor(row, index + 1)), y: Number(yFor(row, index + 1)) };
+    if (![before.x, before.y, current.x, current.y].every(Number.isFinite)) { flush(); style = null; return; }
+    if (!style || JSON.stringify(style) !== JSON.stringify(nextStyle)) {
+      flush();
+      style = nextStyle;
+      points = [before, current];
+    } else {
+      points.push(current);
+    }
+  });
+  flush();
+  return output.join('');
+}
+
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 const CREDIT_STRESS_HISTORY_MONTHS = 36;
 const CREDIT_STRESS_CHART_HEIGHT = 375;
@@ -247,23 +289,16 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     if (!month.endsWith('-01') || (index !== 0 && !month.endsWith('-01-01'))) return '';
     return `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${month.slice(0, 4)}</text>`;
   }).join('');
-  const lines = data.slice(1).map((row, index) => {
-    const previous = data[index];
-    const provisional = row.is_provisional || previous.is_provisional;
-    return `<line x1="${x(index)}" y1="${y(Number(previous.stress_index))}" x2="${x(index + 1)}" y2="${y(Number(row.stress_index))}" stroke="#b7791f" stroke-width="2.75" stroke-linecap="round"${provisional ? ' stroke-dasharray="5 5"' : ''}/>`;
-  }).join('');
+  const lines = monotoneStyledSegments(
+    data, (_, index) => x(index), (row) => y(Number(row.stress_index)),
+    (previous, row) => ({ stroke: '#b7791f', width: 2.75, dash: row.is_provisional || previous.is_provisional ? '5 5' : '' }),
+  );
   const dots = data.map((row, index) => {
     const provisional = Boolean(row.is_provisional);
     const detail = `${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${provisional ? ' (잠정치)' : ' (확정치)'}`;
     return `<circle cx="${x(index)}" cy="${y(Number(row.stress_index))}" r="3.75" fill="#b7791f"${provisional ? ' fill-opacity="0.35" stroke="#b7791f" stroke-width="1.5"' : ''} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const sp500Lines = data.slice(1).map((row, index) => {
-    const previous = data[index];
-    const previousValue = Number(previous.sp500_month_end_close);
-    const currentValue = Number(row.sp500_month_end_close);
-    if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
-    return `<line x1="${x(index)}" y1="${sp500Y(previousValue)}" x2="${x(index + 1)}" y2="${sp500Y(currentValue)}" stroke="#6b7280" stroke-width="2.25" stroke-linecap="round"/>`;
-  }).join('');
+  const sp500Lines = `<path d="${monotoneSeriesPath(data, (_, index) => x(index), (row) => sp500Y(Number(row.sp500_month_end_close)))}" fill="none" stroke="#6b7280" stroke-width="2.25" stroke-linecap="round"/>`;
   const sp500Dots = data.map((row, index) => {
     const value = Number(row.sp500_month_end_close);
     if (!Number.isFinite(value)) return '';
@@ -312,35 +347,15 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     { length: Math.round((sp500Upper - sp500Lower) / sp500Step) + 1 },
     (_, index) => sp500Lower + index * sp500Step,
   ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#6b7280" font-size="10">${value.toLocaleString('en-US')}</text>`).join('') : '';
-  const sp500Lines = weekly.slice(1).map((row, index) => {
-    const previous = weekly[index];
-    const previousValue = Number(previous.sp500_friday_close);
-    const currentValue = Number(row.sp500_friday_close);
-    if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) return '';
-    return `<line x1="${x(previous.week)}" y1="${sp500Y(previousValue)}" x2="${x(row.week)}" y2="${sp500Y(currentValue)}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
-  }).join('');
-  const weeklyPaths = [];
-  let weeklyPath = '';
-  let weeklyPathIsProvisional = null;
-  const finishWeeklyPath = () => {
-    if (!weeklyPath) return;
-    weeklyPaths.push(`<path d="${weeklyPath}" fill="none" stroke="${weeklyPathIsProvisional ? '#d97706' : '#00838c'}" stroke-width="${weeklyPathIsProvisional ? '3.25' : '3.25'}" stroke-linecap="round"${weeklyPathIsProvisional ? ' stroke-dasharray="4 3"' : ''}/>`);
-    weeklyPath = '';
-  };
-  weekly.slice(1).forEach((row, index) => {
-    const previous = weekly[index];
-    const provisional = Boolean(previous.is_provisional || row.is_provisional);
-    const endPoint = `${x(row.week)} ${y(Number(row.tension_index))}`;
-    if (weeklyPathIsProvisional !== provisional) {
-      finishWeeklyPath();
-      weeklyPathIsProvisional = provisional;
-      weeklyPath = `M ${x(previous.week)} ${y(Number(previous.tension_index))} L ${endPoint}`;
-      return;
-    }
-    weeklyPath += ` L ${endPoint}`;
-  });
-  finishWeeklyPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths.join('')}${years}</svg>`;
+  const sp500Lines = `<path d="${monotoneSeriesPath(weekly, (row) => x(row.week), (row) => sp500Y(Number(row.sp500_friday_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
+  const weeklyPaths = monotoneStyledSegments(
+    weekly, (row) => x(row.week), (row) => y(Number(row.tension_index)),
+    (previous, row) => {
+      const provisional = Boolean(previous.is_provisional || row.is_provisional);
+      return { stroke: provisional ? '#d97706' : '#00838c', width: 3.25, dash: provisional ? '4 3' : '' };
+    },
+  );
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths}${years}</svg>`;
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const createSvgElement = (name, attributes) => {
@@ -482,17 +497,9 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value + axisMaximum : axisMaximum - value)) / (axisMaximum * 2);
   const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
-  const lines = showChanges ? data.slice(1).map((row, index) => `<line x1="${x(data[index].month)}" y1="${y(data[index].value)}" x2="${x(row.month)}" y2="${y(row.value)}" stroke="${lineColor}" stroke-width="1.75" stroke-linecap="round"/>`).join('') : '';
-  const averageLines = data.slice(1).map((row, index) => {
-    const previous = data[index];
-    if (!Number.isFinite(previous.average) || !Number.isFinite(row.average)) return '';
-    return `<line x1="${x(previous.month)}" y1="${y(previous.average)}" x2="${x(row.month)}" y2="${y(row.average)}" stroke="${averageColor}" stroke-width="3" stroke-linecap="round"/>`;
-  }).join('');
-  const secondaryAverageLines = secondaryAverageColor ? data.slice(1).map((row, index) => {
-    const previous = data[index];
-    if (!Number.isFinite(previous.secondaryAverage) || !Number.isFinite(row.secondaryAverage)) return '';
-    return `<line x1="${x(previous.month)}" y1="${y(previous.secondaryAverage)}" x2="${x(row.month)}" y2="${y(row.secondaryAverage)}" stroke="${secondaryAverageColor}" stroke-width="2.5" stroke-opacity="0.48" stroke-linecap="round"/>`;
-  }).join('') : '';
+  const lines = showChanges ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.value))}" fill="none" stroke="${lineColor}" stroke-width="1.75" stroke-linecap="round"/>` : '';
+  const averageLines = `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.average))}" fill="none" stroke="${averageColor}" stroke-width="3" stroke-linecap="round"/>`;
+  const secondaryAverageLines = secondaryAverageColor ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.secondaryAverage))}" fill="none" stroke="${secondaryAverageColor}" stroke-width="2.5" stroke-opacity="0.48" stroke-linecap="round"/>` : '';
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${secondaryAverageLines}${averageLines}</svg>`;
   const svg = chart.querySelector('svg');
@@ -633,33 +640,16 @@ function renderEmStressDashboard(rows) {
     const value = upper - (upper - lower) * index / 4;
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
   }).join('');
-  const eem = hasEem ? weekly.slice(1).map((row, index) => {
-    const previous = weekly[index];
-    const before = Number(previous.eem_weekly_close), current = Number(row.eem_weekly_close);
-    return Number.isFinite(before) && Number.isFinite(current) ? `<line x1="${x(previous.week)}" y1="${eemY(before)}" x2="${x(row.week)}" y2="${eemY(current)}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>` : '';
-  }).join('') : '';
+  const eem = hasEem ? `<path d="${monotoneSeriesPath(weekly, (row) => x(row.week), (row) => eemY(Number(row.eem_weekly_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>` : '';
   const eemLabels = hasEem ? [eemLower, (eemLower + eemUpper) / 2, eemUpper].map((value) => `<text x="${width - padding.right + 8}" y="${eemY(value) + 3}" fill="#6b7280" font-size="10">${value.toFixed(1)}</text>`).join('') : '';
-  const paths = [];
-  let path = '', provisionalPath = null;
-  const finishPath = () => {
-    if (!path) return;
-    paths.push(`<path d="${path}" fill="none" stroke="${provisionalPath ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisionalPath ? ' stroke-dasharray="4 3"' : ''}/>`);
-    path = '';
-  };
-  weekly.slice(1).forEach((row, index) => {
-    const previous = weekly[index];
-    const provisional = Boolean(previous.is_provisional || row.is_provisional);
-    const endpoint = `${x(row.week)} ${y(Number(row.stress_index))}`;
-    if (provisionalPath !== provisional) {
-      finishPath();
-      provisionalPath = provisional;
-      path = `M ${x(previous.week)} ${y(Number(previous.stress_index))} L ${endpoint}`;
-    } else {
-      path += ` L ${endpoint}`;
-    }
-  });
-  finishPath();
-  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths.join('')}${eemLabels}${years}</svg>`;
+  const paths = monotoneStyledSegments(
+    weekly, (row) => x(row.week), (row) => y(Number(row.stress_index)),
+    (previous, row) => {
+      const provisional = Boolean(previous.is_provisional || row.is_provisional);
+      return { stroke: provisional ? '#d97706' : '#00838c', width: 3.25, dash: provisional ? '4 3' : '' };
+    },
+  );
+  chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths}${eemLabels}${years}</svg>`;
 
   const createElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -760,18 +750,14 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   }).join('');
   const years = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4));
   const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>`).join('');
-  const draw = (key, mapY, color, dash = '') => data.slice(1).map((row, index) => {
-    const before = Number(data[index][key]), current = Number(row[key]);
-    return Number.isFinite(before) && Number.isFinite(current) ? `<line x1="${x(data[index].month)}" y1="${mapY(before)}" x2="${x(row.month)}" y2="${mapY(current)}" stroke="${color}" stroke-width="${key === 'stress_index' ? '3.25' : '2'}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>` : '';
-  }).join('');
-  const stress = data.slice(1).map((row, index) => {
-    const before = data[index], provisional = Boolean(before.is_provisional || row.is_provisional);
-    return `<line x1="${x(before.month)}" y1="${y(Number(before.stress_index))}" x2="${x(row.month)}" y2="${y(Number(row.stress_index))}" stroke="${provisional ? '#d97706' : '#00838c'}" stroke-width="3.25" stroke-linecap="round"${provisional ? ' stroke-dasharray="4 3"' : ''}/>`;
-  }).join('');
-  const kospi = hasKospi ? weeklyKospi.slice(1).map((row, index) => {
-    const before = weeklyKospi[index];
-    return `<line x1="${x(before.week)}" y1="${kospiY(Number(before.kospi_close))}" x2="${x(row.week)}" y2="${kospiY(Number(row.kospi_close))}" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
-  }).join('') : '';
+  const stress = monotoneStyledSegments(
+    data, (row) => x(row.month), (row) => y(Number(row.stress_index)),
+    (previous, row) => {
+      const provisional = Boolean(previous.is_provisional || row.is_provisional);
+      return { stroke: provisional ? '#d97706' : '#00838c', width: 3.25, dash: provisional ? '4 3' : '' };
+    },
+  );
+  const kospi = hasKospi ? `<path d="${monotoneSeriesPath(weeklyKospi, (row) => x(row.week), (row) => kospiY(Number(row.kospi_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>` : '';
   const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
 
@@ -840,7 +826,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     .filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(fsiRows[index - 1].month).slice(0, 4))
     .map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`)
     .join('');
-  const fsiLine = fsiRows.slice(1).map((row, index) => `<line x1="${x(fsiRows[index].month)}" y1="${fsiY(Number(fsiRows[index].bok_fsi))}" x2="${x(row.month)}" y2="${fsiY(Number(row.bok_fsi))}" stroke="#6d4b91" stroke-width="2.25" stroke-linecap="round"/>`).join('');
+  const fsiLine = `<path d="${monotoneSeriesPath(fsiRows, (row) => x(row.month), (row) => fsiY(Number(row.bok_fsi)))}" fill="none" stroke="#6d4b91" stroke-width="2.25" stroke-linecap="round"/>`;
   fsiChart.innerHTML = `<svg class="w-full" style="height:${fsiHeight}px" viewBox="0 0 ${width} ${fsiHeight}" role="img" aria-label="한국은행 금융불안지수 보조지표"><line x1="${fsiPadding.left}" x2="${fsiPadding.left}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/><line x1="${width - fsiPadding.right}" x2="${width - fsiPadding.right}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/>${fsiGrid}${fsiYearGuides}${fsiLine}</svg>`;
   attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', mapY: fsiY, chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI', showLabels: false });
 }
@@ -944,16 +930,12 @@ function renderCreditStressComponents(rows) {
   const conditionsScale = scaleFor(conditions);
   const bankruptcyScale = scaleFor(bankruptcy, true);
   const pathFor = (item, scale, includeLatest = true) => {
-    let path = '';
-    let connected = false;
-    data.forEach((row, index) => {
-      if (row.is_latest && !includeLatest) return;
-      const value = toCreditStressNumber(row[item.key]);
-      if (!Number.isFinite(value)) { connected = false; return; }
-      path += `${connected ? 'L' : 'M'}${x(index).toFixed(1)},${scale.y(value).toFixed(1)}`;
-      connected = true;
-    });
-    return path;
+    return monotoneSeriesPath(
+      data.map((row, index) => ({ ...row, _chartIndex: index }))
+        .filter((row) => includeLatest || !row.is_latest),
+      (row) => x(row._chartIndex),
+      (row) => scale.y(toCreditStressNumber(row[item.key])),
+    );
   };
   const latestSegmentFor = (item, scale) => {
     const index = data.findIndex((row) => row.is_latest);

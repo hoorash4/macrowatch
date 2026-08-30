@@ -67,7 +67,12 @@
     const timelineWidth = selectedYears === 'max' ? viewportWidth : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
     const initialScale = verticalScale(points.flatMap((point) => [point, { value: point.dailyValue }]));
-    const pathFor = (maximum, key = 'value') => points.filter((point) => Number.isFinite(point[key])).map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2)}`).join(' ');
+    const pathFor = (maximum, key = 'value') => window.MacroWatchAnalysisChart.monotonePath(points
+      .filter((point) => Number.isFinite(point[key]))
+      .map((point) => ({
+        x: point.x,
+        y: scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top),
+      })));
     const firstYear = new Date(firstTimestamp).getUTCFullYear(), lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
       const year = firstYear + index, timestamp = Date.UTC(year, 0, 1);

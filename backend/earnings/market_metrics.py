@@ -84,7 +84,6 @@ def calculate_market_metric_history(
     currency: str,
     universes_by_period: Mapping[MarketQuarter, QuarterlyUniverse],
     financials: Iterable[QuarterlyFinancial],
-    universe_basis: str = "point_in_time_market_cap_snapshot",
 ) -> list[MarketAggregateMetric]:
     """Calculate quarterly market earnings using per-company averages.
 
@@ -107,6 +106,9 @@ def calculate_market_metric_history(
         ordinal = period.year * 4 + period.quarter - 1
         prior_period = period.shift(-4)
         prior_universe = universes_by_period.get(prior_period)
+        result_basis = current_universe.basis
+        if prior_universe is not None and prior_universe.basis != current_universe.basis:
+            result_basis = "point_in_time_with_fallback_average_comparison"
         for metric in METRICS:
             current_rows = [
                 by_period[(company_id, ordinal)]
@@ -157,7 +159,7 @@ def calculate_market_metric_history(
                 fiscal_quarter=period.quarter,
                 metric=metric,
                 currency=currency,
-                universe_basis=universe_basis,
+                universe_basis=result_basis,
                 universe_company_count=len(current_universe.company_ids),
                 # These legacy column names are retained in storage for a
                 # migration-safe rollout. They mean current/prior reported
@@ -176,6 +178,8 @@ def calculate_market_metric_history(
                 previous_yoy_pct_common=previous_yoy,
                 yoy_delta_pp=delta,
                 is_provisional=(
+                    result_basis != "point_in_time_market_cap_snapshot"
+                    or
                     len(current_rows) < len(current_universe.company_ids)
                     or prior_universe is None
                     or len(prior_rows) < len(prior_universe.company_ids)

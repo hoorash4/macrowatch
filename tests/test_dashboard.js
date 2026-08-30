@@ -4,6 +4,19 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
+test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만든다', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
+  const context = { window: {}, Number, Math, Set };
+  vm.createContext(context);
+  vm.runInContext(source, context, { filename: 'analysis-chart-utils.js' });
+  const pathValue = context.window.MacroWatchAnalysisChart.monotonePath([
+    { x: 0, y: 10 }, { x: 10, y: 20 }, { x: 20, y: 15 },
+  ]);
+  assert.match(pathValue, /^M 0\.00 10\.00 C /);
+  assert.match(pathValue, /20\.00 15\.00$/);
+  assert.doesNotMatch(pathValue, /\sL\s/);
+});
+
 // 브라우저 전역을 최소한으로 흉내 내어 script.js의 순수 보조 함수만 검증한다.
 // 실제 DOM 렌더링은 건드리지 않으며, 리팩터링 전후 계산 결과가 같은지 확인한다.
 function loadDashboardScript() {
@@ -110,7 +123,7 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   const serverRows = ['revenue', 'operating_income', 'net_income'].map((metric) => ({
     fiscal_year: 2025, fiscal_quarter: 2, metric,
     universe_company_count: 100, comparable_company_count: 98,
-    current_total: '180', yoy_pct: '20', yoy_state: 'normal', yoy_delta_pp: '10',
+    current_average: '90', universe_basis: 'point_in_time_market_cap_snapshot', yoy_pct: '20', yoy_state: 'normal', yoy_delta_pp: '10',
   }));
   const series = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows(serverRows);
   const latest = series.at(-1).metrics.revenue;
@@ -121,7 +134,7 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(html, /data-korea-earnings-metric="revenue"/);
   assert.match(html, /data-korea-earnings-metric="operating_income"/);
   assert.match(html, /data-korea-earnings-metric="net_income"/);
-  assert.match(html, /각 분기 당시 KOSPI 시가총액 상위 100개/);
+  assert.match(html, /KOSPI 시총 상위기업 평균 실적 모멘텀/);
   assert.match(source, /earnings_market_quarterly_metrics/);
   assert.match(source, /point_in_time_market_cap_snapshot/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
@@ -265,7 +278,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.doesNotMatch(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="2" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=11/);
+  assert.match(html, /policy-expectation-chart\.js\?v=12/);
   const utils = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
   assert.match(utils, /FULL_HISTORY_SCROLL_RANGES = new Set\(\[5, 10\]\)/);
   assert.match(utils, /if \(selectedYears === 'max'\) return viewportWidth/);

@@ -105,6 +105,10 @@ jobs:
             --file supabase/migrations/20260830_add_market_earnings_analysis.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260830_add_quarterly_earnings_universe_reader.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260830_add_market_earnings_averages.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260830160231_label_market_earnings_fallback_averages.sql
 
       - name: Deploy Edge Functions
         run: |

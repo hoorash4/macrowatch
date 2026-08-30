@@ -84,6 +84,26 @@ class MarketAggregateMetricTests(unittest.TestCase):
         self.assertEqual(target.comparable_company_count, 1)
         self.assertEqual(target.delta_comparable_company_count, 1)
 
+    def test_missing_companies_use_the_reported_company_average(self):
+        rows = [
+            row("a", 2024, 1, 100), row("a", 2025, 1, 150),
+            row("b", 2024, 1, 300), row("b", 2025, 1, 450),
+        ]
+        target = result_for(calculate_market_metric_history(
+            index_id="KOSPI100", currency="KRW",
+            universes_by_period=universes(
+                p2024q1=["a", "b", "missing"],
+                p2025q1=["a", "b", "missing"],
+            ),
+            financials=rows,
+        ), 2025, 1, "revenue")
+        self.assertEqual(target.current_total, Decimal("600"))
+        self.assertEqual(target.current_average, Decimal("300"))
+        self.assertEqual(target.prior_average, Decimal("200"))
+        self.assertEqual(target.yoy_pct, Decimal("50.0"))
+        self.assertEqual(target.comparable_company_count, 2)
+        self.assertTrue(target.is_provisional)
+
     def test_explicit_cfs_ofs_mix_is_excluded(self):
         rows = [
             row("mixed", 2024, 1, 100, scope="OFS"),

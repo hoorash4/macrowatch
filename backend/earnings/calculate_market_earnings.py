@@ -100,6 +100,15 @@ def main() -> None:
                 for period, universe in quarterly_universes.items()
             },
             observations=currency_observations,
+            universe_basis_by_period={
+                period: (
+                    "point_in_time_with_fallback_average_comparison"
+                    if period.shift(-4) in quarterly_universes
+                    and quarterly_universes[period.shift(-4)].basis != universe.basis
+                    else universe.basis
+                )
+                for period, universe in quarterly_universes.items()
+            },
         ):
             record = result.as_record()
             record.update({

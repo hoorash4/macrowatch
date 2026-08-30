@@ -71,7 +71,10 @@
       eventScore: Number(row.final_event_score) || 0,
     }));
     const initialScale = visibleVerticalScale(points);
-    const pathFor = ({ yMin, yMax }) => points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top).toFixed(2)}`).join(' ');
+    const pathFor = ({ yMin, yMax }) => window.MacroWatchAnalysisChart.monotonePath(points.map((point) => ({
+      x: point.x,
+      y: scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top),
+    })));
     const circlesFor = ({ yMin, yMax }) => points.map((point) => `<circle cx="${point.x}" cy="${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top)}" r="3" class="policy-chart-point"/>`).join('');
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();

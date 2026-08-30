@@ -5,3 +5,4 @@ __pycache__/
 *.p12
 .env
 .env.*
+supabase/.temp/

@@ -38,6 +38,7 @@ class QuarterlyUniverseTests(unittest.TestCase):
         result = backfill_before_earliest_snapshot(original, [q2, q3, q4])
         self.assertEqual(result[q2].company_ids, frozenset({"a", "b"}))
         self.assertEqual(result[q2].observed_on, date(2026, 8, 29))
+        self.assertEqual(result[q2].basis, "oldest_available_universe_average_fallback")
         self.assertIs(result[q3], original[q3])
         self.assertNotIn(q4, result)
 
