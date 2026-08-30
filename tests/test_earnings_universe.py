@@ -21,6 +21,18 @@ from earnings.collection_coverage import (  # noqa: E402
 
 
 class EarningsUniverseTests(unittest.TestCase):
+    def test_sec_function_migration_is_safe_after_return_shape_extension(self):
+        migration = (ROOT / "supabase/migrations/20260828_add_sec_earnings_functions.sql").read_text(
+            encoding="utf-8"
+        )
+        drop_at = migration.index(
+            "drop function if exists public.list_current_sec_earnings_companies();"
+        )
+        create_at = migration.index(
+            "create function public.list_current_sec_earnings_companies()"
+        )
+        self.assertLess(drop_at, create_at)
+
     def test_collection_union_is_dynamic_and_deduplicates_cross_index_companies(self):
         coverage = {
             "indices": [

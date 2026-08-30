@@ -2,7 +2,11 @@
 -- complete ten-year window, so the worker upserts all changed quarters for a
 -- company atomically without storing the provider response.
 
-create or replace function public.list_current_sec_earnings_companies()
+-- A later migration extends this table-returning function. PostgreSQL cannot
+-- CREATE OR REPLACE a changed OUT-row type, so replaying the full migration
+-- chain must drop the currently installed version first.
+drop function if exists public.list_current_sec_earnings_companies();
+create function public.list_current_sec_earnings_companies()
 returns table(company_id uuid, cik text, ticker text)
 language sql
 security definer
