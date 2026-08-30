@@ -1,0 +1,97 @@
+from io import BytesIO
+import unittest
+from zipfile import ZipFile
+
+from earnings.legacy_dart_financials import (
+    LegacyCumulativeStatement,
+    LegacyDartParseError,
+    parse_legacy_filing_archive,
+)
+from earnings.collect_legacy_financials import build_legacy_standalone_quarters
+
+
+def archive(document: str) -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as zipped:
+        zipped.writestr("report.xml", document.encode("utf-8"))
+    return buffer.getvalue()
+
+
+class LegacyDartFinancialParserTests(unittest.TestCase):
+    def test_reads_current_cumulative_column_and_ignores_note_column(self):
+        document = """
+        <P>연결손익계산서</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>주석</TH><TH>당분기</TH><TH>누적</TH><TH>전분기</TH><TH>누적</TH></TR>
+          <TR><TD>매출액</TD><TD>4</TD><TD>30</TD><TD>100</TD><TD>20</TD><TD>80</TD></TR>
+          <TR><TD>영업이익</TD><TD>5</TD><TD>6</TD><TD>18</TD><TD>4</TD><TD>12</TD></TR>
+          <TR><TD>당기순이익</TD><TD>6</TD><TD>5</TD><TD>15</TD><TD>3</TD><TD>10</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11014")
+        self.assertEqual(parsed["CFS"].revenue, 100_000_000)
+        self.assertEqual(parsed["CFS"].operating_income, 18_000_000)
+        self.assertEqual(parsed["CFS"].net_income, 15_000_000)
+
+    def test_keeps_separate_and_consolidated_candidates_separate(self):
+        document = """
+        <P>손익계산서</P><P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>당기</TH><TH>전기</TH></TR>
+          <TR><TD>매출액</TD><TD>100</TD><TD>90</TD></TR>
+          <TR><TD>영업손익</TD><TD>(10)</TD><TD>8</TD></TR>
+          <TR><TD>당기순이익(손실)</TD><TD>(12)</TD><TD>5</TD></TR>
+        </TABLE>
+        <P>연결손익계산서</P><P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>당기</TH><TH>전기</TH></TR>
+          <TR><TD>영업수익</TD><TD>200</TD><TD>180</TD></TR>
+          <TR><TD>영업이익</TD><TD>20</TD><TD>15</TD></TR>
+          <TR><TD>당기순이익</TD><TD>16</TD><TD>12</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11011")
+        self.assertEqual(parsed["OFS"].operating_income, -10_000)
+        self.assertEqual(parsed["CFS"].operating_income, 20_000)
+
+    def test_refuses_unknown_units(self):
+        document = """
+        <P>손익계산서</P>
+        <TABLE>
+          <TR><TD>매출액</TD><TD>100</TD></TR>
+          <TR><TD>영업이익</TD><TD>10</TD></TR>
+          <TR><TD>당기순이익</TD><TD>8</TD></TR>
+        </TABLE>
+        """
+        with self.assertRaises(LegacyDartParseError):
+            parse_legacy_filing_archive(archive(document), report_code="11011")
+
+    def test_converts_cumulative_year_to_standalone_quarters(self):
+        def statement(scope, revenue, operating, net):
+            return LegacyCumulativeStatement(scope, revenue, operating, net)
+
+        statements = {
+            "11013": {"OFS": statement("OFS", 100, 20, 15)},
+            "11012": {"OFS": statement("OFS", 230, 50, 35)},
+            "11014": {"OFS": statement("OFS", 390, 90, 60)},
+            "11011": {"OFS": statement("OFS", 600, 140, 95)},
+        }
+        scope, quarters = build_legacy_standalone_quarters(statements)
+        self.assertEqual(scope, "OFS")
+        self.assertEqual(quarters["11013"]["revenue"], 100)
+        self.assertEqual(quarters["11012"]["revenue"], 130)
+        self.assertEqual(quarters["11014"]["operating_income"], 40)
+        self.assertEqual(quarters["11011"]["net_income"], 35)
+
+    def test_refuses_to_mix_cfs_and_ofs_within_one_year(self):
+        statements = {
+            "11013": {"CFS": LegacyCumulativeStatement("CFS", 100, 20, 15)},
+            "11012": {"OFS": LegacyCumulativeStatement("OFS", 200, 40, 30)},
+        }
+        scope, quarters = build_legacy_standalone_quarters(statements)
+        self.assertIsNone(scope)
+        self.assertEqual(quarters, {})
+
+
+if __name__ == "__main__":
+    unittest.main()

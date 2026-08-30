@@ -241,6 +241,34 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("OpenDART job claim returned an invalid result.")
         return [row for row in result if isinstance(row, dict)]
 
+    def enqueue_open_dart_legacy_backfill(self) -> int:
+        result = self._rpc("enqueue_earnings_open_dart_legacy_backfill", {})
+        if not isinstance(result, int):
+            raise EarningsStoreError("Legacy OpenDART backfill enqueue returned an invalid result.")
+        return result
+
+    def claim_open_dart_legacy_jobs(self) -> list[dict[str, Any]]:
+        result = self._rpc("claim_earnings_open_dart_legacy_jobs", {})
+        if not isinstance(result, list):
+            raise EarningsStoreError("Legacy OpenDART job claim returned an invalid result.")
+        return [row for row in result if isinstance(row, dict)]
+
+    def resolve_open_dart_legacy_filing_search(
+        self,
+        *,
+        corp_code: str,
+        business_year: int,
+        found_report_codes: list[str],
+    ) -> int:
+        result = self._rpc("resolve_earnings_open_dart_legacy_filing_search", {
+            "p_corp_code": corp_code,
+            "p_business_year": business_year,
+            "p_found_report_codes": found_report_codes,
+        })
+        if not isinstance(result, int):
+            raise EarningsStoreError("Legacy filing-search resolution returned an invalid result.")
+        return result
+
     def complete_open_dart_job(
         self,
         *,

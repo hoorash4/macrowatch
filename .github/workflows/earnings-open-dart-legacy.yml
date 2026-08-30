@@ -1,0 +1,83 @@
+name: Backfill Korean earnings from legacy DART filings
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/earnings/legacy_dart_financials.py"
+      - "backend/earnings/collect_legacy_financials.py"
+      - "backend/earnings/enqueue_legacy_backfill.py"
+      - "backend/earnings/discover_backfill_filings.py"
+      - "backend/earnings/supabase_rest.py"
+      - "supabase/migrations/*legacy_dart*"
+      - ".github/workflows/earnings-open-dart-legacy.yml"
+  workflow_dispatch:
+    inputs:
+      max_company_years:
+        description: "이번 실행에서 처리할 최대 기업-사업연도 수"
+        required: false
+        type: choice
+        default: "2500"
+        options: ["200", "1000", "2500"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-earnings-open-dart-legacy
+  cancel-in-progress: false
+
+jobs:
+  backfill-legacy-dart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install worker dependency
+        run: pip install -r backend/requirements.txt
+
+      - name: Queue the fixed 2002-2015 archive window
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.enqueue_legacy_backfill
+
+      - name: Discover official historical periodic filings
+        env:
+          PYTHONPATH: backend
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.3"
+          OPEN_DART_FILING_WORKERS: "4"
+        run: python -m earnings.discover_backfill_filings
+
+      - name: Parse official legacy filing archives
+        env:
+          PYTHONPATH: backend
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.25"
+          LEGACY_DART_MAX_COMPANY_YEARS: ${{ inputs.max_company_years || '2500' }}
+        run: python -m earnings.collect_legacy_financials
+
+      - name: Recalculate compact earnings growth metrics
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.calculate_growth_metrics
+
+      - name: Recalculate market averages, breadth and contribution
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.calculate_market_earnings

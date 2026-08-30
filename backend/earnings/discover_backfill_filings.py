@@ -57,6 +57,7 @@ def main() -> None:
     filings = 0
     updated = 0
     unmatched = 0
+    no_filing_jobs = 0
 
     requests = []
     for gap in gaps:
@@ -88,6 +89,14 @@ def main() -> None:
                 filings += len(parsed)
                 updated += int(result.get("updated") or 0)
                 unmatched += int(result.get("unmatched") or 0)
+                # The legacy queue is finite. Once the complete company-year
+                # filing search has returned, close report periods that do not
+                # exist so later runs do not request the same empty year again.
+                no_filing_jobs += store.resolve_open_dart_legacy_filing_search(
+                    corp_code=corp_code,
+                    business_year=year,
+                    found_report_codes=sorted({filing.report_code for filing in parsed}),
+                )
 
     print(json.dumps({
         "ok": True,
@@ -97,6 +106,7 @@ def main() -> None:
         "filings": filings,
         "updated": updated,
         "unmatched": unmatched,
+        "no_filing_jobs": no_filing_jobs,
     }, ensure_ascii=False))
 
 
