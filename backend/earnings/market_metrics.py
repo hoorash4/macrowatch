@@ -12,7 +12,7 @@ from earnings.market_universe import QuarterlyUniverse
 
 
 HUNDRED = Decimal("100")
-CALCULATION_VERSION = 2
+CALCULATION_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,8 @@ class MarketAggregateMetric:
     company_coverage_pct: Decimal
     current_total: Decimal | None
     prior_total: Decimal | None
+    current_average: Decimal | None
+    prior_average: Decimal | None
     yoy_pct: Decimal | None
     yoy_state: str
     previous_yoy_pct_common: Decimal | None
@@ -47,11 +49,18 @@ def _pct(numerator: Decimal | int, denominator: Decimal | int) -> Decimal | None
     return None if denominator == 0 else Decimal(numerator) / denominator * HUNDRED
 
 
+def _average(total: Decimal | None, count: int) -> Decimal | None:
+    if total is None or count <= 0:
+        return None
+    return total / Decimal(count)
+
+
 def _state_and_growth(current: Decimal, prior: Decimal) -> tuple[str, Decimal | None]:
     """Return an explicit transition state and a conventional growth rate.
 
-    The aggregate keeps every signed company amount. A percentage is only
-    meaningful when the signed aggregate baseline is positive.
+    Growth is calculated from per-company averages, so changing reported
+    company counts do not mechanically create earnings growth. Signed company
+    amounts are still retained in the raw totals for auditability.
     """
 
     if prior <= 0 < current:
@@ -77,11 +86,14 @@ def calculate_market_metric_history(
     financials: Iterable[QuarterlyFinancial],
     universe_basis: str = "point_in_time_market_cap_snapshot",
 ) -> list[MarketAggregateMetric]:
-    """Calculate each quarter from that quarter's actual market-cap universe.
+    """Calculate quarterly market earnings using per-company averages.
 
-    The current total and its year-ago baseline deliberately use two different
-    point-in-time constituent sets.  Membership change is part of the market
-    aggregate, rather than a reason to project today's companies backwards.
+    Raw totals and coverage counts are retained, but YoY growth and Growth
+    Delta use the reported-company average for each quarter. This prevents
+    changes in data coverage (for example 80 reported companies becoming 100)
+    from being mistaken for earnings growth.
+
+    Current and year-ago periods still use their own point-in-time universes.
     """
 
     if not universes_by_period:
@@ -110,6 +122,8 @@ def calculate_market_metric_history(
                 Decimal(0),
             )
             assert current_total is not None
+            current_average = _average(current_total, len(current_rows))
+            assert current_average is not None
 
             prior_rows = [] if prior_universe is None else [
                 by_period[(company_id, ordinal - 4)]
@@ -122,9 +136,10 @@ def calculate_market_metric_history(
                 sum((row.values[metric] for row in prior_rows), Decimal(0))
                 if prior_rows else None
             )
+            prior_average = _average(prior_total, len(prior_rows))
             state, yoy = (
-                _state_and_growth(current_total, prior_total)
-                if prior_total is not None else ("missing_prior_snapshot", None)
+                _state_and_growth(current_average, prior_average)
+                if prior_average is not None else ("missing_prior_snapshot", None)
             )
 
             previous = result_by_metric_period.get((metric, period.shift(-1)))
@@ -145,7 +160,7 @@ def calculate_market_metric_history(
                 universe_basis=universe_basis,
                 universe_company_count=len(current_universe.company_ids),
                 # These legacy column names are retained in storage for a
-                # migration-safe rollout. They now mean current/prior reported
+                # migration-safe rollout. They mean current/prior reported
                 # counts, never a fixed historical cohort.
                 comparable_company_count=len(current_rows),
                 delta_comparable_company_count=len(prior_rows),
@@ -154,6 +169,8 @@ def calculate_market_metric_history(
                 ),
                 current_total=current_total,
                 prior_total=prior_total,
+                current_average=current_average,
+                prior_average=prior_average,
                 yoy_pct=yoy,
                 yoy_state=state,
                 previous_yoy_pct_common=previous_yoy,
