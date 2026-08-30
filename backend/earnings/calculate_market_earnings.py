@@ -15,7 +15,10 @@ from earnings.market_metrics import (
     CALCULATION_VERSION,
     calculate_market_metric_history,
 )
-from earnings.market_universe import quarterly_universes_from_rows
+from earnings.market_universe import (
+    backfill_before_earliest_snapshot,
+    quarterly_universes_from_rows,
+)
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
@@ -52,6 +55,20 @@ def main() -> None:
         quarterly_universes = universes_by_index.get(index_id, {})
         if not quarterly_universes:
             continue
+
+        available_periods = {
+            MarketQuarter(
+                row.market_year if row.market_year is not None else row.fiscal_year,
+                row.market_quarter if row.market_quarter is not None else row.fiscal_quarter,
+            )
+            for row in financials
+            if row.currency == currency
+        }
+        quarterly_universes = backfill_before_earliest_snapshot(
+            quarterly_universes,
+            available_periods,
+        )
+
         for result in calculate_market_metric_history(
             index_id=index_id,
             currency=currency,
