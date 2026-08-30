@@ -38,7 +38,7 @@ begin
       and jobs.company_id = companies.company_id
       and jobs.business_year = years.business_year
       and jobs.report_code = reports.report_code
-      and jobs.metadata @> '{"legacy_archive": true}'::jsonb
+      and jobs.priority = 10
   )
   and not exists (
     select 1 from public.earnings_quarterly_financials financials
@@ -89,7 +89,7 @@ begin
   where jobs.source = 'open_dart' and jobs.job_kind = 'financial_period'
     and jobs.company_id = v_company_id
     and jobs.business_year = p_business_year
-    and jobs.metadata @> '{"legacy_archive": true}'::jsonb
+    and jobs.priority = 10
     and jobs.status in ('pending', 'retry')
     and not (jobs.report_code = any(coalesce(p_found_report_codes, array[]::text[])));
   get diagnostics v_updated = row_count;
@@ -117,14 +117,14 @@ begin
   set status = 'retry', claimed_at = null, available_at = now(), updated_at = now(),
       last_error = 'Worker lease expired'
   where source = 'open_dart' and status = 'running'
-    and metadata @> '{"legacy_archive": true}'::jsonb
+    and priority = 10 and business_year between 2002 and 2015
     and claimed_at < now() - interval '30 minutes';
 
   select jobs.company_id, jobs.business_year
     into v_company_id, v_year
   from public.earnings_ingestion_jobs jobs
   where jobs.source = 'open_dart' and jobs.job_kind = 'financial_period'
-    and jobs.metadata @> '{"legacy_archive": true}'::jsonb
+    and jobs.priority = 10 and jobs.business_year between 2002 and 2015
     and jobs.status in ('pending', 'retry') and jobs.available_at <= now()
     and jobs.attempts < jobs.max_attempts
     and coalesce(jobs.metadata->>'receipt_no', '') <> ''
@@ -141,7 +141,7 @@ begin
     from public.earnings_ingestion_jobs jobs
     where jobs.source = 'open_dart' and jobs.job_kind = 'financial_period'
       and jobs.company_id = v_company_id and jobs.business_year = v_year
-      and jobs.metadata @> '{"legacy_archive": true}'::jsonb
+      and jobs.priority = 10 and jobs.business_year between 2002 and 2015
       and jobs.status in ('pending', 'retry') and jobs.available_at <= now()
       and jobs.attempts < jobs.max_attempts
       and coalesce(jobs.metadata->>'receipt_no', '') <> ''
