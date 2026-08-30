@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from decimal import Decimal
 import json
 import os
+from threading import Lock, local
 import time
 from typing import Any, Callable
 
@@ -75,13 +77,24 @@ class LegacyDartFinancialWorker:
         self.store = store
         self.request_interval_seconds = max(0.0, request_interval_seconds)
         self.sleeper = sleeper
-        self._requested = False
+        self._request_lock = Lock()
+        self._last_request_started = 0.0
+        self._thread_state = local()
 
     def _archive(self, receipt: str) -> bytes:
-        if self._requested and self.request_interval_seconds:
-            self.sleeper(self.request_interval_seconds)
-        response = self.client.fetch_filing_archive(receipt)
-        self._requested = True
+        # Start requests at a bounded cadence while allowing slow network
+        # responses to overlap. Each thread owns its requests.Session.
+        with self._request_lock:
+            elapsed = time.monotonic() - self._last_request_started
+            remaining = self.request_interval_seconds - elapsed
+            if remaining > 0:
+                self.sleeper(remaining)
+            self._last_request_started = time.monotonic()
+        client = getattr(self._thread_state, "client", None)
+        if client is None:
+            client = OpenDartClient(self.client.api_key, timeout=self.client.timeout)
+            self._thread_state.client = client
+        response = client.fetch_filing_archive(receipt)
         return response.content
 
     def process_company_year(self, jobs: list[dict[str, Any]]) -> dict[str, int]:
@@ -94,16 +107,24 @@ class LegacyDartFinancialWorker:
 
         statements: dict[str, dict[str, LegacyCumulativeStatement]] = {}
         parse_errors: dict[str, str] = {}
-        for job in jobs:
+        def fetch_and_parse(job: dict[str, Any]):
             report_code = str(job["report_code"])
             metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
             receipt = str(metadata.get("receipt_no") or "").strip()
-            try:
-                statements[report_code] = parse_legacy_filing_archive(
-                    self._archive(receipt), report_code=report_code,
-                )
-            except Exception as error:
-                parse_errors[report_code] = type(error).__name__
+            parsed = parse_legacy_filing_archive(
+                self._archive(receipt), report_code=report_code,
+            )
+            return report_code, parsed
+
+        with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as executor:
+            futures = {executor.submit(fetch_and_parse, job): str(job["report_code"]) for job in jobs}
+            for future in as_completed(futures):
+                report_code = futures[future]
+                try:
+                    parsed_code, parsed = future.result()
+                    statements[parsed_code] = parsed
+                except Exception as error:
+                    parse_errors[report_code] = type(error).__name__
 
         scope, standalone = build_legacy_standalone_quarters(statements)
         for job in jobs:

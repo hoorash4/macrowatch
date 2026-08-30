@@ -24,10 +24,9 @@ permissions:
   contents: read
 
 concurrency:
-  # v2 is a one-time group transition that lets the corrected immutable queue
-  # worker assist the already-running v1 backfill. Subsequent v2 runs remain
-  # serialized with each other.
-  group: macrowatch-earnings-open-dart-legacy-v2
+  # v3 transitions once to the latency-overlapped archive downloader. Later
+  # v3 runs remain serialized with each other.
+  group: macrowatch-earnings-open-dart-legacy-v3
   cancel-in-progress: false
 
 jobs:
