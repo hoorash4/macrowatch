@@ -10,7 +10,7 @@ from typing import Any, Iterable, Mapping
 
 METRICS = ("revenue", "operating_income", "net_income")
 HUNDRED = Decimal("100")
-CALCULATION_VERSION = 2
+CALCULATION_VERSION = 3
 BASELINE_YEARS = 5
 BASELINE_ELIGIBLE_STATES = frozenset({"normal"})
 
@@ -113,18 +113,17 @@ def _growth_rate(
         return None, "missing_prior"
     if prior_value == 0:
         return None, "from_zero"
-    if prior_value < 0 <= current_value:
-        state = "black_turn"
-    elif prior_value > 0 > current_value:
-        state = "red_turn"
-    elif prior_value < 0 and current_value < 0:
-        state = "negative_base"
-    else:
-        state = "normal"
-    # abs(prior) preserves the intuitive direction when both periods are
-    # negative. The state prevents a turn or negative-base result from being
-    # mistaken for an ordinary positive-base growth rate.
-    return (current_value - prior_value) / abs(prior_value) * HUNDRED, state
+    # A conventional percentage growth rate has no stable interpretation when
+    # its baseline is negative. Preserve continuity through the signed source
+    # amount and an explicit state; never manufacture a percentage by dividing
+    # by abs(prior_value).
+    if prior_value < 0:
+        return None, "black_turn" if current_value >= 0 else "negative_base"
+    if current_value < 0:
+        # A positive baseline is a valid denominator. The value can therefore
+        # cross below -100%, while the state records the red-turn transition.
+        return (current_value - prior_value) / prior_value * HUNDRED, "red_turn"
+    return (current_value - prior_value) / prior_value * HUNDRED, "normal"
 
 
 def calculate_growth_metrics(financials: Iterable[QuarterlyFinancial]) -> list[GrowthMetric]:

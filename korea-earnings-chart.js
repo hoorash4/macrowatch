@@ -1,68 +1,33 @@
 (() => {
   'use strict';
 
-  const METRICS = ['revenue', 'operating_income', 'net_income'];
   const LABELS = { revenue: '매출', operating_income: '영업이익', net_income: '순이익' };
   const HEIGHT = 320, Y_AXIS_WIDTH = 52, MIN_WIDTH = 640;
   const PADDING = { top: 24, right: 24, bottom: 42, left: 14 };
-  const state = { series: [], metric: 'revenue', years: 5, snapshotDate: null, universeCount: 100 };
+  const state = { series: [], metric: 'revenue', years: 5 };
 
-  function ordinal(row) { return Number(row.fiscal_year) * 4 + Number(row.fiscal_quarter) - 1; }
   function finite(value) { const number = Number(value); return Number.isFinite(number) ? number : null; }
   function periodLabel(row) { return `${row.fiscalYear} Q${row.fiscalQuarter}`; }
   function formatSigned(value, unit) { return Number.isFinite(value) ? `${value > 0 ? '+' : ''}${value.toFixed(1)}${unit}` : '—'; }
 
-  function normalizeRows(rows) {
-    return rows.map((row) => {
-      return {
-        ...row,
-        _ordinal: ordinal(row),
-        // 서로 다른 표시통화를 임의의 현물환율로 섞지 않는다. 한국 카드의
-        // 금액 합산은 OpenDART에서 원화로 공시된 행만 비교군에 포함한다.
-        _values: Object.fromEntries(METRICS.map((metric) => [metric, row.currency === 'KRW' ? finite(row[metric]) : null])),
+  // The browser only reshapes compact, precomputed server rows. Signed sums,
+  // comparable cohorts, transition states and deltas are worker responsibilities.
+  function seriesFromMetricRows(rows) {
+    const periods = new Map();
+    rows.forEach((row) => {
+      const fiscalYear = Number(row.fiscal_year), fiscalQuarter = Number(row.fiscal_quarter);
+      const key = `${fiscalYear}:${fiscalQuarter}`;
+      const period = periods.get(key) || { fiscalYear, fiscalQuarter, metrics: {}, universeCount: Number(row.universe_company_count) || 0 };
+      period.metrics[row.metric] = {
+        yoyPct: finite(row.yoy_pct),
+        yoyDeltaPp: finite(row.yoy_delta_pp),
+        yoyState: row.yoy_state,
+        coverage: Number(row.comparable_company_count) || 0,
+        currentTotal: finite(row.current_total),
       };
+      periods.set(key, period);
     });
-  }
-
-  // NA는 원천 제공자가 연결/별도 구분을 주지 않은 경우다. 명시적인 CFS와 OFS가
-  // 서로 충돌할 때만 제외해, 불필요한 결측 확대 없이 비교 기준을 지킨다.
-  function compatibleScopes(rows) {
-    return new Set(rows.map((row) => row.consolidation_scope).filter((scope) => scope && scope !== 'NA')).size <= 1;
-  }
-
-  function aggregateMetric(cohort, metric) {
-    if (!cohort.length) return null;
-    const sum = (key) => cohort.reduce((total, item) => total + item[key]._values[metric], 0);
-    const current = sum('current'), prior = sum('prior'), previous = sum('previous'), previousPrior = sum('previousPrior');
-    if (prior === 0 || previousPrior === 0) return null;
-    const yoyPct = (current - prior) / Math.abs(prior) * 100;
-    const previousYoyPct = (previous - previousPrior) / Math.abs(previousPrior) * 100;
-    return { yoyPct, yoyDeltaPp: yoyPct - previousYoyPct, coverage: cohort.length, currentTotal: current };
-  }
-
-  function calculateSeries(rows, universeCount = 100) {
-    const normalized = normalizeRows(rows);
-    const byCompanyPeriod = new Map(normalized.map((row) => [`${row.company_id}:${row._ordinal}`, row]));
-    const periods = [...new Map(normalized.map((row) => [row._ordinal, { ordinal: row._ordinal, fiscalYear: Number(row.fiscal_year), fiscalQuarter: Number(row.fiscal_quarter) }])).values()]
-      .sort((a, b) => a.ordinal - b.ordinal);
-    const companyIds = [...new Set(normalized.map((row) => row.company_id))];
-
-    return periods.flatMap((period) => {
-      const metrics = {};
-      for (const metric of METRICS) {
-        const cohort = companyIds.flatMap((companyId) => {
-          const current = byCompanyPeriod.get(`${companyId}:${period.ordinal}`);
-          const previous = byCompanyPeriod.get(`${companyId}:${period.ordinal - 1}`);
-          const prior = byCompanyPeriod.get(`${companyId}:${period.ordinal - 4}`);
-          const previousPrior = byCompanyPeriod.get(`${companyId}:${period.ordinal - 5}`);
-          const comparison = [current, previous, prior, previousPrior];
-          if (comparison.some((row) => !row || row._values[metric] === null) || !compatibleScopes(comparison)) return [];
-          return [{ current, previous, prior, previousPrior }];
-        });
-        metrics[metric] = aggregateMetric(cohort, metric);
-      }
-      return Object.values(metrics).some(Boolean) ? [{ ...period, universeCount, metrics }] : [];
-    });
+    return [...periods.values()].sort((a, b) => (a.fiscalYear * 4 + a.fiscalQuarter) - (b.fiscalYear * 4 + b.fiscalQuarter));
   }
 
   function scale(value, sourceMin, sourceMax, targetMin, targetMax) {
@@ -82,13 +47,13 @@
     const latest = points.at(-1);
     if (!element || !latest) return;
     const metric = latest.metrics[state.metric];
-    element.innerHTML = `<strong>${LABELS[state.metric]} ${periodLabel(latest)}</strong><span>증가율 ${formatSigned(metric.yoyPct, '%')}</span><span>델타 ${formatSigned(metric.yoyDeltaPp, '%p')}</span><span>동일기업 ${metric.coverage}/${latest.universeCount}사</span><span>구성 기준 ${state.snapshotDate || '—'}</span>`;
+    element.innerHTML = `<strong>${LABELS[state.metric]} ${periodLabel(latest)}</strong><span>증가율 ${formatSigned(metric.yoyPct, '%')}</span><span>델타 ${formatSigned(metric.yoyDeltaPp, '%p')}</span><span>동일기업 ${metric.coverage}/${latest.universeCount}사</span><span>현재 구성 종목 기준</span>`;
   }
 
   function render() {
     const container = document.getElementById('korea-earnings-chart');
     if (!container) return;
-    const usable = state.series.filter((row) => row.metrics[state.metric]);
+    const usable = state.series.filter((row) => Number.isFinite(row.metrics[state.metric]?.yoyPct) && Number.isFinite(row.metrics[state.metric]?.yoyDeltaPp));
     const points = state.years === 'max' ? usable : usable.slice(-Number(state.years) * 4);
     if (!points.length) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">비교 가능한 KOSPI 100 합산 실적이 아직 없습니다.</div>';
@@ -127,16 +92,13 @@
   async function load({ supabaseClient }) {
     const container = document.getElementById('korea-earnings-chart');
     if (!container || !supabaseClient) return;
-    const { data: latestRows, error: latestError } = await supabaseClient.from('earnings_universe_snapshots').select('observed_on').eq('index_id', 'KOSPI100').order('observed_on', { ascending: false }).limit(1);
-    const snapshotDate = latestRows?.[0]?.observed_on;
-    if (latestError || !snapshotDate) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 구성 종목을 불러오지 못했습니다.</div>'; return; }
-    const { data: members, error: memberError } = await supabaseClient.from('earnings_universe_snapshots').select('company_id,rank').eq('index_id', 'KOSPI100').eq('observed_on', snapshotDate).order('rank');
-    if (memberError || !members?.length) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 구성 종목이 아직 없습니다.</div>'; return; }
-    const companyIds = members.map((row) => row.company_id);
-    const financials = await window.MacroWatchAnalysisChart.loadAllRows((from, to) => supabaseClient.from('earnings_quarterly_financials').select('company_id,fiscal_year,fiscal_quarter,period_end,revenue,operating_income,net_income,currency,consolidation_scope').in('company_id', companyIds).order('fiscal_year').order('fiscal_quarter').range(from, to));
-    if (financials.error) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 실적을 불러오지 못했습니다.</div>'; return; }
-    state.snapshotDate = snapshotDate; state.universeCount = members.length;
-    state.series = calculateSeries(financials.data || [], members.length);
+    const response = await window.MacroWatchAnalysisChart.loadAllRows((from, to) => supabaseClient
+      .from('earnings_market_quarterly_metrics')
+      .select('fiscal_year,fiscal_quarter,metric,universe_company_count,comparable_company_count,current_total,yoy_pct,yoy_state,yoy_delta_pp')
+      .eq('index_id', 'KOSPI100')
+      .order('fiscal_year').order('fiscal_quarter').order('metric').range(from, to));
+    if (response.error) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 집계 실적을 불러오지 못했습니다.</div>'; return; }
+    state.series = seriesFromMetricRows(response.data || []);
     render();
   }
 
@@ -155,6 +117,6 @@
     render();
   });
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'korea') render(); });
-  window.MacroWatchKoreaEarnings = Object.freeze({ calculateSeries });
+  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMetricRows });
   window.MacroWatchDashboard?.registerLoader(load);
 })();

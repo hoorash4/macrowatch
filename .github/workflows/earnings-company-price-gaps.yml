@@ -44,21 +44,37 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          START_YEAR: ${{ inputs.start_year || '2016' }}
+          REQUESTED_START_YEAR: ${{ inputs.start_year || '' }}
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$REQUESTED_START_YEAR" ]; then
+            start_year="$REQUESTED_START_YEAR"
+          else
+            # Routine deploys and quarterly refreshes only request the current
+            # year. A ten-year history is an explicit resumable manual backfill.
+            start_year="$(date -u +%Y)"
+          fi
           offset=0
+          total_failures=0
           while true; do
             response=$(curl --fail-with-body --retry 3 --retry-all-errors --max-time 120 --request POST \
               "$SUPABASE_URL/functions/v1/earnings-company-prices" \
               --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
               --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
               --header "Content-Type: application/json" \
-              --data "{\"offset\":$offset,\"limit\":5,\"start_year\":$START_YEAR}")
-            echo "$response" | jq -e '.failures | length == 0'
+              --data "{\"offset\":$offset,\"limit\":2,\"start_year\":$start_year}")
+            batch_failures=$(echo "$response" | jq '.failures | length')
+            if [ "$batch_failures" -gt 0 ]; then
+              total_failures=$((total_failures + batch_failures))
+              # One unavailable ticker must not discard every successful
+              # company. Emit provider-safe ticker diagnostics and continue;
+              # the next scheduled/manual run retries it naturally.
+              echo "$response" | jq -r '.failures[] | "::warning title=Quarterly price unavailable::\(.ticker) - \(.error)"'
+            fi
             next=$(echo "$response" | jq -r '.next_offset // empty')
             [ -z "$next" ] && break
             offset="$next"
           done
+          echo "::notice title=Quarterly price refresh::start_year=$start_year, failures=$total_failures"
 
       - name: Calculate normalized lines, gap and gap delta
         env:

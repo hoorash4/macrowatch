@@ -37,6 +37,8 @@ class OperatingIncomeObservation:
     company_id: str
     period: MarketQuarter
     operating_income: Decimal | None
+    currency: str | None = None
+    consolidation_scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,8 +101,16 @@ def observations_from_rows(rows: Iterable[Mapping[str, Any]]) -> list[OperatingI
     for row in rows:
         observations.append(OperatingIncomeObservation(
             company_id=str(row["company_id"]),
-            period=MarketQuarter(int(row["market_year"]), int(row["market_quarter"])),
+            period=MarketQuarter(
+                int(row.get("market_year", row.get("fiscal_year"))),
+                int(row.get("market_quarter", row.get("fiscal_quarter"))),
+            ),
             operating_income=_decimal(row.get("operating_income")),
+            currency=str(row["currency"]) if row.get("currency") else None,
+            consolidation_scope=(
+                str(row["consolidation_scope"])
+                if row.get("consolidation_scope") else None
+            ),
         ))
     return observations
 
@@ -179,27 +189,43 @@ def calculate_market_earnings_breadth(
     if not universe:
         raise ValueError("universe_company_ids must not be empty")
 
-    values: dict[tuple[str, MarketQuarter], Decimal] = {}
+    rows_by_key: dict[tuple[str, MarketQuarter], OperatingIncomeObservation] = {}
     for observation in observations:
         if observation.company_id not in universe or observation.operating_income is None:
             continue
         key = (observation.company_id, observation.period)
-        if key in values and values[key] != observation.operating_income:
+        if key in rows_by_key and rows_by_key[key] != observation:
             raise ValueError(f"conflicting operating income for {observation.company_id} {observation.period}")
-        values[key] = observation.operating_income
+        rows_by_key[key] = observation
+
+    def value(company_id: str, period: MarketQuarter) -> Decimal:
+        observed = rows_by_key[(company_id, period)].operating_income
+        assert observed is not None
+        return observed
+
+    def compatible(company_id: str, periods: Sequence[MarketQuarter]) -> bool:
+        selected = [rows_by_key.get((company_id, period)) for period in periods]
+        if any(row is None for row in selected):
+            return False
+        currencies = {row.currency for row in selected if row and row.currency}
+        scopes = {
+            row.consolidation_scope for row in selected
+            if row and row.consolidation_scope not in (None, "NA")
+        }
+        return len(currencies) <= 1 and len(scopes) <= 1
 
     prior = target.shift(-4)
     previous = target.shift(-1)
     previous_prior = target.shift(-5)
     comparable = sorted(
         company_id for company_id in universe
-        if (company_id, target) in values and (company_id, prior) in values
+        if compatible(company_id, (target, prior))
     )
 
-    current_total = sum((values[(company_id, target)] for company_id in comparable), Decimal(0))
-    prior_total = sum((values[(company_id, prior)] for company_id in comparable), Decimal(0))
+    current_total = sum((value(company_id, target) for company_id in comparable), Decimal(0))
+    prior_total = sum((value(company_id, prior) for company_id in comparable), Decimal(0))
     net_change = current_total - prior_total
-    deltas = [values[(company_id, target)] - values[(company_id, prior)] for company_id in comparable]
+    deltas = [value(company_id, target) - value(company_id, prior) for company_id in comparable]
     positive = [delta for delta in deltas if delta > 0]
     negative_abs = [-delta for delta in deltas if delta < 0]
 
@@ -212,25 +238,25 @@ def calculate_market_earnings_breadth(
     top5_negative = _top_share(negative_abs)
 
     prior_population = [
-        company_id for company_id in universe if (company_id, prior) in values
+        company_id for company_id in universe if (company_id, prior) in rows_by_key
     ]
     prior_population_abs = sum(
-        (abs(values[(company_id, prior)]) for company_id in prior_population), Decimal(0)
+        (abs(value(company_id, prior)) for company_id in prior_population), Decimal(0)
     )
     comparable_prior_abs = sum(
-        (abs(values[(company_id, prior)]) for company_id in comparable), Decimal(0)
+        (abs(value(company_id, prior)) for company_id in comparable), Decimal(0)
     )
 
     delta_comparable = sorted(
         company_id for company_id in universe
-        if all((company_id, period) in values for period in (target, previous, prior, previous_prior))
+        if compatible(company_id, (target, previous, prior, previous_prior))
     )
     current_delta_positive = sum(
-        values[(company_id, target)] > values[(company_id, prior)]
+        value(company_id, target) > value(company_id, prior)
         for company_id in delta_comparable
     )
     previous_delta_positive = sum(
-        values[(company_id, previous)] > values[(company_id, previous_prior)]
+        value(company_id, previous) > value(company_id, previous_prior)
         for company_id in delta_comparable
     )
     current_common_breadth = _pct(current_delta_positive, len(delta_comparable))
@@ -242,23 +268,23 @@ def calculate_market_earnings_breadth(
     # Delta coverage spans both YoY baselines because the common-cohort rule
     # requires t-4 and t-5, not only the current comparison's baseline.
     delta_population_abs = sum((
-        abs(values[(company_id, period)])
+        abs(value(company_id, period))
         for company_id in universe
         for period in (prior, previous_prior)
-        if (company_id, period) in values
+        if (company_id, period) in rows_by_key
     ), Decimal(0))
     delta_comparable_abs = sum((
-        abs(values[(company_id, period)])
+        abs(value(company_id, period))
         for company_id in delta_comparable
         for period in (prior, previous_prior)
     ), Decimal(0))
 
     black_turn_count = sum(
-        values[(company_id, prior)] <= 0 < values[(company_id, target)]
+        value(company_id, prior) <= 0 < value(company_id, target)
         for company_id in comparable
     )
     red_turn_count = sum(
-        values[(company_id, prior)] >= 0 > values[(company_id, target)]
+        value(company_id, prior) >= 0 > value(company_id, target)
         for company_id in comparable
     )
 

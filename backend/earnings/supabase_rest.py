@@ -313,6 +313,35 @@ class SupabaseEarningsStore:
                 return rows
             offset += page_size
 
+    def list_current_index_memberships(self, *, page_size: int = 1000) -> list[dict[str, Any]]:
+        """Return only active index/company pairs for fixed-universe analysis."""
+        endpoint = f"{self.url}/rest/v1/earnings_index_memberships"
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            try:
+                response = self.session.get(
+                    endpoint,
+                    params={
+                        "select": "index_id,company_id,effective_from",
+                        "effective_to": "is.null",
+                        "order": "index_id.asc,company_id.asc",
+                        "limit": str(page_size),
+                        "offset": str(offset),
+                    },
+                    headers=self._headers(), timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except Exception:
+                raise EarningsStoreError("Failed to list current earnings index memberships.") from None
+            if not isinstance(payload, list):
+                raise EarningsStoreError("Current earnings membership response is not an array.")
+            rows.extend(row for row in payload if isinstance(row, dict))
+            if len(payload) < page_size:
+                return rows
+            offset += page_size
+
     def list_current_price_companies(self) -> list[dict[str, Any]]:
         result = self._rpc("list_current_earnings_price_companies", {})
         if not isinstance(result, list):
@@ -378,6 +407,18 @@ class SupabaseEarningsStore:
         return self._upsert_rows(
             "earnings_company_price_gaps", rows,
             "company_id,market_year,market_quarter",
+        )
+
+    def upsert_market_earnings_metrics(self, rows: list[dict[str, Any]]) -> int:
+        return self._upsert_rows(
+            "earnings_market_quarterly_metrics", rows,
+            "index_id,fiscal_year,fiscal_quarter,metric",
+        )
+
+    def upsert_market_earnings_breadth(self, rows: list[dict[str, Any]]) -> int:
+        return self._upsert_rows(
+            "earnings_market_quarterly_breadth", rows,
+            "index_id,market_year,market_quarter",
         )
 
     def get_app_setting(self, key: str) -> dict[str, Any] | None:

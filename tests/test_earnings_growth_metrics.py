@@ -76,6 +76,7 @@ class EarningsGrowthMetricTests(unittest.TestCase):
             metric_for(turns, 2025, 1, "operating_income").yoy_state,
             "black_turn",
         )
+        self.assertIsNone(metric_for(turns, 2025, 1, "operating_income").yoy_pct)
         self.assertEqual(metric_for(turns, 2025, 1, "net_income").yoy_state, "from_zero")
 
         rows = financials_from_rows([
@@ -120,6 +121,28 @@ class EarningsGrowthMetricTests(unittest.TestCase):
         ])
         target = metric_for(results, 2024, 2, "operating_income")
         self.assertEqual(target.yoy_state, "black_turn")
+        self.assertIsNone(target.yoy_delta_pp)
+
+    def test_negative_baseline_never_uses_absolute_value_as_growth_denominator(self):
+        results = calculate_growth_metrics([
+            quarter(2024, 1, 100, -100, -100),
+            quarter(2025, 1, 100, -50, -150),
+        ])
+        narrowing = metric_for(results, 2025, 1, "operating_income")
+        widening = metric_for(results, 2025, 1, "net_income")
+        self.assertEqual(narrowing.yoy_state, "negative_base")
+        self.assertEqual(widening.yoy_state, "negative_base")
+        self.assertIsNone(narrowing.yoy_pct)
+        self.assertIsNone(widening.yoy_pct)
+
+    def test_positive_baseline_red_turn_keeps_valid_signed_decline(self):
+        results = calculate_growth_metrics([
+            quarter(2024, 1, 100, 20, 20),
+            quarter(2025, 1, 100, -10, -10),
+        ])
+        target = metric_for(results, 2025, 1, "operating_income")
+        self.assertEqual(target.yoy_state, "red_turn")
+        self.assertEqual(target.yoy_pct, Decimal("-150.0"))
         self.assertIsNone(target.yoy_delta_pp)
 
     def test_persistence_pivots_three_metrics_into_one_quarter_row(self):

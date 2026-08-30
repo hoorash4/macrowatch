@@ -16,11 +16,13 @@ from .market_breadth import (
     calculate_market_earnings_history,
     observations_from_rows,
 )
+from .market_metrics import MarketAggregateMetric, calculate_market_metric_history
 
 __all__ = [
     "DartAccountFact",
     "DartCorporation",
     "MarketEarningsBreadthResult",
+    "MarketAggregateMetric",
     "MarketQuarter",
     "OpenDartApiError",
     "OpenDartBinaryResponse",
@@ -29,6 +31,7 @@ __all__ = [
     "OperatingIncomeObservation",
     "calculate_market_earnings_breadth",
     "calculate_market_earnings_history",
+    "calculate_market_metric_history",
     "observations_from_rows",
     "parse_account_rows",
     "parse_corp_code_archive",

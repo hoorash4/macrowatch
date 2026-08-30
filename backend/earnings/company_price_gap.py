@@ -11,7 +11,7 @@ from earnings.market_breadth import MarketQuarter
 
 
 HUNDRED = Decimal("100")
-CALCULATION_VERSION = 1
+CALCULATION_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -39,8 +39,8 @@ class CompanyPriceGap:
     ttm_operating_income: Decimal | None
     normalized_price: Decimal | None
     normalized_ttm_operating_income: Decimal | None
-    gap_pct: Decimal | None
-    gap_delta_pp: Decimal | None
+    gap_points: Decimal | None
+    gap_delta_points: Decimal | None
     calculation_state: str
 
     def as_record(self) -> dict[str, Any]:
@@ -57,8 +57,8 @@ class CompanyPriceGap:
             "normalized_ttm_operating_income": _serialize(
                 self.normalized_ttm_operating_income
             ),
-            "gap_pct": _serialize(self.gap_pct),
-            "gap_delta_pp": _serialize(self.gap_delta_pp),
+            "gap_points": _serialize(self.gap_points),
+            "gap_delta_points": _serialize(self.gap_delta_points),
             "calculation_state": self.calculation_state,
             "calculation_version": CALCULATION_VERSION,
         }
@@ -104,7 +104,12 @@ def calculate_company_price_gaps(
     operating_income: Iterable[QuarterlyOperatingIncome],
     prices: Iterable[QuarterlyAdjustedPrice],
 ) -> list[CompanyPriceGap]:
-    """Rebase both quarterly lines at their first positive common TTM point."""
+    """Rebase both lines to 100 and store their finite index-point distance.
+
+    Division between the two normalized lines is deliberately avoided. Once a
+    company's TTM operating income crosses zero, a ratio becomes undefined or
+    explodes even though the two plotted lines remain perfectly meaningful.
+    """
 
     op_by_period: dict[MarketQuarter, Decimal | None] = {}
     for row in operating_income:
@@ -151,16 +156,12 @@ def calculate_company_price_gaps(
             state = "missing_ttm"
             normalized_ttm = gap = delta = None
             previous_normal_gap = None
-        elif ttm <= 0:
-            state = "nonpositive_ttm"
-            normalized_ttm = gap = delta = None
-            previous_normal_gap = None
         else:
-            state = "normal"
             normalized_ttm = ttm / base_ttm * HUNDRED
-            gap = (normalized_price / normalized_ttm - 1) * HUNDRED
+            gap = normalized_price - normalized_ttm
             delta = gap - previous_normal_gap if previous_normal_gap is not None else None
             previous_normal_gap = gap
+            state = "normal" if ttm > 0 else "nonpositive_ttm"
         results.append(CompanyPriceGap(
             company_id=company_id,
             period=period,
@@ -170,8 +171,8 @@ def calculate_company_price_gaps(
             ttm_operating_income=ttm,
             normalized_price=normalized_price,
             normalized_ttm_operating_income=normalized_ttm,
-            gap_pct=gap,
-            gap_delta_pp=delta,
+            gap_points=gap,
+            gap_delta_points=delta,
             calculation_state=state,
         ))
     return results

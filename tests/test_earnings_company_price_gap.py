@@ -33,13 +33,16 @@ class CompanyPriceGapTests(unittest.TestCase):
         self.assertEqual(results[0].period, MarketQuarter(2024, 4))
         self.assertEqual(results[0].normalized_price, Decimal("100"))
         self.assertEqual(results[0].normalized_ttm_operating_income, Decimal("100"))
-        self.assertEqual(results[0].gap_pct, Decimal("0"))
-        self.assertIsNone(results[0].gap_delta_pp)
-        # 2025Q1: price 1.2x, TTM OP 1.05x => disparity +14.2857%.
-        self.assertEqual(results[1].gap_pct, (Decimal("1.2") / Decimal("1.05") - 1) * 100)
-        self.assertEqual(results[2].gap_delta_pp, results[2].gap_pct - results[1].gap_pct)
+        self.assertEqual(results[0].gap_points, Decimal("0"))
+        self.assertIsNone(results[0].gap_delta_points)
+        # 2025Q1: rebased price 120 - rebased TTM OP 105 = +15 points.
+        self.assertEqual(results[1].gap_points, Decimal("15.00"))
+        self.assertEqual(
+            results[2].gap_delta_points,
+            results[2].gap_points - results[1].gap_points,
+        )
 
-    def test_nonpositive_ttm_is_not_forced_into_a_ratio(self):
+    def test_nonpositive_ttm_keeps_a_finite_index_point_distance(self):
         periods = [MarketQuarter(2024, quarter) for quarter in range(1, 5)]
         ops = [QuarterlyOperatingIncome("company", period, Decimal("10")) for period in periods]
         ops.append(QuarterlyOperatingIncome("company", MarketQuarter(2025, 1), Decimal("-100")))
@@ -50,7 +53,9 @@ class CompanyPriceGapTests(unittest.TestCase):
             company_id="company", operating_income=ops, prices=prices
         )
         self.assertEqual(results[-1].calculation_state, "nonpositive_ttm")
-        self.assertIsNone(results[-1].gap_pct)
+        self.assertEqual(results[-1].normalized_ttm_operating_income, Decimal("-175.00"))
+        self.assertEqual(results[-1].gap_points, Decimal("275.00"))
+        self.assertIsNotNone(results[-1].gap_delta_points)
 
 
 class CompanyPriceGapIntegrationContractTests(unittest.TestCase):
@@ -58,6 +63,7 @@ class CompanyPriceGapIntegrationContractTests(unittest.TestCase):
     def setUpClass(cls):
         root = Path(__file__).resolve().parents[1]
         cls.migration = (root / "supabase/migrations/20260829_add_company_earnings_price_gaps.sql").read_text(encoding="utf-8")
+        cls.analysis_migration = (root / "supabase/migrations/20260830_add_market_earnings_analysis.sql").read_text(encoding="utf-8")
         cls.collector = (root / "supabase/functions/earnings-company-prices/index.ts").read_text(encoding="utf-8")
         cls.kis = (root / "supabase/functions/_shared/kis-client.ts").read_text(encoding="utf-8")
         cls.workflow = (root / ".github/workflows/earnings-company-price-gaps.yml").read_text(encoding="utf-8")
@@ -69,6 +75,8 @@ class CompanyPriceGapIntegrationContractTests(unittest.TestCase):
         self.assertIn("earnings_company_price_gaps", self.migration)
         self.assertIn("adjusted_close", self.migration)
         self.assertNotIn("volume numeric", self.migration.lower())
+        self.assertIn("rename column gap_pct to gap_points", self.analysis_migration)
+        self.assertIn("rename column gap_delta_pp to gap_delta_points", self.analysis_migration)
 
     def test_kis_uses_official_adjusted_price_options(self):
         self.assertIn('FID_ORG_ADJ_PRC: "0"', self.kis)

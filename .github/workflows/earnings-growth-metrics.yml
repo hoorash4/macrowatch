@@ -7,6 +7,9 @@ on:
       - ".github/workflows/earnings-growth-metrics.yml"
       - "backend/earnings/growth_metrics.py"
       - "backend/earnings/calculate_growth_metrics.py"
+      - "backend/earnings/market_metrics.py"
+      - "backend/earnings/market_breadth.py"
+      - "backend/earnings/calculate_market_earnings.py"
       - "backend/earnings/supabase_rest.py"
   workflow_run:
     workflows: ["Deploy Supabase changes"]
@@ -43,6 +46,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python -m earnings.calculate_growth_metrics
+
+      - name: Calculate compact market aggregates, breadth and contribution
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings.calculate_market_earnings
 
       - name: Recalculate company earnings-price gaps when prices exist
         env:
