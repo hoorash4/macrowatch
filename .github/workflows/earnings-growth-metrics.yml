@@ -9,6 +9,7 @@ on:
       - "backend/earnings/calculate_growth_metrics.py"
       - "backend/earnings/market_metrics.py"
       - "backend/earnings/market_breadth.py"
+      - "backend/earnings/market_universe.py"
       - "backend/earnings/calculate_market_earnings.py"
       - "backend/earnings/supabase_rest.py"
   workflow_run:
