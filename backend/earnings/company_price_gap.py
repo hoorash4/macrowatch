@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from calendar import monthrange
 from decimal import Decimal
 from typing import Any, Iterable, Mapping
 
@@ -19,6 +20,7 @@ class QuarterlyOperatingIncome:
     company_id: str
     period: MarketQuarter
     operating_income: Decimal | None
+    period_end: date | None = None
 
 
 @dataclass(frozen=True)
@@ -74,9 +76,13 @@ def _decimal(value: Any) -> Decimal | None:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
-def _period(raw_date: str | date) -> MarketQuarter:
-    parsed = raw_date if isinstance(raw_date, date) else date.fromisoformat(str(raw_date)[:10])
-    return MarketQuarter(parsed.year, (parsed.month - 1) // 3 + 1)
+def _quarter_end(period: MarketQuarter) -> date:
+    month = period.quarter * 3
+    return date(period.year, month, monthrange(period.year, month)[1])
+
+
+def _observation_end(row: QuarterlyOperatingIncome) -> date:
+    return row.period_end or _quarter_end(row.period)
 
 
 def operating_income_from_rows(
@@ -84,8 +90,9 @@ def operating_income_from_rows(
 ) -> list[QuarterlyOperatingIncome]:
     return [QuarterlyOperatingIncome(
         company_id=str(row["company_id"]),
-        period=_period(row["period_end"]),
+        period=MarketQuarter(int(row["fiscal_year"]), int(row["fiscal_quarter"])),
         operating_income=_decimal(row.get("operating_income")),
+        period_end=date.fromisoformat(str(row["period_end"])[:10]),
     ) for row in rows]
 
 
@@ -111,13 +118,13 @@ def calculate_company_price_gaps(
     explodes even though the two plotted lines remain perfectly meaningful.
     """
 
-    op_by_period: dict[MarketQuarter, Decimal | None] = {}
+    fiscal_rows: dict[MarketQuarter, QuarterlyOperatingIncome] = {}
     for row in operating_income:
         if row.company_id != company_id:
             continue
-        if row.period in op_by_period:
-            raise ValueError(f"duplicate company calendar quarter: {company_id} {row.period}")
-        op_by_period[row.period] = row.operating_income
+        if row.period in fiscal_rows:
+            raise ValueError(f"duplicate company fiscal quarter: {company_id} {row.period}")
+        fiscal_rows[row.period] = row
 
     price_by_period: dict[MarketQuarter, QuarterlyAdjustedPrice] = {}
     for row in prices:
@@ -129,11 +136,23 @@ def calculate_company_price_gaps(
 
     ttm_by_period: dict[MarketQuarter, Decimal | None] = {}
     for period in sorted(price_by_period):
-        quarters = [period.shift(-offset) for offset in range(4)]
-        values = [op_by_period.get(quarter) for quarter in quarters]
+        calendar_end = _quarter_end(period)
+        eligible = sorted(
+            (
+                row for row in fiscal_rows.values()
+                if _observation_end(row) <= calendar_end
+            ),
+            key=lambda row: (_observation_end(row), row.period),
+        )[-4:]
+        ordinals = [row.period.year * 4 + row.period.quarter - 1 for row in eligible]
+        consecutive = len(ordinals) == 4 and all(
+            current - previous == 1
+            for previous, current in zip(ordinals, ordinals[1:])
+        )
+        values = [row.operating_income for row in eligible]
         ttm_by_period[period] = (
             sum((value for value in values if value is not None), Decimal(0))
-            if all(value is not None for value in values) else None
+            if consecutive and all(value is not None for value in values) else None
         )
 
     base_period = next((

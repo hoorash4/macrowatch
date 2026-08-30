@@ -7,6 +7,7 @@ from earnings.company_price_gap import (
     QuarterlyAdjustedPrice,
     QuarterlyOperatingIncome,
     calculate_company_price_gaps,
+    operating_income_from_rows,
 )
 from earnings.market_breadth import MarketQuarter
 
@@ -56,6 +57,30 @@ class CompanyPriceGapTests(unittest.TestCase):
         self.assertEqual(results[-1].normalized_ttm_operating_income, Decimal("-175.00"))
         self.assertEqual(results[-1].gap_points, Decimal("275.00"))
         self.assertIsNotNone(results[-1].gap_delta_points)
+
+    def test_nonstandard_fiscal_quarters_use_latest_four_fiscal_periods(self):
+        # Fiscal Q3 and Q4 can both end inside calendar Q4. They are distinct
+        # earnings observations and must not collide in a calendar-quarter map.
+        ops = operating_income_from_rows([
+            {"company_id": "company", "fiscal_year": 2024, "fiscal_quarter": 1,
+             "period_end": "2024-03-31", "operating_income": "10"},
+            {"company_id": "company", "fiscal_year": 2024, "fiscal_quarter": 2,
+             "period_end": "2024-06-30", "operating_income": "20"},
+            {"company_id": "company", "fiscal_year": 2024, "fiscal_quarter": 3,
+             "period_end": "2024-10-01", "operating_income": "30"},
+            {"company_id": "company", "fiscal_year": 2024, "fiscal_quarter": 4,
+             "period_end": "2024-12-31", "operating_income": "40"},
+        ])
+        result = calculate_company_price_gaps(
+            company_id="company",
+            operating_income=ops,
+            prices=[QuarterlyAdjustedPrice(
+                "company", MarketQuarter(2024, 4), date(2024, 12, 31), Decimal("100")
+            )],
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].ttm_operating_income, Decimal("100"))
+        self.assertEqual(result[0].gap_points, Decimal("0"))
 
 
 class CompanyPriceGapIntegrationContractTests(unittest.TestCase):
