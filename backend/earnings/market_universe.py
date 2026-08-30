@@ -1,9 +1,4 @@
-"""Point-in-time quarterly market-cap universe selection.
-
-Daily market-cap snapshots are durable source data.  Market earnings analysis
-uses the last complete snapshot observed inside each calendar quarter; it must
-never project today's constituents backwards into periods with no snapshot.
-"""
+"""Quarterly market-cap universe selection with historical fallback."""
 
 from __future__ import annotations
 
@@ -55,5 +50,36 @@ def quarterly_universes_from_rows(
             period=period,
             observed_on=next(iter(dates)),
             company_ids=frozenset(companies),
+        )
+    return result
+
+
+def backfill_before_earliest_snapshot(
+    universes_by_period: Mapping[MarketQuarter, QuarterlyUniverse],
+    periods: Iterable[MarketQuarter],
+) -> dict[MarketQuarter, QuarterlyUniverse]:
+    """Fill only pre-history with the oldest known ranked universe.
+
+    Actual point-in-time snapshots remain authoritative wherever available.
+    Periods strictly earlier than the oldest snapshot reuse that oldest
+    constituent set, giving the historical earnings backfill a stable universe
+    until real market-cap snapshots begin accumulating.
+    """
+
+    result = dict(universes_by_period)
+    if not result:
+        return result
+
+    earliest_period = min(result, key=lambda period: (period.year, period.quarter))
+    earliest = result[earliest_period]
+    earliest_key = (earliest_period.year, earliest_period.quarter)
+    for period in periods:
+        if (period.year, period.quarter) >= earliest_key or period in result:
+            continue
+        result[period] = QuarterlyUniverse(
+            index_id=earliest.index_id,
+            period=period,
+            observed_on=earliest.observed_on,
+            company_ids=earliest.company_ids,
         )
     return result
