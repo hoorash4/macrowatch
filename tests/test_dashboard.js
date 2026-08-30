@@ -140,6 +140,7 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(source, /point_in_time_market_cap_snapshot/);
   assert.match(source, /korea-earnings-line--average/);
   assert.match(html, /기업당 평균 금액 \(좌축\)/);
+  assert.match(html, /증가율·델타는 기업당 평균 기준 \(우축\)/);
   assert.match(html, /기업당 단순평균/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
