@@ -83,6 +83,27 @@ class MarketEarningsBreadthTests(unittest.TestCase):
         self.assertEqual(result.breadth_delta_comparable_count, 1)
         self.assertEqual(result.breadth_delta_pp, Decimal("-50"))
 
+    def test_breadth_delta_coverage_uses_previous_quarters_own_yoy_pair(self):
+        rows = [
+            observation("current", 2025, 2, 10),
+            observation("current", 2026, 2, 20),
+            observation("previous", 2025, 1, 10),
+            observation("previous", 2026, 1, 15),
+        ]
+        result = calculate_market_earnings_breadth(
+            index_id="SP100",
+            target=MarketQuarter(2026, 2),
+            universe_company_ids=["current"],
+            prior_universe_company_ids=["current"],
+            previous_universe_company_ids=["previous"],
+            observations=rows,
+        )
+        # The previous quarter's cohort need not exist in the target quarter's
+        # YoY baseline. Coverage must use 2026Q1/2025Q1, not 2025Q2/2025Q1.
+        self.assertEqual(result.breadth_delta_comparable_count, 1)
+        self.assertEqual(result.breadth_delta_company_coverage_pct, Decimal("100"))
+        self.assertEqual(result.breadth_delta_op_coverage_pct, Decimal("100"))
+
     def test_negative_offset_is_not_capped_at_one_hundred_percent(self):
         rows = [
             observation("up", 2025, 2, 100), observation("up", 2026, 2, 110),

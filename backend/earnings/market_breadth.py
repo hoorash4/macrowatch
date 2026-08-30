@@ -304,13 +304,13 @@ def calculate_market_earnings_breadth(
     delta_population_abs = sum((
         abs(value(company_id, period))
         for company_id in previous_universe
-        for period in (prior, previous_prior)
+        for period in (previous, previous_prior)
         if (company_id, period) in rows_by_key
     ), Decimal(0))
     delta_comparable_abs = sum((
         abs(value(company_id, period))
         for company_id in previous_comparable
-        for period in (prior, previous_prior)
+        for period in (previous, previous_prior)
     ), Decimal(0))
 
     black_turn_count = sum(
