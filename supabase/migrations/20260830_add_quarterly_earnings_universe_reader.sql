@@ -50,3 +50,12 @@ alter table public.earnings_market_quarterly_metrics
 
 comment on table public.earnings_market_quarterly_metrics is
   'Point-in-time market-cap constituent aggregates; each quarter uses that quarter''s actual ranked universe.';
+
+-- Remove only recalculable derivatives produced by the superseded
+-- current-membership reconstruction. Canonical company financials, prices and
+-- point-in-time universe snapshots are deliberately untouched.
+delete from public.earnings_market_quarterly_metrics
+where universe_basis <> 'point_in_time_market_cap_snapshot';
+
+delete from public.earnings_market_quarterly_breadth
+where universe_basis <> 'point_in_time_market_cap_snapshot';
