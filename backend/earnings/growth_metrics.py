@@ -24,10 +24,18 @@ class QuarterlyFinancial:
     consolidation_scope: str
     canonical_version: int
     values: Mapping[str, Decimal | None]
+    market_year: int | None = None
+    market_quarter: int | None = None
 
     @property
     def ordinal(self) -> int:
         return self.fiscal_year * 4 + self.fiscal_quarter - 1
+
+    @property
+    def market_ordinal(self) -> int:
+        year = self.market_year if self.market_year is not None else self.fiscal_year
+        quarter = self.market_quarter if self.market_quarter is not None else self.fiscal_quarter
+        return year * 4 + quarter - 1
 
 
 @dataclass
@@ -92,6 +100,8 @@ def financials_from_rows(rows: Iterable[Mapping[str, Any]]) -> list[QuarterlyFin
             consolidation_scope=str(row["consolidation_scope"]),
             canonical_version=int(row["canonical_version"]),
             values={metric: _decimal(row.get(metric)) for metric in METRICS},
+            market_year=int(row["market_year"]) if row.get("market_year") is not None else None,
+            market_quarter=int(row["market_quarter"]) if row.get("market_quarter") is not None else None,
         ))
     return financials
 

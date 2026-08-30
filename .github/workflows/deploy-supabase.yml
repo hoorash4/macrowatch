@@ -103,6 +103,8 @@ jobs:
             --file supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260830_add_market_earnings_analysis.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260830_add_quarterly_earnings_universe_reader.sql
 
       - name: Deploy Edge Functions
         run: |

@@ -290,7 +290,7 @@ class SupabaseEarningsStore:
                     endpoint,
                     params={
                         "select": (
-                            "company_id,fiscal_year,fiscal_quarter,period_end,revenue,"
+                            "company_id,fiscal_year,fiscal_quarter,market_year,market_quarter,period_end,revenue,"
                             "operating_income,net_income,currency,"
                             "consolidation_scope,canonical_version"
                         ),
@@ -341,6 +341,13 @@ class SupabaseEarningsStore:
             if len(payload) < page_size:
                 return rows
             offset += page_size
+
+    def list_quarterly_index_snapshots(self) -> list[dict[str, Any]]:
+        """Return the final complete market-cap snapshot inside each quarter."""
+        result = self._rpc("list_quarterly_earnings_universes", {})
+        if not isinstance(result, list):
+            raise EarningsStoreError("Quarterly earnings universe response is not an array.")
+        return [row for row in result if isinstance(row, dict)]
 
     def list_current_price_companies(self) -> list[dict[str, Any]]:
         result = self._rpc("list_current_earnings_price_companies", {})

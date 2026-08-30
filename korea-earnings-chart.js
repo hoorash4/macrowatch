@@ -47,7 +47,7 @@
     const latest = points.at(-1);
     if (!element || !latest) return;
     const metric = latest.metrics[state.metric];
-    element.innerHTML = `<strong>${LABELS[state.metric]} ${periodLabel(latest)}</strong><span>증가율 ${formatSigned(metric.yoyPct, '%')}</span><span>델타 ${formatSigned(metric.yoyDeltaPp, '%p')}</span><span>동일기업 ${metric.coverage}/${latest.universeCount}사</span><span>현재 구성 종목 기준</span>`;
+    element.innerHTML = `<strong>${LABELS[state.metric]} ${periodLabel(latest)}</strong><span>증가율 ${formatSigned(metric.yoyPct, '%')}</span><span>델타 ${formatSigned(metric.yoyDeltaPp, '%p')}</span><span>실적 반영 ${metric.coverage}/${latest.universeCount}사</span><span>해당 분기 시총 순위 기준</span>`;
   }
 
   function render() {
@@ -96,6 +96,7 @@
       .from('earnings_market_quarterly_metrics')
       .select('fiscal_year,fiscal_quarter,metric,universe_company_count,comparable_company_count,current_total,yoy_pct,yoy_state,yoy_delta_pp')
       .eq('index_id', 'KOSPI100')
+      .eq('universe_basis', 'point_in_time_market_cap_snapshot')
       .order('fiscal_year').order('fiscal_quarter').order('metric').range(from, to));
     if (response.error) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 100 집계 실적을 불러오지 못했습니다.</div>'; return; }
     state.series = seriesFromMetricRows(response.data || []);

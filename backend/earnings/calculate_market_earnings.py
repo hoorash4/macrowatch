@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timezone
 import json
 
@@ -16,6 +15,7 @@ from earnings.market_metrics import (
     CALCULATION_VERSION,
     calculate_market_metric_history,
 )
+from earnings.market_universe import quarterly_universes_from_rows
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
@@ -31,14 +31,15 @@ def main() -> None:
     store = SupabaseEarningsStore.from_env()
     source_rows = store.list_all_quarterly_financials()
     financials = financials_from_rows(source_rows)
-    memberships = store.list_current_index_memberships()
-    universe_by_index: dict[str, set[str]] = defaultdict(set)
-    for membership in memberships:
-        universe_by_index[str(membership["index_id"])].add(str(membership["company_id"]))
+    snapshot_rows = store.list_quarterly_index_snapshots()
+    universes_by_index = quarterly_universes_from_rows(snapshot_rows)
 
     observations = [OperatingIncomeObservation(
         company_id=row.company_id,
-        period=MarketQuarter(row.fiscal_year, row.fiscal_quarter),
+        period=MarketQuarter(
+            row.market_year if row.market_year is not None else row.fiscal_year,
+            row.market_quarter if row.market_quarter is not None else row.fiscal_quarter,
+        ),
         operating_income=row.values.get("operating_income"),
         currency=row.currency,
         consolidation_scope=row.consolidation_scope,
@@ -48,13 +49,13 @@ def main() -> None:
     metric_records: list[dict] = []
     breadth_records: list[dict] = []
     for index_id, currency in INDEX_CURRENCIES.items():
-        universe = universe_by_index.get(index_id, set())
-        if not universe:
+        quarterly_universes = universes_by_index.get(index_id, {})
+        if not quarterly_universes:
             continue
         for result in calculate_market_metric_history(
             index_id=index_id,
             currency=currency,
-            universe_company_ids=universe,
+            universes_by_period=quarterly_universes,
             financials=financials,
         ):
             record = result.as_record()
@@ -69,7 +70,10 @@ def main() -> None:
         ]
         for result in calculate_market_earnings_history(
             index_id=index_id,
-            universe_company_ids=universe,
+            universes_by_period={
+                period: universe.company_ids
+                for period, universe in quarterly_universes.items()
+            },
             observations=currency_observations,
         ):
             record = result.as_record()
@@ -84,7 +88,8 @@ def main() -> None:
     stored_breadth = store.upsert_market_earnings_breadth(breadth_records)
     print(json.dumps({
         "ok": True,
-        "indices": len(universe_by_index),
+        "indices": len(universes_by_index),
+        "quarterly_snapshots": sum(len(rows) for rows in universes_by_index.values()),
         "source_quarters": len(source_rows),
         "stored_metric_rows": stored_metrics,
         "stored_breadth_rows": stored_breadth,

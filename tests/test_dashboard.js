@@ -121,8 +121,9 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(html, /data-korea-earnings-metric="revenue"/);
   assert.match(html, /data-korea-earnings-metric="operating_income"/);
   assert.match(html, /data-korea-earnings-metric="net_income"/);
-  assert.match(html, /동일기업 기준으로 합산/);
+  assert.match(html, /각 분기 당시 KOSPI 시가총액 상위 100개/);
   assert.match(source, /earnings_market_quarterly_metrics/);
+  assert.match(source, /point_in_time_market_cap_snapshot/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
   assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);

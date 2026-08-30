@@ -64,7 +64,7 @@ class MarketEarningsBreadthTests(unittest.TestCase):
         self.assertEqual(result.aggregate_turn, "black_turn")
         self.assertEqual(result.net_op_change, Decimal("40"))
 
-    def test_breadth_delta_uses_only_four_period_common_cohort(self):
+    def test_breadth_delta_compares_each_periods_point_in_time_breadth(self):
         rows = [
             observation("complete", 2025, 1, 10), observation("complete", 2025, 2, 10),
             observation("complete", 2026, 1, 20), observation("complete", 2026, 2, 5),
@@ -78,10 +78,10 @@ class MarketEarningsBreadthTests(unittest.TestCase):
         )
         # Both companies improve in the headline current-quarter breadth.
         self.assertEqual(result.earnings_breadth_pct, Decimal("50.0"))
-        # Only the complete company can compare both YoY breadth observations:
-        # previous quarter improved, current quarter deteriorated => -100%p.
+        # Current-quarter breadth is 50%; the previous point-in-time universe's
+        # available breadth was 100%, so the actual market breadth delta is -50%p.
         self.assertEqual(result.breadth_delta_comparable_count, 1)
-        self.assertEqual(result.breadth_delta_pp, Decimal("-100"))
+        self.assertEqual(result.breadth_delta_pp, Decimal("-50"))
 
     def test_negative_offset_is_not_capped_at_one_hundred_percent(self):
         rows = [
@@ -118,7 +118,7 @@ class MarketEarningsBreadthTests(unittest.TestCase):
             index_id="SP100", target=MarketQuarter(2026, 1),
             universe_company_ids=["company"], observations=rows,
         )
-        self.assertEqual(result.as_record()["company_coverage_pct"], "0")
+        self.assertEqual(result.as_record()["company_coverage_pct"], "100")
 
     def test_history_reconstructs_only_quarters_with_a_yoy_baseline(self):
         rows = [
@@ -129,7 +129,12 @@ class MarketEarningsBreadthTests(unittest.TestCase):
         ]
         results = calculate_market_earnings_history(
             index_id="KOSPI100",
-            universe_company_ids=["company"],
+            universes_by_period={
+                MarketQuarter(2025, 1): ["company"],
+                MarketQuarter(2025, 2): ["company"],
+                MarketQuarter(2026, 1): ["company"],
+                MarketQuarter(2026, 2): ["company"],
+            },
             observations=rows,
         )
         self.assertEqual(
@@ -137,9 +142,23 @@ class MarketEarningsBreadthTests(unittest.TestCase):
             [(2026, 1), (2026, 2)],
         )
         self.assertTrue(all(
-            result.universe_basis == "current_snapshot_reconstruction"
+            result.universe_basis == "point_in_time_market_cap_snapshot"
             for result in results
         ))
+
+    def test_aggregate_totals_use_different_point_in_time_universes(self):
+        rows = [
+            observation("old", 2025, 2, 100), observation("old", 2026, 2, 999),
+            observation("new", 2025, 2, 999), observation("new", 2026, 2, 150),
+        ]
+        result = calculate_market_earnings_breadth(
+            index_id="KOSPI100", target=MarketQuarter(2026, 2),
+            universe_company_ids=["new"], prior_universe_company_ids=["old"],
+            observations=rows,
+        )
+        self.assertEqual(result.current_total_op, Decimal("150"))
+        self.assertEqual(result.prior_total_op, Decimal("100"))
+        self.assertEqual(result.op_growth_pct, Decimal("50.0"))
 
 
 if __name__ == "__main__":
