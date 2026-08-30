@@ -35,11 +35,37 @@ INDEX_CURRENCIES = {
 HISTORY_START_YEAR = 2002
 
 
+def _latest_market_quarter_rows(rows: list[dict]) -> list[dict]:
+    """Select one canonical fiscal row per company and calendar quarter.
+
+    A non-calendar fiscal year can place two fiscal period ends inside one
+    calendar quarter. Market aggregates need one observation per company, so
+    the latest period end known in that quarter is authoritative. Company-level
+    fiscal history remains untouched and continues to retain every quarter.
+    """
+
+    selected: dict[tuple[str, int, int], dict] = {}
+    selected_order: dict[tuple[str, int, int], tuple[str, int, int]] = {}
+    for row in rows:
+        market_year = int(row.get("market_year") or row["fiscal_year"])
+        market_quarter = int(row.get("market_quarter") or row["fiscal_quarter"])
+        key = (str(row["company_id"]), market_year, market_quarter)
+        order = (
+            str(row.get("period_end") or ""),
+            int(row["fiscal_year"]),
+            int(row["fiscal_quarter"]),
+        )
+        if key not in selected or order > selected_order[key]:
+            selected[key] = row
+            selected_order[key] = order
+    return list(selected.values())
+
+
 def main() -> None:
     store = SupabaseEarningsStore.from_env()
     source_rows = store.list_all_quarterly_financials()
     financials = [
-        row for row in financials_from_rows(source_rows)
+        row for row in financials_from_rows(_latest_market_quarter_rows(source_rows))
         if (row.market_year if row.market_year is not None else row.fiscal_year) >= HISTORY_START_YEAR
     ]
     snapshot_rows = store.list_quarterly_index_snapshots()
@@ -126,6 +152,7 @@ def main() -> None:
         "indices": len(universes_by_index),
         "quarterly_snapshots": sum(len(rows) for rows in universes_by_index.values()),
         "source_quarters": len(source_rows),
+        "selected_market_quarters": len(financials),
         "stored_metric_rows": stored_metrics,
         "stored_breadth_rows": stored_breadth,
     }, ensure_ascii=False), flush=True)
