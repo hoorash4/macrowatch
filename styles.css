@@ -978,7 +978,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-legend-line--raw { height:1px; background:#94a3b8; opacity:.55; }
 .policy-expectation-legend-line--average { background:#475569; }
 
-/* KOSPI 시총 상위 100개 합산 실적은 지표 탭과 두 모멘텀 선을 한 카드에서 비교합니다. */
+/* KOSPI 시총 상위기업 평균 금액과 두 모멘텀 선을 한 카드에서 비교합니다. */
 .korea-earnings-toolbar { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.1rem .15rem .45rem; }
 .korea-earnings-tabs { display:flex; gap:.35rem; }
 .korea-earnings-tabs button { min-width:4.9rem; padding:.42rem .75rem; border:1px solid #cbd5e1; border-radius:.55rem; background:#fff; color:#64748b; font-size:.78rem; font-weight:750; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
@@ -987,7 +987,9 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem .9rem; min-height:2.15rem; padding:.35rem .25rem .5rem; color:#64748b; font-size:.75rem; }
 .korea-earnings-summary strong { color:#0f172a; font-size:1rem; font-weight:800; }
 .korea-earnings-chart-layout { display:flex; width:100%; min-width:0; }
-.korea-earnings-y-axis { width:52px; height:320px; flex:none; background:#f8fafc; }
+.korea-earnings-y-axis { height:320px; flex:none; background:#f8fafc; }
+.korea-earnings-y-axis--amount { width:64px; }
+.korea-earnings-y-axis--rate { width:52px; }
 .korea-earnings-chart-frame { position:relative; min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
 .korea-earnings-chart-svg { display:block; min-width:100%; height:320px; }
 .korea-earnings-grid { stroke:#e2e8f0; stroke-width:1; }
@@ -995,15 +997,18 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-axis-label { fill:#64748b; font-size:9px; font-weight:650; }
 .korea-earnings-period-label { fill:#64748b; font-size:10px; font-weight:650; }
 .korea-earnings-line { fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.korea-earnings-line--average { stroke:#475569; stroke-width:2.5; }
 .korea-earnings-line--growth { stroke:#2563a8; stroke-width:2.5; }
 .korea-earnings-line--delta { stroke:#b7791f; stroke-width:2.1; stroke-dasharray:6 4; }
 .korea-earnings-point { stroke:#fff; stroke-width:1.25; }
+.korea-earnings-point--average { fill:#475569; }
 .korea-earnings-point--growth { fill:#2563a8; }
 .korea-earnings-point--delta { fill:#b7791f; }
 .korea-earnings-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
 .korea-earnings-cursor-label { opacity:0; fill:#334155; font-size:10px; font-weight:750; paint-order:stroke; stroke:#f8fafc; stroke-width:4; pointer-events:none; }
 .korea-earnings-cursor.is-visible,.korea-earnings-cursor-label.is-visible { opacity:1; }
 .korea-earnings-legend-line { display:inline-block; width:1.25rem; height:2px; }
+.korea-earnings-legend-line--average { background:#475569; }
 .korea-earnings-legend-line--growth { background:#2563a8; }
 .korea-earnings-legend-line--delta { background:repeating-linear-gradient(90deg,#b7791f 0 6px,transparent 6px 10px); }
 @media (max-width:640px) {

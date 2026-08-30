@@ -128,6 +128,7 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   const series = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows(serverRows);
   const latest = series.at(-1).metrics.revenue;
   assert.equal(latest.coverage, 98);
+  assert.equal(latest.currentAverage, 90);
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.yoyDeltaPp, 10);
   assert.match(html, /id="korea-earnings-dashboard"/);
@@ -137,10 +138,14 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(html, /KOSPI 시총 상위기업 평균 실적 모멘텀/);
   assert.match(source, /earnings_market_quarterly_metrics/);
   assert.match(source, /point_in_time_market_cap_snapshot/);
+  assert.match(source, /korea-earnings-line--average/);
+  assert.match(html, /기업당 평균 금액 \(좌축\)/);
+  assert.match(html, /기업당 단순평균/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
   assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);
   assert.match(styles, /\.korea-earnings-line--delta[^}]*stroke-dasharray/);
+  assert.match(styles, /\.korea-earnings-line--average/);
 });
 
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {

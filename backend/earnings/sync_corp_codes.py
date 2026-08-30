@@ -13,6 +13,19 @@ from earnings.open_dart import OpenDartClient
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
+# OpenDART's structured financial-statement APIs officially start in 2015.
+# Keep this as a fixed lower bound instead of a rolling N-year window so older
+# supported quarters are not silently discarded as the calendar advances.
+OPEN_DART_STRUCTURED_START_YEAR = 2015
+
+
+def structured_history_years(as_of_year: int) -> int:
+    """Return the non-rolling OpenDART structured-history window."""
+    if as_of_year < OPEN_DART_STRUCTURED_START_YEAR:
+        raise ValueError("OpenDART structured history starts in 2015.")
+    return as_of_year - OPEN_DART_STRUCTURED_START_YEAR + 1
+
+
 def build_identifier_rows(
     companies: list[dict[str, Any]],
     listed_by_ticker: Mapping[str, DartCorporation],
@@ -47,7 +60,11 @@ def main() -> None:
     unique_companies = validate_collection_universe(
         coverage, companies, company_id_key="id"
     )
-    backfill_queued = store.enqueue_open_dart_backfill(as_of_year=korean_today.year, years=10)
+    history_years = structured_history_years(korean_today.year)
+    backfill_queued = store.enqueue_open_dart_backfill(
+        as_of_year=korean_today.year,
+        years=history_years,
+    )
 
     # Only aggregate counts and stock codes are emitted. Provider URLs, request
     # parameters, headers, and secrets never enter the workflow log.

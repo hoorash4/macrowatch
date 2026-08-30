@@ -10,7 +10,10 @@ sys.path.insert(0, str(ROOT / "backend"))
 from earnings.corp_codes import DartCorporation  # noqa: E402
 from earnings.discover_backfill_filings import filing_window  # noqa: E402
 from earnings.supabase_rest import EarningsStoreError, SupabaseEarningsStore  # noqa: E402
-from earnings.sync_corp_codes import build_identifier_rows  # noqa: E402
+from earnings.sync_corp_codes import (  # noqa: E402
+    build_identifier_rows,
+    structured_history_years,
+)
 
 
 class LeakyStoreSession:
@@ -36,6 +39,12 @@ class RpcHttpErrorSession:
 
 
 class EarningsCorpCodeSyncTests(unittest.TestCase):
+    def test_structured_backfill_keeps_the_official_2015_lower_bound(self) -> None:
+        self.assertEqual(structured_history_years(2026), 12)
+        self.assertEqual(structured_history_years(2030), 16)
+        with self.assertRaises(ValueError):
+            structured_history_years(2014)
+
     def test_historical_filing_window_never_extends_past_today(self) -> None:
         self.assertEqual(
             filing_window([2022, 2023, 2024, 2025, 2026], date(2026, 8, 28)),
