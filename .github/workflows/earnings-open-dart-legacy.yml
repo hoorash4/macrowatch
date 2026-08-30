@@ -24,9 +24,9 @@ permissions:
   contents: read
 
 concurrency:
-  # v3 transitions once to the latency-overlapped archive downloader. Later
-  # v3 runs remain serialized with each other.
-  group: macrowatch-earnings-open-dart-legacy-v3
+  # v4 starts one final latency-overlapped worker after the earlier transition
+  # run finishes; later v4 runs remain serialized with each other.
+  group: macrowatch-earnings-open-dart-legacy-v4
   cancel-in-progress: false
 
 jobs:
