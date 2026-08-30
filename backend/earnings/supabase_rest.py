@@ -176,6 +176,14 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("SEC company list returned an invalid result.")
         return [row for row in result if isinstance(row, dict)]
 
+    def get_current_collection_coverage(self, *, country: str) -> dict[str, Any]:
+        result = self._rpc("get_current_earnings_collection_coverage", {
+            "p_country": country,
+        })
+        if not isinstance(result, dict):
+            raise EarningsStoreError("Earnings collection coverage returned an invalid result.")
+        return result
+
     def upsert_sec_company_quarters(
         self,
         *,

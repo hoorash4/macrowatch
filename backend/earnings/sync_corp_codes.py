@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
 from earnings.corp_codes import DartCorporation, listed_corporations, parse_corp_code_archive
+from earnings.collection_coverage import validate_collection_universe
 from earnings.open_dart import OpenDartClient
 from earnings.supabase_rest import SupabaseEarningsStore
 
@@ -42,6 +43,10 @@ def main() -> None:
     korean_today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     rows, unresolved = build_identifier_rows(companies, listed)
     sync_result = store.sync_open_dart_identifiers(rows, valid_from=korean_today.isoformat())
+    coverage = store.get_current_collection_coverage(country="KR")
+    unique_companies = validate_collection_universe(
+        coverage, companies, company_id_key="id"
+    )
     backfill_queued = store.enqueue_open_dart_backfill(as_of_year=korean_today.year, years=10)
 
     # Only aggregate counts and stock codes are emitted. Provider URLs, request
@@ -49,6 +54,7 @@ def main() -> None:
     print(json.dumps({
         "ok": True,
         "tracked_companies": len(companies),
+        "unique_companies": unique_companies,
         "dart_identifiers_matched": int(sync_result.get("matched") or 0),
         "unresolved_count": len(unresolved),
         "unresolved_tickers": unresolved,

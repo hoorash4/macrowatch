@@ -18,6 +18,7 @@ UNIVERSE_FUNCTION = ROOT / "supabase/functions/earnings-universe/index.ts"
 KIS_CLIENT = ROOT / "supabase/functions/_shared/kis-client.ts"
 UNIVERSE_SOURCES = ROOT / "supabase/functions/_shared/earnings-universe-sources.ts"
 CONTRACT = ROOT / "docs/earnings-momentum-data-contract.md"
+DYNAMIC_COLLECTION_MIGRATION = ROOT / "supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -38,6 +39,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.kis_client = KIS_CLIENT.read_text(encoding="utf-8")
         cls.universe_sources = UNIVERSE_SOURCES.read_text(encoding="utf-8")
         cls.contract = CONTRACT.read_text(encoding="utf-8")
+        cls.dynamic_collection_migration = DYNAMIC_COLLECTION_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
         self.assertIn("public.earnings_filings", self.migration)
@@ -86,6 +88,10 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("비어 있는 모든 분기를 기간 제한 없이 자동 백필", self.contract)
         self.assertIn("7년 만의 재진입이면 최대 7년의 공백", self.contract)
         self.assertIn("소속 기간을 기준으로 계산", self.contract)
+        self.assertIn("get_current_earnings_collection_coverage", self.dynamic_collection_migration)
+        self.assertIn("least(", self.dynamic_collection_migration)
+        self.assertIn("period_index + 1", self.dynamic_collection_migration)
+        self.assertIn(DYNAMIC_COLLECTION_MIGRATION.name, self.deploy_workflow)
 
     def test_ingestion_jobs_are_resumable_and_service_role_only(self) -> None:
         self.assertIn("public.earnings_collection_checkpoints", self.ops_migration)

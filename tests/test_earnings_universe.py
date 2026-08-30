@@ -14,9 +14,50 @@ from earnings.universe import (  # noqa: E402
     backfill_periods,
     plan_universe_sync,
 )
+from earnings.collection_coverage import (  # noqa: E402
+    CollectionCoverageError,
+    validate_collection_universe,
+)
 
 
 class EarningsUniverseTests(unittest.TestCase):
+    def test_collection_union_is_dynamic_and_deduplicates_cross_index_companies(self):
+        coverage = {
+            "indices": [
+                {"index_id": "NASDAQ100", "target_count": 100, "active_membership_count": 100},
+                {"index_id": "SP100", "target_count": 100, "active_membership_count": 100},
+            ],
+            "unique_companies": 3,
+            "missing_identifier_tickers": [],
+        }
+        companies = [
+            {"company_id": "one", "cik": "1"},
+            {"company_id": "two", "cik": "2"},
+            {"company_id": "two", "cik": "old-2"},
+            {"company_id": "three", "cik": "3"},
+        ]
+        self.assertEqual(
+            validate_collection_universe(coverage, companies, company_id_key="company_id"),
+            3,
+        )
+
+    def test_collection_union_fails_closed_on_membership_or_identifier_gap(self):
+        coverage = {
+            "indices": [
+                {"index_id": "KOSPI100", "target_count": 100, "active_membership_count": 99},
+            ],
+            "unique_companies": 99,
+            "missing_identifier_tickers": [],
+        }
+        with self.assertRaisesRegex(CollectionCoverageError, "99/100"):
+            validate_collection_universe(coverage, [], company_id_key="id")
+
+        coverage["indices"][0]["active_membership_count"] = 100
+        coverage["unique_companies"] = 100
+        coverage["missing_identifier_tickers"] = ["005930"]
+        with self.assertRaisesRegex(CollectionCoverageError, "005930"):
+            validate_collection_universe(coverage, [], company_id_key="id")
+
     def test_snapshot_classifies_new_reentry_cross_index_and_exit(self):
         companies = {
             "000001": CompanyState("company-reentry", "000001", True, False, (2019, "11011")),
