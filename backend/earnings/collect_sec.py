@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from earnings.collection_coverage import validate_collection_universe
 from earnings.sec_edgar import SecCompanyFactsMirrorClient, SecEdgarClient
 from earnings.sec_parser import METRIC_ALIASES, canonical_sec_quarters
 from earnings.supabase_rest import SupabaseEarningsStore
@@ -53,7 +54,11 @@ def main() -> None:
     client = SecEdgarClient.from_env()
     today = datetime.now(ZoneInfo("America/New_York")).date()
     companies = store.list_current_sec_companies()
-    totals = Counter(companies=len(companies))
+    coverage = store.get_current_collection_coverage(country="US")
+    unique_companies = validate_collection_universe(
+        coverage, companies, company_id_key="company_id"
+    )
+    totals = Counter(companies=len(companies), unique_companies=unique_companies)
     errors: Counter[str] = Counter()
     mirror_client: SecCompanyFactsMirrorClient | None = None
     sec_blocked = False
@@ -62,11 +67,13 @@ def main() -> None:
         company_id = str(company.get("company_id") or "").strip()
         cik = str(company.get("cik") or "").strip()
         ticker = str(company.get("ticker") or "").strip()
+        first_collection_year = int(company.get("first_collection_year") or today.year - 9)
+        history_years = max(10, today.year - first_collection_year + 1)
         try:
             if sec_blocked:
                 if mirror_client is None:
                     mirror_client = SecCompanyFactsMirrorClient()
-                payload = mirror_client.fetch_company_facts(cik, first_year=today.year - 9)
+                payload = mirror_client.fetch_company_facts(cik, first_year=first_collection_year)
                 totals["mirror_companies"] += 1
             else:
                 try:
@@ -79,13 +86,13 @@ def main() -> None:
                     # remaining companies on the nightly SEC-derived mirror.
                     sec_blocked = True
                     mirror_client = SecCompanyFactsMirrorClient()
-                    payload = mirror_client.fetch_company_facts(cik, first_year=today.year - 9)
+                    payload = mirror_client.fetch_company_facts(cik, first_year=first_collection_year)
                     totals["mirror_companies"] += 1
             rows, gaps = canonical_sec_quarters(
                 payload,
                 cik=cik,
                 as_of_year=today.year,
-                years=10,
+                years=history_years,
             )
             if (
                 mirror_client is not None
@@ -95,13 +102,13 @@ def main() -> None:
                 )
             ):
                 expanded_payload = mirror_client.fetch_company_facts(
-                    cik, first_year=today.year - 9, expanded=True
+                    cik, first_year=first_collection_year, expanded=True
                 )
                 expanded_rows, expanded_gaps = canonical_sec_quarters(
                     expanded_payload,
                     cik=cik,
                     as_of_year=today.year,
-                    years=10,
+                    years=history_years,
                 )
                 print(json.dumps({
                     "event": "sec_expanded_metric_scan",

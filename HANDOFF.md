@@ -231,3 +231,24 @@ git diff --check
 - FOMC 프롬프트 6개 안정성 개선안과 `change_bps` 처리 방식을 사용자의 최종 승인 후 반영해야 한다.
 - FOMC 프롬프트 원문을 먼저 확보해야 한다.
 - 프롬프트 수정과 코드 정규화는 구분해서 사용자에게 설명하고 승인 범위를 넘기지 않는다.
+
+## 9. 2026-08-30 실적 유니버스 자동화
+
+- 미국 수집 대상 수를 162개로 고정하지 않는다. 매 실행마다 현재 `SP100`과
+  `NASDAQ100` 멤버십을 각각 100개인지 검증한 뒤 `company_id` 합집합을 계산한다.
+- 한 기업이 두 지수에 있거나 복수 SEC CIK를 보유해도 고유 기업은 한 번으로
+  계산한다. 공급자 식별자별 조회는 모두 수행한다.
+- 한국은 `KOSPI100=100`, `KOSDAQ50=50`을 각각 검증한다. 시장 이전 시 같은
+  종목코드의 기존 `company_id`와 재무 이력을 유지한다.
+- 한 지수에서만 탈락하고 다른 지수에 남은 기업은 계속 수집한다. 모든 추적
+  지수에서 탈락한 기업만 정기 수집을 멈추며 기존 데이터는 삭제하지 않는다.
+- 재진입 기업의 마지막 완전 분기가 일반 10년 창보다 오래됐으면 그 다음
+  분기까지 조회 시작점을 자동 확장한다. 한국은 해당 공백 작업을 큐에 넣고,
+  미국은 SEC 조회 연수를 기업별로 확장한다.
+- `get_current_earnings_collection_coverage` RPC와
+  `backend/earnings/collection_coverage.py`가 지수별 멤버십 수, 공급자 식별자,
+  실제 수집기 입력의 동적 합집합을 대조한다. 불일치하면 수집 전에 실패하여
+  GitHub Actions 실패 이메일 대상이 된다.
+- 관련 마이그레이션:
+  `supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql`
+- 관련 테스트: `tests/test_earnings_universe.py`, `tests/test_earnings_foundation.py`

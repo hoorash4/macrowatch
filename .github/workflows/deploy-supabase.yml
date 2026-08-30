@@ -99,6 +99,8 @@ jobs:
             --file supabase/migrations/20260829_allow_partial_open_dart_financials.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260829_repair_financial_company_revenues.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql
 
       - name: Deploy Edge Functions
         run: |
