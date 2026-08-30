@@ -29,11 +29,19 @@ INDEX_CURRENCIES = {
     "NASDAQ100": "USD",
 }
 
+# Long-cycle analysis needs the post-dot-com era rather than a rolling ten-year
+# window. Historical collectors may use different source methods by era, but
+# market aggregates are kept from 2002Q1 onward whenever source data exists.
+HISTORY_START_YEAR = 2002
+
 
 def main() -> None:
     store = SupabaseEarningsStore.from_env()
     source_rows = store.list_all_quarterly_financials()
-    financials = financials_from_rows(source_rows)
+    financials = [
+        row for row in financials_from_rows(source_rows)
+        if (row.market_year if row.market_year is not None else row.fiscal_year) >= HISTORY_START_YEAR
+    ]
     snapshot_rows = store.list_quarterly_index_snapshots()
     universes_by_index = quarterly_universes_from_rows(snapshot_rows)
 
@@ -105,6 +113,7 @@ def main() -> None:
     stored_breadth = store.upsert_market_earnings_breadth(breadth_records)
     print(json.dumps({
         "ok": True,
+        "history_start_year": HISTORY_START_YEAR,
         "indices": len(universes_by_index),
         "quarterly_snapshots": sum(len(rows) for rows in universes_by_index.values()),
         "source_quarters": len(source_rows),
