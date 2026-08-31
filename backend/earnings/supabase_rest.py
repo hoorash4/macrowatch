@@ -323,6 +323,7 @@ class SupabaseEarningsStore:
                             "consolidation_scope,canonical_version"
                         ),
                         "order": "company_id.asc,fiscal_year.asc,fiscal_quarter.asc",
+                        "quality_status": "eq.complete",
                         "limit": str(page_size),
                         "offset": str(offset),
                     },
@@ -455,6 +456,21 @@ class SupabaseEarningsStore:
             "earnings_market_quarterly_breadth", rows,
             "index_id,market_year,market_quarter",
         )
+
+    def prune_growth_metrics(self) -> int:
+        result = self._rpc("prune_invalid_earnings_growth_metrics", {})
+        if not isinstance(result, int):
+            raise EarningsStoreError("Growth metric pruning returned an invalid result.")
+        return result
+
+    def prune_market_earnings_derivatives(self, *, calculated_at: str) -> dict[str, int]:
+        result = self._rpc(
+            "prune_stale_earnings_market_derivatives",
+            {"p_calculated_at": calculated_at},
+        )
+        if not isinstance(result, dict):
+            raise EarningsStoreError("Market derivative pruning returned an invalid result.")
+        return {str(key): int(value) for key, value in result.items()}
 
     def get_app_setting(self, key: str) -> dict[str, Any] | None:
         endpoint = f"{self.url}/rest/v1/app_settings"

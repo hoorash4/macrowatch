@@ -146,6 +146,7 @@ def main() -> None:
 
     stored_metrics = store.upsert_market_earnings_metrics(metric_records)
     stored_breadth = store.upsert_market_earnings_breadth(breadth_records)
+    pruned = store.prune_market_earnings_derivatives(calculated_at=calculated_at)
     print(json.dumps({
         "ok": True,
         "history_start_year": HISTORY_START_YEAR,
@@ -155,6 +156,7 @@ def main() -> None:
         "selected_market_quarters": len(financials),
         "stored_metric_rows": stored_metrics,
         "stored_breadth_rows": stored_breadth,
+        "pruned_stale_rows": pruned,
     }, ensure_ascii=False), flush=True)
 
 

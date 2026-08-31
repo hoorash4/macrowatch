@@ -28,6 +28,7 @@ from earnings.open_dart_parser import (
     select_preferred_accounts,
     standalone_quarter_value,
 )
+from earnings.financial_quality import validate_canonical_quarter
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
@@ -151,6 +152,7 @@ class OpenDartFinancialWorker:
         *,
         request_interval_seconds: float = 0.2,
         sleeper: Callable[[float], None] = time.sleep,
+        historical_financials: Iterable[dict[str, Any]] = (),
     ) -> None:
         self.client = client
         self.store = store
@@ -158,6 +160,9 @@ class OpenDartFinancialWorker:
         self.sleeper = sleeper
         self._has_requested = False
         self.error_counts: Counter[str] = Counter()
+        self._history_by_company: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in historical_financials:
+            self._history_by_company[str(row.get("company_id"))].append(row)
 
     def _record_error(self, error: Exception) -> None:
         """Keep actionable diagnostics while force-redacting both credentials."""
@@ -446,7 +451,15 @@ class OpenDartFinancialWorker:
                 quarter, missing = build_canonical_quarter(
                     selected, previous_selected, filed_on=filed_on
                 )
-                outcome = "complete" if quarter is not None and not missing else "review_required"
+                quality_issues = validate_canonical_quarter(
+                    quarter,
+                    self._history_by_company.get(str(job.get("company_id")), ()),
+                )
+                outcome = (
+                    "complete"
+                    if quarter is not None and not missing and not quality_issues
+                    else "review_required"
+                )
                 filing = {
                     "source_filing_id": receipt,
                     "filing_kind": FILING_KIND[report_code],
@@ -462,6 +475,7 @@ class OpenDartFinancialWorker:
                     "metadata": {
                         "report_name": metadata.get("report_name"),
                         "missing_metrics": missing,
+                        "quality_issues": quality_issues,
                         "revenue_method": (
                             "dart_statement_gross_operating_revenue_v2"
                             if selected.get("revenue") is not None
@@ -489,7 +503,12 @@ def main() -> None:
     store = SupabaseEarningsStore.from_env()
     max_batches = max(1, min(int(os.getenv("OPEN_DART_MAX_BATCHES", "5")), 50))
     interval = max(0.0, float(os.getenv("OPEN_DART_REQUEST_INTERVAL_SECONDS", "0.2")))
-    worker = OpenDartFinancialWorker(client, store, request_interval_seconds=interval)
+    worker = OpenDartFinancialWorker(
+        client,
+        store,
+        request_interval_seconds=interval,
+        historical_financials=store.list_all_quarterly_financials(),
+    )
     totals = {"batches": 0, "completed": 0, "review_required": 0, "no_data": 0, "failed": 0}
     for _ in range(max_batches):
         jobs = store.claim_open_dart_jobs(limit=100)

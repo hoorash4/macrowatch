@@ -72,11 +72,13 @@ def main() -> None:
     }
     records = [row for row in all_records if row["company_id"] in dirty_companies]
     stored = store.upsert_growth_metrics(records)
+    pruned = store.prune_growth_metrics()
     summary = {
         "ok": True,
         "source_quarters": len(source_rows),
         "derived_metric_values": len(derived),
         "stored_quarter_rows": stored,
+        "pruned_invalid_rows": pruned,
         "recalculated_companies": len(dirty_companies),
         "companies": len({row["company_id"] for row in source_rows}),
     }
