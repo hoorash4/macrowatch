@@ -207,7 +207,14 @@ def canonical_sec_quarters(
                 continue
             annual = _annual_fact(facts, fiscal_year)
             earlier = [selected[quarter].get(metric) for quarter in range(1, 4)]
-            if annual is not None and all(earlier):
+            # Q4 subtraction is valid only when the annual and all interim
+            # values came from the same ranked SEC concept. Mixing TotalRevenue
+            # with NetRevenue, for example, can manufacture a negative Q4.
+            if (
+                annual is not None
+                and all(earlier)
+                and all(fact.alias_priority == annual.alias_priority for fact in earlier if fact)
+            ):
                 q4_start = max(fact.end for fact in earlier if fact is not None) + timedelta(days=1)
                 if q4_start > annual.end:
                     continue
@@ -227,6 +234,15 @@ def canonical_sec_quarters(
         for quarter in range(1, 5):
             metrics = selected[quarter]
             if set(metrics) != set(METRIC_ALIASES):
+                gaps.append((fiscal_year, quarter))
+                continue
+            # A pre-revenue company can legitimately report zero revenue while
+            # recording expenses and a loss. Negative revenue, or an entirely
+            # zero income statement, is instead treated as an unresolved SEC
+            # fact selection and never published as a canonical quarter.
+            if metrics["revenue"].value < 0 or all(
+                fact.value == 0 for fact in metrics.values()
+            ):
                 gaps.append((fiscal_year, quarter))
                 continue
             representative = max(metrics.values(), key=lambda fact: (fact.filed, fact.accession))

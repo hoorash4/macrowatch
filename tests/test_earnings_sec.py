@@ -97,6 +97,44 @@ class SecEarningsTests(unittest.TestCase):
         self.assertEqual(rows[3]["quarter"]["net_income"], "14")
         self.assertNotIn("eps", rows[0]["quarter"])
 
+    def test_q4_subtraction_refuses_mixed_revenue_concepts(self):
+        payload = company_facts()
+        revenue_rows = payload["facts"]["us-gaap"].pop(
+            "RevenueFromContractWithCustomerExcludingAssessedTax"
+        )["units"]["USD"]
+        payload["facts"]["us-gaap"]["Revenues"] = {
+            "units": {"USD": revenue_rows[:3]}
+        }
+        payload["facts"]["us-gaap"]["SalesRevenueNet"] = {
+            "units": {"USD": [revenue_rows[3]]}
+        }
+        rows, gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2025, years=1,
+        )
+        self.assertNotIn(4, [row["filing"]["fiscal_quarter"] for row in rows])
+        self.assertIn((2025, 4), gaps)
+
+    def test_zero_revenue_loss_is_kept_but_all_zero_or_negative_revenue_is_a_gap(self):
+        payload = company_facts()
+        facts = payload["facts"]["us-gaap"]
+        revenue = facts["RevenueFromContractWithCustomerExcludingAssessedTax"]["units"]["USD"]
+        operating = facts["OperatingIncomeLoss"]["units"]["USD"]
+        net = facts["NetIncomeLoss"]["units"]["USD"]
+        revenue[0]["val"] = 0
+        operating[0]["val"] = -20
+        net[0]["val"] = -10
+        revenue[1]["val"] = -1
+        revenue[2]["val"] = operating[2]["val"] = net[2]["val"] = 0
+        rows, gaps = canonical_sec_quarters(
+            payload, cik="0000000001", as_of_year=2025, years=1,
+        )
+        kept = {row["filing"]["fiscal_quarter"] for row in rows}
+        self.assertIn(1, kept)
+        self.assertNotIn(2, kept)
+        self.assertNotIn(3, kept)
+        self.assertIn((2025, 2), gaps)
+        self.assertIn((2025, 3), gaps)
+
     def test_financial_company_net_interest_revenue_is_a_canonical_top_line(self):
         payload = company_facts()
         payload["facts"]["us-gaap"].pop(

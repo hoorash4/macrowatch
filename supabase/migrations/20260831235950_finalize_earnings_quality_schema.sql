@@ -173,5 +173,32 @@ alter table public.earnings_market_quarterly_metrics
     'insufficient_coverage'
   ));
 
+-- Preserve legitimate pre-revenue companies while blocking canonical rows
+-- that cannot represent a real quarterly income statement.
+create or replace function public.enforce_earnings_canonical_numeric_quality()
+returns trigger language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.revenue < 0
+     or (new.revenue = 0 and new.operating_income = 0 and new.net_income = 0) then
+    new.quality_status := 'review_required';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists earnings_canonical_numeric_quality_trg
+  on public.earnings_quarterly_financials;
+create trigger earnings_canonical_numeric_quality_trg
+before insert or update of revenue, operating_income, net_income, quality_status
+on public.earnings_quarterly_financials
+for each row execute function public.enforce_earnings_canonical_numeric_quality();
+
+revoke all on function public.enforce_earnings_canonical_numeric_quality()
+  from public, anon, authenticated;
+grant execute on function public.enforce_earnings_canonical_numeric_quality()
+  to service_role;
+
 create index if not exists earnings_quarterly_financials_source_filing_idx
   on public.earnings_quarterly_financials (source_filing_id);
