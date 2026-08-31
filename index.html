@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=139">
+  <link rel="stylesheet" href="styles.css?v=140">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -333,28 +333,35 @@
           <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOSPI TOP 100 · AVERAGE EARNINGS</p><h2 id="korea-earnings-title" class="analysis-card-title">KOSPI 시총 상위기업 평균 실적 모멘텀</h2></div>
         </div>
         <p class="analysis-card-description">각 분기의 대상 기업 중 실적 자료가 있는 기업의 매출과 이익을 기업당 단순평균으로 표시합니다.</p>
-        <p class="analysis-card-description">회색선은 평균 금액, 파란 실선은 전년동기 증가율, 점선은 직전 분기 대비 증가율 변화폭입니다. OpenDART 원화 공시 실적만 사용합니다.</p>
+        <p class="analysis-card-description">본차트는 평균 금액, 아래 보조차트는 전년동기 증가율과 증가율 델타를 분리해 표시합니다. OpenDART 원화 공시 실적만 사용합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="korea-earnings-toolbar">
-            <div class="korea-earnings-tabs" role="tablist" aria-label="평균 실적 지표 선택">
-              <button type="button" role="tab" aria-selected="true" class="is-active" data-korea-earnings-metric="revenue">매출</button>
-              <button type="button" role="tab" aria-selected="false" data-korea-earnings-metric="operating_income">영업이익</button>
-              <button type="button" role="tab" aria-selected="false" data-korea-earnings-metric="net_income">순이익</button>
-            </div>
             <div class="analysis-chart-range-controls" data-korea-earnings-ranges aria-label="평균 실적 그래프 조회 기간">
               <button type="button" data-korea-earnings-range="5" class="is-active">5년</button><button type="button" data-korea-earnings-range="10">10년</button><button type="button" data-korea-earnings-range="max">MAX</button>
             </div>
           </div>
           <div id="korea-earnings-summary" class="korea-earnings-summary" aria-live="polite"></div>
-          <div id="korea-earnings-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 시총 상위기업 평균 실적을 불러오는 중입니다.</div></div>
+          <div class="korea-earnings-chart-stack">
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--main" aria-labelledby="korea-earnings-amount-title">
+              <div class="korea-earnings-chart-heading"><strong id="korea-earnings-amount-title">기업당 평균 실적</strong><span>원</span></div>
+              <div id="korea-earnings-amount-chart" class="korea-earnings-chart"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">KOSPI 시총 상위기업 평균 실적을 불러오는 중입니다.</div></div>
+            </section>
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="korea-earnings-growth-title">
+              <div class="korea-earnings-chart-heading"><strong id="korea-earnings-growth-title">전년동기 증가율</strong><span>%</span></div>
+              <div id="korea-earnings-growth-chart" class="korea-earnings-chart"></div>
+            </section>
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="korea-earnings-delta-title">
+              <div class="korea-earnings-chart-heading"><strong id="korea-earnings-delta-title">증가율 델타</strong><span>%p</span></div>
+              <div id="korea-earnings-delta-chart" class="korea-earnings-chart"></div>
+            </section>
+          </div>
         </div>
         <div class="policy-expectation-legend" aria-label="KOSPI 상위기업 평균 실적 범례">
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--average"></i>기업당 평균 금액 (좌축)</span>
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--growth"></i>전년동기 증가율</span>
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--delta"></i>증가율 델타 (%p)</span>
-          <span class="ml-auto">증가율·델타는 기업당 평균 기준 (우축)</span>
+          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--revenue"></i>매출</span>
+          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--operating-income"></i>영업이익</span>
+          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--net-income"></i>순이익</span>
         </div>
       </div>
     </section>
@@ -851,7 +858,7 @@
   <script src="policy-expectation-chart.js?v=12"></script>
   <script src="em-capacity-chart.js?v=4"></script>
   <script src="korea-foreign-flow-chart.js?v=10"></script>
-  <script src="korea-earnings-chart.js?v=7"></script>
+  <script src="korea-earnings-chart.js?v=8"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>

@@ -138,21 +138,27 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.ok(rateDomain.min <= 0 && rateDomain.max > 30, '증가율축은 0을 포함해 자동 조정한다');
   assert.notEqual(Math.abs(rateDomain.min), rateDomain.max, '증가율축을 불필요하게 대칭 고정하지 않는다');
   assert.match(html, /id="korea-earnings-dashboard"/);
-  assert.match(html, /data-korea-earnings-metric="revenue"/);
-  assert.match(html, /data-korea-earnings-metric="operating_income"/);
-  assert.match(html, /data-korea-earnings-metric="net_income"/);
+  assert.match(html, /id="korea-earnings-amount-chart"/);
+  assert.match(html, /id="korea-earnings-growth-chart"/);
+  assert.match(html, /id="korea-earnings-delta-chart"/);
+  assert.doesNotMatch(html, /data-korea-earnings-metric=/);
   assert.match(html, /KOSPI 시총 상위기업 평균 실적 모멘텀/);
   assert.match(source, /earnings_market_quarterly_metrics/);
   assert.match(source, /point_in_time_market_cap_snapshot/);
-  assert.match(source, /korea-earnings-line--average/);
-  assert.match(html, /기업당 평균 금액 \(좌축\)/);
-  assert.match(html, /증가율·델타는 기업당 평균 기준 \(우축\)/);
+  assert.match(source, /kind: 'amount'/);
+  assert.match(source, /kind: 'growth'/);
+  assert.match(source, /kind: 'delta'/);
+  assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
+  assert.match(html, /기업당 평균 실적/);
+  assert.match(html, /전년동기 증가율/);
+  assert.match(html, /증가율 델타/);
   assert.match(html, /기업당 단순평균/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
   assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);
   assert.match(styles, /\.korea-earnings-line--delta[^}]*stroke-dasharray/);
-  assert.match(styles, /\.korea-earnings-line--average/);
+  assert.match(styles, /\.korea-earnings-chart-panel--aux/);
+  assert.match(styles, /\.korea-earnings-line--revenue/);
 });
 
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
