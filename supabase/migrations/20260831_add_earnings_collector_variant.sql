@@ -6,7 +6,7 @@ alter table public.earnings_ingestion_jobs
 
 update public.earnings_ingestion_jobs
 set collector_variant = 'legacy_archive', updated_at = now()
-where source = 'open_dart' and business_year between 2002 and 2015
+where source = 'open_dart' and business_year between 2002 and 2014
   and (
     metadata @> '{"legacy_archive": true}'::jsonb
     or (
@@ -39,7 +39,7 @@ begin
     join public.earnings_indices indices on indices.index_id = memberships.index_id
     where memberships.effective_to is null and indices.country = 'KR'
   ) companies
-  cross join lateral generate_series(2002, 2015) years(business_year)
+  cross join lateral generate_series(2002, 2014) years(business_year)
   cross join (values ('11013'), ('11012'), ('11014'), ('11011')) reports(report_code)
   where exists (
     select 1 from public.earnings_company_identifiers identifiers
