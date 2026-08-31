@@ -148,7 +148,7 @@ class LegacyDartFinancialWorker:
             metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
             receipt = str(metadata.get("receipt_no") or "").strip()
             parsed = parse_legacy_filing_archive(
-                self._archive(receipt), report_code=report_code,
+                self._archive(receipt), report_code=report_code, fiscal_year=year,
             )
             return report_code, parsed
 
@@ -207,7 +207,7 @@ class LegacyDartFinancialWorker:
                     "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
                     "metadata": {
                         "report_name": metadata.get("report_name"),
-                        "financial_method": "legacy_dart_document_archive_v10",
+                        "financial_method": "legacy_dart_document_archive_v11",
                         "parse_error": parse_errors.get(report_code),
                         "quality_issues": quality_issues,
                     },

@@ -247,7 +247,28 @@ def _has_statement_title(prefix: str, table: str) -> bool:
     return _STATEMENT_TITLE.search(plain) is not None
 
 
-def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeStatement]:
+def _matches_fiscal_year(prefix: str, table: str, fiscal_year: int | None) -> bool:
+    """Reject statement attachments that belong to a different fiscal year.
+
+    A legacy DART archive can contain the submitted report plus older audit or
+    comparison documents.  Their tables are structurally valid, so metric
+    aliases alone cannot distinguish them.  The period heading immediately
+    before a statement table identifies the year without relying on filenames
+    or guessing from the amounts.
+    """
+    if fiscal_year is None:
+        return True
+    nearby_prefix = re.sub(r"<[^>]+>", " ", prefix)
+    table_text = re.sub(r"<[^>]+>", " ", table)
+    nearby_text = unescape(nearby_prefix[-3000:] + " " + table_text[:1500])
+    return re.search(rf"(?<!\d){fiscal_year}(?!\d)", nearby_text) is not None
+
+
+def _parse_document(
+    document: str,
+    report_code: str,
+    fiscal_year: int | None,
+) -> list[LegacyCumulativeStatement]:
     statements: list[LegacyCumulativeStatement] = []
     for start, table in _balanced_tables(document):
         plain = _normalize(re.sub(r"<[^>]+>", " ", table))
@@ -263,6 +284,8 @@ def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeSta
         # a heading and its value table while avoiding unrelated earlier
         # sections of the filing.
         local_prefix = document[max(0, start - 20000):start]
+        if not _matches_fiscal_year(local_prefix, table, fiscal_year):
+            continue
         units = _UNIT.findall(local_prefix + table[:1000])
         if not units:
             continue
@@ -300,6 +323,7 @@ def parse_legacy_filing_archive(
     archive: bytes,
     *,
     report_code: str,
+    fiscal_year: int | None = None,
 ) -> dict[str, LegacyCumulativeStatement]:
     """Return one deterministic cumulative statement per available scope."""
     if report_code not in REPORT_QUARTERS:
@@ -316,7 +340,7 @@ def parse_legacy_filing_archive(
 
     by_scope: dict[str, list[LegacyCumulativeStatement]] = {"CFS": [], "OFS": []}
     for document in documents:
-        for statement in _parse_document(document, report_code):
+        for statement in _parse_document(document, report_code, fiscal_year):
             by_scope[statement.consolidation_scope].append(statement)
 
     result: dict[str, LegacyCumulativeStatement] = {}

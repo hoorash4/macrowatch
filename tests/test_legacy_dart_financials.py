@@ -20,6 +20,15 @@ def archive(document: str) -> bytes:
     return buffer.getvalue()
 
 
+def archive_documents(**documents: str) -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as zipped:
+        for name, document in documents.items():
+            filename = name if name.endswith((".xml", ".html", ".htm")) else f"{name}.xml"
+            zipped.writestr(filename, document.encode("utf-8"))
+    return buffer.getvalue()
+
+
 class LegacyDartFinancialParserTests(unittest.TestCase):
     def test_database_complete_outcome_uses_completed_summary_counter(self):
         self.assertEqual(_outcome_counter_key("complete"), "completed")
@@ -255,6 +264,31 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].revenue, 312_328_846_326)
         self.assertEqual(parsed["CFS"].operating_income, 13_194_000_167)
         self.assertEqual(parsed["CFS"].net_income, 10_422_801_672)
+
+    def test_ignores_valid_statement_attachment_from_a_different_fiscal_year(self):
+        stale = """
+        <P>손익계산서</P><P>2004년 1월 1일부터 2004년 3월 31일까지</P>
+        <P>(단위 : 원)</P><TABLE>
+          <TR><TD>매출액</TD><TD>237,484,588,063</TD></TR>
+          <TR><TD>영업이익</TD><TD>3,689,412,663</TD></TR>
+          <TR><TD>당기순이익</TD><TD>3,955,632,112</TD></TR>
+        </TABLE>
+        """
+        current = """
+        <P>손익계산서</P><P>2006년 1월 1일부터 2006년 3월 31일까지</P>
+        <P>(단위 : 원)</P><TABLE>
+          <TR><TD>매출액</TD><TD>60,457,374,569</TD></TR>
+          <TR><TD>영업이익</TD><TD>1,700,193,855</TD></TR>
+          <TR><TD>당기순이익</TD><TD>1,410,000,000</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(
+            archive_documents(stale_xml=stale, current_xml=current),
+            report_code="11013",
+            fiscal_year=2006,
+        )
+        self.assertEqual(parsed["OFS"].revenue, 60_457_374_569)
+        self.assertEqual(parsed["OFS"].operating_income, 1_700_193_855)
 
     def test_refuses_unknown_units(self):
         document = """
