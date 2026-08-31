@@ -126,6 +126,8 @@ jobs:
             --file supabase/migrations/20260831235980_restore_legacy_earnings_2015.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260831235990_fix_earnings_filing_metadata_merge.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260831235995_repair_legacy_2015_shifted_headers_v3.sql
 
       - name: Deploy Edge Functions
         run: |

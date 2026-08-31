@@ -69,7 +69,8 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         <P>연결 손익계산서</P><P>(단위 : 백만원)</P>
         <TABLE>
           <TR><TH COLSPAN="2">과목</TH><TH COLSPAN="2">제 47 기 반기</TH><TH COLSPAN="2">제 46 기 반기</TH></TR>
-          <TR><TH COLSPAN="2"></TH><TH>3개월</TH><TH>누적</TH><TH>3개월</TH><TH>누적</TH></TR>
+          <!-- Reproduce DART's shifted header: the first amount column inherits 누적. -->
+          <TR><TH></TH><TH>3개월</TH><TH>누적</TH><TH>3개월</TH><TH>누적</TH></TR>
           <TR><TD COLSPAN="2">수익(매출액)</TD><TD>48,537,539</TD><TD>95,655,457</TD><TD>52,353,229</TD><TD>106,028,555</TD></TR>
           <TR><TD COLSPAN="2">매출원가</TD><TD>28,955,599</TD><TD>57,910,986</TD><TD>31,671,819</TD><TD>63,721,334</TD></TR>
           <TR><TD COLSPAN="2">매출총이익</TD><TD>19,581,940</TD><TD>37,744,471</TD><TD>20,681,410</TD><TD>42,307,221</TD></TR>

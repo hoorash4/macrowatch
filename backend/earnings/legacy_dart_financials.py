@@ -166,13 +166,6 @@ def _choose_cumulative_amount(
     if not candidates:
         return None
 
-    # Interim statements that expose a standalone quarter and a year-to-date
-    # amount explicitly mark the latter as cumulative.  The leftmost such
-    # column is the current period; later columns are prior-year comparatives.
-    cumulative = [candidate for candidate in candidates if "누적" in candidate[2]]
-    if cumulative:
-        return cumulative[0][1]
-
     # A note reference occasionally survives a malformed header.  It is a
     # small integer immediately before materially larger statement amounts.
     if len(candidates) >= 2:
@@ -199,6 +192,12 @@ def _choose_cumulative_amount(
         and has_standalone_and_ytd
     ):
         return candidates[1][1]
+
+    # Only use per-column header context after ruling out a paired interim
+    # layout. Old DART colspans can shift ``누적`` onto the standalone value.
+    cumulative = [candidate for candidate in candidates if "누적" in candidate[2]]
+    if cumulative:
+        return cumulative[0][1]
 
     # Some tables omit explicit period words but retain the same four-column
     # current-quarter/current-YTD/prior-quarter/prior-YTD layout.

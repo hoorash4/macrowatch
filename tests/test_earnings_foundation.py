@@ -23,7 +23,7 @@ LEGACY_ZERO_QUARANTINE_MIGRATION = ROOT / "supabase/migrations/20260831173000_qu
 LEGACY_ZERO_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831174000_retry_quarantined_legacy_dart_jobs.sql"
 LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831175000_retry_quarantined_legacy_dart_company_years.sql"
 STRUCTURED_2015_MIGRATION = ROOT / "supabase/migrations/20260831235970_use_structured_earnings_from_2015.sql"
-LEGACY_2015_RESTORE_MIGRATION = ROOT / "supabase/migrations/20260831235980_restore_legacy_earnings_2015.sql"
+LEGACY_2015_RESTORE_MIGRATION = ROOT / "supabase/migrations/20260831235995_repair_legacy_2015_shifted_headers_v3.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -129,7 +129,7 @@ class EarningsFoundationTests(unittest.TestCase):
 
     def test_final_boundary_restores_corrected_legacy_parser_for_2015(self) -> None:
         sql = self.legacy_2015_restore_migration
-        self.assertIn("enqueue_earnings_legacy_2015_parser_v2_repair", sql)
+        self.assertIn("enqueue_earnings_legacy_2015_parser_v3_repair", sql)
         self.assertIn(LEGACY_2015_RESTORE_MIGRATION.name, self.deploy_workflow)
         self.assertNotIn(STRUCTURED_2015_MIGRATION.name, self.deploy_workflow)
         self.assertLess(

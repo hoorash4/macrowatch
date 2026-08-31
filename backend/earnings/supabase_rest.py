@@ -253,10 +253,10 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("Legacy quality revalidation returned an invalid result.")
         return result
 
-    def enqueue_legacy_2015_parser_v2_repair(self) -> int:
-        result = self._rpc("enqueue_earnings_legacy_2015_parser_v2_repair", {})
+    def enqueue_legacy_2015_parser_v3_repair(self) -> int:
+        result = self._rpc("enqueue_earnings_legacy_2015_parser_v3_repair", {})
         if not isinstance(result, int):
-            raise EarningsStoreError("Legacy 2015 parser-v2 repair returned an invalid result.")
+            raise EarningsStoreError("Legacy 2015 parser-v3 repair returned an invalid result.")
         return result
 
     def claim_open_dart_legacy_jobs(self) -> list[dict[str, Any]]:
