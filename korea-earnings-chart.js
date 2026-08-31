@@ -153,7 +153,8 @@
     document.querySelectorAll('[data-korea-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
     render();
   });
-  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'korea') render(); });
+  // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
+  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'earnings') render(); });
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMetricRows });
   window.MacroWatchDashboard?.registerLoader(load);
 })();

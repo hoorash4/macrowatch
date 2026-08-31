@@ -122,6 +122,7 @@
           </a>
           <p class="dashboard-nav-label">WORKSPACE</p>
           <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>플로우 분석</span></button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-view="earnings"><i class="fa-solid fa-chart-column"></i><span>기업 이익 시그널</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
@@ -324,7 +325,8 @@
       </div>
     </section>
 
-    <section id="korea-earnings-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-earnings-title">
+    <!-- 기업 이익 관련 분석은 국가 스트레스 지수와 분리된 전용 작업공간에 모읍니다. -->
+    <section id="korea-earnings-dashboard" data-dashboard-panel="earnings" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-earnings-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-chart-column text-sm"></i></span>
@@ -842,14 +844,14 @@
 
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="indicator-terms.js?v=3"></script>
-  <script src="script.js?v=158"></script>
+  <script src="script.js?v=159"></script>
   <script src="analysis-chart-utils.js?v=4"></script>
   <script src="dashboard-charts.js?v=31"></script>
   <script src="policy-chart.js?v=16"></script>
   <script src="policy-expectation-chart.js?v=12"></script>
   <script src="em-capacity-chart.js?v=4"></script>
   <script src="korea-foreign-flow-chart.js?v=10"></script>
-  <script src="korea-earnings-chart.js?v=5"></script>
+  <script src="korea-earnings-chart.js?v=6"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>
