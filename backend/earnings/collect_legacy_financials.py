@@ -92,6 +92,7 @@ class LegacyDartFinancialWorker:
         self.request_interval_seconds = max(0.0, request_interval_seconds)
         self.sleeper = sleeper
         self._request_lock = Lock()
+        self._store_lock = Lock()
         self._last_request_started = 0.0
         self._thread_state = local()
         self._reported_failure_diagnostics: set[str] = set()
@@ -211,9 +212,13 @@ class LegacyDartFinancialWorker:
                         "quality_issues": quality_issues,
                     },
                 }
-                self.store.complete_open_dart_job(
-                    job_id=int(job["id"]), filing=filing, quarter=quarter, outcome=outcome,
-                )
+                # requests.Session is not shared concurrently. Archive fetches
+                # use thread-local clients; compact Supabase writes are
+                # serialized through the worker's service-role session.
+                with self._store_lock:
+                    self.store.complete_open_dart_job(
+                        job_id=int(job["id"]), filing=filing, quarter=quarter, outcome=outcome,
+                    )
                 if quarter is not None and outcome == "complete":
                     self._history_by_company.setdefault(str(job["company_id"]), []).append({
                         "company_id": str(job["company_id"]),
@@ -229,7 +234,8 @@ class LegacyDartFinancialWorker:
                         "event": "legacy_dart_completion_failed",
                         "diagnostic": diagnostic,
                     }, ensure_ascii=False), flush=True)
-                self.store.fail_open_dart_job(job_id=int(job["id"]), error=diagnostic)
+                with self._store_lock:
+                    self.store.fail_open_dart_job(job_id=int(job["id"]), error=diagnostic)
                 result["failed"] += 1
         return result
 
@@ -244,19 +250,35 @@ def main() -> None:
         1, min(int(os.getenv("LEGACY_DART_MAX_COMPANY_YEARS", "100")), 2500)
     )
     interval = max(0.2, float(os.getenv("OPEN_DART_REQUEST_INTERVAL_SECONDS", "0.3")))
+    company_workers = max(
+        1, min(int(os.getenv("LEGACY_DART_COMPANY_WORKERS", "8")), 8)
+    )
     worker = LegacyDartFinancialWorker(
         client, store, request_interval_seconds=interval,
         historical_financials=store.list_all_quarterly_financials(),
     )
     totals = {"company_years": 0, "completed": 0, "review_required": 0, "failed": 0}
-    for _ in range(max_company_years):
-        jobs = store.claim_open_dart_legacy_jobs()
-        if not jobs:
-            break
-        batch = worker.process_company_year(jobs)
-        totals["company_years"] += 1
-        for key, value in batch.items():
-            totals[key] += value
+    # Claim one year from different companies before each parallel wave. The
+    # database claim function excludes companies that already have running
+    # rows, preserving chronological context within a company while slow DART
+    # archives from unrelated companies overlap safely.
+    with ThreadPoolExecutor(max_workers=company_workers) as executor:
+        while totals["company_years"] < max_company_years:
+            claimed_batches: list[list[dict[str, Any]]] = []
+            remaining = max_company_years - totals["company_years"]
+            for _ in range(min(company_workers, remaining)):
+                jobs = store.claim_open_dart_legacy_jobs()
+                if not jobs:
+                    break
+                claimed_batches.append(jobs)
+            if not claimed_batches:
+                break
+            futures = [executor.submit(worker.process_company_year, jobs) for jobs in claimed_batches]
+            for future in as_completed(futures):
+                batch = future.result()
+                totals["company_years"] += 1
+                for key, value in batch.items():
+                    totals[key] += value
     useful = totals["completed"] + totals["review_required"]
     # Individual legacy archives can be malformed or temporarily unavailable.
     # Those jobs remain retryable; do not suppress downstream recalculation

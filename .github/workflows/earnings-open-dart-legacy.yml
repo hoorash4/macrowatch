@@ -68,6 +68,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OPEN_DART_REQUEST_INTERVAL_SECONDS: "0.25"
+          LEGACY_DART_COMPANY_WORKERS: "8"
           LEGACY_DART_MAX_COMPANY_YEARS: ${{ inputs.max_company_years || '2500' }}
         run: python -m earnings.collect_legacy_financials
 
