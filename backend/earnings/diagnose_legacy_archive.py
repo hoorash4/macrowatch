@@ -8,7 +8,12 @@ import os
 import re
 from zipfile import ZipFile
 
-from earnings.legacy_dart_financials import _balanced_tables, _decode, _parse_document
+from earnings.legacy_dart_financials import (
+    _STATEMENT_TITLE,
+    _balanced_tables,
+    _decode,
+    _parse_document,
+)
 from earnings.open_dart import OpenDartClient
 
 
@@ -30,11 +35,19 @@ def main() -> None:
                 prefix_text = " ".join(
                     re.sub(r"<[^>]+>", " ", document[max(0, start - 20000):start]).split()
                 )
+                table_titles = [
+                    match.group(0) for match in _STATEMENT_TITLE.finditer(table_text)
+                ]
+                prefix_titles = [
+                    match.group(0) for match in _STATEMENT_TITLE.finditer(prefix_text)
+                ]
                 contexts.append({
                     "document": name,
                     "table": position,
                     "prefix_tail": prefix_text[-1200:],
                     "table_head": table_text[:1200],
+                    "prefix_titles": prefix_titles[-5:],
+                    "table_titles": table_titles,
                 })
             for position, statement in enumerate(_parse_document(document, report_code), start=1):
                 rows.append({
