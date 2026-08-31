@@ -298,7 +298,7 @@ def _matches_fiscal_year(prefix: str, table: str, fiscal_year: int | None) -> bo
 def _parse_document(
     document: str,
     report_code: str,
-    fiscal_year: int | None,
+    fiscal_year: int | None = None,
 ) -> list[LegacyCumulativeStatement]:
     statements: list[LegacyCumulativeStatement] = []
     for start, table in _balanced_tables(document):
