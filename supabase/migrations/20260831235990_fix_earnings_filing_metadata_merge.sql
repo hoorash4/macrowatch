@@ -65,7 +65,10 @@ begin
     ));
 
     update public.earnings_ingestion_jobs
-    set priority = 100,
+    set priority = case
+          when collector_variant = 'legacy_archive' then 10
+          else 100
+        end,
         reason = 'repair',
         metadata = coalesce(metadata, '{}'::jsonb) || v_metadata,
         status = case when status = 'running' then 'retry' else status end,
