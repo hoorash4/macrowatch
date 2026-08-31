@@ -1,17 +1,9 @@
 name: Backfill Korean earnings from legacy DART filings
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/earnings/legacy_dart_financials.py"
-      - "backend/earnings/collect_legacy_financials.py"
-      - "backend/earnings/enqueue_legacy_backfill.py"
-      - "backend/earnings/discover_backfill_filings.py"
-      - "backend/earnings/supabase_rest.py"
-      - "supabase/migrations/*legacy_dart*"
-      - "supabase/migrations/20260831235950_finalize_earnings_quality_schema.sql"
-      - ".github/workflows/earnings-open-dart-legacy.yml"
+  # Historical archives are a repair/backfill path, not a production refresh.
+  # Run them only after the matching parser and database migrations are fully
+  # deployed; push-triggering this workflow can race the Supabase deployment.
   workflow_dispatch:
     inputs:
       max_company_years:

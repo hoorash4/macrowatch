@@ -130,6 +130,28 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].revenue, 35_000_000)
         self.assertEqual(parsed["OFS"].revenue, 900_000)
 
+    def test_scope_uses_last_statement_title_beyond_local_markup_window(self):
+        spacer = "<SPAN data-padding='x'>padding</SPAN>" * 220
+        document = f"""
+        <P>연결 포괄손익계산서</P>{spacer}<P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>당기</TH><TH>전기</TH></TR>
+          <TR><TD>매출액</TD><TD>16,000</TD><TD>15,000</TD></TR>
+          <TR><TD>영업이익</TD><TD>400</TD><TD>300</TD></TR>
+          <TR><TD>당기순이익</TD><TD>300</TD><TD>200</TD></TR>
+        </TABLE>
+        <P>포괄손익계산서</P>{spacer}<P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>당기</TH><TH>전기</TH></TR>
+          <TR><TD>매출액</TD><TD>600</TD><TD>500</TD></TR>
+          <TR><TD>영업이익</TD><TD>60</TD><TD>50</TD></TR>
+          <TR><TD>당기순이익</TD><TD>40</TD><TD>30</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
+        self.assertEqual(parsed["CFS"].revenue, 16_000_000)
+        self.assertEqual(parsed["OFS"].revenue, 600_000)
+
     def test_refuses_unknown_units(self):
         document = """
         <P>손익계산서</P>

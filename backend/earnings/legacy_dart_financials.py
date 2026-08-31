@@ -229,8 +229,8 @@ def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeSta
         plain = _normalize(re.sub(r"<[^>]+>", " ", table))
         if not any(alias in plain for alias in _ALIASES["operating_income"]):
             continue
-        prefix = document[max(0, start - 5000):start]
-        units = _UNIT.findall(prefix + table[:1000])
+        local_prefix = document[max(0, start - 5000):start]
+        units = _UNIT.findall(local_prefix + table[:1000])
         if not units:
             continue
         multiplier = {
@@ -254,7 +254,11 @@ def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeSta
                 break
         if all(metric in values for metric in _ALIASES):
             statements.append(LegacyCumulativeStatement(
-                consolidation_scope=_scope_from_prefix(prefix),
+                # DART's verbose XML can place more than 5 KB of markup
+                # between a statement title and its numeric table. Use the
+                # complete preceding document so the last published title,
+                # rather than an arbitrary nearby title, determines scope.
+                consolidation_scope=_scope_from_prefix(document[:start]),
                 revenue=values["revenue"],
                 operating_income=values["operating_income"],
                 net_income=values["net_income"],
