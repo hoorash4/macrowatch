@@ -220,10 +220,10 @@ def _choose_cumulative_amount(
     if cumulative:
         return cumulative[0][1]
 
-    # Some tables omit explicit period words but retain the same four-column
-    # current-quarter/current-YTD/prior-quarter/prior-YTD layout.
-    if report_code in {"11012", "11014"} and len(candidates) >= 4:
-        return candidates[1][1]
+    # A four-value row alone does not prove a standalone/YTD paired layout.
+    # Older statements also publish current YTD, prior-year YTD and two annual
+    # comparatives. In that structure the first value is the current period;
+    # selecting the second silently copies the prior year into the new year.
     return candidates[0][1]
 
 

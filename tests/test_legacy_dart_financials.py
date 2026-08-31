@@ -95,6 +95,25 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].operating_income, 12_877_304_000_000)
         self.assertEqual(parsed["CFS"].net_income, 10_378_112_000_000)
 
+    def test_four_cumulative_periods_use_current_year_not_prior_year(self):
+        document = """
+        <P>연결손익계산서</P>
+        <P>제 27기 3분기: 2011년 1월 1일부터 2011년 9월 30일까지</P>
+        <P>(단위 : 원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>제27기 3분기</TH><TH>제26기 3분기</TH><TH>제26기</TH><TH>제25기</TH></TR>
+          <TR><TD>매출액</TD><TD>3,414,055,567,610</TD><TD>3,029,253,815,537</TD><TD>4,329,993,599,341</TD><TD>3,021,143,786,604</TD></TR>
+          <TR><TD>영업이익</TD><TD>282,073,395,134</TD><TD>250,929,733,804</TD><TD>424,337,260,684</TD><TD>338,391,009,873</TD></TR>
+          <TR><TD>분기순이익</TD><TD>225,736,999,603</TD><TD>195,656,108,563</TD><TD>327,635,253,583</TD><TD>274,442,443,123</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(
+            archive(document), report_code="11014", fiscal_year=2011,
+        )
+        self.assertEqual(parsed["CFS"].revenue, 3_414_055_567_610)
+        self.assertEqual(parsed["CFS"].operating_income, 282_073_395_134)
+        self.assertEqual(parsed["CFS"].net_income, 225_736_999_603)
+
     def test_keeps_separate_and_consolidated_candidates_separate(self):
         document = """
         <P>손익계산서</P><P>(단위 : 천원)</P>
