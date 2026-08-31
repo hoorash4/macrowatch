@@ -43,6 +43,29 @@
     return sourceMax === sourceMin ? (targetMin + targetMax) / 2 : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
   }
 
+  // 현재 화면에 표시되는 값의 범위로 축을 다시 계산합니다. 증가율축은 해석 기준인
+  // 0을 포함하지만 대칭으로 강제하지 않고, 금액축은 실제 진폭을 보존합니다.
+  function axisDomain(values, { includeZero = false, paddingRatio = 0.1, targetIntervals = 4 } = {}) {
+    const finiteValues = values.filter(Number.isFinite);
+    if (!finiteValues.length) return { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1] };
+    let minimum = Math.min(...finiteValues), maximum = Math.max(...finiteValues);
+    if (includeZero) {
+      minimum = Math.min(0, minimum);
+      maximum = Math.max(0, maximum);
+    }
+    const span = maximum - minimum;
+    const padding = span > Number.EPSILON
+      ? span * paddingRatio
+      : Math.max(Math.abs(maximum) * paddingRatio, 1);
+    const paddedMin = minimum - padding, paddedMax = maximum + padding;
+    const step = window.MacroWatchAnalysisChart.niceStep((paddedMax - paddedMin) / targetIntervals);
+    const domainMin = Math.floor(paddedMin / step) * step;
+    const domainMax = Math.ceil(paddedMax / step) * step;
+    const tickCount = Math.round((domainMax - domainMin) / step);
+    const ticks = Array.from({ length: tickCount + 1 }, (_, index) => Number((domainMin + (step * index)).toPrecision(12)));
+    return { min: domainMin, max: domainMax, ticks };
+  }
+
   function path(points, key, yMin, yMax, width) {
     const segments = [];
     let segment = [];
@@ -86,24 +109,21 @@
     }
     updateSummary(points);
     const rateValues = points.flatMap((row) => [row.metrics[state.metric].yoyPct, row.metrics[state.metric].yoyDeltaPp]).filter(Number.isFinite);
-    const maximumRate = Math.max(1, ...rateValues.map(Math.abs));
-    const rateTickStep = window.MacroWatchAnalysisChart.niceStep(maximumRate / 2);
-    const rateMax = rateTickStep * 2, rateMin = -rateMax;
+    const rateDomain = axisDomain(rateValues, { includeZero: true });
+    const rateMin = rateDomain.min, rateMax = rateDomain.max;
     const amountValues = points.map((row) => row.metrics[state.metric].currentAverage).filter(Number.isFinite);
-    const rawAmountMin = Math.min(0, ...amountValues), rawAmountMax = Math.max(1, ...amountValues);
-    const amountTickStep = window.MacroWatchAnalysisChart.niceStep(Math.max(1, rawAmountMax - rawAmountMin) / 4);
-    const amountMin = Math.floor(rawAmountMin / amountTickStep) * amountTickStep;
-    const amountMax = Math.max(amountTickStep, Math.ceil(rawAmountMax / amountTickStep) * amountTickStep);
+    const amountDomain = axisDomain(amountValues);
+    const amountMin = amountDomain.min, amountMax = amountDomain.max;
     const frameWidth = Math.max(MIN_WIDTH, (container.clientWidth || MIN_WIDTH) - AMOUNT_AXIS_WIDTH - RATE_AXIS_WIDTH);
     const chartWidth = Math.max(frameWidth, points.length * 48);
     const yRate = (value) => scale(value, rateMin, rateMax, HEIGHT - PADDING.bottom, PADDING.top);
     const yAmount = (value) => scale(value, amountMin, amountMax, HEIGHT - PADDING.bottom, PADDING.top);
     const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), PADDING.left, chartWidth - PADDING.right);
-    const rateTicks = [-2, -1, 0, 1, 2];
-    const amountTicks = Array.from({ length: 5 }, (_, index) => amountMin + ((amountMax - amountMin) * index / 4));
+    const rateTicks = rateDomain.ticks;
+    const amountTicks = amountDomain.ticks;
     const amountAxis = amountTicks.map((value) => `<text x="58" y="${yAmount(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAmount(value)}</text>`).join('');
-    const rateAxis = rateTicks.map((multiple) => `<text x="6" y="${yRate(multiple * rateTickStep) + 3}" text-anchor="start" class="korea-earnings-axis-label">${multiple * rateTickStep}%</text>`).join('');
-    const grids = rateTicks.map((multiple) => `<line x1="${PADDING.left}" y1="${yRate(multiple * rateTickStep)}" x2="${chartWidth - PADDING.right}" y2="${yRate(multiple * rateTickStep)}" class="korea-earnings-grid${multiple === 0 ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
+    const rateAxis = rateTicks.map((value) => `<text x="6" y="${yRate(value) + 3}" text-anchor="start" class="korea-earnings-axis-label">${Math.abs(value) < Number.EPSILON ? 0 : value}%</text>`).join('');
+    const grids = rateTicks.map((value) => `<line x1="${PADDING.left}" y1="${yRate(value)}" x2="${chartWidth - PADDING.right}" y2="${yRate(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
     const periodLabels = points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1 ? `<text x="${x(index)}" y="${HEIGHT - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>` : '').join('');
     const metricPoints = points.map((point) => ({ ...point, currentAverage: point.metrics[state.metric].currentAverage, yoyPct: point.metrics[state.metric].yoyPct, yoyDeltaPp: point.metrics[state.metric].yoyDeltaPp }));
     const dots = metricPoints.map((point, index) => [
@@ -155,6 +175,6 @@
   });
   // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'earnings') render(); });
-  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMetricRows });
+  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMetricRows, axisDomain });
   window.MacroWatchDashboard?.registerLoader(load);
 })();

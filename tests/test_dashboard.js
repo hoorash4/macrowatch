@@ -131,6 +131,12 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.equal(latest.currentAverage, 90);
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.yoyDeltaPp, 10);
+  const amountDomain = context.window.MacroWatchKoreaEarnings.axisDomain([90, 100]);
+  assert.ok(amountDomain.min > 0, '양수 금액축은 더 이상 0에 고정하지 않는다');
+  assert.ok(amountDomain.min < 90 && amountDomain.max > 100);
+  const rateDomain = context.window.MacroWatchKoreaEarnings.axisDomain([20, 30], { includeZero: true });
+  assert.ok(rateDomain.min <= 0 && rateDomain.max > 30, '증가율축은 0을 포함해 자동 조정한다');
+  assert.notEqual(Math.abs(rateDomain.min), rateDomain.max, '증가율축을 불필요하게 대칭 고정하지 않는다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /data-korea-earnings-metric="revenue"/);
   assert.match(html, /data-korea-earnings-metric="operating_income"/);
