@@ -65,7 +65,7 @@
   }
 
   // 각 차트가 자기 단위와 현재 표시 구간에 맞는 Y축을 독립적으로 사용합니다.
-  function axisDomain(values, { includeZero = false, paddingRatio = 0.05, targetIntervals = 5 } = {}) {
+  function axisDomain(values, { includeZero = false, paddingRatio = 0.05, targetIntervals = 4 } = {}) {
     const finiteValues = values.filter(Number.isFinite);
     if (!finiteValues.length) return { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1] };
     let minimum = Math.min(...finiteValues), maximum = Math.max(...finiteValues);
@@ -75,10 +75,12 @@
     // 증가율이 한쪽 부호에만 있을 때 0 반대편까지 축을 넓히지 않습니다.
     const paddedMin = includeZero && minimum === 0 ? 0 : minimum - padding;
     const paddedMax = includeZero && maximum === 0 ? 0 : maximum + padding;
-    const step = window.MacroWatchAnalysisChart.niceStep((paddedMax - paddedMin) / targetIntervals);
-    const domainMin = Math.floor(paddedMin / step) * step, domainMax = Math.ceil(paddedMax / step) * step;
-    const tickCount = Math.round((domainMax - domainMin) / step);
-    const ticks = Array.from({ length: tickCount + 1 }, (_, index) => Number((domainMin + (step * index)).toPrecision(12)));
+    // 눈금 반올림으로 표시 범위를 다시 넓히지 않습니다. 현재 보이는
+    // 값이 차트 높이를 충분히 사용하도록 최소 여백만 둔 5개 눈금입니다.
+    const domainMin = paddedMin, domainMax = paddedMax;
+    const ticks = Array.from({ length: targetIntervals + 1 }, (_, index) => (
+      Number((domainMin + ((domainMax - domainMin) * index / targetIntervals)).toPrecision(12))
+    ));
     return { min: domainMin, max: domainMax, ticks };
   }
 
@@ -126,14 +128,17 @@
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-40 items-center justify-center border border-dashed p-5 text-sm text-slate-500">표시할 비교 자료가 없습니다.</div>';
       return null;
     }
-    const domain = axisDomain(values, { includeZero: spec.includeZero });
+    const domainFor = (sourcePoints) => axisDomain(sourcePoints
+      .flatMap((point) => METRICS.map((metric) => metricValue(point, metric.key, spec.valueKey)))
+      .filter(Number.isFinite), { includeZero: spec.includeZero });
+    const domain = domainFor(points);
     const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 16 };
     const frameWidth = Math.max(MIN_WIDTH, (container.clientWidth || MIN_WIDTH) - AXIS_WIDTH);
     const chartWidth = Math.max(frameWidth, points.length * 48);
     const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), padding.left, chartWidth - padding.right);
-    const y = (value) => scale(value, domain.min, domain.max, spec.height - padding.bottom, padding.top);
-    const axis = domain.ticks.map((value) => `<text x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind)}</text>`).join('');
-    const grids = domain.ticks.map((value) => `<line x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
+    const y = (value, sourceDomain = domain) => scale(value, sourceDomain.min, sourceDomain.max, spec.height - padding.bottom, padding.top);
+    const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind)}</text>`).join('');
+    const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
     const labels = spec.showPeriodLabels
       ? points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
         ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>`
@@ -143,9 +148,9 @@
       ...metric,
       points: points.map((point) => ({ ...point, value: metricValue(point, metric.key, spec.valueKey) })),
     }));
-    const lines = metricSeries.map((metric) => `<path d="${linePath(metric.points, domain.min, domain.max, chartWidth, spec.height, padding)}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}"/>`).join('');
+    const lines = metricSeries.map((metric) => `<path data-korea-earnings-line="${metric.key}" d="${linePath(metric.points, domain.min, domain.max, chartWidth, spec.height, padding)}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}"/>`).join('');
     const dots = metricSeries.flatMap((metric) => metric.points.map((point, index) => Number.isFinite(point.value)
-      ? `<circle cx="${x(index)}" cy="${y(point.value)}" r="${spec.kind === 'amount' ? 2.8 : 2.4}" class="korea-earnings-point korea-earnings-point--${metric.className}"/>` : '')).join('');
+      ? `<circle data-korea-earnings-point="${metric.key}" data-point-index="${index}" cx="${x(index)}" cy="${y(point.value)}" r="${spec.kind === 'amount' ? 2.8 : 2.4}" class="korea-earnings-point korea-earnings-point--${metric.className}"/>` : '')).join('');
     const periodCursor = spec.showPeriodLabels
       ? `<text data-korea-earnings-cursor-period x="0" y="${spec.height - 8}" text-anchor="middle" class="korea-earnings-cursor-period"></text>`
       : '';
@@ -153,6 +158,10 @@
     const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
+    const yLabels = [...container.querySelectorAll('[data-korea-earnings-y-label]')];
+    const yGrids = [...container.querySelectorAll('[data-korea-earnings-y-grid]')];
+    const lineElements = new Map(METRICS.map((metric) => [metric.key, container.querySelector(`[data-korea-earnings-line="${metric.key}"]`)]));
+    const pointElements = [...container.querySelectorAll('[data-korea-earnings-point]')];
     const indexFromEvent = (event) => {
       const rect = hit.getBoundingClientRect(), localX = (event.clientX - rect.left) * (chartWidth / rect.width);
       return Math.max(0, Math.min(points.length - 1, Math.round(scale(localX, padding.left, chartWidth - padding.right, 0, Math.max(points.length - 1, 1)))));
@@ -177,8 +186,44 @@
       cursor.classList.remove('is-visible'); cursorLabel.classList.remove('is-visible');
       cursorPeriod?.classList.remove('is-visible');
     };
+    // 스크롤로 실제 보이는 분기만 기준으로 Y축을 다시 잡습니다. 과거의
+    // 큰 이상치가 현재 화면의 정상적인 진폭을 눌러버리지 않게 합니다.
+    let scaleFrame = null;
+    const updateVisibleScale = () => {
+      scaleFrame = null;
+      const visibleStart = frame.scrollLeft, visibleEnd = visibleStart + frame.clientWidth;
+      const visible = points.filter((_, index) => {
+        const pointX = x(index);
+        return pointX >= visibleStart - 1 && pointX <= visibleEnd + 1;
+      });
+      if (!visible.length) return;
+      const visibleDomain = domainFor(visible);
+      yLabels.forEach((label, index) => {
+        const value = visibleDomain.ticks[index];
+        label.setAttribute('y', y(value, visibleDomain) + 3);
+        label.textContent = formatAxis(value, spec.kind);
+      });
+      yGrids.forEach((grid, index) => {
+        const value = visibleDomain.ticks[index], gridY = y(value, visibleDomain);
+        grid.setAttribute('y1', gridY); grid.setAttribute('y2', gridY);
+        grid.classList.toggle('korea-earnings-grid--zero', Math.abs(value) < Number.EPSILON);
+      });
+      metricSeries.forEach((metric) => lineElements.get(metric.key)?.setAttribute(
+        'd', linePath(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding),
+      ));
+      pointElements.forEach((point) => {
+        const metricKey = point.dataset.koreaEarningsPoint;
+        const value = metricSeries.find((metric) => metric.key === metricKey)?.points[Number(point.dataset.pointIndex)]?.value;
+        if (Number.isFinite(value)) point.setAttribute('cy', y(value, visibleDomain));
+      });
+    };
+    frame.addEventListener('scroll', () => {
+      if (scaleFrame !== null) return;
+      scaleFrame = window.requestAnimationFrame(updateVisibleScale);
+    }, { passive: true });
     window.MacroWatchAnalysisChart.scrollToLatest(frame);
-    return { frame, hit, indexFromEvent, showCursor, hideCursor };
+    window.requestAnimationFrame(updateVisibleScale);
+    return { frame, hit, indexFromEvent, showCursor, hideCursor, updateVisibleScale };
   }
 
   function synchronizeFrames(frames) {
