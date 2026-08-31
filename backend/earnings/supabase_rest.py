@@ -247,6 +247,12 @@ class SupabaseEarningsStore:
             raise EarningsStoreError("Legacy OpenDART backfill enqueue returned an invalid result.")
         return result
 
+    def requeue_unvalidated_legacy_jobs(self) -> int:
+        result = self._rpc("requeue_unvalidated_legacy_earnings_jobs", {})
+        if not isinstance(result, int):
+            raise EarningsStoreError("Legacy quality revalidation returned an invalid result.")
+        return result
+
     def claim_open_dart_legacy_jobs(self) -> list[dict[str, Any]]:
         result = self._rpc("claim_earnings_open_dart_legacy_jobs", {})
         if not isinstance(result, list):

@@ -200,5 +200,41 @@ revoke all on function public.enforce_earnings_canonical_numeric_quality()
 grant execute on function public.enforce_earnings_canonical_numeric_quality()
   to service_role;
 
+-- A worker version upgrade must revalidate already completed legacy rows once.
+-- Filing metadata becomes the durable marker, so later runs remain idempotent.
+create or replace function public.requeue_unvalidated_legacy_earnings_jobs()
+returns integer language plpgsql security definer
+set search_path = public, pg_temp
+as $$
+declare v_count integer;
+begin
+  update public.earnings_ingestion_jobs jobs
+  set status='retry', attempts=0, available_at=now(), claimed_at=null,
+      completed_at=null, last_error=null,
+      metadata=jobs.metadata || jsonb_build_object(
+        'quality_revalidation', true,
+        'quality_revalidation_version', 1
+      ),
+      updated_at=now()
+  where jobs.collector_variant='legacy_archive'
+    and jobs.status='completed'
+    and jobs.business_year between 2002 and 2015
+    and coalesce(jobs.metadata->>'receipt_no','')<>''
+    and not exists (
+      select 1 from public.earnings_filings filings
+      where filings.source='open_dart'
+        and filings.source_filing_id=jobs.metadata->>'receipt_no'
+        and filings.metadata ? 'quality_issues'
+    );
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+revoke all on function public.requeue_unvalidated_legacy_earnings_jobs()
+  from public, anon, authenticated;
+grant execute on function public.requeue_unvalidated_legacy_earnings_jobs()
+  to service_role;
+
 create index if not exists earnings_quarterly_financials_source_filing_idx
   on public.earnings_quarterly_financials (source_filing_id);
