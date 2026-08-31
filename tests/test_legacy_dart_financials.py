@@ -134,6 +134,26 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["OFS"].operating_income, -124_321_808)
         self.assertEqual(parsed["OFS"].net_income, -175_022_981)
 
+    def test_q1_single_value_per_period_uses_first_current_period(self):
+        document = """
+        <P>손익계산서</P>
+        <P>제 19기 1분기 (2007년 1월 1일부터 2007년 3월 31일까지)</P>
+        <P>(단위 : 원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>제19기 1분기</TH><TH>제18기 1분기</TH><TH>제18기 연간</TH><TH>제17기 연간</TH></TR>
+          <TR><TH></TH><TH>3개월</TH><TH>누적</TH><TH>3개월</TH><TH>누적</TH></TR>
+          <TR><TD>매출액</TD><TD>291,850,070,388</TD><TD>266,828,815,874</TD><TD>1,117,766,991,887</TD><TD>1,008,079,888,490</TD></TR>
+          <TR><TD>영업이익</TD><TD>25,705,000,000</TD><TD>19,767,266,396</TD><TD>100,000,000,000</TD><TD>90,000,000,000</TD></TR>
+          <TR><TD>당기순이익</TD><TD>17,500,000,000</TD><TD>12,967,683,924</TD><TD>70,000,000,000</TD><TD>60,000,000,000</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(
+            archive(document), report_code="11013", fiscal_year=2007,
+        )
+        self.assertEqual(parsed["OFS"].revenue, 291_850_070_388)
+        self.assertEqual(parsed["OFS"].operating_income, 25_705_000_000)
+        self.assertEqual(parsed["OFS"].net_income, 17_500_000_000)
+
     def test_keeps_separate_and_consolidated_candidates_separate(self):
         document = """
         <P>손익계산서</P><P>(단위 : 천원)</P>

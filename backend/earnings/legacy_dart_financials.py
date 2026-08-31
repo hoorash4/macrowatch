@@ -226,13 +226,20 @@ def _choose_cumulative_amount(
         if first == first.to_integral_value() and abs(first) <= 100 and later >= abs(first) * 100:
             candidates = candidates[1:]
 
+    # Q1's standalone and cumulative periods are identical. Legacy filings
+    # variously duplicate that value or print it once, so the first resolved
+    # current-period amount is authoritative; a later ``누적`` context can be
+    # the prior-year Q1 column because of shifted colspans.
+    if report_code == "11013":
+        return candidates[0][1]
+
     # The current period pair is commonly rendered as ``3개월 / 누적`` (or
     # ``당분기 / 누적``). Header colspans can shift the word ``누적`` one cell
     # left, so a per-column context check incorrectly selected the standalone
     # quarter as YTD for Samsung and other 2015 filings. Recognize the table's
     # paired-period layout before consulting those shifted column contexts.
     if (
-        report_code in {"11013", "11012", "11014"}
+        report_code in {"11012", "11014"}
         and len(candidates) >= 4
         and has_standalone_and_ytd
     ):
