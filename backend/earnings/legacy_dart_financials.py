@@ -126,7 +126,17 @@ def _balanced_tables(document: str):
         if match.group(0).lstrip().startswith("</"):
             if starts:
                 start = starts.pop()
-                yield start, document[start:match.end()]
+                fragment = document[start:match.end()]
+                # Old DART XML frequently wraps several real statement tables
+                # in a layout table. Parsing that wrapper mixes consolidated,
+                # separate and comparison-period rows into one false candidate.
+                # Only leaf tables represent one deterministic statement table.
+                opening_tables = sum(
+                    not tag.group(0).lstrip().startswith("</")
+                    for tag in _TABLE_TAG.finditer(fragment)
+                )
+                if opening_tables == 1:
+                    yield start, fragment
         else:
             starts.append(match.start())
 

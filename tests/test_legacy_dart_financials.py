@@ -107,6 +107,29 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["OFS"].operating_income, -10_000)
         self.assertEqual(parsed["CFS"].operating_income, 20_000)
 
+    def test_ignores_layout_table_wrapping_multiple_statements(self):
+        document = """
+        <TABLE><TR><TD>
+          <P>연결 포괄손익계산서</P><P>(단위 : 천원)</P>
+          <TABLE>
+            <TR><TH>과목</TH><TH>3개월</TH><TH>누적</TH><TH>전기 3개월</TH><TH>전기 누적</TH></TR>
+            <TR><TD>매출액</TD><TD>16,000</TD><TD>35,000</TD><TD>18,000</TD><TD>38,000</TD></TR>
+            <TR><TD>영업이익</TD><TD>400</TD><TD>1,100</TD><TD>(100)</TD><TD>600</TD></TR>
+            <TR><TD>당기순이익</TD><TD>300</TD><TD>900</TD><TD>(200)</TD><TD>500</TD></TR>
+          </TABLE>
+          <P>포괄손익계산서</P><P>(단위 : 천원)</P>
+          <TABLE>
+            <TR><TH>과목</TH><TH>3개월</TH><TH>누적</TH><TH>전기 3개월</TH><TH>전기 누적</TH></TR>
+            <TR><TD>매출액</TD><TD>600</TD><TD>900</TD><TD>500</TD><TD>800</TD></TR>
+            <TR><TD>영업이익</TD><TD>60</TD><TD>90</TD><TD>50</TD><TD>80</TD></TR>
+            <TR><TD>당기순이익</TD><TD>40</TD><TD>70</TD><TD>30</TD><TD>60</TD></TR>
+          </TABLE>
+        </TD></TR></TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11012")
+        self.assertEqual(parsed["CFS"].revenue, 35_000_000)
+        self.assertEqual(parsed["OFS"].revenue, 900_000)
+
     def test_refuses_unknown_units(self):
         document = """
         <P>손익계산서</P>
