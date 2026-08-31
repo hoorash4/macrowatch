@@ -194,7 +194,7 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         <TABLE>
           <TR><TD>매출액</TD><TD>16,878,034,679</TD></TR>
           <TR><TD>영업이익</TD><TD>225,688,492</TD></TR>
-          <TR><TD>순이익</TD><TD>96,288,363</TD></TR>
+          <TR><TD>순이익(손실)</TD><TD>96,288,363</TD></TR>
         </TABLE>
         <P>포괄손익계산서</P><P>(단위 : 천원)</P>
         <TABLE>
