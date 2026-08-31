@@ -168,8 +168,14 @@ def _balanced_tables(document: str):
 
 def _metric_for_label(value: str) -> str | None:
     label = _normalize(value)
+    # Older statements append a full basic/diluted EPS explanation to the net
+    # income label in the same cell.  The parenthetical text is disclosure,
+    # not part of the account name.  Retain the exact-match guard on both the
+    # full label and its pre-parenthesis account name to avoid fuzzy matching
+    # narrative rows.
+    account_label = _normalize(re.split(r"[（(]", value, maxsplit=1)[0])
     for metric, aliases in _ALIASES.items():
-        if label in aliases:
+        if label in aliases or account_label in aliases:
             return metric
     return None
 

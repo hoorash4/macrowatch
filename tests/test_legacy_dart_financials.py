@@ -74,6 +74,20 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].net_income, 15_000_000)
         self.assertEqual(parsed["CFS"].standalone_revenue, 30_000_000)
 
+    def test_reads_net_income_with_legacy_eps_disclosure_in_same_label_cell(self):
+        document = """
+        <P>손익계산서</P><P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>3개월</TH><TH>누적</TH><TH>전기 3개월</TH><TH>전기 누적</TH></TR>
+          <TR><TD>매출액</TD><TD>105,275,834</TD><TD>324,262,042</TD><TD>100,350,915</TD><TD>291,614,250</TD></TR>
+          <TR><TD>영업이익</TD><TD>16,384,909</TD><TD>57,373,042</TD><TD>14,833,701</TD><TD>30,185,606</TD></TR>
+          <TR><TD>당기순이익(기본주당반기경상이익 및 순이익-당분기3개월:1,905원 당분기누적:6,085원)</TD><TD>15,279,996</TD><TD>48,793,766</TD><TD>14,787,195</TD><TD>29,310,724</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11014")
+        self.assertEqual(parsed["OFS"].net_income, 48_793_766_000)
+        self.assertEqual(parsed["OFS"].standalone_net_income, 15_279_996_000)
+
     def test_colspan_shift_cannot_turn_three_month_amount_into_ytd(self):
         document = """
         <P>연결 손익계산서</P><P>(단위 : 백만원)</P>
