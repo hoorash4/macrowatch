@@ -43,7 +43,6 @@ begin
   where jobs.company_id = targets.company_id
     and jobs.source = 'open_dart' and jobs.job_kind = 'financial_period'
     and jobs.business_year = 2015
-    and jobs.metadata @> '{"legacy_2015_parser_version": 3}'::jsonb
     and jobs.status in ('pending', 'running', 'retry');
   get diagnostics v_reused = row_count;
 
