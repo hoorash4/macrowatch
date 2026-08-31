@@ -23,7 +23,9 @@ from earnings.open_dart_parser import REPORT_QUARTERS
 _TABLE_TAG = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _UNIT = re.compile(r"단위\s*[:：]\s*(백만원|천원|원)", re.IGNORECASE)
 _NUMBER = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
-_STATEMENT_TITLE = re.compile(r"(연결\s*)?(?:포괄\s*)?손익계산서")
+# A statement heading must end at the title.  Narrative phrases such as
+# ``연결포괄손익계산서상`` occur in notes and must not relabel the next table.
+_STATEMENT_TITLE = re.compile(r"(연결\s*)?(?:포괄\s*)?손익계산서(?![가-힣])")
 
 _ALIASES = {
     "revenue": {
@@ -33,7 +35,7 @@ _ALIASES = {
         "영업이익", "영업이익손실", "영업손익",
     },
     "net_income": {
-        "당기순이익", "당기순이익손실", "분기순이익", "분기순이익손실",
+        "순이익", "당기순이익", "당기순이익손실", "분기순이익", "분기순이익손실",
         "반기순이익", "반기순이익손실",
     },
 }
@@ -49,6 +51,11 @@ class LegacyCumulativeStatement:
     revenue: Decimal
     operating_income: Decimal
     net_income: Decimal
+    # Old filings often repeat rounded figures in a summary table before the
+    # actual income statement.  A nearby published statement heading marks the
+    # authoritative table; the flag is internal and keeps legacy test/build
+    # call sites backward compatible.
+    statement_title_confirmed: bool = False
 
 
 def _decode(content: bytes) -> str:
@@ -231,13 +238,21 @@ def _scope_for_table(prefix: str, table: str) -> str:
     return _scope_from_prefix(prefix)
 
 
+def _has_statement_title(prefix: str, table: str) -> bool:
+    plain = re.sub(r"<[^>]+>", " ", prefix + table)
+    return _STATEMENT_TITLE.search(plain) is not None
+
+
 def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeStatement]:
     statements: list[LegacyCumulativeStatement] = []
     for start, table in _balanced_tables(document):
         plain = _normalize(re.sub(r"<[^>]+>", " ", table))
         if not any(alias in plain for alias in _ALIASES["operating_income"]):
             continue
-        local_prefix = document[max(0, start - 5000):start]
+        # Twenty thousand source characters cover verbose DART markup between
+        # a heading and its value table while avoiding unrelated earlier
+        # sections of the filing.
+        local_prefix = document[max(0, start - 20000):start]
         units = _UNIT.findall(local_prefix + table[:1000])
         if not units:
             continue
@@ -262,14 +277,11 @@ def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeSta
                 break
         if all(metric in values for metric in _ALIASES):
             statements.append(LegacyCumulativeStatement(
-                # DART's verbose XML can place more than 5 KB of markup
-                # between a statement title and its numeric table. Use the
-                # complete preceding document so the last published title,
-                # rather than an arbitrary nearby title, determines scope.
-                consolidation_scope=_scope_for_table(document[:start], table),
+                consolidation_scope=_scope_for_table(local_prefix, table),
                 revenue=values["revenue"],
                 operating_income=values["operating_income"],
                 net_income=values["net_income"],
+                statement_title_confirmed=_has_statement_title(local_prefix, table),
             ))
     return statements
 
@@ -299,6 +311,12 @@ def parse_legacy_filing_archive(
 
     result: dict[str, LegacyCumulativeStatement] = {}
     for scope, candidates in by_scope.items():
+        # Prefer the actual published income statement over rounded summary
+        # financial information.  Untitled tables remain a fallback for older
+        # filings that genuinely publish no recognizable statement heading.
+        titled = [candidate for candidate in candidates if candidate.statement_title_confirmed]
+        if titled:
+            candidates = titled
         # A published income statement for a listed operating company cannot
         # support a complete quarter when its parsed revenue is zero/negative.
         # Old HTML tables often expose repeated or comparison columns; reject

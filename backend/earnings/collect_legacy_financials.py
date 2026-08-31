@@ -207,7 +207,7 @@ class LegacyDartFinancialWorker:
                     "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
                     "metadata": {
                         "report_name": metadata.get("report_name"),
-                        "financial_method": "legacy_dart_document_archive_v6",
+                        "financial_method": "legacy_dart_document_archive_v7",
                         "parse_error": parse_errors.get(report_code),
                         "quality_issues": quality_issues,
                     },

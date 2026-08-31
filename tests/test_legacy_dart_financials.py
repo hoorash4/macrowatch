@@ -175,6 +175,39 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].revenue, 16_000_000)
         self.assertEqual(parsed["OFS"].revenue, 600_000)
 
+    def test_detailed_statements_override_rounded_summary_tables(self):
+        document = """
+        <P>가. 요약연결재무정보</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TD>매출액</TD><TD>16,878,035</TD></TR>
+          <TR><TD>영업이익</TD><TD>225,688</TD></TR>
+          <TR><TD>당기순이익</TD><TD>96,288</TD></TR>
+        </TABLE>
+        <P>연결포괄손익계산서상 금액은 아래와 같습니다.</P>
+        <P>나. 요약재무정보</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TD>매출액</TD><TD>591,851</TD></TR>
+          <TR><TD>영업이익</TD><TD>292,552</TD></TR>
+          <TR><TD>당기순이익</TD><TD>262,808</TD></TR>
+        </TABLE>
+        <P>연결 포괄손익계산서</P><P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TD>매출액</TD><TD>16,878,034,679</TD></TR>
+          <TR><TD>영업이익</TD><TD>225,688,492</TD></TR>
+          <TR><TD>순이익</TD><TD>96,288,363</TD></TR>
+        </TABLE>
+        <P>포괄손익계산서</P><P>(단위 : 천원)</P>
+        <TABLE>
+          <TR><TD>매출액</TD><TD>591,851,230</TD></TR>
+          <TR><TD>영업이익</TD><TD>292,551,670</TD></TR>
+          <TR><TD>순이익</TD><TD>262,807,675</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
+        self.assertEqual(parsed["CFS"].revenue, 16_878_034_679_000)
+        self.assertEqual(parsed["CFS"].net_income, 96_288_363_000)
+        self.assertEqual(parsed["OFS"].revenue, 591_851_230_000)
+
     def test_refuses_unknown_units(self):
         document = """
         <P>손익계산서</P>
