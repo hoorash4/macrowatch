@@ -206,8 +206,42 @@ create or replace function public.requeue_unvalidated_legacy_earnings_jobs()
 returns integer language plpgsql security definer
 set search_path = public, pg_temp
 as $$
-declare v_count integer;
+declare v_existing integer; v_requeued integer;
 begin
+  -- A previous repair run may already have queued another row for the same
+  -- company, year and report. Reuse that outstanding row rather than
+  -- violating the partial unique index by reopening the historical row.
+  update public.earnings_ingestion_jobs outstanding
+  set status='retry', attempts=0, available_at=now(), claimed_at=null,
+      last_error=null,
+      metadata=outstanding.metadata || jsonb_build_object(
+        'quality_revalidation', true,
+        'quality_revalidation_version', 1
+      ),
+      updated_at=now()
+  where outstanding.collector_variant='legacy_archive'
+    and outstanding.status in ('pending', 'retry')
+    and exists (
+      select 1 from public.earnings_ingestion_jobs completed
+      where completed.collector_variant='legacy_archive'
+        and completed.status='completed'
+        and completed.business_year between 2002 and 2015
+        and completed.source=outstanding.source
+        and completed.job_kind=outstanding.job_kind
+        and completed.company_id=outstanding.company_id
+        and completed.business_year=outstanding.business_year
+        and coalesce(completed.report_code,'')=coalesce(outstanding.report_code,'')
+        and completed.metadata->>'receipt_no'=outstanding.metadata->>'receipt_no'
+        and coalesce(completed.metadata->>'receipt_no','')<>''
+        and not exists (
+          select 1 from public.earnings_filings filings
+          where filings.source='open_dart'
+            and filings.source_filing_id=completed.metadata->>'receipt_no'
+            and filings.metadata ? 'quality_issues'
+        )
+    );
+  get diagnostics v_existing = row_count;
+
   update public.earnings_ingestion_jobs jobs
   set status='retry', attempts=0, available_at=now(), claimed_at=null,
       completed_at=null, last_error=null,
@@ -220,14 +254,44 @@ begin
     and jobs.status='completed'
     and jobs.business_year between 2002 and 2015
     and coalesce(jobs.metadata->>'receipt_no','')<>''
+    -- Several historical bootstrap passes can leave more than one completed
+    -- row for the same identity. Reopen one representative at a time; the
+    -- partial unique index permits only one outstanding row.
+    and jobs.id = (
+      select min(candidate.id)
+      from public.earnings_ingestion_jobs candidate
+      where candidate.collector_variant='legacy_archive'
+        and candidate.status='completed'
+        and candidate.source=jobs.source
+        and candidate.job_kind=jobs.job_kind
+        and candidate.company_id=jobs.company_id
+        and candidate.business_year=jobs.business_year
+        and coalesce(candidate.report_code,'')=coalesce(jobs.report_code,'')
+        and coalesce(candidate.metadata->>'receipt_no','')<>''
+        and not exists (
+          select 1 from public.earnings_filings candidate_filing
+          where candidate_filing.source='open_dart'
+            and candidate_filing.source_filing_id=candidate.metadata->>'receipt_no'
+            and candidate_filing.metadata ? 'quality_issues'
+        )
+    )
+    and not exists (
+      select 1 from public.earnings_ingestion_jobs outstanding
+      where outstanding.source=jobs.source
+        and outstanding.job_kind=jobs.job_kind
+        and outstanding.company_id=jobs.company_id
+        and outstanding.business_year=jobs.business_year
+        and coalesce(outstanding.report_code,'')=coalesce(jobs.report_code,'')
+        and outstanding.status in ('pending', 'running', 'retry')
+    )
     and not exists (
       select 1 from public.earnings_filings filings
       where filings.source='open_dart'
         and filings.source_filing_id=jobs.metadata->>'receipt_no'
         and filings.metadata ? 'quality_issues'
     );
-  get diagnostics v_count = row_count;
-  return v_count;
+  get diagnostics v_requeued = row_count;
+  return v_existing + v_requeued;
 end;
 $$;
 
