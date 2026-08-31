@@ -111,6 +111,8 @@ jobs:
             --file supabase/migrations/20260830160231_label_market_earnings_fallback_averages.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260831173000_quarantine_legacy_dart_zero_quarters.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260831174000_retry_quarantined_legacy_dart_jobs.sql
 
       - name: Deploy Edge Functions
         run: |
