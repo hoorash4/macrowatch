@@ -25,11 +25,13 @@ _UNIT = re.compile(r"단위\s*[:：]\s*(백만원|천원|원)", re.IGNORECASE)
 _NUMBER = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
 # A statement heading must end at the title.  Narrative phrases such as
 # ``연결포괄손익계산서상`` occur in notes and must not relabel the next table.
-_STATEMENT_TITLE = re.compile(r"(연결\s*)?(?:포괄\s*)?손익계산서(?![가-힣])")
+_STATEMENT_TITLE = re.compile(
+    r"(연\s*결\s*)?(?:포\s*괄\s*)?손\s*익\s*계\s*산\s*서(?![가-힣])"
+)
 
 _ALIASES = {
     "revenue": {
-        "매출액", "수익매출액", "영업수익", "수익", "총영업수익",
+        "매출액", "수익매출액", "영업수익", "수익", "총영업수익", "총영업이익",
     },
     "operating_income": {
         "영업이익", "영업이익손실", "영업손익",
@@ -37,7 +39,8 @@ _ALIASES = {
     "net_income": {
         "순이익", "순이익손실", "당기순이익", "당기순이익손실",
         "분기순이익", "분기순이익손실",
-        "반기순이익", "반기순이익손실",
+        "분기순이익분기포괄이익", "반기순이익", "반기순이익손실",
+        "연결분기순이익", "연결반기순이익", "연결당기순이익",
     },
 }
 
@@ -249,6 +252,12 @@ def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeSta
     for start, table in _balanced_tables(document):
         plain = _normalize(re.sub(r"<[^>]+>", " ", table))
         if not any(alias in plain for alias in _ALIASES["operating_income"]):
+            continue
+        # Business-section market-share tables can contain market-wide
+        # revenue, operating income and net income alongside the company's
+        # figures. They are not financial statements and must never become a
+        # canonical quarter.
+        if "점유율" in plain and "시장" in plain and "당사" in plain:
             continue
         # Twenty thousand source characters cover verbose DART markup between
         # a heading and its value table while avoiding unrelated earlier

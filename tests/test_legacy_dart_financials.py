@@ -208,6 +208,33 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].net_income, 96_288_363_000)
         self.assertEqual(parsed["OFS"].revenue, 591_851_230_000)
 
+    def test_financial_company_statement_overrides_market_share_table(self):
+        document = """
+        <P>시장점유율 추이</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TH>구분</TH><TH>시장</TH><TH>당사</TH><TH>점유율</TH></TR>
+          <TR><TD>영업수익</TD><TD>45,241,023</TD><TD>3,536,841</TD><TD>7.82%</TD></TR>
+          <TR><TD>영업이익</TD><TD>2,335,435</TD><TD>59,269</TD><TD>2.54%</TD></TR>
+          <TR><TD>당기순이익</TD><TD>2,090,861</TD><TD>208,186</TD><TD>9.96%</TD></TR>
+        </TABLE>
+        <P>분 기 연 결 포 괄 손 익 계 산 서</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TD>총영업이익</TD><TD>1,196,780</TD></TR>
+          <TR><TD>영업이익</TD><TD>520,372</TD></TR>
+          <TR><TD>연결분기순이익</TD><TD>395,306</TD></TR>
+        </TABLE>
+        <P>분 기 포 괄 손 익 계 산 서</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TD>총영업이익</TD><TD>249,523</TD></TR>
+          <TR><TD>영업이익</TD><TD>242,419</TD></TR>
+          <TR><TD>분기순이익 (분기포괄이익)</TD><TD>220,516</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
+        self.assertEqual(parsed["CFS"].revenue, 1_196_780_000_000)
+        self.assertEqual(parsed["CFS"].net_income, 395_306_000_000)
+        self.assertEqual(parsed["OFS"].revenue, 249_523_000_000)
+
     def test_refuses_unknown_units(self):
         document = """
         <P>손익계산서</P>
