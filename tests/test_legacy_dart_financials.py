@@ -26,10 +26,12 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
             worker._failure_diagnostic(EarningsStoreError("Earnings RPC failed: safe")),
             "Earnings RPC failed: safe",
         )
-        self.assertEqual(
-            worker._failure_diagnostic(RuntimeError("secret provider payload")),
-            "RuntimeError",
-        )
+        try:
+            raise RuntimeError("secret provider payload")
+        except RuntimeError as error:
+            diagnostic = worker._failure_diagnostic(error)
+        self.assertRegex(diagnostic, r"^RuntimeError:test_failure_diagnostic_exposes_only_sanitized_store_errors:\d+$")
+        self.assertNotIn("secret provider payload", diagnostic)
 
     def test_reads_current_cumulative_column_and_ignores_note_column(self):
         document = """

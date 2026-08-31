@@ -9,6 +9,7 @@ import json
 import os
 from threading import Lock, local
 import time
+import traceback
 from typing import Any, Callable
 
 from earnings.collect_financials import FILING_KIND, REPORT_END_MONTH, reporting_period_bounds
@@ -89,8 +90,19 @@ class LegacyDartFinancialWorker:
         self._reported_failure_diagnostics: set[str] = set()
 
     def _failure_diagnostic(self, error: Exception) -> str:
-        """Expose only the store client's credential-safe RPC diagnostic."""
-        return str(error) if isinstance(error, EarningsStoreError) else type(error).__name__
+        """Expose a credential-safe diagnostic with enough location to repair code.
+
+        Provider payloads and request values remain hidden. For local Python
+        failures, the final traceback frame identifies the broken code path
+        without logging filing contents, credentials, or rejected values.
+        """
+        if isinstance(error, EarningsStoreError):
+            return str(error)
+        frames = traceback.extract_tb(error.__traceback__)
+        if not frames:
+            return type(error).__name__
+        frame = frames[-1]
+        return f"{type(error).__name__}:{frame.name}:{frame.lineno}"
 
     def _archive(self, receipt: str) -> bytes:
         # Start requests at a bounded cadence while allowing slow network
@@ -215,8 +227,14 @@ def main() -> None:
         totals["company_years"] += 1
         for key, value in batch.items():
             totals[key] += value
-    print(json.dumps({"ok": totals["failed"] == 0, **totals}, ensure_ascii=False))
-    if totals["failed"]:
+    useful = totals["completed"] + totals["review_required"]
+    # Individual legacy archives can be malformed or temporarily unavailable.
+    # Those jobs remain retryable; do not suppress downstream recalculation
+    # after a productive batch. A run that made no useful progress is still a
+    # hard failure and remains visible in GitHub Actions.
+    ok = totals["failed"] == 0 or useful > 0
+    print(json.dumps({"ok": ok, **totals}, ensure_ascii=False))
+    if not ok:
         raise SystemExit(1)
 
 

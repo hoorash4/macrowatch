@@ -45,7 +45,7 @@ alter table public.earnings_market_quarterly_metrics
   check (yoy_state in (
     'normal', 'black_turn', 'red_turn', 'loss_narrowing',
     'loss_widening', 'loss_unchanged', 'from_zero',
-    'missing_prior_snapshot'
+    'missing_prior_snapshot', 'insufficient_coverage'
   ));
 
 comment on table public.earnings_market_quarterly_metrics is

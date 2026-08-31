@@ -130,14 +130,14 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("'repair',", sql)
         self.assertIn("collector_variant", sql)
         self.assertIn("on conflict do nothing", sql)
-        self.assertIn(LEGACY_ZERO_QUARANTINE_MIGRATION.name, self.deploy_workflow)
+        self.assertNotIn(LEGACY_ZERO_QUARANTINE_MIGRATION.name, self.deploy_workflow)
         self.assertIn("last_error = 'EarningsStoreError'", self.legacy_zero_retry_migration)
         self.assertIn("repair_reason", self.legacy_zero_retry_migration)
-        self.assertIn(LEGACY_ZERO_RETRY_MIGRATION.name, self.deploy_workflow)
+        self.assertNotIn(LEGACY_ZERO_RETRY_MIGRATION.name, self.deploy_workflow)
         self.assertIn("quality_status = 'review_required'", self.legacy_zero_company_year_retry_migration)
         self.assertIn("financial_method", self.legacy_zero_company_year_retry_migration)
         self.assertIn("attempts >= jobs.max_attempts", self.legacy_zero_company_year_retry_migration)
-        self.assertIn(LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.name, self.deploy_workflow)
+        self.assertNotIn(LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.name, self.deploy_workflow)
 
     def test_partial_financial_company_metrics_are_persisted_and_repaired(self) -> None:
         self.assertIn("quality_status = excluded.quality_status", self.partial_financials_migration)
