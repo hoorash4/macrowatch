@@ -10,6 +10,7 @@ on:
       - "backend/earnings/discover_backfill_filings.py"
       - "backend/earnings/supabase_rest.py"
       - "supabase/migrations/*legacy_dart*"
+      - "supabase/migrations/20260831235950_finalize_earnings_quality_schema.sql"
       - ".github/workflows/earnings-open-dart-legacy.yml"
   workflow_dispatch:
     inputs:
