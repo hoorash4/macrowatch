@@ -31,6 +31,11 @@ def _statement_values(statement: LegacyCumulativeStatement) -> dict[str, Decimal
     return {metric: getattr(statement, metric) for metric in REQUIRED_METRICS}
 
 
+def _outcome_counter_key(outcome: str) -> str:
+    """Map the database outcome name to the worker summary counter."""
+    return "completed" if outcome == "complete" else outcome
+
+
 def build_legacy_standalone_quarters(
     statements: dict[str, dict[str, LegacyCumulativeStatement]],
 ) -> tuple[str | None, dict[str, dict[str, Decimal]]]:
@@ -215,7 +220,7 @@ class LegacyDartFinancialWorker:
                         "fiscal_year": year,
                         **quarter,
                     })
-                result[outcome] += 1
+                result[_outcome_counter_key(outcome)] += 1
             except Exception as error:
                 diagnostic = self._failure_diagnostic(error)
                 if diagnostic not in self._reported_failure_diagnostics:

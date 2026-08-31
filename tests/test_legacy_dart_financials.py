@@ -9,6 +9,7 @@ from earnings.legacy_dart_financials import (
 )
 from earnings.collect_legacy_financials import build_legacy_standalone_quarters
 from earnings.collect_legacy_financials import LegacyDartFinancialWorker
+from earnings.collect_legacy_financials import _outcome_counter_key
 from earnings.supabase_rest import EarningsStoreError
 
 
@@ -20,6 +21,10 @@ def archive(document: str) -> bytes:
 
 
 class LegacyDartFinancialParserTests(unittest.TestCase):
+    def test_database_complete_outcome_uses_completed_summary_counter(self):
+        self.assertEqual(_outcome_counter_key("complete"), "completed")
+        self.assertEqual(_outcome_counter_key("review_required"), "review_required")
+
     def test_worker_indexes_historical_financials_by_company(self):
         worker = LegacyDartFinancialWorker(
             object(), object(), sleeper=lambda _seconds: None,
