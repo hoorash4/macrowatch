@@ -13,6 +13,7 @@ import traceback
 from typing import Any, Callable
 
 from earnings.collect_financials import FILING_KIND, REPORT_END_MONTH, reporting_period_bounds
+from earnings.financial_quality import validate_canonical_quarter
 from earnings.legacy_dart_financials import (
     LegacyCumulativeStatement,
     parse_legacy_filing_archive,
@@ -79,6 +80,7 @@ class LegacyDartFinancialWorker:
         *,
         request_interval_seconds: float = 0.3,
         sleeper: Callable[[float], None] = time.sleep,
+        historical_financials: list[dict[str, Any]] | None = None,
     ) -> None:
         self.client = client
         self.store = store
@@ -88,6 +90,11 @@ class LegacyDartFinancialWorker:
         self._last_request_started = 0.0
         self._thread_state = local()
         self._reported_failure_diagnostics: set[str] = set()
+        self._history_by_company: dict[str, list[dict[str, Any]]] = {}
+        for row in historical_financials or []:
+            company_id = str(row.get("company_id") or "")
+            if company_id:
+                self._history_by_company.setdefault(company_id, []).append(row)
 
     def _failure_diagnostic(self, error: Exception) -> str:
         """Expose a credential-safe diagnostic with enough location to repair code.
@@ -162,6 +169,7 @@ class LegacyDartFinancialWorker:
                 values = standalone.get(report_code)
                 quarter = None
                 outcome = "review_required"
+                quality_issues: list[str] = []
                 if scope and values:
                     quarter = {
                         "fiscal_quarter": REPORT_QUARTERS[report_code],
@@ -175,7 +183,11 @@ class LegacyDartFinancialWorker:
                         "missing_metrics": [],
                         "source_updated_at": f"{filed_on}T00:00:00+09:00",
                     }
-                    outcome = "complete"
+                    quality_issues = validate_canonical_quarter(
+                        quarter,
+                        self._history_by_company.get(str(job["company_id"]), []),
+                    )
+                    outcome = "review_required" if quality_issues else "complete"
                 filing = {
                     "source_filing_id": receipt,
                     "filing_kind": FILING_KIND[report_code],
@@ -191,11 +203,18 @@ class LegacyDartFinancialWorker:
                         "report_name": metadata.get("report_name"),
                         "financial_method": "legacy_dart_document_archive_v1",
                         "parse_error": parse_errors.get(report_code),
+                        "quality_issues": quality_issues,
                     },
                 }
                 self.store.complete_open_dart_job(
                     job_id=int(job["id"]), filing=filing, quarter=quarter, outcome=outcome,
                 )
+                if quarter is not None and outcome == "complete":
+                    self._history_by_company.setdefault(str(job["company_id"]), []).append({
+                        "company_id": str(job["company_id"]),
+                        "fiscal_year": year,
+                        **quarter,
+                    })
                 result[outcome] += 1
             except Exception as error:
                 diagnostic = self._failure_diagnostic(error)
@@ -217,6 +236,7 @@ def main() -> None:
     interval = max(0.2, float(os.getenv("OPEN_DART_REQUEST_INTERVAL_SECONDS", "0.3")))
     worker = LegacyDartFinancialWorker(
         client, store, request_interval_seconds=interval,
+        historical_financials=store.list_all_quarterly_financials(),
     )
     totals = {"company_years": 0, "completed": 0, "review_required": 0, "failed": 0}
     for _ in range(max_company_years):

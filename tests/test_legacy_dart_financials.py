@@ -20,6 +20,17 @@ def archive(document: str) -> bytes:
 
 
 class LegacyDartFinancialParserTests(unittest.TestCase):
+    def test_worker_indexes_historical_financials_by_company(self):
+        worker = LegacyDartFinancialWorker(
+            object(), object(), sleeper=lambda _seconds: None,
+            historical_financials=[
+                {"company_id": "a", "fiscal_year": 2020, "revenue": "100"},
+                {"company_id": "b", "fiscal_year": 2020, "revenue": "200"},
+            ],
+        )
+        self.assertEqual(len(worker._history_by_company["a"]), 1)
+        self.assertEqual(worker._history_by_company["b"][0]["revenue"], "200")
+
     def test_failure_diagnostic_exposes_only_sanitized_store_errors(self):
         worker = object.__new__(LegacyDartFinancialWorker)
         self.assertEqual(
