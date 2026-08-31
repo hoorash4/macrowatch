@@ -59,6 +59,12 @@ def build_legacy_standalone_quarters(
             # report is absent or could not be parsed.
             previous = cumulative
             continue
+        # Revenue is the structural guard for the cumulative subtraction. A
+        # non-positive standalone revenue means the parser selected a repeated
+        # or prior-period column. Do not publish any of that quarter's metrics.
+        if values["revenue"] <= 0:
+            previous = None
+            continue
         standalone[report_code] = values
         previous = cumulative
     return scope, standalone

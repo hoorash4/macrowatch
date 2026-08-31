@@ -66,6 +66,19 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         with self.assertRaises(LegacyDartParseError):
             parse_legacy_filing_archive(archive(document), report_code="11011")
 
+    def test_refuses_zero_revenue_statement_candidates(self):
+        document = """
+        <P>손익계산서</P><P>(단위 : 원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>당기</TH></TR>
+          <TR><TD>매출액</TD><TD>0</TD></TR>
+          <TR><TD>영업이익</TD><TD>0</TD></TR>
+          <TR><TD>당기순이익</TD><TD>0</TD></TR>
+        </TABLE>
+        """
+        with self.assertRaises(LegacyDartParseError):
+            parse_legacy_filing_archive(archive(document), report_code="11011")
+
     def test_converts_cumulative_year_to_standalone_quarters(self):
         def statement(scope, revenue, operating, net):
             return LegacyCumulativeStatement(scope, revenue, operating, net)
@@ -91,6 +104,18 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         scope, quarters = build_legacy_standalone_quarters(statements)
         self.assertIsNone(scope)
         self.assertEqual(quarters, {})
+
+    def test_refuses_non_positive_standalone_revenue_after_subtraction(self):
+        statements = {
+            "11013": {"OFS": LegacyCumulativeStatement("OFS", 100, 20, 15)},
+            "11012": {"OFS": LegacyCumulativeStatement("OFS", 100, 20, 15)},
+            "11014": {"OFS": LegacyCumulativeStatement("OFS", 300, 60, 45)},
+            "11011": {"OFS": LegacyCumulativeStatement("OFS", 500, 100, 75)},
+        }
+        _scope, quarters = build_legacy_standalone_quarters(statements)
+        self.assertNotIn("11012", quarters)
+        self.assertNotIn("11014", quarters, "잘못된 Q2 누적값 뒤의 Q3도 추정하지 않는다")
+        self.assertEqual(quarters["11011"]["revenue"], 200)
 
 
 if __name__ == "__main__":

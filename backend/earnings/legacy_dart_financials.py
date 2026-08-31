@@ -259,6 +259,11 @@ def parse_legacy_filing_archive(
 
     result: dict[str, LegacyCumulativeStatement] = {}
     for scope, candidates in by_scope.items():
+        # A published income statement for a listed operating company cannot
+        # support a complete quarter when its parsed revenue is zero/negative.
+        # Old HTML tables often expose repeated or comparison columns; reject
+        # those candidates instead of silently turning them into zero quarters.
+        candidates = [item for item in candidates if item.revenue > 0]
         unique = {
             (item.revenue, item.operating_income, item.net_income): item
             for item in candidates

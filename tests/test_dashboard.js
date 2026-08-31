@@ -131,12 +131,17 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.equal(latest.currentAverage, 90);
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.yoyDeltaPp, 10);
+  const nullSeries = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows([{
+    ...serverRows[0], fiscal_quarter: 3, yoy_pct: null, yoy_delta_pp: null,
+  }]);
+  assert.equal(nullSeries[0].metrics.revenue.yoyPct, null, '계산 불가 null을 가짜 0으로 바꾸지 않는다');
+  assert.equal(nullSeries[0].metrics.revenue.yoyDeltaPp, null, '델타 null도 빈 구간으로 유지한다');
   const amountDomain = context.window.MacroWatchKoreaEarnings.axisDomain([90, 100]);
   assert.ok(amountDomain.min > 0, '양수 금액축은 더 이상 0에 고정하지 않는다');
   assert.ok(amountDomain.min < 90 && amountDomain.max > 100);
   const rateDomain = context.window.MacroWatchKoreaEarnings.axisDomain([20, 30], { includeZero: true });
-  assert.ok(rateDomain.min <= 0 && rateDomain.max > 30, '증가율축은 0을 포함해 자동 조정한다');
-  assert.notEqual(Math.abs(rateDomain.min), rateDomain.max, '증가율축을 불필요하게 대칭 고정하지 않는다');
+  assert.equal(rateDomain.min, 0, '양수뿐인 증가율축은 0 아래에 불필요한 여백을 만들지 않는다');
+  assert.ok(rateDomain.max > 30, '증가율축 상단은 표시 자료에 맞춰 자동 조정한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
   assert.match(html, /id="korea-earnings-growth-chart"/);
@@ -157,7 +162,12 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
   assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);
   assert.match(styles, /\.korea-earnings-line--delta[^}]*stroke-dasharray/);
-  assert.match(styles, /\.korea-earnings-chart-panel--aux/);
+  assert.match(styles, /\.korea-earnings-chart-panel \+ \.korea-earnings-chart-panel/);
+  assert.doesNotMatch(styles, /\.korea-earnings-chart-panel--aux\s*\{[^}]*background/);
+  assert.match(source, /showPeriodLabels: true/);
+  assert.match(source, /showPeriodLabels: false/);
+  assert.match(source, /function synchronizeCursors\(charts\)/);
+  assert.match(source, /data-korea-earnings-cursor-period/);
   assert.match(styles, /\.korea-earnings-line--revenue/);
 });
 

@@ -19,6 +19,7 @@ KIS_CLIENT = ROOT / "supabase/functions/_shared/kis-client.ts"
 UNIVERSE_SOURCES = ROOT / "supabase/functions/_shared/earnings-universe-sources.ts"
 CONTRACT = ROOT / "docs/earnings-momentum-data-contract.md"
 DYNAMIC_COLLECTION_MIGRATION = ROOT / "supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql"
+LEGACY_ZERO_QUARANTINE_MIGRATION = ROOT / "supabase/migrations/20260831173000_quarantine_legacy_dart_zero_quarters.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -40,6 +41,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.universe_sources = UNIVERSE_SOURCES.read_text(encoding="utf-8")
         cls.contract = CONTRACT.read_text(encoding="utf-8")
         cls.dynamic_collection_migration = DYNAMIC_COLLECTION_MIGRATION.read_text(encoding="utf-8")
+        cls.legacy_zero_quarantine_migration = LEGACY_ZERO_QUARANTINE_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
         self.assertIn("public.earnings_filings", self.migration)
@@ -115,6 +117,16 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
         self.assertIn('"backend/earnings/**"', self.open_dart_workflow)
         self.assertIn("github.event_name == 'push' && '20'", self.open_dart_workflow)
+
+    def test_legacy_zero_quarters_are_quarantined_and_requeued_for_full_year(self) -> None:
+        sql = self.legacy_zero_quarantine_migration
+        self.assertIn("legacy_dart_zero_quarter_quarantine", sql)
+        self.assertIn("financials.revenue = 0", sql)
+        self.assertIn("quality_status = 'review_required'", sql)
+        self.assertIn("'repair',", sql)
+        self.assertIn("collector_variant", sql)
+        self.assertIn("on conflict do nothing", sql)
+        self.assertIn(LEGACY_ZERO_QUARANTINE_MIGRATION.name, self.deploy_workflow)
 
     def test_partial_financial_company_metrics_are_persisted_and_repaired(self) -> None:
         self.assertIn("quality_status = excluded.quality_status", self.partial_financials_migration)

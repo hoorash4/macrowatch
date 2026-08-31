@@ -7,17 +7,26 @@
     { key: 'net_income', label: '순이익', className: 'net-income' },
   ];
   const CHARTS = [
-    { id: 'korea-earnings-amount-chart', valueKey: 'currentAverage', kind: 'amount', height: 320, includeZero: false, unit: '원' },
-    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 220, includeZero: true, unit: '%' },
-    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: true, unit: '%p' },
+    { id: 'korea-earnings-amount-chart', valueKey: 'currentAverage', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
+    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 220, includeZero: true, unit: '%', showPeriodLabels: false },
+    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: true, unit: '%p', showPeriodLabels: false },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
-  const PADDING = { top: 24, right: 24, bottom: 42, left: 14 };
+  const BASE_PADDING = { top: 24, right: 24, left: 14 };
   const state = { series: [], years: 5 };
 
-  function finite(value) { const number = Number(value); return Number.isFinite(number) ? number : null; }
+  // Number(null)은 0이므로 DB의 계산 불가값을 먼저 걸러야 가짜 0점이 생기지 않습니다.
+  function finite(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
   function periodLabel(row) { return `${row.fiscalYear} Q${row.fiscalQuarter}`; }
-  function formatSigned(value, unit) { return Number.isFinite(value) ? `${value > 0 ? '+' : ''}${value.toFixed(1)}${unit}` : '—'; }
+  function formatSigned(value, unit) {
+    if (!Number.isFinite(value)) return '—';
+    const rounded = Math.abs(value) < .05 ? 0 : value;
+    return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}${unit}`;
+  }
   function formatAmount(value) {
     if (!Number.isFinite(value)) return '—';
     const absolute = Math.abs(value);
@@ -63,7 +72,9 @@
     if (includeZero) { minimum = Math.min(0, minimum); maximum = Math.max(0, maximum); }
     const span = maximum - minimum;
     const padding = span > Number.EPSILON ? span * paddingRatio : Math.max(Math.abs(maximum) * paddingRatio, 1);
-    const paddedMin = minimum - padding, paddedMax = maximum + padding;
+    // 증가율이 한쪽 부호에만 있을 때 0 반대편까지 축을 넓히지 않습니다.
+    const paddedMin = includeZero && minimum === 0 ? 0 : minimum - padding;
+    const paddedMax = includeZero && maximum === 0 ? 0 : maximum + padding;
     const step = window.MacroWatchAnalysisChart.niceStep((paddedMax - paddedMin) / targetIntervals);
     const domainMin = Math.floor(paddedMin / step) * step, domainMax = Math.ceil(paddedMax / step) * step;
     const tickCount = Math.round((domainMax - domainMin) / step);
@@ -71,7 +82,7 @@
     return { min: domainMin, max: domainMax, ticks };
   }
 
-  function linePath(points, yMin, yMax, width, height) {
+  function linePath(points, yMin, yMax, width, height, padding) {
     const segments = [];
     let segment = [];
     points.forEach((point, index) => {
@@ -81,8 +92,8 @@
         return;
       }
       segment.push({
-        x: scale(index, 0, Math.max(points.length - 1, 1), PADDING.left, width - PADDING.right),
-        y: scale(point.value, yMin, yMax, height - PADDING.bottom, PADDING.top),
+        x: scale(index, 0, Math.max(points.length - 1, 1), padding.left, width - padding.right),
+        y: scale(point.value, yMin, yMax, height - padding.bottom, padding.top),
       });
     });
     if (segment.length) segments.push(segment);
@@ -116,39 +127,58 @@
       return null;
     }
     const domain = axisDomain(values, { includeZero: spec.includeZero });
+    const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 16 };
     const frameWidth = Math.max(MIN_WIDTH, (container.clientWidth || MIN_WIDTH) - AXIS_WIDTH);
     const chartWidth = Math.max(frameWidth, points.length * 48);
-    const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), PADDING.left, chartWidth - PADDING.right);
-    const y = (value) => scale(value, domain.min, domain.max, spec.height - PADDING.bottom, PADDING.top);
+    const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), padding.left, chartWidth - padding.right);
+    const y = (value) => scale(value, domain.min, domain.max, spec.height - padding.bottom, padding.top);
     const axis = domain.ticks.map((value) => `<text x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind)}</text>`).join('');
-    const grids = domain.ticks.map((value) => `<line x1="${PADDING.left}" y1="${y(value)}" x2="${chartWidth - PADDING.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
-    const labels = points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
-      ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>` : '').join('');
+    const grids = domain.ticks.map((value) => `<line x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
+    const labels = spec.showPeriodLabels
+      ? points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
+        ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>`
+        : '').join('')
+      : '';
     const metricSeries = METRICS.map((metric) => ({
       ...metric,
       points: points.map((point) => ({ ...point, value: metricValue(point, metric.key, spec.valueKey) })),
     }));
-    const lines = metricSeries.map((metric) => `<path d="${linePath(metric.points, domain.min, domain.max, chartWidth, spec.height)}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}"/>`).join('');
+    const lines = metricSeries.map((metric) => `<path d="${linePath(metric.points, domain.min, domain.max, chartWidth, spec.height, padding)}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}"/>`).join('');
     const dots = metricSeries.flatMap((metric) => metric.points.map((point, index) => Number.isFinite(point.value)
       ? `<circle cx="${x(index)}" cy="${y(point.value)}" r="${spec.kind === 'amount' ? 2.8 : 2.4}" class="korea-earnings-point korea-earnings-point--${metric.className}"/>` : '')).join('');
-    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" style="height:${spec.height}px" viewBox="0 0 ${AXIS_WIDTH} ${spec.height}" aria-hidden="true">${axis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="매출·영업이익·순이익 ${spec.kind} 시계열">${grids}${labels}${lines}${dots}<line data-korea-earnings-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${spec.height - PADDING.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text><rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
+    const periodCursor = spec.showPeriodLabels
+      ? `<text data-korea-earnings-cursor-period x="0" y="${spec.height - 8}" text-anchor="middle" class="korea-earnings-cursor-period"></text>`
+      : '';
+    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" style="height:${spec.height}px" viewBox="0 0 ${AXIS_WIDTH} ${spec.height}" aria-hidden="true">${axis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="매출·영업이익·순이익 ${spec.kind} 시계열">${grids}${labels}${lines}${dots}<line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
     const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
-    hit.addEventListener('pointermove', (event) => {
+    const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
+    const indexFromEvent = (event) => {
       const rect = hit.getBoundingClientRect(), localX = (event.clientX - rect.left) * (chartWidth / rect.width);
-      const index = Math.max(0, Math.min(points.length - 1, Math.round(scale(localX, PADDING.left, chartWidth - PADDING.right, 0, Math.max(points.length - 1, 1)))));
+      return Math.max(0, Math.min(points.length - 1, Math.round(scale(localX, padding.left, chartWidth - padding.right, 0, Math.max(points.length - 1, 1)))));
+    };
+    const showCursor = (index) => {
       const point = points[index], cursorX = x(index);
       const details = METRICS.map((metric) => {
         const value = metricValue(point, metric.key, spec.valueKey);
         return `${metric.label} ${spec.kind === 'amount' ? `${formatAmount(value)}원` : formatSigned(value, spec.unit)}`;
       }).join(' · ');
-      cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursorLabel.setAttribute('x', cursorX);
-      cursorLabel.textContent = `${periodLabel(point)} · ${details}`;
+      const labelX = Math.max(170, Math.min(chartWidth - 170, cursorX));
+      cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursorLabel.setAttribute('x', labelX);
+      cursorLabel.textContent = details;
       cursor.classList.add('is-visible'); cursorLabel.classList.add('is-visible');
-    });
-    hit.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); cursorLabel.classList.remove('is-visible'); });
+      if (cursorPeriod) {
+        cursorPeriod.setAttribute('x', Math.max(32, Math.min(chartWidth - 32, cursorX)));
+        cursorPeriod.textContent = periodLabel(point);
+        cursorPeriod.classList.add('is-visible');
+      }
+    };
+    const hideCursor = () => {
+      cursor.classList.remove('is-visible'); cursorLabel.classList.remove('is-visible');
+      cursorPeriod?.classList.remove('is-visible');
+    };
     window.MacroWatchAnalysisChart.scrollToLatest(frame);
-    return frame;
+    return { frame, hit, indexFromEvent, showCursor, hideCursor };
   }
 
   function synchronizeFrames(frames) {
@@ -165,6 +195,16 @@
     }, { passive: true }));
   }
 
+  // 어느 보조차트에 마우스를 두더라도 같은 분기의 세로선과 각 차트 값을 함께 표시합니다.
+  function synchronizeCursors(charts) {
+    charts.forEach((chart) => chart.hit.addEventListener('pointermove', (event) => {
+      const index = chart.indexFromEvent(event);
+      charts.forEach((target) => target.showCursor(index));
+    }));
+    const stack = document.querySelector('.korea-earnings-chart-stack');
+    if (stack) stack.onpointerleave = () => charts.forEach((chart) => chart.hideCursor());
+  }
+
   function setStatus(message) {
     CHARTS.forEach((chart) => {
       const container = document.getElementById(chart.id);
@@ -176,8 +216,9 @@
     const points = visiblePoints();
     if (!points.length) { setStatus('비교 가능한 KOSPI 시총 상위기업 평균 실적이 아직 없습니다.'); return; }
     updateSummary(points);
-    const frames = CHARTS.map((chart) => renderChart(chart, points)).filter(Boolean);
-    synchronizeFrames(frames);
+    const charts = CHARTS.map((chart) => renderChart(chart, points)).filter(Boolean);
+    synchronizeFrames(charts.map((chart) => chart.frame));
+    synchronizeCursors(charts);
   }
 
   async function load({ supabaseClient }) {
