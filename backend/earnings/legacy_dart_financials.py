@@ -58,6 +58,13 @@ class LegacyCumulativeStatement:
     revenue: Decimal
     operating_income: Decimal
     net_income: Decimal
+    # Interim statements can publish both the current three-month period and
+    # year-to-date columns.  Keep the former so Q2/Q3 remains recoverable when
+    # the preceding cumulative filing is absent; these are official values,
+    # not values inferred from another period.
+    standalone_revenue: Decimal | None = None
+    standalone_operating_income: Decimal | None = None
+    standalone_net_income: Decimal | None = None
     # Old filings often repeat rounded figures in a summary table before the
     # actual income statement.  A nearby published statement heading marks the
     # authoritative table; the flag is internal and keeps legacy test/build
@@ -174,13 +181,10 @@ def _column_context(rows: list[list[str]], row_index: int, column: int) -> str:
     ))
 
 
-def _choose_cumulative_amount(
-    rows: list[list[str]],
-    row_index: int,
-    label_column: int,
-    *,
-    report_code: str,
-) -> Decimal | None:
+def _row_amount_candidates(
+    rows: list[list[str]], row_index: int, label_column: int,
+) -> list[tuple[int, Decimal, str]]:
+    """Return statement amounts after removing note-reference columns."""
     row = rows[row_index]
     candidates: list[tuple[int, Decimal, str]] = []
     for column in range(label_column + 1, len(row)):
@@ -191,13 +195,40 @@ def _choose_cumulative_amount(
         if "주석" in context:
             continue
         candidates.append((column, value, context))
+
+    # A note reference occasionally survives a malformed header. It is a
+    # small integer immediately before materially larger statement amounts.
+    if len(candidates) >= 2:
+        first = candidates[0][1]
+        later = max(
+            (abs(value) for _column, value, _context in candidates[1:]),
+            default=Decimal(0),
+        )
+        if first == first.to_integral_value() and abs(first) <= 100 and later >= abs(first) * 100:
+            candidates = candidates[1:]
+    return candidates
+
+
+def _has_standalone_and_ytd(rows: list[list[str]], row_index: int) -> bool:
     header = _normalize(" ".join(
         cell for header_row in rows[:row_index] for cell in header_row
     ))
-    has_standalone_and_ytd = (
+    return (
         ("3개월" in header or "당분기" in header)
         and ("누적" in header or "6개월" in header or "9개월" in header)
     )
+
+
+def _choose_cumulative_amount(
+    rows: list[list[str]],
+    row_index: int,
+    label_column: int,
+    *,
+    report_code: str,
+) -> Decimal | None:
+    row = rows[row_index]
+    candidates = _row_amount_candidates(rows, row_index, label_column)
+    has_standalone_and_ytd = _has_standalone_and_ytd(rows, row_index)
 
     # Some old Q1 statements leave both current-period revenue cells blank
     # when the company had no sales, while publishing the prior-year pair.
@@ -217,14 +248,6 @@ def _choose_cumulative_amount(
         return Decimal(0)
     if not candidates:
         return None
-
-    # A note reference occasionally survives a malformed header.  It is a
-    # small integer immediately before materially larger statement amounts.
-    if len(candidates) >= 2:
-        first = candidates[0][1]
-        later = max((abs(value) for _column, value, _context in candidates[1:]), default=Decimal(0))
-        if first == first.to_integral_value() and abs(first) <= 100 and later >= abs(first) * 100:
-            candidates = candidates[1:]
 
     # Q1's standalone and cumulative periods are identical. Legacy filings
     # variously duplicate that value or print it once, so the first resolved
@@ -255,6 +278,26 @@ def _choose_cumulative_amount(
     # Older statements also publish current YTD, prior-year YTD and two annual
     # comparatives. In that structure the first value is the current period;
     # selecting the second silently copies the prior year into the new year.
+    return candidates[0][1]
+
+
+def _choose_standalone_amount(
+    rows: list[list[str]],
+    row_index: int,
+    label_column: int,
+    *,
+    report_code: str,
+) -> Decimal | None:
+    """Read an explicitly published current-quarter amount when available."""
+    if report_code not in {"11012", "11014"}:
+        return None
+    if not _has_standalone_and_ytd(rows, row_index):
+        return None
+    candidates = _row_amount_candidates(rows, row_index, label_column)
+    # Two current-period and two comparison-period amounts identify the
+    # published ``3개월 / 누적`` layout without consulting another filing.
+    if len(candidates) < 4:
+        return None
     return candidates[0][1]
 
 
@@ -328,6 +371,7 @@ def _parse_document(
         parser = _TableParser()
         parser.feed(table)
         values: dict[str, Decimal] = {}
+        standalone_values: dict[str, Decimal] = {}
         for row_index, row in enumerate(parser.rows):
             for label_column, cell in enumerate(row[:4]):
                 metric = _metric_for_label(cell)
@@ -338,6 +382,11 @@ def _parse_document(
                 )
                 if amount is not None:
                     values[metric] = amount * multiplier
+                standalone_amount = _choose_standalone_amount(
+                    parser.rows, row_index, label_column, report_code=report_code,
+                )
+                if standalone_amount is not None:
+                    standalone_values[metric] = standalone_amount * multiplier
                 break
         if all(metric in values for metric in _ALIASES):
             statements.append(LegacyCumulativeStatement(
@@ -345,6 +394,9 @@ def _parse_document(
                 revenue=values["revenue"],
                 operating_income=values["operating_income"],
                 net_income=values["net_income"],
+                standalone_revenue=standalone_values.get("revenue"),
+                standalone_operating_income=standalone_values.get("operating_income"),
+                standalone_net_income=standalone_values.get("net_income"),
                 statement_title_confirmed=_has_statement_title(local_prefix, table),
             ))
     return statements

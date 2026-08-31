@@ -72,6 +72,7 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].revenue, 100_000_000)
         self.assertEqual(parsed["CFS"].operating_income, 18_000_000)
         self.assertEqual(parsed["CFS"].net_income, 15_000_000)
+        self.assertEqual(parsed["CFS"].standalone_revenue, 30_000_000)
 
     def test_colspan_shift_cannot_turn_three_month_amount_into_ytd(self):
         document = """
@@ -390,6 +391,23 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(quarters["11012"]["revenue"], 130)
         self.assertEqual(quarters["11014"]["operating_income"], 40)
         self.assertEqual(quarters["11011"]["net_income"], 35)
+
+    def test_uses_published_q3_column_when_preceding_cumulative_report_is_missing(self):
+        statements = {
+            "11014": {
+                "OFS": LegacyCumulativeStatement(
+                    "OFS", 390, 90, 60,
+                    standalone_revenue=160,
+                    standalone_operating_income=40,
+                    standalone_net_income=25,
+                ),
+            },
+        }
+        scope, quarters = build_legacy_standalone_quarters(statements)
+        self.assertEqual(scope, "OFS")
+        self.assertEqual(quarters["11014"]["revenue"], 160)
+        self.assertEqual(quarters["11014"]["operating_income"], 40)
+        self.assertEqual(quarters["11014"]["net_income"], 25)
 
     def test_refuses_to_mix_cfs_and_ofs_within_one_year(self):
         statements = {

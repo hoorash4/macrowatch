@@ -31,6 +31,19 @@ def _statement_values(statement: LegacyCumulativeStatement) -> dict[str, Decimal
     return {metric: getattr(statement, metric) for metric in REQUIRED_METRICS}
 
 
+def _published_standalone_values(
+    statement: LegacyCumulativeStatement,
+) -> dict[str, Decimal] | None:
+    """Return a complete explicitly published three-month column, if present."""
+    values = {
+        metric: getattr(statement, f"standalone_{metric}")
+        for metric in REQUIRED_METRICS
+    }
+    if any(value is None for value in values.values()):
+        return None
+    return {metric: value for metric, value in values.items() if value is not None}
+
+
 def _outcome_counter_key(outcome: str) -> str:
     """Map the database outcome name to the worker summary counter."""
     return "completed" if outcome == "complete" else outcome
@@ -56,9 +69,13 @@ def build_legacy_standalone_quarters(
         if not by_scope or scope not in by_scope:
             previous = None
             continue
-        cumulative = _statement_values(by_scope[scope])
+        statement = by_scope[scope]
+        cumulative = _statement_values(statement)
+        published_standalone = _published_standalone_values(statement)
         if report_code == "11013":
             values = cumulative
+        elif published_standalone is not None:
+            values = published_standalone
         elif previous is not None:
             values = {metric: cumulative[metric] - previous[metric] for metric in REQUIRED_METRICS}
         else:
@@ -207,7 +224,7 @@ class LegacyDartFinancialWorker:
                     "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
                     "metadata": {
                         "report_name": metadata.get("report_name"),
-                        "financial_method": "legacy_dart_document_archive_v14",
+                        "financial_method": "legacy_dart_document_archive_v15",
                         "parse_error": parse_errors.get(report_code),
                         "quality_issues": quality_issues,
                     },
