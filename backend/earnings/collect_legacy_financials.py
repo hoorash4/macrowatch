@@ -237,7 +237,12 @@ class LegacyDartFinancialWorker:
 def main() -> None:
     client = OpenDartClient.from_env()
     store = SupabaseEarningsStore.from_env()
-    max_company_years = max(1, min(int(os.getenv("LEGACY_DART_MAX_COMPANY_YEARS", "100")), 500))
+    # The workflow exposes 2,500 as its documented upper bound. Keep the
+    # worker consistent so a repair run can drain a large historical backlog
+    # instead of silently stopping after 500 company-years.
+    max_company_years = max(
+        1, min(int(os.getenv("LEGACY_DART_MAX_COMPANY_YEARS", "100")), 2500)
+    )
     interval = max(0.2, float(os.getenv("OPEN_DART_REQUEST_INTERVAL_SECONDS", "0.3")))
     worker = LegacyDartFinancialWorker(
         client, store, request_interval_seconds=interval,
