@@ -144,6 +144,8 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.ok(rateDomain.min < 20, '증가율축 하단에는 최소한의 시각 여백만 둔다');
   assert.ok(rateDomain.max > 30, '증가율축 상단은 표시 자료에 맞춰 자동 조정한다');
   assert.ok((30 - 20) / (rateDomain.max - rateDomain.min) > 0.9, '표시 자료가 Y축 높이를 충분히 사용한다');
+  const deltaDomain = context.window.MacroWatchKoreaEarnings.axisDomain([-8, 20], { includeZero: true });
+  assert.ok(deltaDomain.ticks.includes(0), '증가율 델타축은 가속·둔화 기준인 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
   assert.match(html, /id="korea-earnings-growth-chart"/);
@@ -156,7 +158,7 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(source, /kind: 'growth'/);
   assert.match(source, /kind: 'delta'/);
   assert.doesNotMatch(source, /kind: 'growth'[^\n]*includeZero: true/);
-  assert.doesNotMatch(source, /kind: 'delta'[^\n]*includeZero: true/);
+  assert.match(source, /kind: 'delta'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
   assert.match(html, /기업당 평균 실적/);
   assert.match(html, /전년동기 증가율/);

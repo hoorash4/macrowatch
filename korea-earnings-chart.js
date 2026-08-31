@@ -9,7 +9,7 @@
   const CHARTS = [
     { id: 'korea-earnings-amount-chart', valueKey: 'currentAverage', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
     { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 220, includeZero: false, unit: '%', showPeriodLabels: false },
-    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: false, unit: '%p', showPeriodLabels: false },
+    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: true, unit: '%p', showPeriodLabels: false },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
@@ -78,9 +78,11 @@
     // 눈금 반올림으로 표시 범위를 다시 넓히지 않습니다. 현재 보이는
     // 값이 차트 높이를 충분히 사용하도록 최소 여백만 둔 5개 눈금입니다.
     const domainMin = paddedMin, domainMax = paddedMax;
-    const ticks = Array.from({ length: targetIntervals + 1 }, (_, index) => (
-      Number((domainMin + ((domainMax - domainMin) * index / targetIntervals)).toPrecision(12))
-    ));
+    const ticks = includeZero && domainMin < 0 && domainMax > 0
+      ? [domainMin, domainMin / 2, 0, domainMax / 2, domainMax]
+      : Array.from({ length: targetIntervals + 1 }, (_, index) => (
+        Number((domainMin + ((domainMax - domainMin) * index / targetIntervals)).toPrecision(12))
+      ));
     return { min: domainMin, max: domainMax, ticks };
   }
 
