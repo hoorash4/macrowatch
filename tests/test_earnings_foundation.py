@@ -21,6 +21,7 @@ CONTRACT = ROOT / "docs/earnings-momentum-data-contract.md"
 DYNAMIC_COLLECTION_MIGRATION = ROOT / "supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql"
 LEGACY_ZERO_QUARANTINE_MIGRATION = ROOT / "supabase/migrations/20260831173000_quarantine_legacy_dart_zero_quarters.sql"
 LEGACY_ZERO_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831174000_retry_quarantined_legacy_dart_jobs.sql"
+LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831175000_retry_quarantined_legacy_dart_company_years.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -44,6 +45,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.dynamic_collection_migration = DYNAMIC_COLLECTION_MIGRATION.read_text(encoding="utf-8")
         cls.legacy_zero_quarantine_migration = LEGACY_ZERO_QUARANTINE_MIGRATION.read_text(encoding="utf-8")
         cls.legacy_zero_retry_migration = LEGACY_ZERO_RETRY_MIGRATION.read_text(encoding="utf-8")
+        cls.legacy_zero_company_year_retry_migration = LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
         self.assertIn("public.earnings_filings", self.migration)
@@ -132,6 +134,10 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("last_error = 'EarningsStoreError'", self.legacy_zero_retry_migration)
         self.assertIn("repair_reason", self.legacy_zero_retry_migration)
         self.assertIn(LEGACY_ZERO_RETRY_MIGRATION.name, self.deploy_workflow)
+        self.assertIn("quality_status = 'review_required'", self.legacy_zero_company_year_retry_migration)
+        self.assertIn("financial_method", self.legacy_zero_company_year_retry_migration)
+        self.assertIn("attempts >= jobs.max_attempts", self.legacy_zero_company_year_retry_migration)
+        self.assertIn(LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.name, self.deploy_workflow)
 
     def test_partial_financial_company_metrics_are_persisted_and_repaired(self) -> None:
         self.assertIn("quality_status = excluded.quality_status", self.partial_financials_migration)
