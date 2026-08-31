@@ -135,11 +135,39 @@ function deduplicate(candidates: Candidate[]) {
       .localeCompare(`${right.publishedAt || ""}:${right.itemHash}`));
 }
 
-async function collectCandidates(lookbackHours: number) {
+function previousCalendarDate(value: string) {
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  return new Date(timestamp - 86_400_000).toISOString().slice(0, 10);
+}
+
+function parseTargetDate(value: unknown) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error("target_date는 YYYY-MM-DD 형식이어야 합니다.");
+  }
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value) {
+    throw new Error("target_date가 유효한 날짜가 아닙니다.");
+  }
+  const today = kstDate(new Date().toISOString());
+  const ageDays = Math.floor((Date.parse(`${today}T00:00:00Z`) - timestamp) / 86_400_000);
+  if (ageDays < 0 || ageDays >= 15) {
+    throw new Error("target_date는 오늘부터 14일 전까지 지정할 수 있습니다.");
+  }
+  return value;
+}
+
+async function collectCandidates(lookbackHours: number, targetDate: string | null = null) {
   const sources: SourceName[] = ["yonhap", "maekyung", "financial_news"];
   const results = await Promise.all(sources.map((source) => fetchRss(source, lookbackHours)));
+  const candidates = deduplicate(results.flatMap((result) => result.candidates));
+  // 정기 실행은 기존 rolling 24시간 수집을 그대로 유지한다. 날짜 백필만
+  // 해당 집계일의 전일(KST)에 발행된 후보로 제한해 누락일끼리 섞이지 않게 한다.
+  const sourceDate = targetDate ? previousCalendarDate(targetDate) : null;
   return {
-    candidates: deduplicate(results.flatMap((result) => result.candidates)),
+    candidates: sourceDate
+      ? candidates.filter((candidate) => candidate.publishedAt && kstDate(candidate.publishedAt) === sourceDate)
+      : candidates,
     errors: results.flatMap((result) => result.errors),
   };
 }
@@ -306,6 +334,7 @@ async function getRunOptions(request: Request) {
     limit,
     dryRun: body.dry_run === true,
     markComplete: body.mark_complete === true,
+    targetDate: parseTargetDate(body.target_date),
   };
 }
 Deno.serve(async (request) => {
@@ -316,8 +345,8 @@ Deno.serve(async (request) => {
   if (providedSecret !== expectedSecret) return json({ error: "인증에 실패했습니다." }, 401);
   let stage = "요청 검증";
   try {
-    const { lookbackHours, offset, limit, dryRun, markComplete } = await getRunOptions(request);
-    const runDate = kstDate(new Date().toISOString());
+    const { lookbackHours, offset, limit, dryRun, markComplete, targetDate } = await getRunOptions(request);
+    const runDate = targetDate || kstDate(new Date().toISOString());
     if (markComplete && !dryRun && offset === 0) {
       const { data, error } = await serverClient().from("news_pipeline_runs")
         .select("run_date,next_offset,completed_at")
@@ -344,7 +373,7 @@ Deno.serve(async (request) => {
       }
     }
     stage = "뉴스 수집";
-    const { candidates, errors } = await collectCandidates(lookbackHours);
+    const { candidates, errors } = await collectCandidates(lookbackHours, targetDate);
     const batch = candidates.slice(offset, offset + limit);
     stage = "극단 신호 기준 조회";
     const extremeRules = await loadExtremeRules(serverClient());
@@ -385,6 +414,7 @@ Deno.serve(async (request) => {
       excluded_articles: outputs.length - indexOutputs.length,
       sentiments,
       lookback_hours: lookbackHours,
+      target_date: targetDate,
       offset,
       limit,
       has_more: hasMore,

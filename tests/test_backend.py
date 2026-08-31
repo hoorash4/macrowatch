@@ -454,6 +454,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Promise.allSettled", pipeline)
         self.assertIn("errors: results.flatMap", pipeline)
 
+    def test_news_backfill_keeps_missing_collection_dates_separate(self) -> None:
+        pipeline = (ROOT / "supabase/functions/news-pipeline/index.ts").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")
+        self.assertIn("targetDate: parseTargetDate(body.target_date)", pipeline)
+        self.assertIn("const runDate = targetDate || kstDate", pipeline)
+        self.assertIn("previousCalendarDate(targetDate)", pipeline)
+        self.assertIn("kstDate(candidate.publishedAt) === sourceDate", pipeline)
+        self.assertIn("backfill_date:", workflow)
+        self.assertIn('lookback_hours=360', workflow)
+
     def test_fomc_prompt_has_stability_boundaries(self) -> None:
         prompt = (ROOT / "supabase/prompts/fomc-policy-v1.2.txt").read_text(encoding="utf-8")
         self.assertIn("물가를 직접 억제하거나 가격안정을 회복하는 것이 인상의 핵심 목적이 아니고", prompt)
