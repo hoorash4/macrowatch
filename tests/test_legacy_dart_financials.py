@@ -235,6 +235,27 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].net_income, 395_306_000_000)
         self.assertEqual(parsed["OFS"].revenue, 249_523_000_000)
 
+    def test_statement_revenue_label_without_amount_suffix_overrides_summary(self):
+        document = """
+        <P>요약재무정보</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TD>매출액</TD><TD>5,005</TD></TR>
+          <TR><TD>영업이익</TD><TD>2,126</TD></TR>
+          <TR><TD>당기순이익</TD><TD>1,398</TD></TR>
+        </TABLE>
+        <P>연결 포괄손익계산서</P><P>(단위 : 원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH>당분기</TH><TH>전분기</TH></TR>
+          <TR><TD>매출</TD><TD>312,328,846,326</TD><TD>325,409,677,400</TD></TR>
+          <TR><TD>영업이익</TD><TD>13,194,000,167</TD><TD>19,569,949,992</TD></TR>
+          <TR><TD>당기 순이익</TD><TD>10,422,801,672</TD><TD>18,508,436,679</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
+        self.assertEqual(parsed["CFS"].revenue, 312_328_846_326)
+        self.assertEqual(parsed["CFS"].operating_income, 13_194_000_167)
+        self.assertEqual(parsed["CFS"].net_income, 10_422_801_672)
+
     def test_refuses_unknown_units(self):
         document = """
         <P>손익계산서</P>
