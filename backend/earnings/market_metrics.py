@@ -12,7 +12,8 @@ from earnings.market_universe import QuarterlyUniverse
 
 
 HUNDRED = Decimal("100")
-CALCULATION_VERSION = 3
+MIN_MARKET_COVERAGE_PCT = Decimal("50")
+CALCULATION_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,9 @@ def calculate_market_metric_history(
             assert current_total is not None
             current_average = _average(current_total, len(current_rows))
             assert current_average is not None
+            current_coverage = (
+                _pct(len(current_rows), len(current_universe.company_ids)) or Decimal(0)
+            )
 
             prior_rows = [] if prior_universe is None else [
                 by_period[(company_id, ordinal - 4)]
@@ -139,10 +143,19 @@ def calculate_market_metric_history(
                 if prior_rows else None
             )
             prior_average = _average(prior_total, len(prior_rows))
-            state, yoy = (
-                _state_and_growth(current_average, prior_average)
-                if prior_average is not None else ("missing_prior_snapshot", None)
+            prior_coverage = (
+                _pct(len(prior_rows), len(prior_universe.company_ids))
+                if prior_universe is not None else None
             )
+            if current_coverage < MIN_MARKET_COVERAGE_PCT:
+                state, yoy = "insufficient_coverage", None
+            elif prior_coverage is not None and prior_coverage < MIN_MARKET_COVERAGE_PCT:
+                state, yoy = "insufficient_coverage", None
+            else:
+                state, yoy = (
+                    _state_and_growth(current_average, prior_average)
+                    if prior_average is not None else ("missing_prior_snapshot", None)
+                )
 
             previous = result_by_metric_period.get((metric, period.shift(-1)))
             previous_yoy = previous.yoy_pct if previous else None
@@ -166,12 +179,13 @@ def calculate_market_metric_history(
                 # counts, never a fixed historical cohort.
                 comparable_company_count=len(current_rows),
                 delta_comparable_company_count=len(prior_rows),
-                company_coverage_pct=(
-                    _pct(len(current_rows), len(current_universe.company_ids)) or Decimal(0)
-                ),
+                company_coverage_pct=current_coverage,
                 current_total=current_total,
                 prior_total=prior_total,
-                current_average=current_average,
+                current_average=(
+                    current_average
+                    if current_coverage >= MIN_MARKET_COVERAGE_PCT else None
+                ),
                 prior_average=prior_average,
                 yoy_pct=yoy,
                 yoy_state=state,

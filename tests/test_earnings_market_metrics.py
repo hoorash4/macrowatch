@@ -104,6 +104,37 @@ class MarketAggregateMetricTests(unittest.TestCase):
         self.assertEqual(target.comparable_company_count, 2)
         self.assertTrue(target.is_provisional)
 
+    def test_less_than_half_coverage_is_not_published_as_a_market_signal(self):
+        rows = [
+            row("a", 2024, 1, 100), row("a", 2025, 1, 1000),
+            row("b", 2024, 1, 100), row("b", 2025, 1, 1000),
+        ]
+        target = result_for(calculate_market_metric_history(
+            index_id="KOSPI100", currency="KRW",
+            universes_by_period=universes(
+                p2024q1=["a", "b", "missing-1", "missing-2", "missing-3"],
+                p2025q1=["a", "b", "missing-1", "missing-2", "missing-3"],
+            ), financials=rows,
+        ), 2025, 1, "revenue")
+        self.assertEqual(target.yoy_state, "insufficient_coverage")
+        self.assertIsNone(target.current_average)
+        self.assertIsNone(target.yoy_pct)
+
+    def test_low_prior_coverage_suppresses_yoy_but_keeps_current_average(self):
+        rows = [
+            row("a", 2024, 1, 100), row("a", 2025, 1, 150),
+            row("b", 2025, 1, 150), row("c", 2025, 1, 150),
+        ]
+        target = result_for(calculate_market_metric_history(
+            index_id="KOSPI100", currency="KRW",
+            universes_by_period=universes(
+                p2024q1=["a", "b", "c"], p2025q1=["a", "b", "c"],
+            ), financials=rows,
+        ), 2025, 1, "revenue")
+        self.assertEqual(target.yoy_state, "insufficient_coverage")
+        self.assertEqual(target.current_average, Decimal("150"))
+        self.assertIsNone(target.yoy_pct)
+
     def test_explicit_cfs_ofs_mix_is_excluded(self):
         rows = [
             row("mixed", 2024, 1, 100, scope="OFS"),
