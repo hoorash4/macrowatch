@@ -115,6 +115,13 @@ jobs:
             --file supabase/migrations/20260831174000_retry_quarantined_legacy_dart_jobs.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260831175000_retry_quarantined_legacy_dart_company_years.sql
+          # Historical files above are replayed for idempotent deployments.
+          # Always finish with the queue split and replay-safe quality schema
+          # so an older function definition cannot reclaim legacy jobs.
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260831_add_earnings_collector_variant.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260831235950_finalize_earnings_quality_schema.sql
 
       - name: Deploy Edge Functions
         run: |
