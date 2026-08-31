@@ -18,7 +18,7 @@ from earnings.legacy_dart_financials import (
 )
 from earnings.open_dart import OpenDartClient
 from earnings.open_dart_parser import REPORT_QUARTERS, REQUIRED_METRICS
-from earnings.supabase_rest import SupabaseEarningsStore
+from earnings.supabase_rest import EarningsStoreError, SupabaseEarningsStore
 
 
 def _decimal_text(value: Decimal | None) -> str | None:
@@ -86,6 +86,11 @@ class LegacyDartFinancialWorker:
         self._request_lock = Lock()
         self._last_request_started = 0.0
         self._thread_state = local()
+        self._reported_failure_diagnostics: set[str] = set()
+
+    def _failure_diagnostic(self, error: Exception) -> str:
+        """Expose only the store client's credential-safe RPC diagnostic."""
+        return str(error) if isinstance(error, EarningsStoreError) else type(error).__name__
 
     def _archive(self, receipt: str) -> bytes:
         # Start requests at a bounded cadence while allowing slow network
@@ -181,7 +186,14 @@ class LegacyDartFinancialWorker:
                 )
                 result[outcome] += 1
             except Exception as error:
-                self.store.fail_open_dart_job(job_id=int(job["id"]), error=type(error).__name__)
+                diagnostic = self._failure_diagnostic(error)
+                if diagnostic not in self._reported_failure_diagnostics:
+                    self._reported_failure_diagnostics.add(diagnostic)
+                    print(json.dumps({
+                        "event": "legacy_dart_completion_failed",
+                        "diagnostic": diagnostic,
+                    }, ensure_ascii=False), flush=True)
+                self.store.fail_open_dart_job(job_id=int(job["id"]), error=diagnostic)
                 result["failed"] += 1
         return result
 

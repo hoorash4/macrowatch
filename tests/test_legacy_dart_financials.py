@@ -8,6 +8,8 @@ from earnings.legacy_dart_financials import (
     parse_legacy_filing_archive,
 )
 from earnings.collect_legacy_financials import build_legacy_standalone_quarters
+from earnings.collect_legacy_financials import LegacyDartFinancialWorker
+from earnings.supabase_rest import EarningsStoreError
 
 
 def archive(document: str) -> bytes:
@@ -18,6 +20,17 @@ def archive(document: str) -> bytes:
 
 
 class LegacyDartFinancialParserTests(unittest.TestCase):
+    def test_failure_diagnostic_exposes_only_sanitized_store_errors(self):
+        worker = object.__new__(LegacyDartFinancialWorker)
+        self.assertEqual(
+            worker._failure_diagnostic(EarningsStoreError("Earnings RPC failed: safe")),
+            "Earnings RPC failed: safe",
+        )
+        self.assertEqual(
+            worker._failure_diagnostic(RuntimeError("secret provider payload")),
+            "RuntimeError",
+        )
+
     def test_reads_current_cumulative_column_and_ignores_note_column(self):
         document = """
         <P>연결손익계산서</P><P>(단위 : 백만원)</P>
