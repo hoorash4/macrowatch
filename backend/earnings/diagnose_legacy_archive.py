@@ -10,8 +10,13 @@ from zipfile import ZipFile
 
 from earnings.legacy_dart_financials import (
     _STATEMENT_TITLE,
+    _TableParser,
+    _UNIT,
     _balanced_tables,
+    _choose_cumulative_amount,
+    _choose_standalone_amount,
     _decode,
+    _metric_for_label,
     _parse_document,
 )
 from earnings.open_dart import OpenDartClient
@@ -41,6 +46,32 @@ def main() -> None:
                 prefix_titles = [
                     match.group(0) for match in _STATEMENT_TITLE.finditer(prefix_text)
                 ]
+                parser = _TableParser()
+                parser.feed(table)
+                recognized: dict[str, dict[str, str | None]] = {}
+                for row_index, row in enumerate(parser.rows):
+                    for label_column, cell in enumerate(row[:4]):
+                        metric = _metric_for_label(cell)
+                        if not metric or metric in recognized:
+                            continue
+                        cumulative = _choose_cumulative_amount(
+                            parser.rows, row_index, label_column,
+                            report_code=report_code,
+                        )
+                        standalone = _choose_standalone_amount(
+                            parser.rows, row_index, label_column,
+                            report_code=report_code,
+                        )
+                        recognized[metric] = {
+                            "label": cell,
+                            "cumulative": (
+                                format(cumulative, "f") if cumulative is not None else None
+                            ),
+                            "standalone": (
+                                format(standalone, "f") if standalone is not None else None
+                            ),
+                        }
+                        break
                 contexts.append({
                     "document": name,
                     "table": position,
@@ -48,6 +79,8 @@ def main() -> None:
                     "table_head": table_text[:1200],
                     "prefix_titles": prefix_titles[-5:],
                     "table_titles": table_titles,
+                    "units": _UNIT.findall(prefix_text + table_text[:1000])[-3:],
+                    "recognized_metrics": recognized,
                 })
             for position, statement in enumerate(_parse_document(document, report_code), start=1):
                 rows.append({
