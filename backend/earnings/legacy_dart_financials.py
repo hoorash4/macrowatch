@@ -223,6 +223,14 @@ def _scope_from_prefix(prefix: str) -> str:
     return "OFS"
 
 
+def _scope_for_table(prefix: str, table: str) -> str:
+    """Prefer a statement title embedded in the table over prior context."""
+    table_matches = list(_STATEMENT_TITLE.finditer(re.sub(r"<[^>]+>", " ", table)))
+    if table_matches:
+        return "CFS" if table_matches[-1].group(1) else "OFS"
+    return _scope_from_prefix(prefix)
+
+
 def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeStatement]:
     statements: list[LegacyCumulativeStatement] = []
     for start, table in _balanced_tables(document):
@@ -258,7 +266,7 @@ def _parse_document(document: str, report_code: str) -> list[LegacyCumulativeSta
                 # between a statement title and its numeric table. Use the
                 # complete preceding document so the last published title,
                 # rather than an arbitrary nearby title, determines scope.
-                consolidation_scope=_scope_from_prefix(document[:start]),
+                consolidation_scope=_scope_for_table(document[:start], table),
                 revenue=values["revenue"],
                 operating_income=values["operating_income"],
                 net_income=values["net_income"],
