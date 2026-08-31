@@ -1,4 +1,4 @@
--- Re-run legacy statements after parser v14 separated Q1's one-value-per-
+-- Re-run every legacy Q1 after parser v14 separated Q1's one-value-per-
 -- period layout from Q2/Q3 standalone-and-cumulative pairs.  Some Q1 tables
 -- show the 3-month/YTD header but publish one identical period value only;
 -- treating the second numeric cell as current silently selected prior-year Q1.
@@ -10,7 +10,7 @@ with latest_filings as (
   from public.earnings_filings filings
   where filings.source = 'open_dart'
     and filings.fiscal_year between 2002 and 2015
-    and filings.source_report_code in ('11013', '11012', '11014', '11011')
+    and filings.source_report_code = '11013'
     and filings.source_filing_id ~ '^\d{14}$'
   order by filings.company_id, filings.fiscal_year, filings.source_report_code,
            filings.is_correction desc, filings.filing_date desc, filings.updated_at desc
