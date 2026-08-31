@@ -8,8 +8,8 @@
   ];
   const CHARTS = [
     { id: 'korea-earnings-amount-chart', valueKey: 'currentAverage', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
-    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 220, includeZero: true, unit: '%', showPeriodLabels: false },
-    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: true, unit: '%p', showPeriodLabels: false },
+    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 220, includeZero: false, unit: '%', showPeriodLabels: false },
+    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: false, unit: '%p', showPeriodLabels: false },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
@@ -65,7 +65,7 @@
   }
 
   // 각 차트가 자기 단위와 현재 표시 구간에 맞는 Y축을 독립적으로 사용합니다.
-  function axisDomain(values, { includeZero = false, paddingRatio = 0.1, targetIntervals = 4 } = {}) {
+  function axisDomain(values, { includeZero = false, paddingRatio = 0.05, targetIntervals = 5 } = {}) {
     const finiteValues = values.filter(Number.isFinite);
     if (!finiteValues.length) return { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1] };
     let minimum = Math.min(...finiteValues), maximum = Math.max(...finiteValues);
