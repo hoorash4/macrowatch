@@ -44,7 +44,7 @@ jobs:
       - name: Install worker dependency
         run: pip install -r backend/requirements.txt
 
-      - name: Queue the fixed 2002-2014 archive window
+      - name: Queue the fixed 2002-2015 archive window
         env:
           PYTHONPATH: backend
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

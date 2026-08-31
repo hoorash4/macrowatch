@@ -64,6 +64,27 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].operating_income, 18_000_000)
         self.assertEqual(parsed["CFS"].net_income, 15_000_000)
 
+    def test_colspan_shift_cannot_turn_three_month_amount_into_ytd(self):
+        document = """
+        <P>연결 손익계산서</P><P>(단위 : 백만원)</P>
+        <TABLE>
+          <TR><TH COLSPAN="2">과목</TH><TH COLSPAN="2">제 47 기 반기</TH><TH COLSPAN="2">제 46 기 반기</TH></TR>
+          <TR><TH COLSPAN="2"></TH><TH>3개월</TH><TH>누적</TH><TH>3개월</TH><TH>누적</TH></TR>
+          <TR><TD COLSPAN="2">수익(매출액)</TD><TD>48,537,539</TD><TD>95,655,457</TD><TD>52,353,229</TD><TD>106,028,555</TD></TR>
+          <TR><TD COLSPAN="2">매출원가</TD><TD>28,955,599</TD><TD>57,910,986</TD><TD>31,671,819</TD><TD>63,721,334</TD></TR>
+          <TR><TD COLSPAN="2">매출총이익</TD><TD>19,581,940</TD><TD>37,744,471</TD><TD>20,681,410</TD><TD>42,307,221</TD></TR>
+          <TR><TD COLSPAN="2">판매비와관리비</TD><TD>12,684,003</TD><TD>24,867,167</TD><TD>13,494,087</TD><TD>26,631,099</TD></TR>
+          <TR><TD COLSPAN="2">영업이익(손실)</TD><TD>6,897,937</TD><TD>12,877,304</TD><TD>7,187,323</TD><TD>15,676,122</TD></TR>
+          <TR><TD COLSPAN="2">기타수익</TD><TD>1</TD><TD>2</TD><TD>3</TD><TD>4</TD></TR>
+          <TR><TD COLSPAN="2">기타비용</TD><TD>1</TD><TD>2</TD><TD>3</TD><TD>4</TD></TR>
+          <TR><TD COLSPAN="2">당기순이익(손실)</TD><TD>5,752,297</TD><TD>10,378,112</TD><TD>6,250,781</TD><TD>13,825,222</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(archive(document), report_code="11012")
+        self.assertEqual(parsed["CFS"].revenue, 95_655_457_000_000)
+        self.assertEqual(parsed["CFS"].operating_income, 12_877_304_000_000)
+        self.assertEqual(parsed["CFS"].net_income, 10_378_112_000_000)
+
     def test_keeps_separate_and_consolidated_candidates_separate(self):
         document = """
         <P>손익계산서</P><P>(단위 : 천원)</P>

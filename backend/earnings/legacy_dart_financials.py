@@ -181,8 +181,27 @@ def _choose_cumulative_amount(
         if first == first.to_integral_value() and abs(first) <= 100 and later >= abs(first) * 100:
             candidates = candidates[1:]
 
-    # Q2/Q3 tables sometimes omit the word "누적" but present current-quarter,
-    # current-YTD, prior-quarter, prior-YTD in that order.
+    # The current period pair is commonly rendered as ``3개월 / 누적`` (or
+    # ``당분기 / 누적``). Header colspans can shift the word ``누적`` one cell
+    # left, so a per-column context check incorrectly selected the standalone
+    # quarter as YTD for Samsung and other 2015 filings. Recognize the table's
+    # paired-period layout before consulting those shifted column contexts.
+    header = _normalize(" ".join(
+        cell for header_row in rows[:row_index] for cell in header_row
+    ))
+    has_standalone_and_ytd = (
+        ("3개월" in header or "당분기" in header)
+        and ("누적" in header or "6개월" in header or "9개월" in header)
+    )
+    if (
+        report_code in {"11012", "11014"}
+        and len(candidates) >= 4
+        and has_standalone_and_ytd
+    ):
+        return candidates[1][1]
+
+    # Some tables omit explicit period words but retain the same four-column
+    # current-quarter/current-YTD/prior-quarter/prior-YTD layout.
     if report_code in {"11012", "11014"} and len(candidates) >= 4:
         return candidates[1][1]
     return candidates[0][1]

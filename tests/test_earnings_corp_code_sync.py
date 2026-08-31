@@ -39,11 +39,11 @@ class RpcHttpErrorSession:
 
 
 class EarningsCorpCodeSyncTests(unittest.TestCase):
-    def test_structured_backfill_includes_open_dart_2015_lower_bound(self) -> None:
-        self.assertEqual(structured_history_years(2026), 12)
-        self.assertEqual(structured_history_years(2030), 16)
+    def test_structured_backfill_keeps_the_verified_2016_lower_bound(self) -> None:
+        self.assertEqual(structured_history_years(2026), 11)
+        self.assertEqual(structured_history_years(2030), 15)
         with self.assertRaises(ValueError):
-            structured_history_years(2014)
+            structured_history_years(2015)
 
     def test_historical_filing_window_never_extends_past_today(self) -> None:
         self.assertEqual(

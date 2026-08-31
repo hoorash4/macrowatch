@@ -13,17 +13,16 @@ from earnings.open_dart import OpenDartClient
 from earnings.supabase_rest import SupabaseEarningsStore
 
 
-# OpenDART's structured financial-statement endpoint accepts business years
-# from 2015 onward. Keep 2015 on this deterministic route: it is the comparison
-# base for 2016 YoY metrics, so sending it through the legacy archive parser can
-# distort every downstream growth and delta series.
-OPEN_DART_STRUCTURED_START_YEAR = 2015
+# The structured multi-company and single-company endpoints return no rows for
+# much of the tracked 2015 universe. The corrected official filing-archive
+# parser owns 2002-2015; structured collection begins at its verified boundary.
+OPEN_DART_STRUCTURED_START_YEAR = 2016
 
 
 def structured_history_years(as_of_year: int) -> int:
     """Return the non-rolling OpenDART structured-history window."""
     if as_of_year < OPEN_DART_STRUCTURED_START_YEAR:
-        raise ValueError("MacroWatch structured OpenDART history starts in 2015.")
+        raise ValueError("MacroWatch structured OpenDART history starts in 2016.")
     return as_of_year - OPEN_DART_STRUCTURED_START_YEAR + 1
 
 

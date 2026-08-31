@@ -23,6 +23,7 @@ LEGACY_ZERO_QUARANTINE_MIGRATION = ROOT / "supabase/migrations/20260831173000_qu
 LEGACY_ZERO_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831174000_retry_quarantined_legacy_dart_jobs.sql"
 LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831175000_retry_quarantined_legacy_dart_company_years.sql"
 STRUCTURED_2015_MIGRATION = ROOT / "supabase/migrations/20260831235970_use_structured_earnings_from_2015.sql"
+LEGACY_2015_RESTORE_MIGRATION = ROOT / "supabase/migrations/20260831235980_restore_legacy_earnings_2015.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -48,6 +49,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.legacy_zero_retry_migration = LEGACY_ZERO_RETRY_MIGRATION.read_text(encoding="utf-8")
         cls.legacy_zero_company_year_retry_migration = LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.read_text(encoding="utf-8")
         cls.structured_2015_migration = STRUCTURED_2015_MIGRATION.read_text(encoding="utf-8")
+        cls.legacy_2015_restore_migration = LEGACY_2015_RESTORE_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
         self.assertIn("public.earnings_filings", self.migration)
@@ -125,13 +127,19 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("inputs.max_batches || '50'", self.open_dart_workflow)
         self.assertIn('default: "50"', self.open_dart_workflow)
 
-    def test_2015_uses_structured_open_dart_and_legacy_stops_at_2014(self) -> None:
-        sql = self.structured_2015_migration
-        self.assertIn("jobs.business_year >= 2015", sql)
-        self.assertIn("generate_series(2002, 2014)", sql)
-        self.assertIn("jobs.business_year between 2002 and 2014", sql)
-        self.assertIn("enqueue_earnings_structured_2015_repair", sql)
-        self.assertIn(STRUCTURED_2015_MIGRATION.name, self.deploy_workflow)
+    def test_final_boundary_restores_corrected_legacy_parser_for_2015(self) -> None:
+        sql = self.legacy_2015_restore_migration
+        self.assertIn("enqueue_earnings_legacy_2015_parser_v2_repair", sql)
+        self.assertIn(LEGACY_2015_RESTORE_MIGRATION.name, self.deploy_workflow)
+        self.assertNotIn(STRUCTURED_2015_MIGRATION.name, self.deploy_workflow)
+        self.assertLess(
+            self.deploy_workflow.index("20260831235950_finalize_earnings_quality_schema.sql"),
+            self.deploy_workflow.index("20260831235960_parallelize_legacy_dart_companies.sql"),
+        )
+        self.assertLess(
+            self.deploy_workflow.index("20260831235960_parallelize_legacy_dart_companies.sql"),
+            self.deploy_workflow.index(LEGACY_2015_RESTORE_MIGRATION.name),
+        )
 
     def test_legacy_zero_quarters_are_quarantined_and_requeued_for_full_year(self) -> None:
         sql = self.legacy_zero_quarantine_migration

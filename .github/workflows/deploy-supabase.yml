@@ -114,14 +114,16 @@ jobs:
           # be replayed on every deploy; doing so can resurrect completed work.
           # Historical files above are replayed for idempotent deployments.
           # Always finish with the queue split, replay-safe quality schema and
-          # the 2015 provider boundary. Older definitions must not reclaim 2015
-          # jobs through the legacy parser after a deployment replay.
+          # the final provider boundary. Older definitions must not reclaim
+          # incompatible jobs after a deployment replay.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260831_add_earnings_collector_variant.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260831235950_finalize_earnings_quality_schema.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235970_use_structured_earnings_from_2015.sql
+            --file supabase/migrations/20260831235960_parallelize_legacy_dart_companies.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260831235980_restore_legacy_earnings_2015.sql
 
       - name: Deploy Edge Functions
         run: |

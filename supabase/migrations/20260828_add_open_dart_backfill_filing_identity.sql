@@ -123,7 +123,7 @@ begin
     update public.earnings_ingestion_jobs
     set priority = 100,
         reason = 'repair',
-        metadata = v_metadata,
+        metadata = jobs.metadata || v_metadata,
         status = case when status = 'running' then 'retry' else status end,
         claimed_at = case when status = 'running' then null else claimed_at end,
         available_at = least(available_at, now()),
