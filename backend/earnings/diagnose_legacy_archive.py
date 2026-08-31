@@ -76,7 +76,7 @@ def main() -> None:
                     "document": name,
                     "table": position,
                     "prefix_tail": prefix_text[-1200:],
-                    "table_head": table_text[:1200],
+                    "table_head": table_text[:6000],
                     "prefix_titles": prefix_titles[-5:],
                     "table_titles": table_titles,
                     "units": _UNIT.findall(prefix_text + table_text[:1000])[-3:],
