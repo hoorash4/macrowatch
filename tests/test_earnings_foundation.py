@@ -120,7 +120,8 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("inputs.sync_identifiers == true", self.open_dart_workflow)
         self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
         self.assertIn('"backend/earnings/**"', self.open_dart_workflow)
-        self.assertIn("github.event_name == 'push' && '20'", self.open_dart_workflow)
+        self.assertIn("inputs.max_batches || '50'", self.open_dart_workflow)
+        self.assertIn('default: "50"', self.open_dart_workflow)
 
     def test_legacy_zero_quarters_are_quarantined_and_requeued_for_full_year(self) -> None:
         sql = self.legacy_zero_quarantine_migration
