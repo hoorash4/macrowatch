@@ -66,10 +66,10 @@ def build_legacy_standalone_quarters(
             # report is absent or could not be parsed.
             previous = cumulative
             continue
-        # Revenue is the structural guard for the cumulative subtraction. A
-        # non-positive standalone revenue means the parser selected a repeated
-        # or prior-period column. Do not publish any of that quarter's metrics.
-        if values["revenue"] <= 0:
+        # Negative revenue or an entirely zero statement cannot support a
+        # canonical quarter. Zero revenue with reported expenses/losses is a
+        # legitimate published result and is retained consistently with SEC.
+        if values["revenue"] < 0 or all(value == 0 for value in values.values()):
             previous = None
             continue
         standalone[report_code] = values
@@ -207,7 +207,7 @@ class LegacyDartFinancialWorker:
                     "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
                     "metadata": {
                         "report_name": metadata.get("report_name"),
-                        "financial_method": "legacy_dart_document_archive_v12",
+                        "financial_method": "legacy_dart_document_archive_v13",
                         "parse_error": parse_errors.get(report_code),
                         "quality_issues": quality_issues,
                     },

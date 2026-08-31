@@ -46,8 +46,12 @@ def validate_canonical_quarter(
     values = {metric: _amount(quarter.get(metric)) for metric in CORE_METRICS}
     revenue = values["revenue"]
     issues: list[str] = []
-    if revenue is not None and revenue <= 0:
+    if revenue is not None and revenue < 0:
         issues.append("non_positive_revenue")
+    if all(value == 0 for value in values.values() if value is not None) and all(
+        value is not None for value in values.values()
+    ):
+        issues.append("all_zero_income_statement")
 
     currency = str(quarter.get("currency") or "")
     absolute_limit = ABSOLUTE_REVENUE_LIMIT.get(currency)

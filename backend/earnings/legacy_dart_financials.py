@@ -22,7 +22,10 @@ from earnings.open_dart_parser import REPORT_QUARTERS
 
 _TABLE_TAG = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _UNIT = re.compile(r"단위\s*[:：]\s*(백만원|천원|원)", re.IGNORECASE)
-_NUMBER = re.compile(r"^\(?-?[\d,]+(?:\.\d+)?\)?$")
+# Legacy DART uses both ``(123)`` and ``(-)123`` for losses.  The latter is
+# not accepted by Decimal directly and previously made the parser skip the
+# current-period loss, leaving only the prior-period positive comparison.
+_NUMBER = re.compile(r"^(?:\(-\)|-?|\(?)[\d,]+(?:\.\d+)?\)?$")
 # A statement heading must end at the title.  Narrative phrases such as
 # ``연결포괄손익계산서상`` occur in notes and must not relabel the next table.
 _STATEMENT_TITLE = re.compile(
@@ -82,8 +85,12 @@ def _amount(value: str) -> Decimal | None:
     text = "".join(unescape(value).split()).replace(",", "")
     if text in {"", "-", "—", "–"} or not _NUMBER.fullmatch(text):
         return None
-    negative = text.startswith("(") and text.endswith(")")
-    if negative:
+    prefix_negative = text.startswith("(-)")
+    parenthesized_negative = text.startswith("(") and text.endswith(")")
+    negative = prefix_negative or parenthesized_negative or text.startswith("-")
+    if prefix_negative:
+        text = text[3:]
+    elif parenthesized_negative:
         text = text[1:-1]
     try:
         parsed = Decimal(text)
@@ -184,6 +191,30 @@ def _choose_cumulative_amount(
         if "주석" in context:
             continue
         candidates.append((column, value, context))
+    header = _normalize(" ".join(
+        cell for header_row in rows[:row_index] for cell in header_row
+    ))
+    has_standalone_and_ytd = (
+        ("3개월" in header or "당분기" in header)
+        and ("누적" in header or "6개월" in header or "9개월" in header)
+    )
+
+    # Some old Q1 statements leave both current-period revenue cells blank
+    # when the company had no sales, while publishing the prior-year pair.
+    # Preserve that official zero only when the paired layout and empty
+    # current pair make the column identity deterministic.  A wholly empty or
+    # ambiguous row still remains unresolved.
+    if (
+        report_code in {"11013", "11012", "11014"}
+        and has_standalone_and_ytd
+        and len(candidates) >= 2
+        and candidates[0][0] >= label_column + 3
+        and all(
+            not row[column].strip() or row[column].strip() in {"-", "—", "–"}
+            for column in range(label_column + 1, min(candidates[0][0], label_column + 3))
+        )
+    ):
+        return Decimal(0)
     if not candidates:
         return None
 
@@ -200,15 +231,8 @@ def _choose_cumulative_amount(
     # left, so a per-column context check incorrectly selected the standalone
     # quarter as YTD for Samsung and other 2015 filings. Recognize the table's
     # paired-period layout before consulting those shifted column contexts.
-    header = _normalize(" ".join(
-        cell for header_row in rows[:row_index] for cell in header_row
-    ))
-    has_standalone_and_ytd = (
-        ("3개월" in header or "당분기" in header)
-        and ("누적" in header or "6개월" in header or "9개월" in header)
-    )
     if (
-        report_code in {"11012", "11014"}
+        report_code in {"11013", "11012", "11014"}
         and len(candidates) >= 4
         and has_standalone_and_ytd
     ):
@@ -351,11 +375,16 @@ def parse_legacy_filing_archive(
         titled = [candidate for candidate in candidates if candidate.statement_title_confirmed]
         if titled:
             candidates = titled
-        # A published income statement for a listed operating company cannot
-        # support a complete quarter when its parsed revenue is zero/negative.
-        # Old HTML tables often expose repeated or comparison columns; reject
-        # those candidates instead of silently turning them into zero quarters.
-        candidates = [item for item in candidates if item.revenue > 0]
+        # A pre-revenue or temporarily revenue-free company can publish zero
+        # revenue with real expenses and losses. Keep that official statement,
+        # but reject negative revenue and entirely zero candidate tables.
+        candidates = [
+            item for item in candidates
+            if item.revenue >= 0
+            and any(value != 0 for value in (
+                item.revenue, item.operating_income, item.net_income,
+            ))
+        ]
         unique = {
             (item.revenue, item.operating_income, item.net_income): item
             for item in candidates

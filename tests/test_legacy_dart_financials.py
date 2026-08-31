@@ -114,6 +114,26 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].operating_income, 282_073_395_134)
         self.assertEqual(parsed["CFS"].net_income, 225_736_999_603)
 
+    def test_q1_blank_revenue_and_parenthesized_minus_losses_use_current_period(self):
+        document = """
+        <P>손익계산서</P>
+        <P>제 22 기 분기 (2005.01.01 부터 2005.03.31 까지)</P>
+        <P>(단위 : 원)</P>
+        <TABLE>
+          <TR><TH>과목</TH><TH COLSPAN="2">제22기 분기</TH><TH COLSPAN="2">제21기 분기</TH></TR>
+          <TR><TH></TH><TH>3개월</TH><TH>누적</TH><TH>3개월</TH><TH>누적</TH></TR>
+          <TR><TD>매출액</TD><TD></TD><TD></TD><TD>12,922,253,399</TD><TD>12,922,253,399</TD></TR>
+          <TR><TD>영업이익(손실)</TD><TD>(-)124,321,808</TD><TD>(-)124,321,808</TD><TD>339,681,055</TD><TD>339,681,055</TD></TR>
+          <TR><TD>당기순이익(손실)</TD><TD>(-)175,022,981</TD><TD>(-)175,022,981</TD><TD>866,243,304</TD><TD>866,243,304</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_legacy_filing_archive(
+            archive(document), report_code="11013", fiscal_year=2005,
+        )
+        self.assertEqual(parsed["OFS"].revenue, 0)
+        self.assertEqual(parsed["OFS"].operating_income, -124_321_808)
+        self.assertEqual(parsed["OFS"].net_income, -175_022_981)
+
     def test_keeps_separate_and_consolidated_candidates_separate(self):
         document = """
         <P>손익계산서</P><P>(단위 : 천원)</P>
@@ -360,7 +380,7 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertIsNone(scope)
         self.assertEqual(quarters, {})
 
-    def test_refuses_non_positive_standalone_revenue_after_subtraction(self):
+    def test_refuses_negative_or_all_zero_standalone_revenue_after_subtraction(self):
         statements = {
             "11013": {"OFS": LegacyCumulativeStatement("OFS", 100, 20, 15)},
             "11012": {"OFS": LegacyCumulativeStatement("OFS", 100, 20, 15)},
@@ -371,6 +391,14 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         self.assertNotIn("11012", quarters)
         self.assertNotIn("11014", quarters, "잘못된 Q2 누적값 뒤의 Q3도 추정하지 않는다")
         self.assertEqual(quarters["11011"]["revenue"], 200)
+
+    def test_keeps_zero_revenue_quarter_with_reported_losses(self):
+        statements = {
+            "11013": {"OFS": LegacyCumulativeStatement("OFS", 0, -20, -10)},
+        }
+        _scope, quarters = build_legacy_standalone_quarters(statements)
+        self.assertEqual(quarters["11013"]["revenue"], 0)
+        self.assertEqual(quarters["11013"]["operating_income"], -20)
 
 
 if __name__ == "__main__":

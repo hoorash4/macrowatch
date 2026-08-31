@@ -17,8 +17,10 @@ def row(year, quarter, revenue, operating=10, net=8):
 
 
 class EarningsFinancialQualityTests(unittest.TestCase):
-    def test_rejects_non_positive_and_impossible_revenue(self):
+    def test_rejects_negative_and_impossible_revenue(self):
         self.assertIn("non_positive_revenue", validate_canonical_quarter(row(2026, 1, -1)))
+        self.assertNotIn("non_positive_revenue", validate_canonical_quarter(row(2026, 1, 0, -2, -1)))
+        self.assertIn("all_zero_income_statement", validate_canonical_quarter(row(2026, 1, 0, 0, 0)))
         self.assertIn(
             "absolute_revenue_limit",
             validate_canonical_quarter(row(2026, 1, Decimal("1000000000000001"))),
