@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_v2.models import FinancialFact
+from earnings_v2.cli import completed_successfully
 from earnings_v2.providers import KisClient, OpenDartClient
 from earnings_v2.transform import (
     aggregate_market,
@@ -99,6 +100,15 @@ class OpenDartTransportTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as captured:
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn("secret", str(captured.exception))
+
+
+class CliContractTests(unittest.TestCase):
+    def test_only_ready_results_are_successful(self):
+        self.assertTrue(completed_successfully({"status": "ready"}))
+        self.assertTrue(completed_successfully([{"status": "ready"}, {"status": "ready"}]))
+        self.assertFalse(completed_successfully({"status": "incomplete"}))
+        self.assertFalse(completed_successfully([{"status": "ready"}, {"status": "incomplete"}]))
+        self.assertFalse(completed_successfully([]))
 
 
 class QuarterlyExtractionTests(unittest.TestCase):

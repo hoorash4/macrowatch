@@ -185,7 +185,10 @@ class KoreaEarningsV2Pipeline:
                 fact = fact.with_changes(top_line=self.kis.quarter_top_line(identity.stock_code, year, quarter))
             for field in ("top_line", "operating_income", "net_income"):
                 if getattr(fact, field) is None:
-                    issues.append({"company": identity.company_name, "field": field, "reason": "provider value missing"})
+                    reason = "provider value missing"
+                    if field == "top_line" and fact.profit_complete and year >= 2019 and self.kis is None:
+                        reason = "KIS fallback unavailable: GitHub KIS credentials are not configured"
+                    issues.append({"company": identity.company_name, "field": field, "reason": reason})
             facts[identity.company_id] = fact
         return facts, issues
 
@@ -252,6 +255,10 @@ class KoreaEarningsV2Pipeline:
                 "companies": len(identities),
                 "facts": len(facts),
                 "complete_facts": sum(row.fully_complete for row in facts.values()),
+                "providers": {
+                    "kis_configured": self.kis is not None,
+                    "ecos_configured": self.fx is not None,
+                },
                 "issues": issues,
                 "requests": {
                     "krx": self.krx.request_count,

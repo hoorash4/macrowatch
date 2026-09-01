@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from typing import Any
 
 from .pipeline import KoreaEarningsV2Pipeline
 
@@ -15,6 +17,12 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def completed_successfully(result: dict[str, Any] | list[dict[str, Any]]) -> bool:
+    """GitHub Actions가 불완전 수집을 성공으로 오인하지 않게 한다."""
+    rows = result if isinstance(result, list) else [result]
+    return bool(rows) and all(row.get("status") == "ready" for row in rows)
+
+
 def main() -> None:
     args = parser().parse_args()
     pipeline = KoreaEarningsV2Pipeline.from_env()
@@ -23,6 +31,8 @@ def main() -> None:
     else:
         result = pipeline.run_year(args.year, write=args.write, allow_review=args.allow_review)
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
+    if not completed_successfully(result):
+        sys.exit(2)
 
 
 if __name__ == "__main__":
