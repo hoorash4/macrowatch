@@ -1,0 +1,25 @@
+name: Diagnose KIS finance response
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query protected KIS diagnostic
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 90 \
+            --request POST "$SUPABASE_URL/functions/v1/kis-market-test" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{"mode":"finance","ticker":"105560"}' \
+            | python -c 'import json,sys; print(json.dumps(json.load(sys.stdin), ensure_ascii=False, separators=(",",":")))'
