@@ -1,0 +1,66 @@
+name: Diagnose KIS KB ratio basis
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/diagnose-kis-kb-ratio-basis.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Compare cumulative and standalone ratios
+        env:
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+        shell: python
+        run: |
+          import json, os, time, urllib.parse, urllib.request
+
+          base = "https://openapi.koreainvestment.com:9443"
+          body = json.dumps({
+              "grant_type": "client_credentials",
+              "appkey": os.environ["KIS_APP_KEY"],
+              "appsecret": os.environ["KIS_APP_SECRET"],
+          }).encode()
+          req = urllib.request.Request(
+              base + "/oauth2/tokenP", data=body,
+              headers={"Content-Type": "application/json"}, method="POST")
+          with urllib.request.urlopen(req, timeout=20) as response:
+              token = json.load(response)["access_token"]
+
+          endpoints = [
+              ("income", "/uapi/domestic-stock/v1/finance/income-statement", "FHKST66430200"),
+              ("financial", "/uapi/domestic-stock/v1/finance/financial-ratio", "FHKST66430300"),
+              ("profit", "/uapi/domestic-stock/v1/finance/profit-ratio", "FHKST66430400"),
+              ("other", "/uapi/domestic-stock/v1/finance/other-major-ratios", "FHKST66430500"),
+              ("growth", "/uapi/domestic-stock/v1/finance/growth-ratio", "FHKST66430800"),
+          ]
+          params = urllib.parse.urlencode({
+              "FID_DIV_CLS_CODE": "1",
+              "fid_cond_mrkt_div_code": "J",
+              "fid_input_iscd": "105560",
+          })
+          headers = {
+              "authorization": "Bearer " + token,
+              "appkey": os.environ["KIS_APP_KEY"],
+              "appsecret": os.environ["KIS_APP_SECRET"],
+              "custtype": "P",
+          }
+          wanted = {"202403","202406","202409","202412","202503","202506","202509","202512"}
+          for index, (name, path, tr_id) in enumerate(endpoints):
+              if index: time.sleep(0.7)
+              req = urllib.request.Request(
+                  base + path + "?" + params,
+                  headers={**headers, "tr_id": tr_id})
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  payload = json.load(response)
+              rows = payload.get("output") or []
+              print("\n===" + name + "===")
+              for row in rows:
+                  if str(row.get("stac_yymm") or "") in wanted:
+                      print(json.dumps(row, ensure_ascii=False, sort_keys=True))
