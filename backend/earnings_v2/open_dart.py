@@ -32,8 +32,9 @@ class OpenDartV2Client:
         self.interval = interval
         self.session = session if session is not None else resilient_session()
         self.last_request = 0.0
-        self._xbrl_cache: dict[str, bytes] = {}
-        self._xbrl_cache_lock = Lock()
+        self._request_lock = Lock()
+        self._account_cache: dict[tuple[str, int, int, str], list[dict[str, Any]]] = {}
+        self._account_cache_lock = Lock()
 
     @classmethod
     def from_env(cls) -> "OpenDartV2Client":
@@ -43,15 +44,24 @@ class OpenDartV2Client:
         return cls(key)
 
     def _wait_for_slot(self) -> None:
-        elapsed = time.monotonic() - self.last_request
-        if self.last_request and elapsed < self.interval:
-            time.sleep(self.interval - elapsed)
+        """Reserve one provider request slot across all worker threads."""
+        with self._request_lock:
+            elapsed = time.monotonic() - self.last_request
+            if self.last_request and elapsed < self.interval:
+                time.sleep(self.interval - elapsed)
+            self.last_request = time.monotonic()
 
-    def _get_json(self, endpoint: str, params: dict[str, str]) -> dict[str, Any]:
+    def _get_json(
+        self,
+        endpoint: str,
+        params: dict[str, str],
+        *,
+        session: Any | None = None,
+    ) -> dict[str, Any]:
         self._wait_for_slot()
         try:
             response = get_with_retries(
-                self.session,
+                session if session is not None else self.session,
                 f"{BASE_URL}/{endpoint}",
                 params={"crtfc_key": self.api_key, **params},
                 timeout=(10, 30),
@@ -61,7 +71,6 @@ class OpenDartV2Client:
         except Exception:
             # requests may include the expanded URL (and API key) in errors.
             raise OpenDartV2Error(f"{endpoint} transport request failed") from None
-        self.last_request = time.monotonic()
         try:
             payload = response.json()
         except Exception:
@@ -89,7 +98,6 @@ class OpenDartV2Client:
             response.raise_for_status()
         except Exception:
             raise OpenDartV2Error("corpCode.xml transport request failed") from None
-        self.last_request = time.monotonic()
         try:
             with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
                 root = ET.fromstring(archive.read("CORPCODE.xml"))
@@ -117,81 +125,95 @@ class OpenDartV2Client:
         })
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
-    def _download_xbrl_archive(self, receipt_no: str, session: Any | None = None) -> bytes:
-        """Download and validate one archive using an isolated HTTP session."""
-        normalized = str(receipt_no or "").strip()
-        if not re.fullmatch(r"\d{14}", normalized):
-            raise ValueError("OpenDART XBRL download requires a 14-digit receipt number")
-        try:
-            response = get_with_retries(
-                session if session is not None else resilient_session(),
-                f"{BASE_URL}/fnlttXbrl.xml",
-                params={"crtfc_key": self.api_key, "rcept_no": normalized},
-                timeout=(10, 60),
-                attempts=3,
-            )
-            response.raise_for_status()
-        except Exception:
-            raise OpenDartV2Error("fnlttXbrl.xml transport request failed") from None
-        payload = bytes(response.content)
-        try:
-            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-                if not archive.namelist():
-                    raise zipfile.BadZipFile("empty archive")
-        except zipfile.BadZipFile:
-            raise OpenDartV2Error("fnlttXbrl.xml returned an invalid XBRL archive") from None
-        return payload
-
-    def xbrl_archives(
+    def _fetch_all_accounts(
         self,
-        receipt_nos: Iterable[str],
+        key: tuple[str, int, int, str],
+        *,
+        session: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        corp_code, year, quarter, scope = key
+        payload = self._get_json("fnlttSinglAcntAll.json", {
+            "corp_code": corp_code,
+            "bsns_year": str(year),
+            "reprt_code": REPORT_CODES[quarter],
+            "fs_div": scope,
+        }, session=session)
+        return [row for row in payload.get("list", []) if isinstance(row, dict)]
+
+    @staticmethod
+    def _account_key(
+        corp_code: str,
+        year: int,
+        quarter: int,
+        scope: str,
+    ) -> tuple[str, int, int, str]:
+        code = str(corp_code or "").strip()
+        normalized_scope = str(scope or "").upper()
+        if not re.fullmatch(r"\d{8}", code):
+            raise ValueError("OpenDART full-account request requires an 8-digit corporation code")
+        if quarter not in REPORT_CODES:
+            raise ValueError("quarter must be between 1 and 4")
+        if normalized_scope not in {"CFS", "OFS"}:
+            raise ValueError("scope must be CFS or OFS")
+        return code, int(year), int(quarter), normalized_scope
+
+    def all_accounts(
+        self,
+        corp_code: str,
+        year: int,
+        quarter: int,
+        scope: str,
+    ) -> list[dict[str, Any]]:
+        key = self._account_key(corp_code, year, quarter, scope)
+        with self._account_cache_lock:
+            cached = self._account_cache.get(key)
+        if cached is not None:
+            return cached
+        rows = self._fetch_all_accounts(key)
+        with self._account_cache_lock:
+            self._account_cache[key] = rows
+        return rows
+
+    def all_accounts_many(
+        self,
+        requests: Iterable[tuple[str, int, int, str]],
         *,
         workers: int = 4,
-    ) -> tuple[dict[str, bytes], dict[str, str]]:
-        """Fetch unique missing filings concurrently and reuse them for this run."""
-        receipts = list(dict.fromkeys(str(value or "").strip() for value in receipt_nos))
-        results: dict[str, bytes] = {}
-        errors: dict[str, str] = {}
+    ) -> tuple[
+        dict[tuple[str, int, int, str], list[dict[str, Any]]],
+        dict[tuple[str, int, int, str], str],
+    ]:
+        """Fetch only unique unresolved company-periods with bounded concurrency."""
+        keys = list(dict.fromkeys(self._account_key(*request) for request in requests))
+        results: dict[tuple[str, int, int, str], list[dict[str, Any]]] = {}
+        errors: dict[tuple[str, int, int, str], str] = {}
         pending = []
-        with self._xbrl_cache_lock:
-            for receipt in receipts:
-                cached = self._xbrl_cache.get(receipt)
-                if cached is not None:
-                    results[receipt] = cached
+        with self._account_cache_lock:
+            for key in keys:
+                cached = self._account_cache.get(key)
+                if cached is None:
+                    pending.append(key)
                 else:
-                    pending.append(receipt)
-        if len(pending) == 1:
-            receipt = pending[0]
-            try:
-                payload = self._download_xbrl_archive(receipt, self.session)
-            except Exception as error:
-                errors[receipt] = str(error)[:180]
-            else:
-                results[receipt] = payload
-                with self._xbrl_cache_lock:
-                    self._xbrl_cache[receipt] = payload
-        elif pending:
-            with ThreadPoolExecutor(max_workers=min(max(1, workers), len(pending))) as executor:
-                futures = {
-                    executor.submit(self._download_xbrl_archive, receipt): receipt
-                    for receipt in pending
-                }
-                for future in as_completed(futures):
-                    receipt = futures[future]
-                    try:
-                        payload = future.result()
-                    except Exception as error:
-                        errors[receipt] = str(error)[:180]
-                        continue
-                    results[receipt] = payload
-                    with self._xbrl_cache_lock:
-                        self._xbrl_cache[receipt] = payload
-        return results, errors
+                    results[key] = cached
 
-    def xbrl_archive(self, receipt_no: str) -> bytes:
-        """Download one filing's XBRL ZIP without writing it to disk."""
-        normalized = str(receipt_no or "").strip()
-        results, errors = self.xbrl_archives([normalized], workers=1)
-        if normalized in results:
-            return results[normalized]
-        raise OpenDartV2Error(errors.get(normalized, "XBRL archive unavailable"))
+        def fetch(key: tuple[str, int, int, str]) -> list[dict[str, Any]]:
+            session = resilient_session()
+            try:
+                return self._fetch_all_accounts(key, session=session)
+            finally:
+                session.close()
+
+        if pending:
+            with ThreadPoolExecutor(max_workers=min(max(1, workers), len(pending))) as executor:
+                futures = {executor.submit(fetch, key): key for key in pending}
+                for future in as_completed(futures):
+                    key = futures[future]
+                    try:
+                        rows = future.result()
+                    except Exception as error:
+                        errors[key] = str(error)[:180]
+                        continue
+                    results[key] = rows
+                    with self._account_cache_lock:
+                        self._account_cache[key] = rows
+        return results, errors

@@ -6,8 +6,7 @@ import re
 from typing import Any, Iterable
 
 from .financials import single_quarter_amount
-from .open_dart import OpenDartV2Client, OpenDartV2Error
-from .xbrl_financials import extract_single_quarter_metrics
+from .open_dart import OpenDartV2Client
 
 
 OP_IDS = ("dartoperatingincomeloss", "ifrsfulloperatingprofitloss")
@@ -264,8 +263,54 @@ def _needs_previous(rows: list[dict[str, Any]], quarter: int, scope: str) -> boo
     return False
 
 
+def _top_line_needs_previous(
+    rows: list[dict[str, Any]],
+    quarter: int,
+    scope: str,
+) -> bool:
+    if quarter == 1:
+        return False
+    scoped = [
+        row for row in rows
+        if str(row.get("fs_div") or scope).upper() == scope
+        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+    ]
+    selected = _top_line_row(scoped)
+    if selected is None:
+        return False
+    if quarter == 4:
+        return True
+    return (
+        _decimal(selected.get("thstrm_amount")) is None
+        and _decimal(selected.get("thstrm_add_amount")) is not None
+    )
+
+
+def _individual_top_line(
+    rows: list[dict[str, Any]],
+    prior_rows: list[dict[str, Any]],
+    quarter: int,
+    scope: str,
+) -> Decimal | None:
+    current = [
+        row for row in rows
+        if str(row.get("fs_div") or scope).upper() == scope
+        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+    ]
+    previous = [
+        row for row in prior_rows
+        if str(row.get("fs_div") or scope).upper() == scope
+        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+    ]
+    return _amount(
+        _top_line_row(current),
+        quarter,
+        _top_line_row(previous),
+    )
+
+
 class DartFinancialCollector:
-    """Use one batch request, then XBRL only for fields absent from that batch."""
+    """Use batch facts first, then fetch only missing company top lines."""
 
     def __init__(self, client: OpenDartV2Client) -> None:
         self.client = client
@@ -313,73 +358,62 @@ class DartFinancialCollector:
                 if value is None or not value.complete:
                     diagnostics[code] = diagnostic
 
-        xbrl_codes = [
-            company for company in companies
-            if not values.get(company) or not values[company].complete
+        top_line_codes = [
+            code for code in companies
+            if (partial := values.get(code)) is not None
+            and partial.top_line is None
+            and partial.operating_income is not None
+            and partial.net_income is not None
         ]
-        receipts_by_code = {}
-        prior_receipts_by_code = {}
-        for code in xbrl_codes:
-            partial = values.get(code)
-            receipts_by_code[code] = (
-                partial.source_filing_id if partial is not None else next((
-                    str(row.get("rcept_no") or "") for row in current[code]
-                    if row.get("rcept_no")
-                ), "")
-            )
-            prior_receipts_by_code[code] = next((
-                str(row.get("rcept_no") or "") for row in previous.get(code, [])
-                if row.get("rcept_no")
-            ), "")
-        requested_receipts = [
-            receipt for code in xbrl_codes
-            for receipt in (
-                receipts_by_code[code],
-                prior_receipts_by_code[code] if quarter == 4 else "",
-            )
-            if receipt
+        current_requests = [
+            (code, year, quarter, values[code].scope)
+            for code in top_line_codes
         ]
-        archives, archive_errors = (
-            self.client.xbrl_archives(requested_receipts)
-            if requested_receipts else ({}, {})
-        )
+        individual_current, current_errors = self.client.all_accounts_many(
+            current_requests,
+            workers=4,
+        ) if current_requests else ({}, {})
 
-        for code in xbrl_codes:
-            # Preserve every valid batch fact. A single in-memory XBRL archive
-            # replaces repeated CFS/OFS full-statement API calls.
-            partial = values.get(code)
-            try:
-                receipt = receipts_by_code[code]
-                prior_receipt = prior_receipts_by_code[code]
-                if receipt not in archives:
-                    raise OpenDartV2Error(archive_errors.get(receipt, "XBRL archive unavailable"))
-                archive = archives[receipt]
-                prior_archive = (
-                    archives.get(prior_receipt)
-                    if quarter == 4 and prior_receipt else None
-                )
-                xbrl = extract_single_quarter_metrics(
-                    archive,
-                    year,
-                    quarter,
-                    prior_quarter_payload=prior_archive,
-                )
-                fallback = DartQuarterFinancials(
-                    top_line=xbrl.top_line,
-                    operating_income=xbrl.operating_income,
-                    net_income=xbrl.net_income,
-                    scope=partial.scope if partial is not None else "CFS",
-                    source_filing_id=receipt,
-                    currency=partial.currency if partial is not None else "KRW",
-                )
-                candidate = partial.fill_missing_from(fallback) if partial is not None else fallback
-                values[code] = candidate
-            except Exception as error:
-                errors[code] = str(error)[:180]
+        previous_requests = []
+        for request in current_requests:
+            rows = individual_current.get(request, [])
+            if _top_line_needs_previous(rows, quarter, request[3]):
+                previous_requests.append((request[0], year, quarter - 1, request[3]))
+        individual_previous, previous_errors = self.client.all_accounts_many(
+            previous_requests,
+            workers=4,
+        ) if previous_requests else ({}, {})
+
+        for code in top_line_codes:
+            partial = values[code]
+            request = (code, year, quarter, partial.scope)
+            previous_request = (code, year, quarter - 1, partial.scope)
+            if request in current_errors:
+                errors[code] = current_errors[request]
                 continue
+            if previous_request in previous_errors:
+                errors[code] = previous_errors[previous_request]
+                continue
+            top_line = _individual_top_line(
+                individual_current.get(request, []),
+                individual_previous.get(previous_request, []),
+                quarter,
+                partial.scope,
+            )
+            if top_line is not None:
+                values[code] = partial.fill_missing_from(DartQuarterFinancials(
+                    top_line=top_line,
+                    operating_income=None,
+                    net_income=None,
+                    scope=partial.scope,
+                    source_filing_id=partial.source_filing_id,
+                    currency=partial.currency,
+                ))
+
+        for code in companies:
             if not values.get(code) or not values[code].complete:
-                errors[code] = (
-                    diagnostics.get(code)
-                    or "OpenDART required values unavailable"
+                errors.setdefault(
+                    code,
+                    diagnostics.get(code) or "OpenDART required values unavailable",
                 )
         return DartBatchResult(values=values, errors=errors)
