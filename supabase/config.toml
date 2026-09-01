@@ -19,3 +19,6 @@ verify_jwt = true
 
 [functions.earnings-index-prices]
 verify_jwt = true
+
+[functions.earnings-kis-top-lines]
+verify_jwt = true

@@ -5,6 +5,7 @@ import os
 
 from .ecos import EcosFxClient
 from .korea_pipeline import KoreaEarningsPipeline
+from .kis_financials import KisTopLineClient
 from .krx import KrxOpenApiClient
 from .open_dart import OpenDartV2Client
 from .pilot import build_recent_four_quarter_pilot
@@ -22,6 +23,11 @@ def main() -> int:
         dart=OpenDartV2Client.from_env(),
         fx=EcosFxClient.from_env(),
         store=EarningsV2Store(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+            timeout=120,
+        ),
+        kis_top_lines=KisTopLineClient(
             os.environ["SUPABASE_URL"],
             os.environ["SUPABASE_SERVICE_ROLE_KEY"],
             timeout=120,

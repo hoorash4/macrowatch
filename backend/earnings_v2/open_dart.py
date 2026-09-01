@@ -4,7 +4,6 @@ import io
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Any, Iterable
 import zipfile
@@ -33,8 +32,6 @@ class OpenDartV2Client:
         self.session = session if session is not None else resilient_session()
         self.last_request = 0.0
         self._request_lock = Lock()
-        self._account_cache: dict[tuple[str, int, int, str], list[dict[str, Any]]] = {}
-        self._account_cache_lock = Lock()
 
     @classmethod
     def from_env(cls) -> "OpenDartV2Client":
@@ -124,96 +121,3 @@ class OpenDartV2Client:
             "reprt_code": REPORT_CODES[quarter],
         })
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
-
-    def _fetch_all_accounts(
-        self,
-        key: tuple[str, int, int, str],
-        *,
-        session: Any | None = None,
-    ) -> list[dict[str, Any]]:
-        corp_code, year, quarter, scope = key
-        payload = self._get_json("fnlttSinglAcntAll.json", {
-            "corp_code": corp_code,
-            "bsns_year": str(year),
-            "reprt_code": REPORT_CODES[quarter],
-            "fs_div": scope,
-        }, session=session)
-        return [row for row in payload.get("list", []) if isinstance(row, dict)]
-
-    @staticmethod
-    def _account_key(
-        corp_code: str,
-        year: int,
-        quarter: int,
-        scope: str,
-    ) -> tuple[str, int, int, str]:
-        code = str(corp_code or "").strip()
-        normalized_scope = str(scope or "").upper()
-        if not re.fullmatch(r"\d{8}", code):
-            raise ValueError("OpenDART full-account request requires an 8-digit corporation code")
-        if quarter not in REPORT_CODES:
-            raise ValueError("quarter must be between 1 and 4")
-        if normalized_scope not in {"CFS", "OFS"}:
-            raise ValueError("scope must be CFS or OFS")
-        return code, int(year), int(quarter), normalized_scope
-
-    def all_accounts(
-        self,
-        corp_code: str,
-        year: int,
-        quarter: int,
-        scope: str,
-    ) -> list[dict[str, Any]]:
-        key = self._account_key(corp_code, year, quarter, scope)
-        with self._account_cache_lock:
-            cached = self._account_cache.get(key)
-        if cached is not None:
-            return cached
-        rows = self._fetch_all_accounts(key)
-        with self._account_cache_lock:
-            self._account_cache[key] = rows
-        return rows
-
-    def all_accounts_many(
-        self,
-        requests: Iterable[tuple[str, int, int, str]],
-        *,
-        workers: int = 4,
-    ) -> tuple[
-        dict[tuple[str, int, int, str], list[dict[str, Any]]],
-        dict[tuple[str, int, int, str], str],
-    ]:
-        """Fetch only unique unresolved company-periods with bounded concurrency."""
-        keys = list(dict.fromkeys(self._account_key(*request) for request in requests))
-        results: dict[tuple[str, int, int, str], list[dict[str, Any]]] = {}
-        errors: dict[tuple[str, int, int, str], str] = {}
-        pending = []
-        with self._account_cache_lock:
-            for key in keys:
-                cached = self._account_cache.get(key)
-                if cached is None:
-                    pending.append(key)
-                else:
-                    results[key] = cached
-
-        def fetch(key: tuple[str, int, int, str]) -> list[dict[str, Any]]:
-            session = resilient_session()
-            try:
-                return self._fetch_all_accounts(key, session=session)
-            finally:
-                session.close()
-
-        if pending:
-            with ThreadPoolExecutor(max_workers=min(max(1, workers), len(pending))) as executor:
-                futures = {executor.submit(fetch, key): key for key in pending}
-                for future in as_completed(futures):
-                    key = futures[future]
-                    try:
-                        rows = future.result()
-                    except Exception as error:
-                        errors[key] = str(error)[:180]
-                        continue
-                    results[key] = rows
-                    with self._account_cache_lock:
-                        self._account_cache[key] = rows
-        return results, errors

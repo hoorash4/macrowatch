@@ -135,6 +135,10 @@ jobs:
             --file supabase/migrations/20260901012000_remove_earnings_revenue_derivatives.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260901013000_enforce_profit_only_earnings_schema.sql
+          # Earnings V2 is isolated from the legacy tables. This replay-safe
+          # migration adds only empty UI-ready margin-delta storage and RPC fields.
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260902013000_store_earnings_v2_margin_deltas.sql
 
       - name: Deploy Edge Functions
         run: |

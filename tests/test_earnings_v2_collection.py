@@ -1,6 +1,5 @@
 from decimal import Decimal
 import unittest
-from unittest.mock import patch
 
 from earnings_v2.dart_financials import DartFinancialCollector, extract_quarter
 from earnings_v2.open_dart import OpenDartV2Client, OpenDartV2Error
@@ -83,65 +82,6 @@ class EarningsV2OpenDartTransportTests(unittest.TestCase):
         with self.assertRaises(OpenDartV2Error) as captured:
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn(secret, str(captured.exception))
-
-    def test_single_company_full_accounts_use_official_endpoint_and_cache(self):
-        class Response:
-            @staticmethod
-            def raise_for_status():
-                return None
-
-            @staticmethod
-            def json():
-                return {"status": "000", "list": [{"account_nm": "영업수익"}]}
-
-        class Session:
-            def __init__(self):
-                self.calls = []
-
-            def get(self, url, **kwargs):
-                self.calls.append((url, kwargs))
-                return Response()
-
-        session = Session()
-        client = OpenDartV2Client("test", interval=0, session=session)
-        first = client.all_accounts("00000001", 2026, 1, "CFS")
-        second = client.all_accounts("00000001", 2026, 1, "CFS")
-        self.assertEqual(first, second)
-        self.assertEqual(len(session.calls), 1)
-        self.assertTrue(session.calls[0][0].endswith("/fnlttSinglAcntAll.json"))
-        self.assertEqual(session.calls[0][1]["params"]["fs_div"], "CFS")
-
-    def test_parallel_full_accounts_deduplicate_and_reuse_run_cache(self):
-        class Session:
-            headers = {}
-
-            @staticmethod
-            def close():
-                return None
-
-        class Client(OpenDartV2Client):
-            def __init__(self):
-                super().__init__("test", interval=0, session=Session())
-                self.fetches = []
-
-            def _fetch_all_accounts(self, key, *, session=None):
-                self.fetches.append(key)
-                return [{"corp_code": key[0]}]
-
-        requests = [
-            ("00000001", 2026, 1, "CFS"),
-            ("00000001", 2026, 1, "CFS"),
-            ("00000002", 2026, 1, "CFS"),
-        ]
-        with patch("earnings_v2.open_dart.resilient_session", return_value=Session()):
-            client = Client()
-            first, errors = client.all_accounts_many(requests, workers=4)
-            second, second_errors = client.all_accounts_many(requests, workers=4)
-        self.assertEqual(errors, {})
-        self.assertEqual(second_errors, {})
-        self.assertEqual(first, second)
-        self.assertCountEqual(client.fetches, requests[::2])
-
 
 class EarningsV2DartFinancialTests(unittest.TestCase):
     def test_complete_batch_rows_need_no_single_company_fallback(self):
@@ -303,11 +243,8 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         result = DartFinancialCollector(Client()).collect(["00000001"], 2026, 1)
         self.assertIn("00000001", result.errors)
 
-    def test_only_top_line_missing_company_uses_individual_fallback(self):
+    def test_only_top_line_missing_company_is_forwarded_to_kis_supplement(self):
         class Client:
-            def __init__(self):
-                self.individual_calls = []
-
             @staticmethod
             def multi_accounts(codes, _year, _quarter):
                 return [
@@ -316,36 +253,21 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                     account(codes[1], "당기순이익", "10", account_id="ifrs-full_ProfitLoss"),
                 ]
 
-            def all_accounts_many(self, requests, *, workers):
-                requests = tuple(requests)
-                self.individual_calls.append((requests, workers))
-                return {
-                    request: complete_rows(request[0])
-                    for request in requests
-                }, {}
-
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001", "00000002"], 2026, 1)
         self.assertEqual(set(result.values), {"00000001", "00000002"})
-        self.assertEqual(result.errors, {})
-        self.assertEqual(client.individual_calls, [
-            ((('00000002', 2026, 1, 'CFS'),), 4),
-        ])
+        self.assertIn("00000002", result.errors)
+        self.assertIsNone(result.values["00000002"].top_line)
         self.assertEqual(result.request_counts, {
             "batch_current": 1,
             "batch_current_companies": 2,
             "batch_previous": 0,
             "batch_previous_companies": 0,
-            "individual_current": 1,
-            "individual_previous": 0,
-            "individual_errors": 0,
+            "kis_top_line_candidates": 1,
         })
 
-    def test_partial_batch_values_are_preserved_and_only_current_scope_is_fetched(self):
+    def test_partial_batch_values_are_preserved_without_individual_retry(self):
         class Client:
-            def __init__(self):
-                self.individual_calls = []
-
             @staticmethod
             def multi_accounts(codes, _year, _quarter):
                 return [
@@ -353,24 +275,13 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                     account(codes[0], "당기순이익", "10", account_id="ifrs-full_ProfitLoss"),
                 ]
 
-            def all_accounts_many(self, requests, *, workers):
-                requests = tuple(requests)
-                self.individual_calls.append((requests, workers))
-                return {
-                    request: complete_rows(request[0])
-                    for request in requests
-                }, {}
-
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001"], 2026, 3)
         value = result.values["00000001"]
-        self.assertTrue(value.complete)
-        self.assertEqual(value.top_line, Decimal("100"))
+        self.assertFalse(value.complete)
+        self.assertIsNone(value.top_line)
         self.assertEqual(value.operating_income, Decimal("20"))
         self.assertEqual(value.net_income, Decimal("10"))
-        self.assertEqual(client.individual_calls, [
-            ((('00000001', 2026, 3, 'CFS'),), 4),
-        ])
 
     def test_unresolved_partial_is_returned_instead_of_discarded(self):
         class Client:
@@ -399,11 +310,8 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(value.net_income, Decimal("10"))
         self.assertIn("00000001", result.errors)
 
-    def test_q4_individual_top_line_requests_only_current_and_q3(self):
+    def test_q4_missing_top_line_remains_partial_after_batch_subtraction(self):
         class Client:
-            def __init__(self):
-                self.individual_calls = []
-
             @staticmethod
             def multi_accounts(codes, _year, quarter):
                 amount = "140" if quarter == 4 else "90"
@@ -412,25 +320,11 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                     account(codes[0], "당기순이익", amount, account_id="ifrs-full_ProfitLoss"),
                 ]
 
-            def all_accounts_many(self, requests, *, workers):
-                requests = tuple(requests)
-                self.individual_calls.append(requests)
-                rows = {}
-                for request in requests:
-                    amount = "140" if request[2] == 4 else "90"
-                    row = account(request[0], "영업수익", amount)
-                    row["thstrm_amount"] = amount
-                    row["thstrm_add_amount"] = amount
-                    rows[request] = [row]
-                return rows, {}
-
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001"], 2026, 4)
-        self.assertEqual(result.values["00000001"].top_line, Decimal("50"))
-        self.assertEqual(client.individual_calls, [
-            (('00000001', 2026, 4, 'CFS'),),
-            (('00000001', 2026, 3, 'CFS'),),
-        ])
+        self.assertIsNone(result.values["00000001"].top_line)
+        self.assertEqual(result.values["00000001"].operating_income, Decimal("50"))
+        self.assertIn("00000001", result.errors)
 
 
 if __name__ == "__main__":

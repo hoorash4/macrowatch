@@ -6,6 +6,7 @@ import unittest
 from earnings_v2.dart_financials import DartBatchResult, DartQuarterFinancials
 from earnings_v2.korea_pipeline import KoreaEarningsPipeline
 from earnings_v2.krx import KrxSecurity
+from earnings_v2.kis_financials import KisTopLineResult
 
 
 class FakeKrx:
@@ -82,6 +83,22 @@ class FakeFinancialCollector:
                 for code in codes
             },
             errors={},
+        )
+
+
+class FakeKisTopLines:
+    def __init__(self, values=None, errors=None):
+        self.values = values or {}
+        self.errors = errors or {}
+        self.calls = []
+
+    def collect(self, tickers, year, quarter):
+        requested = list(tickers)
+        self.calls.append((requested, year, quarter))
+        return KisTopLineResult(
+            values={ticker: self.values[ticker] for ticker in requested if ticker in self.values},
+            errors={ticker: self.errors[ticker] for ticker in requested if ticker in self.errors},
+            request_counts={"edge_calls": 1, "tickers": len(requested)},
         )
 
 
@@ -239,6 +256,44 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertIsNone(saved.operating_margin_pct)
         self.assertIsNone(saved.net_margin_pct)
         self.assertEqual(saved.quality_status, "review_required")
+
+    def test_kis_supplements_only_the_missing_top_line(self):
+        class PartialCollector(FakeFinancialCollector):
+            def collect(self, corp_codes, year, quarter):
+                result = super().collect(corp_codes, year, quarter)
+                result.values["00000001"] = DartQuarterFinancials(
+                    top_line=None,
+                    operating_income=Decimal("20"),
+                    net_income=Decimal("10"),
+                    scope="CFS",
+                    source_filing_id="20260515000001",
+                    currency="KRW",
+                )
+                result.errors["00000001"] = "CFS(top_line=no,op=yes,net=yes)"
+                return result
+
+        store = FakeStore()
+        kis = FakeKisTopLines(values={"000001": Decimal("200")})
+        pipeline = KoreaEarningsPipeline(
+            krx=FakeKrx(), dart=FakeDart(), fx=FakeFx(), store=store,
+            kis_top_lines=kis,
+        )
+        pipeline.financials = PartialCollector()
+
+        result = pipeline.run(
+            [("kr_largecap", 2026, 1)],
+            source="test",
+            operation="kis_top_line",
+        )
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(kis.calls, [(["000001"], 2026, 1)])
+        saved = store.company_quarters["kr:00000001"][0]
+        self.assertEqual(saved.top_line, Decimal("200"))
+        self.assertEqual(saved.operating_income, Decimal("20"))
+        self.assertEqual(saved.net_income, Decimal("10"))
+        self.assertEqual(saved.operating_margin_pct, Decimal("10.00000000"))
+        self.assertEqual(saved.net_margin_pct, Decimal("5.00000000"))
 
 
 if __name__ == "__main__":

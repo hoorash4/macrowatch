@@ -4,6 +4,7 @@ const ETF_CURRENT_PRICE_PATH = "/uapi/etfetn/v1/quotations/inquire-price";
 const DAILY_INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice";
 const MARKET_INVESTOR_PATH = "/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market";
 const OVERSEAS_MARKET_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap";
+const DOMESTIC_INCOME_STATEMENT_PATH = "/uapi/domestic-stock/v1/finance/income-statement";
 
 export type KisDailyPrice = {
   marketDate: string;
@@ -33,6 +34,11 @@ export type KisMarketCapRow = {
   rank: number;
   marketCap: number;
   exchange: string;
+};
+export type KisIncomeStatementPeriod = {
+  year: number;
+  quarter: 1 | 2 | 3 | 4;
+  topLineHundredMillionKrw: number;
 };
 export type KisRequestRunner = <T>(request: () => Promise<T>) => Promise<T>;
 
@@ -162,6 +168,65 @@ export function createKisRequestRunner() {
       }
     }
   };
+}
+
+/**
+ * Return KIS's standardized single-quarter sales account for one domestic
+ * company. The provider exposes Q2/Q3 as year-to-date figures and Q4 as the
+ * annual figure, so only the requested standalone quarter is returned after
+ * subtracting the preceding cumulative period.
+ */
+export async function fetchKisDomesticQuarterTopLine(
+  credentials: KisCredentials,
+  accessToken: string,
+  ticker: string,
+  year: number,
+  quarter: 1 | 2 | 3 | 4,
+  runRequest: KisRequestRunner = createKisRequestRunner(),
+): Promise<KisIncomeStatementPeriod | null> {
+  const normalizedTicker = ticker.trim();
+  if (!/^\d{6}$/.test(normalizedTicker)) throw new Error("국내 종목코드는 숫자 6자리여야 합니다.");
+  if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new Error("사업연도가 올바르지 않습니다.");
+  if (![1, 2, 3, 4].includes(quarter)) throw new Error("분기는 1~4여야 합니다.");
+
+  const params = new URLSearchParams({
+    FID_DIV_CLS_CODE: "0",
+    fid_cond_mrkt_div_code: "J",
+    fid_input_iscd: normalizedTicker,
+  });
+  const payload = await runRequest(async () => {
+    const response = await fetch(`${KIS_REAL_BASE_URL}${DOMESTIC_INCOME_STATEMENT_PATH}?${params}`, {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        appkey: credentials.appKey,
+        appsecret: credentials.appSecret,
+        tr_id: "FHKST66430200",
+        custtype: "P",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const body = await readJson(response);
+    if (!response.ok || String(body.rt_cd ?? "0") !== "0") {
+      throw new Error(`KIS 국내 손익계산서 조회 실패 (${response.status}): ${String(body.msg1 || "알 수 없는 오류")}`);
+    }
+    return body;
+  });
+
+  const cumulative = new Map<number, number>();
+  const rows = Array.isArray(payload.output) ? payload.output as Record<string, unknown>[] : [];
+  for (const row of rows) {
+    const period = String(row.stac_yymm ?? "").replace(/[^0-9]/g, "");
+    if (period.length !== 6 || Number(period.slice(0, 4)) !== year) continue;
+    const month = Number(period.slice(4, 6));
+    if (![3, 6, 9, 12].includes(month)) continue;
+    const amount = numberValue(row.sale_account);
+    if (amount !== null) cumulative.set(month / 3, amount);
+  }
+  const current = cumulative.get(quarter);
+  if (current === undefined) return null;
+  const standalone = quarter === 1 ? current : current - (cumulative.get(quarter - 1) ?? Number.NaN);
+  if (!Number.isFinite(standalone)) return null;
+  return { year, quarter, topLineHundredMillionKrw: standalone };
 }
 
 /** Fetch one U.S. exchange's market-cap order for later universe composition. */

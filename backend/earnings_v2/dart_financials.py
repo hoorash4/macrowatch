@@ -264,54 +264,13 @@ def _needs_previous(rows: list[dict[str, Any]], quarter: int, scope: str) -> boo
     return False
 
 
-def _top_line_needs_previous(
-    rows: list[dict[str, Any]],
-    quarter: int,
-    scope: str,
-) -> bool:
-    if quarter == 1:
-        return False
-    scoped = [
-        row for row in rows
-        if str(row.get("fs_div") or scope).upper() == scope
-        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
-    ]
-    selected = _top_line_row(scoped)
-    if selected is None:
-        return False
-    if quarter == 4:
-        return True
-    return (
-        _decimal(selected.get("thstrm_amount")) is None
-        and _decimal(selected.get("thstrm_add_amount")) is not None
-    )
-
-
-def _individual_top_line(
-    rows: list[dict[str, Any]],
-    prior_rows: list[dict[str, Any]],
-    quarter: int,
-    scope: str,
-) -> Decimal | None:
-    current = [
-        row for row in rows
-        if str(row.get("fs_div") or scope).upper() == scope
-        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
-    ]
-    previous = [
-        row for row in prior_rows
-        if str(row.get("fs_div") or scope).upper() == scope
-        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
-    ]
-    return _amount(
-        _top_line_row(current),
-        quarter,
-        _top_line_row(previous),
-    )
-
-
 class DartFinancialCollector:
-    """Use batch facts first, then fetch only missing company top lines."""
+    """Collect only OpenDART multi-company facts.
+
+    Missing top lines are intentionally left partial for the separate KIS
+    supplement. This keeps provider responsibilities explicit and prevents a
+    slow per-company OpenDART retry path from duplicating the batch request.
+    """
 
     def __init__(self, client: OpenDartV2Client) -> None:
         self.client = client
@@ -359,58 +318,6 @@ class DartFinancialCollector:
                 if value is None or not value.complete:
                     diagnostics[code] = diagnostic
 
-        top_line_codes = [
-            code for code in companies
-            if (partial := values.get(code)) is not None
-            and partial.top_line is None
-            and partial.operating_income is not None
-            and partial.net_income is not None
-        ]
-        current_requests = [
-            (code, year, quarter, values[code].scope)
-            for code in top_line_codes
-        ]
-        individual_current, current_errors = self.client.all_accounts_many(
-            current_requests,
-            workers=4,
-        ) if current_requests else ({}, {})
-
-        previous_requests = []
-        for request in current_requests:
-            rows = individual_current.get(request, [])
-            if _top_line_needs_previous(rows, quarter, request[3]):
-                previous_requests.append((request[0], year, quarter - 1, request[3]))
-        individual_previous, previous_errors = self.client.all_accounts_many(
-            previous_requests,
-            workers=4,
-        ) if previous_requests else ({}, {})
-
-        for code in top_line_codes:
-            partial = values[code]
-            request = (code, year, quarter, partial.scope)
-            previous_request = (code, year, quarter - 1, partial.scope)
-            if request in current_errors:
-                errors[code] = current_errors[request]
-                continue
-            if previous_request in previous_errors:
-                errors[code] = previous_errors[previous_request]
-                continue
-            top_line = _individual_top_line(
-                individual_current.get(request, []),
-                individual_previous.get(previous_request, []),
-                quarter,
-                partial.scope,
-            )
-            if top_line is not None:
-                values[code] = partial.fill_missing_from(DartQuarterFinancials(
-                    top_line=top_line,
-                    operating_income=None,
-                    net_income=None,
-                    scope=partial.scope,
-                    source_filing_id=partial.source_filing_id,
-                    currency=partial.currency,
-                ))
-
         for code in companies:
             if not values.get(code) or not values[code].complete:
                 errors.setdefault(
@@ -425,8 +332,11 @@ class DartFinancialCollector:
                 "batch_current_companies": len(companies),
                 "batch_previous": 1 if needs_batch_previous else 0,
                 "batch_previous_companies": len(needs_batch_previous),
-                "individual_current": len(current_requests),
-                "individual_previous": len(previous_requests),
-                "individual_errors": len(current_errors) + len(previous_errors),
+                "kis_top_line_candidates": sum(
+                    value.top_line is None
+                    and value.operating_income is not None
+                    and value.net_income is not None
+                    for value in values.values()
+                ),
             },
         )

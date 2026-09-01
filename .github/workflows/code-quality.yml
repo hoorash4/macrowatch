@@ -56,3 +56,4 @@ jobs:
           deno check supabase/functions/policy-pipeline/index.ts
           deno check supabase/functions/admin-control/index.ts
           deno check supabase/functions/earnings-universe/index.ts
+          deno check supabase/functions/earnings-kis-top-lines/index.ts

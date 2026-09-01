@@ -7,11 +7,12 @@ import json
 import re
 from typing import Any, Iterable
 
-from .dart_financials import DartBatchResult, DartFinancialCollector
+from .dart_financials import DartBatchResult, DartFinancialCollector, DartQuarterFinancials
 from .ecos import EcosFxClient, EcosFxError
 from .financials import profit_margin
 from .growth import calculate_company_growth
 from .krx import KrxOpenApiClient
+from .kis_financials import KisTopLineClient, KisTopLineResult
 from .market import aggregate_market_quarter, calculate_market_series
 from .models import MarketQuarter, QuarterValue, UniverseCandidate, UniverseMember
 from .open_dart import OpenDartV2Client
@@ -20,10 +21,9 @@ from .universe import MARKET_TARGETS, select_final_universe
 
 
 QUARTER_END = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
-# Version 3 refreshes the one-year pilot exactly once for the individual-account
-# top-line fallback and persisted profit-margin calculations. Subsequent runs
-# reuse complete v3 rows and therefore make no duplicate financial calls.
-EXTRACTION_VERSION = 3
+# Version 4 replaces the per-company OpenDART retry path with a narrow KIS
+# supplement that is called only for top lines missing from the batch result.
+EXTRACTION_VERSION = 4
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -64,6 +64,8 @@ def _quarter_from_record(row: dict[str, Any]) -> QuarterValue:
         calculation_version=int(row.get("calculation_version") or 1),
         operating_margin_pct=_decimal(row.get("operating_margin_pct")),
         net_margin_pct=_decimal(row.get("net_margin_pct")),
+        operating_margin_qoq_delta_pctp=_decimal(row.get("operating_margin_qoq_delta_pctp")),
+        net_margin_qoq_delta_pctp=_decimal(row.get("net_margin_qoq_delta_pctp")),
         operating_income_yoy_pct=_decimal(row.get("operating_income_yoy_pct")),
         operating_income_yoy_state=str(row.get("operating_income_yoy_state") or "missing_prior"),
         net_income_yoy_pct=_decimal(row.get("net_income_yoy_pct")),
@@ -87,6 +89,8 @@ def _market_from_record(row: dict[str, Any]) -> MarketQuarter:
         completion_status=str(row["completion_status"]),
         operating_margin_pct=_decimal(row.get("operating_margin_pct")),
         net_margin_pct=_decimal(row.get("net_margin_pct")),
+        operating_margin_qoq_delta_pctp=_decimal(row.get("operating_margin_qoq_delta_pctp")),
+        net_margin_qoq_delta_pctp=_decimal(row.get("net_margin_qoq_delta_pctp")),
         operating_income_yoy_pct=_decimal(row.get("operating_income_yoy_pct")),
         operating_income_yoy_state=str(row.get("operating_income_yoy_state") or "missing_prior"),
         net_income_yoy_pct=_decimal(row.get("net_income_yoy_pct")),
@@ -106,6 +110,7 @@ class KoreaQuarterContext:
     reference_date: date
     members: tuple[UniverseMember, ...]
     corp_code_by_company: dict[str, str]
+    stock_code_by_company: dict[str, str]
     company_name_by_company: dict[str, str]
 
 
@@ -119,11 +124,13 @@ class KoreaEarningsPipeline:
         dart: OpenDartV2Client,
         fx: EcosFxClient,
         store: EarningsV2Store,
+        kis_top_lines: KisTopLineClient | None = None,
     ) -> None:
         self.krx = krx
         self.dart = dart
         self.fx = fx
         self.financials = DartFinancialCollector(dart)
+        self.kis_top_lines = kis_top_lines
         self.store = store
 
     def _discover_quarter(
@@ -143,6 +150,7 @@ class KoreaEarningsPipeline:
         identifiers = []
         candidates = []
         corp_code_by_company = {}
+        stock_code_by_company = {}
         company_name_by_company = {}
         exchange = "KOSPI" if market_id == "kr_largecap" else "KOSDAQ"
 
@@ -151,6 +159,7 @@ class KoreaEarningsPipeline:
             company_id = f"kr:{corp_code}"
             company_name = official_name or security.name
             corp_code_by_company[company_id] = corp_code
+            stock_code_by_company[company_id] = security.stock_code
             company_name_by_company[company_id] = company_name
             companies.append({
                 "company_id": company_id,
@@ -200,6 +209,7 @@ class KoreaEarningsPipeline:
             reference_date=reference_date,
             members=tuple(members),
             corp_code_by_company=corp_code_by_company,
+            stock_code_by_company=stock_code_by_company,
             company_name_by_company=company_name_by_company,
         )
 
@@ -233,6 +243,41 @@ class KoreaEarningsPipeline:
             self.financials.collect(pending_codes, context.year, context.quarter)
             if pending_codes else DartBatchResult(values={}, errors={})
         )
+        kis_result = KisTopLineResult(values={}, errors={}, request_counts={})
+        kis_company_by_ticker = {
+            context.stock_code_by_company[company_id]: company_id
+            for company_id in pending_ids
+            if (partial := batch.values.get(context.corp_code_by_company[company_id])) is not None
+            and partial.top_line is None
+            and partial.operating_income is not None
+            and partial.net_income is not None
+        }
+        if kis_company_by_ticker and self.kis_top_lines is not None:
+            kis_result = self.kis_top_lines.collect(
+                kis_company_by_ticker,
+                context.year,
+                context.quarter,
+            )
+            for ticker, top_line in kis_result.values.items():
+                company_id = kis_company_by_ticker.get(ticker)
+                if company_id is None:
+                    continue
+                corp_code = context.corp_code_by_company[company_id]
+                partial = batch.values[corp_code]
+                batch.values[corp_code] = partial.fill_missing_from(DartQuarterFinancials(
+                    top_line=top_line,
+                    operating_income=None,
+                    net_income=None,
+                    scope=partial.scope,
+                    source_filing_id=partial.source_filing_id,
+                    currency=partial.currency,
+                ))
+                batch.errors.pop(corp_code, None)
+            for ticker, message in kis_result.errors.items():
+                company_id = kis_company_by_ticker.get(ticker)
+                if company_id is not None:
+                    corp_code = context.corp_code_by_company[company_id]
+                    batch.errors[corp_code] = f"KIS top-line supplement: {message}"
         missing: list[dict[str, str]] = []
         touched: set[str] = set()
         month, day = QUARTER_END[context.quarter]
@@ -351,6 +396,7 @@ class KoreaEarningsPipeline:
             "requested": len(pending_ids),
             "collected": len(pending_ids) - len(missing),
             "provider_requests": batch.request_counts,
+            "kis_requests": kis_result.request_counts,
             "missing": missing,
         }, ensure_ascii=False), flush=True)
         return touched
