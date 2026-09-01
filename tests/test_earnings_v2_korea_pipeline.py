@@ -24,6 +24,24 @@ class FakeKrx:
         ]
 
 
+class FakeKrxWithEarlierMarketClose(FakeKrx):
+    @staticmethod
+    def last_trading_day(_market_id, trading_date):
+        reference_date, rows = FakeKrx.last_trading_day(_market_id, trading_date)
+        earlier = date(reference_date.year, 12, 30)
+        return earlier, [
+            KrxSecurity(
+                stock_code=row.stock_code,
+                name=row.name,
+                close=row.close,
+                market_cap=row.market_cap,
+                listed_shares=row.listed_shares,
+                reference_date=earlier,
+            )
+            for row in rows
+        ]
+
+
 class FakeDart:
     @staticmethod
     def corp_code_map():
@@ -161,6 +179,23 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertEqual(converted.operating_income, Decimal("26000"))
         self.assertEqual(converted.net_income, Decimal("13000"))
         self.assertEqual(fx.calls, [date(2026, 3, 31)])
+
+    def test_fx_uses_calendar_quarter_end_not_earlier_market_close(self):
+        store = FakeStore()
+        fx = FakeFx("1300")
+        pipeline = KoreaEarningsPipeline(
+            krx=FakeKrxWithEarlierMarketClose(), dart=FakeDart(), fx=fx, store=store,
+        )
+        pipeline.financials = FakeFinancialCollector(usd_codes={"00000001"})
+
+        result = pipeline.run(
+            [("kr_largecap", 2026, 4)],
+            source="test",
+            operation="quarter_end_fx",
+        )
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(fx.calls, [date(2026, 12, 31)])
 
 
 if __name__ == "__main__":

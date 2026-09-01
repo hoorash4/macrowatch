@@ -227,6 +227,7 @@ class KoreaEarningsPipeline:
         missing: list[dict[str, str]] = []
         touched: set[str] = set()
         month, day = QUARTER_END[context.quarter]
+        quarter_end = date(context.year, month, day)
 
         for company_id in pending_ids:
             corp_code = context.corp_code_by_company[company_id]
@@ -243,7 +244,10 @@ class KoreaEarningsPipeline:
                 exchange_rate = Decimal("1")
             elif source_currency == "USD":
                 try:
-                    exchange_rate = self.fx.usd_krw_on_or_before(context.reference_date)
+                    # Financial facts belong to the calendar quarter.  The
+                    # market-cap reference date may be an earlier exchange
+                    # trading day, so FX must anchor to the actual quarter end.
+                    exchange_rate = self.fx.usd_krw_on_or_before(quarter_end)
                 except EcosFxError as error:
                     missing.append({
                         "company_id": company_id,
@@ -273,7 +277,7 @@ class KoreaEarningsPipeline:
                 fiscal_quarter=context.quarter,
                 market_year=context.year,
                 market_quarter=context.quarter,
-                period_end=date(context.year, month, day),
+                period_end=quarter_end,
                 top_line=financial.top_line * exchange_rate,
                 operating_income=financial.operating_income * exchange_rate,
                 net_income=financial.net_income * exchange_rate,
