@@ -86,7 +86,15 @@ create policy "Authenticated users can read earnings growth metrics"
 -- seasonal-adjustment outputs even if a future worker accidentally regresses.
 do $$
 begin
-  if not exists (
+  -- Revenue derivatives were removed by the active profit-only contract.
+  -- Keep this historical migration replay-safe without recreating them.
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'earnings_quarterly_growth_metrics'
+      and column_name = 'revenue_yoy_state'
+  ) and not exists (
     select 1 from pg_constraint
     where conname = 'earnings_growth_revenue_state_values_ck'
       and conrelid = 'public.earnings_quarterly_growth_metrics'::regclass
