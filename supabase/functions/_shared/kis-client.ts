@@ -4,8 +4,6 @@ const ETF_CURRENT_PRICE_PATH = "/uapi/etfetn/v1/quotations/inquire-price";
 const DAILY_INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice";
 const MARKET_INVESTOR_PATH = "/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market";
 const OVERSEAS_MARKET_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap";
-const FINANCE_INCOME_STATEMENT_PATH = "/uapi/domestic-stock/v1/finance/income-statement";
-const FINANCE_PROFIT_RATIO_PATH = "/uapi/domestic-stock/v1/finance/profit-ratio";
 
 export type KisDailyPrice = {
   marketDate: string;
@@ -37,14 +35,6 @@ export type KisMarketCapRow = {
   exchange: string;
 };
 export type KisRequestRunner = <T>(request: () => Promise<T>) => Promise<T>;
-
-export type KisFinanceDiagnostic = {
-  endpoint: "income_statement" | "profit_ratio";
-  period: "annual" | "quarterly";
-  rows: Record<string, unknown>[];
-  responseCode: string;
-  responseMessage: string;
-};
 
 type KisCredentials = { appKey: string; appSecret: string };
 type KisTokenStore = { from: (table: string) => any };
@@ -171,46 +161,6 @@ export function createKisRequestRunner() {
         await wait(KIS_RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
       }
     }
-  };
-}
-
-/** Read-only diagnostic for the official KIS standardized finance endpoints. */
-export async function fetchKisFinanceDiagnostic(
-  credentials: KisCredentials,
-  accessToken: string,
-  ticker: string,
-  endpoint: "income_statement" | "profit_ratio",
-  period: "annual" | "quarterly",
-): Promise<KisFinanceDiagnostic> {
-  const path = endpoint === "income_statement" ? FINANCE_INCOME_STATEMENT_PATH : FINANCE_PROFIT_RATIO_PATH;
-  const trId = endpoint === "income_statement" ? "FHKST66430200" : "FHKST66430400";
-  const params = new URLSearchParams({
-    FID_DIV_CLS_CODE: period === "annual" ? "0" : "1",
-    FID_COND_MRKT_DIV_CODE: "J",
-    FID_INPUT_ISCD: ticker,
-  });
-  const response = await fetch(`${KIS_REAL_BASE_URL}${path}?${params}`, {
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      authorization: `Bearer ${accessToken}`,
-      appkey: credentials.appKey,
-      appsecret: credentials.appSecret,
-      tr_id: trId,
-      custtype: "P",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  const payload = await readJson(response);
-  if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
-    throw new Error(`KIS ${endpoint} 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
-  }
-  const output = Array.isArray(payload.output) ? payload.output : Array.isArray(payload.output1) ? payload.output1 : [];
-  return {
-    endpoint,
-    period,
-    rows: output as Record<string, unknown>[],
-    responseCode: String(payload.rt_cd ?? ""),
-    responseMessage: String(payload.msg1 ?? ""),
   };
 }
 

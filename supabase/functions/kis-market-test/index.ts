@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisDailyPrices, fetchKisFinanceDiagnostic, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -18,17 +18,6 @@ Deno.serve(async (request) => {
     const admin = createClient(supabaseUrl, serviceRole);
     const credentials = loadKisCredentials();
     const token = await getKisAccessToken(credentials, admin);
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    if (body.mode === "finance") {
-      const ticker = String(body.ticker || "105560").trim();
-      const results = [];
-      for (const endpoint of ["income_statement", "profit_ratio"] as const) {
-        for (const period of ["annual", "quarterly"] as const) {
-          results.push(await fetchKisFinanceDiagnostic(credentials, token, ticker, endpoint, period));
-        }
-      }
-      return json({ ok: true, ticker, results });
-    }
     const end = new Date();
     const start = new Date(end.getTime() - 14 * 86_400_000);
     const prices = await fetchKisDailyPrices(credentials, token, "069500", start, end);
