@@ -4,12 +4,12 @@ import json
 import os
 import re
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import Any, Iterable
 
 from .aggregation import aggregate_market, calculate_market_series
-from .models import CompanyIdentity, FinancialFact, MarketFact, Security
+from .models import CompanyIdentity, FinancialFact, MarketFact, PeriodicFiling, Security
 from .providers import EcosFxClient, KisClient, KrxClient, OpenDartClient
 from .repository import EarningsV2Repository
 from .transform import calculate_financial_series, decimal_value, extract_company_fact
@@ -32,6 +32,14 @@ def previous_period(year: int, quarter: int) -> tuple[int, int]:
 def latest_completed_quarter(today: date) -> tuple[int, int]:
     current_quarter = (today.month - 1) // 3 + 1
     return previous_period(today.year, current_quarter)
+
+
+def filing_period(filing: PeriodicFiling) -> tuple[int, int] | None:
+    """정기보고서명 끝의 기준월을 회계 분기로 변환한다."""
+    match = re.search(r"\((\d{4})\.(03|06|09|12)\)", filing.report_name)
+    if match is None:
+        return None
+    return int(match.group(1)), {"03": 1, "06": 2, "09": 3, "12": 4}[match.group(2)]
 
 
 def _eligible_name(name: str) -> bool:
@@ -294,7 +302,8 @@ class KoreaEarningsV2Pipeline:
             } for row in members))
 
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
-                    allow_review: bool = False, incremental: bool = False) -> dict[str, Any]:
+                    allow_review: bool = False, incremental: bool = False,
+                    refresh_corp_codes: set[str] | None = None) -> dict[str, Any]:
         operation = f"{year}Q{quarter}"
         if write:
             self.repository.save_state(operation, "running", {})
@@ -323,27 +332,49 @@ class KoreaEarningsV2Pipeline:
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
             stored_current, manual_ids = self._stored_current_facts(identities, year, quarter)
             selected = [row for row in identities if row.company_id not in manual_ids]
-            if incremental and stored_current:
-                recently_filed = self.dart.recent_periodic_corp_codes(date.today() - timedelta(days=14), date.today())
+            if incremental:
+                provider_refresh = refresh_corp_codes or set()
                 selected = [
                     row for row in identities
                     if row.company_id not in manual_ids and (
-                        row.corp_code in recently_filed
+                        row.corp_code in provider_refresh
                         or row.company_id not in stored_current
-                        or stored_current[row.company_id].is_pending
                     )
                 ]
             fresh_facts, issues = self.collect_financials(selected, year, quarter) if selected else ({}, [])
             preserved = stored_current if incremental else {
                 company_id: fact for company_id, fact in stored_current.items() if company_id in manual_ids
             }
-            facts = {**preserved, **fresh_facts}
+            pending_top_lines: dict[str, FinancialFact] = {}
+            if incremental and self.kis is not None and year >= 2019:
+                selected_ids = {row.company_id for row in selected}
+                for identity in identities:
+                    fact = stored_current.get(identity.company_id)
+                    if (
+                        identity.company_id in manual_ids
+                        or identity.company_id in selected_ids
+                        or fact is None
+                        or not fact.is_pending
+                        or fact.top_line is not None
+                        or not fact.profit_complete
+                    ):
+                        continue
+                    self._progress("kis_top_line_retry_start", company=identity.company_name, ticker=identity.stock_code)
+                    top_line = self.kis.quarter_top_line(identity.stock_code, year, quarter)
+                    pending_top_lines[identity.company_id] = fact.with_changes(
+                        top_line=top_line,
+                        is_pending=top_line is None,
+                    )
+                    self._progress("kis_top_line_retry_done", company=identity.company_name, found=top_line is not None)
+                    if top_line is None:
+                        issues.append({"company": identity.company_name, "field": "top_line", "reason": "provider value missing"})
+            facts = {**preserved, **fresh_facts, **pending_top_lines}
             histories = self._calculated_histories(facts)
             markets = self._market_rows(universes, histories, year, quarter)
             current_facts = [row for rows in histories.values() for row in rows if row.key == (year, quarter)]
             current_markets = [row for rows in markets.values() for row in rows if row.key == (year, quarter)]
             if write:
-                changed_ids = set(fresh_facts)
+                changed_ids = set(fresh_facts) | set(pending_top_lines)
                 self.repository.upsert_company_quarters(
                     row.db_row(calculation_version=CALCULATION_VERSION)
                     for row in current_facts if row.company_id in changed_ids
@@ -356,6 +387,7 @@ class KoreaEarningsV2Pipeline:
                 "universe": {market: len(rows) for market, rows in universes.items()},
                 "companies": len(identities), "facts": len(current_facts),
                 "refreshed_companies": len(fresh_facts),
+                "retried_pending_top_lines": len(pending_top_lines),
                 "complete_facts": sum(not row.is_pending for row in current_facts),
                 "markets": {row.market_id: row.completion_status for row in current_markets},
                 "issues": issues,
@@ -403,9 +435,50 @@ class KoreaEarningsV2Pipeline:
             "status": "ready",
         }
 
-    def run_daily(self, *, write: bool = True) -> dict[str, Any]:
-        year, quarter = latest_completed_quarter(date.today())
-        return self.run_quarter(year, quarter, write=write, allow_review=True, incremental=True)
+    def run_daily(self, *, write: bool = True, today: date | None = None) -> dict[str, Any]:
+        """마지막 정상 확인일 이후의 신규 접수번호만 증분 처리한다."""
+        current_day = today or date.today()
+        state = self.repository.pipeline_state("daily_filings") or {}
+        cursor = state.get("cursor") if isinstance(state.get("cursor"), dict) else {}
+        checked_text = str(cursor.get("last_checked_date") or "")
+        try:
+            checked_on = date.fromisoformat(checked_text)
+        except ValueError:
+            checked_on = current_day
+        if checked_on > current_day:
+            checked_on = current_day
+
+        boundary_receipts = {
+            str(value) for value in cursor.get("boundary_receipt_ids", [])
+            if re.fullmatch(r"\d{14}", str(value))
+        }
+        filings = self.dart.periodic_filings(checked_on, current_day)
+        new_filings = [
+            filing for filing in filings
+            if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
+        ]
+        year, quarter = latest_completed_quarter(current_day)
+        refresh_corp_codes = {
+            filing.corp_code for filing in new_filings if filing_period(filing) == (year, quarter)
+        }
+        result = self.run_quarter(
+            year, quarter, write=write, allow_review=True, incremental=True,
+            refresh_corp_codes=refresh_corp_codes,
+        )
+        result["filing_discovery"] = {
+            "checked_from": checked_on.isoformat(),
+            "checked_through": current_day.isoformat(),
+            "new_receipts": len(new_filings),
+            "refreshed_companies": len(refresh_corp_codes),
+        }
+        if write:
+            self.repository.save_state("daily_filings", "ready", {
+                "last_checked_date": current_day.isoformat(),
+                "boundary_receipt_ids": sorted(
+                    filing.receipt_no for filing in filings if filing.received_on == current_day
+                ),
+            })
+        return result
 
     def run_year(self, year: int, *, write: bool = False, allow_review: bool = False) -> list[dict[str, Any]]:
         results = []

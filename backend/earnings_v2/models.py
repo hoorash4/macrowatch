@@ -15,6 +15,14 @@ class Security:
 
 
 @dataclass(frozen=True)
+class PeriodicFiling:
+    corp_code: str
+    receipt_no: str
+    received_on: date
+    report_name: str
+
+
+@dataclass(frozen=True)
 class CompanyIdentity:
     company_id: str
     company_name: str

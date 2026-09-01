@@ -437,6 +437,26 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("recalculate_only:", workflow)
         self.assertIn("args+=(--recalculate-only)", workflow)
 
+    def test_earnings_v2_daily_collection_is_receipt_checkpointed(self):
+        pipeline = (ROOT / "backend/earnings_v2/pipeline.py").read_text(encoding="utf-8")
+        providers = (ROOT / "backend/earnings_v2/providers.py").read_text(encoding="utf-8")
+        repository = (ROOT / "backend/earnings_v2/repository.py").read_text(encoding="utf-8")
+        migration = (ROOT / "supabase/migrations/20260902224500_add_earnings_v2_daily_checkpoint_read.sql").read_text(encoding="utf-8")
+        initializer = (ROOT / "supabase/migrations/20260902225000_initialize_earnings_v2_daily_checkpoint.sql").read_text(encoding="utf-8")
+
+        self.assertNotIn("timedelta(days=14)", pipeline)
+        self.assertNotIn("recent_periodic_corp_codes", pipeline)
+        self.assertIn('pipeline_state("daily_filings")', pipeline)
+        self.assertIn('"boundary_receipt_ids"', pipeline)
+        self.assertIn("filing.receipt_no in boundary_receipts", pipeline)
+        self.assertIn("def periodic_filings", providers)
+        self.assertIn("result[receipt] = PeriodicFiling", providers)
+        self.assertIn('self.rpc("earnings_v2_get_pipeline_state"', repository)
+        self.assertIn("to service_role", migration)
+        self.assertIn("'korea_v2', 'daily_filings'", initializer)
+        self.assertIn("'last_checked_date', (now() at time zone 'Asia/Seoul')::date", initializer)
+        self.assertIn("on conflict (source, operation) do nothing", initializer)
+
     def test_target_alerts_use_db_tokens_retry_queue_and_visible_failures(self):
         checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")

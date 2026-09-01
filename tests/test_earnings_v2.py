@@ -5,9 +5,9 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_v2.aggregation import aggregate_market
-from earnings_v2.models import CompanyIdentity, FinancialFact
+from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling
 from earnings_v2.cli import completed_successfully, parser
-from earnings_v2.pipeline import _eligible_name, latest_completed_quarter
+from earnings_v2.pipeline import KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.providers import KisClient, OpenDartClient
 from earnings_v2.transform import (
     calculate_financial_series,
@@ -143,7 +143,7 @@ class OpenDartTransportTests(unittest.TestCase):
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn("secret", str(captured.exception))
 
-    def test_recent_periodic_filings_filter_nonperiodic_reports(self):
+    def test_periodic_filings_preserve_unique_receipt_numbers(self):
         class Response:
             content = b"1"
 
@@ -156,8 +156,9 @@ class OpenDartTransportTests(unittest.TestCase):
                 return {
                     "status": "000", "total_page": 1,
                     "list": [
-                        {"corp_code": "00123456", "report_nm": "분기보고서 (2026.03)"},
-                        {"corp_code": "00999999", "report_nm": "주요사항보고서"},
+                        {"corp_code": "00123456", "rcept_no": "20260814000001", "rcept_dt": "20260814", "report_nm": "분기보고서 (2026.03)"},
+                        {"corp_code": "00123456", "rcept_no": "20260814000001", "rcept_dt": "20260814", "report_nm": "분기보고서 (2026.03)"},
+                        {"corp_code": "00999999", "rcept_no": "20260814000002", "rcept_dt": "20260814", "report_nm": "주요사항보고서"},
                     ],
                 }
 
@@ -167,10 +168,13 @@ class OpenDartTransportTests(unittest.TestCase):
                 return Response()
 
         client = OpenDartClient("secret", session=Session(), interval=0)
-        self.assertEqual(
-            client.recent_periodic_corp_codes(date(2026, 8, 1), date(2026, 8, 14)),
-            {"00123456"},
-        )
+        filings = client.periodic_filings(date(2026, 8, 1), date(2026, 8, 14))
+        self.assertEqual(len(filings), 1)
+        self.assertEqual(filings[0].receipt_no, "20260814000001")
+
+    def test_periodic_filing_period_uses_report_reference_month(self):
+        filing = PeriodicFiling("00123456", "20260814000001", date(2026, 8, 14), "[기재정정]반기보고서 (2026.06)")
+        self.assertEqual(filing_period(filing), (2026, 2))
 
 
 class CliContractTests(unittest.TestCase):
@@ -184,6 +188,67 @@ class CliContractTests(unittest.TestCase):
     def test_recalculation_mode_is_an_explicit_cli_path(self):
         args = parser().parse_args(["--year", "2026", "--quarter", "2", "--write", "--recalculate-only"])
         self.assertTrue(args.recalculate_only)
+
+
+class DailyCheckpointTests(unittest.TestCase):
+    def test_daily_run_deduplicates_boundary_receipts_and_advances_after_success(self):
+        class Repository:
+            saved = []
+
+            @staticmethod
+            def pipeline_state(_operation):
+                return {"cursor": {
+                    "last_checked_date": "2026-09-01",
+                    "boundary_receipt_ids": ["20260901000001"],
+                }}
+
+            def save_state(self, operation, status, cursor, error=None):
+                self.saved.append((operation, status, cursor, error))
+
+        class Dart:
+            @staticmethod
+            def periodic_filings(start, end):
+                self.assertEqual((start, end), (date(2026, 9, 1), date(2026, 9, 2)))
+                return [
+                    PeriodicFiling("00000001", "20260901000001", date(2026, 9, 1), "반기보고서 (2026.06)"),
+                    PeriodicFiling("00000002", "20260902000001", date(2026, 9, 2), "반기보고서 (2026.06)"),
+                ]
+
+        repository = Repository()
+        pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=repository)
+        captured = {}
+
+        def run_quarter(year, quarter, **kwargs):
+            captured.update({"year": year, "quarter": quarter, **kwargs})
+            return {"status": "incomplete"}
+
+        pipeline.run_quarter = run_quarter
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+        self.assertEqual(captured["refresh_corp_codes"], {"00000002"})
+        self.assertEqual(result["filing_discovery"]["new_receipts"], 1)
+        self.assertEqual(repository.saved[-1][0:2], ("daily_filings", "ready"))
+        self.assertEqual(repository.saved[-1][2]["last_checked_date"], "2026-09-02")
+        self.assertEqual(repository.saved[-1][2]["boundary_receipt_ids"], ["20260902000001"])
+
+    def test_first_daily_run_starts_from_the_day_it_is_enabled(self):
+        class Repository:
+            @staticmethod
+            def pipeline_state(_operation):
+                return None
+
+            @staticmethod
+            def save_state(*_args, **_kwargs):
+                return None
+
+        class Dart:
+            @staticmethod
+            def periodic_filings(start, end):
+                self.assertEqual((start, end), (date(2026, 9, 2), date(2026, 9, 2)))
+                return []
+
+        pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=Repository())
+        pipeline.run_quarter = lambda *_args, **_kwargs: {"status": "incomplete"}
+        pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
 
 class QuarterlyExtractionTests(unittest.TestCase):

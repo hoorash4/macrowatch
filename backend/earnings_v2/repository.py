@@ -95,6 +95,14 @@ class EarningsV2Repository:
             "p_last_error": error,
         })
 
+    def pipeline_state(self, operation: str) -> dict[str, Any] | None:
+        result = self.rpc("earnings_v2_get_pipeline_state", {
+            "p_source": "korea_v2", "p_operation": operation,
+        })
+        if isinstance(result, list):
+            return result[0] if result and isinstance(result[0], dict) else None
+        return result if isinstance(result, dict) else None
+
     def cached_kis_token(self) -> str | None:
         response = self.session.get(
             f"{self.url}/rest/v1/app_settings",

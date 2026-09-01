@@ -13,7 +13,7 @@ from typing import Any
 
 import requests
 
-from .models import Security
+from .models import PeriodicFiling, Security
 
 
 OPEN_DART_BASE = "https://opendart.fss.or.kr/api"
@@ -148,9 +148,9 @@ class OpenDartClient:
             rows.extend(row for row in payload.get("list", []) if isinstance(row, dict))
         return rows
 
-    def recent_periodic_corp_codes(self, start: date, end: date) -> set[str]:
-        """조회 구간에 새로 접수된 정기공시의 기업코드만 반환한다."""
-        result: set[str] = set()
+    def periodic_filings(self, start: date, end: date) -> list[PeriodicFiling]:
+        """접수번호로 중복을 구분할 수 있는 정기공시 목록을 반환한다."""
+        result: dict[str, PeriodicFiling] = {}
         page = 1
         while True:
             payload = self._get("list.json", {
@@ -163,14 +163,26 @@ class OpenDartClient:
             items = [row for row in payload.get("list", []) if isinstance(row, dict)]
             for row in items:
                 code = str(row.get("corp_code") or "").strip()
+                receipt = str(row.get("rcept_no") or "").strip()
+                received = str(row.get("rcept_dt") or "").strip()
                 report = str(row.get("report_nm") or "")
-                if re.fullmatch(r"\d{8}", code) and any(name in report for name in ("분기보고서", "반기보고서", "사업보고서")):
-                    result.add(code)
+                if (
+                    re.fullmatch(r"\d{8}", code)
+                    and re.fullmatch(r"\d{14}", receipt)
+                    and re.fullmatch(r"\d{8}", received)
+                    and any(name in report for name in ("분기보고서", "반기보고서", "사업보고서"))
+                ):
+                    result[receipt] = PeriodicFiling(
+                        corp_code=code,
+                        receipt_no=receipt,
+                        received_on=date.fromisoformat(f"{received[:4]}-{received[4:6]}-{received[6:]}"),
+                        report_name=report,
+                    )
             total_pages = int(payload.get("total_page") or 1)
             if page >= total_pages:
                 break
             page += 1
-        return result
+        return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
 
 
 class KrxClient:
