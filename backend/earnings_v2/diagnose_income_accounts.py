@@ -44,7 +44,7 @@ def main() -> int:
         "quarter": quarter,
         "scope": scope,
         "accounts_through_operating_income": selected,
-    }, ensure_ascii=False, indent=2))
+    }, ensure_ascii=False, separators=(",", ":")))
     return 0
 
 
