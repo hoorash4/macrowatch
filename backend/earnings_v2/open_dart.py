@@ -10,9 +10,8 @@ from typing import Any
 import zipfile
 import xml.etree.ElementTree as ET
 
-import requests
-
 from .financials import StatementAmount, financial_top_line, single_quarter_amount
+from .http import get_with_retries, resilient_session
 
 
 BASE = "https://opendart.fss.or.kr/api"
@@ -71,7 +70,7 @@ class OpenDartV2Client:
             raise ValueError("OpenDART API key is required")
         self.api_key = api_key.strip()
         self.interval = interval
-        self.session = requests.Session()
+        self.session = resilient_session()
         self.last_request = 0.0
 
     @classmethod
@@ -85,7 +84,8 @@ class OpenDartV2Client:
         elapsed = time.monotonic() - self.last_request
         if self.last_request and elapsed < self.interval:
             time.sleep(self.interval - elapsed)
-        response = self.session.get(
+        response = get_with_retries(
+            self.session,
             f"{BASE}/{endpoint}", params={"crtfc_key": self.api_key, **params}, timeout=60,
         )
         self.last_request = time.monotonic()
@@ -99,7 +99,12 @@ class OpenDartV2Client:
         return payload
 
     def corp_code_map(self) -> dict[str, tuple[str, str]]:
-        response = self.session.get(f"{BASE}/corpCode.xml", params={"crtfc_key": self.api_key}, timeout=60)
+        response = get_with_retries(
+            self.session,
+            f"{BASE}/corpCode.xml",
+            params={"crtfc_key": self.api_key},
+            timeout=60,
+        )
         response.raise_for_status()
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             root = ET.fromstring(archive.read("CORPCODE.xml"))

@@ -5,6 +5,7 @@ import unittest
 
 from earnings_v2.financials import StatementAmount, financial_top_line, single_quarter_amount
 from earnings_v2.growth import calculate_company_growth, conventional_growth
+from earnings_v2.http import get_with_retries
 from earnings_v2.market import aggregate_market_quarter, calculate_market_series
 from earnings_v2.krx import is_eligible_common_stock
 from earnings_v2.models import MarketQuarter, QuarterValue, UniverseCandidate
@@ -32,6 +33,26 @@ def quarter(year: int, fiscal_quarter: int, op: str, net: str | None = None) -> 
 
 
 class EarningsV2GrowthTests(unittest.TestCase):
+    def test_get_with_retries_handles_temporary_api_failures(self):
+        class Response:
+            def __init__(self, status_code):
+                self.status_code = status_code
+
+        class Session:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, _url, **_kwargs):
+                self.calls += 1
+                return Response(503 if self.calls == 1 else 200)
+
+        session = Session()
+        response = get_with_retries(
+            session, "https://example.test", attempts=2, backoff_factor=0,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(session.calls, 2)
+
     def test_conventional_growth_keeps_turns_as_states(self):
         self.assertEqual(conventional_growth(Decimal("10"), Decimal("-5")).state, "black_turn")
         self.assertEqual(conventional_growth(Decimal("-10"), Decimal("5")).state, "red_turn")

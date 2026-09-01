@@ -9,6 +9,8 @@ from typing import Any
 
 import requests
 
+from .http import get_with_retries, resilient_session
+
 
 KRX_BASE_URL = "https://data-dbg.krx.co.kr/svc/apis/sto"
 MARKET_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
@@ -54,7 +56,7 @@ class KrxOpenApiClient:
         if not auth_key.strip():
             raise ValueError("KRX OPEN API key is required")
         self.auth_key = auth_key.strip()
-        self.session = session or requests.Session()
+        self.session = session or resilient_session()
 
     @classmethod
     def from_env(cls) -> "KrxOpenApiClient":
@@ -65,7 +67,8 @@ class KrxOpenApiClient:
 
     def daily_market(self, market_id: str, trading_date: date) -> list[KrxSecurity]:
         endpoint = MARKET_ENDPOINTS[market_id]
-        response = self.session.get(
+        response = get_with_retries(
+            self.session,
             f"{KRX_BASE_URL}/{endpoint}",
             params={"basDd": trading_date.strftime("%Y%m%d")},
             headers={"AUTH_KEY": self.auth_key, "Accept": "application/json"},
@@ -102,4 +105,3 @@ class KrxOpenApiClient:
                 return candidate, rows
             candidate -= timedelta(days=1)
         raise RuntimeError(f"No KRX trading day found on or before {on_or_before}")
-
