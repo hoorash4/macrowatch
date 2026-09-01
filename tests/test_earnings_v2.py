@@ -7,7 +7,7 @@ from earnings_v2.financials import StatementAmount, financial_top_line, single_q
 from earnings_v2.growth import calculate_company_growth, conventional_growth
 from earnings_v2.market import aggregate_market_quarter, calculate_market_series
 from earnings_v2.models import MarketQuarter, QuarterValue, UniverseCandidate
-from earnings_v2.pilot import build_one_year_pilot
+from earnings_v2.pilot import build_one_year_pilot, build_recent_four_quarter_pilot
 from earnings_v2.pipeline import coverage_report, prepare_company_series
 from earnings_v2.readiness import inspect_repository
 from earnings_v2.universe import select_final_universe
@@ -113,6 +113,15 @@ class EarningsV2BoundaryTests(unittest.TestCase):
     def test_pilot_plan_is_exactly_one_year(self):
         plan = build_one_year_pilot(2026, ("kr_largecap",))
         self.assertEqual(plan.quarters, tuple(("kr_largecap", 2026, quarter) for quarter in range(1, 5)))
+
+    def test_recent_pilot_uses_trailing_four_confirmed_quarters(self):
+        plan = build_recent_four_quarter_pilot(
+            end_year=2026, end_quarter=2, markets=("kr_largecap",),
+        )
+        self.assertEqual(plan.quarters, (
+            ("kr_largecap", 2025, 3), ("kr_largecap", 2025, 4),
+            ("kr_largecap", 2026, 1), ("kr_largecap", 2026, 2),
+        ))
 
     def test_v2_has_no_legacy_package_dependency(self):
         root = Path(__file__).resolve().parents[1]
