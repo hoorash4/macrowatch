@@ -9,44 +9,10 @@ from typing import Any, Iterable
 
 
 METRIC_ALIASES = {
-    "revenue": (
-        # Banks and broker-dealers commonly use this total after interest
-        # expense instead of an industrial-company sales tag.
-        "RevenuesNetOfInterestExpense",
-        "TotalRevenue",
-        "TotalRevenues",
-        "NetRevenue",
-        "NetRevenues",
-        "TotalRevenuesNetOfInterestExpense",
-        "TotalRevenueNetOfInterestExpense",
-        "OperatingRevenues",
-        "RegulatedAndUnregulatedOperatingRevenue",
-        "SalesAndOtherOperatingRevenue",
-        "RevenuesAndOtherIncome",
-        "TotalRevenuesAndOtherIncome",
-        "NetSales",
-        "RevenueFromContractWithCustomerExcludingAssessedTax",
-        "RevenueFromContractWithCustomerIncludingAssessedTax",
-        "SalesRevenueServicesNet",
-        "SalesRevenueServicesGross",
-        "SubscriptionRevenue",
-        "ProfessionalServicesRevenue",
-        "Revenues",
-        "SalesRevenueNet",
-        "SalesRevenueGoodsNet",
-    ),
     "operating_income": (
         "OperatingIncomeLoss",
         "IncomeFromOperations",
         "LossFromOperations",
-        "IncomeBeforeProvisionForIncomeTaxes",
-        "IncomeLossBeforeProvisionForIncomeTaxes",
-        "IncomeBeforeIncomeTaxes",
-        "IncomeLossBeforeIncomeTaxes",
-        "IncomeFromContinuingOperationsBeforeTaxes",
-        "IncomeLossFromContinuingOperationsBeforeTaxes",
-        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
-        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
     ),
     "net_income": (
         "NetIncomeLoss",
@@ -208,8 +174,7 @@ def canonical_sec_quarters(
             annual = _annual_fact(facts, fiscal_year)
             earlier = [selected[quarter].get(metric) for quarter in range(1, 4)]
             # Q4 subtraction is valid only when the annual and all interim
-            # values came from the same ranked SEC concept. Mixing TotalRevenue
-            # with NetRevenue, for example, can manufacture a negative Q4.
+            # values came from the same ranked SEC concept.
             if (
                 annual is not None
                 and all(earlier)
@@ -236,13 +201,7 @@ def canonical_sec_quarters(
             if set(metrics) != set(METRIC_ALIASES):
                 gaps.append((fiscal_year, quarter))
                 continue
-            # A pre-revenue company can legitimately report zero revenue while
-            # recording expenses and a loss. Negative revenue, or an entirely
-            # zero income statement, is instead treated as an unresolved SEC
-            # fact selection and never published as a canonical quarter.
-            if metrics["revenue"].value < 0 or all(
-                fact.value == 0 for fact in metrics.values()
-            ):
+            if all(fact.value == 0 for fact in metrics.values()):
                 gaps.append((fiscal_year, quarter))
                 continue
             representative = max(metrics.values(), key=lambda fact: (fact.filed, fact.accession))
@@ -280,7 +239,6 @@ def canonical_sec_quarters(
                     "market_quarter": market_quarter,
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),
-                    "revenue": _number_text(metrics["revenue"].value),
                     "operating_income": _number_text(metrics["operating_income"].value),
                     "net_income": _number_text(metrics["net_income"].value),
                     "currency": "USD",

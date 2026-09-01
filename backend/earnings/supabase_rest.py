@@ -323,22 +323,33 @@ class SupabaseEarningsStore:
         """Read the compact canonical quarters without fetching filing payloads."""
         endpoint = f"{self.url}/rest/v1/earnings_quarterly_financials"
         rows: list[dict[str, Any]] = []
-        offset = 0
+        cursor: tuple[str, int, int] | None = None
         while True:
+            params = {
+                "select": (
+                    "company_id,fiscal_year,fiscal_quarter,market_year,market_quarter,period_end,"
+                    "operating_income,net_income,currency,"
+                    "consolidation_scope,canonical_version"
+                ),
+                "order": "company_id.asc,fiscal_year.asc,fiscal_quarter.asc",
+                "quality_status": "eq.complete",
+                "limit": str(page_size),
+            }
+            if cursor is not None:
+                company_id, fiscal_year, fiscal_quarter = cursor
+                # Offset pagination can duplicate or skip rows while another
+                # collector completes quarters. Advance by the unique key so
+                # concurrent Korean/U.S. ingestion cannot break recalculation.
+                params["or"] = (
+                    f"(company_id.gt.{company_id},"
+                    f"and(company_id.eq.{company_id},fiscal_year.gt.{fiscal_year}),"
+                    f"and(company_id.eq.{company_id},fiscal_year.eq.{fiscal_year},"
+                    f"fiscal_quarter.gt.{fiscal_quarter}))"
+                )
             try:
                 response = self.session.get(
                     endpoint,
-                    params={
-                        "select": (
-                            "company_id,fiscal_year,fiscal_quarter,market_year,market_quarter,period_end,revenue,"
-                            "operating_income,net_income,currency,"
-                            "consolidation_scope,canonical_version"
-                        ),
-                        "order": "company_id.asc,fiscal_year.asc,fiscal_quarter.asc",
-                        "quality_status": "eq.complete",
-                        "limit": str(page_size),
-                        "offset": str(offset),
-                    },
+                    params=params,
                     headers=self._headers(),
                     timeout=self.timeout,
                 )
@@ -352,7 +363,12 @@ class SupabaseEarningsStore:
             rows.extend(page)
             if len(payload) < page_size:
                 return rows
-            offset += page_size
+            last = page[-1]
+            cursor = (
+                str(last["company_id"]),
+                int(last["fiscal_year"]),
+                int(last["fiscal_quarter"]),
+            )
 
     def list_current_index_memberships(self, *, page_size: int = 1000) -> list[dict[str, Any]]:
         """Return only active index/company pairs for fixed-universe analysis."""

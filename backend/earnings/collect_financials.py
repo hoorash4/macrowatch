@@ -14,12 +14,6 @@ import time
 from typing import Any, Callable, Iterable
 
 from earnings.open_dart import OpenDartApiError, OpenDartClient, OpenDartResponse
-from earnings.dart_statement_revenue import (
-    DartRevenueDerivationError,
-    derive_gross_revenue_from_account_rows,
-    derive_gross_revenue_from_archive,
-    derive_gross_revenue_from_xbrl_presentation,
-)
 from earnings.open_dart_parser import (
     DartAccountFact,
     REPORT_QUARTERS,
@@ -186,138 +180,15 @@ class OpenDartFinancialWorker:
         report_code: str,
         facts: list[DartAccountFact],
     ) -> list[DartAccountFact]:
-        """Use full CFS then OFS until core profit facts support a safe result."""
+        """Use full CFS then OFS until both profit facts support a safe result."""
         for scope in ("CFS", "OFS"):
             selected = select_preferred_accounts(facts).get(corp_code, {})
-            if all(metric in selected for metric in REQUIRED_METRICS) or all(
-                metric in selected for metric in ("operating_income", "net_income")
-            ):
+            if all(metric in selected for metric in REQUIRED_METRICS):
                 break
             response = self._request(lambda scope=scope: self.client.fetch_single_all_accounts(
                 corp_code, business_year, report_code, scope
             ))
             facts.extend(parse_account_rows(response.payload))
-        return facts
-
-    def _derive_missing_revenue(
-        self,
-        corp_code: str,
-        facts: list[DartAccountFact],
-    ) -> list[DartAccountFact]:
-        """Append one exactly reconciled financial-company revenue fact."""
-        selected = select_preferred_accounts(facts).get(corp_code, {})
-        if "operating_income" not in selected:
-            return facts
-        # Ordinary industrial-company revenue is already the requested top
-        # line. Rebuild only a missing top line or a financial-company style
-        # operating-revenue label, which can represent just one branch.
-        existing_revenue = selected.get("revenue")
-        if existing_revenue is not None:
-            revenue_label = re.sub(r"\\s+", "", existing_revenue.account_name)
-            if not any(label in revenue_label for label in (
-                "영업수익", "보험수익", "순영업수익",
-            )):
-                return facts
-        operating = selected["operating_income"]
-        receipt = operating.receipt_number or next(
-            (fact.receipt_number for fact in selected.values() if fact.receipt_number), ""
-        )
-        if not receipt or operating.consolidation_scope not in {"CFS", "OFS"}:
-            return facts
-
-        amounts = None
-        full_account_rows: list[dict[str, Any]] = []
-        try:
-            full_accounts = self._request(
-                lambda: self.client.fetch_single_all_accounts(
-                    corp_code,
-                    operating.business_year,
-                    operating.report_code,
-                    operating.consolidation_scope,
-                )
-            )
-            full_account_rows = full_accounts.rows
-            amounts = derive_gross_revenue_from_account_rows(
-                full_account_rows,
-                operating_current=operating.current_amount,
-                operating_cumulative=operating.cumulative_amount,
-            )
-        except DartRevenueDerivationError as error:
-            print(json.dumps({
-                "event": "dart_account_revenue_derivation_skipped",
-                "receipt_no": receipt,
-                "reason": str(error),
-            }, ensure_ascii=False), flush=True)
-        except OpenDartApiError as error:
-            print(json.dumps({
-                "event": "dart_full_income_accounts_unavailable",
-                "receipt_no": receipt,
-                "status": error.status,
-            }, ensure_ascii=False), flush=True)
-
-        xbrl_available = False
-        if amounts is None:
-            try:
-                xbrl_response = self._request(
-                    lambda: self.client.fetch_financial_xbrl_archive(
-                        receipt, operating.report_code
-                    )
-                )
-                xbrl_available = True
-                amounts = derive_gross_revenue_from_xbrl_presentation(
-                    xbrl_response.content,
-                    full_account_rows,
-                    operating_current=operating.current_amount,
-                    operating_cumulative=operating.cumulative_amount,
-                )
-            except (OpenDartApiError, DartRevenueDerivationError) as error:
-                print(json.dumps({
-                    "event": "dart_xbrl_revenue_derivation_skipped",
-                    "receipt_no": receipt,
-                    "reason": str(error),
-                }, ensure_ascii=False), flush=True)
-
-        if amounts is None and xbrl_available:
-            return facts
-
-        if amounts is None:
-            try:
-                archive_response = self._request(
-                    lambda: self.client.fetch_filing_archive(receipt)
-                )
-                amounts = derive_gross_revenue_from_archive(
-                    archive_response.content,
-                    operating_current=operating.current_amount,
-                    operating_cumulative=operating.cumulative_amount,
-                    consolidation_scope=operating.consolidation_scope,
-                )
-            except OpenDartApiError as error:
-                if error.status != "014":
-                    raise
-                print(json.dumps({
-                    "event": "dart_revenue_archive_unavailable",
-                    "receipt_no": receipt,
-                    "status": error.status,
-                }, ensure_ascii=False), flush=True)
-                return facts
-            except DartRevenueDerivationError as error:
-                print(json.dumps({
-                    "event": "dart_revenue_derivation_skipped",
-                    "receipt_no": receipt,
-                    "reason": str(error),
-                }, ensure_ascii=False), flush=True)
-                return facts
-        if amounts.current_revenue is None and amounts.cumulative_revenue is None:
-            return facts
-        facts = [fact for fact in facts if fact.metric != "revenue"]
-        facts.append(replace(
-            operating,
-            metric="revenue",
-            account_id="derived-gross-operating-revenue",
-            account_name="총영업수익(공시 계정 합산)",
-            current_amount=amounts.current_revenue,
-            cumulative_amount=amounts.cumulative_revenue,
-        ))
         return facts
 
     def _fetch_previous(
@@ -409,7 +280,6 @@ class OpenDartFinancialWorker:
                     report_code=report_code,
                     report_name=metadata.get("report_name"),
                 )
-                current_facts = self._derive_missing_revenue(corp_code, current_facts)
                 selected = select_preferred_accounts(current_facts).get(corp_code, {})
                 previous_code = PREVIOUS_REPORT_CODE.get(report_code)
                 previous_facts = attach_reporting_period(
@@ -435,7 +305,6 @@ class OpenDartFinancialWorker:
                         business_year=business_year,
                         report_code=PREVIOUS_REPORT_CODE[report_code],
                     )
-                    previous_facts = self._derive_missing_revenue(corp_code, previous_facts)
                 previous_selected = select_preferred_accounts(previous_facts).get(corp_code, {})
 
                 receipt = str(metadata.get("receipt_no") or "").strip()
@@ -476,13 +345,6 @@ class OpenDartFinancialWorker:
                         "report_name": metadata.get("report_name"),
                         "missing_metrics": missing,
                         "quality_issues": quality_issues,
-                        "revenue_method": (
-                            "dart_statement_gross_operating_revenue_v2"
-                            if selected.get("revenue") is not None
-                            and selected["revenue"].account_id
-                            == "derived-gross-operating-revenue"
-                            else "open_dart_account"
-                        ),
                     },
                 }
                 self.store.complete_open_dart_job(

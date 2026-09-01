@@ -83,10 +83,8 @@ def build_legacy_standalone_quarters(
             # report is absent or could not be parsed.
             previous = cumulative
             continue
-        # Negative revenue or an entirely zero statement cannot support a
-        # canonical quarter. Zero revenue with reported expenses/losses is a
-        # legitimate published result and is retained consistently with SEC.
-        if values["revenue"] < 0 or all(value == 0 for value in values.values()):
+        # An entirely zero pair cannot identify a usable profit statement.
+        if all(value == 0 for value in values.values()):
             previous = None
             continue
         standalone[report_code] = values

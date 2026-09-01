@@ -38,12 +38,12 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         worker = LegacyDartFinancialWorker(
             object(), object(), sleeper=lambda _seconds: None,
             historical_financials=[
-                {"company_id": "a", "fiscal_year": 2020, "revenue": "100"},
-                {"company_id": "b", "fiscal_year": 2020, "revenue": "200"},
+                {"company_id": "a", "fiscal_year": 2020, "operating_income": "10"},
+                {"company_id": "b", "fiscal_year": 2020, "operating_income": "20"},
             ],
         )
         self.assertEqual(len(worker._history_by_company["a"]), 1)
-        self.assertEqual(worker._history_by_company["b"][0]["revenue"], "200")
+        self.assertEqual(worker._history_by_company["b"][0]["operating_income"], "20")
 
     def test_failure_diagnostic_exposes_only_sanitized_store_errors(self):
         worker = object.__new__(LegacyDartFinancialWorker)
@@ -69,10 +69,8 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11014")
-        self.assertEqual(parsed["CFS"].revenue, 100_000_000)
         self.assertEqual(parsed["CFS"].operating_income, 18_000_000)
         self.assertEqual(parsed["CFS"].net_income, 15_000_000)
-        self.assertEqual(parsed["CFS"].standalone_revenue, 30_000_000)
 
     def test_reads_net_income_with_legacy_eps_disclosure_in_same_label_cell(self):
         document = """
@@ -106,7 +104,6 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11012")
-        self.assertEqual(parsed["CFS"].revenue, 95_655_457_000_000)
         self.assertEqual(parsed["CFS"].operating_income, 12_877_304_000_000)
         self.assertEqual(parsed["CFS"].net_income, 10_378_112_000_000)
 
@@ -125,7 +122,6 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         parsed = parse_legacy_filing_archive(
             archive(document), report_code="11014", fiscal_year=2011,
         )
-        self.assertEqual(parsed["CFS"].revenue, 3_414_055_567_610)
         self.assertEqual(parsed["CFS"].operating_income, 282_073_395_134)
         self.assertEqual(parsed["CFS"].net_income, 225_736_999_603)
 
@@ -145,7 +141,6 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         parsed = parse_legacy_filing_archive(
             archive(document), report_code="11013", fiscal_year=2005,
         )
-        self.assertEqual(parsed["OFS"].revenue, 0)
         self.assertEqual(parsed["OFS"].operating_income, -124_321_808)
         self.assertEqual(parsed["OFS"].net_income, -175_022_981)
 
@@ -165,7 +160,6 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         parsed = parse_legacy_filing_archive(
             archive(document), report_code="11013", fiscal_year=2007,
         )
-        self.assertEqual(parsed["OFS"].revenue, 291_850_070_388)
         self.assertEqual(parsed["OFS"].operating_income, 25_705_000_000)
         self.assertEqual(parsed["OFS"].net_income, 17_500_000_000)
 
@@ -210,8 +204,8 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TD></TR></TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11012")
-        self.assertEqual(parsed["CFS"].revenue, 35_000_000)
-        self.assertEqual(parsed["OFS"].revenue, 900_000)
+        self.assertEqual(parsed["CFS"].operating_income, 1_100_000)
+        self.assertEqual(parsed["OFS"].operating_income, 90_000)
 
     def test_scope_uses_last_statement_title_beyond_local_markup_window(self):
         spacer = "<SPAN data-padding='x'>padding</SPAN>" * 220
@@ -232,8 +226,8 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
-        self.assertEqual(parsed["CFS"].revenue, 16_000_000)
-        self.assertEqual(parsed["OFS"].revenue, 600_000)
+        self.assertEqual(parsed["CFS"].operating_income, 400_000)
+        self.assertEqual(parsed["OFS"].operating_income, 60_000)
 
     def test_statement_title_inside_table_overrides_previous_scope(self):
         document = """
@@ -255,8 +249,8 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
-        self.assertEqual(parsed["CFS"].revenue, 16_000_000)
-        self.assertEqual(parsed["OFS"].revenue, 600_000)
+        self.assertEqual(parsed["CFS"].operating_income, 400_000)
+        self.assertEqual(parsed["OFS"].operating_income, 60_000)
 
     def test_detailed_statements_override_rounded_summary_tables(self):
         document = """
@@ -287,9 +281,9 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
-        self.assertEqual(parsed["CFS"].revenue, 16_878_034_679_000)
+        self.assertEqual(parsed["CFS"].operating_income, 225_688_492_000)
         self.assertEqual(parsed["CFS"].net_income, 96_288_363_000)
-        self.assertEqual(parsed["OFS"].revenue, 591_851_230_000)
+        self.assertEqual(parsed["OFS"].operating_income, 292_551_670_000)
 
     def test_financial_company_statement_overrides_market_share_table(self):
         document = """
@@ -314,11 +308,11 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
-        self.assertEqual(parsed["CFS"].revenue, 1_196_780_000_000)
+        self.assertEqual(parsed["CFS"].operating_income, 520_372_000_000)
         self.assertEqual(parsed["CFS"].net_income, 395_306_000_000)
-        self.assertEqual(parsed["OFS"].revenue, 249_523_000_000)
+        self.assertEqual(parsed["OFS"].operating_income, 242_419_000_000)
 
-    def test_statement_revenue_label_without_amount_suffix_overrides_summary(self):
+    def test_statement_profit_rows_override_summary(self):
         document = """
         <P>요약재무정보</P><P>(단위 : 백만원)</P>
         <TABLE>
@@ -335,7 +329,6 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         </TABLE>
         """
         parsed = parse_legacy_filing_archive(archive(document), report_code="11013")
-        self.assertEqual(parsed["CFS"].revenue, 312_328_846_326)
         self.assertEqual(parsed["CFS"].operating_income, 13_194_000_167)
         self.assertEqual(parsed["CFS"].net_income, 10_422_801_672)
 
@@ -361,7 +354,6 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
             report_code="11013",
             fiscal_year=2006,
         )
-        self.assertEqual(parsed["OFS"].revenue, 60_457_374_569)
         self.assertEqual(parsed["OFS"].operating_income, 1_700_193_855)
 
     def test_refuses_unknown_units(self):
@@ -376,7 +368,7 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         with self.assertRaises(LegacyDartParseError):
             parse_legacy_filing_archive(archive(document), report_code="11011")
 
-    def test_refuses_zero_revenue_statement_candidates(self):
+    def test_refuses_all_zero_profit_statement_candidates(self):
         document = """
         <P>손익계산서</P><P>(단위 : 원)</P>
         <TABLE>
@@ -390,19 +382,18 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
             parse_legacy_filing_archive(archive(document), report_code="11011")
 
     def test_converts_cumulative_year_to_standalone_quarters(self):
-        def statement(scope, revenue, operating, net):
-            return LegacyCumulativeStatement(scope, revenue, operating, net)
+        def statement(scope, operating, net):
+            return LegacyCumulativeStatement(scope, operating, net)
 
         statements = {
-            "11013": {"OFS": statement("OFS", 100, 20, 15)},
-            "11012": {"OFS": statement("OFS", 230, 50, 35)},
-            "11014": {"OFS": statement("OFS", 390, 90, 60)},
-            "11011": {"OFS": statement("OFS", 600, 140, 95)},
+            "11013": {"OFS": statement("OFS", 20, 15)},
+            "11012": {"OFS": statement("OFS", 50, 35)},
+            "11014": {"OFS": statement("OFS", 90, 60)},
+            "11011": {"OFS": statement("OFS", 140, 95)},
         }
         scope, quarters = build_legacy_standalone_quarters(statements)
         self.assertEqual(scope, "OFS")
-        self.assertEqual(quarters["11013"]["revenue"], 100)
-        self.assertEqual(quarters["11012"]["revenue"], 130)
+        self.assertNotIn("revenue", quarters["11013"])
         self.assertEqual(quarters["11014"]["operating_income"], 40)
         self.assertEqual(quarters["11011"]["net_income"], 35)
 
@@ -410,8 +401,7 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         statements = {
             "11014": {
                 "OFS": LegacyCumulativeStatement(
-                    "OFS", 390, 90, 60,
-                    standalone_revenue=160,
+                    "OFS", 90, 60,
                     standalone_operating_income=40,
                     standalone_net_income=25,
                 ),
@@ -419,37 +409,35 @@ class LegacyDartFinancialParserTests(unittest.TestCase):
         }
         scope, quarters = build_legacy_standalone_quarters(statements)
         self.assertEqual(scope, "OFS")
-        self.assertEqual(quarters["11014"]["revenue"], 160)
         self.assertEqual(quarters["11014"]["operating_income"], 40)
         self.assertEqual(quarters["11014"]["net_income"], 25)
 
     def test_refuses_to_mix_cfs_and_ofs_within_one_year(self):
         statements = {
-            "11013": {"CFS": LegacyCumulativeStatement("CFS", 100, 20, 15)},
-            "11012": {"OFS": LegacyCumulativeStatement("OFS", 200, 40, 30)},
+            "11013": {"CFS": LegacyCumulativeStatement("CFS", 20, 15)},
+            "11012": {"OFS": LegacyCumulativeStatement("OFS", 40, 30)},
         }
         scope, quarters = build_legacy_standalone_quarters(statements)
         self.assertIsNone(scope)
         self.assertEqual(quarters, {})
 
-    def test_refuses_negative_or_all_zero_standalone_revenue_after_subtraction(self):
+    def test_refuses_all_zero_standalone_profit_pair_after_subtraction(self):
         statements = {
-            "11013": {"OFS": LegacyCumulativeStatement("OFS", 100, 20, 15)},
-            "11012": {"OFS": LegacyCumulativeStatement("OFS", 100, 20, 15)},
-            "11014": {"OFS": LegacyCumulativeStatement("OFS", 300, 60, 45)},
-            "11011": {"OFS": LegacyCumulativeStatement("OFS", 500, 100, 75)},
+            "11013": {"OFS": LegacyCumulativeStatement("OFS", 20, 15)},
+            "11012": {"OFS": LegacyCumulativeStatement("OFS", 20, 15)},
+            "11014": {"OFS": LegacyCumulativeStatement("OFS", 60, 45)},
+            "11011": {"OFS": LegacyCumulativeStatement("OFS", 100, 75)},
         }
         _scope, quarters = build_legacy_standalone_quarters(statements)
         self.assertNotIn("11012", quarters)
         self.assertNotIn("11014", quarters, "잘못된 Q2 누적값 뒤의 Q3도 추정하지 않는다")
-        self.assertEqual(quarters["11011"]["revenue"], 200)
+        self.assertEqual(quarters["11011"]["operating_income"], 40)
 
-    def test_keeps_zero_revenue_quarter_with_reported_losses(self):
+    def test_keeps_reported_loss_quarter(self):
         statements = {
-            "11013": {"OFS": LegacyCumulativeStatement("OFS", 0, -20, -10)},
+            "11013": {"OFS": LegacyCumulativeStatement("OFS", -20, -10)},
         }
         _scope, quarters = build_legacy_standalone_quarters(statements)
-        self.assertEqual(quarters["11013"]["revenue"], 0)
         self.assertEqual(quarters["11013"]["operating_income"], -20)
 
 

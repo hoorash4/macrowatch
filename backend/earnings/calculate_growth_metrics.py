@@ -14,7 +14,7 @@ from earnings.supabase_rest import SupabaseEarningsStore
 
 
 def _compact_records(metrics: list, *, calculated_at: str) -> list[dict]:
-    """Pivot three in-memory metrics into one compact DB row per quarter."""
+    """Pivot both in-memory profit metrics into one compact DB row per quarter."""
     records: dict[tuple[str, int, int], dict] = {}
     for metric in metrics:
         key = (metric.company_id, metric.fiscal_year, metric.fiscal_quarter)

@@ -8,7 +8,7 @@ from earnings.market_universe import QuarterlyUniverse
 from datetime import date
 
 
-def row(company, year, quarter, revenue, operating=None, net=None, scope="CFS"):
+def row(company, year, quarter, operating, net=None, scope="CFS"):
     return QuarterlyFinancial(
         company_id=company,
         fiscal_year=year,
@@ -17,9 +17,8 @@ def row(company, year, quarter, revenue, operating=None, net=None, scope="CFS"):
         consolidation_scope=scope,
         canonical_version=1,
         values={
-            "revenue": Decimal(str(revenue)),
-            "operating_income": Decimal(str(revenue if operating is None else operating)),
-            "net_income": Decimal(str(revenue if net is None else net)),
+            "operating_income": Decimal(str(operating)),
+            "net_income": Decimal(str(operating if net is None else net)),
         },
     )
 
@@ -46,8 +45,8 @@ def universes(**periods):
 class MarketAggregateMetricTests(unittest.TestCase):
     def test_sums_signed_amounts_before_calculating_growth(self):
         rows = [
-            row("a", 2024, 1, 100, 100), row("a", 2025, 1, 100, 130),
-            row("b", 2024, 1, 100, -20), row("b", 2025, 1, 100, -10),
+            row("a", 2024, 1, 100), row("a", 2025, 1, 130),
+            row("b", 2024, 1, -20), row("b", 2025, 1, -10),
         ]
         target = result_for(calculate_market_metric_history(
             index_id="KOSPI100", currency="KRW",
@@ -59,8 +58,8 @@ class MarketAggregateMetricTests(unittest.TestCase):
 
     def test_nonpositive_aggregate_baseline_has_state_but_no_percentage(self):
         rows = [
-            row("a", 2024, 1, 100, -20), row("a", 2025, 1, 100, 10),
-            row("b", 2024, 1, 100, 10), row("b", 2025, 1, 100, 20),
+            row("a", 2024, 1, -20), row("a", 2025, 1, 10),
+            row("b", 2024, 1, 10), row("b", 2025, 1, 20),
         ]
         target = result_for(calculate_market_metric_history(
             index_id="KOSDAQ50", currency="KRW",
@@ -77,7 +76,7 @@ class MarketAggregateMetricTests(unittest.TestCase):
         target = result_for(calculate_market_metric_history(
             index_id="KOSPI100", currency="KRW",
             universes_by_period=universes(p2024q1=["old"], p2025q1=["new"]), financials=rows,
-        ), 2025, 1, "revenue")
+        ), 2025, 1)
         self.assertEqual(target.prior_total, Decimal("100"))
         self.assertEqual(target.current_total, Decimal("150"))
         self.assertEqual(target.yoy_pct, Decimal("50.0"))
@@ -96,7 +95,7 @@ class MarketAggregateMetricTests(unittest.TestCase):
                 p2025q1=["a", "b", "missing"],
             ),
             financials=rows,
-        ), 2025, 1, "revenue")
+        ), 2025, 1)
         self.assertEqual(target.current_total, Decimal("600"))
         self.assertEqual(target.current_average, Decimal("300"))
         self.assertEqual(target.prior_average, Decimal("200"))
@@ -115,7 +114,7 @@ class MarketAggregateMetricTests(unittest.TestCase):
                 p2024q1=["a", "b", "missing-1", "missing-2", "missing-3"],
                 p2025q1=["a", "b", "missing-1", "missing-2", "missing-3"],
             ), financials=rows,
-        ), 2025, 1, "revenue")
+        ), 2025, 1)
         self.assertEqual(target.yoy_state, "insufficient_coverage")
         self.assertIsNone(target.current_average)
         self.assertIsNone(target.yoy_pct)
@@ -130,7 +129,7 @@ class MarketAggregateMetricTests(unittest.TestCase):
             universes_by_period=universes(
                 p2024q1=["a", "b", "c"], p2025q1=["a", "b", "c"],
             ), financials=rows,
-        ), 2025, 1, "revenue")
+        ), 2025, 1)
         self.assertEqual(target.yoy_state, "insufficient_coverage")
         self.assertEqual(target.current_average, Decimal("150"))
         self.assertIsNone(target.yoy_pct)
@@ -152,7 +151,7 @@ class MarketAggregateMetricTests(unittest.TestCase):
             index_id="KOSPI100", currency="KRW",
             universes_by_period=universes(p2026q1=["current"]), financials=rows,
         )
-        self.assertEqual([(x.fiscal_year, x.fiscal_quarter) for x in results], [(2026, 1)] * 3)
+        self.assertEqual([(x.fiscal_year, x.fiscal_quarter) for x in results], [(2026, 1)] * 2)
         self.assertTrue(all(x.prior_total is None for x in results))
         self.assertTrue(all(x.yoy_state == "missing_prior_snapshot" for x in results))
 

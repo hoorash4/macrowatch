@@ -87,13 +87,8 @@ def main() -> None:
                     "document": name,
                     "candidate": position,
                     "scope": statement.consolidation_scope,
-                    "revenue": format(statement.revenue, "f"),
                     "operating_income": format(statement.operating_income, "f"),
                     "net_income": format(statement.net_income, "f"),
-                    "standalone_revenue": (
-                        format(statement.standalone_revenue, "f")
-                        if statement.standalone_revenue is not None else None
-                    ),
                     "standalone_operating_income": (
                         format(statement.standalone_operating_income, "f")
                         if statement.standalone_operating_income is not None else None

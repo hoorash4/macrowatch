@@ -178,26 +178,25 @@ class OpenDartParserTests(unittest.TestCase):
 
     def test_account_names_are_fallbacks_not_the_only_matching_method(self):
         rows = [
-            account_row(account_id="ifrs-full_Revenue", account_nm="영업수익(임의 표시명)"),
+            account_row(account_id="dart_OperatingIncomeLoss", account_nm="영업손익(임의 표시명)"),
             account_row(account_id="custom", account_nm="당기순이익(손실)"),
         ]
         self.assertEqual([fact.metric for fact in parse_account_rows({"list": rows})], [
-            "revenue", "net_income"
+            "operating_income", "net_income"
         ])
 
     def test_selection_uses_one_cfs_scope_without_mixing_ofs(self):
         rows = [
-            account_row(fs_div="CFS", account_id="ifrs-full_Revenue", account_nm="매출액"),
-            account_row(fs_div="OFS", account_id="dart_OperatingIncomeLoss", account_nm="영업이익"),
+            account_row(fs_div="CFS", account_id="dart_OperatingIncomeLoss", account_nm="영업이익"),
+            account_row(fs_div="OFS", account_id="ifrs-full_ProfitLoss", account_nm="당기순이익"),
         ]
         selected = select_preferred_accounts(parse_account_rows({"list": rows}))["00126380"]
-        self.assertEqual(set(selected), {"revenue"})
-        self.assertEqual(selected["revenue"].consolidation_scope, "CFS")
+        self.assertEqual(set(selected), {"operating_income"})
+        self.assertEqual(selected["operating_income"].consolidation_scope, "CFS")
 
     def test_complete_ofs_set_wins_over_incomplete_cfs_without_mixing(self):
         rows = [
-            account_row(fs_div="CFS", account_id="ifrs-full_Revenue", account_nm="매출액"),
-            account_row(fs_div="OFS", account_id="ifrs-full_Revenue", account_nm="매출액"),
+            account_row(fs_div="CFS", account_id="dart_OperatingIncomeLoss", account_nm="영업이익"),
             account_row(fs_div="OFS", account_id="dart_OperatingIncomeLoss", account_nm="영업이익"),
             account_row(fs_div="OFS", account_id="ifrs-full_ProfitLoss", account_nm="당기순이익"),
             account_row(
@@ -207,7 +206,7 @@ class OpenDartParserTests(unittest.TestCase):
             ),
         ]
         selected = select_preferred_accounts(parse_account_rows({"list": rows}))["00126380"]
-        self.assertEqual(set(selected), {"revenue", "operating_income", "net_income"})
+        self.assertEqual(set(selected), {"operating_income", "net_income"})
         self.assertEqual({fact.consolidation_scope for fact in selected.values()}, {"OFS"})
 
     def test_interim_prefers_documented_three_month_value(self):

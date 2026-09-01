@@ -8,7 +8,7 @@ from statistics import median
 from typing import Any, Iterable, Mapping
 
 
-METRICS = ("revenue", "operating_income", "net_income")
+METRICS = ("operating_income", "net_income")
 HUNDRED = Decimal("100")
 CALCULATION_VERSION = 3
 BASELINE_YEARS = 5
@@ -137,7 +137,7 @@ def _growth_rate(
 
 
 def calculate_growth_metrics(financials: Iterable[QuarterlyFinancial]) -> list[GrowthMetric]:
-    """Calculate all three metrics without looking at future seasonal samples."""
+    """Calculate both profit metrics without looking at future seasonal samples."""
 
     source = list(financials)
     by_period: dict[tuple[str, int], QuarterlyFinancial] = {}

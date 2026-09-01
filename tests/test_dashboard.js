@@ -120,13 +120,13 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
-  const serverRows = ['revenue', 'operating_income', 'net_income'].map((metric) => ({
+  const serverRows = ['operating_income', 'net_income'].map((metric) => ({
     fiscal_year: 2025, fiscal_quarter: 2, metric,
     universe_company_count: 100, comparable_company_count: 98,
     current_average: '90', universe_basis: 'point_in_time_market_cap_snapshot', yoy_pct: '20', yoy_state: 'normal', yoy_delta_pp: '10',
   }));
   const series = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows(serverRows);
-  const latest = series.at(-1).metrics.revenue;
+  const latest = series.at(-1).metrics.operating_income;
   assert.equal(latest.coverage, 98);
   assert.equal(latest.currentAverage, 90);
   assert.equal(latest.yoyPct, 20);
@@ -134,8 +134,8 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   const nullSeries = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows([{
     ...serverRows[0], fiscal_quarter: 3, yoy_pct: null, yoy_delta_pp: null,
   }]);
-  assert.equal(nullSeries[0].metrics.revenue.yoyPct, null, '계산 불가 null을 가짜 0으로 바꾸지 않는다');
-  assert.equal(nullSeries[0].metrics.revenue.yoyDeltaPp, null, '델타 null도 빈 구간으로 유지한다');
+  assert.equal(nullSeries[0].metrics.operating_income.yoyPct, null, '계산 불가 null을 가짜 0으로 바꾸지 않는다');
+  assert.equal(nullSeries[0].metrics.operating_income.yoyDeltaPp, null, '델타 null도 빈 구간으로 유지한다');
   const amountDomain = context.window.MacroWatchKoreaEarnings.axisDomain([90, 100]);
   assert.ok(amountDomain.min > 0, '양수 금액축은 더 이상 0에 고정하지 않는다');
   assert.ok(amountDomain.min < 90 && amountDomain.max > 100);
@@ -148,10 +148,8 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.ok(deltaDomain.ticks.includes(0), '증가율 델타축은 가속·둔화 기준인 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
-  assert.match(html, /id="korea-earnings-growth-revenue-chart"/);
   assert.match(html, /id="korea-earnings-growth-operating-income-chart"/);
   assert.match(html, /id="korea-earnings-growth-net-income-chart"/);
-  assert.match(html, /id="korea-earnings-delta-revenue-chart"/);
   assert.match(html, /id="korea-earnings-delta-operating-income-chart"/);
   assert.match(html, /id="korea-earnings-delta-net-income-chart"/);
   assert.doesNotMatch(html, /data-korea-earnings-metric=/);
@@ -182,7 +180,7 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(source, /function updateVisibleScale|const updateVisibleScale/);
   assert.match(source, /visibleStart = frame\.scrollLeft/);
   assert.match(source, /data-korea-earnings-cursor-period/);
-  assert.match(styles, /\.korea-earnings-line--revenue/);
+  assert.doesNotMatch(styles, /\.korea-earnings-line--revenue/);
 });
 
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {

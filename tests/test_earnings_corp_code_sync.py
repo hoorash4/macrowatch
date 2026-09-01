@@ -38,6 +38,27 @@ class RpcHttpErrorSession:
         return RpcHttpErrorResponse()
 
 
+class PageResponse:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.rows
+
+
+class PagingSession:
+    def __init__(self, pages):
+        self.pages = list(pages)
+        self.params = []
+
+    def get(self, _url, *, params, headers, timeout):
+        self.params.append(params)
+        return PageResponse(self.pages.pop(0))
+
+
 class EarningsCorpCodeSyncTests(unittest.TestCase):
     def test_structured_backfill_keeps_the_verified_2016_lower_bound(self) -> None:
         self.assertEqual(structured_history_years(2026), 11)
@@ -101,6 +122,27 @@ class EarningsCorpCodeSyncTests(unittest.TestCase):
         self.assertIn("code 57014", message)
         self.assertNotIn("service-role-secret", message)
         self.assertNotIn("secret-bearing", message)
+
+    def test_canonical_quarters_use_unique_key_cursor_not_offset_pagination(self) -> None:
+        first = [
+            {"company_id": "00000000-0000-0000-0000-000000000001", "fiscal_year": 2025,
+             "fiscal_quarter": 3},
+            {"company_id": "00000000-0000-0000-0000-000000000001", "fiscal_year": 2025,
+             "fiscal_quarter": 4},
+        ]
+        second = [
+            {"company_id": "00000000-0000-0000-0000-000000000002", "fiscal_year": 2025,
+             "fiscal_quarter": 1},
+        ]
+        session = PagingSession([first, second])
+        store = SupabaseEarningsStore(
+            "https://example.supabase.co", "service-role-secret", session=session,
+        )
+        self.assertEqual(store.list_all_quarterly_financials(page_size=2), first + second)
+        self.assertNotIn("offset", session.params[0])
+        self.assertNotIn("or", session.params[0])
+        self.assertNotIn("offset", session.params[1])
+        self.assertIn("fiscal_quarter.gt.4", session.params[1]["or"])
 
 
 if __name__ == "__main__":

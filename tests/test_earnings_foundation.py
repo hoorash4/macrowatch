@@ -24,6 +24,7 @@ LEGACY_ZERO_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831174000_retry_q
 LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION = ROOT / "supabase/migrations/20260831175000_retry_quarantined_legacy_dart_company_years.sql"
 STRUCTURED_2015_MIGRATION = ROOT / "supabase/migrations/20260831235970_use_structured_earnings_from_2015.sql"
 LEGACY_2015_RESTORE_MIGRATION = ROOT / "supabase/migrations/20260831235995_repair_legacy_2015_shifted_headers_v3.sql"
+PROFIT_ONLY_MIGRATION = ROOT / "supabase/migrations/20260901011000_remove_earnings_revenue_collection.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -50,6 +51,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.legacy_zero_company_year_retry_migration = LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.read_text(encoding="utf-8")
         cls.structured_2015_migration = STRUCTURED_2015_MIGRATION.read_text(encoding="utf-8")
         cls.legacy_2015_restore_migration = LEGACY_2015_RESTORE_MIGRATION.read_text(encoding="utf-8")
+        cls.profit_only_migration = PROFIT_ONLY_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
         self.assertIn("public.earnings_filings", self.migration)
@@ -164,6 +166,16 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("'repair_partial_core_metrics', true", self.partial_financials_migration)
         self.assertIn("not exists (", self.partial_financials_migration)
         self.assertNotIn("eps", self.partial_financials_migration.lower())
+
+    def test_final_ingestion_contract_collects_only_profit_metrics(self) -> None:
+        sql = self.profit_only_migration
+        self.assertIn("array['operating_income', 'net_income']", sql)
+        self.assertIn("period_end, operating_income, net_income", sql)
+        self.assertNotIn("p_quarter->>'revenue'", sql)
+        self.assertNotIn("v_quarter->>'revenue'", sql)
+        self.assertIn("array_remove", sql)
+        self.assertIn("revenue_collection_removed", sql)
+        self.assertIn(PROFIT_ONLY_MIGRATION.name, self.deploy_workflow)
 
     def test_universes_are_market_cap_rankings_not_official_indices(self) -> None:
         for name in (

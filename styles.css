@@ -1003,11 +1003,9 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-line--amount { stroke-width:2.5; }
 .korea-earnings-line--growth { stroke-width:2.2; }
 .korea-earnings-line--delta { stroke-width:2; stroke-dasharray:6 4; }
-.korea-earnings-line--revenue { stroke:#475569; }
 .korea-earnings-line--operating-income { stroke:#2563a8; }
 .korea-earnings-line--net-income { stroke:#b7791f; }
 .korea-earnings-point { stroke:#fff; stroke-width:1.25; }
-.korea-earnings-point--revenue { fill:#475569; }
 .korea-earnings-point--operating-income { fill:#2563a8; }
 .korea-earnings-point--net-income { fill:#b7791f; }
 .korea-earnings-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
@@ -1015,7 +1013,6 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-cursor-period { fill:#64748b; font-size:9px; }
 .korea-earnings-cursor.is-visible,.korea-earnings-cursor-label.is-visible,.korea-earnings-cursor-period.is-visible { opacity:1; }
 .korea-earnings-legend-line { display:inline-block; width:1.25rem; height:2px; }
-.korea-earnings-legend-line--revenue { background:#475569; }
 .korea-earnings-legend-line--operating-income { background:#2563a8; }
 .korea-earnings-legend-line--net-income { background:#b7791f; }
 @media (max-width:640px) {

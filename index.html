@@ -332,7 +332,7 @@
           <span class="analysis-card-icon"><i class="fa-solid fa-chart-column text-sm"></i></span>
           <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOSPI TOP 100 · AVERAGE EARNINGS</p><h2 id="korea-earnings-title" class="analysis-card-title">KOSPI 시총 상위기업 평균 실적 모멘텀</h2></div>
         </div>
-        <p class="analysis-card-description">각 분기의 대상 기업 중 실적 자료가 있는 기업의 매출과 이익을 기업당 단순평균으로 표시합니다.</p>
+        <p class="analysis-card-description">각 분기의 대상 기업 중 실적 자료가 있는 기업의 영업이익과 순이익을 기업당 단순평균으로 표시합니다.</p>
         <p class="analysis-card-description">본차트는 평균 금액, 아래 보조차트는 전년동기 증가율과 증가율 델타를 분리해 표시합니다. OpenDART 원화 공시 실적만 사용합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
@@ -351,7 +351,6 @@
             <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="korea-earnings-growth-title">
               <div class="korea-earnings-chart-heading"><strong id="korea-earnings-growth-title">전년동기 증가율</strong><span>%</span></div>
               <div class="korea-earnings-subchart-stack">
-                <div class="korea-earnings-subchart"><span>매출</span><div id="korea-earnings-growth-revenue-chart" class="korea-earnings-chart"></div></div>
                 <div class="korea-earnings-subchart"><span>영업이익</span><div id="korea-earnings-growth-operating-income-chart" class="korea-earnings-chart"></div></div>
                 <div class="korea-earnings-subchart"><span>순이익</span><div id="korea-earnings-growth-net-income-chart" class="korea-earnings-chart"></div></div>
               </div>
@@ -359,7 +358,6 @@
             <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="korea-earnings-delta-title">
               <div class="korea-earnings-chart-heading"><strong id="korea-earnings-delta-title">증가율 델타</strong><span>%p</span></div>
               <div class="korea-earnings-subchart-stack">
-                <div class="korea-earnings-subchart"><span>매출</span><div id="korea-earnings-delta-revenue-chart" class="korea-earnings-chart"></div></div>
                 <div class="korea-earnings-subchart"><span>영업이익</span><div id="korea-earnings-delta-operating-income-chart" class="korea-earnings-chart"></div></div>
                 <div class="korea-earnings-subchart"><span>순이익</span><div id="korea-earnings-delta-net-income-chart" class="korea-earnings-chart"></div></div>
               </div>
@@ -367,7 +365,6 @@
           </div>
         </div>
         <div class="policy-expectation-legend" aria-label="KOSPI 상위기업 평균 실적 범례">
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--revenue"></i>매출</span>
           <span><i class="korea-earnings-legend-line korea-earnings-legend-line--operating-income"></i>영업이익</span>
           <span><i class="korea-earnings-legend-line korea-earnings-legend-line--net-income"></i>순이익</span>
         </div>

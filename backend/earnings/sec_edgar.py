@@ -15,19 +15,9 @@ from earnings.sec_parser import METRIC_ALIASES
 SEC_COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 DOLTHUB_QUERY_URL = "https://www.dolthub.com/api/v1alpha1/deeleeramone/sec-company-facts/main"
 
-SEC_TAGS = (
-    "RevenuesNetOfInterestExpense",
-    "RevenueFromContractWithCustomerExcludingAssessedTax",
-    "Revenues",
-    "SalesRevenueNet",
-    "SalesRevenueGoodsNet",
-    "OperatingIncomeLoss",
-    "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
-    "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
-    "NetIncomeLoss",
-    "ProfitLoss",
-    "NetIncomeLossAvailableToCommonStockholdersBasic",
-)
+SEC_TAGS = tuple(dict.fromkeys(
+    tag for aliases in METRIC_ALIASES.values() for tag in aliases
+))
 
 
 class SecEdgarClient:

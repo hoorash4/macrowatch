@@ -14,11 +14,6 @@ REPORT_QUARTERS = {"11013": 1, "11012": 2, "11014": 3, "11011": 4}
 # Standard XBRL IDs take priority. Names are controlled fallbacks for companies
 # that publish extension accounts or omit a standard ID.
 ACCOUNT_ID_PRIORITIES: dict[str, tuple[str, ...]] = {
-    "revenue": (
-        "ifrs-full_revenue",
-        "ifrs-full_revenuefromcontractswithcustomers",
-        "dart_revenue",
-    ),
     "operating_income": ("dart_operatingincomeloss",),
     "net_income": (
         "ifrs-full_profitloss",
@@ -27,13 +22,15 @@ ACCOUNT_ID_PRIORITIES: dict[str, tuple[str, ...]] = {
 }
 
 ACCOUNT_NAME_ALIASES: dict[str, set[str]] = {
-    "revenue": {"매출액", "영업수익", "수익매출액", "수익"},
     "operating_income": {"영업이익", "영업이익손실", "영업손익"},
     "net_income": {"당기순이익", "당기순이익손실", "분기순이익", "반기순이익"},
 }
 
-# Earnings Momentum stores only the three income-statement totals below.
-REQUIRED_METRICS = ("revenue", "operating_income", "net_income")
+# Earnings Momentum intentionally excludes top-line revenue. Financial-company
+# revenue labels are not comparable with industrial sales and previously
+# required a fragile statement reconstruction path. Profit collection has one
+# canonical contract everywhere: operating income and net income only.
+REQUIRED_METRICS = ("operating_income", "net_income")
 
 
 @dataclass(frozen=True)
@@ -97,7 +94,7 @@ def _parse_period(raw_value: Any) -> tuple[date | None, date | None]:
 
 
 def parse_account_rows(payload: dict[str, Any]) -> list[DartAccountFact]:
-    """Extract only revenue, operating income, and net income."""
+    """Extract only operating income and net income."""
     facts: list[DartAccountFact] = []
     rows = payload.get("list") or []
     if not isinstance(rows, list):
@@ -153,7 +150,7 @@ def select_preferred_accounts(
     """Choose one non-mixed CFS-or-OFS account set for each company.
 
     A complete CFS set wins.  If CFS is present but incomplete while OFS has
-    all three required metrics, OFS wins as one complete set instead of mixing
+    both required metrics, OFS wins as one complete set instead of mixing
     the two scopes.  An incomplete set is returned only so the caller can
     decide which full-statement fallback is still required.
     """

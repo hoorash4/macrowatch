@@ -1,10 +1,8 @@
 from datetime import date
 from decimal import Decimal
-from io import BytesIO
 from pathlib import Path
 import sys
 import unittest
-from zipfile import ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +24,6 @@ from earnings.open_dart_parser import parse_account_rows, select_preferred_accou
 
 def rows_for_period(report_code="11013", year="2026", current="100", cumulative="100"):
     accounts = (
-        ("ifrs-full_Revenue", "매출액"),
         ("dart_OperatingIncomeLoss", "영업이익"),
         ("ifrs-full_ProfitLoss", "당기순이익"),
         ("ifrs-full_BasicEarningsLossPerShare", "기본주당이익"),
@@ -45,13 +42,6 @@ def rows_for_period(report_code="11013", year="2026", current="100", cumulative=
         "thstrm_add_amount": cumulative,
         "currency": "KRW",
     } for account_id, account_name in accounts]
-
-
-def filing_archive(statement_page):
-    output = BytesIO()
-    with ZipFile(output, "w") as zipped:
-        zipped.writestr("report.xml", statement_page)
-    return output.getvalue()
 
 
 class FakeClient:
@@ -126,7 +116,7 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
             filed_on="2027-03-20",
         )
         self.assertEqual(missing, [])
-        self.assertEqual(quarter["revenue"], "180")
+        self.assertEqual(quarter["operating_income"], "180")
         self.assertEqual(quarter["period_start"], "2026-10-01")
 
     def test_reporting_period_uses_official_report_name_when_multi_rows_omit_dates(self):
@@ -181,7 +171,7 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         rows = rows_for_period()
         self.assertEqual(
             {fact.metric for fact in parse_account_rows({"list": rows})},
-            {"revenue", "operating_income", "net_income"},
+            {"operating_income", "net_income"},
         )
         client = FakeClient({"status": "000", "list": rows})
         store = FakeStore()
@@ -202,74 +192,16 @@ class EarningsFinancialWorkerTests(unittest.TestCase):
         self.assertEqual(client.full_calls, [])
         self.assertNotIn("eps", store.completions[0]["quarter"])
 
-    def test_missing_financial_company_revenue_keeps_other_core_metrics(self):
-        rows = [row for row in rows_for_period() if row["account_nm"] != "매출액"]
+    def test_two_profit_metrics_are_complete_without_revenue(self):
+        rows = rows_for_period()
         selected = select_preferred_accounts(parse_account_rows({"list": rows}))["00126380"]
         quarter, missing = build_canonical_quarter(
             selected, previous_selected=None, filed_on="2026-05-15",
         )
-        self.assertEqual(missing, ["revenue"])
-        self.assertIsNone(quarter["revenue"])
+        self.assertEqual(missing, [])
+        self.assertNotIn("revenue", quarter)
         self.assertEqual(quarter["operating_income"], "100")
         self.assertEqual(quarter["net_income"], "100")
-
-    def test_missing_financial_revenue_is_derived_only_after_statement_reconciliation(self):
-        rows = [
-            row for row in rows_for_period(current="100", cumulative="100")
-            if row["account_nm"] != "매출액"
-        ]
-        statement_page = """
-        <html><body>(단위 : 원)<table>
-          <tr><td>영업수익</td><td>300</td></tr>
-          <tr><td>영업비용</td><td>200</td></tr>
-          <tr><td>영업이익</td><td>100</td></tr>
-        </table></body></html>
-        """
-        client = FakeClient(
-            {"status": "000", "list": rows},
-            archive=filing_archive(statement_page),
-        )
-        store = FakeStore()
-        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
-        result = worker.process_batch([{
-            "id": 1,
-            "company_id": "company-id",
-            "business_year": 2026,
-            "report_code": "11013",
-            "corp_code": "00126380",
-            "metadata": {
-                "receipt_no": "20260515000001",
-                "filed_on": "2026-05-15",
-                "report_name": "분기보고서 (2026.03)",
-            },
-        }])
-        self.assertEqual(result["completed"], 1)
-        self.assertEqual(store.completions[0]["quarter"]["revenue"], "300")
-        self.assertEqual(store.completions[0]["quarter"]["missing_metrics"], [])
-
-    def test_unreconciled_financial_revenue_remains_a_partial_review_row(self):
-        rows = [row for row in rows_for_period() if row["account_nm"] != "매출액"]
-        client = FakeClient(
-            {"status": "000", "list": rows},
-            archive=filing_archive("""
-              <html><body>(단위 : 원)<table>
-                <tr><td>영업수익</td><td>300</td></tr>
-                <tr><td>영업비용</td><td>100</td></tr>
-                <tr><td>영업이익</td><td>100</td></tr>
-              </table></body></html>
-            """),
-        )
-        store = FakeStore()
-        worker = OpenDartFinancialWorker(client, store, request_interval_seconds=0)
-        result = worker.process_batch([{
-            "id": 1, "company_id": "company-id", "business_year": 2026,
-            "report_code": "11013", "corp_code": "00126380",
-            "metadata": {"receipt_no": "20260515000001", "filed_on": "2026-05-15"},
-        }])
-        self.assertEqual(result["review_required"], 1)
-        quarter = store.completions[0]["quarter"]
-        self.assertIsNone(quarter["revenue"])
-        self.assertEqual(quarter["missing_metrics"], ["revenue"])
 
 
 if __name__ == "__main__":

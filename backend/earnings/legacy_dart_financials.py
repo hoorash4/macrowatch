@@ -33,9 +33,6 @@ _STATEMENT_TITLE = re.compile(
 )
 
 _ALIASES = {
-    "revenue": {
-        "매출", "매출액", "수익매출액", "영업수익", "수익", "총영업수익", "총영업이익",
-    },
     "operating_income": {
         "영업이익", "영업이익손실", "영업손익",
     },
@@ -55,14 +52,12 @@ class LegacyDartParseError(ValueError):
 @dataclass(frozen=True)
 class LegacyCumulativeStatement:
     consolidation_scope: str
-    revenue: Decimal
     operating_income: Decimal
     net_income: Decimal
     # Interim statements can publish both the current three-month period and
     # year-to-date columns.  Keep the former so Q2/Q3 remains recoverable when
     # the preceding cumulative filing is absent; these are official values,
     # not values inferred from another period.
-    standalone_revenue: Decimal | None = None
     standalone_operating_income: Decimal | None = None
     standalone_net_income: Decimal | None = None
     # Old filings often repeat rounded figures in a summary table before the
@@ -236,22 +231,6 @@ def _choose_cumulative_amount(
     candidates = _row_amount_candidates(rows, row_index, label_column)
     has_standalone_and_ytd = _has_standalone_and_ytd(rows, row_index)
 
-    # Some old Q1 statements leave both current-period revenue cells blank
-    # when the company had no sales, while publishing the prior-year pair.
-    # Preserve that official zero only when the paired layout and empty
-    # current pair make the column identity deterministic.  A wholly empty or
-    # ambiguous row still remains unresolved.
-    if (
-        report_code in {"11013", "11012", "11014"}
-        and has_standalone_and_ytd
-        and len(candidates) >= 2
-        and candidates[0][0] >= label_column + 3
-        and all(
-            not row[column].strip() or row[column].strip() in {"-", "—", "–"}
-            for column in range(label_column + 1, min(candidates[0][0], label_column + 3))
-        )
-    ):
-        return Decimal(0)
     if not candidates:
         return None
 
@@ -354,10 +333,9 @@ def _parse_document(
         plain = _normalize(re.sub(r"<[^>]+>", " ", table))
         if not any(alias in plain for alias in _ALIASES["operating_income"]):
             continue
-        # Business-section market-share tables can contain market-wide
-        # revenue, operating income and net income alongside the company's
-        # figures. They are not financial statements and must never become a
-        # canonical quarter.
+        # Business-section market-share tables can contain market-wide profit
+        # figures alongside the company's figures. They are not financial
+        # statements and must never become a canonical quarter.
         if "점유율" in plain and "시장" in plain and "당사" in plain:
             continue
         # Twenty thousand source characters cover verbose DART markup between
@@ -397,10 +375,8 @@ def _parse_document(
         if all(metric in values for metric in _ALIASES):
             statements.append(LegacyCumulativeStatement(
                 consolidation_scope=_scope_for_table(local_prefix, table),
-                revenue=values["revenue"],
                 operating_income=values["operating_income"],
                 net_income=values["net_income"],
-                standalone_revenue=standalone_values.get("revenue"),
                 standalone_operating_income=standalone_values.get("operating_income"),
                 standalone_net_income=standalone_values.get("net_income"),
                 statement_title_confirmed=_has_statement_title(local_prefix, table),
@@ -440,18 +416,14 @@ def parse_legacy_filing_archive(
         titled = [candidate for candidate in candidates if candidate.statement_title_confirmed]
         if titled:
             candidates = titled
-        # A pre-revenue or temporarily revenue-free company can publish zero
-        # revenue with real expenses and losses. Keep that official statement,
-        # but reject negative revenue and entirely zero candidate tables.
+        # An entirely zero profit pair is not enough to identify a unique
+        # income statement; keep real reported profits and losses unchanged.
         candidates = [
             item for item in candidates
-            if item.revenue >= 0
-            and any(value != 0 for value in (
-                item.revenue, item.operating_income, item.net_income,
-            ))
+            if any(value != 0 for value in (item.operating_income, item.net_income))
         ]
         unique = {
-            (item.revenue, item.operating_income, item.net_income): item
+            (item.operating_income, item.net_income): item
             for item in candidates
         }
         if len(unique) == 1:
