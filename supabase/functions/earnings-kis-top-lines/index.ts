@@ -24,7 +24,8 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
     const serviceRole = requiredSecret("SUPABASE_SERVICE_ROLE_KEY");
-    if (!isTrustedServerRequest(request)) {
+    const supabaseUrl = requiredSecret("SUPABASE_URL");
+    if (!await isTrustedServerRequest(request, supabaseUrl)) {
       return json({ error: "서비스 역할 호출만 허용됩니다." }, 403);
     }
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
@@ -38,7 +39,6 @@ Deno.serve(async (request) => {
       return json({ error: "종목코드는 숫자 6자리이며 한 번에 100개까지 허용됩니다." }, 400);
     }
 
-    const supabaseUrl = requiredSecret("SUPABASE_URL");
     const admin = createClient(supabaseUrl, serviceRole);
     const credentials = loadKisCredentials();
     const token = await getKisAccessToken(credentials, admin);

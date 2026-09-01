@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 function configuredServerKeys(): string[] {
   const keys = new Set<string>();
   const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
@@ -17,8 +19,26 @@ function configuredServerKeys(): string[] {
   return [...keys];
 }
 
-/** Accept only a Supabase backend key supplied through the server-only header. */
-export function isTrustedServerRequest(request: Request): boolean {
+/**
+ * Accept only a Supabase backend key supplied through the server-only header.
+ *
+ * The fast path supports platform-provided legacy and modern key variables.
+ * The permission probe handles independently named `sb_secret_...` keys used
+ * by CI without coupling the function to a particular secret's literal value.
+ */
+export async function isTrustedServerRequest(
+  request: Request,
+  supabaseUrl: string,
+): Promise<boolean> {
   const supplied = request.headers.get("apikey")?.trim();
-  return Boolean(supplied && configuredServerKeys().includes(supplied));
+  if (!supplied) return false;
+  if (configuredServerKeys().includes(supplied)) return true;
+
+  const verifier = createClient(supabaseUrl, supplied, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { error } = await verifier.rpc("earnings_v2_get_company_quarters_many", {
+    p_company_ids: [],
+  });
+  return error === null;
 }
