@@ -43,6 +43,7 @@ def _decimal(value: Any) -> Decimal | None:
 CONNECT_TIMEOUT = 5
 STANDARD_READ_TIMEOUT = 20
 FAST_READ_TIMEOUT = 12
+BINARY_TOTAL_TIMEOUT = 30
 
 
 def _session() -> requests.Session:
@@ -90,10 +91,22 @@ class OpenDartClient:
                 f"{OPEN_DART_BASE}/{endpoint}",
                 params={"crtfc_key": self.api_key, **params},
                 timeout=(CONNECT_TIMEOUT, STANDARD_READ_TIMEOUT),
+                stream=binary,
             )
             response.raise_for_status()
             if binary:
-                return response.content
+                # requests의 read timeout은 응답 전체 시간이 아니라 소켓에서
+                # 다음 바이트를 기다리는 시간이다. 공급자가 데이터를 조금씩
+                # 보내면 무한히 늘어질 수 있으므로 대용량 ZIP은 전체 시간을
+                # 별도로 제한한다. 시간 초과 시 분기 전체가 실패한다.
+                started = time.monotonic()
+                chunks: list[bytes] = []
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if time.monotonic() - started > BINARY_TOTAL_TIMEOUT:
+                        raise ProviderError(f"OpenDART {endpoint} response exceeded total deadline")
+                    if chunk:
+                        chunks.append(chunk)
+                return b"".join(chunks)
             payload = response.json()
         except Exception:
             raise ProviderError(f"OpenDART {endpoint} request failed") from None

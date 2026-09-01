@@ -63,6 +63,31 @@ def fact(year: int, quarter: int, value: str, *, company: str = "kr:1") -> Finan
 
 
 class OpenDartTransportTests(unittest.TestCase):
+    def test_corporation_map_streams_the_archive(self):
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def iter_content(*, chunk_size):
+                self.assertEqual(chunk_size, 64 * 1024)
+                return iter([b"not-a-zip"])
+
+        class Session:
+            def __init__(self):
+                self.kwargs = None
+
+            def get(self, _url, **kwargs):
+                self.kwargs = kwargs
+                return Response()
+
+        session = Session()
+        client = OpenDartClient("secret", session=session, interval=0)
+        with self.assertRaises(RuntimeError):
+            client.corporation_map()
+        self.assertTrue(session.kwargs["stream"])
+
     def test_multi_account_batches_are_capped_at_one_hundred(self):
         class Response:
             content = b""
