@@ -78,6 +78,113 @@ def member(company: str, rank: int, *, year: int = 2026, quarter: int = 2) -> Co
     )
 
 
+def simulated_universe(market_id: str, count: int, *, year: int = 2026, quarter: int = 2) -> list[dict]:
+    """운영 DB와 같은 고정 기업군을 외부 상태 없이 재현한다."""
+    offset = 0 if market_id == "kr_largecap" else 1000
+    return [{
+        "company_id": f"kr:{offset + rank:08d}",
+        "company_name": f"{market_id}-{rank}",
+        "stock_code": f"{offset + rank:06d}",
+        "corp_code": f"{offset + rank:08d}",
+        "market_id": market_id,
+        "market_cap_rank": rank,
+        "market_cap": str(100000 - rank),
+        "reference_date": date(year, quarter * 3, 30),
+    } for rank in range(1, count + 1)]
+
+
+class SimulatedRepository:
+    """증분 수집 생명주기를 검증하는 최소 인메모리 저장소."""
+
+    def __init__(self) -> None:
+        self.universes = {
+            ("kr_largecap", 2026, 2): simulated_universe("kr_largecap", 100),
+            ("kr_kosdaq", 2026, 2): simulated_universe("kr_kosdaq", 50),
+        }
+        self.company_rows: dict[tuple[str, int, int], dict] = {}
+        self.market_rows: dict[tuple[str, int, int], dict] = {}
+        self.states: dict[str, dict] = {}
+        self.saved_states: list[tuple[str, str, dict, str | None]] = []
+
+    def seed_company(self, company_id: str, *, top_line: Decimal | None = Decimal("100"),
+                     operating_income: Decimal = Decimal("10"), net_income: Decimal = Decimal("8"),
+                     pending: bool = False, source: str = "open_dart") -> None:
+        stored = FinancialFact(
+            company_id, 2026, 2, date(2026, 6, 30), top_line, operating_income, net_income,
+            "KRW", "CFS", f"seed:{company_id}", date(2026, 8, 14), is_pending=pending,
+        ).db_row(calculation_version=6)
+        stored["source"] = source
+        self.company_rows[(company_id, 2026, 2)] = stored
+
+    def universe(self, market_id, year, quarter):
+        return list(self.universes.get((market_id, year, quarter), []))
+
+    def company_history(self, company_ids):
+        wanted = set(company_ids)
+        return [dict(row) for (company_id, _year, _quarter), row in self.company_rows.items() if company_id in wanted]
+
+    def market_history(self, market_id):
+        return [dict(row) for (stored_market, _year, _quarter), row in self.market_rows.items() if stored_market == market_id]
+
+    def upsert_company_quarters(self, rows):
+        materialized = list(rows)
+        for row in materialized:
+            self.company_rows[(row["company_id"], row["fiscal_year"], row["fiscal_quarter"])] = dict(row)
+        return len(materialized)
+
+    def upsert_market_quarters(self, rows):
+        materialized = list(rows)
+        for row in materialized:
+            self.market_rows[(row["market_id"], row["market_year"], row["market_quarter"])] = dict(row)
+        return len(materialized)
+
+    def pipeline_state(self, operation):
+        return self.states.get(operation)
+
+    def save_state(self, operation, status, cursor, error=None):
+        record = {"status": status, "cursor": dict(cursor), "last_error": error}
+        self.states[operation] = record
+        self.saved_states.append((operation, status, dict(cursor), error))
+
+
+class SimulatedDart:
+    def __init__(self, filings=()):
+        self.filings = list(filings)
+        self.financial_calls: list[tuple[tuple[str, ...], int, int]] = []
+
+    @property
+    def request_count(self):
+        return len(self.financial_calls)
+
+    def periodic_filings(self, _start, _end):
+        return list(self.filings)
+
+    def multi_accounts(self, corp_codes, year, quarter):
+        codes = tuple(corp_codes)
+        self.financial_calls.append((codes, year, quarter))
+        if quarter == 1:
+            return [item for corp in codes for item in complete(corp, current="100", cumulative="100")]
+        return [item for corp in codes for item in complete(corp, current="20", cumulative="120")]
+
+
+class SimulatedKis:
+    def __init__(self, values=None):
+        self.values = values or {}
+        self.calls: list[tuple[str, int, int]] = []
+
+    @property
+    def request_count(self):
+        return len(self.calls)
+
+    def quarter_top_line(self, ticker, year, quarter):
+        self.calls.append((ticker, year, quarter))
+        return self.values.get(ticker)
+
+
+class SimulatedKrx:
+    request_count = 0
+
+
 class OpenDartTransportTests(unittest.TestCase):
     def test_corporation_map_streams_the_archive(self):
         class Response:
@@ -249,6 +356,113 @@ class DailyCheckpointTests(unittest.TestCase):
         pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=Repository())
         pipeline.run_quarter = lambda *_args, **_kwargs: {"status": "incomplete"}
         pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+
+class IncrementalLifecycleSimulationTests(unittest.TestCase):
+    def populated_repository(self, *, missing_company: str | None = None) -> SimulatedRepository:
+        repository = SimulatedRepository()
+        for rows in repository.universes.values():
+            for identity in rows:
+                if identity["company_id"] != missing_company:
+                    repository.seed_company(identity["company_id"])
+        return repository
+
+    def test_new_receipt_refreshes_only_one_company_then_duplicate_is_noop(self):
+        target_company = "kr:00000100"
+        target_corp = "00000100"
+        receipt = PeriodicFiling(
+            target_corp, "20260902000001", date(2026, 9, 2), "반기보고서 (2026.06)",
+        )
+        repository = self.populated_repository(missing_company=target_company)
+        dart = SimulatedDart([receipt])
+        kis = SimulatedKis()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
+        )
+
+        first = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(first["filing_discovery"]["new_receipts"], 1)
+        self.assertEqual(first["refreshed_companies"], 1)
+        self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,), (target_corp,)])
+        self.assertEqual(kis.calls, [])
+        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
+        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["reported_company_count"], 100)
+        self.assertEqual(repository.market_rows[("kr_kosdaq", 2026, 2)]["reported_company_count"], 50)
+
+        calls_after_first_run = list(dart.financial_calls)
+        second = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(second["filing_discovery"]["new_receipts"], 0)
+        self.assertEqual(second["refreshed_companies"], 0)
+        self.assertEqual(dart.financial_calls, calls_after_first_run)
+        self.assertEqual(kis.calls, [])
+
+    def test_pending_top_line_retries_only_kis_and_completes_market(self):
+        target_company = "kr:00000099"
+        repository = self.populated_repository()
+        repository.seed_company(target_company, top_line=None, pending=True)
+        target_ticker = "000099"
+        dart = SimulatedDart()
+        kis = SimulatedKis({target_ticker: Decimal("250")})
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
+        )
+
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(dart.financial_calls, [])
+        self.assertEqual(kis.calls, [(target_ticker, 2026, 2)])
+        self.assertEqual(result["retried_pending_top_lines"], 1)
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(stored["top_line"], Decimal("250"))
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
+
+    def test_manual_company_is_excluded_even_when_a_new_receipt_exists(self):
+        target_company = "kr:00000098"
+        target_corp = "00000098"
+        repository = self.populated_repository()
+        repository.seed_company(target_company, source="manual")
+        dart = SimulatedDart([
+            PeriodicFiling(target_corp, "20260902000002", date(2026, 9, 2), "반기보고서 (2026.06)"),
+        ])
+        kis = SimulatedKis()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
+        )
+
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(result["filing_discovery"]["new_receipts"], 1)
+        self.assertEqual(result["refreshed_companies"], 0)
+        self.assertEqual(dart.financial_calls, [])
+        self.assertEqual(kis.calls, [])
+        self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["source"], "manual")
+
+    def test_processing_failure_does_not_advance_daily_checkpoint(self):
+        repository = SimulatedRepository()
+        original_cursor = {
+            "last_checked_date": "2026-09-01",
+            "boundary_receipt_ids": ["20260901000001"],
+        }
+        repository.states["daily_filings"] = {"status": "ready", "cursor": original_cursor}
+        dart = SimulatedDart([
+            PeriodicFiling("00000001", "20260902000003", date(2026, 9, 2), "반기보고서 (2026.06)"),
+        ])
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository,
+        )
+        pipeline.run_quarter = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("simulated failure"))
+
+        with self.assertRaisesRegex(RuntimeError, "simulated failure"):
+            pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(repository.states["daily_filings"]["cursor"], original_cursor)
+        self.assertFalse(any(
+            operation == "daily_filings" and cursor.get("last_checked_date") == "2026-09-02"
+            for operation, _status, cursor, _error in repository.saved_states
+        ))
 
 
 class QuarterlyExtractionTests(unittest.TestCase):
