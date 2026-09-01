@@ -155,7 +155,6 @@ def calculate_market_growth(rows: Iterable[MarketQuarter]) -> list[MarketQuarter
             net_income=row.average_net_income,
             currency="UNIT",
             consolidation_scope="CFS",
-            top_line_method="reported_total",
         )
         for row in ordered
     ]

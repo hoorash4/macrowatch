@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import json
@@ -19,6 +19,7 @@ from .universe import MARKET_TARGETS, select_final_universe
 
 
 QUARTER_END = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
+EXTRACTION_VERSION = 2
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -51,7 +52,6 @@ def _quarter_from_record(row: dict[str, Any]) -> QuarterValue:
         net_income=_decimal(row.get("net_income")),
         currency=str(row["currency"]),
         consolidation_scope=str(row["consolidation_scope"]),
-        top_line_method=str(row["top_line_method"]),
         source=str(row.get("source") or "open_dart"),
         source_filing_id=str(row.get("source_filing_id") or ""),
         filing_date=_date(row.get("filing_date")),
@@ -218,6 +218,7 @@ class KoreaEarningsPipeline:
             for member in context.members
             if current_by_company.get(member.company_id) is None
             or current_by_company[member.company_id].quality_status != "complete"
+            or current_by_company[member.company_id].calculation_version < EXTRACTION_VERSION
         ]
         pending_codes = [context.corp_code_by_company[company_id] for company_id in pending_ids]
         batch = (
@@ -229,15 +230,46 @@ class KoreaEarningsPipeline:
         month, day = QUARTER_END[context.quarter]
         quarter_end = date(context.year, month, day)
 
+        def record_missing(company_id: str, reason: str) -> None:
+            missing.append({
+                "company_id": company_id,
+                "company_name": context.company_name_by_company[company_id],
+                "reason": reason,
+            })
+            existing = current_by_company.get(company_id)
+            if existing is None:
+                return
+            # A superseded extractor must not leave an old, known-bad fact
+            # marked complete when the replacement cannot be verified.
+            invalidated = replace(
+                existing,
+                top_line=None,
+                operating_income=None,
+                net_income=None,
+                quality_status="review_required",
+                calculation_version=EXTRACTION_VERSION,
+                operating_income_yoy_pct=None,
+                operating_income_yoy_state="missing_prior",
+                net_income_yoy_pct=None,
+                net_income_yoy_state="missing_prior",
+                operating_income_qoq_sa_pct=None,
+                operating_income_qoq_state="insufficient_history",
+                net_income_qoq_sa_pct=None,
+                net_income_qoq_state="insufficient_history",
+            )
+            histories[company_id] = [
+                row for row in histories.get(company_id, []) if row.key != invalidated.key
+            ] + [invalidated]
+            touched.add(company_id)
+
         for company_id in pending_ids:
             corp_code = context.corp_code_by_company[company_id]
             financial = batch.values.get(corp_code)
             if financial is None:
-                missing.append({
-                    "company_id": company_id,
-                    "company_name": context.company_name_by_company[company_id],
-                    "reason": batch.errors.get(corp_code, "OpenDART required values unavailable"),
-                })
+                record_missing(
+                    company_id,
+                    batch.errors.get(corp_code, "OpenDART required values unavailable"),
+                )
                 continue
             source_currency = financial.currency or "KRW"
             if source_currency == "KRW":
@@ -249,27 +281,15 @@ class KoreaEarningsPipeline:
                     # trading day, so FX must anchor to the actual quarter end.
                     exchange_rate = self.fx.usd_krw_on_or_before(quarter_end)
                 except EcosFxError as error:
-                    missing.append({
-                        "company_id": company_id,
-                        "company_name": context.company_name_by_company[company_id],
-                        "reason": str(error),
-                    })
+                    record_missing(company_id, str(error))
                     continue
             else:
-                missing.append({
-                    "company_id": company_id,
-                    "company_name": context.company_name_by_company[company_id],
-                    "reason": f"unsupported reporting currency: {source_currency}",
-                })
+                record_missing(company_id, f"unsupported reporting currency: {source_currency}")
                 continue
             try:
                 filing_date = _receipt_date(financial.source_filing_id)
             except ValueError as error:
-                missing.append({
-                    "company_id": company_id,
-                    "company_name": context.company_name_by_company[company_id],
-                    "reason": str(error),
-                })
+                record_missing(company_id, str(error))
                 continue
             row = QuarterValue(
                 company_id=company_id,
@@ -283,11 +303,11 @@ class KoreaEarningsPipeline:
                 net_income=financial.net_income * exchange_rate,
                 currency="KRW",
                 consolidation_scope=financial.scope,
-                top_line_method=financial.top_line_method,
                 source="open_dart",
                 source_filing_id=financial.source_filing_id,
                 filing_date=filing_date,
                 quality_status="complete",
+                calculation_version=EXTRACTION_VERSION,
             )
             histories[company_id] = [
                 existing for existing in histories.get(company_id, [])

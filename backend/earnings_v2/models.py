@@ -20,7 +20,6 @@ class QuarterValue:
     net_income: Decimal | None
     currency: str
     consolidation_scope: str
-    top_line_method: str
     period_start: date | None = None
     source: str = "open_dart"
     source_filing_id: str = ""

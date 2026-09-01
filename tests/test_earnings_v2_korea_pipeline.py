@@ -76,7 +76,6 @@ class FakeFinancialCollector:
                     operating_income=Decimal("20"),
                     net_income=Decimal("10"),
                     scope="CFS",
-                    top_line_method="reported_total",
                     source_filing_id="20260515000001",
                     currency="USD" if code in self.usd_codes else "KRW",
                 )

@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import unittest
 
-from earnings_v2.financials import StatementAmount, financial_top_line, single_quarter_amount
+from earnings_v2.financials import single_quarter_amount
 from earnings_v2.growth import calculate_company_growth, conventional_growth
 from earnings_v2.http import get_with_retries
 from earnings_v2.market import aggregate_market_quarter, calculate_market_series
@@ -29,7 +29,6 @@ def quarter(year: int, fiscal_quarter: int, op: str, net: str | None = None) -> 
         net_income=Decimal(net if net is not None else op),
         currency="KRW",
         consolidation_scope="CFS",
-        top_line_method="reported_total",
     )
 
 
@@ -107,14 +106,6 @@ class EarningsV2FinancialTests(unittest.TestCase):
     def test_single_quarter_prefers_disclosed_three_month_value(self):
         self.assertEqual(single_quarter_amount(2, current_three_month=Decimal("7"), cumulative=Decimal("20"), previous_cumulative=Decimal("8")), Decimal("7"))
         self.assertEqual(single_quarter_amount(4, cumulative=Decimal("40"), previous_cumulative=Decimal("28")), Decimal("12"))
-
-    def test_financial_top_line_prefers_verified_total_without_double_counting(self):
-        value, method = financial_top_line([
-            StatementAmount("영업수익", Decimal("100"), is_total=True, is_revenue=True),
-            StatementAmount("이자수익", Decimal("70"), is_revenue=True),
-            StatementAmount("수수료비용", Decimal("10"), is_cost_or_loss=True),
-        ])
-        self.assertEqual((value, method), (Decimal("100"), "reported_total"))
 
     def test_krx_filter_keeps_common_stock_and_rejects_preferred_or_spac(self):
         self.assertTrue(is_eligible_common_stock("삼성전자", "005930"))

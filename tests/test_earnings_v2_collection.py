@@ -175,7 +175,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(diagnostic, "")
         self.assertEqual(value.operating_income, Decimal("60"))
 
-    def test_financial_total_prevents_double_counting_income_leaves(self):
+    def test_explicit_financial_total_is_selected_without_summing_income_leaves(self):
         rows = [
             account("00000001", "영업수익", "100", account_id="custom_Total", order=1),
             account("00000001", "이자수익", "70", account_id="custom_Interest", order=2),
@@ -186,7 +186,52 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         value, diagnostic = extract_quarter(rows, [], 1)
         self.assertEqual(diagnostic, "")
         self.assertEqual(value.top_line, Decimal("100"))
-        self.assertEqual(value.top_line_method, "reported_total")
+
+    def test_sales_revenue_name_combinations_are_explicit_top_lines(self):
+        for name in ("매출", "매출액", "수익", "수익/매출액", "매출(수익)"):
+            with self.subTest(name=name):
+                rows = [
+                    account("00000001", name, "100", account_id="custom_Revenue", order=1),
+                    account("00000001", "영업이익", "20", account_id="dart_OperatingIncomeLoss", order=2),
+                    account("00000001", "당기순이익", "10", account_id="ifrs-full_ProfitLoss", order=3),
+                ]
+                value, diagnostic = extract_quarter(rows, [], 1)
+                self.assertEqual(diagnostic, "")
+                self.assertEqual(value.top_line, Decimal("100"))
+
+    def test_financial_top_line_exact_names_are_supported(self):
+        for name in ("순영업이익", "순영업수익", "영업수익"):
+            with self.subTest(name=name):
+                rows = [
+                    account("00000001", name, "100", account_id="custom_Total", order=1),
+                    account("00000001", "영업이익", "20", account_id="dart_OperatingIncomeLoss", order=2),
+                    account("00000001", "당기순이익", "10", account_id="ifrs-full_ProfitLoss", order=3),
+                ]
+                value, diagnostic = extract_quarter(rows, [], 1)
+                self.assertEqual(diagnostic, "")
+                self.assertEqual(value.top_line, Decimal("100"))
+
+    def test_income_leaves_are_never_summed_into_top_line(self):
+        rows = [
+            account("00000001", "금융수익", "70", account_id="custom_Finance", order=1),
+            account("00000001", "이자수익", "30", account_id="custom_Interest", order=2),
+            account("00000001", "영업이익", "20", account_id="dart_OperatingIncomeLoss", order=3),
+            account("00000001", "당기순이익", "10", account_id="ifrs-full_ProfitLoss", order=4),
+        ]
+        value, diagnostic = extract_quarter(rows, [], 1)
+        self.assertIsNone(value)
+        self.assertIn("top_line=no", diagnostic)
+
+    def test_unrelated_labels_do_not_override_operating_or_net_income(self):
+        rows = [
+            account("00000001", "매출액", "100", account_id="ifrs-full_Revenue", order=1),
+            account("00000001", "영업비용", "20", account_id="dart_OperatingIncomeLoss", order=2),
+            account("00000001", "법인세차감전순이익", "10", account_id="ifrs-full_ProfitLoss", order=3),
+        ]
+        value, diagnostic = extract_quarter(rows, [], 1)
+        self.assertIsNone(value)
+        self.assertIn("op=no", diagnostic)
+        self.assertIn("net=no", diagnostic)
 
     def test_only_unresolved_company_uses_full_statement_fallback(self):
         class Client:

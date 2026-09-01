@@ -5,20 +5,25 @@ from decimal import Decimal, InvalidOperation
 import re
 from typing import Any, Iterable
 
-from .financials import StatementAmount, financial_top_line, single_quarter_amount
+from .financials import single_quarter_amount
 from .open_dart import OpenDartV2Client
 
 
 OP_IDS = ("dartoperatingincomeloss", "ifrsfulloperatingprofitloss")
 NET_IDS = ("ifrsfullprofitloss", "dartprofitloss")
-REVENUE_IDS = ("ifrsfullrevenue", "dartrevenue", "ifrsrevenue")
-OP_NAMES = ("영업이익", "영업이익손실", "영업손익")
-NET_NAMES = ("당기순이익", "당기순이익손실", "분기순이익", "반기순이익")
-REVENUE_TOTAL_NAMES = (
-    "매출액", "수익매출액", "영업수익", "영업수익합계", "총영업수익", "순영업수익",
+REVENUE_IDS = (
+    "ifrsfullrevenue",
+    "ifrsfullrevenuefromcontractswithcustomers",
+    "dartrevenue",
+    "ifrsrevenue",
 )
-REVENUE_TOKENS = ("수익", "매출", "보험료수익", "이자수익", "수수료수익")
-REVENUE_EXCLUSIONS = ("비용", "원가", "손실", "차감", "지출")
+OP_NAMES = ("영업이익", "영업이익손실", "영업손익", "영업손실")
+NET_NAMES = (
+    "당기순이익", "당기순이익손실", "당기순손익", "당기순손실",
+    "분기순이익", "분기순이익손실", "반기순이익", "반기순이익손실",
+)
+FINANCIAL_TOP_LINE_NAMES = ("순영업이익", "순영업수익", "영업수익")
+TOP_LINE_WORDS = re.compile(r"^(?:매출액|매출|수익)+$")
 
 
 def _norm(value: Any) -> str:
@@ -49,13 +54,57 @@ def _metric_row(
     ids: tuple[str, ...],
     names: tuple[str, ...],
 ) -> dict[str, Any] | None:
-    source = list(rows)
-    by_id = [row for row in source if _norm(row.get("account_id")) in ids]
+    source = [
+        row for row in rows
+        if str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+    ]
+    accepted_names = set(names)
+    # A standard ID is useful corroboration, but must never override an
+    # unrelated label.  This prevents malformed or duplicated XBRL rows from
+    # silently becoming operating profit or net income.
+    by_id = [
+        row for row in source
+        if _norm(row.get("account_id")) in ids
+        and _norm(row.get("account_nm")) in accepted_names
+    ]
     if by_id:
         return min(by_id, key=lambda row: _row_priority(row, ids))
-    accepted_names = set(names)
     by_name = [row for row in source if _norm(row.get("account_nm")) in accepted_names]
     return min(by_name, key=lambda row: _row_priority(row, ids)) if by_name else None
+
+
+def _top_line_name_rank(name: str) -> int | None:
+    normalized = _norm(name)
+    if TOP_LINE_WORDS.fullmatch(normalized):
+        return 0
+    try:
+        return 1 + FINANCIAL_TOP_LINE_NAMES.index(normalized)
+    except ValueError:
+        return None
+
+
+def _top_line_row(rows: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = []
+    for row in rows:
+        name_rank = _top_line_name_rank(str(row.get("account_nm") or ""))
+        account_id = _norm(row.get("account_id"))
+        if name_rank is None and account_id not in REVENUE_IDS:
+            continue
+        statement = str(row.get("sj_div") or "").upper()
+        if statement not in {"IS", "CIS"}:
+            continue
+        try:
+            order = int(str(row.get("ord") or "999999").replace(",", ""))
+        except ValueError:
+            order = 999999
+        candidates.append((
+            0 if account_id in REVENUE_IDS else 1,
+            name_rank if name_rank is not None else 100,
+            0 if statement == "IS" else 1,
+            order,
+            row,
+        ))
+    return min(candidates, key=lambda item: item[:-1])[-1] if candidates else None
 
 
 def _amount(row: dict[str, Any] | None, quarter: int, prior: dict[str, Any] | None) -> Decimal | None:
@@ -75,25 +124,12 @@ def _amount(row: dict[str, Any] | None, quarter: int, prior: dict[str, Any] | No
     )
 
 
-def _account_key(row: dict[str, Any]) -> tuple[str, str]:
-    return _norm(row.get("account_id")), _norm(row.get("account_nm"))
-
-
-def _is_revenue(name: str) -> bool:
-    normalized = _norm(name)
-    return (
-        any(token in normalized for token in REVENUE_TOKENS)
-        and not any(token in normalized for token in REVENUE_EXCLUSIONS)
-    )
-
-
 @dataclass(frozen=True)
 class DartQuarterFinancials:
     top_line: Decimal
     operating_income: Decimal
     net_income: Decimal
     scope: str
-    top_line_method: str
     source_filing_id: str
     currency: str
 
@@ -128,48 +164,13 @@ def _extract_scope(
         return None, f"{scope}(no_rows)"
     op_row = _metric_row(current, OP_IDS, OP_NAMES)
     net_row = _metric_row(current, NET_IDS, NET_NAMES)
-    revenue_row = _metric_row(current, REVENUE_IDS, REVENUE_TOTAL_NAMES)
+    revenue_row = _top_line_row(current)
     prior_op = _metric_row(previous, OP_IDS, OP_NAMES)
     prior_net = _metric_row(previous, NET_IDS, NET_NAMES)
-    prior_revenue = _metric_row(previous, REVENUE_IDS, REVENUE_TOTAL_NAMES)
+    prior_revenue = _top_line_row(previous)
     op = _amount(op_row, quarter, prior_op)
     net = _amount(net_row, quarter, prior_net)
     top = _amount(revenue_row, quarter, prior_revenue)
-    method = "reported_total"
-
-    # Financial companies often omit the standard revenue ID. Prefer one
-    # verified total; otherwise sum positive income leaves above operating
-    # income. Costs, losses and subtotals beneath operating income are excluded.
-    if top is None and op_row is not None:
-        try:
-            op_order = int(str(op_row.get("ord") or "999999").replace(",", ""))
-        except ValueError:
-            op_order = 999999
-        prior_by_id = {_norm(row.get("account_id")): row for row in previous if _norm(row.get("account_id"))}
-        prior_by_name = {_norm(row.get("account_nm")): row for row in previous}
-        candidates: list[StatementAmount] = []
-        for row in current:
-            if str(row.get("sj_div") or "").upper() not in {"IS", "CIS"}:
-                continue
-            try:
-                order = int(str(row.get("ord") or "999999").replace(",", ""))
-            except ValueError:
-                continue
-            name = str(row.get("account_nm") or "")
-            if order >= op_order or not _is_revenue(name):
-                continue
-            account_id, account_name = _account_key(row)
-            prior = prior_by_id.get(account_id) if account_id else None
-            amount = _amount(row, quarter, prior or prior_by_name.get(account_name))
-            if amount is None:
-                continue
-            candidates.append(StatementAmount(
-                account_name=name,
-                amount=amount,
-                is_total=_norm(name) in REVENUE_TOTAL_NAMES,
-                is_revenue=True,
-            ))
-        top, method = financial_top_line(candidates)
 
     if top is None or op is None or net is None:
         return None, (
@@ -182,7 +183,6 @@ def _extract_scope(
         operating_income=op,
         net_income=net,
         scope=scope,
-        top_line_method=method,
         source_filing_id=str(representative.get("rcept_no") or ""),
         currency=str(representative.get("currency") or "KRW").upper(),
     ), ""
