@@ -40,9 +40,9 @@ def _decimal(value: Any) -> Decimal | None:
         return None
 
 
-def _session() -> requests.Session:
+def _session(*, retries: int = 2) -> requests.Session:
     client = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=2)
+    adapter = requests.adapters.HTTPAdapter(max_retries=max(retries, 0))
     client.mount("https://", adapter)
     return client
 
@@ -200,7 +200,9 @@ class KisClient:
             raise ValueError("KIS credentials are required")
         self.cached_token = cached_token
         self.save_token = save_token
-        self.session = session or _session()
+        # KIS 보완 호출은 여러 기업을 순차 처리한다. 숨은 HTTP 재시도가
+        # 기업마다 누적되지 않게 하고, 실패는 파이프라인이 즉시 드러낸다.
+        self.session = session or _session(retries=0)
         self.interval = interval
         self._last_request = 0.0
         self._token: str | None = None
@@ -217,7 +219,7 @@ class KisClient:
             response = self.session.post(
                 f"{KIS_BASE}/oauth2/tokenP",
                 json={"grant_type": "client_credentials", "appkey": self.app_key, "appsecret": self.app_secret},
-                timeout=30,
+                timeout=(5, 15),
             )
             response.raise_for_status()
             payload = response.json()
@@ -246,7 +248,7 @@ class KisClient:
         try:
             response = self.session.get(
                 f"{KIS_BASE}/uapi/domestic-stock/v1/finance/income-statement",
-                params=params, headers=headers, timeout=30,
+                params=params, headers=headers, timeout=(5, 12),
             )
             payload = response.json()
             if not response.ok or str(payload.get("rt_cd") or "0") != "0":

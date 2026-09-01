@@ -110,6 +110,11 @@ class KoreaEarningsV2Pipeline:
         self.kis = kis
         self.fx = fx
 
+    @staticmethod
+    def _progress(stage: str, **details: Any) -> None:
+        """장시간 실행에서도 현재 공급자 단계를 즉시 확인할 수 있게 한다."""
+        print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
+
     @classmethod
     def from_env(cls) -> "KoreaEarningsV2Pipeline":
         repository = EarningsV2Repository.from_env()
@@ -182,7 +187,9 @@ class KoreaEarningsV2Pipeline:
             # KIS는 OpenDART에서 영업이익과 순이익을 확보했지만 매출만 없는
             # 2019년 이후 기업에만 호출한다. 다른 필드를 다시 가져오지 않는다.
             if fact.top_line is None and fact.profit_complete and year >= 2019 and self.kis is not None:
+                self._progress("kis_top_line_start", company=identity.company_name, ticker=identity.stock_code)
                 fact = fact.with_changes(top_line=self.kis.quarter_top_line(identity.stock_code, year, quarter))
+                self._progress("kis_top_line_done", company=identity.company_name, found=fact.top_line is not None)
             for field in ("top_line", "operating_income", "net_income"):
                 if getattr(fact, field) is None:
                     reason = "provider value missing"
@@ -239,13 +246,18 @@ class KoreaEarningsV2Pipeline:
         if write:
             self.repository.save_state(operation, "running", {})
         try:
+            self._progress("dart_corporation_map_start", period=operation)
             corp_map = self.dart.corporation_map()
+            self._progress("dart_corporation_map_done", companies=len(corp_map))
             universes = {
                 market_id: self.discover_universe(market_id, year, quarter, corp_map)
                 for market_id in TARGETS
             }
+            self._progress("krx_universe_done", **{market: len(rows) for market, rows in universes.items()})
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
+            self._progress("dart_financials_start", companies=len(identities))
             facts, issues = self.collect_financials(identities, year, quarter)
+            self._progress("financials_done", facts=len(facts), issues=len(issues))
             histories = self._calculated_histories(facts)
             markets = self._market_rows(universes, histories, year, quarter)
             summary = {
