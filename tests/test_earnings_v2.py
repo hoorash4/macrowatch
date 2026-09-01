@@ -215,8 +215,13 @@ class EarningsV2BoundaryTests(unittest.TestCase):
     def test_kis_top_line_adapter_is_protected_and_uses_standard_sales_account(self):
         root = Path(__file__).resolve().parents[1]
         adapter = (root / "supabase" / "functions" / "earnings-kis-top-lines" / "index.ts").read_text(encoding="utf-8")
+        auth = (root / "supabase" / "functions" / "_shared" / "server-key-auth.ts").read_text(encoding="utf-8")
         shared = (root / "supabase" / "functions" / "_shared" / "kis-client.ts").read_text(encoding="utf-8")
-        self.assertIn('Authorization") !== `Bearer ${serviceRole}`', adapter)
+        config = (root / "supabase" / "config.toml").read_text(encoding="utf-8")
+        self.assertIn("isTrustedServerRequest(request)", adapter)
+        self.assertIn('request.headers.get("apikey")', auth)
+        self.assertIn('Deno.env.get("SUPABASE_SECRET_KEYS")', auth)
+        self.assertIn('[functions.earnings-kis-top-lines]\nverify_jwt = false', config)
         self.assertIn("sale_account", shared)
         self.assertIn("FHKST66430200", shared)
 

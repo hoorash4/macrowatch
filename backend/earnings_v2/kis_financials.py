@@ -31,7 +31,6 @@ class KisTopLineClient:
             self.url,
             headers={
                 "apikey": self.key,
-                "Authorization": f"Bearer {self.key}",
                 "Content-Type": "application/json",
             },
             json={"tickers": unique, "year": int(year), "quarter": int(quarter)},

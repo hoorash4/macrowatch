@@ -6,6 +6,7 @@ import {
   getKisAccessToken,
   loadKisCredentials,
 } from "../_shared/kis-client.ts";
+import { isTrustedServerRequest } from "../_shared/server-key-auth.ts";
 
 const HUNDRED_MILLION_KRW = 100_000_000;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -23,7 +24,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
     const serviceRole = requiredSecret("SUPABASE_SERVICE_ROLE_KEY");
-    if (request.headers.get("Authorization") !== `Bearer ${serviceRole}`) {
+    if (!isTrustedServerRequest(request)) {
       return json({ error: "서비스 역할 호출만 허용됩니다." }, 403);
     }
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
