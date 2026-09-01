@@ -6,6 +6,7 @@ import unittest
 from earnings_v2.financials import StatementAmount, financial_top_line, single_quarter_amount
 from earnings_v2.growth import calculate_company_growth, conventional_growth
 from earnings_v2.market import aggregate_market_quarter, calculate_market_series
+from earnings_v2.krx import is_eligible_common_stock
 from earnings_v2.models import MarketQuarter, QuarterValue, UniverseCandidate
 from earnings_v2.pilot import build_one_year_pilot, build_recent_four_quarter_pilot
 from earnings_v2.pipeline import coverage_report, prepare_company_series
@@ -72,6 +73,11 @@ class EarningsV2FinancialTests(unittest.TestCase):
             StatementAmount("수수료비용", Decimal("10"), is_cost_or_loss=True),
         ])
         self.assertEqual((value, method), (Decimal("100"), "reported_total"))
+
+    def test_krx_filter_keeps_common_stock_and_rejects_preferred_or_spac(self):
+        self.assertTrue(is_eligible_common_stock("삼성전자", "005930"))
+        self.assertFalse(is_eligible_common_stock("삼성전자우", "005935"))
+        self.assertFalse(is_eligible_common_stock("테스트스팩1호", "123456"))
 
 
 class EarningsV2UniverseAndMarketTests(unittest.TestCase):
