@@ -184,6 +184,14 @@ class EarningsV2BoundaryTests(unittest.TestCase):
         self.assertIn("grant execute", sql.lower())
         self.assertNotIn("references public.earnings_", sql.lower())
 
+    def test_pipeline_contract_supports_bulk_resume_and_incomplete_status(self):
+        root = Path(__file__).resolve().parents[1]
+        migration = root / "supabase" / "migrations" / "20260901111500_complete_earnings_v2_pipeline_contract.sql"
+        sql = migration.read_text(encoding="utf-8").lower()
+        self.assertIn("earnings_v2_get_company_quarters_many", sql)
+        self.assertIn("earnings_v2_get_market_quarters", sql)
+        self.assertIn("'incomplete'", sql)
+
     def test_pipeline_never_completes_a_missing_required_fact(self):
         row = quarter(2026, 1, "10").with_metrics(top_line=None)
         prepared = prepare_company_series([row])

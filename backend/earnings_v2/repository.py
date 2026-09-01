@@ -80,6 +80,14 @@ class EarningsV2Store:
             raise EarningsV2StoreError("V2 company-quarter RPC returned a non-array result")
         return [row for row in result if isinstance(row, dict)]
 
+    def get_company_quarters_many(self, company_ids: Iterable[str]) -> list[dict[str, Any]]:
+        result = self._rpc("earnings_v2_get_company_quarters_many", {
+            "p_company_ids": list(dict.fromkeys(company_ids)),
+        })
+        if not isinstance(result, list):
+            raise EarningsV2StoreError("V2 multi-company-quarter RPC returned a non-array result")
+        return [row for row in result if isinstance(row, dict)]
+
     def get_market_inputs(self, market_id: str, year: int, quarter: int) -> list[dict[str, Any]]:
         result = self._rpc("earnings_v2_get_market_inputs", {
             "p_market_id": market_id,
@@ -88,6 +96,12 @@ class EarningsV2Store:
         })
         if not isinstance(result, list):
             raise EarningsV2StoreError("V2 market-input RPC returned a non-array result")
+        return [row for row in result if isinstance(row, dict)]
+
+    def get_market_quarters(self, market_id: str) -> list[dict[str, Any]]:
+        result = self._rpc("earnings_v2_get_market_quarters", {"p_market_id": market_id})
+        if not isinstance(result, list):
+            raise EarningsV2StoreError("V2 market-quarter RPC returned a non-array result")
         return [row for row in result if isinstance(row, dict)]
 
     def save_pipeline_state(

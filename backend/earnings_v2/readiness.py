@@ -15,6 +15,7 @@ def inspect_repository(root: Path) -> list[str]:
     migration_dir = root / "supabase" / "migrations"
     required_modules = (
         "models.py", "financials.py", "growth.py", "universe.py", "market.py",
+        "dart_financials.py", "korea_pipeline.py",
         "pipeline.py", "repository.py", "sources.py", "pilot.py", "krx.py", "open_dart.py",
         "backfill_korea_pilot.py",
     )
