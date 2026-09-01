@@ -67,4 +67,4 @@ jobs:
           [[ "$ALLOW_REVIEW" == "true" ]] && args+=(--allow-review)
           # 요청별 제한과 별개로 분기 프로세스 전체에도 명시적인 상한을 둔다.
           # 124는 정상 실패로 처리되며 다음 분기를 자동 실행하지 않는다.
-          timeout --signal=TERM --kill-after=10s 4m30s python -m earnings_v2.cli "${args[@]}"
+          timeout --signal=TERM --kill-after=10s 270s python -m earnings_v2.cli "${args[@]}"
