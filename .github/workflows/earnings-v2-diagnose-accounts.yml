@@ -1,0 +1,50 @@
+name: Diagnose Earnings V2 OpenDART account names
+
+on:
+  workflow_dispatch:
+    inputs:
+      corp_codes:
+        description: Comma-separated OpenDART corporation codes
+        required: true
+        type: string
+      year:
+        description: Business year
+        required: true
+        type: string
+      quarter:
+        description: Quarter number (1-4)
+        required: true
+        type: string
+      scope:
+        description: CFS or OFS
+        required: true
+        default: CFS
+        type: choice
+        options:
+          - CFS
+          - OFS
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Print income-statement account names
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          DART_DIAGNOSE_CORP_CODES: ${{ inputs.corp_codes }}
+          DART_DIAGNOSE_YEAR: ${{ inputs.year }}
+          DART_DIAGNOSE_QUARTER: ${{ inputs.quarter }}
+          DART_DIAGNOSE_SCOPE: ${{ inputs.scope }}
+        run: python -m earnings_v2.diagnose_account_names
