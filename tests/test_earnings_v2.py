@@ -1,0 +1,145 @@
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+import unittest
+
+from earnings_v2.financials import StatementAmount, financial_top_line, single_quarter_amount
+from earnings_v2.growth import calculate_company_growth, conventional_growth
+from earnings_v2.market import aggregate_market_quarter, calculate_market_series
+from earnings_v2.models import MarketQuarter, QuarterValue, UniverseCandidate
+from earnings_v2.pilot import build_one_year_pilot
+from earnings_v2.pipeline import coverage_report, prepare_company_series
+from earnings_v2.readiness import inspect_repository
+from earnings_v2.universe import select_final_universe
+
+
+def quarter(year: int, fiscal_quarter: int, op: str, net: str | None = None) -> QuarterValue:
+    return QuarterValue(
+        company_id="company",
+        fiscal_year=year,
+        fiscal_quarter=fiscal_quarter,
+        market_year=year,
+        market_quarter=fiscal_quarter,
+        period_end=date(year, fiscal_quarter * 3, 1),
+        top_line=Decimal("100"),
+        operating_income=Decimal(op),
+        net_income=Decimal(net if net is not None else op),
+        currency="KRW",
+        consolidation_scope="CFS",
+        top_line_method="reported_total",
+    )
+
+
+class EarningsV2GrowthTests(unittest.TestCase):
+    def test_conventional_growth_keeps_turns_as_states(self):
+        self.assertEqual(conventional_growth(Decimal("10"), Decimal("-5")).state, "black_turn")
+        self.assertEqual(conventional_growth(Decimal("-10"), Decimal("5")).state, "red_turn")
+        self.assertEqual(conventional_growth(Decimal("-3"), Decimal("-5")).state, "loss_narrowing")
+        self.assertEqual(conventional_growth(Decimal("-8"), Decimal("-5")).state, "loss_widening")
+        self.assertIsNone(conventional_growth(Decimal("10"), Decimal("0")).value)
+
+    def test_yoy_is_normal_percentage_for_positive_values(self):
+        rows = calculate_company_growth([quarter(2025, 1, "100"), quarter(2026, 1, "125")])
+        self.assertEqual(rows[-1].operating_income_yoy_pct, Decimal("25.00"))
+        self.assertEqual(rows[-1].operating_income_yoy_state, "normal")
+
+    def test_seasonal_qoq_uses_only_prior_same_transitions_and_latest_ten(self):
+        rows = []
+        for year in range(2010, 2026):
+            rows.extend([quarter(year, 1, "100"), quarter(year, 2, "120")])
+        rows.extend([quarter(2026, 1, "100"), quarter(2026, 2, "130")])
+        result = calculate_company_growth(rows)[-1]
+        self.assertEqual(result.operating_income_qoq_sa_pct, Decimal("10.0"))
+        self.assertEqual(result.operating_income_qoq_state, "normal")
+
+    def test_scope_change_breaks_growth(self):
+        prior = quarter(2025, 1, "100")
+        current = quarter(2026, 1, "120").with_metrics(consolidation_scope="OFS")
+        result = calculate_company_growth([prior, current])[-1]
+        self.assertEqual(result.operating_income_yoy_state, "scope_mismatch")
+        self.assertIsNone(result.operating_income_yoy_pct)
+
+
+class EarningsV2FinancialTests(unittest.TestCase):
+    def test_single_quarter_prefers_disclosed_three_month_value(self):
+        self.assertEqual(single_quarter_amount(2, current_three_month=Decimal("7"), cumulative=Decimal("20"), previous_cumulative=Decimal("8")), Decimal("7"))
+        self.assertEqual(single_quarter_amount(4, cumulative=Decimal("40"), previous_cumulative=Decimal("28")), Decimal("12"))
+
+    def test_financial_top_line_prefers_verified_total_without_double_counting(self):
+        value, method = financial_top_line([
+            StatementAmount("영업수익", Decimal("100"), is_total=True, is_revenue=True),
+            StatementAmount("이자수익", Decimal("70"), is_revenue=True),
+            StatementAmount("수수료비용", Decimal("10"), is_cost_or_loss=True),
+        ])
+        self.assertEqual((value, method), (Decimal("100"), "reported_total"))
+
+
+class EarningsV2UniverseAndMarketTests(unittest.TestCase):
+    def test_universe_filters_currency_and_deduplicates_company(self):
+        candidates = [
+            UniverseCandidate("a", "A", "USD", Decimal("100"), date(2026, 6, 30)),
+            UniverseCandidate("a", "A class B", "USD", Decimal("80"), date(2026, 6, 30)),
+            UniverseCandidate("b", "B", "EUR", Decimal("200"), date(2026, 6, 30)),
+            UniverseCandidate("c", "C", "USD", Decimal("90"), date(2026, 6, 30)),
+        ]
+        result = select_final_universe(
+            market_id="us_largecap", market_year=2026, market_quarter=2,
+            candidates=candidates, selection_method="reconstructed_revenue500", target_count=2,
+        )
+        self.assertEqual([row.company_id for row in result], ["a", "c"])
+        self.assertEqual([row.market_cap_rank for row in result], [1, 2])
+
+    def test_market_uses_average_of_complete_final_members(self):
+        result = aggregate_market_quarter(
+            market_id="kr_largecap", market_year=2020, market_quarter=1,
+            company_values=[(Decimal("10"), Decimal("5"), "complete"), (Decimal("30"), Decimal("15"), "complete")],
+            historical=True,
+        )
+        self.assertEqual(result.average_operating_income, Decimal("20"))
+        self.assertEqual(result.average_net_income, Decimal("10"))
+        self.assertEqual(result.completion_status, "historical_partial")
+
+    def test_market_growth_is_calculated_from_average_series(self):
+        rows = [
+            MarketQuarter("kr_largecap", 2025, 1, Decimal("100"), Decimal("50"), 100, 100, "complete"),
+            MarketQuarter("kr_largecap", 2026, 1, Decimal("120"), Decimal("75"), 100, 100, "complete"),
+        ]
+        calculated = calculate_market_series(rows)
+        self.assertEqual(calculated[-1].operating_income_yoy_pct, Decimal("20.0"))
+        self.assertEqual(calculated[-1].net_income_yoy_pct, Decimal("50.0"))
+
+
+class EarningsV2BoundaryTests(unittest.TestCase):
+    def test_pilot_plan_is_exactly_one_year(self):
+        plan = build_one_year_pilot(2026, ("kr_largecap",))
+        self.assertEqual(plan.quarters, tuple(("kr_largecap", 2026, quarter) for quarter in range(1, 5)))
+
+    def test_v2_has_no_legacy_package_dependency(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(inspect_repository(root), [])
+
+    def test_migration_keeps_private_schema_and_service_role_rpc(self):
+        root = Path(__file__).resolve().parents[1]
+        migration = next((root / "supabase" / "migrations").glob("*_create_earnings_v2_foundation.sql"))
+        sql = migration.read_text(encoding="utf-8")
+        self.assertIn("create schema if not exists earnings_v2", sql.lower())
+        self.assertIn("enable row level security", sql.lower())
+        self.assertIn("grant execute", sql.lower())
+        self.assertNotIn("references public.earnings_", sql.lower())
+
+    def test_pipeline_never_completes_a_missing_required_fact(self):
+        row = quarter(2026, 1, "10").with_metrics(top_line=None)
+        prepared = prepare_company_series([row])
+        self.assertEqual(prepared[0].quality_status, "review_required")
+
+    def test_coverage_reports_exact_missing_companies(self):
+        result = coverage_report(
+            market_id="kr_kosdaq", year=2026, quarter=2, target_count=3,
+            universe_company_ids=("a", "b", "c"), complete_financial_company_ids=("a", "c"),
+        )
+        self.assertFalse(result.ready)
+        self.assertEqual(result.missing_company_ids, ("b",))
+
+
+if __name__ == "__main__":
+    unittest.main()
