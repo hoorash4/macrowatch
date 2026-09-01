@@ -1,8 +1,11 @@
 from decimal import Decimal
+import io
 import unittest
+import zipfile
 
 from earnings_v2.dart_financials import DartFinancialCollector, extract_quarter
 from earnings_v2.open_dart import OpenDartV2Client, OpenDartV2Error
+from earnings_v2.xbrl_financials import extract_single_quarter_metrics
 
 
 def account(
@@ -35,6 +38,52 @@ def complete_rows(corp_code: str, *, scope: str = "CFS", amount: str = "100") ->
         account(corp_code, "영업이익", amount, scope=scope, account_id="dart_OperatingIncomeLoss", order=2),
         account(corp_code, "당기순이익", amount, scope=scope, account_id="ifrs-full_ProfitLoss", order=3),
     ]
+
+
+def xbrl_archive(periods: dict[str, tuple[str, str, str]], *, dimensional: bool = False) -> bytes:
+    contexts = []
+    facts = []
+    for context_id, (start, end, amount) in periods.items():
+        segment = (
+            '<xbrli:segment><xbrldi:explicitMember dimension="dart:SegmentAxis">'
+            'dart:RetailMember</xbrldi:explicitMember></xbrli:segment>'
+            if dimensional and context_id == "dimensional" else ""
+        )
+        contexts.append(
+            f'<xbrli:context id="{context_id}"><xbrli:entity>'
+            f'<xbrli:identifier scheme="test">1</xbrli:identifier>{segment}'
+            f'</xbrli:entity><xbrli:period><xbrli:startDate>{start}</xbrli:startDate>'
+            f'<xbrli:endDate>{end}</xbrli:endDate></xbrli:period></xbrli:context>'
+        )
+        facts.extend([
+            f'<dart:OperatingRevenue contextRef="{context_id}">{amount}</dart:OperatingRevenue>',
+            f'<dart:OperatingIncome contextRef="{context_id}">{Decimal(amount) / 5}</dart:OperatingIncome>',
+            f'<dart:ProfitLoss contextRef="{context_id}">{Decimal(amount) / 10}</dart:ProfitLoss>',
+        ])
+    instance = (
+        '<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" '
+        'xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:dart="http://example.com/dart">'
+        + "".join(contexts) + "".join(facts) + '</xbrli:xbrl>'
+    )
+    labels = '''<link:linkbase xmlns:link="http://www.xbrl.org/2003/linkbase"
+      xmlns:xlink="http://www.w3.org/1999/xlink" xml:lang="ko">
+      <link:labelLink xlink:type="extended">
+        <link:loc xlink:type="locator" xlink:label="loc_revenue" xlink:href="test.xsd#OperatingRevenue"/>
+        <link:label xlink:type="resource" xlink:label="lab_revenue" xml:lang="ko">영업수익</link:label>
+        <link:labelArc xlink:type="arc" xlink:from="loc_revenue" xlink:to="lab_revenue"/>
+        <link:loc xlink:type="locator" xlink:label="loc_op" xlink:href="test.xsd#OperatingIncome"/>
+        <link:label xlink:type="resource" xlink:label="lab_op" xml:lang="ko">영업이익</link:label>
+        <link:labelArc xlink:type="arc" xlink:from="loc_op" xlink:to="lab_op"/>
+        <link:loc xlink:type="locator" xlink:label="loc_net" xlink:href="test.xsd#ProfitLoss"/>
+        <link:label xlink:type="resource" xlink:label="lab_net" xml:lang="ko">당기순이익</link:label>
+        <link:labelArc xlink:type="arc" xlink:from="loc_net" xlink:to="lab_net"/>
+      </link:labelLink>
+    </link:linkbase>'''
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("instance.xbrl", instance)
+        archive.writestr("labels.xml", labels)
+    return output.getvalue()
 
 
 class EarningsV2OpenDartTransportTests(unittest.TestCase):
@@ -83,15 +132,15 @@ class EarningsV2OpenDartTransportTests(unittest.TestCase):
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn(secret, str(captured.exception))
 
-    def test_full_statement_rows_inherit_requested_scope(self):
+    def test_xbrl_archive_is_validated_in_memory(self):
+        payload = xbrl_archive({"current": ("2026-01-01", "2026-03-31", "100")})
+
         class Response:
+            content = payload
+
             @staticmethod
             def raise_for_status():
                 return None
-
-            @staticmethod
-            def json():
-                return {"status": "000", "list": [{"account_nm": "영업수익"}]}
 
         class Session:
             @staticmethod
@@ -99,8 +148,7 @@ class EarningsV2OpenDartTransportTests(unittest.TestCase):
                 return Response()
 
         client = OpenDartV2Client("test", interval=0, session=Session())
-        rows = client.all_accounts("00000001", 2026, 3, "CFS")
-        self.assertEqual(rows[0]["fs_div"], "CFS")
+        self.assertEqual(client.xbrl_archive("20260515000001"), payload)
 
 
 class EarningsV2DartFinancialTests(unittest.TestCase):
@@ -135,8 +183,8 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                 return [row for code in codes for row in complete_rows(code)]
 
             @staticmethod
-            def all_accounts(*_args):
-                raise AssertionError("complete Q2 rows must not use full statements")
+            def xbrl_archive(*_args):
+                raise AssertionError("complete Q2 rows must not use XBRL")
 
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001", "00000002"], 2026, 2)
@@ -154,8 +202,8 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                 return [row for code in codes for row in complete_rows(code, amount=amount)]
 
             @staticmethod
-            def all_accounts(*_args):
-                raise AssertionError("complete Q4 rows must not use full statements")
+            def xbrl_archive(*_args):
+                raise AssertionError("complete Q4 rows must not use XBRL")
 
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001", "00000002"], 2026, 4)
@@ -258,28 +306,32 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertIn("op=no", diagnostic)
         self.assertIn("net=no", diagnostic)
 
-    def test_only_unresolved_company_uses_full_statement_fallback(self):
+    def test_only_unresolved_company_uses_xbrl_fallback(self):
         class Client:
             def __init__(self):
-                self.full_calls = []
+                self.xbrl_calls = []
 
             @staticmethod
             def multi_accounts(codes, _year, _quarter):
-                return complete_rows(codes[0])
+                return [
+                    *complete_rows(codes[0]),
+                    account(codes[1], "영업이익", "20", account_id="dart_OperatingIncomeLoss"),
+                    account(codes[1], "당기순이익", "10", account_id="ifrs-full_ProfitLoss"),
+                ]
 
-            def all_accounts(self, code, _year, _quarter, scope):
-                self.full_calls.append((code, scope))
-                return complete_rows(code, scope=scope) if scope == "CFS" else []
+            def xbrl_archive(self, receipt):
+                self.xbrl_calls.append(receipt)
+                return xbrl_archive({"current": ("2026-01-01", "2026-03-31", "100")})
 
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001", "00000002"], 2026, 1)
         self.assertEqual(set(result.values), {"00000001", "00000002"})
-        self.assertEqual(client.full_calls, [("00000002", "CFS")])
+        self.assertEqual(client.xbrl_calls, ["20260515000001"])
 
     def test_partial_batch_values_are_preserved_and_only_current_scope_is_fetched(self):
         class Client:
             def __init__(self):
-                self.full_calls = []
+                self.xbrl_calls = []
 
             @staticmethod
             def multi_accounts(codes, _year, _quarter):
@@ -288,14 +340,9 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                     account(codes[0], "당기순이익", "10", account_id="ifrs-full_ProfitLoss"),
                 ]
 
-            def all_accounts(self, code, _year, quarter, scope):
-                self.full_calls.append((code, quarter, scope))
-                return [
-                    account(code, "영업수익", "100", scope=scope),
-                    # These deliberately differ: valid batch values must win.
-                    account(code, "영업이익", "999", scope=scope),
-                    account(code, "당기순이익", "999", scope=scope),
-                ]
+            def xbrl_archive(self, receipt):
+                self.xbrl_calls.append(receipt)
+                return xbrl_archive({"current": ("2026-07-01", "2026-09-30", "100")})
 
         client = Client()
         result = DartFinancialCollector(client).collect(["00000001"], 2026, 3)
@@ -304,7 +351,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(value.top_line, Decimal("100"))
         self.assertEqual(value.operating_income, Decimal("20"))
         self.assertEqual(value.net_income, Decimal("10"))
-        self.assertEqual(client.full_calls, [("00000001", 3, "CFS")])
+        self.assertEqual(client.xbrl_calls, ["20260515000001"])
 
     def test_unresolved_partial_is_returned_instead_of_discarded(self):
         class Client:
@@ -316,8 +363,8 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
                 ]
 
             @staticmethod
-            def all_accounts(*_args):
-                return []
+            def xbrl_archive(*_args):
+                return xbrl_archive({"prior": ("2025-01-01", "2025-03-31", "100")})
 
         result = DartFinancialCollector(Client()).collect(["00000001"], 2026, 1)
         value = result.values["00000001"]
@@ -326,6 +373,36 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(value.operating_income, Decimal("20"))
         self.assertEqual(value.net_income, Decimal("10"))
         self.assertIn("00000001", result.errors)
+
+    def test_xbrl_selects_current_standalone_quarter_from_repeated_account(self):
+        payload = xbrl_archive({
+            "current_quarter": ("2026-07-01", "2026-09-30", "30"),
+            "current_ytd": ("2026-01-01", "2026-09-30", "90"),
+            "prior_quarter": ("2025-07-01", "2025-09-30", "20"),
+            "prior_ytd": ("2025-01-01", "2025-09-30", "70"),
+        })
+        result = extract_single_quarter_metrics(payload, 2026, 3)
+        self.assertEqual(result.top_line, Decimal("30"))
+        self.assertEqual(result.operating_income, Decimal("6"))
+        self.assertEqual(result.net_income, Decimal("3"))
+
+    def test_xbrl_prefers_non_dimensional_total(self):
+        payload = xbrl_archive({
+            "current": ("2026-04-01", "2026-06-30", "100"),
+            "dimensional": ("2026-04-01", "2026-06-30", "40"),
+        }, dimensional=True)
+        result = extract_single_quarter_metrics(payload, 2026, 2)
+        self.assertEqual(result.top_line, Decimal("100"))
+
+    def test_xbrl_q4_subtracts_q3_ytd_when_standalone_is_absent(self):
+        annual = xbrl_archive({"annual": ("2026-01-01", "2026-12-31", "140")})
+        q3 = xbrl_archive({"q3_ytd": ("2026-01-01", "2026-09-30", "90")})
+        result = extract_single_quarter_metrics(
+            annual, 2026, 4, prior_quarter_payload=q3,
+        )
+        self.assertEqual(result.top_line, Decimal("50"))
+        self.assertEqual(result.operating_income, Decimal("10"))
+        self.assertEqual(result.net_income, Decimal("5"))
 
 
 if __name__ == "__main__":

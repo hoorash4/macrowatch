@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from .financials import single_quarter_amount
 from .open_dart import OpenDartV2Client
+from .xbrl_financials import extract_single_quarter_metrics
 
 
 OP_IDS = ("dartoperatingincomeloss", "ifrsfulloperatingprofitloss")
@@ -264,7 +265,7 @@ def _needs_previous(rows: list[dict[str, Any]], quarter: int, scope: str) -> boo
 
 
 class DartFinancialCollector:
-    """Use the official batch endpoint first and full statements only as fallback."""
+    """Use one batch request, then XBRL only for fields absent from that batch."""
 
     def __init__(self, client: OpenDartV2Client) -> None:
         self.client = client
@@ -313,49 +314,47 @@ class DartFinancialCollector:
                     diagnostics[code] = diagnostic
 
         for code in (company for company in companies if not values.get(company) or not values[company].complete):
-            # Preserve every valid batch fact. The full-statement fallback is
-            # only allowed to fill missing fields from the same scope.
+            # Preserve every valid batch fact. A single in-memory XBRL archive
+            # replaces repeated CFS/OFS full-statement API calls.
             partial = values.get(code)
-            scopes = (partial.scope,) if partial is not None else ("CFS", "OFS")
-            fallback_diagnostics = []
             try:
-                for scope in scopes:
-                    full_current = self.client.all_accounts(code, year, quarter, scope)
-                    full_value, diagnostic = _extract_scope(full_current, [], quarter, scope)
-                    if full_value is not None:
-                        candidate = (
-                            partial.fill_missing_from(full_value)
-                            if partial is not None else full_value
-                        )
-                    else:
-                        candidate = partial
-                    if candidate is not None and candidate.complete:
-                        values[code] = candidate
-                        break
-                    if previous_quarter and _needs_previous(full_current, quarter, scope):
-                        full_previous = self.client.all_accounts(
-                            code, year, previous_quarter, scope
-                        )
-                        full_value, diagnostic = _extract_scope(
-                            full_current, full_previous, quarter, scope
-                        )
-                        if full_value is not None:
-                            candidate = (
-                                partial.fill_missing_from(full_value)
-                                if partial is not None else full_value
-                            )
-                    if candidate is not None:
-                        values[code] = candidate
-                    if candidate is not None and candidate.complete:
-                        break
-                    fallback_diagnostics.append(diagnostic)
+                receipt = partial.source_filing_id if partial is not None else ""
+                if not receipt:
+                    receipt = next((
+                        str(row.get("rcept_no") or "") for row in current[code]
+                        if row.get("rcept_no")
+                    ), "")
+                prior_receipt = next((
+                    str(row.get("rcept_no") or "") for row in previous.get(code, [])
+                    if row.get("rcept_no")
+                ), "")
+                archive = self.client.xbrl_archive(receipt)
+                prior_archive = (
+                    self.client.xbrl_archive(prior_receipt)
+                    if quarter == 4 and prior_receipt else None
+                )
+                xbrl = extract_single_quarter_metrics(
+                    archive,
+                    year,
+                    quarter,
+                    prior_quarter_payload=prior_archive,
+                )
+                fallback = DartQuarterFinancials(
+                    top_line=xbrl.top_line,
+                    operating_income=xbrl.operating_income,
+                    net_income=xbrl.net_income,
+                    scope=partial.scope if partial is not None else "CFS",
+                    source_filing_id=receipt,
+                    currency=partial.currency if partial is not None else "KRW",
+                )
+                candidate = partial.fill_missing_from(fallback) if partial is not None else fallback
+                values[code] = candidate
             except Exception as error:
                 errors[code] = str(error)[:180]
                 continue
             if not values.get(code) or not values[code].complete:
                 errors[code] = (
-                    ", ".join(value for value in fallback_diagnostics if value)
-                    or diagnostics.get(code)
+                    diagnostics.get(code)
                     or "OpenDART required values unavailable"
                 )
         return DartBatchResult(values=values, errors=errors)

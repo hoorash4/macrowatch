@@ -113,19 +113,29 @@ class OpenDartV2Client:
         })
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
-    def all_accounts(self, corp_code: str, year: int, quarter: int, scope: str) -> list[dict[str, Any]]:
-        normalized_scope = scope.upper()
-        if normalized_scope not in {"CFS", "OFS"}:
-            raise ValueError("OpenDART scope must be CFS or OFS")
-        payload = self._get_json("fnlttSinglAcntAll.json", {
-            "corp_code": corp_code,
-            "bsns_year": str(year),
-            "reprt_code": REPORT_CODES[quarter],
-            "fs_div": normalized_scope,
-        })
-        rows = [row for row in payload.get("list", []) if isinstance(row, dict)]
-        # fnlttSinglAcntAll selects CFS/OFS through the request parameter but
-        # does not consistently repeat that scope in every response row. Keep
-        # the transport contract explicit so the statement parser never
-        # discards a valid response as an unscoped row.
-        return [{**row, "fs_div": normalized_scope} for row in rows]
+    def xbrl_archive(self, receipt_no: str) -> bytes:
+        """Download one filing's official XBRL ZIP without writing it to disk."""
+        normalized = str(receipt_no or "").strip()
+        if not re.fullmatch(r"\d{14}", normalized):
+            raise ValueError("OpenDART XBRL download requires a 14-digit receipt number")
+        self._wait_for_slot()
+        try:
+            response = get_with_retries(
+                self.session,
+                f"{BASE_URL}/fnlttXbrl.xml",
+                params={"crtfc_key": self.api_key, "rcept_no": normalized},
+                timeout=(10, 60),
+                attempts=3,
+            )
+            response.raise_for_status()
+        except Exception:
+            raise OpenDartV2Error("fnlttXbrl.xml transport request failed") from None
+        self.last_request = time.monotonic()
+        payload = bytes(response.content)
+        try:
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                if not archive.namelist():
+                    raise zipfile.BadZipFile("empty archive")
+        except zipfile.BadZipFile:
+            raise OpenDartV2Error("fnlttXbrl.xml returned an invalid XBRL archive") from None
+        return payload
