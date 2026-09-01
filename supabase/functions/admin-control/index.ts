@@ -10,6 +10,7 @@ const BRANCH = "main";
 const CHECK_WORKFLOW = "check-targets.yml";
 const BACKUP_WORKFLOW = "backup-database.yml";
 const NEWS_WORKFLOW = "news-pipeline.yml";
+const EARNINGS_V2_WORKFLOW = "earnings-v2-korea.yml";
 const ADMIN_CARD_IDS = new Set([
   "member-management", "index-registry", "sector-registry", "news-analysis",
   "decisive-news", "uncertain-news", "policy-review", "target-collection",
@@ -472,9 +473,49 @@ export default {
       }
 
       if (action === "list_earnings_v2_pending") {
-        const { data, error } = await admin.rpc("earnings_v2_list_stale_pending");
+        const { data, error } = await admin.rpc("earnings_v2_list_pending");
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "resolve_earnings_v2_pending") {
+        const companyId = String(body?.company_id || "").trim();
+        const fiscalYear = Number(body?.fiscal_year);
+        const fiscalQuarter = Number(body?.fiscal_quarter);
+        const amount = (value: unknown, label: string) => {
+          const text = String(value ?? "").trim().replaceAll(",", "");
+          if (!/^-?\d+(?:\.\d{1,4})?$/.test(text)) throw new Error(`${label}을(를) 숫자로 입력하세요.`);
+          return text;
+        };
+        if (!companyId || !Number.isInteger(fiscalYear) || ![1, 2, 3, 4].includes(fiscalQuarter)) {
+          throw new Error("기업과 분기 정보가 올바르지 않습니다.");
+        }
+        const { data, error } = await admin.rpc("earnings_v2_resolve_pending", {
+          p_company_id: companyId,
+          p_fiscal_year: fiscalYear,
+          p_fiscal_quarter: fiscalQuarter,
+          p_top_line: amount(body?.top_line, "매출"),
+          p_operating_income: amount(body?.operating_income, "영업이익"),
+          p_net_income: amount(body?.net_income, "순이익"),
+        });
+        let recalculationDispatched = false;
+        try {
+          await githubRequest(`/actions/workflows/${EARNINGS_V2_WORKFLOW}/dispatches`, githubToken, {
+            method: "POST",
+            body: JSON.stringify({
+              ref: BRANCH,
+              inputs: {
+                year: String(fiscalYear), quarter: String(fiscalQuarter),
+                write: "true", allow_review: "false", recalculate_only: "true",
+              },
+            }),
+          });
+          recalculationDispatched = true;
+        } catch (_) {
+          // The manual fact is already durable. A dispatch failure must not make
+          // the administrator repeat the same write or see a false save error.
+        }
+        return json({ item: data, recalculation_dispatched: recalculationDispatched }, 200, origin);
       }
 
       if (action === "list_policy_reviews") {

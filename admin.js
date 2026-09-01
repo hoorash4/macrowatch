@@ -99,7 +99,7 @@
     const labels = {
       'policy-review-list': 'FOMC 검토 목록', 'sector-etf-list': '섹터 ETF 목록',
       'extreme-news-rule-list': '결정적 뉴스 기준 목록', 'uncertain-news-list': '불명확 뉴스 목록',
-      'earnings-v2-pending-list': '기업 실적 장기 대기 목록', 'error-list': '수집 오류 목록'
+      'earnings-v2-pending-list': '기업 실적 대기 목록', 'error-list': '수집 오류 목록'
     };
     document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #uncertain-news-list, #earnings-v2-pending-list, #error-list').forEach((list) => {
       if (list.parentElement?.tagName === 'DETAILS') return;
@@ -397,13 +397,34 @@
     const list = document.getElementById('earnings-v2-pending-list');
     setListAttentionCount('earnings-v2-pending-list', items.length);
     if (!items.length) {
-      list.innerHTML = '<p class="p-4 text-center text-sm text-emerald-400">장기 대기 중인 기업 실적이 없습니다.</p>';
+      list.innerHTML = '<p class="p-4 text-center text-sm text-emerald-400">대기 중인 기업 실적이 없습니다.</p>';
       return;
     }
     const missingLabel = (item) => [
       item.missing_top_line ? '매출' : '', item.missing_operating_income ? '영업이익' : '', item.missing_net_income ? '순이익' : '',
     ].filter(Boolean).join(' · ');
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-4 last:border-0"><div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p class="font-bold text-slate-200">${escapeHtml(item.company_name)} <span class="ml-1 text-xs font-normal text-slate-500">${escapeHtml(item.stock_code || '')}</span></p><p class="mt-1 text-xs text-slate-500">${escapeHtml(`${item.market_year} Q${item.market_quarter}`)} · ${escapeHtml(item.market_id)}</p></div><span class="w-fit rounded-full border border-orange-800/70 bg-orange-950/40 px-2.5 py-1 text-xs font-bold text-orange-300">미확보: ${escapeHtml(missingLabel(item))}</span></div></article>`).join('');
+    const amountValue = (value) => value == null ? '' : String(value);
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-4 last:border-0"><form class="earnings-v2-pending-form space-y-3" data-company-id="${escapeHtml(item.company_id)}" data-fiscal-year="${Number(item.market_year)}" data-fiscal-quarter="${Number(item.market_quarter)}"><div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p class="font-bold text-slate-200">${escapeHtml(item.company_name)} <span class="ml-1 text-xs font-normal text-slate-500">${escapeHtml(item.stock_code || '')}</span></p><p class="mt-1 text-xs text-slate-500">${escapeHtml(`${item.market_year} Q${item.market_quarter}`)} · ${escapeHtml(item.market_id)}</p></div><span class="w-fit rounded-full border border-orange-800/70 bg-orange-950/40 px-2.5 py-1 text-xs font-bold text-orange-300">미확보: ${escapeHtml(missingLabel(item))}</span></div><div class="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]"><label class="text-xs text-slate-400">매출<input name="top_line" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.top_line))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"></label><label class="text-xs text-slate-400">영업이익<input name="operating_income" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.operating_income))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"></label><label class="text-xs text-slate-400">순이익<input name="net_income" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.net_income))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"></label><button type="submit" class="self-end rounded-lg border border-blue-600 px-4 py-2 text-sm font-bold text-blue-300 hover:bg-blue-950/40">확정</button></div></form></article>`).join('');
+    list.querySelectorAll('.earnings-v2-pending-form').forEach((form) => form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submit = form.querySelector('button[type="submit"]');
+      const values = new FormData(form);
+      submit.disabled = true;
+      try {
+        const result = await invokeAdmin('resolve_earnings_v2_pending', {
+          company_id: form.dataset.companyId,
+          fiscal_year: Number(form.dataset.fiscalYear),
+          fiscal_quarter: Number(form.dataset.fiscalQuarter),
+          top_line: values.get('top_line'),
+          operating_income: values.get('operating_income'),
+          net_income: values.get('net_income'),
+        });
+        await loadEarningsV2Pending();
+        showNotice('기업 실적 확정 완료', result.recalculation_dispatched ? '수동 값을 저장했고 해당 분기 재계산을 시작했습니다.' : '수동 값은 저장했습니다. 분기 재계산은 다음 수집 때 반영됩니다.');
+      } catch (error) {
+        showNotice('기업 실적 확정 실패', error.message || '수동 값을 저장하지 못했습니다.', true);
+      } finally { submit.disabled = false; }
+    }));
   }
 
   async function loadEarningsV2Pending() {

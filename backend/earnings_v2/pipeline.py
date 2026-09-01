@@ -219,15 +219,21 @@ class KoreaEarningsV2Pipeline:
             facts[identity.company_id] = fact
         return facts, issues
 
-    def _stored_current_facts(self, identities: Iterable[CompanyIdentity], year: int, quarter: int) -> dict[str, FinancialFact]:
+    def _stored_current_facts(self, identities: Iterable[CompanyIdentity], year: int, quarter: int
+                              ) -> tuple[dict[str, FinancialFact], set[str]]:
         company_ids = [row.company_id for row in identities]
-        return {
-            fact.company_id: fact
-            for record in self.repository.company_history(company_ids)
-            if int(record.get("calculation_version") or 0) >= CALCULATION_VERSION
-            for fact in [_financial_from_db(record)]
-            if fact.key == (year, quarter)
-        }
+        facts: dict[str, FinancialFact] = {}
+        manual_ids: set[str] = set()
+        for record in self.repository.company_history(company_ids):
+            if int(record.get("calculation_version") or 0) < CALCULATION_VERSION:
+                continue
+            fact = _financial_from_db(record)
+            if fact.key != (year, quarter):
+                continue
+            facts[fact.company_id] = fact
+            if str(record.get("source") or "") == "manual":
+                manual_ids.add(fact.company_id)
+        return facts, manual_ids
 
     def _calculated_histories(self, facts: dict[str, FinancialFact]) -> dict[str, list[FinancialFact]]:
         histories: dict[str, list[FinancialFact]] = defaultdict(list)
@@ -315,18 +321,23 @@ class KoreaEarningsV2Pipeline:
             if write and discovered:
                 self._save_universes(discovered, year, quarter)
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
-            stored_current = self._stored_current_facts(identities, year, quarter)
-            selected = identities
+            stored_current, manual_ids = self._stored_current_facts(identities, year, quarter)
+            selected = [row for row in identities if row.company_id not in manual_ids]
             if incremental and stored_current:
                 recently_filed = self.dart.recent_periodic_corp_codes(date.today() - timedelta(days=14), date.today())
                 selected = [
                     row for row in identities
-                    if row.corp_code in recently_filed
-                    or row.company_id not in stored_current
-                    or stored_current[row.company_id].is_pending
+                    if row.company_id not in manual_ids and (
+                        row.corp_code in recently_filed
+                        or row.company_id not in stored_current
+                        or stored_current[row.company_id].is_pending
+                    )
                 ]
             fresh_facts, issues = self.collect_financials(selected, year, quarter) if selected else ({}, [])
-            facts = {**stored_current, **fresh_facts}
+            preserved = stored_current if incremental else {
+                company_id: fact for company_id, fact in stored_current.items() if company_id in manual_ids
+            }
+            facts = {**preserved, **fresh_facts}
             histories = self._calculated_histories(facts)
             markets = self._market_rows(universes, histories, year, quarter)
             current_facts = [row for rows in histories.values() for row in rows if row.key == (year, quarter)]
@@ -360,6 +371,37 @@ class KoreaEarningsV2Pipeline:
             if write:
                 self.repository.save_state(operation, "failed", {}, str(error)[:2000])
             raise
+
+    def recalculate_quarter(self, year: int, quarter: int, *, write: bool = True) -> dict[str, Any]:
+        """저장된 기업 실적만으로 시장 합계와 파생값을 다시 계산한다.
+
+        관리자 수동 확정 뒤에는 외부 공급자를 다시 호출할 이유가 없다.
+        이 경로는 확정된 기업군과 DB 실적만 읽고 시장 분기 행만 갱신한다.
+        """
+        universes: dict[str, list[CompanyIdentity]] = {}
+        for market_id, target in TARGETS.items():
+            frozen = self.repository.universe(market_id, year, quarter)
+            if len(frozen) != target:
+                raise ValueError(f"{market_id} universe is {len(frozen)}/{target}")
+            universes[market_id] = [_identity_from_universe(row) for row in frozen]
+
+        identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
+        stored_current, _manual_ids = self._stored_current_facts(identities, year, quarter)
+        histories = self._calculated_histories(stored_current)
+        markets = self._market_rows(universes, histories, year, quarter)
+        current_markets = [row for rows in markets.values() for row in rows if row.key == (year, quarter)]
+        if write:
+            self.repository.upsert_market_quarters(
+                row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets
+            )
+        return {
+            "period": f"{year}Q{quarter}",
+            "write": write,
+            "mode": "stored_recalculation",
+            "companies": len(identities),
+            "markets": {row.market_id: row.completion_status for row in current_markets},
+            "status": "ready",
+        }
 
     def run_daily(self, *, write: bool = True) -> dict[str, Any]:
         year, quarter = latest_completed_quarter(date.today())

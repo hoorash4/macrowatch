@@ -64,38 +64,40 @@ def aggregate_market(
         previous_members = sorted(comparison_members, key=lambda row: row.rank)
         previous_facts = comparison_facts or {}
         if len(previous_members) != target_count:
+            # 최초 기준 분기에는 비교 바구니가 없다. 확보된 실제값만으로
+            # 잠정 합계를 만들며, 없는 자리를 임의 값으로 채우지 않는다.
+            provisional = [
+                current_facts[row.company_id]
+                for row in members if _complete(current_facts.get(row.company_id))
+            ]
+        else:
+            current_ids = {row.company_id for row in members}
+            previous_ids = {row.company_id for row in previous_members}
+            entrants = [row for row in members if row.company_id not in previous_ids]
+            exits = [row for row in previous_members if row.company_id not in current_ids]
+            if len(entrants) != len(exits):
+                raise ValueError("fixed-size universe must have equal entrant and exit counts")
+            exit_for_entrant = {
+                entrant.company_id: departed.company_id
+                for entrant, departed in zip(entrants, exits, strict=True)
+            }
+
+            provisional = []
+            for member in members:
+                current = current_facts.get(member.company_id)
+                if _complete(current):
+                    provisional.append(current)
+                    continue
+                placeholder_id = member.company_id if member.company_id in previous_ids else exit_for_entrant[member.company_id]
+                placeholder = previous_facts.get(placeholder_id)
+                if _complete(placeholder):
+                    provisional.append(placeholder)
+        if not provisional:
             return MarketFact(
                 market_id, year, quarter, reference_date,
                 None, None, None, None, None,
                 reported, pending, target_count, "collecting",
             )
-
-        current_ids = {row.company_id for row in members}
-        previous_ids = {row.company_id for row in previous_members}
-        entrants = [row for row in members if row.company_id not in previous_ids]
-        exits = [row for row in previous_members if row.company_id not in current_ids]
-        if len(entrants) != len(exits):
-            raise ValueError("fixed-size universe must have equal entrant and exit counts")
-        exit_for_entrant = {
-            entrant.company_id: departed.company_id
-            for entrant, departed in zip(entrants, exits, strict=True)
-        }
-
-        provisional: list[FinancialFact] = []
-        for member in members:
-            current = current_facts.get(member.company_id)
-            if _complete(current):
-                provisional.append(current)
-                continue
-            placeholder_id = member.company_id if member.company_id in previous_ids else exit_for_entrant[member.company_id]
-            placeholder = previous_facts.get(placeholder_id)
-            if not _complete(placeholder):
-                return MarketFact(
-                    market_id, year, quarter, reference_date,
-                    None, None, None, None, None,
-                    reported, pending, target_count, "collecting",
-                )
-            provisional.append(placeholder)
         top, operating, net = _totals(provisional)
         status = "provisional"
 

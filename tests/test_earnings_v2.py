@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from earnings_v2.aggregation import aggregate_market
 from earnings_v2.models import CompanyIdentity, FinancialFact
-from earnings_v2.cli import completed_successfully
+from earnings_v2.cli import completed_successfully, parser
 from earnings_v2.pipeline import _eligible_name, latest_completed_quarter
 from earnings_v2.providers import KisClient, OpenDartClient
 from earnings_v2.transform import (
@@ -181,6 +181,10 @@ class CliContractTests(unittest.TestCase):
         self.assertFalse(completed_successfully([{"status": "ready"}, {"status": "incomplete"}]))
         self.assertFalse(completed_successfully([]))
 
+    def test_recalculation_mode_is_an_explicit_cli_path(self):
+        args = parser().parse_args(["--year", "2026", "--quarter", "2", "--write", "--recalculate-only"])
+        self.assertTrue(args.recalculate_only)
+
 
 class QuarterlyExtractionTests(unittest.TestCase):
     def test_q1_uses_current_cumulative_value(self):
@@ -335,12 +339,25 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
-    def test_missing_complete_baseline_keeps_market_collecting(self):
+    def test_missing_baseline_uses_available_actuals_as_provisional(self):
         current_members = [member("a", 1), member("b", 2)]
         current = {"a": fact(2026, 2, "12", company="a")}
         market = aggregate_market("kr_largecap", 2026, 2, current_members, current, 2)
-        self.assertIsNone(market.operating_income_total)
-        self.assertEqual(market.completion_status, "collecting")
+        self.assertEqual(market.operating_income_total, Decimal("12"))
+        self.assertEqual(market.reported_company_count, 1)
+        self.assertEqual(market.completion_status, "provisional")
+
+    def test_incomplete_prior_placeholder_is_omitted_from_provisional_total(self):
+        current_members = [member("a", 1), member("b", 2)]
+        previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
+        current = {"a": fact(2026, 2, "12", company="a")}
+        previous = {"b": fact(2026, 1, "20", company="b").with_changes(top_line=None, is_pending=True)}
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members, current, 2,
+            comparison_members=previous_members, comparison_facts=previous,
+        )
+        self.assertEqual(market.operating_income_total, Decimal("12"))
+        self.assertEqual(market.completion_status, "provisional")
 
     def test_market_db_row_maps_domain_status_to_database_lifecycle(self):
         current_members = [member("a", 1)]
