@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { auditKisIncomeStatementHistory, fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -18,6 +18,10 @@ Deno.serve(async (request) => {
     const admin = createClient(supabaseUrl, serviceRole);
     const credentials = loadKisCredentials();
     const token = await getKisAccessToken(credentials, admin);
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    if (body.mode === "finance_history") {
+      return json({ ok: true, history: await auditKisIncomeStatementHistory(credentials, token, "105560") });
+    }
     const end = new Date();
     const start = new Date(end.getTime() - 14 * 86_400_000);
     const prices = await fetchKisDailyPrices(credentials, token, "069500", start, end);

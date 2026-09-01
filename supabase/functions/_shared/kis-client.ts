@@ -4,6 +4,7 @@ const ETF_CURRENT_PRICE_PATH = "/uapi/etfetn/v1/quotations/inquire-price";
 const DAILY_INDEX_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice";
 const MARKET_INVESTOR_PATH = "/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market";
 const OVERSEAS_MARKET_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap";
+const FINANCE_INCOME_STATEMENT_PATH = "/uapi/domestic-stock/v1/finance/income-statement";
 
 export type KisDailyPrice = {
   marketDate: string;
@@ -162,6 +163,56 @@ export function createKisRequestRunner() {
       }
     }
   };
+}
+
+/** One-shot history audit for the KIS finance endpoint, including continuation pages. */
+export async function auditKisIncomeStatementHistory(
+  credentials: KisCredentials,
+  accessToken: string,
+  ticker: string,
+) {
+  const pages: Array<{ page: number; count: number; first: string; last: string; trCont: string }> = [];
+  const periods = new Set<string>();
+  let trCont = "";
+  for (let page = 1; page <= 10; page += 1) {
+    const params = new URLSearchParams({
+      FID_DIV_CLS_CODE: "1",
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: ticker,
+    });
+    const response = await fetch(`${KIS_REAL_BASE_URL}${FINANCE_INCOME_STATEMENT_PATH}?${params}`, {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        authorization: `Bearer ${accessToken}`,
+        appkey: credentials.appKey,
+        appsecret: credentials.appSecret,
+        tr_id: "FHKST66430200",
+        tr_cont: trCont,
+        custtype: "P",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = await readJson(response);
+    if (!response.ok || String(payload.rt_cd ?? "0") !== "0") {
+      throw new Error(`KIS 손익계산서 조회 실패 (${response.status}): ${String(payload.msg1 || "알 수 없는 오류")}`);
+    }
+    const rows = Array.isArray(payload.output) ? payload.output as Record<string, unknown>[] : [];
+    const rowPeriods = rows.map((row) => String(row.stac_yymm || "")).filter(Boolean);
+    rowPeriods.forEach((period) => periods.add(period));
+    const next = String(response.headers.get("tr_cont") || "").trim().toUpperCase();
+    pages.push({
+      page,
+      count: rows.length,
+      first: rowPeriods[0] || "",
+      last: rowPeriods[rowPeriods.length - 1] || "",
+      trCont: next,
+    });
+    if (!(["M", "F"].includes(next))) break;
+    trCont = "N";
+    await wait(KIS_REQUEST_INTERVAL_MS);
+  }
+  const sorted = [...periods].sort();
+  return { ticker, pages, uniquePeriods: sorted.length, earliest: sorted[0] || null, latest: sorted.at(-1) || null };
 }
 
 /** Fetch one U.S. exchange's market-cap order for later universe composition. */
