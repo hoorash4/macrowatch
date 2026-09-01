@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from statistics import median
 from typing import Any
 
-from .models import FinancialFact, MarketFact
+from .models import FinancialFact
 
 
 HUNDRED = Decimal("100")
@@ -182,7 +182,8 @@ def extract_company_fact(
 
 
 def profit_margin(profit: Decimal | None, top_line: Decimal | None) -> Decimal | None:
-    if profit is None or top_line is None or top_line == 0:
+    """개별 기업 이익률. 매출이 0 이하이면 값은 보존하되 비율은 계산하지 않는다."""
+    if profit is None or top_line is None or top_line <= 0:
         return None
     return profit / top_line * HUNDRED
 
@@ -192,17 +193,13 @@ def conventional_growth(current: Decimal | None, previous: Decimal | None) -> tu
         return None, "missing_prior"
     if previous == 0:
         return None, "from_zero"
-    if previous < 0:
-        if current >= 0:
-            return None, "black_turn"
-        if current > previous:
-            return None, "loss_narrowing"
-        if current < previous:
-            return None, "loss_widening"
-        return None, "loss_unchanged"
-    if current < 0:
+    if previous < 0 < current:
+        return None, "black_turn"
+    if previous > 0 > current:
         return None, "red_turn"
-    return (current - previous) / previous * HUNDRED, "normal"
+    # 적자 지속도 방향을 유지한 채 계산한다. -100 -> -70은 +30%,
+    # -100 -> -130은 -30%다. 부호 전환만 비율 대신 상태로 남긴다.
+    return (current - previous) / abs(previous) * HUNDRED, "normal"
 
 
 def _ordinal(year: int, quarter: int) -> int:
@@ -251,58 +248,5 @@ def calculate_financial_series(rows: Iterable[FinancialFact]) -> list[FinancialF
                 samples = samples[-MAX_SEASONAL_SAMPLES:]
                 qoq = (raw[0] - Decimal(str(median(samples))), "normal") if len(samples) >= MIN_SEASONAL_SAMPLES else (None, "insufficient_history")
             updates[f"{prefix}_qoq_sa_pct"], updates[f"{prefix}_qoq_state"] = qoq
-        quality = "complete" if row.fully_complete else "review_required"
-        result.append(row.with_changes(quality_status=quality, **updates))
+        result.append(row.with_changes(is_pending=row.is_pending or not row.fully_complete, **updates))
     return result
-
-
-def aggregate_market(
-    market_id: str,
-    year: int,
-    quarter: int,
-    rows: Iterable[FinancialFact],
-    target_count: int,
-    *,
-    historical: bool = False,
-) -> MarketFact:
-    values = [row for row in rows if row.profit_complete]
-    actual = len(values)
-    average_op = sum((row.operating_income for row in values if row.operating_income is not None), Decimal(0)) / actual if actual else None
-    average_net = sum((row.net_income for row in values if row.net_income is not None), Decimal(0)) / actual if actual else None
-    all_top_lines = actual == target_count and all(row.top_line is not None for row in values)
-    top_sum = sum((row.top_line for row in values if row.top_line is not None), Decimal(0)) if all_top_lines else None
-    op_sum = sum((row.operating_income for row in values if row.operating_income is not None), Decimal(0)) if all_top_lines else None
-    net_sum = sum((row.net_income for row in values if row.net_income is not None), Decimal(0)) if all_top_lines else None
-    status = "complete" if actual == target_count else ("historical_partial" if historical else "incomplete")
-    return MarketFact(
-        market_id, year, quarter, average_op, average_net,
-        profit_margin(op_sum, top_sum), profit_margin(net_sum, top_sum),
-        actual, target_count, status,
-    )
-
-
-def calculate_market_series(rows: Iterable[MarketFact]) -> list[MarketFact]:
-    ordered = sorted(rows, key=lambda row: row.key)
-    synthetic = [
-        FinancialFact(
-            company_id=row.market_id, fiscal_year=row.market_year, fiscal_quarter=row.market_quarter,
-            period_end=date(row.market_year, row.market_quarter * 3, 1), top_line=None,
-            operating_income=row.average_operating_income, net_income=row.average_net_income,
-            currency="UNIT", consolidation_scope="CFS", source_filing_id="market", filing_date=date(row.market_year, 1, 1),
-        )
-        for row in ordered
-    ]
-    metrics = calculate_financial_series(synthetic)
-    return [
-        source.with_changes(
-            operating_income_yoy_pct=metric.operating_income_yoy_pct,
-            operating_income_yoy_state=metric.operating_income_yoy_state,
-            net_income_yoy_pct=metric.net_income_yoy_pct,
-            net_income_yoy_state=metric.net_income_yoy_state,
-            operating_income_qoq_sa_pct=metric.operating_income_qoq_sa_pct,
-            operating_income_qoq_state=metric.operating_income_qoq_state,
-            net_income_qoq_sa_pct=metric.net_income_qoq_sa_pct,
-            net_income_qoq_state=metric.net_income_qoq_state,
-        )
-        for source, metric in zip(ordered, metrics, strict=True)
-    ]

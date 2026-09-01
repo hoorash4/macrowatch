@@ -20,7 +20,7 @@ on:
         default: false
         type: boolean
       allow_review:
-        description: Allow rows with unresolved fields (normally false)
+        description: Continue after an incomplete quarter (normally false)
         required: true
         default: false
         type: boolean

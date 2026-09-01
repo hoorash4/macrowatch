@@ -39,7 +39,7 @@ class FinancialFact:
     consolidation_scope: str
     source_filing_id: str
     filing_date: date
-    quality_status: str = "draft"
+    is_pending: bool = False
     operating_margin_pct: Decimal | None = None
     net_margin_pct: Decimal | None = None
     operating_income_yoy_pct: Decimal | None = None
@@ -75,6 +75,7 @@ class FinancialFact:
             "source": "open_dart",
             "revision_reference_date": None,
             "calculation_version": calculation_version,
+            "is_pending": self.is_pending or not self.fully_complete,
         })
         return row
 
@@ -84,11 +85,14 @@ class MarketFact:
     market_id: str
     market_year: int
     market_quarter: int
-    average_operating_income: Decimal | None
-    average_net_income: Decimal | None
+    reference_date: date
+    top_line_total: Decimal | None
+    operating_income_total: Decimal | None
+    net_income_total: Decimal | None
     operating_margin_pct: Decimal | None
     net_margin_pct: Decimal | None
-    actual_company_count: int
+    reported_company_count: int
+    pending_company_count: int
     target_company_count: int
     completion_status: str
     operating_income_yoy_pct: Decimal | None = None

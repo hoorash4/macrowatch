@@ -4,13 +4,16 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from earnings_v2.models import FinancialFact
+from earnings_v2.aggregation import aggregate_market
+from earnings_v2.models import CompanyIdentity, FinancialFact
 from earnings_v2.cli import completed_successfully
+from earnings_v2.pipeline import _eligible_name
 from earnings_v2.providers import KisClient, OpenDartClient
 from earnings_v2.transform import (
-    aggregate_market,
     calculate_financial_series,
+    conventional_growth,
     extract_company_fact,
+    profit_margin,
 )
 
 
@@ -59,6 +62,19 @@ def fact(year: int, quarter: int, value: str, *, company: str = "kr:1") -> Finan
         consolidation_scope="CFS",
         source_filing_id="test",
         filing_date=date(year, quarter * 3, 1),
+    )
+
+
+def member(company: str, rank: int, *, year: int = 2026, quarter: int = 2) -> CompanyIdentity:
+    return CompanyIdentity(
+        company_id=company,
+        company_name=company,
+        stock_code=f"{rank:06d}",
+        corp_code=f"{rank:08d}",
+        market_id="kr_largecap",
+        rank=rank,
+        market_cap=Decimal(1000 - rank),
+        reference_date=date(year, quarter * 3, 30),
     )
 
 
@@ -250,11 +266,78 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertEqual(calculated[1].operating_income_qoq_state, "insufficient_history")
         self.assertEqual(calculated[-1].operating_income_qoq_state, "normal")
 
-    def test_market_average_uses_available_company_count_without_filling_missing_companies(self):
-        market = aggregate_market("kr_largecap", 2026, 2, [fact(2026, 2, "10", company="a"), fact(2026, 2, "30", company="b")], 100, historical=True)
-        self.assertEqual(market.average_operating_income, Decimal("20"))
-        self.assertEqual(market.actual_company_count, 2)
-        self.assertEqual(market.completion_status, "historical_partial")
+    def test_loss_to_loss_growth_uses_absolute_prior_denominator(self):
+        self.assertEqual(conventional_growth(Decimal("-70"), Decimal("-100")), (Decimal("30.0"), "normal"))
+        self.assertEqual(conventional_growth(Decimal("-130"), Decimal("-100")), (Decimal("-30.0"), "normal"))
+
+    def test_turns_and_zero_denominator_are_not_numeric_growth(self):
+        self.assertEqual(conventional_growth(Decimal("10"), Decimal("-10")), (None, "black_turn"))
+        self.assertEqual(conventional_growth(Decimal("-10"), Decimal("10")), (None, "red_turn"))
+        self.assertEqual(conventional_growth(Decimal("10"), Decimal("0")), (None, "from_zero"))
+        self.assertEqual(conventional_growth(Decimal("0"), Decimal("-10")), (Decimal("100"), "normal"))
+        self.assertEqual(conventional_growth(Decimal("0"), Decimal("10")), (Decimal("-100"), "normal"))
+
+    def test_individual_margin_is_null_for_nonpositive_top_line(self):
+        self.assertIsNone(profit_margin(Decimal("10"), Decimal("0")))
+        self.assertIsNone(profit_margin(Decimal("10"), Decimal("-5")))
+        self.assertEqual(profit_margin(Decimal("0"), Decimal("100")), Decimal("0"))
+
+    def test_company_db_row_contains_v6_pending_state(self):
+        stored = fact(2026, 2, "10").db_row(calculation_version=6)
+        self.assertFalse(stored["is_pending"])
+
+    def test_pending_company_is_excluded_even_when_profit_values_exist(self):
+        current_members = [member("a", 1), member("b", 2)]
+        previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
+        current = {
+            "a": fact(2026, 2, "12", company="a"),
+            "b": fact(2026, 2, "999", company="b").with_changes(top_line=None, is_pending=True),
+        }
+        previous = {"a": fact(2026, 1, "10", company="a"), "b": fact(2026, 1, "20", company="b")}
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members, current, 2,
+            comparison_members=previous_members, comparison_facts=previous,
+        )
+        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.reported_company_count, 1)
+        self.assertEqual(market.completion_status, "provisional")
+
+    def test_missing_complete_baseline_keeps_market_collecting(self):
+        current_members = [member("a", 1), member("b", 2)]
+        current = {"a": fact(2026, 2, "12", company="a")}
+        market = aggregate_market("kr_largecap", 2026, 2, current_members, current, 2)
+        self.assertIsNone(market.operating_income_total)
+        self.assertEqual(market.completion_status, "collecting")
+
+    def test_provisional_total_replaces_reported_firms_and_keeps_placeholders(self):
+        current_members = [member("a", 1), member("b", 2)]
+        previous_members = [member("a", 1, year=2026, quarter=1), member("x", 2, year=2026, quarter=1)]
+        current = {"a": fact(2026, 2, "12", company="a"), "b": fact(2026, 2, "30", company="b").with_changes(is_pending=True)}
+        previous = {"a": fact(2026, 1, "10", company="a"), "x": fact(2026, 1, "20", company="x")}
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members, current, 2,
+            comparison_members=previous_members, comparison_facts=previous,
+        )
+        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.reported_company_count, 1)
+        self.assertEqual(market.completion_status, "provisional")
+
+    def test_final_total_uses_only_current_basket(self):
+        current_members = [member("a", 1), member("b", 2)]
+        previous_members = [member("a", 1, year=2026, quarter=1), member("x", 2, year=2026, quarter=1)]
+        current = {"a": fact(2026, 2, "12", company="a"), "b": fact(2026, 2, "30", company="b")}
+        previous = {"a": fact(2026, 1, "10", company="a"), "x": fact(2026, 1, "999", company="x")}
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members, current, 2,
+            comparison_members=previous_members, comparison_facts=previous,
+        )
+        self.assertEqual(market.operating_income_total, Decimal("42"))
+        self.assertEqual(market.completion_status, "complete")
+
+    def test_preferred_shares_are_excluded(self):
+        self.assertFalse(_eligible_name("삼성전자우"))
+        self.assertFalse(_eligible_name("현대차2우B"))
+        self.assertTrue(_eligible_name("삼성전자"))
 
 
 if __name__ == "__main__":

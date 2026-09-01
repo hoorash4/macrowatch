@@ -66,10 +66,10 @@ class EarningsV2Repository:
         return int(self.rpc("earnings_v2_replace_universe", {"p_market_id": market_id, "p_market_year": year, "p_market_quarter": quarter, "p_rows": list(rows)}) or 0)
 
     def upsert_company_quarters(self, rows: Iterable[dict[str, Any]]) -> int:
-        return int(self.rpc("earnings_v2_upsert_company_quarters", {"p_rows": list(rows)}) or 0)
+        return int(self.rpc("earnings_v2_v6_upsert_company_quarters", {"p_rows": list(rows)}) or 0)
 
     def upsert_market_quarters(self, rows: Iterable[dict[str, Any]]) -> int:
-        return int(self.rpc("earnings_v2_upsert_market_quarters", {"p_rows": list(rows)}) or 0)
+        return int(self.rpc("earnings_v2_v6_upsert_market_quarters", {"p_rows": list(rows)}) or 0)
 
     def company_history(self, company_ids: Iterable[str]) -> list[dict[str, Any]]:
         result = self.rpc("earnings_v2_get_company_quarters_many", {"p_company_ids": list(dict.fromkeys(company_ids))})
@@ -77,6 +77,14 @@ class EarningsV2Repository:
 
     def market_history(self, market_id: str) -> list[dict[str, Any]]:
         result = self.rpc("earnings_v2_get_market_quarters", {"p_market_id": market_id})
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
+    def universe(self, market_id: str, year: int, quarter: int) -> list[dict[str, Any]]:
+        result = self.rpc("earnings_v2_v6_get_universe", {
+            "p_market_id": market_id,
+            "p_market_year": year,
+            "p_market_quarter": quarter,
+        })
         return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
 
     def save_state(self, operation: str, status: str, cursor: dict[str, Any], error: str | None = None) -> None:
