@@ -33,9 +33,20 @@ class FakeDart:
         }
 
 
-class FakeFinancialCollector:
-    def __init__(self):
+class FakeFx:
+    def __init__(self, rate="1300"):
+        self.rate = Decimal(rate)
         self.calls = []
+
+    def usd_krw_on_or_before(self, reference_date):
+        self.calls.append(reference_date)
+        return self.rate
+
+
+class FakeFinancialCollector:
+    def __init__(self, usd_codes=()):
+        self.calls = []
+        self.usd_codes = set(usd_codes)
 
     def collect(self, corp_codes, year, quarter):
         codes = list(corp_codes)
@@ -49,7 +60,7 @@ class FakeFinancialCollector:
                     scope="CFS",
                     top_line_method="reported_total",
                     source_filing_id="20260515000001",
-                    currency="KRW",
+                    currency="USD" if code in self.usd_codes else "KRW",
                 )
                 for code in codes
             },
@@ -104,7 +115,9 @@ class FakeStore:
 class EarningsV2KoreaPipelineTests(unittest.TestCase):
     def test_full_flow_persists_one_hundred_and_rerun_makes_no_financial_call(self):
         store = FakeStore()
-        pipeline = KoreaEarningsPipeline(krx=FakeKrx(), dart=FakeDart(), store=store)
+        pipeline = KoreaEarningsPipeline(
+            krx=FakeKrx(), dart=FakeDart(), fx=FakeFx(), store=store,
+        )
         financials = FakeFinancialCollector()
         pipeline.financials = financials
 
@@ -127,7 +140,28 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertEqual(second["status"], "ready")
         self.assertEqual(len(financials.calls), 1)
 
+    def test_usd_company_is_kept_and_saved_as_quarter_end_krw(self):
+        store = FakeStore()
+        fx = FakeFx("1300")
+        pipeline = KoreaEarningsPipeline(
+            krx=FakeKrx(), dart=FakeDart(), fx=fx, store=store,
+        )
+        pipeline.financials = FakeFinancialCollector(usd_codes={"00000001"})
+
+        result = pipeline.run(
+            [("kr_largecap", 2026, 1)],
+            source="test",
+            operation="usd_conversion",
+        )
+
+        self.assertEqual(result["status"], "ready")
+        converted = store.company_quarters["kr:00000001"][0]
+        self.assertEqual(converted.currency, "KRW")
+        self.assertEqual(converted.top_line, Decimal("130000"))
+        self.assertEqual(converted.operating_income, Decimal("26000"))
+        self.assertEqual(converted.net_income, Decimal("13000"))
+        self.assertEqual(fx.calls, [date(2026, 3, 31)])
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -8,6 +8,7 @@ import re
 from typing import Any, Iterable
 
 from .dart_financials import DartBatchResult, DartFinancialCollector
+from .ecos import EcosFxClient, EcosFxError
 from .growth import calculate_company_growth
 from .krx import KrxOpenApiClient
 from .market import aggregate_market_quarter, calculate_market_series
@@ -108,10 +109,12 @@ class KoreaEarningsPipeline:
         *,
         krx: KrxOpenApiClient,
         dart: OpenDartV2Client,
+        fx: EcosFxClient,
         store: EarningsV2Store,
     ) -> None:
         self.krx = krx
         self.dart = dart
+        self.fx = fx
         self.financials = DartFinancialCollector(dart)
         self.store = store
 
@@ -235,11 +238,24 @@ class KoreaEarningsPipeline:
                     "reason": batch.errors.get(corp_code, "OpenDART required values unavailable"),
                 })
                 continue
-            if financial.currency not in {"", "KRW"}:
+            source_currency = financial.currency or "KRW"
+            if source_currency == "KRW":
+                exchange_rate = Decimal("1")
+            elif source_currency == "USD":
+                try:
+                    exchange_rate = self.fx.usd_krw_on_or_before(context.reference_date)
+                except EcosFxError as error:
+                    missing.append({
+                        "company_id": company_id,
+                        "company_name": context.company_name_by_company[company_id],
+                        "reason": str(error),
+                    })
+                    continue
+            else:
                 missing.append({
                     "company_id": company_id,
                     "company_name": context.company_name_by_company[company_id],
-                    "reason": f"reporting currency is {financial.currency}",
+                    "reason": f"unsupported reporting currency: {source_currency}",
                 })
                 continue
             try:
@@ -258,9 +274,9 @@ class KoreaEarningsPipeline:
                 market_year=context.year,
                 market_quarter=context.quarter,
                 period_end=date(context.year, month, day),
-                top_line=financial.top_line,
-                operating_income=financial.operating_income,
-                net_income=financial.net_income,
+                top_line=financial.top_line * exchange_rate,
+                operating_income=financial.operating_income * exchange_rate,
+                net_income=financial.net_income * exchange_rate,
                 currency="KRW",
                 consolidation_scope=financial.scope,
                 top_line_method=financial.top_line_method,

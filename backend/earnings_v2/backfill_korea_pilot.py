@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 
+from .ecos import EcosFxClient
 from .korea_pipeline import KoreaEarningsPipeline
 from .krx import KrxOpenApiClient
 from .open_dart import OpenDartV2Client
@@ -19,6 +20,7 @@ def main() -> int:
     pipeline = KoreaEarningsPipeline(
         krx=KrxOpenApiClient.from_env(),
         dart=OpenDartV2Client.from_env(),
+        fx=EcosFxClient.from_env(),
         store=EarningsV2Store(
             os.environ["SUPABASE_URL"],
             os.environ["SUPABASE_SERVICE_ROLE_KEY"],
