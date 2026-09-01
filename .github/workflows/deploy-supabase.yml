@@ -135,6 +135,8 @@ jobs:
           # this migration prevents them from reactivating revenue collection.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260901011000_remove_earnings_revenue_collection.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260901012000_remove_earnings_revenue_derivatives.sql
 
       - name: Deploy Edge Functions
         run: |

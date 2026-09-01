@@ -25,6 +25,7 @@ LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION = ROOT / "supabase/migrations/202608311
 STRUCTURED_2015_MIGRATION = ROOT / "supabase/migrations/20260831235970_use_structured_earnings_from_2015.sql"
 LEGACY_2015_RESTORE_MIGRATION = ROOT / "supabase/migrations/20260831235995_repair_legacy_2015_shifted_headers_v3.sql"
 PROFIT_ONLY_MIGRATION = ROOT / "supabase/migrations/20260901011000_remove_earnings_revenue_collection.sql"
+PROFIT_ONLY_DERIVATIVES_MIGRATION = ROOT / "supabase/migrations/20260901012000_remove_earnings_revenue_derivatives.sql"
 
 
 class EarningsFoundationTests(unittest.TestCase):
@@ -52,6 +53,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.structured_2015_migration = STRUCTURED_2015_MIGRATION.read_text(encoding="utf-8")
         cls.legacy_2015_restore_migration = LEGACY_2015_RESTORE_MIGRATION.read_text(encoding="utf-8")
         cls.profit_only_migration = PROFIT_ONLY_MIGRATION.read_text(encoding="utf-8")
+        cls.profit_only_derivatives_migration = PROFIT_ONLY_DERIVATIVES_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
         self.assertIn("public.earnings_filings", self.migration)
@@ -176,6 +178,9 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("array_remove", sql)
         self.assertIn("revenue_collection_removed", sql)
         self.assertIn(PROFIT_ONLY_MIGRATION.name, self.deploy_workflow)
+        self.assertIn("drop column if exists revenue_yoy_state", self.profit_only_derivatives_migration)
+        self.assertIn("where metric = 'revenue'", self.profit_only_derivatives_migration)
+        self.assertIn(PROFIT_ONLY_DERIVATIVES_MIGRATION.name, self.deploy_workflow)
 
     def test_universes_are_market_cap_rankings_not_official_indices(self) -> None:
         for name in (
