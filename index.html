@@ -350,11 +350,19 @@
             </section>
             <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="korea-earnings-growth-title">
               <div class="korea-earnings-chart-heading"><strong id="korea-earnings-growth-title">전년동기 증가율</strong><span>%</span></div>
-              <div id="korea-earnings-growth-chart" class="korea-earnings-chart"></div>
+              <div class="korea-earnings-subchart-stack">
+                <div class="korea-earnings-subchart"><span>매출</span><div id="korea-earnings-growth-revenue-chart" class="korea-earnings-chart"></div></div>
+                <div class="korea-earnings-subchart"><span>영업이익</span><div id="korea-earnings-growth-operating-income-chart" class="korea-earnings-chart"></div></div>
+                <div class="korea-earnings-subchart"><span>순이익</span><div id="korea-earnings-growth-net-income-chart" class="korea-earnings-chart"></div></div>
+              </div>
             </section>
             <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="korea-earnings-delta-title">
               <div class="korea-earnings-chart-heading"><strong id="korea-earnings-delta-title">증가율 델타</strong><span>%p</span></div>
-              <div id="korea-earnings-delta-chart" class="korea-earnings-chart"></div>
+              <div class="korea-earnings-subchart-stack">
+                <div class="korea-earnings-subchart"><span>매출</span><div id="korea-earnings-delta-revenue-chart" class="korea-earnings-chart"></div></div>
+                <div class="korea-earnings-subchart"><span>영업이익</span><div id="korea-earnings-delta-operating-income-chart" class="korea-earnings-chart"></div></div>
+                <div class="korea-earnings-subchart"><span>순이익</span><div id="korea-earnings-delta-net-income-chart" class="korea-earnings-chart"></div></div>
+              </div>
             </section>
           </div>
         </div>
@@ -858,7 +866,7 @@
   <script src="policy-expectation-chart.js?v=12"></script>
   <script src="em-capacity-chart.js?v=4"></script>
   <script src="korea-foreign-flow-chart.js?v=10"></script>
-  <script src="korea-earnings-chart.js?v=12"></script>
+  <script src="korea-earnings-chart.js?v=13"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>

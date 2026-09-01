@@ -148,8 +148,12 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.ok(deltaDomain.ticks.includes(0), '증가율 델타축은 가속·둔화 기준인 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
-  assert.match(html, /id="korea-earnings-growth-chart"/);
-  assert.match(html, /id="korea-earnings-delta-chart"/);
+  assert.match(html, /id="korea-earnings-growth-revenue-chart"/);
+  assert.match(html, /id="korea-earnings-growth-operating-income-chart"/);
+  assert.match(html, /id="korea-earnings-growth-net-income-chart"/);
+  assert.match(html, /id="korea-earnings-delta-revenue-chart"/);
+  assert.match(html, /id="korea-earnings-delta-operating-income-chart"/);
+  assert.match(html, /id="korea-earnings-delta-net-income-chart"/);
   assert.doesNotMatch(html, /data-korea-earnings-metric=/);
   assert.match(html, /KOSPI 시총 상위기업 평균 실적 모멘텀/);
   assert.match(source, /earnings_market_quarterly_metrics/);
@@ -157,6 +161,8 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.match(source, /kind: 'amount'/);
   assert.match(source, /kind: 'growth'/);
   assert.match(source, /kind: 'delta'/);
+  assert.match(source, /metricKey: metric\.key/);
+  assert.match(source, /const chartMetrics = spec\.metricKey/);
   assert.doesNotMatch(source, /kind: 'growth'[^\n]*includeZero: true/);
   assert.match(source, /kind: 'delta'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);

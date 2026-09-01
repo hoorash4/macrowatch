@@ -8,8 +8,8 @@
   ];
   const CHARTS = [
     { id: 'korea-earnings-amount-chart', valueKey: 'currentAverage', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
-    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 220, includeZero: false, unit: '%', showPeriodLabels: false },
-    { id: 'korea-earnings-delta-chart', valueKey: 'yoyDeltaPp', kind: 'delta', height: 220, includeZero: true, unit: '%p', showPeriodLabels: false },
+    ...METRICS.map((metric) => ({ id: `korea-earnings-growth-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'yoyPct', kind: 'growth', height: 102, includeZero: false, unit: '%', showPeriodLabels: false })),
+    ...METRICS.map((metric) => ({ id: `korea-earnings-delta-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'yoyDeltaPp', kind: 'delta', height: 102, includeZero: true, unit: '%p', showPeriodLabels: false })),
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
@@ -125,13 +125,19 @@
   function renderChart(spec, points) {
     const container = document.getElementById(spec.id);
     if (!container) return null;
-    const values = points.flatMap((point) => METRICS.map((metric) => metricValue(point, metric.key, spec.valueKey))).filter(Number.isFinite);
+    // 금액 본차트는 세 항목을 함께 비교하지만 증가율과 델타는 항목별
+    // 독립 축을 사용합니다. 한 항목의 큰 기저효과가 다른 선을 눌러
+    // 사실상 직선으로 보이게 하는 문제를 값 절삭 없이 피합니다.
+    const chartMetrics = spec.metricKey
+      ? METRICS.filter((metric) => metric.key === spec.metricKey)
+      : METRICS;
+    const values = points.flatMap((point) => chartMetrics.map((metric) => metricValue(point, metric.key, spec.valueKey))).filter(Number.isFinite);
     if (!values.length) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-40 items-center justify-center border border-dashed p-5 text-sm text-slate-500">표시할 비교 자료가 없습니다.</div>';
       return null;
     }
     const domainFor = (sourcePoints) => axisDomain(sourcePoints
-      .flatMap((point) => METRICS.map((metric) => metricValue(point, metric.key, spec.valueKey)))
+      .flatMap((point) => chartMetrics.map((metric) => metricValue(point, metric.key, spec.valueKey)))
       .filter(Number.isFinite), { includeZero: spec.includeZero });
     const domain = domainFor(points);
     const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 16 };
@@ -146,7 +152,7 @@
         ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>`
         : '').join('')
       : '';
-    const metricSeries = METRICS.map((metric) => ({
+    const metricSeries = chartMetrics.map((metric) => ({
       ...metric,
       points: points.map((point) => ({ ...point, value: metricValue(point, metric.key, spec.valueKey) })),
     }));
@@ -170,7 +176,7 @@
     };
     const showCursor = (index) => {
       const point = points[index], cursorX = x(index);
-      const details = METRICS.map((metric) => {
+      const details = chartMetrics.map((metric) => {
         const value = metricValue(point, metric.key, spec.valueKey);
         return `${metric.label} ${spec.kind === 'amount' ? `${formatAmount(value)}원` : formatSigned(value, spec.unit)}`;
       }).join(' · ');

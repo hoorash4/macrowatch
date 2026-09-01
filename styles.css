@@ -987,6 +987,10 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-chart-panel + .korea-earnings-chart-panel { border-top:1px solid #dbe3ed; }
 .korea-earnings-chart-heading { display:flex; align-items:center; justify-content:space-between; min-height:2.1rem; padding:.4rem .75rem .2rem; color:#64748b; font-size:.7rem; }
 .korea-earnings-chart-heading strong { color:#334155; font-size:.78rem; font-weight:800; }
+.korea-earnings-subchart-stack { display:grid; }
+.korea-earnings-subchart { position:relative; min-width:0; overflow:hidden; }
+.korea-earnings-subchart + .korea-earnings-subchart { border-top:1px dashed #e2e8f0; }
+.korea-earnings-subchart > span { position:absolute; z-index:2; top:.35rem; left:4.55rem; color:#64748b; font-size:.64rem; font-weight:750; pointer-events:none; }
 .korea-earnings-chart-layout { display:flex; width:100%; min-width:0; }
 .korea-earnings-y-axis { width:64px; flex:none; background:transparent; }
 .korea-earnings-chart-frame { position:relative; min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
