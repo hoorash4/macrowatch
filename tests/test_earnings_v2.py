@@ -12,6 +12,7 @@ from earnings_v2.models import MarketQuarter, QuarterValue, UniverseCandidate
 from earnings_v2.pilot import build_one_year_pilot, build_recent_four_quarter_pilot
 from earnings_v2.pipeline import coverage_report, prepare_company_series
 from earnings_v2.readiness import inspect_repository
+from earnings_v2.repository import EarningsV2Store
 from earnings_v2.universe import select_final_universe
 
 
@@ -33,6 +34,26 @@ def quarter(year: int, fiscal_quarter: int, op: str, net: str | None = None) -> 
 
 
 class EarningsV2GrowthTests(unittest.TestCase):
+    def test_void_rpc_response_is_a_success(self):
+        class Response:
+            content = b""
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+        class Session:
+            @staticmethod
+            def post(*_args, **_kwargs):
+                return Response()
+
+        store = object.__new__(EarningsV2Store)
+        store.url = "https://example.test"
+        store.service_role_key = "test"
+        store.timeout = 1
+        store.session = Session()
+        self.assertIsNone(store._rpc("void_rpc", {}))
+
     def test_get_with_retries_handles_temporary_api_failures(self):
         class Response:
             def __init__(self, status_code):

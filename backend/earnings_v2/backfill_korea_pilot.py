@@ -69,10 +69,18 @@ def main() -> int:
             try:
                 values = dart.quarter_values(corp_code, year, quarter)
             except Exception as error:
-                missing.append({"company_id": company_id, "reason": str(error)[:180]})
+                missing.append({
+                    "company_id": company_id,
+                    "company_name": official_name or security.name,
+                    "reason": str(error)[:180],
+                })
                 continue
             if values is None or values["currency"] not in ("KRW", ""):
-                missing.append({"company_id": company_id, "reason": "required financial values or KRW currency unavailable"})
+                missing.append({
+                    "company_id": company_id,
+                    "company_name": official_name or security.name,
+                    "reason": "filing unavailable or reporting currency is not KRW",
+                })
                 continue
             filing_id = str(values["source_filing_id"])
             row = QuarterValue(
@@ -101,6 +109,11 @@ def main() -> int:
             "universe": len(members), "financials": len(complete_ids), "missing": missing,
         })
         print(f"{market_id} {year}Q{quarter}: universe={len(members)}/{target}, financials={len(complete_ids)}/{target}")
+        for issue in missing:
+            print(
+                f"  missing {issue['company_name']} ({issue['company_id']}): "
+                f"{issue['reason']}"
+            )
 
     for company_id, rows in quarter_rows_by_company.items():
         store.upsert_company_quarters(calculate_company_growth(rows))

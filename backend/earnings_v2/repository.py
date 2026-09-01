@@ -48,6 +48,8 @@ class EarningsV2Store:
                 timeout=self.timeout,
             )
             response.raise_for_status()
+            if not response.content:
+                return None
             return response.json()
         except Exception as error:
             raise EarningsV2StoreError(f"V2 RPC {name} failed: {error}") from None

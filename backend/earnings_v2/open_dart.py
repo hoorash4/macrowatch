@@ -125,6 +125,7 @@ class OpenDartV2Client:
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
     def quarter_values(self, corp_code: str, year: int, quarter: int) -> dict[str, Any] | None:
+        diagnostics: list[str] = []
         for scope in ("CFS", "OFS"):
             rows = self.all_accounts(corp_code, year, quarter, scope)
             if not rows:
@@ -170,4 +171,13 @@ class OpenDartV2Client:
                     "source_filing_id": str(representative.get("rcept_no") or f"{corp_code}:{year}Q{quarter}"),
                     "currency": str(representative.get("currency") or "KRW").upper(),
                 }
+            diagnostics.append(
+                f"{scope}(top_line={'yes' if top is not None else 'no'},"
+                f"op={'yes' if op is not None else 'no'},"
+                f"net={'yes' if net is not None else 'no'})"
+            )
+        if diagnostics:
+            raise RuntimeError(
+                "OpenDART required values unavailable: " + ", ".join(diagnostics)
+            )
         return None
