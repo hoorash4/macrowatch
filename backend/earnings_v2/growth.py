@@ -100,22 +100,6 @@ def calculate_company_growth(rows: Iterable[QuarterValue]) -> list[QuarterValue]
         previous_year = by_key.get((current.fiscal_year - 1, current.fiscal_quarter))
         previous_quarter = ordered[index - 1] if index else None
         updates: dict[str, object] = {}
-        consecutive = (
-            previous_quarter is not None
-            and _quarter_ordinal(current.fiscal_year, current.fiscal_quarter)
-            - _quarter_ordinal(previous_quarter.fiscal_year, previous_quarter.fiscal_quarter)
-            == 1
-        )
-
-        for field in ("operating_margin_pct", "net_margin_pct"):
-            previous_margin = getattr(previous_quarter, field) if consecutive else None
-            current_margin = getattr(current, field)
-            updates[f"{field.removesuffix('_pct')}_qoq_delta_pctp"] = (
-                current_margin - previous_margin
-                if current_margin is not None and previous_margin is not None
-                else None
-            )
-
         for field, prefix in (
             ("operating_income", "operating_income"),
             ("net_income", "net_income"),
@@ -131,6 +115,12 @@ def calculate_company_growth(rows: Iterable[QuarterValue]) -> list[QuarterValue]
             updates[f"{prefix}_yoy_pct"] = yoy.value
             updates[f"{prefix}_yoy_state"] = yoy.state
 
+            consecutive = (
+                previous_quarter is not None
+                and _quarter_ordinal(current.fiscal_year, current.fiscal_quarter)
+                - _quarter_ordinal(previous_quarter.fiscal_year, previous_quarter.fiscal_quarter)
+                == 1
+            )
             raw = _raw_qoq(current, previous_quarter, field) if consecutive else GrowthResult(None, "missing_prior")
             if raw.state != "normal" or raw.value is None:
                 qoq = raw
@@ -178,8 +168,6 @@ def calculate_market_growth(rows: Iterable[MarketQuarter]) -> list[MarketQuarter
             operating_income_qoq_state=metric.operating_income_qoq_state,
             net_income_qoq_sa_pct=metric.net_income_qoq_sa_pct,
             net_income_qoq_state=metric.net_income_qoq_state,
-            operating_margin_qoq_delta_pctp=metric.operating_margin_qoq_delta_pctp,
-            net_margin_qoq_delta_pctp=metric.net_margin_qoq_delta_pctp,
         )
         for source, metric in zip(ordered, calculated, strict=True)
     ]

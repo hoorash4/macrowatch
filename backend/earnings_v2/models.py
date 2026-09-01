@@ -29,8 +29,6 @@ class QuarterValue:
     calculation_version: int = 1
     operating_margin_pct: Decimal | None = None
     net_margin_pct: Decimal | None = None
-    operating_margin_qoq_delta_pctp: Decimal | None = None
-    net_margin_qoq_delta_pctp: Decimal | None = None
     operating_income_yoy_pct: Decimal | None = None
     operating_income_yoy_state: str = "missing_prior"
     net_income_yoy_pct: Decimal | None = None
@@ -90,8 +88,6 @@ class MarketQuarter:
     completion_status: str
     operating_margin_pct: Decimal | None = None
     net_margin_pct: Decimal | None = None
-    operating_margin_qoq_delta_pctp: Decimal | None = None
-    net_margin_qoq_delta_pctp: Decimal | None = None
     operating_income_yoy_pct: Decimal | None = None
     operating_income_yoy_state: str = "missing_prior"
     net_income_yoy_pct: Decimal | None = None

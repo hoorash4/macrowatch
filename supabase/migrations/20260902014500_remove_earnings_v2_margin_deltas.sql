@@ -1,23 +1,14 @@
--- Store quarter-to-quarter profit-margin changes as percentage-point values.
--- The pipeline calculates them from already persisted single-quarter margins;
--- no trigger or browser-side calculation is involved.
+-- Margin deltas are intentionally not persisted in V2. Keep only the
+-- underlying operating and net margin values; a delta can be derived later
+-- if the product decides to use it.
 
 alter table earnings_v2.company_quarters
-  add column if not exists operating_margin_qoq_delta_pctp numeric(20, 8),
-  add column if not exists net_margin_qoq_delta_pctp numeric(20, 8);
+  drop column if exists operating_margin_qoq_delta_pctp,
+  drop column if exists net_margin_qoq_delta_pctp;
 
 alter table earnings_v2.market_quarters
-  add column if not exists operating_margin_qoq_delta_pctp numeric(20, 8),
-  add column if not exists net_margin_qoq_delta_pctp numeric(20, 8);
-
-comment on column earnings_v2.company_quarters.operating_margin_qoq_delta_pctp is
-  'Current single-quarter operating margin minus the immediately preceding quarter, in percentage points.';
-comment on column earnings_v2.company_quarters.net_margin_qoq_delta_pctp is
-  'Current single-quarter net margin minus the immediately preceding quarter, in percentage points.';
-comment on column earnings_v2.market_quarters.operating_margin_qoq_delta_pctp is
-  'Current aggregate operating margin minus the immediately preceding quarter, in percentage points.';
-comment on column earnings_v2.market_quarters.net_margin_qoq_delta_pctp is
-  'Current aggregate net margin minus the immediately preceding quarter, in percentage points.';
+  drop column if exists operating_margin_qoq_delta_pctp,
+  drop column if exists net_margin_qoq_delta_pctp;
 
 create or replace function public.earnings_v2_upsert_company_quarters(p_rows jsonb)
 returns integer
@@ -30,7 +21,6 @@ begin
   insert into earnings_v2.company_quarters as target (
     company_id, fiscal_year, fiscal_quarter, period_start, period_end, market_year, market_quarter,
     top_line, operating_income, net_income, operating_margin_pct, net_margin_pct,
-    operating_margin_qoq_delta_pctp, net_margin_qoq_delta_pctp,
     currency, consolidation_scope,
     operating_income_yoy_pct, operating_income_yoy_state, net_income_yoy_pct, net_income_yoy_state,
     operating_income_qoq_sa_pct, operating_income_qoq_state, net_income_qoq_sa_pct, net_income_qoq_state,
@@ -39,7 +29,6 @@ begin
   select
     company_id, fiscal_year, fiscal_quarter, period_start, period_end, market_year, market_quarter,
     top_line, operating_income, net_income, operating_margin_pct, net_margin_pct,
-    operating_margin_qoq_delta_pctp, net_margin_qoq_delta_pctp,
     currency, consolidation_scope,
     operating_income_yoy_pct, operating_income_yoy_state, net_income_yoy_pct, net_income_yoy_state,
     operating_income_qoq_sa_pct, operating_income_qoq_state, net_income_qoq_sa_pct, net_income_qoq_state,
@@ -56,8 +45,6 @@ begin
     net_income = excluded.net_income,
     operating_margin_pct = excluded.operating_margin_pct,
     net_margin_pct = excluded.net_margin_pct,
-    operating_margin_qoq_delta_pctp = excluded.operating_margin_qoq_delta_pctp,
-    net_margin_qoq_delta_pctp = excluded.net_margin_qoq_delta_pctp,
     currency = excluded.currency,
     consolidation_scope = excluded.consolidation_scope,
     operating_income_yoy_pct = excluded.operating_income_yoy_pct,
@@ -91,14 +78,12 @@ begin
   insert into earnings_v2.market_quarters as target (
     market_id, market_year, market_quarter, average_operating_income, average_net_income,
     operating_margin_pct, net_margin_pct,
-    operating_margin_qoq_delta_pctp, net_margin_qoq_delta_pctp,
     operating_income_yoy_pct, operating_income_yoy_state, net_income_yoy_pct, net_income_yoy_state,
     operating_income_qoq_sa_pct, operating_income_qoq_state, net_income_qoq_sa_pct, net_income_qoq_state,
     actual_company_count, target_company_count, completion_status, calculation_version, calculated_at
   )
   select market_id, market_year, market_quarter, average_operating_income, average_net_income,
     operating_margin_pct, net_margin_pct,
-    operating_margin_qoq_delta_pctp, net_margin_qoq_delta_pctp,
     operating_income_yoy_pct, operating_income_yoy_state, net_income_yoy_pct, net_income_yoy_state,
     operating_income_qoq_sa_pct, operating_income_qoq_state, net_income_qoq_sa_pct, net_income_qoq_state,
     actual_company_count, target_company_count, completion_status, coalesce(calculation_version, 1),
@@ -109,8 +94,6 @@ begin
     average_net_income = excluded.average_net_income,
     operating_margin_pct = excluded.operating_margin_pct,
     net_margin_pct = excluded.net_margin_pct,
-    operating_margin_qoq_delta_pctp = excluded.operating_margin_qoq_delta_pctp,
-    net_margin_qoq_delta_pctp = excluded.net_margin_qoq_delta_pctp,
     operating_income_yoy_pct = excluded.operating_income_yoy_pct,
     operating_income_yoy_state = excluded.operating_income_yoy_state,
     net_income_yoy_pct = excluded.net_income_yoy_pct,

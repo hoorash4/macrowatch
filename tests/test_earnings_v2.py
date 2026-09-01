@@ -101,19 +101,6 @@ class EarningsV2GrowthTests(unittest.TestCase):
         self.assertEqual(result.operating_income_yoy_state, "scope_mismatch")
         self.assertIsNone(result.operating_income_yoy_pct)
 
-    def test_margin_delta_is_previous_quarter_percentage_point_change(self):
-        prior = quarter(2026, 1, "20", "10").with_metrics(
-            operating_margin_pct=Decimal("20"),
-            net_margin_pct=Decimal("10"),
-        )
-        current = quarter(2026, 2, "24", "9").with_metrics(
-            operating_margin_pct=Decimal("24"),
-            net_margin_pct=Decimal("9"),
-        )
-        result = calculate_company_growth([prior, current])[-1]
-        self.assertEqual(result.operating_margin_qoq_delta_pctp, Decimal("4"))
-        self.assertEqual(result.net_margin_qoq_delta_pctp, Decimal("-1"))
-
 
 class EarningsV2FinancialTests(unittest.TestCase):
     def test_profit_margin_uses_same_quarter_values_and_rejects_zero_denominator(self):
@@ -216,14 +203,14 @@ class EarningsV2BoundaryTests(unittest.TestCase):
         self.assertNotIn("generated always as", sql)
         self.assertIn("no automatic historical backfill", sql)
 
-    def test_margin_delta_migration_stores_company_and_market_values(self):
+    def test_margin_delta_cleanup_keeps_only_margin_source_values(self):
         root = Path(__file__).resolve().parents[1]
-        migration = root / "supabase" / "migrations" / "20260902013000_store_earnings_v2_margin_deltas.sql"
+        migration = root / "supabase" / "migrations" / "20260902014500_remove_earnings_v2_margin_deltas.sql"
         sql = migration.read_text(encoding="utf-8").lower()
-        self.assertIn("operating_margin_qoq_delta_pctp numeric(20, 8)", sql)
-        self.assertIn("net_margin_qoq_delta_pctp numeric(20, 8)", sql)
-        self.assertIn("earnings_v2_upsert_company_quarters", sql)
-        self.assertIn("earnings_v2_upsert_market_quarters", sql)
+        self.assertIn("drop column if exists operating_margin_qoq_delta_pctp", sql)
+        self.assertIn("drop column if exists net_margin_qoq_delta_pctp", sql)
+        self.assertIn("operating_margin_pct, net_margin_pct", sql)
+        self.assertNotIn("operating_margin_qoq_delta_pctp numeric", sql)
 
     def test_kis_top_line_adapter_is_protected_and_uses_standard_sales_account(self):
         root = Path(__file__).resolve().parents[1]
