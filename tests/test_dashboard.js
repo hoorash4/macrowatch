@@ -104,7 +104,7 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   assert.match(chart, /value >= -0\.15/);
 });
 
-test('KOSPI 100 earnings card reads compact server-calculated market rows', () => {
+test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   const source = fs.readFileSync(path.join(__dirname, '..', 'korea-earnings-chart.js'), 'utf8');
@@ -120,22 +120,22 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
-  const serverRows = ['operating_income', 'net_income'].map((metric) => ({
-    fiscal_year: 2025, fiscal_quarter: 2, metric,
-    universe_company_count: 100, comparable_company_count: 98,
-    current_average: '90', universe_basis: 'point_in_time_market_cap_snapshot', yoy_pct: '20', yoy_state: 'normal', yoy_delta_pp: '10',
-  }));
-  const series = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows(serverRows);
+  const serverRows = [{
+    market_year: 2025, market_quarter: 2,
+    target_company_count: 100, reported_company_count: 98, pending_company_count: 2,
+    lifecycle_status: 'provisional', operating_income_total: '90', net_income_total: '70',
+    operating_income_yoy_pct: '20', operating_income_yoy_state: 'normal',
+    net_income_yoy_pct: null, net_income_yoy_state: 'black_turn',
+    operating_income_qoq_sa_pct: '10', operating_income_qoq_state: 'normal',
+    net_income_qoq_sa_pct: null, net_income_qoq_state: 'red_turn',
+  }];
+  const series = context.window.MacroWatchKoreaEarnings.seriesFromMarketRows(serverRows);
   const latest = series.at(-1).metrics.operating_income;
-  assert.equal(latest.coverage, 98);
-  assert.equal(latest.currentAverage, 90);
+  assert.equal(series.at(-1).reportedCount, 98);
+  assert.equal(latest.amount, 90);
   assert.equal(latest.yoyPct, 20);
-  assert.equal(latest.yoyDeltaPp, 10);
-  const nullSeries = context.window.MacroWatchKoreaEarnings.seriesFromMetricRows([{
-    ...serverRows[0], fiscal_quarter: 3, yoy_pct: null, yoy_delta_pp: null,
-  }]);
-  assert.equal(nullSeries[0].metrics.operating_income.yoyPct, null, '계산 불가 null을 가짜 0으로 바꾸지 않는다');
-  assert.equal(nullSeries[0].metrics.operating_income.yoyDeltaPp, null, '델타 null도 빈 구간으로 유지한다');
+  assert.equal(latest.qoqPct, 10);
+  assert.equal(series.at(-1).metrics.net_income.yoyState, 'black_turn');
   const amountDomain = context.window.MacroWatchKoreaEarnings.axisDomain([90, 100]);
   assert.ok(amountDomain.min > 0, '양수 금액축은 더 이상 0에 고정하지 않는다');
   assert.ok(amountDomain.min < 90 && amountDomain.max > 100);
@@ -144,34 +144,33 @@ test('KOSPI 100 earnings card reads compact server-calculated market rows', () =
   assert.ok(rateDomain.min < 20, '증가율축 하단에는 최소한의 시각 여백만 둔다');
   assert.ok(rateDomain.max > 30, '증가율축 상단은 표시 자료에 맞춰 자동 조정한다');
   assert.ok((30 - 20) / (rateDomain.max - rateDomain.min) > 0.9, '표시 자료가 Y축 높이를 충분히 사용한다');
-  const deltaDomain = context.window.MacroWatchKoreaEarnings.axisDomain([-8, 20], { includeZero: true });
-  assert.ok(deltaDomain.ticks.includes(0), '증가율 델타축은 가속·둔화 기준인 0 눈금을 반드시 포함한다');
+  const qoqDomain = context.window.MacroWatchKoreaEarnings.axisDomain([-8, 20], { includeZero: true });
+  assert.ok(qoqDomain.ticks.includes(0), '계절조정 QoQ축은 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
   assert.match(html, /id="korea-earnings-growth-operating-income-chart"/);
   assert.match(html, /id="korea-earnings-growth-net-income-chart"/);
-  assert.match(html, /id="korea-earnings-delta-operating-income-chart"/);
-  assert.match(html, /id="korea-earnings-delta-net-income-chart"/);
+  assert.match(html, /id="korea-earnings-qoq-operating-income-chart"/);
+  assert.match(html, /id="korea-earnings-qoq-net-income-chart"/);
   assert.doesNotMatch(html, /data-korea-earnings-metric=/);
-  assert.match(html, /KOSPI 시총 상위기업 평균 실적 모멘텀/);
-  assert.match(source, /earnings_market_quarterly_metrics/);
-  assert.match(source, /point_in_time_market_cap_snapshot/);
+  assert.match(html, /KOSPI 시총 상위기업 실적 모멘텀/);
+  assert.match(source, /earnings_v2_public_market_series/);
   assert.match(source, /kind: 'amount'/);
   assert.match(source, /kind: 'growth'/);
-  assert.match(source, /kind: 'delta'/);
+  assert.match(source, /kind: 'qoq'/);
   assert.match(source, /metricKey: metric\.key/);
   assert.match(source, /const chartMetrics = spec\.metricKey/);
-  assert.doesNotMatch(source, /kind: 'growth'[^\n]*includeZero: true/);
-  assert.match(source, /kind: 'delta'[^\n]*includeZero: true/);
+  assert.match(source, /kind: 'growth'[^\n]*includeZero: true/);
+  assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
-  assert.match(html, /기업당 평균 실적/);
+  assert.match(html, /기업군 합산 실적/);
   assert.match(html, /전년동기 증가율/);
-  assert.match(html, /증가율 델타/);
-  assert.match(html, /기업당 단순평균/);
+  assert.match(html, /계절조정 전분기 증가율/);
+  assert.doesNotMatch(html, /기업당 단순평균/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
   assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);
-  assert.match(styles, /\.korea-earnings-line--delta[^}]*stroke-dasharray/);
+  assert.match(styles, /\.korea-earnings-line--qoq[^}]*stroke-dasharray/);
   assert.match(styles, /\.korea-earnings-chart-panel \+ \.korea-earnings-chart-panel/);
   assert.doesNotMatch(styles, /\.korea-earnings-chart-panel--aux\s*\{[^}]*background/);
   assert.match(source, /showPeriodLabels: true/);

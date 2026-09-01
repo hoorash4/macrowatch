@@ -99,9 +99,9 @@
     const labels = {
       'policy-review-list': 'FOMC 검토 목록', 'sector-etf-list': '섹터 ETF 목록',
       'extreme-news-rule-list': '결정적 뉴스 기준 목록', 'uncertain-news-list': '불명확 뉴스 목록',
-      'error-list': '수집 오류 목록'
+      'earnings-v2-pending-list': '기업 실적 장기 대기 목록', 'error-list': '수집 오류 목록'
     };
-    document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #uncertain-news-list, #error-list').forEach((list) => {
+    document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #uncertain-news-list, #earnings-v2-pending-list, #error-list').forEach((list) => {
       if (list.parentElement?.tagName === 'DETAILS') return;
       const details = document.createElement('details');
       details.className = 'group';
@@ -393,6 +393,27 @@
     }
   }
 
+  function renderEarningsV2Pending(items) {
+    const list = document.getElementById('earnings-v2-pending-list');
+    setListAttentionCount('earnings-v2-pending-list', items.length);
+    if (!items.length) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-emerald-400">장기 대기 중인 기업 실적이 없습니다.</p>';
+      return;
+    }
+    const missingLabel = (item) => [
+      item.missing_top_line ? '매출' : '', item.missing_operating_income ? '영업이익' : '', item.missing_net_income ? '순이익' : '',
+    ].filter(Boolean).join(' · ');
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-4 last:border-0"><div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p class="font-bold text-slate-200">${escapeHtml(item.company_name)} <span class="ml-1 text-xs font-normal text-slate-500">${escapeHtml(item.stock_code || '')}</span></p><p class="mt-1 text-xs text-slate-500">${escapeHtml(`${item.market_year} Q${item.market_quarter}`)} · ${escapeHtml(item.market_id)}</p></div><span class="w-fit rounded-full border border-orange-800/70 bg-orange-950/40 px-2.5 py-1 text-xs font-bold text-orange-300">미확보: ${escapeHtml(missingLabel(item))}</span></div></article>`).join('');
+  }
+
+  async function loadEarningsV2Pending() {
+    try { renderEarningsV2Pending((await invokeAdmin('list_earnings_v2_pending')).items || []); }
+    catch (error) {
+      setListAttentionCount('earnings-v2-pending-list', 0);
+      document.getElementById('earnings-v2-pending-list').innerHTML = '<p class="p-4 text-center text-sm text-red-300">기업 실적 대기 목록을 불러오지 못했습니다.</p>';
+    }
+  }
+
   async function loadAll() {
     const button = document.getElementById('refresh-button');
     button.disabled = true;
@@ -401,6 +422,7 @@
       const status = await invokeAdmin('status');
       applyStatus(status);
       await loadUncertainNews();
+      await loadEarningsV2Pending();
       await loadSectorEtfs();
       await loadExtremeNewsRules();
       await loadMembers();
@@ -520,6 +542,7 @@
       renderScheduleTimeInputs(current);
     });
     document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
+    document.getElementById('refresh-earnings-pending-button').addEventListener('click', loadEarningsV2Pending);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
     document.getElementById('member-form').addEventListener('submit', createMember);

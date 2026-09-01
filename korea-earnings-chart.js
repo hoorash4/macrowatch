@@ -6,9 +6,9 @@
     { key: 'net_income', label: '순이익', className: 'net-income' },
   ];
   const CHARTS = [
-    { id: 'korea-earnings-amount-chart', valueKey: 'currentAverage', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
-    ...METRICS.map((metric) => ({ id: `korea-earnings-growth-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'yoyPct', kind: 'growth', height: 102, includeZero: false, unit: '%', showPeriodLabels: false })),
-    ...METRICS.map((metric) => ({ id: `korea-earnings-delta-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'yoyDeltaPp', kind: 'delta', height: 102, includeZero: true, unit: '%p', showPeriodLabels: false })),
+    { id: 'korea-earnings-amount-chart', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
+    ...METRICS.map((metric) => ({ id: `korea-earnings-growth-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'yoyPct', kind: 'growth', height: 102, includeZero: true, unit: '%', showPeriodLabels: false })),
+    ...METRICS.map((metric) => ({ id: `korea-earnings-qoq-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'qoqPct', kind: 'qoq', height: 102, includeZero: true, unit: '%', showPeriodLabels: false })),
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
@@ -39,24 +39,27 @@
     return `${Math.abs(value) < Number.EPSILON ? 0 : Number(value.toFixed(2))}`;
   }
 
-  // 서버가 계산한 분기·항목별 행을 차트용 시계열 모양으로만 변환합니다.
-  function seriesFromMetricRows(rows) {
-    const periods = new Map();
-    rows.forEach((row) => {
-      const fiscalYear = Number(row.fiscal_year), fiscalQuarter = Number(row.fiscal_quarter);
-      const key = `${fiscalYear}:${fiscalQuarter}`;
-      const period = periods.get(key) || { fiscalYear, fiscalQuarter, metrics: {}, universeCount: Number(row.universe_company_count) || 0 };
-      period.metrics[row.metric] = {
-        yoyPct: finite(row.yoy_pct),
-        yoyDeltaPp: finite(row.yoy_delta_pp),
-        yoyState: row.yoy_state,
-        coverage: Number(row.comparable_company_count) || 0,
-        currentAverage: finite(row.current_average),
-        universeBasis: row.universe_basis,
-      };
-      periods.set(key, period);
-    });
-    return [...periods.values()].sort((a, b) => (a.fiscalYear * 4 + a.fiscalQuarter) - (b.fiscalYear * 4 + b.fiscalQuarter));
+  // V2 공개 RPC의 분기 총합 행을 차트 전용 구조로만 변환합니다.
+  function seriesFromMarketRows(rows) {
+    return rows.map((row) => ({
+      fiscalYear: Number(row.market_year), fiscalQuarter: Number(row.market_quarter),
+      reportedCount: Number(row.reported_company_count) || 0,
+      pendingCount: Number(row.pending_company_count) || 0,
+      universeCount: Number(row.target_company_count) || 0,
+      lifecycleStatus: row.lifecycle_status,
+      metrics: {
+        operating_income: {
+          amount: finite(row.operating_income_total), yoyPct: finite(row.operating_income_yoy_pct),
+          yoyState: row.operating_income_yoy_state, qoqPct: finite(row.operating_income_qoq_sa_pct),
+          qoqState: row.operating_income_qoq_state,
+        },
+        net_income: {
+          amount: finite(row.net_income_total), yoyPct: finite(row.net_income_yoy_pct),
+          yoyState: row.net_income_yoy_state, qoqPct: finite(row.net_income_qoq_sa_pct),
+          qoqState: row.net_income_qoq_state,
+        },
+      },
+    })).sort((a, b) => (a.fiscalYear * 4 + a.fiscalQuarter) - (b.fiscalYear * 4 + b.fiscalQuarter));
   }
 
   function scale(value, sourceMin, sourceMax, targetMin, targetMax) {
@@ -105,6 +108,21 @@
 
   function metricValue(point, metricKey, valueKey) { return point.metrics[metricKey]?.[valueKey] ?? null; }
 
+  const STATE_LABELS = Object.freeze({ black_turn: '흑전', red_turn: '적전', from_zero: '계산 불가' });
+  function metricState(point, metricKey, kind) {
+    return point.metrics[metricKey]?.[kind === 'growth' ? 'yoyState' : 'qoqState'] || '';
+  }
+  function chartValue(point, metricKey, spec) {
+    const value = metricValue(point, metricKey, spec.valueKey);
+    if (Number.isFinite(value)) return value;
+    return spec.kind !== 'amount' && STATE_LABELS[metricState(point, metricKey, spec.kind)] ? 0 : null;
+  }
+  function formatChartValue(point, metric, spec) {
+    const raw = metricValue(point, metric.key, spec.valueKey);
+    if (Number.isFinite(raw)) return spec.kind === 'amount' ? `${formatAmount(raw)}원` : formatSigned(raw, spec.unit);
+    return STATE_LABELS[metricState(point, metric.key, spec.kind)] || '—';
+  }
+
   function visiblePoints() {
     const usable = state.series.filter((row) => METRICS.some((metric) => CHARTS.some((chart) => Number.isFinite(metricValue(row, metric.key, chart.valueKey)))));
     return state.years === 'max' ? usable : usable.slice(-Number(state.years) * 4);
@@ -113,12 +131,9 @@
   function updateSummary(points) {
     const element = document.getElementById('korea-earnings-summary'), latest = points.at(-1);
     if (!element || !latest) return;
-    const referenceMetric = latest.metrics.operating_income || latest.metrics.net_income;
-    const basis = referenceMetric?.universeBasis === 'point_in_time_market_cap_snapshot'
-      ? '해당 분기 시총 순위 기준'
-      : '과거 순위 미확보 · 대체 유니버스 평균';
-    const values = METRICS.map((metric) => `<span>${metric.label} 평균 ${formatAmount(metricValue(latest, metric.key, 'currentAverage'))}원</span>`).join('');
-    element.innerHTML = `<strong>${periodLabel(latest)}</strong>${values}<span>실적 반영 ${referenceMetric?.coverage || 0}/${latest.universeCount}사</span><span>${basis}</span>`;
+    const status = latest.lifecycleStatus === 'complete' ? '확정' : latest.lifecycleStatus === 'provisional' ? '잠정' : '수집 중';
+    const values = METRICS.map((metric) => `<span>${metric.label} 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
+    element.innerHTML = `<strong>${periodLabel(latest)}</strong>${values}<span>실적 반영 ${latest.reportedCount}/${latest.universeCount}사</span><span>${status}${latest.pendingCount ? ` · 대기 ${latest.pendingCount}사` : ''}</span>`;
   }
 
   function renderChart(spec, points) {
@@ -130,13 +145,13 @@
     const chartMetrics = spec.metricKey
       ? METRICS.filter((metric) => metric.key === spec.metricKey)
       : METRICS;
-    const values = points.flatMap((point) => chartMetrics.map((metric) => metricValue(point, metric.key, spec.valueKey))).filter(Number.isFinite);
+    const values = points.flatMap((point) => chartMetrics.map((metric) => chartValue(point, metric.key, spec))).filter(Number.isFinite);
     if (!values.length) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-40 items-center justify-center border border-dashed p-5 text-sm text-slate-500">표시할 비교 자료가 없습니다.</div>';
       return null;
     }
     const domainFor = (sourcePoints) => axisDomain(sourcePoints
-      .flatMap((point) => chartMetrics.map((metric) => metricValue(point, metric.key, spec.valueKey)))
+      .flatMap((point) => chartMetrics.map((metric) => chartValue(point, metric.key, spec)))
       .filter(Number.isFinite), { includeZero: spec.includeZero });
     const domain = domainFor(points);
     const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 16 };
@@ -153,7 +168,7 @@
       : '';
     const metricSeries = chartMetrics.map((metric) => ({
       ...metric,
-      points: points.map((point) => ({ ...point, value: metricValue(point, metric.key, spec.valueKey) })),
+      points: points.map((point) => ({ ...point, value: chartValue(point, metric.key, spec) })),
     }));
     const lines = metricSeries.map((metric) => `<path data-korea-earnings-line="${metric.key}" d="${linePath(metric.points, domain.min, domain.max, chartWidth, spec.height, padding)}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}"/>`).join('');
     const dots = metricSeries.flatMap((metric) => metric.points.map((point, index) => Number.isFinite(point.value)
@@ -176,8 +191,7 @@
     const showCursor = (index) => {
       const point = points[index], cursorX = x(index);
       const details = chartMetrics.map((metric) => {
-        const value = metricValue(point, metric.key, spec.valueKey);
-        return `${metric.label} ${spec.kind === 'amount' ? `${formatAmount(value)}원` : formatSigned(value, spec.unit)}`;
+        return `${metric.label} ${formatChartValue(point, metric, spec)}`;
       }).join(' · ');
       const labelX = Math.max(170, Math.min(chartWidth - 170, cursorX));
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursorLabel.setAttribute('x', labelX);
@@ -266,7 +280,7 @@
 
   function render() {
     const points = visiblePoints();
-    if (!points.length) { setStatus('비교 가능한 KOSPI 시총 상위기업 평균 실적이 아직 없습니다.'); return; }
+    if (!points.length) { setStatus('비교 가능한 KOSPI 시총 상위기업 실적이 아직 없습니다.'); return; }
     updateSummary(points);
     const charts = CHARTS.map((chart) => renderChart(chart, points)).filter(Boolean);
     synchronizeFrames(charts.map((chart) => chart.frame));
@@ -275,13 +289,9 @@
 
   async function load({ supabaseClient }) {
     if (!document.getElementById('korea-earnings-amount-chart') || !supabaseClient) return;
-    const response = await window.MacroWatchAnalysisChart.loadAllRows((from, to) => supabaseClient
-      .from('earnings_market_quarterly_metrics')
-      .select('fiscal_year,fiscal_quarter,metric,universe_basis,universe_company_count,comparable_company_count,current_average,yoy_pct,yoy_state,yoy_delta_pp')
-      .eq('index_id', 'KOSPI100')
-      .order('fiscal_year').order('fiscal_quarter').order('metric').range(from, to));
+    const response = await supabaseClient.rpc('earnings_v2_public_market_series', { p_market_id: 'kr_largecap' });
     if (response.error) { setStatus('KOSPI 100 집계 실적을 불러오지 못했습니다.'); return; }
-    state.series = seriesFromMetricRows(response.data || []);
+    state.series = seriesFromMarketRows(response.data || []);
     render();
   }
 
@@ -294,6 +304,6 @@
   });
   // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 세 차트 폭을 다시 맞춥니다.
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'earnings') render(); });
-  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMetricRows, axisDomain });
+  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain });
   window.MacroWatchDashboard?.registerLoader(load);
 })();

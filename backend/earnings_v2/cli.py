@@ -10,8 +10,9 @@ from .pipeline import KoreaEarningsV2Pipeline
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="MacroWatch Earnings V2 Korean quarterly pipeline")
-    result.add_argument("--year", type=int, required=True)
+    result.add_argument("--year", type=int)
     result.add_argument("--quarter", type=int, choices=(1, 2, 3, 4))
+    result.add_argument("--daily", action="store_true", help="최근 완료 분기의 신규 공시·대기 기업만 갱신")
     result.add_argument("--write", action="store_true", help="기업군·부분 실적·잠정 또는 확정 집계를 V2 DB에 저장")
     result.add_argument("--allow-review", action="store_true", help="불완전 분기 뒤의 다음 분기도 계속 검사")
     return result
@@ -24,14 +25,21 @@ def completed_successfully(result: dict[str, Any] | list[dict[str, Any]]) -> boo
 
 
 def main() -> None:
-    args = parser().parse_args()
+    argument_parser = parser()
+    args = argument_parser.parse_args()
     pipeline = KoreaEarningsV2Pipeline.from_env()
-    if args.quarter:
+    if args.daily:
+        result = pipeline.run_daily(write=args.write)
+    elif args.year is None:
+        argument_parser.error("--daily가 아니면 --year가 필요합니다")
+    elif args.quarter:
         result = pipeline.run_quarter(args.year, args.quarter, write=args.write, allow_review=args.allow_review)
     else:
         result = pipeline.run_year(args.year, write=args.write, allow_review=args.allow_review)
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
-    if not completed_successfully(result):
+    # 증분 실행의 provisional/collecting은 공급자 오류가 아니라 정상적인
+    # 실적 발표 진행 상태다. 백필만 분기 미완료를 실패로 반환한다.
+    if not args.daily and not completed_successfully(result):
         sys.exit(2)
 
 

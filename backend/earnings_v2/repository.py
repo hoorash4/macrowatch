@@ -10,6 +10,7 @@ import requests
 
 STORE_TIMEOUT = (5, 20)
 TOKEN_TIMEOUT = (5, 10)
+KIS_TOKEN_CACHE_KEY = "kis_access_token_prod"
 
 
 class StoreError(RuntimeError):
@@ -98,7 +99,7 @@ class EarningsV2Repository:
         response = self.session.get(
             f"{self.url}/rest/v1/app_settings",
             headers=self.headers,
-            params={"key": "eq.kis_access_token_prod", "select": "value", "limit": "1"},
+            params={"key": f"eq.{KIS_TOKEN_CACHE_KEY}", "select": "value", "limit": "1"},
             timeout=TOKEN_TIMEOUT,
         )
         if not response.ok:
@@ -119,7 +120,7 @@ class EarningsV2Repository:
             f"{self.url}/rest/v1/app_settings",
             headers={**self.headers, "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "key"},
-            json={"key": "kis_access_token_prod", "value": {"access_token": token, "expires_at": expires.isoformat()}, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": None},
+            json={"key": KIS_TOKEN_CACHE_KEY, "value": {"access_token": token, "expires_at": expires.isoformat()}, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": None},
             timeout=TOKEN_TIMEOUT,
         )
         if not response.ok:

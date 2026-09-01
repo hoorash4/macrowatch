@@ -7,7 +7,7 @@ from decimal import Decimal
 from earnings_v2.aggregation import aggregate_market
 from earnings_v2.models import CompanyIdentity, FinancialFact
 from earnings_v2.cli import completed_successfully
-from earnings_v2.pipeline import _eligible_name
+from earnings_v2.pipeline import _eligible_name, latest_completed_quarter
 from earnings_v2.providers import KisClient, OpenDartClient
 from earnings_v2.transform import (
     calculate_financial_series,
@@ -143,6 +143,35 @@ class OpenDartTransportTests(unittest.TestCase):
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn("secret", str(captured.exception))
 
+    def test_recent_periodic_filings_filter_nonperiodic_reports(self):
+        class Response:
+            content = b"1"
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "status": "000", "total_page": 1,
+                    "list": [
+                        {"corp_code": "00123456", "report_nm": "분기보고서 (2026.03)"},
+                        {"corp_code": "00999999", "report_nm": "주요사항보고서"},
+                    ],
+                }
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        client = OpenDartClient("secret", session=Session(), interval=0)
+        self.assertEqual(
+            client.recent_periodic_corp_codes(date(2026, 8, 1), date(2026, 8, 14)),
+            {"00123456"},
+        )
+
 
 class CliContractTests(unittest.TestCase):
     def test_only_ready_results_are_successful(self):
@@ -252,6 +281,10 @@ class KisFallbackTests(unittest.TestCase):
 
 
 class GrowthAndAggregationTests(unittest.TestCase):
+    def test_latest_completed_quarter_uses_previous_calendar_quarter(self):
+        self.assertEqual(latest_completed_quarter(date(2026, 9, 2)), (2026, 2))
+        self.assertEqual(latest_completed_quarter(date(2026, 1, 5)), (2025, 4))
+
     def test_yoy_requires_prior_year_and_turns_are_states(self):
         rows = calculate_financial_series([fact(2025, 1, "-10"), fact(2026, 1, "20")])
         self.assertIsNone(rows[-1].operating_income_yoy_pct)

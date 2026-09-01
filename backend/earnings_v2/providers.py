@@ -148,6 +148,30 @@ class OpenDartClient:
             rows.extend(row for row in payload.get("list", []) if isinstance(row, dict))
         return rows
 
+    def recent_periodic_corp_codes(self, start: date, end: date) -> set[str]:
+        """조회 구간에 새로 접수된 정기공시의 기업코드만 반환한다."""
+        result: set[str] = set()
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "A",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            items = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            for row in items:
+                code = str(row.get("corp_code") or "").strip()
+                report = str(row.get("report_nm") or "")
+                if re.fullmatch(r"\d{8}", code) and any(name in report for name in ("분기보고서", "반기보고서", "사업보고서")):
+                    result.add(code)
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return result
+
 
 class KrxClient:
     def __init__(self, auth_key: str, *, session: Any | None = None) -> None:

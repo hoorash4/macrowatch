@@ -4,7 +4,7 @@ import json
 import os
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Iterable
 
@@ -27,6 +27,11 @@ def quarter_end(year: int, quarter: int) -> date:
 
 def previous_period(year: int, quarter: int) -> tuple[int, int]:
     return (year - 1, 4) if quarter == 1 else (year, quarter - 1)
+
+
+def latest_completed_quarter(today: date) -> tuple[int, int]:
+    current_quarter = (today.month - 1) // 3 + 1
+    return previous_period(today.year, current_quarter)
 
 
 def _eligible_name(name: str) -> bool:
@@ -214,6 +219,16 @@ class KoreaEarningsV2Pipeline:
             facts[identity.company_id] = fact
         return facts, issues
 
+    def _stored_current_facts(self, identities: Iterable[CompanyIdentity], year: int, quarter: int) -> dict[str, FinancialFact]:
+        company_ids = [row.company_id for row in identities]
+        return {
+            fact.company_id: fact
+            for record in self.repository.company_history(company_ids)
+            if int(record.get("calculation_version") or 0) >= CALCULATION_VERSION
+            for fact in [_financial_from_db(record)]
+            if fact.key == (year, quarter)
+        }
+
     def _calculated_histories(self, facts: dict[str, FinancialFact]) -> dict[str, list[FinancialFact]]:
         histories: dict[str, list[FinancialFact]] = defaultdict(list)
         for record in self.repository.company_history(facts):
@@ -273,7 +288,7 @@ class KoreaEarningsV2Pipeline:
             } for row in members))
 
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
-                    allow_review: bool = False) -> dict[str, Any]:
+                    allow_review: bool = False, incremental: bool = False) -> dict[str, Any]:
         operation = f"{year}Q{quarter}"
         if write:
             self.repository.save_state(operation, "running", {})
@@ -300,13 +315,28 @@ class KoreaEarningsV2Pipeline:
             if write and discovered:
                 self._save_universes(discovered, year, quarter)
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
-            facts, issues = self.collect_financials(identities, year, quarter)
+            stored_current = self._stored_current_facts(identities, year, quarter)
+            selected = identities
+            if incremental and stored_current:
+                recently_filed = self.dart.recent_periodic_corp_codes(date.today() - timedelta(days=14), date.today())
+                selected = [
+                    row for row in identities
+                    if row.corp_code in recently_filed
+                    or row.company_id not in stored_current
+                    or stored_current[row.company_id].is_pending
+                ]
+            fresh_facts, issues = self.collect_financials(selected, year, quarter) if selected else ({}, [])
+            facts = {**stored_current, **fresh_facts}
             histories = self._calculated_histories(facts)
             markets = self._market_rows(universes, histories, year, quarter)
             current_facts = [row for rows in histories.values() for row in rows if row.key == (year, quarter)]
             current_markets = [row for rows in markets.values() for row in rows if row.key == (year, quarter)]
             if write:
-                self.repository.upsert_company_quarters(row.db_row(calculation_version=CALCULATION_VERSION) for row in current_facts)
+                changed_ids = set(fresh_facts)
+                self.repository.upsert_company_quarters(
+                    row.db_row(calculation_version=CALCULATION_VERSION)
+                    for row in current_facts if row.company_id in changed_ids
+                )
                 self.repository.upsert_market_quarters(row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets)
             ready = not issues and all(row.completion_status == "complete" for row in current_markets)
             status = "ready" if ready else "incomplete"
@@ -314,6 +344,7 @@ class KoreaEarningsV2Pipeline:
                 "period": operation, "write": write,
                 "universe": {market: len(rows) for market, rows in universes.items()},
                 "companies": len(identities), "facts": len(current_facts),
+                "refreshed_companies": len(fresh_facts),
                 "complete_facts": sum(not row.is_pending for row in current_facts),
                 "markets": {row.market_id: row.completion_status for row in current_markets},
                 "issues": issues,
@@ -329,6 +360,10 @@ class KoreaEarningsV2Pipeline:
             if write:
                 self.repository.save_state(operation, "failed", {}, str(error)[:2000])
             raise
+
+    def run_daily(self, *, write: bool = True) -> dict[str, Any]:
+        year, quarter = latest_completed_quarter(date.today())
+        return self.run_quarter(year, quarter, write=write, allow_review=True, incremental=True)
 
     def run_year(self, year: int, *, write: bool = False, allow_review: bool = False) -> list[dict[str, Any]]:
         results = []

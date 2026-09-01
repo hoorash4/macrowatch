@@ -13,7 +13,7 @@ const NEWS_WORKFLOW = "news-pipeline.yml";
 const ADMIN_CARD_IDS = new Set([
   "member-management", "index-registry", "sector-registry", "news-analysis",
   "decisive-news", "uncertain-news", "policy-review", "target-collection",
-  "collection-errors", "integrations-backup",
+  "earnings-v2-pending", "collection-errors", "integrations-backup",
 ]);
 
 function corsHeaders(origin: string | null) {
@@ -467,6 +467,12 @@ export default {
           .select("id,published_at,source_name,derived_keywords,uncertain_summary")
           .eq("ai_sentiment", "uncertain").is("admin_sentiment", null)
           .order("published_at", { ascending: false }).limit(100);
+        if (error) throw error;
+        return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "list_earnings_v2_pending") {
+        const { data, error } = await admin.rpc("earnings_v2_list_stale_pending");
         if (error) throw error;
         return json({ items: data || [] }, 200, origin);
       }
