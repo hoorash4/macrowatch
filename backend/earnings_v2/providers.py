@@ -40,11 +40,21 @@ def _decimal(value: Any) -> Decimal | None:
         return None
 
 
-def _session(*, retries: int = 2) -> requests.Session:
-    client = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=max(retries, 0))
-    client.mount("https://", adapter)
-    return client
+CONNECT_TIMEOUT = 5
+STANDARD_READ_TIMEOUT = 20
+FAST_READ_TIMEOUT = 12
+
+
+def _session() -> requests.Session:
+    """자동 재시도 없이 한 번만 호출한다.
+
+    분기 파이프라인은 같은 요청을 내부에서 여러 번 숨겨 실행하지 않는다.
+    공급자 장애는 제한시간 안에 실패시키고 다음 실행에서 분기 전체를 다시
+    검증한다. 그래야 부분 결과와 장시간 정지를 동시에 막을 수 있다.
+    """
+    # requests.Session 기본값은 자동 재시도 0회다. 별도 어댑터를 붙이지
+    # 않아 공급자 호출 횟수가 코드에 보이는 횟수와 정확히 일치하게 한다.
+    return requests.Session()
 
 
 class OpenDartClient:
@@ -79,7 +89,7 @@ class OpenDartClient:
             response = self.session.get(
                 f"{OPEN_DART_BASE}/{endpoint}",
                 params={"crtfc_key": self.api_key, **params},
-                timeout=(10, 45),
+                timeout=(CONNECT_TIMEOUT, STANDARD_READ_TIMEOUT),
             )
             response.raise_for_status()
             if binary:
@@ -149,7 +159,7 @@ class KrxClient:
                 f"{KRX_BASE}/{endpoint}",
                 params={"basDd": day.strftime("%Y%m%d")},
                 headers={"AUTH_KEY": self.auth_key, "Accept": "application/json"},
-                timeout=60,
+                timeout=(CONNECT_TIMEOUT, STANDARD_READ_TIMEOUT),
             )
             response.raise_for_status()
             payload = response.json()
@@ -200,9 +210,7 @@ class KisClient:
             raise ValueError("KIS credentials are required")
         self.cached_token = cached_token
         self.save_token = save_token
-        # KIS 보완 호출은 여러 기업을 순차 처리한다. 숨은 HTTP 재시도가
-        # 기업마다 누적되지 않게 하고, 실패는 파이프라인이 즉시 드러낸다.
-        self.session = session or _session(retries=0)
+        self.session = session or _session()
         self.interval = interval
         self._last_request = 0.0
         self._token: str | None = None
@@ -219,7 +227,7 @@ class KisClient:
             response = self.session.post(
                 f"{KIS_BASE}/oauth2/tokenP",
                 json={"grant_type": "client_credentials", "appkey": self.app_key, "appsecret": self.app_secret},
-                timeout=(5, 15),
+                timeout=(CONNECT_TIMEOUT, 15),
             )
             response.raise_for_status()
             payload = response.json()
@@ -248,7 +256,7 @@ class KisClient:
         try:
             response = self.session.get(
                 f"{KIS_BASE}/uapi/domestic-stock/v1/finance/income-statement",
-                params=params, headers=headers, timeout=(5, 12),
+                params=params, headers=headers, timeout=(CONNECT_TIMEOUT, FAST_READ_TIMEOUT),
             )
             payload = response.json()
             if not response.ok or str(payload.get("rt_cd") or "0") != "0":
@@ -293,7 +301,7 @@ class EcosFxClient:
         )
         self.request_count += 1
         try:
-            response = self.session.get(url, timeout=30)
+            response = self.session.get(url, timeout=(CONNECT_TIMEOUT, 15))
             response.raise_for_status()
             payload = response.json()
             rows = payload["StatisticSearch"]["row"]

@@ -8,6 +8,10 @@ from typing import Any, Iterable
 import requests
 
 
+STORE_TIMEOUT = (5, 20)
+TOKEN_TIMEOUT = (5, 10)
+
+
 class StoreError(RuntimeError):
     pass
 
@@ -41,7 +45,12 @@ class EarningsV2Repository:
 
     def rpc(self, name: str, params: dict[str, Any]) -> Any:
         try:
-            response = self.session.post(f"{self.url}/rest/v1/rpc/{name}", headers=self.headers, json=_json(params), timeout=90)
+            response = self.session.post(
+                f"{self.url}/rest/v1/rpc/{name}",
+                headers=self.headers,
+                json=_json(params),
+                timeout=STORE_TIMEOUT,
+            )
             response.raise_for_status()
             return response.json() if response.content else None
         except Exception:
@@ -82,7 +91,7 @@ class EarningsV2Repository:
             f"{self.url}/rest/v1/app_settings",
             headers=self.headers,
             params={"key": "eq.kis_access_token_prod", "select": "value", "limit": "1"},
-            timeout=30,
+            timeout=TOKEN_TIMEOUT,
         )
         if not response.ok:
             return None
@@ -103,7 +112,7 @@ class EarningsV2Repository:
             headers={**self.headers, "Prefer": "resolution=merge-duplicates,return=minimal"},
             params={"on_conflict": "key"},
             json={"key": "kis_access_token_prod", "value": {"access_token": token, "expires_at": expires.isoformat()}, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": None},
-            timeout=30,
+            timeout=TOKEN_TIMEOUT,
         )
         if not response.ok:
             raise StoreError("Could not persist the shared KIS access token")

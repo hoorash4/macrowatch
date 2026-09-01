@@ -87,6 +87,7 @@ class OpenDartTransportTests(unittest.TestCase):
         client = OpenDartClient("secret", session=session, interval=0)
         client.multi_accounts([f"{index:08d}" for index in range(150)], 2026, 2)
         self.assertEqual(len(session.calls), 2)
+        self.assertEqual(session.calls[0][1]["timeout"], (5, 20))
         self.assertEqual(len(session.calls[0][1]["params"]["corp_code"].split(",")), 100)
         self.assertEqual(len(session.calls[1][1]["params"]["corp_code"].split(",")), 50)
 

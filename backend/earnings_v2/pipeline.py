@@ -258,8 +258,11 @@ class KoreaEarningsV2Pipeline:
             self._progress("dart_financials_start", companies=len(identities))
             facts, issues = self.collect_financials(identities, year, quarter)
             self._progress("financials_done", facts=len(facts), issues=len(issues))
+            self._progress("history_calculation_start", companies=len(facts))
             histories = self._calculated_histories(facts)
+            self._progress("history_calculation_done", companies=len(histories))
             markets = self._market_rows(universes, histories, year, quarter)
+            self._progress("market_calculation_done", markets=len(markets))
             summary = {
                 "period": operation,
                 "write": write,
