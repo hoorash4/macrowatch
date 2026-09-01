@@ -123,4 +123,9 @@ class OpenDartV2Client:
             "reprt_code": REPORT_CODES[quarter],
             "fs_div": normalized_scope,
         })
-        return [row for row in payload.get("list", []) if isinstance(row, dict)]
+        rows = [row for row in payload.get("list", []) if isinstance(row, dict)]
+        # fnlttSinglAcntAll selects CFS/OFS through the request parameter but
+        # does not consistently repeat that scope in every response row. Keep
+        # the transport contract explicit so the statement parser never
+        # discards a valid response as an unscoped row.
+        return [{**row, "fs_div": normalized_scope} for row in rows]

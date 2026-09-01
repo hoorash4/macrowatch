@@ -196,6 +196,40 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "ready")
         self.assertEqual(fx.calls, [date(2026, 12, 31)])
 
+    def test_partial_financials_are_persisted_for_later_completion(self):
+        class PartialCollector(FakeFinancialCollector):
+            def collect(self, corp_codes, year, quarter):
+                result = super().collect(corp_codes, year, quarter)
+                result.values["00000001"] = DartQuarterFinancials(
+                    top_line=None,
+                    operating_income=Decimal("20"),
+                    net_income=Decimal("10"),
+                    scope="CFS",
+                    source_filing_id="20260515000001",
+                    currency="KRW",
+                )
+                result.errors["00000001"] = "CFS(top_line=no,op=yes,net=yes)"
+                return result
+
+        store = FakeStore()
+        pipeline = KoreaEarningsPipeline(
+            krx=FakeKrx(), dart=FakeDart(), fx=FakeFx(), store=store,
+        )
+        pipeline.financials = PartialCollector()
+
+        result = pipeline.run(
+            [("kr_largecap", 2026, 1)],
+            source="test",
+            operation="partial_persistence",
+        )
+
+        self.assertEqual(result["status"], "incomplete")
+        saved = store.company_quarters["kr:00000001"][0]
+        self.assertIsNone(saved.top_line)
+        self.assertEqual(saved.operating_income, Decimal("20"))
+        self.assertEqual(saved.net_income, Decimal("10"))
+        self.assertEqual(saved.quality_status, "review_required")
+
 
 if __name__ == "__main__":
     unittest.main()

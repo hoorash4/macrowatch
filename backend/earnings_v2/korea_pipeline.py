@@ -291,6 +291,20 @@ class KoreaEarningsPipeline:
             except ValueError as error:
                 record_missing(company_id, str(error))
                 continue
+            quality_status = "complete" if financial.complete else "review_required"
+            if quality_status != "complete":
+                missing.append({
+                    "company_id": company_id,
+                    "company_name": context.company_name_by_company[company_id],
+                    "reason": batch.errors.get(
+                        corp_code,
+                        "OpenDART required values partially unavailable",
+                    ),
+                })
+
+            def converted(value: Decimal | None) -> Decimal | None:
+                return value * exchange_rate if value is not None else None
+
             row = QuarterValue(
                 company_id=company_id,
                 fiscal_year=context.year,
@@ -298,15 +312,15 @@ class KoreaEarningsPipeline:
                 market_year=context.year,
                 market_quarter=context.quarter,
                 period_end=quarter_end,
-                top_line=financial.top_line * exchange_rate,
-                operating_income=financial.operating_income * exchange_rate,
-                net_income=financial.net_income * exchange_rate,
+                top_line=converted(financial.top_line),
+                operating_income=converted(financial.operating_income),
+                net_income=converted(financial.net_income),
                 currency="KRW",
                 consolidation_scope=financial.scope,
                 source="open_dart",
                 source_filing_id=financial.source_filing_id,
                 filing_date=filing_date,
-                quality_status="complete",
+                quality_status=quality_status,
                 calculation_version=EXTRACTION_VERSION,
             )
             histories[company_id] = [

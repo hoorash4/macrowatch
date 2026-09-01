@@ -83,6 +83,25 @@ class EarningsV2OpenDartTransportTests(unittest.TestCase):
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn(secret, str(captured.exception))
 
+    def test_full_statement_rows_inherit_requested_scope(self):
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"status": "000", "list": [{"account_nm": "영업수익"}]}
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        client = OpenDartV2Client("test", interval=0, session=Session())
+        rows = client.all_accounts("00000001", 2026, 3, "CFS")
+        self.assertEqual(rows[0]["fs_div"], "CFS")
+
 
 class EarningsV2DartFinancialTests(unittest.TestCase):
     def test_complete_batch_rows_need_no_single_company_fallback(self):
@@ -219,7 +238,10 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
             account("00000001", "당기순이익", "10", account_id="ifrs-full_ProfitLoss", order=4),
         ]
         value, diagnostic = extract_quarter(rows, [], 1)
-        self.assertIsNone(value)
+        self.assertIsNotNone(value)
+        self.assertIsNone(value.top_line)
+        self.assertEqual(value.operating_income, Decimal("20"))
+        self.assertEqual(value.net_income, Decimal("10"))
         self.assertIn("top_line=no", diagnostic)
 
     def test_unrelated_labels_do_not_override_operating_or_net_income(self):
@@ -229,7 +251,10 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
             account("00000001", "법인세차감전순이익", "10", account_id="ifrs-full_ProfitLoss", order=3),
         ]
         value, diagnostic = extract_quarter(rows, [], 1)
-        self.assertIsNone(value)
+        self.assertIsNotNone(value)
+        self.assertEqual(value.top_line, Decimal("100"))
+        self.assertIsNone(value.operating_income)
+        self.assertIsNone(value.net_income)
         self.assertIn("op=no", diagnostic)
         self.assertIn("net=no", diagnostic)
 
@@ -250,6 +275,57 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         result = DartFinancialCollector(client).collect(["00000001", "00000002"], 2026, 1)
         self.assertEqual(set(result.values), {"00000001", "00000002"})
         self.assertEqual(client.full_calls, [("00000002", "CFS")])
+
+    def test_partial_batch_values_are_preserved_and_only_current_scope_is_fetched(self):
+        class Client:
+            def __init__(self):
+                self.full_calls = []
+
+            @staticmethod
+            def multi_accounts(codes, _year, _quarter):
+                return [
+                    account(codes[0], "영업이익", "20", account_id="dart_OperatingIncomeLoss"),
+                    account(codes[0], "당기순이익", "10", account_id="ifrs-full_ProfitLoss"),
+                ]
+
+            def all_accounts(self, code, _year, quarter, scope):
+                self.full_calls.append((code, quarter, scope))
+                return [
+                    account(code, "영업수익", "100", scope=scope),
+                    # These deliberately differ: valid batch values must win.
+                    account(code, "영업이익", "999", scope=scope),
+                    account(code, "당기순이익", "999", scope=scope),
+                ]
+
+        client = Client()
+        result = DartFinancialCollector(client).collect(["00000001"], 2026, 3)
+        value = result.values["00000001"]
+        self.assertTrue(value.complete)
+        self.assertEqual(value.top_line, Decimal("100"))
+        self.assertEqual(value.operating_income, Decimal("20"))
+        self.assertEqual(value.net_income, Decimal("10"))
+        self.assertEqual(client.full_calls, [("00000001", 3, "CFS")])
+
+    def test_unresolved_partial_is_returned_instead_of_discarded(self):
+        class Client:
+            @staticmethod
+            def multi_accounts(codes, _year, _quarter):
+                return [
+                    account(codes[0], "영업이익", "20", account_id="dart_OperatingIncomeLoss"),
+                    account(codes[0], "당기순이익", "10", account_id="ifrs-full_ProfitLoss"),
+                ]
+
+            @staticmethod
+            def all_accounts(*_args):
+                return []
+
+        result = DartFinancialCollector(Client()).collect(["00000001"], 2026, 1)
+        value = result.values["00000001"]
+        self.assertFalse(value.complete)
+        self.assertIsNone(value.top_line)
+        self.assertEqual(value.operating_income, Decimal("20"))
+        self.assertEqual(value.net_income, Decimal("10"))
+        self.assertIn("00000001", result.errors)
 
 
 if __name__ == "__main__":

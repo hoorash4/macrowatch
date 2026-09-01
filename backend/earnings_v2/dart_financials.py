@@ -126,12 +126,44 @@ def _amount(row: dict[str, Any] | None, quarter: int, prior: dict[str, Any] | No
 
 @dataclass(frozen=True)
 class DartQuarterFinancials:
-    top_line: Decimal
-    operating_income: Decimal
-    net_income: Decimal
+    top_line: Decimal | None
+    operating_income: Decimal | None
+    net_income: Decimal | None
     scope: str
     source_filing_id: str
     currency: str
+
+    @property
+    def complete(self) -> bool:
+        return all(value is not None for value in (
+            self.top_line,
+            self.operating_income,
+            self.net_income,
+        ))
+
+    @property
+    def available_count(self) -> int:
+        return sum(value is not None for value in (
+            self.top_line,
+            self.operating_income,
+            self.net_income,
+        ))
+
+    def fill_missing_from(self, other: "DartQuarterFinancials") -> "DartQuarterFinancials":
+        if self.scope != other.scope:
+            raise ValueError("CFS and OFS financial facts must never be mixed")
+        return DartQuarterFinancials(
+            top_line=self.top_line if self.top_line is not None else other.top_line,
+            operating_income=(
+                self.operating_income
+                if self.operating_income is not None
+                else other.operating_income
+            ),
+            net_income=self.net_income if self.net_income is not None else other.net_income,
+            scope=self.scope,
+            source_filing_id=self.source_filing_id or other.source_filing_id,
+            currency=self.currency or other.currency,
+        )
 
 
 @dataclass(frozen=True)
@@ -172,20 +204,20 @@ def _extract_scope(
     net = _amount(net_row, quarter, prior_net)
     top = _amount(revenue_row, quarter, prior_revenue)
 
-    if top is None or op is None or net is None:
-        return None, (
-            f"{scope}(top_line={'yes' if top is not None else 'no'},"
-            f"op={'yes' if op is not None else 'no'},net={'yes' if net is not None else 'no'})"
-        )
     representative = op_row or net_row or revenue_row or current[0]
-    return DartQuarterFinancials(
+    value = DartQuarterFinancials(
         top_line=top,
         operating_income=op,
         net_income=net,
         scope=scope,
         source_filing_id=str(representative.get("rcept_no") or ""),
         currency=str(representative.get("currency") or "KRW").upper(),
-    ), ""
+    )
+    diagnostic = (
+        f"{scope}(top_line={'yes' if top is not None else 'no'},"
+        f"op={'yes' if op is not None else 'no'},net={'yes' if net is not None else 'no'})"
+    )
+    return value, "" if value.complete else diagnostic
 
 
 def extract_quarter(
@@ -194,12 +226,41 @@ def extract_quarter(
     quarter: int,
 ) -> tuple[DartQuarterFinancials | None, str]:
     diagnostics = []
+    partials = []
     for scope in ("CFS", "OFS"):
         value, diagnostic = _extract_scope(rows, prior_rows, quarter, scope)
-        if value is not None:
+        if value is not None and value.complete:
             return value, ""
+        if value is not None:
+            partials.append(value)
         diagnostics.append(diagnostic)
-    return None, ", ".join(diagnostics)
+    # Keep the best partial result instead of throwing away valid fields.
+    # Equal coverage preserves CFS priority because it was appended first.
+    best = max(partials, key=lambda value: value.available_count) if partials else None
+    return best, ", ".join(diagnostics)
+
+
+def _needs_previous(rows: list[dict[str, Any]], quarter: int, scope: str) -> bool:
+    if quarter == 1:
+        return False
+    scoped = [
+        row for row in rows
+        if str(row.get("fs_div") or "").upper() == scope
+        and str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+    ]
+    selected = (
+        _top_line_row(scoped),
+        _metric_row(scoped, OP_IDS, OP_NAMES),
+        _metric_row(scoped, NET_IDS, NET_NAMES),
+    )
+    for row in selected:
+        if row is None:
+            continue
+        if quarter == 4:
+            return True
+        if _decimal(row.get("thstrm_amount")) is None and _decimal(row.get("thstrm_add_amount")) is not None:
+            return True
+    return False
 
 
 class DartFinancialCollector:
@@ -222,53 +283,78 @@ class DartFinancialCollector:
             value, diagnostic = extract_quarter(current[code], [], quarter)
             if value is not None:
                 values[code] = value
-            else:
+            if value is None or not value.complete:
                 diagnostics[code] = diagnostic
 
-        unresolved = [code for code in companies if code not in values]
+        unresolved = [code for code in companies if not values.get(code) or not values[code].complete]
         previous_quarter = quarter - 1 if quarter > 1 else None
         previous = {code: [] for code in companies}
-        if unresolved and previous_quarter:
+        needs_batch_previous = [
+            code for code in unresolved
+            if previous_quarter
+            and any(
+                _needs_previous(current[code], quarter, scope)
+                for scope in ("CFS", "OFS")
+            )
+        ]
+        if needs_batch_previous and previous_quarter:
             # Q4 requires annual cumulative minus Q3 cumulative. For Q2/Q3,
             # this is only a compatibility fallback when a filing omitted the
             # documented standalone three-month field.
             previous.update(_group_by_company(
-                self.client.multi_accounts(unresolved, year, previous_quarter),
-                unresolved,
+                self.client.multi_accounts(needs_batch_previous, year, previous_quarter),
+                needs_batch_previous,
             ))
-            for code in unresolved:
+            for code in needs_batch_previous:
                 value, diagnostic = extract_quarter(current[code], previous[code], quarter)
                 if value is not None:
                     values[code] = value
-                else:
+                if value is None or not value.complete:
                     diagnostics[code] = diagnostic
 
-        for code in (company for company in companies if company not in values):
-            # Only unresolved companies pay the full-statement cost. CFS is
-            # evaluated first; OFS is used only as a complete, separate scope.
-            fallback_current: list[dict[str, Any]] = []
-            fallback_previous: list[dict[str, Any]] = []
+        for code in (company for company in companies if not values.get(company) or not values[company].complete):
+            # Preserve every valid batch fact. The full-statement fallback is
+            # only allowed to fill missing fields from the same scope.
+            partial = values.get(code)
+            scopes = (partial.scope,) if partial is not None else ("CFS", "OFS")
+            fallback_diagnostics = []
             try:
-                for scope in ("CFS", "OFS"):
-                    fallback_current.extend(self.client.all_accounts(code, year, quarter, scope))
-                    if previous_quarter:
-                        fallback_previous.extend(
-                            self.client.all_accounts(code, year, previous_quarter, scope)
+                for scope in scopes:
+                    full_current = self.client.all_accounts(code, year, quarter, scope)
+                    full_value, diagnostic = _extract_scope(full_current, [], quarter, scope)
+                    if full_value is not None:
+                        candidate = (
+                            partial.fill_missing_from(full_value)
+                            if partial is not None else full_value
                         )
-                    value, diagnostic = extract_quarter(
-                        fallback_current,
-                        fallback_previous,
-                        quarter,
-                    )
-                    if value is not None:
-                        values[code] = value
+                    else:
+                        candidate = partial
+                    if candidate is not None and candidate.complete:
+                        values[code] = candidate
                         break
+                    if previous_quarter and _needs_previous(full_current, quarter, scope):
+                        full_previous = self.client.all_accounts(
+                            code, year, previous_quarter, scope
+                        )
+                        full_value, diagnostic = _extract_scope(
+                            full_current, full_previous, quarter, scope
+                        )
+                        if full_value is not None:
+                            candidate = (
+                                partial.fill_missing_from(full_value)
+                                if partial is not None else full_value
+                            )
+                    if candidate is not None:
+                        values[code] = candidate
+                    if candidate is not None and candidate.complete:
+                        break
+                    fallback_diagnostics.append(diagnostic)
             except Exception as error:
                 errors[code] = str(error)[:180]
                 continue
-            if code not in values:
+            if not values.get(code) or not values[code].complete:
                 errors[code] = (
-                    diagnostic
+                    ", ".join(value for value in fallback_diagnostics if value)
                     or diagnostics.get(code)
                     or "OpenDART required values unavailable"
                 )
