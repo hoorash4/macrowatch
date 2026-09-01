@@ -86,6 +86,18 @@ def xbrl_archive(periods: dict[str, tuple[str, str, str]], *, dimensional: bool 
     return output.getvalue()
 
 
+class XbrlBatchClient:
+    def xbrl_archives(self, receipts):
+        results = {}
+        errors = {}
+        for receipt in dict.fromkeys(receipts):
+            try:
+                results[receipt] = self.xbrl_archive(receipt)
+            except Exception as error:
+                errors[receipt] = str(error)
+        return results, errors
+
+
 class EarningsV2OpenDartTransportTests(unittest.TestCase):
     def test_multi_company_transport_uses_one_official_request(self):
         class Response:
@@ -153,7 +165,7 @@ class EarningsV2OpenDartTransportTests(unittest.TestCase):
 
 class EarningsV2DartFinancialTests(unittest.TestCase):
     def test_complete_batch_rows_need_no_single_company_fallback(self):
-        class Client:
+        class Client(XbrlBatchClient):
             def __init__(self):
                 self.full_calls = []
                 self.batch_calls = []
@@ -174,7 +186,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(client.full_calls, [])
 
     def test_q2_reported_three_month_values_do_not_request_q1(self):
-        class Client:
+        class Client(XbrlBatchClient):
             def __init__(self):
                 self.batch_calls = []
 
@@ -192,7 +204,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(client.batch_calls, [(('00000001', '00000002'), 2)])
 
     def test_q4_requests_q3_once_for_annual_subtraction(self):
-        class Client:
+        class Client(XbrlBatchClient):
             def __init__(self):
                 self.batch_calls = []
 
@@ -307,7 +319,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertIn("net=no", diagnostic)
 
     def test_only_unresolved_company_uses_xbrl_fallback(self):
-        class Client:
+        class Client(XbrlBatchClient):
             def __init__(self):
                 self.xbrl_calls = []
 
@@ -329,7 +341,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(client.xbrl_calls, ["20260515000001"])
 
     def test_partial_batch_values_are_preserved_and_only_current_scope_is_fetched(self):
-        class Client:
+        class Client(XbrlBatchClient):
             def __init__(self):
                 self.xbrl_calls = []
 
@@ -354,7 +366,7 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(client.xbrl_calls, ["20260515000001"])
 
     def test_unresolved_partial_is_returned_instead_of_discarded(self):
-        class Client:
+        class Client(XbrlBatchClient):
             @staticmethod
             def multi_accounts(codes, _year, _quarter):
                 return [

@@ -6,7 +6,7 @@ import re
 from typing import Any, Iterable
 
 from .financials import single_quarter_amount
-from .open_dart import OpenDartV2Client
+from .open_dart import OpenDartV2Client, OpenDartV2Error
 from .xbrl_financials import extract_single_quarter_metrics
 
 
@@ -313,24 +313,49 @@ class DartFinancialCollector:
                 if value is None or not value.complete:
                     diagnostics[code] = diagnostic
 
-        for code in (company for company in companies if not values.get(company) or not values[company].complete):
+        xbrl_codes = [
+            company for company in companies
+            if not values.get(company) or not values[company].complete
+        ]
+        receipts_by_code = {}
+        prior_receipts_by_code = {}
+        for code in xbrl_codes:
+            partial = values.get(code)
+            receipts_by_code[code] = (
+                partial.source_filing_id if partial is not None else next((
+                    str(row.get("rcept_no") or "") for row in current[code]
+                    if row.get("rcept_no")
+                ), "")
+            )
+            prior_receipts_by_code[code] = next((
+                str(row.get("rcept_no") or "") for row in previous.get(code, [])
+                if row.get("rcept_no")
+            ), "")
+        requested_receipts = [
+            receipt for code in xbrl_codes
+            for receipt in (
+                receipts_by_code[code],
+                prior_receipts_by_code[code] if quarter == 4 else "",
+            )
+            if receipt
+        ]
+        archives, archive_errors = (
+            self.client.xbrl_archives(requested_receipts)
+            if requested_receipts else ({}, {})
+        )
+
+        for code in xbrl_codes:
             # Preserve every valid batch fact. A single in-memory XBRL archive
             # replaces repeated CFS/OFS full-statement API calls.
             partial = values.get(code)
             try:
-                receipt = partial.source_filing_id if partial is not None else ""
-                if not receipt:
-                    receipt = next((
-                        str(row.get("rcept_no") or "") for row in current[code]
-                        if row.get("rcept_no")
-                    ), "")
-                prior_receipt = next((
-                    str(row.get("rcept_no") or "") for row in previous.get(code, [])
-                    if row.get("rcept_no")
-                ), "")
-                archive = self.client.xbrl_archive(receipt)
+                receipt = receipts_by_code[code]
+                prior_receipt = prior_receipts_by_code[code]
+                if receipt not in archives:
+                    raise OpenDartV2Error(archive_errors.get(receipt, "XBRL archive unavailable"))
+                archive = archives[receipt]
                 prior_archive = (
-                    self.client.xbrl_archive(prior_receipt)
+                    archives.get(prior_receipt)
                     if quarter == 4 and prior_receipt else None
                 )
                 xbrl = extract_single_quarter_metrics(

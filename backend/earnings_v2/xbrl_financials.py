@@ -94,7 +94,19 @@ def _safe_xml_members(payload: bytes) -> list[tuple[str, ET.Element]]:
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         for info in archive.infolist():
             lower = info.filename.lower()
-            if info.is_dir() or not lower.endswith((".xml", ".xbrl", ".xsd")):
+            if info.is_dir():
+                continue
+            # Facts live in the instance, Korean account names in label
+            # linkbases, and statement roles in presentation/schema files.
+            # Calculation, definition, reference and English linkbases do not
+            # participate in this extraction and can be very large.
+            relevant = (
+                lower.endswith((".xbrl", ".xsd"))
+                or lower.endswith(".xml") and any(token in lower for token in (
+                    "_ko", "-ko", "label", "_lab", "-lab", "_pre", "-pre",
+                ))
+            )
+            if not relevant:
                 continue
             # The official archive is small, but reject pathological members
             # rather than expanding an unbounded ZIP in memory.
