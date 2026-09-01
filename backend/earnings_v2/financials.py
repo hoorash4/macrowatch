@@ -3,6 +3,13 @@ from __future__ import annotations
 from decimal import Decimal
 
 
+def profit_margin(profit: Decimal | None, top_line: Decimal | None) -> Decimal | None:
+    """Return a same-quarter profit margin percentage without inventing a denominator."""
+    if profit is None or top_line is None or top_line == 0:
+        return None
+    return ((profit / top_line) * Decimal("100")).quantize(Decimal("0.00000001"))
+
+
 def single_quarter_amount(
     fiscal_quarter: int,
     *,

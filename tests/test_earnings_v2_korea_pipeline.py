@@ -147,7 +147,13 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertEqual(len(financials.calls), 1)
         self.assertEqual(len(financials.calls[0][0]), 100)
         self.assertEqual(sum(len(rows) for rows in store.company_quarters.values()), 100)
-        self.assertEqual(store.market_quarters["kr_largecap"][0].actual_company_count, 100)
+        company = store.company_quarters["kr:00000001"][0]
+        self.assertEqual(company.operating_margin_pct, Decimal("20.00000000"))
+        self.assertEqual(company.net_margin_pct, Decimal("10.00000000"))
+        market = store.market_quarters["kr_largecap"][0]
+        self.assertEqual(market.actual_company_count, 100)
+        self.assertEqual(market.operating_margin_pct, Decimal("20.00000000"))
+        self.assertEqual(market.net_margin_pct, Decimal("10.00000000"))
 
         second = pipeline.run(
             [("kr_largecap", 2026, 1)],
@@ -177,6 +183,8 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertEqual(converted.top_line, Decimal("130000"))
         self.assertEqual(converted.operating_income, Decimal("26000"))
         self.assertEqual(converted.net_income, Decimal("13000"))
+        self.assertEqual(converted.operating_margin_pct, Decimal("20.00000000"))
+        self.assertEqual(converted.net_margin_pct, Decimal("10.00000000"))
         self.assertEqual(fx.calls, [date(2026, 3, 31)])
 
     def test_fx_uses_calendar_quarter_end_not_earlier_market_close(self):
@@ -228,6 +236,8 @@ class EarningsV2KoreaPipelineTests(unittest.TestCase):
         self.assertIsNone(saved.top_line)
         self.assertEqual(saved.operating_income, Decimal("20"))
         self.assertEqual(saved.net_income, Decimal("10"))
+        self.assertIsNone(saved.operating_margin_pct)
+        self.assertIsNone(saved.net_margin_pct)
         self.assertEqual(saved.quality_status, "review_required")
 
 

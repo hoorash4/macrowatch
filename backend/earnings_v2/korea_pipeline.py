@@ -9,6 +9,7 @@ from typing import Any, Iterable
 
 from .dart_financials import DartBatchResult, DartFinancialCollector
 from .ecos import EcosFxClient, EcosFxError
+from .financials import profit_margin
 from .growth import calculate_company_growth
 from .krx import KrxOpenApiClient
 from .market import aggregate_market_quarter, calculate_market_series
@@ -58,6 +59,8 @@ def _quarter_from_record(row: dict[str, Any]) -> QuarterValue:
         revision_reference_date=_date(row.get("revision_reference_date")),
         quality_status=str(row.get("quality_status") or "draft"),
         calculation_version=int(row.get("calculation_version") or 1),
+        operating_margin_pct=_decimal(row.get("operating_margin_pct")),
+        net_margin_pct=_decimal(row.get("net_margin_pct")),
         operating_income_yoy_pct=_decimal(row.get("operating_income_yoy_pct")),
         operating_income_yoy_state=str(row.get("operating_income_yoy_state") or "missing_prior"),
         net_income_yoy_pct=_decimal(row.get("net_income_yoy_pct")),
@@ -79,6 +82,8 @@ def _market_from_record(row: dict[str, Any]) -> MarketQuarter:
         actual_company_count=int(row.get("actual_company_count") or 0),
         target_company_count=int(row["target_company_count"]),
         completion_status=str(row["completion_status"]),
+        operating_margin_pct=_decimal(row.get("operating_margin_pct")),
+        net_margin_pct=_decimal(row.get("net_margin_pct")),
         operating_income_yoy_pct=_decimal(row.get("operating_income_yoy_pct")),
         operating_income_yoy_state=str(row.get("operating_income_yoy_state") or "missing_prior"),
         net_income_yoy_pct=_decimal(row.get("net_income_yoy_pct")),
@@ -305,6 +310,9 @@ class KoreaEarningsPipeline:
             def converted(value: Decimal | None) -> Decimal | None:
                 return value * exchange_rate if value is not None else None
 
+            top_line = converted(financial.top_line)
+            operating_income = converted(financial.operating_income)
+            net_income = converted(financial.net_income)
             row = QuarterValue(
                 company_id=company_id,
                 fiscal_year=context.year,
@@ -312,9 +320,9 @@ class KoreaEarningsPipeline:
                 market_year=context.year,
                 market_quarter=context.quarter,
                 period_end=quarter_end,
-                top_line=converted(financial.top_line),
-                operating_income=converted(financial.operating_income),
-                net_income=converted(financial.net_income),
+                top_line=top_line,
+                operating_income=operating_income,
+                net_income=net_income,
                 currency="KRW",
                 consolidation_scope=financial.scope,
                 source="open_dart",
@@ -322,6 +330,8 @@ class KoreaEarningsPipeline:
                 filing_date=filing_date,
                 quality_status=quality_status,
                 calculation_version=EXTRACTION_VERSION,
+                operating_margin_pct=profit_margin(operating_income, top_line),
+                net_margin_pct=profit_margin(net_income, top_line),
             )
             histories[company_id] = [
                 existing for existing in histories.get(company_id, [])
@@ -377,9 +387,14 @@ class KoreaEarningsPipeline:
                     and candidate.fiscal_quarter == context.quarter
                 ), None)
                 if row is None:
-                    company_values.append((None, None, "missing"))
+                    company_values.append((None, None, None, "missing"))
                 else:
-                    company_values.append((row.operating_income, row.net_income, row.quality_status))
+                    company_values.append((
+                        row.top_line,
+                        row.operating_income,
+                        row.net_income,
+                        row.quality_status,
+                    ))
                     if row.quality_status == "complete":
                         complete_count += 1
             market_rows.setdefault(context.market_id, []).append(aggregate_market_quarter(

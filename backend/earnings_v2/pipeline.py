@@ -46,7 +46,14 @@ def prepare_company_series(rows: Iterable[QuarterValue]) -> list[QuarterValue]:
 def build_market_series(
     *,
     market_id: str,
-    quarter_inputs: Iterable[tuple[int, int, list[tuple[Decimal | None, Decimal | None, str]], bool]],
+    quarter_inputs: Iterable[
+        tuple[
+            int,
+            int,
+            list[tuple[Decimal | None, Decimal | None, Decimal | None, str]],
+            bool,
+        ]
+    ],
 ) -> list[MarketQuarter]:
     rows = [
         aggregate_market_quarter(

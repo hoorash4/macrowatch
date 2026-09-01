@@ -27,6 +27,8 @@ class QuarterValue:
     revision_reference_date: date | None = None
     quality_status: str = "draft"
     calculation_version: int = 1
+    operating_margin_pct: Decimal | None = None
+    net_margin_pct: Decimal | None = None
     operating_income_yoy_pct: Decimal | None = None
     operating_income_yoy_state: str = "missing_prior"
     net_income_yoy_pct: Decimal | None = None
@@ -84,6 +86,8 @@ class MarketQuarter:
     actual_company_count: int
     target_company_count: int
     completion_status: str
+    operating_margin_pct: Decimal | None = None
+    net_margin_pct: Decimal | None = None
     operating_income_yoy_pct: Decimal | None = None
     operating_income_yoy_state: str = "missing_prior"
     net_income_yoy_pct: Decimal | None = None

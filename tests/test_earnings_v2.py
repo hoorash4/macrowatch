@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import unittest
 
-from earnings_v2.financials import single_quarter_amount
+from earnings_v2.financials import profit_margin, single_quarter_amount
 from earnings_v2.growth import calculate_company_growth, conventional_growth
 from earnings_v2.http import get_with_retries
 from earnings_v2.market import aggregate_market_quarter, calculate_market_series
@@ -103,6 +103,12 @@ class EarningsV2GrowthTests(unittest.TestCase):
 
 
 class EarningsV2FinancialTests(unittest.TestCase):
+    def test_profit_margin_uses_same_quarter_values_and_rejects_zero_denominator(self):
+        self.assertEqual(profit_margin(Decimal("20"), Decimal("80")), Decimal("25.00000000"))
+        self.assertEqual(profit_margin(Decimal("-10"), Decimal("100")), Decimal("-10.00000000"))
+        self.assertIsNone(profit_margin(Decimal("10"), Decimal("0")))
+        self.assertIsNone(profit_margin(None, Decimal("100")))
+
     def test_single_quarter_prefers_disclosed_three_month_value(self):
         self.assertEqual(single_quarter_amount(2, current_three_month=Decimal("7"), cumulative=Decimal("20"), previous_cumulative=Decimal("8")), Decimal("7"))
         self.assertEqual(single_quarter_amount(4, cumulative=Decimal("40"), previous_cumulative=Decimal("28")), Decimal("12"))
@@ -131,11 +137,16 @@ class EarningsV2UniverseAndMarketTests(unittest.TestCase):
     def test_market_uses_average_of_complete_final_members(self):
         result = aggregate_market_quarter(
             market_id="kr_largecap", market_year=2020, market_quarter=1,
-            company_values=[(Decimal("10"), Decimal("5"), "complete"), (Decimal("30"), Decimal("15"), "complete")],
+            company_values=[
+                (Decimal("100"), Decimal("10"), Decimal("5"), "complete"),
+                (Decimal("200"), Decimal("30"), Decimal("15"), "complete"),
+            ],
             historical=True,
         )
         self.assertEqual(result.average_operating_income, Decimal("20"))
         self.assertEqual(result.average_net_income, Decimal("10"))
+        self.assertEqual(result.operating_margin_pct, Decimal("13.33333333"))
+        self.assertEqual(result.net_margin_pct, Decimal("6.66666667"))
         self.assertEqual(result.completion_status, "historical_partial")
 
     def test_market_growth_is_calculated_from_average_series(self):
@@ -182,6 +193,15 @@ class EarningsV2BoundaryTests(unittest.TestCase):
         self.assertIn("earnings_v2_get_company_quarters_many", sql)
         self.assertIn("earnings_v2_get_market_quarters", sql)
         self.assertIn("'incomplete'", sql)
+
+    def test_profit_margin_fields_are_plain_and_not_backfilled_by_schema(self):
+        root = Path(__file__).resolve().parents[1]
+        migration = root / "supabase" / "migrations" / "20260901215500_store_new_earnings_v2_profit_margins.sql"
+        sql = migration.read_text(encoding="utf-8").lower()
+        self.assertIn("operating_margin_pct numeric(20, 8)", sql)
+        self.assertIn("net_margin_pct numeric(20, 8)", sql)
+        self.assertNotIn("generated always as", sql)
+        self.assertIn("no automatic historical backfill", sql)
 
     def test_pipeline_never_completes_a_missing_required_fact(self):
         row = quarter(2026, 1, "10").with_metrics(top_line=None)
