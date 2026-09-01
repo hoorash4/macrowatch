@@ -197,12 +197,17 @@ class KisFallbackTests(unittest.TestCase):
                 }
 
         class Session:
-            @staticmethod
-            def get(*_args, **_kwargs):
+            def __init__(self):
+                self.kwargs = None
+
+            def get(self, *_args, **kwargs):
+                self.kwargs = kwargs
                 return Response()
 
-        client = KisClient("key", "secret", cached_token=lambda: "token", session=Session(), interval=0)
+        session = Session()
+        client = KisClient("key", "secret", cached_token=lambda: "token", session=session, interval=0)
         self.assertEqual(client.quarter_top_line("005930", 2026, 2), Decimal("15000000000"))
+        self.assertEqual(session.kwargs["params"]["FID_DIV_CLS_CODE"], "1")
 
 
 class GrowthAndAggregationTests(unittest.TestCase):

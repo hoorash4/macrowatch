@@ -248,7 +248,9 @@ class KisClient:
             time.sleep(remaining)
         self._last_request = time.monotonic()
         self.request_count += 1
-        params = {"FID_DIV_CLS_CODE": "0", "fid_cond_mrkt_div_code": "J", "fid_input_iscd": ticker}
+        # KIS 정의: 0=연간, 1=분기. 분기 응답은 연초부터의 누적값이므로
+        # 아래에서 직전 분기 누적값을 차감해 단독 분기값으로 변환한다.
+        params = {"FID_DIV_CLS_CODE": "1", "fid_cond_mrkt_div_code": "J", "fid_input_iscd": ticker}
         headers = {
             "authorization": f"Bearer {self._access_token()}", "appkey": self.app_key,
             "appsecret": self.app_secret, "tr_id": "FHKST66430200", "custtype": "P",
