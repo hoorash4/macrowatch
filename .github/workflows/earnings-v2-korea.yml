@@ -1,0 +1,68 @@
+name: Earnings V2 Korea quarter
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Fiscal year
+        required: true
+        default: "2026"
+        type: string
+      quarter:
+        description: Fiscal quarter
+        required: true
+        default: "2"
+        type: choice
+        options: ["1", "2", "3", "4"]
+      write:
+        description: Write only after the dry-run result is accepted
+        required: true
+        default: false
+        type: boolean
+      allow_review:
+        description: Allow rows with unresolved fields (normally false)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-v2-korea-quarter
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Collect and validate one quarter
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          YEAR: ${{ inputs.year }}
+          QUARTER: ${{ inputs.quarter }}
+          WRITE: ${{ inputs.write }}
+          ALLOW_REVIEW: ${{ inputs.allow_review }}
+          KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$YEAR" =~ ^[0-9]{4}$ ]]
+          args=(--year "$YEAR" --quarter "$QUARTER")
+          [[ "$WRITE" == "true" ]] && args+=(--write)
+          [[ "$ALLOW_REVIEW" == "true" ]] && args+=(--allow-review)
+          python -m earnings_v2.cli "${args[@]}"
