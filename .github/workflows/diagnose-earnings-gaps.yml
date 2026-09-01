@@ -1,0 +1,111 @@
+name: Diagnose earnings gap causes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check requests
+      - name: Inspect KIS periods and OpenDART Olix accounts
+        env:
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        shell: python
+        run: |
+          import io
+          import json
+          import os
+          import time
+          import zipfile
+          import xml.etree.ElementTree as ET
+
+          import requests
+
+          base = "https://openapi.koreainvestment.com:9443"
+          key = os.environ["KIS_APP_KEY"]
+          secret = os.environ["KIS_APP_SECRET"]
+          token_response = requests.post(
+              f"{base}/oauth2/tokenP",
+              json={"grant_type": "client_credentials", "appkey": key, "appsecret": secret},
+              timeout=(5, 15),
+          )
+          token_response.raise_for_status()
+          token = token_response.json()["access_token"]
+          headers = {
+              "authorization": f"Bearer {token}", "appkey": key,
+              "appsecret": secret, "tr_id": "FHKST66430200", "custtype": "P",
+          }
+          tickers = {
+              "삼성생명": "032830", "KB금융": "105560", "신한지주": "055550",
+              "하나금융지주": "086790", "삼성화재해상보험": "000810",
+              "우리금융지주": "316140", "기업은행": "024110",
+              "한국금융지주": "071050", "NH투자증권": "005940",
+              "삼성증권": "016360", "DB손해보험": "005830",
+              "삼성카드": "029780", "BNK금융지주": "138930", "올릭스": "226950",
+          }
+          for company, ticker in tickers.items():
+              response = requests.get(
+                  f"{base}/uapi/domestic-stock/v1/finance/income-statement",
+                  params={"FID_DIV_CLS_CODE": "1", "fid_cond_mrkt_div_code": "J", "fid_input_iscd": ticker},
+                  headers=headers,
+                  timeout=(5, 15),
+              )
+              payload = response.json()
+              rows = payload.get("output") if isinstance(payload, dict) else []
+              periods = [
+                  {"period": str(row.get("stac_yymm") or ""), "sale_account": str(row.get("sale_account") or "")}
+                  for row in rows or [] if isinstance(row, dict)
+              ]
+              print(json.dumps({
+                  "source": "KIS", "company": company, "ticker": ticker,
+                  "latest_periods": periods[:6],
+                  "has_202606": any(row["period"] == "202606" for row in periods),
+              }, ensure_ascii=False))
+              time.sleep(0.6)
+
+          dart_key = os.environ["OPENDART_API_KEY"]
+          archive_response = requests.get(
+              "https://opendart.fss.or.kr/api/corpCode.xml",
+              params={"crtfc_key": dart_key}, timeout=(5, 30),
+          )
+          archive_response.raise_for_status()
+          with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
+              root = ET.fromstring(archive.read("CORPCODE.xml"))
+          corp_code = next(
+              (node.findtext("corp_code") or "").strip()
+              for node in root.findall("list")
+              if (node.findtext("stock_code") or "").strip() == "226950"
+          )
+          for report_code, report_name in (("11012", "2026Q2"), ("11013", "2026Q1")):
+              response = requests.get(
+                  "https://opendart.fss.or.kr/api/fnlttMultiAcnt.json",
+                  params={
+                      "crtfc_key": dart_key, "corp_code": corp_code,
+                      "bsns_year": "2026", "reprt_code": report_code,
+                  },
+                  timeout=(5, 20),
+              )
+              payload = response.json()
+              rows = payload.get("list") if isinstance(payload, dict) else []
+              safe_rows = [{
+                  "fs_div": row.get("fs_div"), "sj_div": row.get("sj_div"),
+                  "account_id": row.get("account_id"), "account_nm": row.get("account_nm"),
+                  "thstrm_amount": row.get("thstrm_amount"),
+                  "thstrm_add_amount": row.get("thstrm_add_amount"),
+                  "ord": row.get("ord"),
+              } for row in rows or [] if isinstance(row, dict)]
+              print(json.dumps({
+                  "source": "OpenDART", "company": "올릭스", "report": report_name,
+                  "status": payload.get("status") if isinstance(payload, dict) else None,
+                  "rows": safe_rows,
+              }, ensure_ascii=False))
