@@ -309,6 +309,16 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertIsNone(market.operating_income_total)
         self.assertEqual(market.completion_status, "collecting")
 
+    def test_market_db_row_maps_domain_status_to_database_lifecycle(self):
+        current_members = [member("a", 1)]
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members,
+            {"a": fact(2026, 2, "12", company="a")}, 1,
+        )
+        stored = market.db_row(calculation_version=6)
+        self.assertEqual(stored["lifecycle_status"], "complete")
+        self.assertNotIn("completion_status", stored)
+
     def test_provisional_total_replaces_reported_firms_and_keeps_placeholders(self):
         current_members = [member("a", 1), member("b", 2)]
         previous_members = [member("a", 1, year=2026, quarter=1), member("x", 2, year=2026, quarter=1)]

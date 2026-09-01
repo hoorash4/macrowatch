@@ -113,5 +113,6 @@ class MarketFact:
 
     def db_row(self, *, calculation_version: int) -> dict[str, Any]:
         row = asdict(self)
+        row["lifecycle_status"] = row.pop("completion_status")
         row["calculation_version"] = calculation_version
         return row
