@@ -331,6 +331,15 @@ class EarningsV2DartFinancialTests(unittest.TestCase):
         self.assertEqual(client.individual_calls, [
             ((('00000002', 2026, 1, 'CFS'),), 4),
         ])
+        self.assertEqual(result.request_counts, {
+            "batch_current": 1,
+            "batch_current_companies": 2,
+            "batch_previous": 0,
+            "batch_previous_companies": 0,
+            "individual_current": 1,
+            "individual_previous": 0,
+            "individual_errors": 0,
+        })
 
     def test_partial_batch_values_are_preserved_and_only_current_scope_is_fetched(self):
         class Client:

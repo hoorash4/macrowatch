@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 import re
 from typing import Any, Iterable
@@ -170,6 +170,7 @@ class DartQuarterFinancials:
 class DartBatchResult:
     values: dict[str, DartQuarterFinancials]
     errors: dict[str, str]
+    request_counts: dict[str, int] = field(default_factory=dict)
 
 
 def _group_by_company(
@@ -416,4 +417,16 @@ class DartFinancialCollector:
                     code,
                     diagnostics.get(code) or "OpenDART required values unavailable",
                 )
-        return DartBatchResult(values=values, errors=errors)
+        return DartBatchResult(
+            values=values,
+            errors=errors,
+            request_counts={
+                "batch_current": 1 if companies else 0,
+                "batch_current_companies": len(companies),
+                "batch_previous": 1 if needs_batch_previous else 0,
+                "batch_previous_companies": len(needs_batch_previous),
+                "individual_current": len(current_requests),
+                "individual_previous": len(previous_requests),
+                "individual_errors": len(current_errors) + len(previous_errors),
+            },
+        )

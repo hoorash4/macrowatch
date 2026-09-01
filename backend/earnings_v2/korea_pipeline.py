@@ -20,7 +20,10 @@ from .universe import MARKET_TARGETS, select_final_universe
 
 
 QUARTER_END = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
-EXTRACTION_VERSION = 2
+# Version 3 refreshes the one-year pilot exactly once for the individual-account
+# top-line fallback and persisted profit-margin calculations. Subsequent runs
+# reuse complete v3 rows and therefore make no duplicate financial calls.
+EXTRACTION_VERSION = 3
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -347,6 +350,7 @@ class KoreaEarningsPipeline:
             "reused": len(context.members) - len(pending_ids),
             "requested": len(pending_ids),
             "collected": len(pending_ids) - len(missing),
+            "provider_requests": batch.request_counts,
             "missing": missing,
         }, ensure_ascii=False), flush=True)
         return touched
