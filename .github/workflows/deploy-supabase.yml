@@ -96,10 +96,6 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260829_make_target_alerts_retryable.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260829_allow_partial_open_dart_financials.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260829_repair_financial_company_revenues.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260830_add_market_earnings_analysis.sql
@@ -131,12 +127,14 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260831235997_preserve_legacy_filing_job_priority.sql
           # Final active earnings contract: operating income and net income only.
-          # Historical revenue migrations remain above for schema replay, while
-          # this migration prevents them from reactivating revenue collection.
+          # Retired revenue migrations are preserved in migration history but
+          # never replayed by the active deployment path.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260901011000_remove_earnings_revenue_collection.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260901012000_remove_earnings_revenue_derivatives.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260901013000_enforce_profit_only_earnings_schema.sql
 
       - name: Deploy Edge Functions
         run: |

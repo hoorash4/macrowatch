@@ -5,16 +5,6 @@ create table if not exists public.earnings_quarterly_growth_metrics (
   fiscal_year integer not null,
   fiscal_quarter smallint not null check (fiscal_quarter between 1 and 4),
 
-  revenue_yoy_pct numeric(20, 8),
-  revenue_yoy_state text not null,
-  revenue_yoy_delta_pp numeric(20, 8),
-  revenue_qoq_raw_pct numeric(20, 8),
-  revenue_qoq_state text not null,
-  revenue_qoq_seasonal_baseline_pct numeric(20, 8),
-  revenue_qoq_seasonally_adjusted_pct numeric(20, 8),
-  revenue_qoq_seasonally_adjusted_delta_pp numeric(20, 8),
-  revenue_qoq_seasonal_sample_count smallint not null default 0,
-
   operating_income_yoy_pct numeric(20, 8),
   operating_income_yoy_state text not null,
   operating_income_yoy_delta_pp numeric(20, 8),
@@ -43,14 +33,6 @@ create table if not exists public.earnings_quarterly_growth_metrics (
   foreign key (company_id, fiscal_year, fiscal_quarter)
     references public.earnings_quarterly_financials(company_id, fiscal_year, fiscal_quarter)
     on delete cascade,
-  check (revenue_yoy_state in (
-    'normal', 'black_turn', 'red_turn', 'negative_base', 'from_zero',
-    'missing_prior', 'currency_mismatch', 'scope_mismatch'
-  )),
-  check (revenue_qoq_state in (
-    'normal', 'black_turn', 'red_turn', 'negative_base', 'from_zero',
-    'missing_prior', 'currency_mismatch', 'scope_mismatch'
-  )),
   check (operating_income_yoy_state in (
     'normal', 'black_turn', 'red_turn', 'negative_base', 'from_zero',
     'missing_prior', 'currency_mismatch', 'scope_mismatch'
@@ -67,7 +49,6 @@ create table if not exists public.earnings_quarterly_growth_metrics (
     'normal', 'black_turn', 'red_turn', 'negative_base', 'from_zero',
     'missing_prior', 'currency_mismatch', 'scope_mismatch'
   )),
-  check (revenue_qoq_seasonal_sample_count between 0 and 5),
   check (operating_income_qoq_seasonal_sample_count between 0 and 5),
   check (net_income_qoq_seasonal_sample_count between 0 and 5)
 );
@@ -86,33 +67,6 @@ create policy "Authenticated users can read earnings growth metrics"
 -- seasonal-adjustment outputs even if a future worker accidentally regresses.
 do $$
 begin
-  -- Revenue derivatives were removed by the active profit-only contract.
-  -- Keep this historical migration replay-safe without recreating them.
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'earnings_quarterly_growth_metrics'
-      and column_name = 'revenue_yoy_state'
-  ) and not exists (
-    select 1 from pg_constraint
-    where conname = 'earnings_growth_revenue_state_values_ck'
-      and conrelid = 'public.earnings_quarterly_growth_metrics'::regclass
-  ) then
-    alter table public.earnings_quarterly_growth_metrics
-      add constraint earnings_growth_revenue_state_values_ck check (
-        (revenue_yoy_state = 'normal' or revenue_yoy_delta_pp is null)
-        and (
-          revenue_qoq_state = 'normal'
-          or (
-            revenue_qoq_seasonal_baseline_pct is null
-            and revenue_qoq_seasonally_adjusted_pct is null
-            and revenue_qoq_seasonally_adjusted_delta_pp is null
-          )
-        )
-      );
-  end if;
-
   if not exists (
     select 1 from pg_constraint
     where conname = 'earnings_growth_operating_state_values_ck'

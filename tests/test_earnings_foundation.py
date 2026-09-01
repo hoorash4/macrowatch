@@ -8,7 +8,6 @@ OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_earnings_ingestion_ops.
 OPEN_DART_OPS_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_ingestion_functions.sql"
 OPEN_DART_WORKER_MIGRATION = ROOT / "supabase/migrations/20260828_add_open_dart_financial_worker_functions.sql"
 SLIM_STORAGE_MIGRATION = ROOT / "supabase/migrations/20260828_slim_earnings_storage.sql"
-PARTIAL_FINANCIALS_MIGRATION = ROOT / "supabase/migrations/20260829_allow_partial_open_dart_financials.sql"
 SEC_MIGRATION = ROOT / "supabase/migrations/20260828_add_sec_earnings_functions.sql"
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-supabase.yml"
 OPEN_DART_WORKFLOW = ROOT / ".github/workflows/earnings-open-dart.yml"
@@ -26,6 +25,7 @@ STRUCTURED_2015_MIGRATION = ROOT / "supabase/migrations/20260831235970_use_struc
 LEGACY_2015_RESTORE_MIGRATION = ROOT / "supabase/migrations/20260831235995_repair_legacy_2015_shifted_headers_v3.sql"
 PROFIT_ONLY_MIGRATION = ROOT / "supabase/migrations/20260901011000_remove_earnings_revenue_collection.sql"
 PROFIT_ONLY_DERIVATIVES_MIGRATION = ROOT / "supabase/migrations/20260901012000_remove_earnings_revenue_derivatives.sql"
+PROFIT_ONLY_SCHEMA_MIGRATION = ROOT / "supabase/migrations/20260901013000_enforce_profit_only_earnings_schema.sql"
 GROWTH_MIGRATION = ROOT / "supabase/migrations/20260829_add_earnings_growth_metrics.sql"
 
 
@@ -37,7 +37,6 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.open_dart_ops_migration = OPEN_DART_OPS_MIGRATION.read_text(encoding="utf-8")
         cls.open_dart_worker_migration = OPEN_DART_WORKER_MIGRATION.read_text(encoding="utf-8")
         cls.slim_storage_migration = SLIM_STORAGE_MIGRATION.read_text(encoding="utf-8")
-        cls.partial_financials_migration = PARTIAL_FINANCIALS_MIGRATION.read_text(encoding="utf-8")
         cls.sec_migration = SEC_MIGRATION.read_text(encoding="utf-8")
         cls.deploy_workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
         cls.open_dart_workflow = OPEN_DART_WORKFLOW.read_text(encoding="utf-8")
@@ -55,6 +54,7 @@ class EarningsFoundationTests(unittest.TestCase):
         cls.legacy_2015_restore_migration = LEGACY_2015_RESTORE_MIGRATION.read_text(encoding="utf-8")
         cls.profit_only_migration = PROFIT_ONLY_MIGRATION.read_text(encoding="utf-8")
         cls.profit_only_derivatives_migration = PROFIT_ONLY_DERIVATIVES_MIGRATION.read_text(encoding="utf-8")
+        cls.profit_only_schema_migration = PROFIT_ONLY_SCHEMA_MIGRATION.read_text(encoding="utf-8")
         cls.growth_migration = GROWTH_MIGRATION.read_text(encoding="utf-8")
 
     def test_final_schema_keeps_only_filing_and_canonical_layers(self) -> None:
@@ -126,7 +126,6 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("to service_role", self.open_dart_worker_migration)
         self.assertIn(OPEN_DART_WORKER_MIGRATION.name, self.deploy_workflow)
         self.assertIn(SLIM_STORAGE_MIGRATION.name, self.deploy_workflow)
-        self.assertIn(PARTIAL_FINANCIALS_MIGRATION.name, self.deploy_workflow)
         self.assertIn("inputs.sync_identifiers == true", self.open_dart_workflow)
         self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
         self.assertIn('"backend/earnings/**"', self.open_dart_workflow)
@@ -164,13 +163,6 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("attempts >= jobs.max_attempts", self.legacy_zero_company_year_retry_migration)
         self.assertNotIn(LEGACY_ZERO_COMPANY_YEAR_RETRY_MIGRATION.name, self.deploy_workflow)
 
-    def test_partial_financial_company_metrics_are_persisted_and_repaired(self) -> None:
-        self.assertIn("quality_status = excluded.quality_status", self.partial_financials_migration)
-        self.assertIn("nullif(p_quarter->>'revenue', '')::numeric", self.partial_financials_migration)
-        self.assertIn("'repair_partial_core_metrics', true", self.partial_financials_migration)
-        self.assertIn("not exists (", self.partial_financials_migration)
-        self.assertNotIn("eps", self.partial_financials_migration.lower())
-
     def test_final_ingestion_contract_collects_only_profit_metrics(self) -> None:
         sql = self.profit_only_migration
         self.assertIn("array['operating_income', 'net_income']", sql)
@@ -183,7 +175,11 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn("drop column if exists revenue_yoy_state", self.profit_only_derivatives_migration)
         self.assertIn("where metric = 'revenue'", self.profit_only_derivatives_migration)
         self.assertIn(PROFIT_ONLY_DERIVATIVES_MIGRATION.name, self.deploy_workflow)
-        self.assertIn("column_name = 'revenue_yoy_state'", self.growth_migration)
+        self.assertNotIn("revenue_", self.growth_migration)
+        self.assertNotIn("20260829_allow_partial_open_dart_financials.sql", self.deploy_workflow)
+        self.assertNotIn("20260829_repair_financial_company_revenues.sql", self.deploy_workflow)
+        self.assertIn("check (metric in ('operating_income', 'net_income'))", self.profit_only_schema_migration)
+        self.assertIn(PROFIT_ONLY_SCHEMA_MIGRATION.name, self.deploy_workflow)
 
     def test_universes_are_market_cap_rankings_not_official_indices(self) -> None:
         for name in (
