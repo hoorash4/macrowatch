@@ -9,16 +9,16 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
-      - name: Probe 2015 KB Financial records
+      - name: Probe KB Financial full history
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
         run: |
           import json
           import os
-          import sys
+          import time
           import urllib.request
 
           key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
@@ -27,14 +27,25 @@ jobs:
 
           base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
           query = (
-              f"?serviceKey={key}&numOfRows=100&pageNo=1&resultType=json"
-              "&crno=1101113975517&bizYear=2015"
+              f"?serviceKey={key}&numOfRows=1000&pageNo=1&resultType=json"
+              "&crno=1101113975517"
           )
           request = urllib.request.Request(base + query, headers={"User-Agent": "MacroWatch-FSC-Probe/1.0"})
-          with urllib.request.urlopen(request, timeout=45) as response:
-              raw = response.read().decode("utf-8", errors="replace")
-              print("http_status=", response.status)
-              print("content_type=", response.headers.get("content-type"))
+          raw = None
+          for attempt in range(1, 4):
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      raw = response.read().decode("utf-8", errors="replace")
+                      print(f"attempt={attempt} http_status={response.status} elapsed={time.monotonic()-started:.1f}s")
+                      print("content_type=", response.headers.get("content-type"))
+                  break
+              except Exception as exc:
+                  print(f"attempt={attempt} error={type(exc).__name__}: {exc} elapsed={time.monotonic()-started:.1f}s")
+                  if attempt < 3:
+                      time.sleep(5 * attempt)
+          if raw is None:
+              raise SystemExit("API request failed after 3 attempts")
 
           try:
               payload = json.loads(raw)
@@ -44,13 +55,24 @@ jobs:
 
           header = payload.get("FnCoSummFinaStat_header") or payload.get("response", {}).get("header") or {}
           body = payload.get("FnCoSummFinaStat_body") or payload.get("response", {}).get("body") or {}
-          items = body.get("items", {}).get("item", [])
+          wrapped = body.get("items", {})
+          items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
           if isinstance(items, dict):
               items = [items]
-          safe_fields = (
+          if not isinstance(items, list):
+              items = []
+
+          fields = (
               "basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm",
               "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd"
           )
+          rows = [{k: row.get(k) for k in fields} for row in items]
+          years = sorted({str(row.get("bizYear")) for row in items if row.get("bizYear")})
+          oldest = min(items, key=lambda row: (str(row.get("bizYear", "9999")), str(row.get("basDt", "99999999"))), default=None)
+          rows_2015 = [row for row in rows if str(row.get("bizYear")) == "2015"]
           print("result=", json.dumps(header, ensure_ascii=False))
           print("total_count=", body.get("totalCount"))
-          print("records=", json.dumps([{k: row.get(k) for k in safe_fields} for row in items], ensure_ascii=False))
+          print("returned_count=", len(items))
+          print("years=", json.dumps(years, ensure_ascii=False))
+          print("oldest_record=", json.dumps({k: oldest.get(k) for k in fields} if oldest else None, ensure_ascii=False))
+          print("records_2015=", json.dumps(rows_2015, ensure_ascii=False))
