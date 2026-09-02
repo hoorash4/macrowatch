@@ -1,7 +1,9 @@
 name: Earnings V2 Korea quarter
 
 on:
-  # 최근 3개 분기 백필이 검증될 때까지 수동 실행만 허용한다.
+  schedule:
+    # 19:30 KST. 정기공시 신규 접수와 매출 대기 기업만 증분 갱신합니다.
+    - cron: "30 10 * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -60,9 +62,9 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           EARNINGS_V2_DEADLINE_SECONDS: "600"
-          YEAR: ${{ inputs.year }}
-          QUARTER: ${{ inputs.quarter }}
-          WRITE: ${{ inputs.write }}
+          YEAR: ${{ inputs.year || '' }}
+          QUARTER: ${{ inputs.quarter || '' }}
+          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
           RECALCULATE_ONLY: ${{ inputs.recalculate_only }}
           TRUST_PREVIOUS_BACKFILL: ${{ inputs.trust_previous_backfill }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
@@ -75,8 +77,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$YEAR" =~ ^[0-9]{4}$ ]]
-          args=(--year "$YEAR" --quarter "$QUARTER")
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            args=(--daily)
+          else
+            [[ "$YEAR" =~ ^[0-9]{4}$ ]]
+            args=(--year "$YEAR" --quarter "$QUARTER")
+          fi
           [[ "$WRITE" == "true" ]] && args+=(--write)
           [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
           [[ "$TRUST_PREVIOUS_BACKFILL" == "true" ]] && args+=(--trust-previous-backfill)
