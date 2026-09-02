@@ -1,0 +1,79 @@
+name: Earnings V2 historical batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: First fiscal year
+        required: true
+        type: string
+      start_quarter:
+        description: First fiscal quarter
+        required: true
+        type: choice
+        options: ["1", "2", "3", "4"]
+      end_year:
+        description: Last fiscal year
+        required: true
+        type: string
+      end_quarter:
+        description: Last fiscal quarter
+        required: true
+        type: choice
+        options: ["1", "2", "3", "4"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-v2-historical-batch
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Backfill requested fiscal range
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          EARNINGS_V2_DEADLINE_SECONDS: "600"
+          START_YEAR: ${{ inputs.start_year }}
+          START_QUARTER: ${{ inputs.start_quarter }}
+          END_YEAR: ${{ inputs.end_year }}
+          END_QUARTER: ${{ inputs.end_quarter }}
+          KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$START_YEAR" =~ ^[0-9]{4}$ ]]
+          [[ "$END_YEAR" =~ ^[0-9]{4}$ ]]
+          start_index=$((START_YEAR * 4 + START_QUARTER - 1))
+          end_index=$((END_YEAR * 4 + END_QUARTER - 1))
+          (( start_index <= end_index ))
+          first=true
+          for ((index=start_index; index<=end_index; index++)); do
+            year=$((index / 4))
+            quarter=$((index % 4 + 1))
+            args=(--year "$year" --quarter "$quarter" --write)
+            if [[ "$first" == "false" ]]; then
+              args+=(--trust-previous-backfill)
+            fi
+            echo "::group::Backfill ${year}Q${quarter}"
+            timeout --signal=TERM --kill-after=10s 660s python -m earnings_v2.cli "${args[@]}"
+            echo "::endgroup::"
+            first=false
+          done
