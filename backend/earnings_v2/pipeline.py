@@ -243,20 +243,6 @@ class KoreaEarningsV2Pipeline:
             rank=rank, market_cap=security.market_cap, reference_date=reference_date,
         ) for rank, (corp_code, (security, official_name)) in enumerate(selected, 1)]
 
-    @staticmethod
-    def _fill_missing_fields(fact: FinancialFact, stored: FinancialFact | None) -> FinancialFact:
-        """재수집 응답의 누락값 때문에 이미 확보한 같은 분기 값을 잃지 않는다."""
-        if stored is None:
-            return fact
-        return fact.with_changes(
-            top_line=fact.top_line if fact.top_line is not None else stored.top_line,
-            operating_income=(
-                fact.operating_income if fact.operating_income is not None else stored.operating_income
-            ),
-            net_income=fact.net_income if fact.net_income is not None else stored.net_income,
-            is_pending=stored.is_pending,
-        )
-
     def _try_kis_top_line(
         self,
         identity: CompanyIdentity,
@@ -280,8 +266,7 @@ class KoreaEarningsV2Pipeline:
         self._progress(f"{stage}_done", company=identity.company_name, found=top_line is not None)
         return fact.with_changes(top_line=top_line, is_pending=top_line is None), None
 
-    def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
-                           stored_facts: dict[str, FinancialFact] | None = None
+    def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
@@ -289,7 +274,6 @@ class KoreaEarningsV2Pipeline:
         previous = _group(self.dart.multi_accounts(codes, year, quarter - 1), codes) if quarter > 1 else {code: [] for code in codes}
         facts: dict[str, FinancialFact] = {}
         issues: list[dict[str, str]] = []
-        stored_facts = stored_facts or {}
         end = quarter_end(year, quarter)
         for identity in identities:
             fact = extract_company_fact(identity.corp_code, identity.company_id, year, quarter,
@@ -311,8 +295,6 @@ class KoreaEarningsV2Pipeline:
                 else:
                     fact = fact.with_changes(is_pending=True)
                     issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
-            # 같은 분기를 다시 수집할 때 공급자 응답이 일시적으로 비어도 기존 정상값을 보존한다.
-            fact = self._fill_missing_fields(fact, stored_facts.get(identity.company_id))
             if fact.top_line is None and fact.profit_complete and year >= 2019 and self.kis is not None:
                 fact, kis_issue = self._try_kis_top_line(
                     identity, fact, year, quarter, stage="kis_top_line",
@@ -504,18 +486,18 @@ class KoreaEarningsV2Pipeline:
                 for rows in [*universes.values(), *previous_universes.values()]
                 for row in rows
             }
-            stored_rows = self.repository.company_periods(
-                history_ids,
-                [(year, quarter), previous_key, (year - 1, quarter)],
-            )
-            stored, manual_ids = self._stored_facts(stored_rows, (year, quarter))
-            stored_current = {
-                identity.company_id: stored[(identity.company_id, year, quarter)]
-                for identity in identities
-                if (identity.company_id, year, quarter) in stored
-            }
-            selected = [row for row in identities if row.company_id not in manual_ids]
+            # 백필은 현재 분기 기존값을 참조하지 않는다. 증분 수집만 현재값과 수동 확정을 읽는다.
+            reference_periods = [previous_key, (year - 1, quarter)]
             if incremental:
+                reference_periods.insert(0, (year, quarter))
+            stored_rows = self.repository.company_periods(history_ids, reference_periods)
+            stored, manual_ids = self._stored_facts(stored_rows, (year, quarter))
+            if incremental:
+                stored_current = {
+                    identity.company_id: stored[(identity.company_id, year, quarter)]
+                    for identity in identities
+                    if (identity.company_id, year, quarter) in stored
+                }
                 provider_refresh = refresh_corp_codes or set()
                 selected = [
                     row for row in identities
@@ -524,13 +506,13 @@ class KoreaEarningsV2Pipeline:
                         or row.company_id not in stored_current
                     )
                 ]
-            fresh_facts, issues = (
-                self.collect_financials(selected, year, quarter, stored_current)
-                if selected else ({}, [])
-            )
-            preserved = stored_current if incremental else {
-                company_id: fact for company_id, fact in stored_current.items() if company_id in manual_ids
-            }
+                preserved = stored_current
+            else:
+                # 명시적 백필은 자동/수동 여부와 관계없이 공급자 원자료로 전부 교체한다.
+                stored_current = {}
+                selected = identities
+                preserved = {}
+            fresh_facts, issues = self.collect_financials(selected, year, quarter) if selected else ({}, [])
             pending_top_lines: dict[str, FinancialFact] = {}
             if incremental and self.kis is not None and year >= 2019:
                 selected_ids = {row.company_id for row in selected}

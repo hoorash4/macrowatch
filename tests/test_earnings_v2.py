@@ -479,7 +479,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
 
-    def test_existing_top_line_is_reused_before_kis_fallback(self):
+    def test_backfill_replaces_existing_top_line_with_provider_result(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
 
@@ -493,17 +493,36 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         repository = self.populated_repository()
         dart = MissingTopLineDart()
-        kis = FailingKis()
+        kis = SimulatedKis({"000099": Decimal("250")})
         pipeline = KoreaEarningsV2Pipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
         )
 
         result = pipeline.run_quarter(2026, 2, write=True)
 
-        self.assertEqual(kis.calls, [])
+        self.assertEqual(kis.calls, [("000099", 2026, 2)])
         self.assertEqual(result["status"], "ready")
-        self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("100"))
+        self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("250"))
         self.assertFalse(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+
+    def test_backfill_overwrites_manual_current_row(self):
+        target_company = "kr:00000099"
+        repository = self.populated_repository()
+        repository.seed_company(target_company, source="manual")
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository, kis=SimulatedKis(),
+        )
+
+        result = pipeline.run_quarter(2026, 2, write=True)
+
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(stored["source"], "open_dart")
+        self.assertEqual(stored["top_line"], Decimal("20"))
+        self.assertTrue(repository.company_period_calls)
+        self.assertTrue(
+            all((2026, 2) not in periods for _companies, periods in repository.company_period_calls)
+        )
 
     def test_kis_failure_marks_only_the_company_pending(self):
         target_company = "kr:00000099"
@@ -517,7 +536,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
                     if not (item["corp_code"] == target_corp and item["account_nm"] == "매출액")
                 ]
 
-        repository = self.populated_repository(missing_company=target_company)
+        repository = self.populated_repository()
         kis = FailingKis()
         pipeline = KoreaEarningsV2Pipeline(
             krx=SimulatedKrx(), dart=MissingTopLineDart(), repository=repository, kis=kis,
@@ -528,7 +547,9 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(kis.calls, [("000099", 2026, 2)])
         self.assertEqual(result["status"], "incomplete")
         self.assertEqual(len([item for item in result["issues"] if item["company"] == "kr_largecap-99"]), 1)
-        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertIsNone(stored["top_line"])
+        self.assertTrue(stored["is_pending"])
 
     def test_pending_kis_retry_failure_does_not_abort_daily_run(self):
         target_company = "kr:00000099"
