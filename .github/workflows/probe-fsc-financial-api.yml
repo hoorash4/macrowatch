@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Probe FSC snapshot-date behavior
+      - name: Discover live FSC record and its full history
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
@@ -23,39 +23,37 @@ jobs:
 
           key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
           base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
-          cases = [
-              ("sample", "1101113892240", "20200408", None),
-              ("sample", "1101113892240", "20200408", "2015"),
-              ("sample", "1101113892240", "20260902", None),
-              ("kbfg", "1101113975517", "20260902", None),
-              ("kbfg", "1101113975517", "20260902", "2015"),
-              ("kbbank", "1101112365321", "20260902", None),
-              ("kbbank", "1101112365321", "20260902", "2015"),
-          ]
-          for name, crno, bas_dt, year in cases:
-              params = {
-                  "serviceKey": key, "pageNo": 1, "numOfRows": 1000,
-                  "resultType": "json", "crno": crno, "basDt": bas_dt,
-              }
-              if year:
-                  params["bizYear"] = year
-              query = urllib.parse.urlencode(params, safe="%")
+
+          def call(extra, rows, timeout):
+              query = urllib.parse.urlencode({
+                  "serviceKey": key, "pageNo": 1, "numOfRows": rows,
+                  "resultType": "json", **extra,
+              }, safe="%")
               proc = subprocess.run(
                   ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
-                   "--connect-timeout", "8", "--max-time", "15", base + "?" + query],
+                   "--connect-timeout", "8", "--max-time", str(timeout), base + "?" + query],
                   text=True, capture_output=True
               )
               if proc.returncode:
-                  print(f"NETWORK name={name} basDt={bas_dt} year={year} error={proc.stderr.strip()}", flush=True)
-                  continue
+                  raise SystemExit(f"request failed: {proc.stderr.strip()}")
               payload = json.loads(proc.stdout)
               response = payload.get("response", {})
-              header = response.get("header", {})
               body = response.get("body", {})
               wrapped = body.get("items", {})
               items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
               if isinstance(items, dict):
                   items = [items]
-              if not isinstance(items, list):
-                  items = []
-              print(f"CASE name={name} basDt={bas_dt} year={year} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} rows={json.dumps(items, ensure_ascii=False)}", flush=True)
+              return response.get("header", {}), body, items if isinstance(items, list) else []
+
+          header, body, items = call({}, 1, 60)
+          print(f"LIVE header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} first={json.dumps(items[:1], ensure_ascii=False)}", flush=True)
+          if not items:
+              raise SystemExit("service returned no live records")
+          first = items[0]
+          crno = first.get("crno")
+          if not crno:
+              raise SystemExit("live record has no crno")
+          header, body, items = call({"crno": crno}, 1000, 30)
+          years = sorted({str(row.get("bizYear")) for row in items if row.get("bizYear")})
+          print(f"HISTORY crno={crno} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} years={json.dumps(years, ensure_ascii=False)}", flush=True)
+          print("OLDEST=", json.dumps([row for row in items if str(row.get("bizYear")) == (years[0] if years else "")], ensure_ascii=False), flush=True)
