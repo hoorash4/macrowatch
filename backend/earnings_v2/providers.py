@@ -36,7 +36,7 @@ class ProviderError(RuntimeError):
 
 
 def _decimal(value: Any) -> Decimal | None:
-    text = str(value or "").replace(",", "").replace(" ", "").strip()
+    text = "" if value is None else str(value).replace(",", "").replace(" ", "").strip()
     if text in {"", "-", "—", "–"}:
         return None
     if text.startswith("(") and text.endswith(")"):
@@ -61,7 +61,7 @@ def _session() -> requests.Session:
 
 
 class OpenDartClient:
-    """OpenDART 다중기업 주요계정 API만 담당한다."""
+    """OpenDART 기업 메타데이터와 구조화 재무제표 API를 담당한다."""
 
     def __init__(self, api_key: str, *, session: Any | None = None, interval: float = 0.15) -> None:
         if not api_key.strip():
@@ -181,6 +181,28 @@ class OpenDartClient:
             "corp_code": ",".join(corp_codes),
             "bsns_year": str(year),
             "reprt_code": REPORT_CODES[quarter],
+        })
+        return [row for row in payload.get("list", []) if isinstance(row, dict)]
+
+    def company_profile(self, corp_code: str) -> dict[str, str] | None:
+        payload = self._get("company.json", {"corp_code": corp_code})
+        industry_code = str(payload.get("induty_code") or "").strip()
+        if not industry_code:
+            return None
+        return {"industry_code": industry_code}
+
+    def single_accounts(
+        self,
+        corp_code: str,
+        year: int,
+        quarter: int,
+        consolidation_scope: str,
+    ) -> list[dict[str, Any]]:
+        payload = self._get("fnlttSinglAcntAll.json", {
+            "corp_code": corp_code,
+            "bsns_year": str(year),
+            "reprt_code": REPORT_CODES[quarter],
+            "fs_div": consolidation_scope,
         })
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 

@@ -124,6 +124,7 @@ class SimulatedRepository:
         self.states: dict[str, dict] = {}
         self.saved_states: list[tuple[str, str, dict, str | None]] = []
         self.company_period_calls: list[tuple[set[str], tuple[tuple[int, int], ...]]] = []
+        self.company_profiles: dict[str, dict] = {}
 
     def seed_company(self, company_id: str, *, top_line: Decimal | None = Decimal("100"),
                      operating_income: Decimal = Decimal("10"), net_income: Decimal = Decimal("8"),
@@ -136,7 +137,16 @@ class SimulatedRepository:
         self.company_rows[(company_id, 2026, 2)] = stored
 
     def universe(self, market_id, year, quarter):
-        return list(self.universes.get((market_id, year, quarter), []))
+        return [
+            {**row, **self.company_profiles.get(row["company_id"], {})}
+            for row in self.universes.get((market_id, year, quarter), [])
+        ]
+
+    def upsert_company_profiles(self, rows):
+        materialized = list(rows)
+        for row in materialized:
+            self.company_profiles[row["company_id"]] = dict(row)
+        return len(materialized)
 
     def company_history(self, company_ids):
         wanted = set(company_ids)
@@ -207,6 +217,8 @@ class SimulatedDart:
     def __init__(self, filings=()):
         self.filings = list(filings)
         self.financial_calls: list[tuple[tuple[str, ...], int, int]] = []
+        self.profile_calls: list[str] = []
+        self.single_calls: list[tuple[str, int, int, str]] = []
 
     @property
     def request_count(self):
@@ -221,6 +233,16 @@ class SimulatedDart:
         if quarter == 1:
             return [item for corp in codes for item in complete(corp, current="100", cumulative="100")]
         return [item for corp in codes for item in complete(corp, current="20", cumulative="120")]
+
+    def company_profile(self, corp_code):
+        self.profile_calls.append(corp_code)
+        return {"industry_code": "62010"}
+
+    def single_accounts(self, corp_code, year, quarter, scope):
+        self.single_calls.append((corp_code, year, quarter, scope))
+        if quarter == 1:
+            return complete(corp_code, current="100", cumulative="100", scope=scope)
+        return complete(corp_code, current="20", cumulative="120", scope=scope)
 
 
 class UsdDart(SimulatedDart):
@@ -386,6 +408,29 @@ class OpenDartTransportTests(unittest.TestCase):
         filings = client.periodic_filings(date(2026, 8, 1), date(2026, 8, 14))
         self.assertEqual(len(filings), 1)
         self.assertEqual(filings[0].receipt_no, "20260814000001")
+
+    def test_company_profile_and_single_accounts_use_structured_endpoints(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+                self.requests = []
+
+            def _get(self, endpoint, params, *, binary=False):
+                self.requests.append((endpoint, params, binary))
+                if endpoint == "company.json":
+                    return {"status": "000", "induty_code": "64110"}
+                return {"status": "000", "list": [{"corp_code": "00123456"}]}
+
+        client = Client()
+        self.assertEqual(client.company_profile("00123456"), {"industry_code": "64110"})
+        self.assertEqual(client.single_accounts("00123456", 2026, 2, "CFS"), [{"corp_code": "00123456"}])
+        self.assertEqual(client.requests, [
+            ("company.json", {"corp_code": "00123456"}, False),
+            ("fnlttSinglAcntAll.json", {
+                "corp_code": "00123456", "bsns_year": "2026",
+                "reprt_code": "11012", "fs_div": "CFS",
+            }, False),
+        ])
 
     def test_periodic_filing_period_uses_report_reference_month(self):
         filing = PeriodicFiling("00123456", "20260814000001", date(2026, 8, 14), "[기재정정]반기보고서 (2026.06)")
@@ -736,10 +781,13 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(dart.financial_calls, calls_after_first_run)
         self.assertEqual(kis.calls, [])
 
-    def test_pending_top_line_retries_only_kis_and_completes_market(self):
+    def test_pending_financial_company_skips_single_open_dart_and_uses_kis(self):
         target_company = "kr:00000099"
         repository = self.populated_repository()
         repository.seed_company(target_company, top_line=None, pending=True)
+        repository.company_profiles[target_company] = {
+            "industry_code": "64110", "entity_kind": "financial",
+        }
         target_ticker = "000099"
         dart = SimulatedDart()
         kis = SimulatedKis({target_ticker: Decimal("250")})
@@ -750,14 +798,16 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
         self.assertEqual(dart.financial_calls, [])
+        self.assertEqual(dart.single_calls, [])
+        self.assertEqual(dart.profile_calls, [])
         self.assertEqual(kis.calls, [(target_ticker, 2026, 2)])
-        self.assertEqual(result["retried_pending_top_lines"], 1)
+        self.assertEqual(result["retried_pending_companies"], 1)
         stored = repository.company_rows[(target_company, 2026, 2)]
         self.assertEqual(stored["top_line"], Decimal("250"))
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
 
-    def test_profit_incomplete_pending_company_refetches_full_provider_path(self):
+    def test_profit_incomplete_pending_company_uses_single_provider_path(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
         repository = self.populated_repository()
@@ -772,7 +822,10 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
         self.assertEqual(result["status"], "ready")
-        self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,), (target_corp,)])
+        self.assertEqual(dart.financial_calls, [])
+        self.assertEqual([call[0] for call in dart.single_calls], [target_corp, target_corp])
+        self.assertEqual([call[2] for call in dart.single_calls], [2, 1])
+        self.assertEqual(repository.company_profiles[target_company]["industry_code"], "62010")
         stored = repository.company_rows[(target_company, 2026, 2)]
         self.assertEqual(stored["operating_income"], Decimal("20"))
         self.assertFalse(stored["is_pending"])
@@ -788,6 +841,10 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
                     item for item in rows
                     if not (item["corp_code"] == target_corp and item["account_nm"] == "매출액")
                 ]
+
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return []
 
         repository = self.populated_repository()
         dart = MissingTopLineDart()
@@ -871,6 +928,10 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
                     item for item in rows
                     if not (item["corp_code"] == target_corp and item["account_nm"] == "매출액")
                 ]
+
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return []
 
         repository = self.populated_repository()
         kis = FailingKis()
@@ -967,6 +1028,9 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         target_company = "kr:00000099"
         repository = self.populated_repository()
         repository.seed_company(target_company, top_line=None, pending=True)
+        repository.company_profiles[target_company] = {
+            "industry_code": "64110", "entity_kind": "financial",
+        }
         kis = FailingKis()
         pipeline = KoreaEarningsV2Pipeline(
             krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository, kis=kis,
@@ -1026,6 +1090,18 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
 
 class QuarterlyExtractionTests(unittest.TestCase):
+    def test_numeric_and_decimal_zero_are_preserved(self):
+        current = [
+            row("1", "매출액", current=0, cumulative=0),
+            row("1", "영업이익", current=Decimal("0"), cumulative=Decimal("0")),
+            row("1", "당기순이익", current="0", cumulative="0"),
+        ]
+        value = extract_company_fact("1", "kr:1", 2026, 1, current)
+        self.assertEqual(value.top_line, Decimal("0"))
+        self.assertEqual(value.operating_income, Decimal("0"))
+        self.assertEqual(value.net_income, Decimal("0"))
+        self.assertTrue(value.fully_complete)
+
     def test_q1_uses_current_cumulative_value(self):
         value = extract_company_fact("00000001", "kr:1", 2026, 1, complete("00000001", current="40", cumulative="40"), [])
         self.assertEqual(value.operating_income, Decimal("40"))
@@ -1185,6 +1261,34 @@ class KisFallbackTests(unittest.TestCase):
             "net_income": Decimal("1200000000"),
         })
         self.assertEqual(session.kwargs["params"]["FID_DIV_CLS_CODE"], "1")
+
+    def test_equal_numeric_cumulative_values_produce_zero_standalone(self):
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "rt_cd": "0",
+                    "output": [
+                        {"stac_yymm": "202603", "sale_account": 100, "bsop_prti": 10, "thtr_ntin": 8},
+                        {"stac_yymm": "202606", "sale_account": 100, "bsop_prti": 10, "thtr_ntin": 8},
+                    ],
+                }
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        client = KisClient("key", "secret", cached_token=lambda: "token", session=Session(), interval=0)
+        self.assertEqual(client.quarter_financials("005930", 2026, 2), {
+            "top_line": Decimal("0"),
+            "operating_income": Decimal("0"),
+            "net_income": Decimal("0"),
+        })
 
 
 class GrowthAndAggregationTests(unittest.TestCase):

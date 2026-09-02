@@ -174,6 +174,8 @@ def _identity_from_universe(row: dict[str, Any]) -> CompanyIdentity:
         market_id=str(row["market_id"]), rank=int(row["market_cap_rank"]),
         market_cap=decimal_value(row.get("market_cap")) or Decimal(0),
         reference_date=date.fromisoformat(str(row["reference_date"])),
+        industry_code=str(row.get("industry_code") or "").strip() or None,
+        entity_kind=str(row.get("entity_kind") or "").strip() or None,
     )
 
 
@@ -293,12 +295,134 @@ class KoreaEarningsV2Pipeline:
         )
         return updated, None
 
+    @staticmethod
+    def _entity_kind(industry_code: str | None) -> str | None:
+        digits = re.sub(r"\D", "", industry_code or "")
+        if not digits:
+            return None
+        return "financial" if digits[:2] in {"64", "65", "66"} else "general"
+
+    def _single_open_dart_missing_financials(
+        self,
+        identity: CompanyIdentity,
+        fact: FinancialFact,
+        year: int,
+        quarter: int,
+        previous_fact: FinancialFact | None,
+        previous_rows: list[dict[str, Any]],
+    ) -> FinancialFact:
+        existing_count = sum(
+            getattr(fact, field) is not None
+            for field in ("top_line", "operating_income", "net_income")
+        )
+        scopes = [fact.consolidation_scope] if existing_count else ["CFS", "OFS"]
+        rows: list[dict[str, Any]] = []
+        prior_rows = list(previous_rows)
+        best: FinancialFact | None = None
+        for scope in scopes:
+            rows.extend(self.dart.single_accounts(identity.corp_code, year, quarter, scope))
+            candidate = extract_company_fact(
+                identity.corp_code, identity.company_id, year, quarter,
+                rows, prior_rows, previous_fact=previous_fact,
+                consolidation_scope=fact.consolidation_scope if existing_count else None,
+            )
+            needs_previous = candidate is not None and quarter > 1 and any(
+                getattr(candidate, f"source_{field}_cumulative") is not None
+                and getattr(candidate, field) is None
+                for field in ("top_line", "operating_income", "net_income")
+            )
+            if needs_previous:
+                prior_rows.extend(self.dart.single_accounts(identity.corp_code, year, quarter - 1, scope))
+                candidate = extract_company_fact(
+                    identity.corp_code, identity.company_id, year, quarter,
+                    rows, prior_rows, previous_fact=previous_fact,
+                    consolidation_scope=fact.consolidation_scope if existing_count else None,
+                )
+            if candidate is not None:
+                best = candidate
+            if best is not None and best.fully_complete:
+                break
+        if best is None or (existing_count and best.consolidation_scope != fact.consolidation_scope):
+            return fact
+
+        changes: dict[str, Any] = {}
+        for field in ("top_line", "operating_income", "net_income"):
+            if getattr(fact, field) is None and getattr(best, field) is not None:
+                changes[field] = getattr(best, field)
+                changes[f"source_{field}_cumulative"] = getattr(best, f"source_{field}_cumulative")
+        if not existing_count and changes:
+            changes.update({
+                "consolidation_scope": best.consolidation_scope,
+                "source_filing_id": best.source_filing_id,
+                "filing_date": best.filing_date,
+                "currency": best.currency,
+                "source_currency": best.source_currency,
+            })
+        return fact.with_changes(**changes) if changes else fact
+
+    def _resolve_missing_financials(
+        self,
+        identity: CompanyIdentity,
+        fact: FinancialFact,
+        year: int,
+        quarter: int,
+        *,
+        previous_fact: FinancialFact | None = None,
+        previous_rows: list[dict[str, Any]] | None = None,
+        tolerate_provider_errors: bool = False,
+        profile_updates: dict[str, dict[str, str]] | None = None,
+        stage: str = "financial_fallback",
+    ) -> tuple[FinancialFact, dict[str, str] | None]:
+        if fact.fully_complete:
+            return fact.with_changes(is_pending=False), None
+
+        industry_code = identity.industry_code
+        entity_kind = self._entity_kind(industry_code)
+        if entity_kind is None:
+            try:
+                profile = self.dart.company_profile(identity.corp_code)
+            except ProviderError:
+                profile = None
+            industry_code = str((profile or {}).get("industry_code") or "").strip() or None
+            entity_kind = self._entity_kind(industry_code)
+            if industry_code and entity_kind and profile_updates is not None:
+                profile_updates[identity.company_id] = {
+                    "company_id": identity.company_id,
+                    "industry_code": industry_code,
+                    "entity_kind": entity_kind,
+                }
+
+        # 금융업은 전체계정 단일 조회로도 매출 총액을 확정하기 어려우므로 KIS로 직행한다.
+        if entity_kind != "financial":
+            self._progress(f"{stage}_open_dart_start", company=identity.company_name)
+            try:
+                fact = self._single_open_dart_missing_financials(
+                    identity, fact, year, quarter, previous_fact, previous_rows or [],
+                )
+            except ProviderError:
+                if not tolerate_provider_errors:
+                    raise
+            self._progress(
+                f"{stage}_open_dart_done", company=identity.company_name,
+                complete=fact.fully_complete,
+            )
+
+        if not fact.fully_complete and year >= 2019 and self.kis is not None:
+            fact, kis_issue = self._try_kis_missing_financials(
+                identity, fact, year, quarter, stage=f"{stage}_kis",
+                propagate_provider_error=not tolerate_provider_errors,
+            )
+            if kis_issue is not None:
+                return fact, kis_issue
+        return fact.with_changes(is_pending=not fact.fully_complete), None
+
     def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
                            previous_facts: dict[str, FinancialFact] | None = None,
                            *, existing_facts: dict[str, FinancialFact] | None = None,
-                           tolerate_provider_errors: bool = False,
-                           force_previous_cumulative: bool = False,
-                           ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
+                            tolerate_provider_errors: bool = False,
+                            force_previous_cumulative: bool = False,
+                            persist_profiles: bool = False,
+                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
         current = _group(self.dart.multi_accounts(codes, year, quarter), codes)
@@ -335,6 +459,7 @@ class KoreaEarningsV2Pipeline:
         )
         facts: dict[str, FinancialFact] = {}
         issues: list[dict[str, str]] = []
+        profile_updates: dict[str, dict[str, str]] = {}
         end = quarter_end(year, quarter)
         for identity in identities:
             currency_failed = False
@@ -378,19 +503,24 @@ class KoreaEarningsV2Pipeline:
                 else:
                     fact = fact.with_changes(is_pending=True)
                     issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
-            if not currency_failed and not fact.fully_complete and year >= 2019 and self.kis is not None:
-                fact, kis_issue = self._try_kis_missing_financials(
-                    identity, fact, year, quarter, stage="kis_top_line",
-                    propagate_provider_error=not tolerate_provider_errors,
+            if not currency_failed and not fact.fully_complete:
+                fact, fallback_issue = self._resolve_missing_financials(
+                    identity, fact, year, quarter,
+                    previous_fact=previous_facts.get(identity.company_id),
+                    previous_rows=previous.get(identity.corp_code, []),
+                    tolerate_provider_errors=tolerate_provider_errors,
+                    profile_updates=profile_updates,
                 )
-                if kis_issue is not None:
-                    issues.append(kis_issue)
+                if fallback_issue is not None:
+                    issues.append(fallback_issue)
             fact = fact.with_changes(is_pending=fact.is_pending or not fact.fully_complete)
             existing_issues = {(item["company"], item["field"]) for item in issues}
             for field in () if currency_failed else ("top_line", "operating_income", "net_income"):
                 if getattr(fact, field) is None and (identity.company_name, field) not in existing_issues:
                     issues.append({"company": identity.company_name, "field": field, "reason": "provider value missing"})
             facts[identity.company_id] = fact
+        if persist_profiles and profile_updates:
+            self.repository.upsert_company_profiles(profile_updates.values())
         return facts, issues
 
     @staticmethod
@@ -601,7 +731,6 @@ class KoreaEarningsV2Pipeline:
                             stored_current[row.company_id].is_pending
                             and (
                                 stored_current[row.company_id].fully_complete
-                                or not stored_current[row.company_id].profit_complete
                                 or stored_current[row.company_id].source_currency != "KRW"
                             )
                         )
@@ -626,11 +755,13 @@ class KoreaEarningsV2Pipeline:
                     existing_facts=stored_current,
                     tolerate_provider_errors=incremental,
                     force_previous_cumulative=not incremental and not trust_previous_backfill,
+                    persist_profiles=write,
                 )
                 if selected else ({}, [])
             )
-            pending_top_lines: dict[str, FinancialFact] = {}
-            if incremental and self.kis is not None and year >= 2019:
+            pending_fallbacks: dict[str, FinancialFact] = {}
+            profile_updates: dict[str, dict[str, str]] = {}
+            if incremental:
                 selected_ids = {row.company_id for row in selected}
                 for identity in identities:
                     fact = stored_current.get(identity.company_id)
@@ -639,22 +770,26 @@ class KoreaEarningsV2Pipeline:
                         or identity.company_id in selected_ids
                         or fact is None
                         or not fact.is_pending
-                        or fact.top_line is not None
-                        or not fact.profit_complete
                     ):
                         continue
-                    retried, kis_issue = self._try_kis_missing_financials(
-                        identity, fact, year, quarter, stage="kis_top_line_retry",
+                    retried, fallback_issue = self._resolve_missing_financials(
+                        identity, fact, year, quarter,
+                        previous_fact=stored.get((identity.company_id, *previous_key)),
+                        tolerate_provider_errors=True,
+                        profile_updates=profile_updates,
+                        stage="pending_retry",
                     )
-                    pending_top_lines[identity.company_id] = retried
-                    if kis_issue is not None:
-                        issues.append(kis_issue)
+                    pending_fallbacks[identity.company_id] = retried
+                    if fallback_issue is not None:
+                        issues.append(fallback_issue)
                     else:
                         for field in ("top_line", "operating_income", "net_income"):
                             if getattr(retried, field) is None:
                                 issues.append({"company": identity.company_name, "field": field, "reason": "provider value missing"})
-            facts = {**preserved, **fresh_facts, **pending_top_lines}
-            changed_ids = set(fresh_facts) | set(pending_top_lines)
+            if write and profile_updates:
+                self.repository.upsert_company_profiles(profile_updates.values())
+            facts = {**preserved, **fresh_facts, **pending_fallbacks}
+            changed_ids = set(fresh_facts) | set(pending_fallbacks)
             current_by_company, company_window_rows = self._calculate_company_points(
                 facts, stored, changed_ids, year, quarter,
             )
@@ -683,7 +818,7 @@ class KoreaEarningsV2Pipeline:
                 "universe": {market: len(rows) for market, rows in universes.items()},
                 "companies": len(identities), "facts": len(current_facts),
                 "refreshed_companies": len(fresh_facts),
-                "retried_pending_top_lines": len(pending_top_lines),
+                "retried_pending_companies": len(pending_fallbacks),
                 "complete_facts": sum(not row.is_pending for row in current_facts),
                 "markets": {row.market_id: row.completion_status for row in current_markets},
                 "issues": issues,

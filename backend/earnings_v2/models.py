@@ -32,6 +32,8 @@ class CompanyIdentity:
     rank: int
     market_cap: Decimal
     reference_date: date
+    industry_code: str | None = None
+    entity_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -129,3 +131,4 @@ class MarketFact:
         row["lifecycle_status"] = row.pop("completion_status")
         row["calculation_version"] = calculation_version
         return row
+

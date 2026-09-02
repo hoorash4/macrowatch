@@ -60,6 +60,9 @@ class EarningsV2Repository:
     def upsert_companies(self, rows: Iterable[dict[str, Any]]) -> int:
         return int(self.rpc("earnings_v2_upsert_companies", {"p_rows": list(rows)}) or 0)
 
+    def upsert_company_profiles(self, rows: Iterable[dict[str, Any]]) -> int:
+        return int(self.rpc("earnings_v2_upsert_company_profiles", {"p_rows": list(rows)}) or 0)
+
     def upsert_identifiers(self, rows: Iterable[dict[str, Any]]) -> int:
         return int(self.rpc("earnings_v2_upsert_identifiers", {"p_rows": list(rows)}) or 0)
 
@@ -171,3 +174,4 @@ class EarningsV2Repository:
         )
         if not response.ok:
             raise StoreError("Could not persist the shared KIS access token")
+

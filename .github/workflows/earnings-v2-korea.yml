@@ -62,7 +62,7 @@ jobs:
           EARNINGS_V2_DEADLINE_SECONDS: "600"
           YEAR: ${{ inputs.year || '' }}
           QUARTER: ${{ inputs.quarter || '' }}
-          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
+          WRITE: ${{ inputs.write }}
           RECALCULATE_ONLY: ${{ inputs.recalculate_only }}
           TRUST_PREVIOUS_BACKFILL: ${{ inputs.trust_previous_backfill }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
@@ -75,12 +75,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            args=(--daily)
-          else
-            [[ "$YEAR" =~ ^[0-9]{4}$ ]]
-            args=(--year "$YEAR" --quarter "$QUARTER")
-          fi
+          [[ "$YEAR" =~ ^[0-9]{4}$ ]]
+          args=(--year "$YEAR" --quarter "$QUARTER")
           [[ "$WRITE" == "true" ]] && args+=(--write)
           [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
           [[ "$TRUST_PREVIOUS_BACKFILL" == "true" ]] && args+=(--trust-previous-backfill)

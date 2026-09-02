@@ -33,7 +33,7 @@ def normalize_label(value: Any) -> str:
 
 
 def decimal_value(value: Any) -> Decimal | None:
-    text = str(value or "").replace(",", "").replace(" ", "").strip()
+    text = "" if value is None else str(value).replace(",", "").replace(" ", "").strip()
     if text in {"", "-", "—", "–"}:
         return None
     if text.startswith("(") and text.endswith(")"):
@@ -144,6 +144,7 @@ def extract_company_fact(
     previous_rows: list[dict[str, Any]] | None = None,
     *,
     previous_fact: FinancialFact | None = None,
+    consolidation_scope: str | None = None,
 ) -> FinancialFact | None:
     """원본 누적값을 보존하면서 한 범위의 단독 분기 실적을 만든다.
 
@@ -153,7 +154,8 @@ def extract_company_fact(
     """
     previous_rows = previous_rows or []
     candidates: list[FinancialFact] = []
-    for scope in ("CFS", "OFS"):
+    scopes = (consolidation_scope,) if consolidation_scope in {"CFS", "OFS"} else ("CFS", "OFS")
+    for scope in scopes:
         current = _statement_rows(current_rows, scope)
         previous = _statement_rows(previous_rows, scope)
         if not current:
