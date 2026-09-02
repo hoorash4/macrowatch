@@ -47,6 +47,11 @@ class FinancialFact:
     consolidation_scope: str
     source_filing_id: str
     filing_date: date
+    source: str = "open_dart"
+    source_currency: str = "KRW"
+    source_top_line_cumulative: Decimal | None = None
+    source_operating_income_cumulative: Decimal | None = None
+    source_net_income_cumulative: Decimal | None = None
     is_pending: bool = False
     operating_margin_pct: Decimal | None = None
     net_margin_pct: Decimal | None = None
@@ -80,7 +85,7 @@ class FinancialFact:
             "period_start": None,
             "market_year": self.fiscal_year,
             "market_quarter": self.fiscal_quarter,
-            "source": "open_dart",
+            "source": self.source,
             "revision_reference_date": None,
             "calculation_version": calculation_version,
             "is_pending": self.is_pending or not self.fully_complete,

@@ -170,6 +170,9 @@ class SimulatedRepository:
             self.company_rows[(row["company_id"], row["fiscal_year"], row["fiscal_quarter"])] = dict(row)
         return len(materialized)
 
+    def replace_company_quarters_for_backfill(self, rows):
+        return self.upsert_company_quarters(rows)
+
     def upsert_market_quarters(self, rows):
         materialized = list(rows)
         for row in materialized:
@@ -624,6 +627,39 @@ class QuarterlyExtractionTests(unittest.TestCase):
             complete("00000001", current="40", cumulative="40"),
         )
         self.assertEqual(value.operating_income, Decimal("60"))
+
+    def test_q2_uses_saved_source_cumulative_without_previous_api_rows(self):
+        previous = extract_company_fact(
+            "00000001", "kr:1", 2026, 1,
+            complete("00000001", current="40", cumulative="40"),
+        )
+        value = extract_company_fact(
+            "00000001", "kr:1", 2026, 2,
+            complete("00000001", current="60", cumulative="100"),
+            previous_fact=previous,
+        )
+
+        self.assertEqual(value.operating_income, Decimal("60"))
+        self.assertEqual(value.source_operating_income_cumulative, Decimal("100"))
+
+    def test_collector_skips_previous_bulk_request_when_saved_cumulative_exists(self):
+        identity = member("kr:00000001", 1)
+        previous = extract_company_fact(
+            identity.corp_code, identity.company_id, 2026, 1,
+            complete(identity.corp_code, current="100", cumulative="100"),
+        )
+        dart = SimulatedDart()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=SimulatedRepository(),
+        )
+
+        facts, issues = pipeline.collect_financials(
+            [identity], 2026, 2, {identity.company_id: previous},
+        )
+
+        self.assertEqual(dart.financial_calls, [((identity.corp_code,), 2026, 2)])
+        self.assertEqual(facts[identity.company_id].operating_income, Decimal("20"))
+        self.assertEqual(issues, [])
 
     def test_q3_always_subtracts_q2_cumulative(self):
         value = extract_company_fact(

@@ -107,18 +107,26 @@ def _cumulative_amount(row: dict[str, Any] | None, quarter: int) -> Decimal | No
     return decimal_value(row.get("thstrm_amount")) or decimal_value(row.get("thstrm_add_amount"))
 
 
-def _standalone(
-    current_row: dict[str, Any] | None,
-    previous_row: dict[str, Any] | None,
-    quarter: int,
-) -> Decimal | None:
-    current = _cumulative_amount(current_row, quarter)
+def _standalone(current: Decimal | None, previous: Decimal | None, quarter: int) -> Decimal | None:
     if current is None:
         return None
     if quarter == 1:
         return current
-    previous = _cumulative_amount(previous_row, quarter - 1)
     return current - previous if previous is not None else None
+
+
+def _stored_cumulative(
+    previous_fact: FinancialFact | None,
+    field: str,
+    *,
+    scope: str,
+    source_currency: str,
+) -> Decimal | None:
+    if previous_fact is None:
+        return None
+    if previous_fact.consolidation_scope != scope or previous_fact.source_currency != source_currency:
+        return None
+    return getattr(previous_fact, f"source_{field}_cumulative")
 
 
 def _filing_identity(rows: list[dict[str, Any]], year: int, quarter: int, corp_code: str) -> tuple[str, date]:
@@ -138,9 +146,17 @@ def extract_company_fact(
     year: int,
     quarter: int,
     current_rows: list[dict[str, Any]],
-    previous_rows: list[dict[str, Any]],
+    previous_rows: list[dict[str, Any]] | None = None,
+    *,
+    previous_fact: FinancialFact | None = None,
 ) -> FinancialFact | None:
-    """한 범위의 CFS 또는 OFS만 사용해 단독 분기 실적을 만든다."""
+    """원본 누적값을 보존하면서 한 범위의 단독 분기 실적을 만든다.
+
+    정상 백필·증분 실행은 직전 분기에 저장한 누적 원본을 사용한다.
+    ``previous_rows``는 과거 기업군에 없던 기업처럼 저장 원본이 없는
+    경우에만 호출자가 채우는 제한적 공급자 폴백이다.
+    """
+    previous_rows = previous_rows or []
     candidates: list[FinancialFact] = []
     for scope in ("CFS", "OFS"):
         current = _statement_rows(current_rows, scope)
@@ -155,19 +171,41 @@ def extract_company_fact(
         previous_top = _top_line_row(previous)
         filing_id, filing_date = _filing_identity(current, year, quarter, corp_code)
         representative = current_op or current_net or current_top or current[0]
-        currency = str(representative.get("currency") or "KRW").strip().upper()
+        source_currency = str(representative.get("currency") or "KRW").strip().upper()
+        current_cumulative = {
+            "top_line": _cumulative_amount(current_top, quarter),
+            "operating_income": _cumulative_amount(current_op, quarter),
+            "net_income": _cumulative_amount(current_net, quarter),
+        }
+        fallback_previous = {
+            "top_line": _cumulative_amount(previous_top, quarter - 1),
+            "operating_income": _cumulative_amount(previous_op, quarter - 1),
+            "net_income": _cumulative_amount(previous_net, quarter - 1),
+        } if quarter > 1 else {"top_line": None, "operating_income": None, "net_income": None}
+        previous_cumulative = {}
+        for field in current_cumulative:
+            stored_value = _stored_cumulative(
+                previous_fact, field, scope=scope, source_currency=source_currency,
+            )
+            previous_cumulative[field] = (
+                stored_value if stored_value is not None else fallback_previous[field]
+            )
         fact = FinancialFact(
             company_id=company_id,
             fiscal_year=year,
             fiscal_quarter=quarter,
             period_end=date(year, quarter * 3, 31 if quarter in {1, 4} else 30),
-            top_line=_standalone(current_top, previous_top, quarter),
-            operating_income=_standalone(current_op, previous_op, quarter),
-            net_income=_standalone(current_net, previous_net, quarter),
-            currency=currency,
+            top_line=_standalone(current_cumulative["top_line"], previous_cumulative["top_line"], quarter),
+            operating_income=_standalone(current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter),
+            net_income=_standalone(current_cumulative["net_income"], previous_cumulative["net_income"], quarter),
+            currency=source_currency,
             consolidation_scope=scope,
             source_filing_id=filing_id,
             filing_date=filing_date,
+            source_currency=source_currency,
+            source_top_line_cumulative=current_cumulative["top_line"],
+            source_operating_income_cumulative=current_cumulative["operating_income"],
+            source_net_income_cumulative=current_cumulative["net_income"],
         )
         candidates.append(fact)
     if not candidates:

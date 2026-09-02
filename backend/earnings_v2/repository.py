@@ -69,6 +69,13 @@ class EarningsV2Repository:
     def upsert_company_quarters(self, rows: Iterable[dict[str, Any]]) -> int:
         return int(self.rpc("earnings_v2_v6_upsert_company_quarters", {"p_rows": list(rows)}) or 0)
 
+    def replace_company_quarters_for_backfill(self, rows: Iterable[dict[str, Any]]) -> int:
+        """명시적 백필 범위만 원자적으로 삭제 후 공급자 원본으로 교체한다."""
+        return int(self.rpc(
+            "earnings_v2_v6_replace_company_quarters_for_backfill",
+            {"p_rows": list(rows)},
+        ) or 0)
+
     def upsert_market_quarters(self, rows: Iterable[dict[str, Any]]) -> int:
         return int(self.rpc("earnings_v2_v6_upsert_market_quarters", {"p_rows": list(rows)}) or 0)
 

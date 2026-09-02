@@ -123,6 +123,11 @@ def _financial_from_db(row: dict[str, Any]) -> FinancialFact:
         net_income=decimal_value(row.get("net_income")), currency=str(row.get("currency") or "KRW"),
         consolidation_scope=str(row.get("consolidation_scope") or "CFS"),
         source_filing_id=str(row.get("source_filing_id") or "stored"), filing_date=date.fromisoformat(filing_text),
+        source=str(row.get("source") or "open_dart"),
+        source_currency=str(row.get("source_currency") or row.get("currency") or "KRW"),
+        source_top_line_cumulative=decimal_value(row.get("source_top_line_cumulative")),
+        source_operating_income_cumulative=decimal_value(row.get("source_operating_income_cumulative")),
+        source_net_income_cumulative=decimal_value(row.get("source_net_income_cumulative")),
         is_pending=bool(row.get("is_pending", False)),
         operating_margin_pct=decimal_value(row.get("operating_margin_pct")),
         net_margin_pct=decimal_value(row.get("net_margin_pct")),
@@ -266,18 +271,46 @@ class KoreaEarningsV2Pipeline:
         self._progress(f"{stage}_done", company=identity.company_name, found=top_line is not None)
         return fact.with_changes(top_line=top_line, is_pending=top_line is None), None
 
-    def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int
+    def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
+                           previous_facts: dict[str, FinancialFact] | None = None,
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
         current = _group(self.dart.multi_accounts(codes, year, quarter), codes)
-        previous = _group(self.dart.multi_accounts(codes, year, quarter - 1), codes) if quarter > 1 else {code: [] for code in codes}
+        previous_facts = previous_facts or {}
+        # 직전 분기의 누적 원본은 DB가 단일 진실 공급원이다. 과거 기업군에
+        # 없었던 기업 등 실제 단독값 계산에 필요한 원본이 없는 경우에만
+        # 해당 기업만 폴백한다. 현재 누적값 자체가 없는 필드는 재호출해도
+        # 해결되지 않으므로 폴백 대상에서 제외한다.
+        fallback_codes = []
+        if quarter > 1:
+            for identity in identities:
+                prior = previous_facts.get(identity.company_id)
+                preview = extract_company_fact(
+                    identity.corp_code, identity.company_id, year, quarter,
+                    current[identity.corp_code], previous_fact=prior,
+                )
+                needs_previous = preview is not None and any(
+                    source_value is not None and standalone_value is None
+                    for source_value, standalone_value in (
+                        (preview.source_top_line_cumulative, preview.top_line),
+                        (preview.source_operating_income_cumulative, preview.operating_income),
+                        (preview.source_net_income_cumulative, preview.net_income),
+                    )
+                )
+                if needs_previous:
+                    fallback_codes.append(identity.corp_code)
+        previous = (
+            _group(self.dart.multi_accounts(fallback_codes, year, quarter - 1), fallback_codes)
+            if fallback_codes else {}
+        )
         facts: dict[str, FinancialFact] = {}
         issues: list[dict[str, str]] = []
         end = quarter_end(year, quarter)
         for identity in identities:
             fact = extract_company_fact(identity.corp_code, identity.company_id, year, quarter,
-                                        current[identity.corp_code], previous[identity.corp_code])
+                                        current[identity.corp_code], previous.get(identity.corp_code, []),
+                                        previous_fact=previous_facts.get(identity.company_id))
             if fact is None:
                 fact = FinancialFact(
                     identity.company_id, year, quarter, end, None, None, None, "KRW", "CFS",
@@ -512,7 +545,15 @@ class KoreaEarningsV2Pipeline:
                 stored_current = {}
                 selected = identities
                 preserved = {}
-            fresh_facts, issues = self.collect_financials(selected, year, quarter) if selected else ({}, [])
+            previous_facts = {
+                identity.company_id: stored[(identity.company_id, *previous_key)]
+                for identity in selected
+                if (identity.company_id, *previous_key) in stored
+            }
+            fresh_facts, issues = (
+                self.collect_financials(selected, year, quarter, previous_facts)
+                if selected else ({}, [])
+            )
             pending_top_lines: dict[str, FinancialFact] = {}
             if incremental and self.kis is not None and year >= 2019:
                 selected_ids = {row.company_id for row in selected}
@@ -545,10 +586,14 @@ class KoreaEarningsV2Pipeline:
             )
             current_facts = list(current_by_company.values())
             if write:
-                self.repository.upsert_company_quarters(
+                company_rows = [
                     row.db_row(calculation_version=CALCULATION_VERSION)
                     for row in current_facts if row.company_id in changed_ids
-                )
+                ]
+                if incremental:
+                    self.repository.upsert_company_quarters(company_rows)
+                else:
+                    self.repository.replace_company_quarters_for_backfill(company_rows)
                 if company_window_rows:
                     self.repository.upsert_seasonal_windows(company_window_rows)
                 self.repository.upsert_market_quarters(row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets)
