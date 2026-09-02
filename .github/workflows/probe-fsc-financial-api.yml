@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Resolve KB financial entities and full history
+      - name: Probe KB entities full financial history
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
@@ -25,56 +25,46 @@ jobs:
           if not key:
               raise SystemExit("DATA_GO_KR_SERVICE_KEY is missing")
 
-          def call(base, params):
-              query = urllib.parse.urlencode({"serviceKey": key, "pageNo": 1, "numOfRows": 1000, "resultType": "json", **params}, safe="%")
+          base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
+          entities = {
+              "KB금융지주": "1101113975517",
+              "KB국민은행_현재": "1101112365321",
+              "국민은행_과거DART": "1101110545553",
+          }
+          fields = ("basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm", "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd", "crno", "fncoNm")
+          failures = 0
+          for name, crno in entities.items():
+              query = urllib.parse.urlencode({
+                  "serviceKey": key, "pageNo": 1, "numOfRows": 1000,
+                  "resultType": "json", "crno": crno,
+              }, safe="%")
               proc = subprocess.run(
                   ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
-                   "--connect-timeout", "5", "--max-time", "20", base + "?" + query],
+                   "--connect-timeout", "8", "--max-time", "30", base + "?" + query],
                   text=True, capture_output=True
               )
+              print(f"REQUEST entity={name} crno={crno} exit={proc.returncode}", flush=True)
               if proc.returncode:
-                  return {"curlError": proc.stderr.strip(), "curlExit": proc.returncode}
-              try:
-                  return json.loads(proc.stdout)
-              except json.JSONDecodeError:
-                  return {"decodeError": proc.stdout[:500]}
-
-          def unpack(payload):
-              response = payload.get("response", {}) if isinstance(payload, dict) else {}
+                  print("ERROR=", proc.stderr.strip(), flush=True)
+                  failures += 1
+                  continue
+              payload = json.loads(proc.stdout)
+              response = payload.get("response", {})
               header = response.get("header", {})
               body = response.get("body", {})
               wrapped = body.get("items", {})
               items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
               if isinstance(items, dict):
                   items = [items]
-              return header, body, items if isinstance(items, list) else []
-
-          basic = "https://apis.data.go.kr/1160100/service/GetFnCoBasiInfoService/getFnCoOutl"
-          summary = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
-          entities = {}
-          for name in ["KB국민은행", "국민은행", "(주)국민은행", "KB금융지주", "(주)KB금융지주"]:
-              payload = call(basic, {"fncoNm": name})
-              header, body, items = unpack(payload)
-              print(f"BASIC name={name} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} returned={len(items)}", flush=True)
-              for row in items:
-                  crno = str(row.get("crno", "")).strip()
-                  if crno:
-                      entities[crno] = {
-                          "crno": crno, "fncoNm": row.get("fncoNm"), "basDt": row.get("basDt"),
-                          "fssCorpUnqNo": row.get("fssCorpUnqNo"), "fncoEstbDt": row.get("fncoEstbDt")
-                      }
-          entities.setdefault("1101113975517", {"crno": "1101113975517", "fncoNm": "KB금융지주(DART)", "basDt": None})
-          print("ENTITIES=", json.dumps(list(entities.values()), ensure_ascii=False), flush=True)
-
-          fields = ("basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm", "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd", "crno", "fncoNm")
-          for crno, entity in entities.items():
-              payload = call(summary, {"crno": crno})
-              header, body, items = unpack(payload)
+              if not isinstance(items, list):
+                  items = []
               years = sorted({str(row.get("bizYear")) for row in items if row.get("bizYear")})
-              oldest_year = years[0] if years else None
-              oldest_rows = [{k: row.get(k) for k in fields} for row in items if str(row.get("bizYear")) == str(oldest_year)]
+              oldest = years[0] if years else None
+              oldest_rows = [{k: row.get(k) for k in fields} for row in items if str(row.get("bizYear")) == str(oldest)]
               rows_2015 = [{k: row.get(k) for k in fields} for row in items if str(row.get("bizYear")) == "2015"]
-              print(f"HISTORY entity={json.dumps(entity, ensure_ascii=False)} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} returned={len(items)}", flush=True)
-              print("YEARS=", json.dumps(years, ensure_ascii=False), flush=True)
-              print("OLDEST_ROWS=", json.dumps(oldest_rows, ensure_ascii=False), flush=True)
-              print("ROWS_2015=", json.dumps(rows_2015, ensure_ascii=False), flush=True)
+              print(f"RESULT entity={name} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} returned={len(items)}", flush=True)
+              print(f"YEARS entity={name} values={json.dumps(years, ensure_ascii=False)}", flush=True)
+              print(f"OLDEST entity={name} rows={json.dumps(oldest_rows, ensure_ascii=False)}", flush=True)
+              print(f"Y2015 entity={name} rows={json.dumps(rows_2015, ensure_ascii=False)}", flush=True)
+          if failures == len(entities):
+              raise SystemExit("all API requests failed")
