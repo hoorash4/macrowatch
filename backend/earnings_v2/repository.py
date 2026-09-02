@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Iterable
 
-import requests
+from .http import resilient_session, safe_request_failure
 
 
 STORE_TIMEOUT = (5, 20)
@@ -37,7 +37,7 @@ class EarningsV2Repository:
         self.key = service_key.strip()
         if not self.url or not self.key:
             raise ValueError("Supabase URL and service key are required")
-        self.session = session or requests.Session()
+        self.session = session or resilient_session()
         self.headers = {"apikey": self.key, "Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
 
     @classmethod
@@ -54,8 +54,8 @@ class EarningsV2Repository:
             )
             response.raise_for_status()
             return response.json() if response.content else None
-        except Exception:
-            raise StoreError(f"Supabase RPC {name} failed") from None
+        except Exception as exc:
+            raise StoreError(safe_request_failure("Supabase RPC", name, exc)) from None
 
     def upsert_companies(self, rows: Iterable[dict[str, Any]]) -> int:
         return int(self.rpc("earnings_v2_upsert_companies", {"p_rows": list(rows)}) or 0)

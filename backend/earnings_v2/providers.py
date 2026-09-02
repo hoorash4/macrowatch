@@ -13,6 +13,7 @@ from typing import Any
 
 import requests
 
+from .http import resilient_session, safe_request_failure
 from .models import PeriodicFiling, Security
 
 
@@ -47,15 +48,8 @@ BINARY_TOTAL_TIMEOUT = 30
 
 
 def _session() -> requests.Session:
-    """자동 재시도 없이 한 번만 호출한다.
-
-    분기 파이프라인은 같은 요청을 내부에서 여러 번 숨겨 실행하지 않는다.
-    공급자 장애는 제한시간 안에 실패시키고 다음 실행에서 분기 전체를 다시
-    검증한다. 그래야 부분 결과와 장시간 정지를 동시에 막을 수 있다.
-    """
-    # requests.Session 기본값은 자동 재시도 0회다. 별도 어댑터를 붙이지
-    # 않아 공급자 호출 횟수가 코드에 보이는 횟수와 정확히 일치하게 한다.
-    return requests.Session()
+    """일시적인 연결·속도제한·서버 오류만 최대 세 번 안에서 복구한다."""
+    return resilient_session()
 
 
 class OpenDartClient:
@@ -112,14 +106,7 @@ class OpenDartClient:
             # API 키·URL·응답 본문은 노출하지 않고 실패 종류만 남긴다.
             if isinstance(exc, ProviderError):
                 raise
-            failure_type = type(exc).__name__
-            response = getattr(exc, "response", None)
-            status = getattr(response, "status_code", None)
-            if status is not None:
-                raise ProviderError(f"OpenDART {endpoint} returned HTTP {status}") from None
-            if "Timeout" in failure_type:
-                raise ProviderError(f"OpenDART {endpoint} timed out ({failure_type})") from None
-            raise ProviderError(f"OpenDART {endpoint} request failed ({failure_type})") from None
+            raise ProviderError(safe_request_failure("OpenDART", endpoint, exc)) from None
         if not isinstance(payload, dict):
             raise ProviderError(f"OpenDART {endpoint} returned invalid JSON")
         status = str(payload.get("status") or "")
@@ -222,8 +209,8 @@ class KrxClient:
             )
             response.raise_for_status()
             payload = response.json()
-        except Exception:
-            raise ProviderError(f"KRX {endpoint} request failed") from None
+        except Exception as exc:
+            raise ProviderError(safe_request_failure("KRX", endpoint, exc)) from None
         raw_rows = payload.get("OutBlock_1") if isinstance(payload, dict) else None
         if not isinstance(raw_rows, list):
             raise ProviderError(f"KRX {endpoint} returned invalid data")
@@ -292,8 +279,8 @@ class KisClient:
             payload = response.json()
             token = str(payload.get("access_token") or "")
             expires = int(payload.get("expires_in") or 86400)
-        except Exception:
-            raise ProviderError("KIS access-token request failed") from None
+        except Exception as exc:
+            raise ProviderError(safe_request_failure("KIS", "access-token", exc)) from None
         if not token:
             raise ProviderError("KIS access-token response did not include a token")
         if self.save_token:
@@ -319,11 +306,16 @@ class KisClient:
                 f"{KIS_BASE}/uapi/domestic-stock/v1/finance/income-statement",
                 params=params, headers=headers, timeout=(CONNECT_TIMEOUT, FAST_READ_TIMEOUT),
             )
+            response.raise_for_status()
             payload = response.json()
-            if not response.ok or str(payload.get("rt_cd") or "0") != "0":
-                raise RuntimeError
-        except Exception:
-            raise ProviderError(f"KIS top-line request failed for {ticker}") from None
+        except Exception as exc:
+            raise ProviderError(safe_request_failure("KIS", f"financials {ticker}", exc)) from None
+        if not isinstance(payload, dict):
+            raise ProviderError(f"KIS financials {ticker} returned invalid JSON")
+        result_code = str(payload.get("rt_cd") or "0")
+        if result_code != "0":
+            message_code = re.sub(r"[^0-9A-Za-z_-]", "", str(payload.get("msg_cd") or "unknown"))
+            raise ProviderError(f"KIS financials {ticker} rejected the request ({message_code})")
         fields = {
             "top_line": "sale_account",
             "operating_income": "bsop_prti",
@@ -375,9 +367,18 @@ class EcosFxClient:
             response = self.session.get(url, timeout=(CONNECT_TIMEOUT, 15))
             response.raise_for_status()
             payload = response.json()
-            rows = payload["StatisticSearch"]["row"]
-        except Exception:
-            raise ProviderError("ECOS USD/KRW request failed") from None
+        except Exception as exc:
+            raise ProviderError(safe_request_failure("ECOS", "USD/KRW", exc)) from None
+        if not isinstance(payload, dict):
+            raise ProviderError("ECOS USD/KRW returned invalid JSON")
+        result = payload.get("RESULT")
+        if isinstance(result, dict):
+            code = re.sub(r"[^0-9A-Za-z_-]", "", str(result.get("CODE") or "unknown"))
+            raise ProviderError(f"ECOS USD/KRW rejected the request ({code})")
+        statistic = payload.get("StatisticSearch")
+        rows = statistic.get("row") if isinstance(statistic, dict) else None
+        if not isinstance(rows, list):
+            raise ProviderError("ECOS USD/KRW returned invalid data")
         candidates: list[tuple[str, Decimal]] = []
         for row in rows if isinstance(rows, list) else []:
             value = _decimal(row.get("DATA_VALUE"))

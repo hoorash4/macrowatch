@@ -13,9 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
-# 계산 테스트에는 네트워크가 필요 없다. 로컬에 운영 의존성이 설치되지 않은
-# 환경에서도 모듈을 불러올 수 있도록 import 자리만 제공한다.
-if "requests" not in sys.modules:
+# 계산 테스트에는 네트워크가 필요 없지만, 운영 의존성이 설치된 환경에서는
+# 실제 requests 패키지를 보존해 뒤에 수집기 테스트가 같은 프로세스에서
+# 하위 모듈과 예외 타입을 정상적으로 불러오게 한다.
+try:
+    import requests  # noqa: F401
+except ModuleNotFoundError:
     requests_stub = types.ModuleType("requests")
     requests_stub.Session = object
     requests_stub.HTTPError = type("HTTPError", (Exception,), {})

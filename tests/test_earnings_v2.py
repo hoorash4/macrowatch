@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import requests
 from datetime import date
 from decimal import Decimal
 
@@ -8,7 +9,8 @@ from earnings_v2.aggregation import aggregate_market
 from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling
 from earnings_v2.cli import completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
-from earnings_v2.providers import KisClient, OpenDartClient, ProviderError
+from earnings_v2.http import RETRYABLE_STATUS_CODES, RETRY_TOTAL, resilient_session
+from earnings_v2.providers import EcosFxClient, KisClient, OpenDartClient, ProviderError
 from earnings_v2.transform import (
     calculate_financial_point,
     calculate_financial_series,
@@ -208,6 +210,19 @@ class SimulatedDart:
         return [item for corp in codes for item in complete(corp, current="20", cumulative="120")]
 
 
+class UsdDart(SimulatedDart):
+    def __init__(self, target_corp: str, filings=()):
+        super().__init__(filings)
+        self.target_corp = target_corp
+
+    def multi_accounts(self, corp_codes, year, quarter):
+        rows = super().multi_accounts(corp_codes, year, quarter)
+        return [
+            {**item, "currency": "USD"} if item["corp_code"] == self.target_corp else item
+            for item in rows
+        ]
+
+
 class SimulatedKis:
     def __init__(self, values=None):
         self.values = values or {}
@@ -233,6 +248,15 @@ class FailingKis(SimulatedKis):
     def quarter_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
         raise ProviderError(f"KIS top-line request failed for {ticker}")
+
+
+class FailingFx:
+    def __init__(self):
+        self.request_count = 0
+
+    def usd_krw(self, _reference_date):
+        self.request_count += 1
+        raise ProviderError("ECOS USD/KRW timed out (ConnectTimeout)")
 
 
 class SimulatedKrx:
@@ -339,6 +363,50 @@ class OpenDartTransportTests(unittest.TestCase):
         self.assertEqual(filing_period(filing), (2026, 2))
 
 
+class ProviderReliabilityTests(unittest.TestCase):
+    def test_shared_session_retries_only_bounded_transient_failures(self):
+        retry = resilient_session().get_adapter("https://").max_retries
+
+        self.assertEqual(retry.total, RETRY_TOTAL)
+        self.assertEqual(retry.connect, RETRY_TOTAL)
+        self.assertEqual(retry.read, RETRY_TOTAL)
+        self.assertEqual(retry.status, RETRY_TOTAL)
+        self.assertEqual(frozenset(retry.status_forcelist), RETRYABLE_STATUS_CODES)
+        self.assertTrue(retry.respect_retry_after_header)
+        self.assertEqual(retry.allowed_methods, frozenset({"GET", "POST"}))
+
+    def test_ecos_reports_timeout_type_without_exposing_key(self):
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                raise requests.ConnectTimeout("secret-key")
+
+        client = EcosFxClient("secret-key", session=Session())
+        with self.assertRaisesRegex(ProviderError, r"ECOS USD/KRW timed out \(ConnectTimeout\)") as captured:
+            client.usd_krw(date(2025, 12, 31))
+        self.assertNotIn("secret-key", str(captured.exception))
+
+    def test_ecos_reports_sanitized_provider_result_code(self):
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"RESULT": {"CODE": "ERROR-101", "MESSAGE": "sensitive detail"}}
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        client = EcosFxClient("secret", session=Session())
+        with self.assertRaisesRegex(ProviderError, r"rejected the request \(ERROR-101\)") as captured:
+            client.usd_krw(date(2025, 12, 31))
+        self.assertNotIn("sensitive detail", str(captured.exception))
+
+
 class CliContractTests(unittest.TestCase):
     def test_korean_market_targets_are_one_hundred_each(self):
         self.assertEqual(TARGETS, {"kr_largecap": 100, "kr_kosdaq": 100})
@@ -404,7 +472,7 @@ class DailyCheckpointTests(unittest.TestCase):
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
         self.assertEqual(captured["refresh_corp_codes"], {"00000002"})
         self.assertEqual(result["filing_discovery"]["new_receipts"], 1)
-        self.assertEqual(repository.saved[-1][0:2], ("daily_filings", "ready"))
+        self.assertEqual(repository.saved[-1][0:2], ("daily_filings", "incomplete"))
         self.assertEqual(repository.saved[-1][2]["last_checked_date"], "2026-09-02")
         self.assertEqual(repository.saved[-1][2]["boundary_receipt_ids"], ["20260902000001"])
 
@@ -492,6 +560,26 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
 
+    def test_profit_incomplete_pending_company_refetches_full_provider_path(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.seed_company(
+            target_company, top_line=None, operating_income=None, net_income=None, pending=True,
+        )
+        dart = SimulatedDart()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=SimulatedKis(),
+        )
+
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,), (target_corp,)])
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(stored["operating_income"], Decimal("20"))
+        self.assertFalse(stored["is_pending"])
+
     def test_backfill_replaces_existing_top_line_with_provider_result(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
@@ -537,7 +625,34 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             all((2026, 2) not in periods for _companies, periods in repository.company_period_calls)
         )
 
-    def test_kis_failure_marks_only_the_company_pending(self):
+    def test_backfill_refetches_previous_cumulative_instead_of_using_db_fact(self):
+        target_company = "kr:00000099"
+        repository = self.populated_repository()
+        stale_previous = extract_company_fact(
+            "00000099", target_company, 2026, 1,
+            complete("00000099", current="999", cumulative="999"),
+        )
+        repository.company_rows[(target_company, 2026, 1)] = stale_previous.db_row(
+            calculation_version=6,
+        )
+        dart = SimulatedDart()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=SimulatedKis(),
+        )
+
+        result = pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(
+            repository.company_rows[(target_company, 2026, 2)]["operating_income"],
+            Decimal("20"),
+        )
+        self.assertEqual(dart.financial_calls, [
+            (tuple(f"{rank:08d}" for rank in range(1, 101)) + tuple(f"{1000 + rank:08d}" for rank in range(1, 101)), 2026, 2),
+            (tuple(f"{rank:08d}" for rank in range(1, 101)) + tuple(f"{1000 + rank:08d}" for rank in range(1, 101)), 2026, 1),
+        ])
+
+    def test_backfill_provider_failure_stops_before_replacement(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
 
@@ -555,14 +670,67 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             krx=SimulatedKrx(), dart=MissingTopLineDart(), repository=repository, kis=kis,
         )
 
-        result = pipeline.run_quarter(2026, 2, write=True)
+        with self.assertRaisesRegex(ProviderError, "KIS top-line request failed"):
+            pipeline.run_quarter(2026, 2, write=True)
 
         self.assertEqual(kis.calls, [("000099", 2026, 2)])
-        self.assertEqual(result["status"], "incomplete")
-        self.assertEqual(len([item for item in result["issues"] if item["company"] == "kr_largecap-99"]), 1)
         stored = repository.company_rows[(target_company, 2026, 2)]
-        self.assertIsNone(stored["top_line"])
+        self.assertEqual(stored["top_line"], Decimal("100"))
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(repository.states["2026Q2"]["status"], "failed")
+
+    def test_backfill_fx_failure_stops_before_replacement(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        fx = FailingFx()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=UsdDart(target_corp), repository=repository,
+            kis=SimulatedKis(), fx=fx,
+        )
+
+        with self.assertRaisesRegex(ProviderError, r"ECOS USD/KRW timed out \(ConnectTimeout\)"):
+            pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(fx.request_count, 1)
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(stored["top_line"], Decimal("100"))
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(repository.states["2026Q2"]["status"], "failed")
+
+    def test_daily_fx_failure_preserves_company_and_retries_next_run(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        receipt = PeriodicFiling(
+            target_corp, "20260902000009", date(2026, 9, 2), "반기보고서 (2026.06)",
+        )
+        repository = self.populated_repository()
+        fx = FailingFx()
+        dart = UsdDart(target_corp, [receipt])
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository,
+            kis=SimulatedKis(), fx=fx,
+        )
+
+        first = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+        stored = repository.company_rows[(target_company, 2026, 2)]
+
+        self.assertEqual(first["status"], "incomplete")
+        self.assertEqual(first["issues"], [{
+            "company": "kr_largecap-99",
+            "field": "currency",
+            "reason": "ECOS USD/KRW timed out (ConnectTimeout)",
+        }])
+        self.assertEqual(stored["top_line"], Decimal("100"))
         self.assertTrue(stored["is_pending"])
+        self.assertEqual(fx.request_count, 1)
+
+        second = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(second["filing_discovery"]["new_receipts"], 0)
+        self.assertEqual(second["refreshed_companies"], 1)
+        self.assertEqual(fx.request_count, 2)
+        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
 
     def test_pending_kis_retry_failure_does_not_abort_daily_run(self):
         target_company = "kr:00000099"
@@ -732,6 +900,10 @@ class KisFallbackTests(unittest.TestCase):
     def test_kis_converts_cumulative_hundred_million_krw_to_standalone_won(self):
         class Response:
             ok = True
+
+            @staticmethod
+            def raise_for_status():
+                return None
 
             @staticmethod
             def json():

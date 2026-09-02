@@ -264,6 +264,7 @@ class KoreaEarningsV2Pipeline:
         quarter: int,
         *,
         stage: str,
+        propagate_provider_error: bool = False,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
         """KIS로 OpenDART 누락 손익만 보완하고, 실패는 기업 단위 대기로 격리한다."""
         self._progress(f"{stage}_start", company=identity.company_name, ticker=identity.stock_code)
@@ -271,6 +272,8 @@ class KoreaEarningsV2Pipeline:
             values = self.kis.quarter_financials(identity.stock_code, year, quarter)
         except ProviderError as error:
             self._progress(f"{stage}_failed", company=identity.company_name)
+            if propagate_provider_error:
+                raise
             return fact.with_changes(is_pending=True), {
                 "company": identity.company_name,
                 "field": "top_line",
@@ -291,11 +294,14 @@ class KoreaEarningsV2Pipeline:
 
     def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
                            previous_facts: dict[str, FinancialFact] | None = None,
+                           *, existing_facts: dict[str, FinancialFact] | None = None,
+                           tolerate_provider_errors: bool = False,
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
         current = _group(self.dart.multi_accounts(codes, year, quarter), codes)
         previous_facts = previous_facts or {}
+        existing_facts = existing_facts or {}
         # 직전 분기의 누적 원본은 DB가 단일 진실 공급원이다. 과거 기업군에
         # 없었던 기업 등 실제 단독값 계산에 필요한 원본이 없는 경우에만
         # 해당 기업만 폴백한다. 현재 누적값 자체가 없는 필드는 재호출해도
@@ -326,6 +332,7 @@ class KoreaEarningsV2Pipeline:
         issues: list[dict[str, str]] = []
         end = quarter_end(year, quarter)
         for identity in identities:
+            currency_failed = False
             fact = extract_company_fact(identity.corp_code, identity.company_id, year, quarter,
                                         current[identity.corp_code], previous.get(identity.corp_code, []),
                                         previous_fact=previous_facts.get(identity.company_id))
@@ -336,25 +343,46 @@ class KoreaEarningsV2Pipeline:
                 )
             if fact.currency != "KRW":
                 if fact.currency == "USD" and self.fx is not None:
-                    rate = self.fx.usd_krw(end)
-                    fact = fact.with_changes(
-                        top_line=fact.top_line * rate if fact.top_line is not None else None,
-                        operating_income=fact.operating_income * rate if fact.operating_income is not None else None,
-                        net_income=fact.net_income * rate if fact.net_income is not None else None,
-                        currency="KRW",
-                    )
+                    try:
+                        rate = self.fx.usd_krw(end)
+                    except ProviderError as error:
+                        if not tolerate_provider_errors:
+                            raise
+                        currency_failed = True
+                        preserved = existing_facts.get(identity.company_id)
+                        fact = (
+                            preserved.with_changes(is_pending=True)
+                            if preserved is not None
+                            else fact.with_changes(
+                                top_line=None, operating_income=None, net_income=None,
+                                currency="KRW", is_pending=True,
+                            )
+                        )
+                        issues.append({
+                            "company": identity.company_name,
+                            "field": "currency",
+                            "reason": str(error),
+                        })
+                    else:
+                        fact = fact.with_changes(
+                            top_line=fact.top_line * rate if fact.top_line is not None else None,
+                            operating_income=fact.operating_income * rate if fact.operating_income is not None else None,
+                            net_income=fact.net_income * rate if fact.net_income is not None else None,
+                            currency="KRW",
+                        )
                 else:
                     fact = fact.with_changes(is_pending=True)
                     issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
-            if not fact.fully_complete and year >= 2019 and self.kis is not None:
+            if not currency_failed and not fact.fully_complete and year >= 2019 and self.kis is not None:
                 fact, kis_issue = self._try_kis_missing_financials(
                     identity, fact, year, quarter, stage="kis_top_line",
+                    propagate_provider_error=not tolerate_provider_errors,
                 )
                 if kis_issue is not None:
                     issues.append(kis_issue)
             fact = fact.with_changes(is_pending=fact.is_pending or not fact.fully_complete)
             existing_issues = {(item["company"], item["field"]) for item in issues}
-            for field in ("top_line", "operating_income", "net_income"):
+            for field in () if currency_failed else ("top_line", "operating_income", "net_income"):
                 if getattr(fact, field) is None and (identity.company_name, field) not in existing_issues:
                     issues.append({"company": identity.company_name, "field": field, "reason": "provider value missing"})
             facts[identity.company_id] = fact
@@ -555,6 +583,14 @@ class KoreaEarningsV2Pipeline:
                     if row.company_id not in manual_ids and (
                         row.corp_code in provider_refresh
                         or row.company_id not in stored_current
+                        or (
+                            stored_current[row.company_id].is_pending
+                            and (
+                                stored_current[row.company_id].fully_complete
+                                or not stored_current[row.company_id].profit_complete
+                                or stored_current[row.company_id].source_currency != "KRW"
+                            )
+                        )
                     )
                 ]
                 preserved = stored_current
@@ -563,13 +599,20 @@ class KoreaEarningsV2Pipeline:
                 stored_current = {}
                 selected = identities
                 preserved = {}
+            # 증분은 저장된 직전 누적 원본을 재사용한다. 명시적 백필은 현재
+            # 분기뿐 아니라 단독값 계산에 필요한 직전 누적도 공급자에서 다시
+            # 받아 기존 DB 재무값이 새 결과에 섞이지 않게 한다.
             previous_facts = {
                 identity.company_id: stored[(identity.company_id, *previous_key)]
                 for identity in selected
-                if (identity.company_id, *previous_key) in stored
+                if incremental and (identity.company_id, *previous_key) in stored
             }
             fresh_facts, issues = (
-                self.collect_financials(selected, year, quarter, previous_facts)
+                self.collect_financials(
+                    selected, year, quarter, previous_facts,
+                    existing_facts=stored_current,
+                    tolerate_provider_errors=incremental,
+                )
                 if selected else ({}, [])
             )
             pending_top_lines: dict[str, FinancialFact] = {}
@@ -744,7 +787,7 @@ class KoreaEarningsV2Pipeline:
             "refreshed_companies": len(refresh_corp_codes),
         }
         if write:
-            self.repository.save_state("daily_filings", "ready", {
+            self.repository.save_state("daily_filings", result["status"], {
                 "last_checked_date": current_day.isoformat(),
                 "boundary_receipt_ids": sorted(
                     filing.receipt_no for filing in filings if filing.received_on == current_day
