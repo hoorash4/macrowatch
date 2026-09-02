@@ -11,6 +11,7 @@ from .aggregation import aggregate_market, calculate_market_point
 from .models import CompanyIdentity, FinancialFact, MarketFact, PeriodicFiling, Security
 from .providers import EcosFxClient, KisClient, KrxClient, OpenDartClient, ProviderError
 from .repository import EarningsV2Repository
+from .runtime import execution_deadline
 from .transform import (
     calculate_financial_point,
     decimal_value,
@@ -525,7 +526,14 @@ class KoreaEarningsV2Pipeline:
 
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
                     allow_review: bool = False, incremental: bool = False,
-                    refresh_corp_codes: set[str] | None = None) -> dict[str, Any]:
+                    refresh_corp_codes: set[str] | None = None,
+                    deadline_seconds: int | None = None) -> dict[str, Any]:
+        if deadline_seconds is not None:
+            with execution_deadline(deadline_seconds):
+                return self.run_quarter(
+                    year, quarter, write=write, allow_review=allow_review,
+                    incremental=incremental, refresh_corp_codes=refresh_corp_codes,
+                )
         operation = f"{year}Q{quarter}"
         if write:
             self.repository.save_state(operation, "running", {})
@@ -750,11 +758,29 @@ class KoreaEarningsV2Pipeline:
             "status": "ready",
         }
 
-    def run_daily(self, *, write: bool = True, today: date | None = None) -> dict[str, Any]:
+    def run_daily(self, *, write: bool = True, today: date | None = None,
+                  deadline_seconds: int | None = None) -> dict[str, Any]:
         """마지막 정상 확인일 이후의 신규 접수번호만 증분 처리한다."""
+        if deadline_seconds is not None:
+            with execution_deadline(deadline_seconds):
+                return self.run_daily(write=write, today=today)
         current_day = today or date.today()
         state = self.repository.pipeline_state("daily_filings") or {}
         cursor = state.get("cursor") if isinstance(state.get("cursor"), dict) else {}
+        try:
+            return self._run_daily_from_cursor(current_day, cursor, write=write)
+        except Exception as error:
+            # 자동 실행은 실패 시 기존 체크포인트를 그대로 유지한다. 다음 실행이
+            # 같은 공시 경계를 다시 읽어 공급자 장애로 자료가 건너뛰지 않게 한다.
+            if write:
+                self.repository.save_state(
+                    "daily_filings", "failed", cursor, str(error)[:2000],
+                )
+            raise
+
+    def _run_daily_from_cursor(
+        self, current_day: date, cursor: dict[str, Any], *, write: bool,
+    ) -> dict[str, Any]:
         checked_text = str(cursor.get("last_checked_date") or "")
         try:
             checked_on = date.fromisoformat(checked_text)
@@ -795,11 +821,15 @@ class KoreaEarningsV2Pipeline:
             })
         return result
 
-    def run_year(self, year: int, *, write: bool = False, allow_review: bool = False) -> list[dict[str, Any]]:
+    def run_year(self, year: int, *, write: bool = False, allow_review: bool = False,
+                 deadline_seconds: int | None = None) -> list[dict[str, Any]]:
         """백필은 참조 분기가 먼저 존재하도록 항상 1분기부터 순서대로 실행한다."""
         results = []
         for quarter in range(1, 5):
-            result = self.run_quarter(year, quarter, write=write, allow_review=allow_review)
+            result = self.run_quarter(
+                year, quarter, write=write, allow_review=allow_review,
+                deadline_seconds=deadline_seconds,
+            )
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
             if result["status"] != "ready" and not allow_review:

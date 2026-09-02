@@ -7,9 +7,17 @@ from decimal import Decimal
 
 from earnings_v2.aggregation import aggregate_market
 from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling
-from earnings_v2.cli import completed_successfully, parser
+from earnings_v2.cli import DAILY_DEADLINE_SECONDS, QUARTER_DEADLINE_SECONDS, completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
-from earnings_v2.http import RETRYABLE_STATUS_CODES, RETRY_TOTAL, resilient_session
+from earnings_v2.http import (
+    RETRYABLE_STATUS_CODES,
+    RETRY_TOTAL,
+    ExecutionDeadlineExceeded,
+    ResponseDeadlineExceeded,
+    bounded_request,
+    provider_session,
+    resilient_session,
+)
 from earnings_v2.providers import EcosFxClient, KisClient, OpenDartClient, ProviderError
 from earnings_v2.transform import (
     calculate_financial_point,
@@ -313,7 +321,7 @@ class OpenDartTransportTests(unittest.TestCase):
         client = OpenDartClient("secret", session=session, interval=0)
         client.multi_accounts([f"{index:08d}" for index in range(150)], 2026, 2)
         self.assertEqual(len(session.calls), 2)
-        self.assertEqual(session.calls[0][1]["timeout"], (5, 20))
+        self.assertEqual(session.calls[0][1]["timeout"], (5, 12))
         self.assertEqual(len(session.calls[0][1]["params"]["corp_code"].split(",")), 100)
         self.assertEqual(len(session.calls[1][1]["params"]["corp_code"].split(",")), 50)
 
@@ -373,7 +381,83 @@ class ProviderReliabilityTests(unittest.TestCase):
         self.assertEqual(retry.status, RETRY_TOTAL)
         self.assertEqual(frozenset(retry.status_forcelist), RETRYABLE_STATUS_CODES)
         self.assertTrue(retry.respect_retry_after_header)
-        self.assertEqual(retry.allowed_methods, frozenset({"GET", "POST"}))
+        self.assertEqual(retry.allowed_methods, frozenset({"GET"}))
+
+    def test_provider_session_has_no_hidden_adapter_retries(self):
+        retry = provider_session().get_adapter("https://").max_retries
+        self.assertEqual(retry.total, 0)
+
+    def test_streaming_response_is_stopped_by_total_deadline(self):
+        clock = [0.0]
+
+        class Response:
+            status_code = 200
+            headers = {}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def iter_content(chunk_size):
+                self.assertEqual(chunk_size, 64 * 1024)
+                clock[0] = 6.0
+                yield b'{"status":"000"}'
+
+        class Session:
+            calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                return Response()
+
+        session = Session()
+        with self.assertRaises(ResponseDeadlineExceeded):
+            bounded_request(
+                session, "GET", "https://provider.invalid",
+                provider="test", operation="stream", total_timeout=5,
+                attempt_timeout=None,
+                connect_timeout=2, read_timeout=2,
+                monotonic=lambda: clock[0], sleep=lambda _seconds: None,
+            )
+        self.assertEqual(session.calls, 1)
+
+    def test_provider_retries_share_one_total_budget(self):
+        clock = [0.0]
+
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"ok": True}
+
+        class Session:
+            calls = []
+
+            def get(self, *_args, **kwargs):
+                self.calls.append(kwargs["timeout"])
+                if len(self.calls) == 1:
+                    clock[0] = 2.0
+                    raise requests.ConnectTimeout()
+                return Response()
+
+        def advance(seconds):
+            clock[0] += seconds
+
+        session = Session()
+        result = bounded_request(
+            session, "GET", "https://provider.invalid",
+            provider="test", operation="retry", total_timeout=5,
+            attempt_timeout=4,
+            connect_timeout=4, read_timeout=4,
+            monotonic=lambda: clock[0], sleep=advance,
+        )
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(len(session.calls), 2)
+        self.assertLess(session.calls[1][0], session.calls[0][0])
 
     def test_ecos_reports_timeout_type_without_exposing_key(self):
         class Session:
@@ -411,19 +495,28 @@ class CliContractTests(unittest.TestCase):
     def test_korean_market_targets_are_one_hundred_each(self):
         self.assertEqual(TARGETS, {"kr_largecap": 100, "kr_kosdaq": 100})
 
+    def test_application_deadline_precedes_workflow_hard_stop(self):
+        self.assertEqual(DAILY_DEADLINE_SECONDS, 240)
+        self.assertEqual(QUARTER_DEADLINE_SECONDS, 600)
+        self.assertLess(DAILY_DEADLINE_SECONDS, 270)
+        self.assertLess(QUARTER_DEADLINE_SECONDS, 660)
+
     def test_year_backfill_always_runs_oldest_quarter_first(self):
         pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=object(), repository=object())
         visited: list[int] = []
+        deadlines: list[int | None] = []
 
-        def run_quarter(_year, quarter, **_kwargs):
+        def run_quarter(_year, quarter, **kwargs):
             visited.append(quarter)
+            deadlines.append(kwargs.get("deadline_seconds"))
             return {"status": "ready", "quarter": quarter}
 
         pipeline.run_quarter = run_quarter
 
-        pipeline.run_year(2026)
+        pipeline.run_year(2026, deadline_seconds=600)
 
         self.assertEqual(visited, [1, 2, 3, 4])
+        self.assertEqual(deadlines, [600, 600, 600, 600])
 
     def test_only_ready_results_are_successful(self):
         self.assertTrue(completed_successfully({"status": "ready"}))
@@ -698,6 +791,29 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.states["2026Q2"]["status"], "failed")
 
+    def test_backfill_application_deadline_stops_before_replacement(self):
+        target_company = "kr:00000099"
+
+        class DeadlineDart(SimulatedDart):
+            def multi_accounts(self, _corp_codes, _year, _quarter):
+                raise ExecutionDeadlineExceeded(
+                    "earnings process exceeded 600-second application deadline"
+                )
+
+        repository = self.populated_repository()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=DeadlineDart(), repository=repository,
+            kis=SimulatedKis(),
+        )
+
+        with self.assertRaises(ExecutionDeadlineExceeded):
+            pipeline.run_quarter(2026, 2, write=True)
+
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(stored["top_line"], Decimal("100"))
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(repository.states["2026Q2"]["status"], "failed")
+
     def test_daily_fx_failure_preserves_company_and_retries_next_run(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
@@ -787,6 +903,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
         self.assertEqual(repository.states["daily_filings"]["cursor"], original_cursor)
+        self.assertEqual(repository.states["daily_filings"]["status"], "failed")
         self.assertFalse(any(
             operation == "daily_filings" and cursor.get("last_checked_date") == "2026-09-02"
             for operation, _status, cursor, _error in repository.saved_states

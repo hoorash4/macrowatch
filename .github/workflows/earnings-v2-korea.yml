@@ -42,7 +42,7 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -54,6 +54,8 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
+          # 자동 증분은 짧게, 수동 분기 백필은 누락 보완 시간을 포함해 넉넉히 둡니다.
+          EARNINGS_V2_DEADLINE_SECONDS: ${{ github.event_name == 'schedule' && '240' || '600' }}
           YEAR: ${{ inputs.year || '' }}
           QUARTER: ${{ inputs.quarter || '' }}
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
@@ -71,13 +73,15 @@ jobs:
           set -euo pipefail
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
             args=(--daily)
+            hard_timeout=270
           else
             [[ "$YEAR" =~ ^[0-9]{4}$ ]]
             args=(--year "$YEAR" --quarter "$QUARTER")
+            hard_timeout=660
           fi
           [[ "$WRITE" == "true" ]] && args+=(--write)
           [[ "$ALLOW_REVIEW" == "true" ]] && args+=(--allow-review)
           [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
-          # 요청별 제한과 별개로 분기 프로세스 전체에도 명시적인 상한을 둔다.
-          # 124는 정상 실패로 처리되며 다음 분기를 자동 실행하지 않는다.
-          timeout --signal=TERM --kill-after=10s 270s python -m earnings_v2.cli "${args[@]}"
+          # 애플리케이션 마감선보다 30초 뒤의 외부 제한은 실패 상태 기록까지
+          # 고장 난 경우에만 사용하는 최후 강제 종료 안전망이다.
+          timeout --signal=TERM --kill-after=10s "${hard_timeout}s" python -m earnings_v2.cli "${args[@]}"

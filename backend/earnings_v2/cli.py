@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
 from .pipeline import KoreaEarningsV2Pipeline
+from .runtime import execution_deadline
+
+
+DAILY_DEADLINE_SECONDS = 240
+QUARTER_DEADLINE_SECONDS = 600
 
 
 def parser() -> argparse.ArgumentParser:
@@ -31,16 +37,27 @@ def main() -> None:
     pipeline = KoreaEarningsV2Pipeline.from_env()
     if args.daily and args.recalculate_only:
         argument_parser.error("--daily와 --recalculate-only는 함께 사용할 수 없습니다")
+    default_deadline = DAILY_DEADLINE_SECONDS if args.daily else QUARTER_DEADLINE_SECONDS
+    deadline_seconds = int(os.getenv("EARNINGS_V2_DEADLINE_SECONDS", str(default_deadline)))
     if args.daily:
-        result = pipeline.run_daily(write=args.write)
+        result = pipeline.run_daily(write=args.write, deadline_seconds=deadline_seconds)
     elif args.year is None:
         argument_parser.error("--daily가 아니면 --year가 필요합니다")
     elif args.quarter and args.recalculate_only:
-        result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)
+        with execution_deadline(deadline_seconds):
+            result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)
     elif args.quarter:
-        result = pipeline.run_quarter(args.year, args.quarter, write=args.write, allow_review=args.allow_review)
+        result = pipeline.run_quarter(
+            args.year, args.quarter, write=args.write, allow_review=args.allow_review,
+            deadline_seconds=deadline_seconds,
+        )
     else:
-        result = pipeline.run_year(args.year, write=args.write, allow_review=args.allow_review)
+        # 연도 실행도 분기마다 새 마감선을 받는다. 다년 백필은 이 경계를
+        # 그대로 확장해 성공한 분기 다음부터 재개할 수 있다.
+        result = pipeline.run_year(
+            args.year, write=args.write, allow_review=args.allow_review,
+            deadline_seconds=deadline_seconds,
+        )
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
     # 증분 실행의 provisional/collecting은 공급자 오류가 아니라 정상적인
     # 실적 발표 진행 상태다. 백필만 분기 미완료를 실패로 반환한다.

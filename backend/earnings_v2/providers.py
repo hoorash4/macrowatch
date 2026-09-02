@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import time
@@ -13,7 +14,7 @@ from typing import Any
 
 import requests
 
-from .http import resilient_session, safe_request_failure
+from .http import ExecutionDeadlineExceeded, bounded_request, provider_session, safe_request_failure
 from .models import PeriodicFiling, Security
 
 
@@ -45,11 +46,15 @@ CONNECT_TIMEOUT = 5
 STANDARD_READ_TIMEOUT = 20
 FAST_READ_TIMEOUT = 12
 BINARY_TOTAL_TIMEOUT = 30
+OPEN_DART_TOTAL_TIMEOUT = 40
+KRX_TOTAL_TIMEOUT = 30
+KIS_TOTAL_TIMEOUT = 25
+ECOS_TOTAL_TIMEOUT = 30
 
 
 def _session() -> requests.Session:
-    """일시적인 연결·속도제한·서버 오류만 최대 세 번 안에서 복구한다."""
-    return resilient_session()
+    """공급자 재시도는 bounded_request 한 곳에서만 수행한다."""
+    return provider_session()
 
 
 class OpenDartClient:
@@ -77,36 +82,42 @@ class OpenDartClient:
             time.sleep(remaining)
         self._last_request = time.monotonic()
 
+    @staticmethod
+    def _progress(stage: str, **details: Any) -> None:
+        print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
+
+    def _retry_progress(self, endpoint: str) -> Callable[[int, str, float], None]:
+        return lambda attempt, reason, remaining: self._progress(
+            "provider_request_retry",
+            provider="OpenDART", endpoint=endpoint, attempt=attempt,
+            reason=reason, remaining_budget_seconds=remaining,
+        )
+
     def _get(self, endpoint: str, params: dict[str, str], *, binary: bool = False) -> Any:
         self._wait()
         self.request_count += 1
         try:
-            response = self.session.get(
+            payload = bounded_request(
+                self.session, "GET",
                 f"{OPEN_DART_BASE}/{endpoint}",
+                provider="OpenDART", operation=endpoint,
                 params={"crtfc_key": self.api_key, **params},
-                timeout=(CONNECT_TIMEOUT, STANDARD_READ_TIMEOUT),
-                stream=binary,
+                total_timeout=BINARY_TOTAL_TIMEOUT if binary else OPEN_DART_TOTAL_TIMEOUT,
+                attempt_timeout=9 if binary else 12,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=STANDARD_READ_TIMEOUT,
+                binary=binary,
+                on_retry=self._retry_progress(endpoint),
             )
-            response.raise_for_status()
-            if binary:
-                # requests의 read timeout은 응답 전체 시간이 아니라 소켓에서
-                # 다음 바이트를 기다리는 시간이다. 공급자가 데이터를 조금씩
-                # 보내면 무한히 늘어질 수 있으므로 대용량 ZIP은 전체 시간을
-                # 별도로 제한한다. 시간 초과 시 분기 전체가 실패한다.
-                started = time.monotonic()
-                chunks: list[bytes] = []
-                for chunk in response.iter_content(chunk_size=64 * 1024):
-                    if time.monotonic() - started > BINARY_TOTAL_TIMEOUT:
-                        raise ProviderError(f"OpenDART {endpoint} response exceeded total deadline")
-                    if chunk:
-                        chunks.append(chunk)
-                return b"".join(chunks)
-            payload = response.json()
+        except ExecutionDeadlineExceeded:
+            raise
         except Exception as exc:
             # API 키·URL·응답 본문은 노출하지 않고 실패 종류만 남긴다.
             if isinstance(exc, ProviderError):
                 raise
             raise ProviderError(safe_request_failure("OpenDART", endpoint, exc)) from None
+        if binary:
+            return payload
         if not isinstance(payload, dict):
             raise ProviderError(f"OpenDART {endpoint} returned invalid JSON")
         status = str(payload.get("status") or "")
@@ -135,14 +146,27 @@ class OpenDartClient:
     def multi_accounts(self, corp_codes: Iterable[str], year: int, quarter: int) -> list[dict[str, Any]]:
         unique = list(dict.fromkeys(str(code).strip() for code in corp_codes if str(code).strip()))
         rows: list[dict[str, Any]] = []
+        batch_count = (len(unique) + 99) // 100
         for start in range(0, len(unique), 100):
             batch = unique[start:start + 100]
+            batch_number = start // 100 + 1
+            self._progress(
+                "open_dart_batch_start", endpoint="fnlttMultiAcnt.json",
+                year=year, quarter=quarter, batch=batch_number,
+                batch_count=batch_count, company_count=len(batch),
+            )
             payload = self._get("fnlttMultiAcnt.json", {
                 "corp_code": ",".join(batch),
                 "bsns_year": str(year),
                 "reprt_code": REPORT_CODES[quarter],
             })
-            rows.extend(row for row in payload.get("list", []) if isinstance(row, dict))
+            batch_rows = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            rows.extend(batch_rows)
+            self._progress(
+                "open_dart_batch_done", endpoint="fnlttMultiAcnt.json",
+                year=year, quarter=quarter, batch=batch_number,
+                batch_count=batch_count, row_count=len(batch_rows),
+            )
         return rows
 
     def periodic_filings(self, start: date, end: date) -> list[PeriodicFiling]:
@@ -201,14 +225,19 @@ class KrxClient:
         self.request_count += 1
         endpoint = KRX_ENDPOINTS[market_id]
         try:
-            response = self.session.get(
+            payload = bounded_request(
+                self.session, "GET",
                 f"{KRX_BASE}/{endpoint}",
+                provider="KRX", operation=endpoint,
                 params={"basDd": day.strftime("%Y%m%d")},
                 headers={"AUTH_KEY": self.auth_key, "Accept": "application/json"},
-                timeout=(CONNECT_TIMEOUT, STANDARD_READ_TIMEOUT),
+                total_timeout=KRX_TOTAL_TIMEOUT,
+                attempt_timeout=9,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=STANDARD_READ_TIMEOUT,
             )
-            response.raise_for_status()
-            payload = response.json()
+        except ExecutionDeadlineExceeded:
+            raise
         except Exception as exc:
             raise ProviderError(safe_request_failure("KRX", endpoint, exc)) from None
         raw_rows = payload.get("OutBlock_1") if isinstance(payload, dict) else None
@@ -270,15 +299,20 @@ class KisClient:
             self._token = cached
             return cached
         try:
-            response = self.session.post(
+            payload = bounded_request(
+                self.session, "POST",
                 f"{KIS_BASE}/oauth2/tokenP",
+                provider="KIS", operation="access-token",
                 json={"grant_type": "client_credentials", "appkey": self.app_key, "appsecret": self.app_secret},
-                timeout=(CONNECT_TIMEOUT, 15),
+                total_timeout=KIS_TOTAL_TIMEOUT,
+                attempt_timeout=7,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=15,
             )
-            response.raise_for_status()
-            payload = response.json()
             token = str(payload.get("access_token") or "")
             expires = int(payload.get("expires_in") or 86400)
+        except ExecutionDeadlineExceeded:
+            raise
         except Exception as exc:
             raise ProviderError(safe_request_failure("KIS", "access-token", exc)) from None
         if not token:
@@ -302,12 +336,18 @@ class KisClient:
             "appsecret": self.app_secret, "tr_id": "FHKST66430200", "custtype": "P",
         }
         try:
-            response = self.session.get(
+            payload = bounded_request(
+                self.session, "GET",
                 f"{KIS_BASE}/uapi/domestic-stock/v1/finance/income-statement",
-                params=params, headers=headers, timeout=(CONNECT_TIMEOUT, FAST_READ_TIMEOUT),
+                provider="KIS", operation=f"financials {ticker}",
+                params=params, headers=headers,
+                total_timeout=KIS_TOTAL_TIMEOUT,
+                attempt_timeout=7,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=FAST_READ_TIMEOUT,
             )
-            response.raise_for_status()
-            payload = response.json()
+        except ExecutionDeadlineExceeded:
+            raise
         except Exception as exc:
             raise ProviderError(safe_request_failure("KIS", f"financials {ticker}", exc)) from None
         if not isinstance(payload, dict):
@@ -364,9 +404,16 @@ class EcosFxClient:
         )
         self.request_count += 1
         try:
-            response = self.session.get(url, timeout=(CONNECT_TIMEOUT, 15))
-            response.raise_for_status()
-            payload = response.json()
+            payload = bounded_request(
+                self.session, "GET", url,
+                provider="ECOS", operation="USD/KRW",
+                total_timeout=ECOS_TOTAL_TIMEOUT,
+                attempt_timeout=9,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=15,
+            )
+        except ExecutionDeadlineExceeded:
+            raise
         except Exception as exc:
             raise ProviderError(safe_request_failure("ECOS", "USD/KRW", exc)) from None
         if not isinstance(payload, dict):
