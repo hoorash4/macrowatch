@@ -9,44 +9,41 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 2
     steps:
-      - name: Probe KB Financial full history
+      - name: Probe KB Financial full history over IPv4
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
         run: |
           import json
           import os
+          import subprocess
           import time
-          import urllib.request
 
           key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
           if not key:
               raise SystemExit("DATA_GO_KR_SERVICE_KEY is missing")
 
-          base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
-          query = (
+          url = (
+              "https://apis.data.go.kr/1160100/service/"
+              "GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
               f"?serviceKey={key}&numOfRows=1000&pageNo=1&resultType=json"
               "&crno=1101113975517"
           )
-          request = urllib.request.Request(base + query, headers={"User-Agent": "MacroWatch-FSC-Probe/1.0"})
-          raw = None
-          for attempt in range(1, 4):
-              started = time.monotonic()
-              try:
-                  with urllib.request.urlopen(request, timeout=120) as response:
-                      raw = response.read().decode("utf-8", errors="replace")
-                      print(f"attempt={attempt} http_status={response.status} elapsed={time.monotonic()-started:.1f}s")
-                      print("content_type=", response.headers.get("content-type"))
-                  break
-              except Exception as exc:
-                  print(f"attempt={attempt} error={type(exc).__name__}: {exc} elapsed={time.monotonic()-started:.1f}s")
-                  if attempt < 3:
-                      time.sleep(5 * attempt)
-          if raw is None:
-              raise SystemExit("API request failed after 3 attempts")
+          started = time.monotonic()
+          proc = subprocess.run(
+              ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
+               "--connect-timeout", "10", "--max-time", "45", url],
+              text=True, capture_output=True
+          )
+          print(f"curl_exit={proc.returncode} elapsed={time.monotonic()-started:.1f}s", flush=True)
+          if proc.stderr:
+              print("curl_error=", proc.stderr.strip(), flush=True)
+          if proc.returncode:
+              raise SystemExit("API request failed")
 
+          raw = proc.stdout
           try:
               payload = json.loads(raw)
           except json.JSONDecodeError:
@@ -66,10 +63,9 @@ jobs:
               "basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm",
               "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd"
           )
-          rows = [{k: row.get(k) for k in fields} for row in items]
           years = sorted({str(row.get("bizYear")) for row in items if row.get("bizYear")})
           oldest = min(items, key=lambda row: (str(row.get("bizYear", "9999")), str(row.get("basDt", "99999999"))), default=None)
-          rows_2015 = [row for row in rows if str(row.get("bizYear")) == "2015"]
+          rows_2015 = [{k: row.get(k) for k in fields} for row in items if str(row.get("bizYear")) == "2015"]
           print("result=", json.dumps(header, ensure_ascii=False))
           print("total_count=", body.get("totalCount"))
           print("returned_count=", len(items))
