@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Probe KB entities full financial history
+      - name: Probe KB financial history by business year
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
@@ -24,30 +24,25 @@ jobs:
           key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
           if not key:
               raise SystemExit("DATA_GO_KR_SERVICE_KEY is missing")
-
           base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
           entities = {
               "KB금융지주": "1101113975517",
               "KB국민은행_현재": "1101112365321",
               "국민은행_과거DART": "1101110545553",
           }
-          fields = ("basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm", "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd", "crno", "fncoNm")
-          failures = 0
-          for name, crno in entities.items():
+
+          def fetch(crno, year, rows):
               query = urllib.parse.urlencode({
-                  "serviceKey": key, "pageNo": 1, "numOfRows": 1000,
-                  "resultType": "json", "crno": crno,
+                  "serviceKey": key, "pageNo": 1, "numOfRows": rows,
+                  "resultType": "json", "crno": crno, "bizYear": year,
               }, safe="%")
               proc = subprocess.run(
                   ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
-                   "--connect-timeout", "8", "--max-time", "30", base + "?" + query],
+                   "--connect-timeout", "8", "--max-time", "15", base + "?" + query],
                   text=True, capture_output=True
               )
-              print(f"REQUEST entity={name} crno={crno} exit={proc.returncode}", flush=True)
               if proc.returncode:
-                  print("ERROR=", proc.stderr.strip(), flush=True)
-                  failures += 1
-                  continue
+                  raise SystemExit(f"network failure crno={crno} year={year}: {proc.stderr.strip()}")
               payload = json.loads(proc.stdout)
               response = payload.get("response", {})
               header = response.get("header", {})
@@ -56,15 +51,18 @@ jobs:
               items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
               if isinstance(items, dict):
                   items = [items]
-              if not isinstance(items, list):
-                  items = []
-              years = sorted({str(row.get("bizYear")) for row in items if row.get("bizYear")})
-              oldest = years[0] if years else None
-              oldest_rows = [{k: row.get(k) for k in fields} for row in items if str(row.get("bizYear")) == str(oldest)]
-              rows_2015 = [{k: row.get(k) for k in fields} for row in items if str(row.get("bizYear")) == "2015"]
-              print(f"RESULT entity={name} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} returned={len(items)}", flush=True)
-              print(f"YEARS entity={name} values={json.dumps(years, ensure_ascii=False)}", flush=True)
-              print(f"OLDEST entity={name} rows={json.dumps(oldest_rows, ensure_ascii=False)}", flush=True)
-              print(f"Y2015 entity={name} rows={json.dumps(rows_2015, ensure_ascii=False)}", flush=True)
-          if failures == len(entities):
-              raise SystemExit("all API requests failed")
+              return header, body, items if isinstance(items, list) else []
+
+          fields = ("basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm", "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd", "crno", "fncoNm")
+          for name, crno in entities.items():
+              counts = {}
+              for year in range(2000, 2027):
+                  header, body, _ = fetch(crno, year, 1)
+                  counts[year] = int(body.get("totalCount") or 0)
+              available = [year for year, total in counts.items() if total > 0]
+              print(f"COUNTS entity={name} values={json.dumps(counts, ensure_ascii=False)}", flush=True)
+              print(f"RANGE entity={name} oldest={min(available) if available else None} newest={max(available) if available else None}", flush=True)
+              for year in sorted(set(([min(available)] if available else []) + [2015])):
+                  header, body, items = fetch(crno, year, 1000)
+                  safe = [{k: row.get(k) for k in fields} for row in items]
+                  print(f"DETAIL entity={name} year={year} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} rows={json.dumps(safe, ensure_ascii=False)}", flush=True)
