@@ -1,0 +1,62 @@
+name: Diagnose V2 OpenDART top line
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Inspect structured account rows
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          cases = [
+              ("알지노믹스", "01596920", 2025, "11011"),
+              ("에이프릴바이오", "01375822", 2025, "11011"),
+              ("유일로보틱스", "01152586", 2025, "11011"),
+              ("지아이이노베이션", "01351080", 2025, "11011"),
+              ("알지노믹스", "01596920", 2026, "11013"),
+              ("에이프릴바이오", "01375822", 2026, "11013"),
+          ]
+          keep = {
+              "rcept_no", "reprt_code", "bsns_year", "corp_code", "sj_div",
+              "sj_nm", "account_id", "account_nm", "account_detail", "thstrm_nm",
+              "thstrm_amount", "thstrm_add_amount", "currency", "ord", "fs_div",
+              "fs_nm",
+          }
+          key = os.environ["OPENDART_API_KEY"]
+          for name, corp, year, report in cases:
+              params = urllib.parse.urlencode({
+                  "crtfc_key": key, "corp_code": corp, "bsns_year": year,
+                  "reprt_code": report, "fs_div": "OFS",
+              })
+              with urllib.request.urlopen(
+                  "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?" + params,
+                  timeout=60,
+              ) as response:
+                  payload = json.load(response)
+              rows = [
+                  {field: row.get(field) for field in keep}
+                  for row in payload.get("list", [])
+                  if str(row.get("sj_div") or "").upper() in {"IS", "CIS"}
+              ]
+              print(json.dumps({
+                  "company": name, "year": year, "status": payload.get("status"),
+                  "message": payload.get("message"), "statement_rows": rows,
+              }, ensure_ascii=False, sort_keys=True))
+          PY
