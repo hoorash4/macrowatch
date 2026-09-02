@@ -8,7 +8,7 @@ from earnings_v2.aggregation import aggregate_market
 from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling
 from earnings_v2.cli import completed_successfully, parser
 from earnings_v2.pipeline import KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
-from earnings_v2.providers import KisClient, OpenDartClient
+from earnings_v2.providers import KisClient, OpenDartClient, ProviderError
 from earnings_v2.transform import (
     calculate_financial_point,
     calculate_financial_series,
@@ -219,6 +219,12 @@ class SimulatedKis:
         return self.values.get(ticker)
 
 
+class FailingKis(SimulatedKis):
+    def quarter_top_line(self, ticker, year, quarter):
+        self.calls.append((ticker, year, quarter))
+        raise ProviderError(f"KIS top-line request failed for {ticker}")
+
+
 class SimulatedKrx:
     request_count = 0
 
@@ -323,6 +329,20 @@ class OpenDartTransportTests(unittest.TestCase):
 
 
 class CliContractTests(unittest.TestCase):
+    def test_year_backfill_always_runs_oldest_quarter_first(self):
+        pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=object(), repository=object())
+        visited: list[int] = []
+
+        def run_quarter(_year, quarter, **_kwargs):
+            visited.append(quarter)
+            return {"status": "ready", "quarter": quarter}
+
+        pipeline.run_quarter = run_quarter
+
+        pipeline.run_year(2026)
+
+        self.assertEqual(visited, [1, 2, 3, 4])
+
     def test_only_ready_results_are_successful(self):
         self.assertTrue(completed_successfully({"status": "ready"}))
         self.assertTrue(completed_successfully([{"status": "ready"}, {"status": "ready"}]))
@@ -458,6 +478,72 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(stored["top_line"], Decimal("250"))
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
+
+    def test_existing_top_line_is_reused_before_kis_fallback(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+
+        class MissingTopLineDart(SimulatedDart):
+            def multi_accounts(self, corp_codes, year, quarter):
+                rows = super().multi_accounts(corp_codes, year, quarter)
+                return [
+                    item for item in rows
+                    if not (item["corp_code"] == target_corp and item["account_nm"] == "매출액")
+                ]
+
+        repository = self.populated_repository()
+        dart = MissingTopLineDart()
+        kis = FailingKis()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
+        )
+
+        result = pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(kis.calls, [])
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("100"))
+        self.assertFalse(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+
+    def test_kis_failure_marks_only_the_company_pending(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+
+        class MissingTopLineDart(SimulatedDart):
+            def multi_accounts(self, corp_codes, year, quarter):
+                rows = super().multi_accounts(corp_codes, year, quarter)
+                return [
+                    item for item in rows
+                    if not (item["corp_code"] == target_corp and item["account_nm"] == "매출액")
+                ]
+
+        repository = self.populated_repository(missing_company=target_company)
+        kis = FailingKis()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=MissingTopLineDart(), repository=repository, kis=kis,
+        )
+
+        result = pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(kis.calls, [("000099", 2026, 2)])
+        self.assertEqual(result["status"], "incomplete")
+        self.assertEqual(len([item for item in result["issues"] if item["company"] == "kr_largecap-99"]), 1)
+        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+
+    def test_pending_kis_retry_failure_does_not_abort_daily_run(self):
+        target_company = "kr:00000099"
+        repository = self.populated_repository()
+        repository.seed_company(target_company, top_line=None, pending=True)
+        kis = FailingKis()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository, kis=kis,
+        )
+
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(kis.calls, [("000099", 2026, 2)])
+        self.assertEqual(result["status"], "incomplete")
+        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
 
     def test_manual_company_is_excluded_even_when_a_new_receipt_exists(self):
         target_company = "kr:00000098"
