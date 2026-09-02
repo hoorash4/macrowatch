@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Discover live FSC record and its full history
+      - name: Verify FSC global oldest record and KB coverage
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
@@ -23,37 +23,34 @@ jobs:
 
           key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
           base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
-
-          def call(extra, rows, timeout):
-              query = urllib.parse.urlencode({
-                  "serviceKey": key, "pageNo": 1, "numOfRows": rows,
-                  "resultType": "json", **extra,
-              }, safe="%")
-              proc = subprocess.run(
-                  ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
-                   "--connect-timeout", "8", "--max-time", str(timeout), base + "?" + query],
-                  text=True, capture_output=True
-              )
-              if proc.returncode:
-                  raise SystemExit(f"request failed: {proc.stderr.strip()}")
-              payload = json.loads(proc.stdout)
-              response = payload.get("response", {})
-              body = response.get("body", {})
-              wrapped = body.get("items", {})
-              items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
-              if isinstance(items, dict):
-                  items = [items]
-              return response.get("header", {}), body, items if isinstance(items, list) else []
-
-          header, body, items = call({}, 1, 60)
-          print(f"LIVE header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} first={json.dumps(items[:1], ensure_ascii=False)}", flush=True)
-          if not items:
-              raise SystemExit("service returned no live records")
-          first = items[0]
-          crno = first.get("crno")
-          if not crno:
-              raise SystemExit("live record has no crno")
-          header, body, items = call({"crno": crno}, 1000, 30)
+          query = urllib.parse.urlencode({
+              "serviceKey": key, "pageNo": 1, "numOfRows": 1000, "resultType": "json",
+          }, safe="%")
+          proc = subprocess.run(
+              ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
+               "--connect-timeout", "8", "--max-time", "60", base + "?" + query],
+              text=True, capture_output=True
+          )
+          if proc.returncode:
+              raise SystemExit(f"request failed: {proc.stderr.strip()}")
+          payload = json.loads(proc.stdout)
+          response = payload.get("response", {})
+          header = response.get("header", {})
+          body = response.get("body", {})
+          wrapped = body.get("items", {})
+          items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
+          if isinstance(items, dict):
+              items = [items]
+          if not isinstance(items, list):
+              items = []
+          dates = sorted({str(row.get("basDt")) for row in items if row.get("basDt")})
           years = sorted({str(row.get("bizYear")) for row in items if row.get("bizYear")})
-          print(f"HISTORY crno={crno} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} years={json.dumps(years, ensure_ascii=False)}", flush=True)
-          print("OLDEST=", json.dumps([row for row in items if str(row.get("bizYear")) == (years[0] if years else "")], ensure_ascii=False), flush=True)
+          crnos = {str(row.get("crno")) for row in items if row.get("crno")}
+          oldest_date = dates[0] if dates else None
+          oldest_rows = [row for row in items if str(row.get("basDt")) == str(oldest_date)]
+          kb_crnos = {"1101113975517", "1101112365321", "1101110545553"}
+          kb_rows = [row for row in items if str(row.get("crno")) in kb_crnos]
+          print(f"GLOBAL header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} returned={len(items)} unique_crnos={len(crnos)}", flush=True)
+          print(f"RANGE oldest_date={oldest_date} newest_date={dates[-1] if dates else None} oldest_year={years[0] if years else None} newest_year={years[-1] if years else None}", flush=True)
+          print("OLDEST_ROWS=", json.dumps(oldest_rows, ensure_ascii=False), flush=True)
+          print("KB_ROWS=", json.dumps(kb_rows, ensure_ascii=False), flush=True)
