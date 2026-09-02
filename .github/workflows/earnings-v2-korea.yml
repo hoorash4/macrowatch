@@ -1,9 +1,8 @@
+warning: in the working copy of '.github/workflows/earnings-v2-korea.yml', LF will be replaced by CRLF the next time Git touches it
 name: Earnings V2 Korea quarter
 
 on:
-  schedule:
-    # 19:30 KST. 정기공시 신규 접수와 매출 대기 기업만 증분 갱신합니다.
-    - cron: "30 10 * * *"
+  # 최소 15년 역사 백필이 검증될 때까지 수동 실행만 허용한다.
   workflow_dispatch:
     inputs:
       year:
