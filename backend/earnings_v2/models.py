@@ -37,6 +37,21 @@ class CompanyIdentity:
 
 
 @dataclass(frozen=True)
+class QuarterFxRate:
+    fiscal_year: int
+    fiscal_quarter: int
+    base_currency: str
+    quote_currency: str
+    target_date: date
+    observed_on: date
+    rate: Decimal
+    source: str = "ecos"
+
+    def db_row(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class FinancialFact:
     company_id: str
     fiscal_year: int
@@ -131,4 +146,3 @@ class MarketFact:
         row["lifecycle_status"] = row.pop("completion_status")
         row["calculation_version"] = calculation_version
         return row
-

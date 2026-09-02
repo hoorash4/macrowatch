@@ -421,17 +421,17 @@ class KisClient:
 
 
 class EcosFxClient:
-    """분기 말 이전 최근 USD/KRW 종가를 한 번만 조회해 재사용한다."""
+    """기준일 이전의 최근 USD/KRW 종가를 조회한다."""
 
     def __init__(self, api_key: str, *, session: Any | None = None) -> None:
         if not api_key.strip():
             raise ValueError("ECOS API key is required")
         self.api_key = api_key.strip()
         self.session = session or _session()
-        self.cache: dict[date, Decimal] = {}
+        self.cache: dict[date, tuple[date, Decimal]] = {}
         self.request_count = 0
 
-    def usd_krw(self, reference_date: date) -> Decimal:
+    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
         if reference_date in self.cache:
             return self.cache[reference_date]
         start = reference_date - timedelta(days=10)
@@ -463,15 +463,18 @@ class EcosFxClient:
         rows = statistic.get("row") if isinstance(statistic, dict) else None
         if not isinstance(rows, list):
             raise ProviderError("ECOS USD/KRW returned invalid data")
-        candidates: list[tuple[str, Decimal]] = []
+        candidates: list[tuple[date, Decimal]] = []
         for row in rows if isinstance(rows, list) else []:
             value = _decimal(row.get("DATA_VALUE"))
             observed = str(row.get("TIME") or "")
-            if value is not None and value > 0 and observed <= reference_date.strftime("%Y%m%d"):
-                candidates.append((observed, value))
+            if (
+                value is not None and value > 0
+                and re.fullmatch(r"\d{8}", observed)
+                and observed <= reference_date.strftime("%Y%m%d")
+            ):
+                candidates.append((date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"), value))
         if not candidates:
             raise ProviderError("ECOS returned no USD/KRW value near quarter end")
-        rate = max(candidates, key=lambda item: item[0])[1]
-        self.cache[reference_date] = rate
-        return rate
-
+        latest = max(candidates, key=lambda item: item[0])
+        self.cache[reference_date] = latest
+        return latest

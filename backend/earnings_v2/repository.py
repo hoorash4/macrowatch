@@ -129,6 +129,20 @@ class EarningsV2Repository:
         })
         return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
 
+    def quarter_fx_rate(self, year: int, quarter: int, base_currency: str, quote_currency: str) -> dict[str, Any] | None:
+        result = self.rpc("earnings_v2_get_quarter_fx_rate", {
+            "p_fiscal_year": year,
+            "p_fiscal_quarter": quarter,
+            "p_base_currency": base_currency,
+            "p_quote_currency": quote_currency,
+        })
+        if isinstance(result, list):
+            return result[0] if result and isinstance(result[0], dict) else None
+        return result if isinstance(result, dict) else None
+
+    def upsert_quarter_fx_rate(self, row: dict[str, Any]) -> int:
+        return int(self.rpc("earnings_v2_upsert_quarter_fx_rate", {"p_row": row}) or 0)
+
     def save_state(self, operation: str, status: str, cursor: dict[str, Any], error: str | None = None) -> None:
         self.rpc("earnings_v2_save_pipeline_state", {
             "p_source": "korea_v2", "p_operation": operation, "p_cursor": cursor,
@@ -174,4 +188,3 @@ class EarningsV2Repository:
         )
         if not response.ok:
             raise StoreError("Could not persist the shared KIS access token")
-
