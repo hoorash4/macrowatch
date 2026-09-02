@@ -422,6 +422,42 @@ class ProviderReliabilityTests(unittest.TestCase):
             )
         self.assertEqual(session.calls, 1)
 
+    def test_streaming_response_can_outlive_attempt_wait_without_retry(self):
+        clock = [0.0]
+
+        class Response:
+            status_code = 200
+            headers = {}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def iter_content(chunk_size):
+                self.assertEqual(chunk_size, 64 * 1024)
+                clock[0] = 15.0
+                yield b'{"status":"000"}'
+
+        class Session:
+            calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                return Response()
+
+        session = Session()
+        result = bounded_request(
+            session, "GET", "https://provider.invalid",
+            provider="test", operation="stream", total_timeout=40,
+            attempt_timeout=12,
+            connect_timeout=5, read_timeout=20,
+            monotonic=lambda: clock[0], sleep=lambda _seconds: None,
+        )
+
+        self.assertEqual(result, {"status": "000"})
+        self.assertEqual(session.calls, 1)
+
     def test_provider_retries_share_one_total_budget(self):
         clock = [0.0]
 

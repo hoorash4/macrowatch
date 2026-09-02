@@ -99,11 +99,10 @@ def bounded_request(
             break
         response: Any = None
         try:
-            attempt_deadline = min(
-                deadline,
-                monotonic() + (attempt_timeout if attempt_timeout is not None else remaining),
+            attempt_remaining = min(
+                remaining,
+                attempt_timeout if attempt_timeout is not None else remaining,
             )
-            attempt_remaining = attempt_deadline - monotonic()
             call = getattr(session, method.lower())
             response = call(
                 url,
@@ -115,7 +114,10 @@ def bounded_request(
             # 단순 테스트 대역은 iter_content가 없으므로 기존 json() 계약을 사용한다.
             if not binary and not hasattr(response, "iter_content"):
                 return response.json()
-            content = _response_bytes(response, attempt_deadline, monotonic)
+            # attempt_timeout은 연결 및 멈춘 소켓을 재시도하기 위한 대기
+            # 상한이다. 응답 바이트가 계속 들어오는 정상 스트림은 요청 전체
+            # deadline 안에서 완료되도록 두고 중간에 재시도하지 않는다.
+            content = _response_bytes(response, deadline, monotonic)
             if binary:
                 return content
             return json.loads(content.decode("utf-8-sig"))
@@ -161,3 +163,4 @@ def safe_request_failure(provider: str, operation: str, error: Exception) -> str
     if isinstance(error, requests.ConnectionError):
         return f"{provider} {operation} connection failed ({type(error).__name__})"
     return f"{provider} {operation} request failed ({type(error).__name__})"
+
