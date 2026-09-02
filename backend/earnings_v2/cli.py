@@ -16,6 +16,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--recalculate-only", action="store_true", help="외부 API 호출 없이 저장된 분기값만 재집계")
     result.add_argument("--write", action="store_true", help="기업군·부분 실적·잠정 또는 확정 집계를 V2 DB에 저장")
     result.add_argument("--allow-review", action="store_true", help="불완전 분기 뒤의 다음 분기도 계속 검사")
+    result.add_argument("--diagnose-kosdaq-slice", nargs=2, type=int, metavar=("START", "END"),
+                        help="DB 저장 없이 코스닥 시총 순위 구간의 누적 손익 부호만 점검")
     return result
 
 
@@ -29,9 +31,15 @@ def main() -> None:
     argument_parser = parser()
     args = argument_parser.parse_args()
     pipeline = KoreaEarningsV2Pipeline.from_env()
-    if args.daily and args.recalculate_only:
-        argument_parser.error("--daily와 --recalculate-only는 함께 사용할 수 없습니다")
-    if args.daily:
+    if args.daily and (args.recalculate_only or args.diagnose_kosdaq_slice):
+        argument_parser.error("--daily는 재계산 또는 순위 진단과 함께 사용할 수 없습니다")
+    if args.diagnose_kosdaq_slice:
+        if args.year is None or args.quarter is None:
+            argument_parser.error("진단에는 --year와 --quarter가 필요합니다")
+        result = pipeline.diagnose_kosdaq_slice(
+            args.year, args.quarter, *args.diagnose_kosdaq_slice,
+        )
+    elif args.daily:
         result = pipeline.run_daily(write=args.write)
     elif args.year is None:
         argument_parser.error("--daily가 아니면 --year가 필요합니다")
@@ -44,7 +52,7 @@ def main() -> None:
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
     # 증분 실행의 provisional/collecting은 공급자 오류가 아니라 정상적인
     # 실적 발표 진행 상태다. 백필만 분기 미완료를 실패로 반환한다.
-    if not args.daily and not args.recalculate_only and not completed_successfully(result):
+    if not args.daily and not args.recalculate_only and not args.diagnose_kosdaq_slice and not completed_successfully(result):
         sys.exit(2)
 
 

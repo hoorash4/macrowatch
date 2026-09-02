@@ -212,17 +212,7 @@ class KoreaEarningsV2Pipeline:
 
     def discover_universe(self, market_id: str, year: int, quarter: int,
                           corp_map: dict[str, tuple[str, str]]) -> list[CompanyIdentity]:
-        reference_date, securities = self.krx.last_trading_day(market_id, quarter_end(year, quarter))
-        by_company: dict[str, tuple[Security, str]] = {}
-        for security in securities:
-            mapped = corp_map.get(security.stock_code)
-            if mapped is None or not _eligible_name(security.name):
-                continue
-            corp_code, official_name = mapped
-            current = by_company.get(corp_code)
-            if current is None or security.market_cap > current[0].market_cap:
-                by_company[corp_code] = (security, official_name)
-        candidates = sorted(by_company.items(), key=lambda item: (-item[1][0].market_cap, item[1][0].stock_code))
+        reference_date, candidates = self._market_cap_candidates(market_id, year, quarter, corp_map)
         target = TARGETS[market_id]
         if len(candidates) < target:
             raise RuntimeError(f"{market_id} universe is {len(candidates)}/{target}")
@@ -247,6 +237,75 @@ class KoreaEarningsV2Pipeline:
             stock_code=security.stock_code, corp_code=corp_code, market_id=market_id,
             rank=rank, market_cap=security.market_cap, reference_date=reference_date,
         ) for rank, (corp_code, (security, official_name)) in enumerate(selected, 1)]
+
+    def _market_cap_candidates(self, market_id: str, year: int, quarter: int,
+                               corp_map: dict[str, tuple[str, str]]) -> tuple[date, list[tuple[str, tuple[Security, str]]]]:
+        """한 번 정규화한 시총 후보군을 운영 기업군과 진단에서 함께 쓴다."""
+        reference_date, securities = self.krx.last_trading_day(market_id, quarter_end(year, quarter))
+        by_company: dict[str, tuple[Security, str]] = {}
+        for security in securities:
+            mapped = corp_map.get(security.stock_code)
+            if mapped is None or not _eligible_name(security.name):
+                continue
+            corp_code, official_name = mapped
+            current = by_company.get(corp_code)
+            if current is None or security.market_cap > current[0].market_cap:
+                by_company[corp_code] = (security, official_name)
+        return reference_date, sorted(
+            by_company.items(),
+            key=lambda item: (-item[1][0].market_cap, item[1][0].stock_code),
+        )
+
+    def diagnose_kosdaq_slice(self, year: int, quarter: int, start_rank: int, end_rank: int) -> dict[str, Any]:
+        """DB 저장 없이 코스닥 시총 구간의 누적 손익 부호만 점검한다."""
+        if start_rank < 1 or end_rank < start_rank or end_rank - start_rank + 1 > 100:
+            raise ValueError("diagnostic rank range must contain 1 to 100 companies")
+        corp_map = self.dart.corporation_map()
+        reference_date, candidates = self._market_cap_candidates("kr_kosdaq", year, quarter, corp_map)
+        if len(candidates) < end_rank:
+            raise RuntimeError(f"kr_kosdaq candidates are {len(candidates)}/{end_rank}")
+        selected = candidates[start_rank - 1:end_rank]
+        identities = [CompanyIdentity(
+            company_id=f"kr:{corp_code}", company_name=official_name or security.name,
+            stock_code=security.stock_code, corp_code=corp_code, market_id="kr_kosdaq",
+            rank=rank, market_cap=security.market_cap, reference_date=reference_date,
+        ) for rank, (corp_code, (security, official_name)) in enumerate(selected, start_rank)]
+        codes = [row.corp_code for row in identities]
+        grouped = _group(self.dart.multi_accounts(codes, year, quarter), codes)
+        rows = []
+        for identity in identities:
+            fact = extract_company_fact(
+                identity.corp_code, identity.company_id, year, quarter,
+                grouped[identity.corp_code],
+            )
+            rows.append({
+                "rank": identity.rank,
+                "company": identity.company_name,
+                "operating_income_cumulative": fact.source_operating_income_cumulative if fact else None,
+                "net_income_cumulative": fact.source_net_income_cumulative if fact else None,
+            })
+        return {
+            "period": f"{year}Q{quarter}",
+            "reference_date": reference_date,
+            "rank_range": [start_rank, end_rank],
+            "companies": len(rows),
+            "operating_loss_companies": sum(
+                row["operating_income_cumulative"] is not None and row["operating_income_cumulative"] < 0
+                for row in rows
+            ),
+            "net_loss_companies": sum(
+                row["net_income_cumulative"] is not None and row["net_income_cumulative"] < 0
+                for row in rows
+            ),
+            "missing_operating_income": sum(row["operating_income_cumulative"] is None for row in rows),
+            "missing_net_income": sum(row["net_income_cumulative"] is None for row in rows),
+            "loss_companies": [row for row in rows if (
+                row["operating_income_cumulative"] is not None and row["operating_income_cumulative"] < 0
+            ) or (
+                row["net_income_cumulative"] is not None and row["net_income_cumulative"] < 0
+            )],
+            "database_written": False,
+        }
 
     def _try_kis_top_line(
         self,
