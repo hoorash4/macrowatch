@@ -20,6 +20,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--quarter", type=int, choices=(1, 2, 3, 4))
     result.add_argument("--daily", action="store_true", help="최근 완료 분기의 신규 공시·대기 기업만 갱신")
     result.add_argument("--recalculate-only", action="store_true", help="외부 API 호출 없이 저장된 분기값만 재집계")
+    result.add_argument("--trust-previous-backfill", action="store_true", help="같은 백필에서 직전에 새로 저장한 누적 원자료 사용")
     result.add_argument("--write", action="store_true", help="기업군·부분 실적·잠정 또는 확정 집계를 V2 DB에 저장")
     return result
 
@@ -36,6 +37,8 @@ def main() -> None:
     pipeline = KoreaEarningsV2Pipeline.from_env()
     if args.daily and args.recalculate_only:
         argument_parser.error("--daily와 --recalculate-only는 함께 사용할 수 없습니다")
+    if args.trust_previous_backfill and (args.daily or args.recalculate_only or args.quarter is None):
+        argument_parser.error("--trust-previous-backfill은 명시적 분기 백필에만 사용할 수 있습니다")
     default_deadline = DAILY_DEADLINE_SECONDS if args.daily else QUARTER_DEADLINE_SECONDS
     deadline_seconds = int(os.getenv("EARNINGS_V2_DEADLINE_SECONDS", str(default_deadline)))
     if args.daily:
@@ -48,6 +51,7 @@ def main() -> None:
     elif args.quarter:
         result = pipeline.run_quarter(
             args.year, args.quarter, write=args.write,
+            trust_previous_backfill=args.trust_previous_backfill,
             deadline_seconds=deadline_seconds,
         )
     else:

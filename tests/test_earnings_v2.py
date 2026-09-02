@@ -822,32 +822,43 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             all((2026, 2) not in periods for _companies, periods in repository.company_period_calls)
         )
 
-    def test_backfill_refetches_previous_cumulative_instead_of_using_db_fact(self):
-        target_company = "kr:00000099"
+    def test_backfill_reuses_saved_previous_cumulative(self):
         repository = self.populated_repository()
-        stale_previous = extract_company_fact(
-            "00000099", target_company, 2026, 1,
-            complete("00000099", current="999", cumulative="999"),
-        )
-        repository.company_rows[(target_company, 2026, 1)] = stale_previous.db_row(
-            calculation_version=6,
-        )
+        for market_rows in repository.universes.values():
+            for row_data in market_rows:
+                previous = extract_company_fact(
+                    row_data["corp_code"], row_data["company_id"], 2026, 1,
+                    complete(row_data["corp_code"], current="100", cumulative="100"),
+                )
+                repository.company_rows[(row_data["company_id"], 2026, 1)] = previous.db_row(
+                    calculation_version=6,
+                )
         dart = SimulatedDart()
         pipeline = KoreaEarningsV2Pipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=SimulatedKis(),
         )
 
-        result = pipeline.run_quarter(2026, 2, write=True)
+        result = pipeline.run_quarter(2026, 2, write=True, trust_previous_backfill=True)
 
         self.assertEqual(result["status"], "ready")
         self.assertEqual(
-            repository.company_rows[(target_company, 2026, 2)]["operating_income"],
+            repository.company_rows[("kr:00000099", 2026, 2)]["operating_income"],
             Decimal("20"),
         )
         self.assertEqual(dart.financial_calls, [
             (tuple(f"{rank:08d}" for rank in range(1, 101)) + tuple(f"{1000 + rank:08d}" for rank in range(1, 101)), 2026, 2),
-            (tuple(f"{rank:08d}" for rank in range(1, 101)) + tuple(f"{1000 + rank:08d}" for rank in range(1, 101)), 2026, 1),
         ])
+
+    def test_oldest_backfill_quarter_forces_previous_cumulative_refresh(self):
+        repository = self.populated_repository()
+        dart = SimulatedDart()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=SimulatedKis(),
+        )
+
+        pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual([call[2] for call in dart.financial_calls], [2, 1])
 
     def test_backfill_provider_failure_stops_before_replacement(self):
         target_company = "kr:00000099"

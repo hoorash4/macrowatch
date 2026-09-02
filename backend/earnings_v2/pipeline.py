@@ -297,6 +297,7 @@ class KoreaEarningsV2Pipeline:
                            previous_facts: dict[str, FinancialFact] | None = None,
                            *, existing_facts: dict[str, FinancialFact] | None = None,
                            tolerate_provider_errors: bool = False,
+                           force_previous_cumulative: bool = False,
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
@@ -310,6 +311,9 @@ class KoreaEarningsV2Pipeline:
         fallback_codes = []
         if quarter > 1:
             for identity in identities:
+                if force_previous_cumulative:
+                    fallback_codes.append(identity.corp_code)
+                    continue
                 prior = previous_facts.get(identity.company_id)
                 preview = extract_company_fact(
                     identity.corp_code, identity.company_id, year, quarter,
@@ -527,12 +531,14 @@ class KoreaEarningsV2Pipeline:
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
                     incremental: bool = False,
                     refresh_corp_codes: set[str] | None = None,
+                    trust_previous_backfill: bool = False,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if deadline_seconds is not None:
             with execution_deadline(deadline_seconds):
                 return self.run_quarter(
                     year, quarter, write=write,
                     incremental=incremental, refresh_corp_codes=refresh_corp_codes,
+                    trust_previous_backfill=trust_previous_backfill,
                 )
         operation = f"{year}Q{quarter}"
         if write:
@@ -607,19 +613,19 @@ class KoreaEarningsV2Pipeline:
                 stored_current = {}
                 selected = identities
                 preserved = {}
-            # 증분은 저장된 직전 누적 원본을 재사용한다. 명시적 백필은 현재
-            # 분기뿐 아니라 단독값 계산에 필요한 직전 누적도 공급자에서 다시
-            # 받아 기존 DB 재무값이 새 결과에 섞이지 않게 한다.
+            # 저장된 직전 누적 원본을 재사용한다. 시간순 백필의 최초 경계에서
+            # 누적 원본이 없을 때만 collect_financials가 직전 분기를 추가 호출한다.
             previous_facts = {
                 identity.company_id: stored[(identity.company_id, *previous_key)]
                 for identity in selected
-                if incremental and (identity.company_id, *previous_key) in stored
+                if (identity.company_id, *previous_key) in stored
             }
             fresh_facts, issues = (
                 self.collect_financials(
                     selected, year, quarter, previous_facts,
                     existing_facts=stored_current,
                     tolerate_provider_errors=incremental,
+                    force_previous_cumulative=not incremental and not trust_previous_backfill,
                 )
                 if selected else ({}, [])
             )
@@ -832,6 +838,7 @@ class KoreaEarningsV2Pipeline:
         for quarter in range(1, 5):
             result = self.run_quarter(
                 year, quarter, write=write,
+                trust_previous_backfill=write and quarter > 1,
                 deadline_seconds=deadline_seconds,
             )
             results.append(result)
