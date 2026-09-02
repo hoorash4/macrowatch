@@ -525,13 +525,13 @@ class KoreaEarningsV2Pipeline:
             } for row in members))
 
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
-                    allow_review: bool = False, incremental: bool = False,
+                    incremental: bool = False,
                     refresh_corp_codes: set[str] | None = None,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if deadline_seconds is not None:
             with execution_deadline(deadline_seconds):
                 return self.run_quarter(
-                    year, quarter, write=write, allow_review=allow_review,
+                    year, quarter, write=write,
                     incremental=incremental, refresh_corp_codes=refresh_corp_codes,
                 )
         operation = f"{year}Q{quarter}"
@@ -803,7 +803,7 @@ class KoreaEarningsV2Pipeline:
             filing.corp_code for filing in new_filings if filing_period(filing) == (year, quarter)
         }
         result = self.run_quarter(
-            year, quarter, write=write, allow_review=True, incremental=True,
+            year, quarter, write=write, incremental=True,
             refresh_corp_codes=refresh_corp_codes,
         )
         result["filing_discovery"] = {
@@ -821,17 +821,20 @@ class KoreaEarningsV2Pipeline:
             })
         return result
 
-    def run_year(self, year: int, *, write: bool = False, allow_review: bool = False,
+    def run_year(self, year: int, *, write: bool = False,
                  deadline_seconds: int | None = None) -> list[dict[str, Any]]:
-        """백필은 참조 분기가 먼저 존재하도록 항상 1분기부터 순서대로 실행한다."""
+        """백필은 참조 분기가 먼저 존재하도록 항상 1분기부터 순서대로 실행한다.
+
+        incomplete는 처리가 끝난 잠정 데이터이므로 다음 분기로 진행한다.
+        실제 공급자·저장 오류는 run_quarter의 예외가 전파되어 즉시 중단된다.
+        """
         results = []
         for quarter in range(1, 5):
             result = self.run_quarter(
-                year, quarter, write=write, allow_review=allow_review,
+                year, quarter, write=write,
                 deadline_seconds=deadline_seconds,
             )
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
-            if result["status"] != "ready" and not allow_review:
-                break
         return results
+

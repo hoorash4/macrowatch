@@ -518,11 +518,27 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(visited, [1, 2, 3, 4])
         self.assertEqual(deadlines, [600, 600, 600, 600])
 
-    def test_only_ready_results_are_successful(self):
+    def test_year_backfill_continues_after_an_incomplete_quarter(self):
+        pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=object(), repository=object())
+        visited: list[int] = []
+
+        def run_quarter(_year, quarter, **_kwargs):
+            visited.append(quarter)
+            return {"status": "incomplete" if quarter == 1 else "ready", "quarter": quarter}
+
+        pipeline.run_quarter = run_quarter
+
+        results = pipeline.run_year(2026)
+
+        self.assertEqual(visited, [1, 2, 3, 4])
+        self.assertEqual([row["status"] for row in results], ["incomplete", "ready", "ready", "ready"])
+
+    def test_ready_and_incomplete_results_are_successful(self):
         self.assertTrue(completed_successfully({"status": "ready"}))
         self.assertTrue(completed_successfully([{"status": "ready"}, {"status": "ready"}]))
-        self.assertFalse(completed_successfully({"status": "incomplete"}))
-        self.assertFalse(completed_successfully([{"status": "ready"}, {"status": "incomplete"}]))
+        self.assertTrue(completed_successfully({"status": "incomplete"}))
+        self.assertTrue(completed_successfully([{"status": "ready"}, {"status": "incomplete"}]))
+        self.assertFalse(completed_successfully({"status": "failed"}))
         self.assertFalse(completed_successfully([]))
 
     def test_recalculation_mode_is_an_explicit_cli_path(self):
@@ -1003,14 +1019,36 @@ class QuarterlyExtractionTests(unittest.TestCase):
         value = extract_company_fact("1", "kr:1", 2026, 1, current, [])
         self.assertIsNone(value.top_line)
 
-    def test_explicit_financial_top_line_is_allowed(self):
+    def test_exact_top_line_names_and_display_prefixes_are_allowed(self):
+        for account_name in ("매출액", "매출", "수익", "영업수익", " Ⅰ. 매출액 "):
+            with self.subTest(account_name=account_name):
+                current = [
+                    row("1", account_name, current="100", cumulative="100"),
+                    row("1", "영업이익", current="20", cumulative="20"),
+                    row("1", "당기순이익", current="10", cumulative="10"),
+                ]
+                value = extract_company_fact("1", "kr:1", 2026, 1, current, [])
+                self.assertEqual(value.top_line, Decimal("100"))
+
+    def test_financial_components_and_profit_labels_are_not_top_line(self):
+        for account_name in ("금융수익", "보험수익", "이자수익", "수수료수익", "순영업수익", "순영업이익"):
+            with self.subTest(account_name=account_name):
+                current = [
+                    row("1", account_name, current="100", cumulative="100", account_id="ifrs-full_Revenue"),
+                    row("1", "영업이익", current="20", cumulative="20"),
+                    row("1", "당기순이익", current="10", cumulative="10"),
+                ]
+                value = extract_company_fact("1", "kr:1", 2026, 1, current, [])
+                self.assertIsNone(value.top_line)
+
+    def test_semantic_suffix_does_not_match_an_exact_top_line(self):
         current = [
-            row("1", "순영업이익", current="100", cumulative="100"),
+            row("1", "매출및기타수익", current="100", cumulative="100"),
             row("1", "영업이익", current="20", cumulative="20"),
             row("1", "당기순이익", current="10", cumulative="10"),
         ]
         value = extract_company_fact("1", "kr:1", 2026, 1, current, [])
-        self.assertEqual(value.top_line, Decimal("100"))
+        self.assertIsNone(value.top_line)
 
 
 class KisFallbackTests(unittest.TestCase):
@@ -1195,3 +1233,4 @@ class GrowthAndAggregationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

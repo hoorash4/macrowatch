@@ -506,7 +506,7 @@ export default {
               ref: BRANCH,
               inputs: {
                 year: String(fiscalYear), quarter: String(fiscalQuarter),
-                write: "true", allow_review: "false", recalculate_only: "true",
+                write: "true", recalculate_only: "true",
               },
             }),
           });
@@ -698,4 +698,5 @@ export default {
     }
   },
 };
+
 

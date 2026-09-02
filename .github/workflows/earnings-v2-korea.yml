@@ -22,11 +22,6 @@ on:
         required: true
         default: false
         type: boolean
-      allow_review:
-        description: Continue after an incomplete quarter (normally false)
-        required: true
-        default: false
-        type: boolean
       recalculate_only:
         description: Recalculate from stored facts without external provider calls
         required: true
@@ -59,7 +54,6 @@ jobs:
           YEAR: ${{ inputs.year || '' }}
           QUARTER: ${{ inputs.quarter || '' }}
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
-          ALLOW_REVIEW: ${{ inputs.allow_review }}
           RECALCULATE_ONLY: ${{ inputs.recalculate_only }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
@@ -80,8 +74,8 @@ jobs:
             hard_timeout=660
           fi
           [[ "$WRITE" == "true" ]] && args+=(--write)
-          [[ "$ALLOW_REVIEW" == "true" ]] && args+=(--allow-review)
           [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
           # 애플리케이션 마감선보다 30초 뒤의 외부 제한은 실패 상태 기록까지
           # 고장 난 경우에만 사용하는 최후 강제 종료 안전망이다.
           timeout --signal=TERM --kill-after=10s "${hard_timeout}s" python -m earnings_v2.cli "${args[@]}"
+

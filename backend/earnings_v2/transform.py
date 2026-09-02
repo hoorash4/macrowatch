@@ -25,7 +25,7 @@ NET_NAMES = {
     "당기순이익", "당기순이익손실", "당기순손익", "당기순손실",
     "분기순이익", "분기순이익손실", "반기순이익", "반기순이익손실",
 }
-FINANCIAL_TOP_LINES = {"순영업이익", "순영업수익", "영업수익"}
+TOP_LINE_NAMES = {"매출액", "매출", "수익", "영업수익"}
 
 
 def normalize_label(value: Any) -> str:
@@ -69,15 +69,10 @@ def _metric_row(
 
 
 def _is_explicit_top_line(name: str) -> bool:
-    normalized = normalize_label(name)
-    if normalized in FINANCIAL_TOP_LINES:
-        return True
-    # 매출·매출액·수익만으로 구성된 명칭만 허용한다. 금융수익·보험수익처럼
-    # 다른 의미가 붙은 하위 계정은 매출로 합산하지 않는다.
-    remainder = normalized
-    for token in ("매출액", "매출", "수익"):
-        remainder = remainder.replace(token, "")
-    return bool(normalized) and not remainder
+    # 공백, 괄호, 로마 숫자 같은 표시용 문자를 제거한 뒤 총액 계정명과
+    # 정확히 일치할 때만 허용한다. 금융수익·보험수익·이자수익 같은
+    # 구성 항목은 표준 Revenue ID가 붙어 있어도 매출로 추론하지 않는다.
+    return normalize_label(name) in TOP_LINE_NAMES
 
 
 def _top_line_row(rows: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
@@ -349,3 +344,4 @@ def update_seasonal_window(
         samples[year] = value
     retained = sorted(samples.items())[-MAX_SEASONAL_SAMPLES:]
     return [sample_year for sample_year, _ in retained], [sample_value for _, sample_value in retained]
+
