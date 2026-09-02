@@ -1,0 +1,36 @@
+name: Temporary life insurance API probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Samsung Life
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          key=os.environ["DATA_GO_KR_SERVICE_KEY"]
+          base="https://apis.data.go.kr/1160100/service/GetLifeInsuCompInfoService/"
+          for op in ["getLifeInsuCompGeneInfo","getLifeInsuCompFinaInfo"]:
+              for ym in ["201309","202412","202503","202506"]:
+                  q=urllib.parse.urlencode({"serviceKey":key,"resultType":"json","pageNo":1,"numOfRows":9999,"basYm":ym})
+                  url=base+op+"?"+q
+                  try:
+                      with urllib.request.urlopen(url, timeout=60) as r:
+                          body=r.read().decode("utf-8","replace")
+                      print("PROBE",op,ym,"HTTP",r.status,"LEN",len(body))
+                      try:
+                          obj=json.loads(body)
+                          print("HEAD",json.dumps(obj,ensure_ascii=False)[:500])
+                          items=obj.get("response",{}).get("body",{}).get("items",{}).get("item",[])
+                          if isinstance(items,dict): items=[items]
+                          sams=[x for x in items if "삼성생명" in str(x.get("fncoNm",""))]
+                          print("TOTAL",len(items),"SAMSUNG",len(sams))
+                          for x in sams[:20]: print("SAMSUNG_ROW",json.dumps(x,ensure_ascii=False))
+                      except Exception:
+                          print("BODY",body[:1000])
+                  except Exception as e:
+                      print("ERROR",op,ym,repr(e))
+          PY
