@@ -22,6 +22,13 @@ on:
         required: true
         default: false
         type: boolean
+      # 현재 배포된 admin-control이 보내는 이전 입력 계약과의 경계다.
+      # 백엔드는 이 값을 사용하지 않으며 admin-control 재배포 후 제거한다.
+      allow_review:
+        description: Deprecated compatibility input; incomplete runs always continue
+        required: true
+        default: false
+        type: boolean
       recalculate_only:
         description: Recalculate from stored facts without external provider calls
         required: true
