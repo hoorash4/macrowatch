@@ -16,7 +16,6 @@ import requests
 
 from .http import (
     ExecutionDeadlineExceeded,
-    ResponseDeadlineExceeded,
     bounded_request,
     provider_session,
     safe_request_failure,
@@ -36,10 +35,6 @@ class ProviderError(RuntimeError):
     """API 키나 전체 요청 URL을 노출하지 않는 공급자 오류."""
 
 
-class OpenDartResponseDeadlineError(ProviderError):
-    """OpenDART 응답 전체가 허용 시간을 넘긴 경우에만 배치 분할을 허용한다."""
-
-
 def _decimal(value: Any) -> Decimal | None:
     text = str(value or "").replace(",", "").replace(" ", "").strip()
     if text in {"", "-", "—", "–"}:
@@ -55,8 +50,6 @@ def _decimal(value: Any) -> Decimal | None:
 CONNECT_TIMEOUT = 5
 STANDARD_READ_TIMEOUT = 20
 FAST_READ_TIMEOUT = 12
-BINARY_TOTAL_TIMEOUT = 30
-OPEN_DART_TOTAL_TIMEOUT = 40
 KRX_TOTAL_TIMEOUT = 30
 KIS_TOTAL_TIMEOUT = 25
 ECOS_TOTAL_TIMEOUT = 30
@@ -96,11 +89,17 @@ class OpenDartClient:
     def _progress(stage: str, **details: Any) -> None:
         print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
 
-    def _retry_progress(self, endpoint: str) -> Callable[[int, str, float], None]:
+    def _retry_progress(self, endpoint: str) -> Callable[[int, str, float | None], None]:
         return lambda attempt, reason, remaining: self._progress(
             "provider_request_retry",
             provider="OpenDART", endpoint=endpoint, attempt=attempt,
             reason=reason, remaining_budget_seconds=remaining,
+        )
+
+    def _transport_progress(self, endpoint: str) -> Callable[[str, dict[str, Any]], None]:
+        return lambda event, details: self._progress(
+            "provider_response_progress",
+            provider="OpenDART", endpoint=endpoint, event=event, **details,
         )
 
     def _get(self, endpoint: str, params: dict[str, str], *, binary: bool = False) -> Any:
@@ -112,19 +111,18 @@ class OpenDartClient:
                 f"{OPEN_DART_BASE}/{endpoint}",
                 provider="OpenDART", operation=endpoint,
                 params={"crtfc_key": self.api_key, **params},
-                total_timeout=BINARY_TOTAL_TIMEOUT if binary else OPEN_DART_TOTAL_TIMEOUT,
-                attempt_timeout=9 if binary else 12,
+                # 정상적으로 바이트가 수신되는 응답은 애플리케이션 전체 마감선까지
+                # 허용한다. 여기서는 연결 실패와 20초 수신 정지만 재시도한다.
+                total_timeout=None,
+                attempt_timeout=None,
                 connect_timeout=CONNECT_TIMEOUT,
                 read_timeout=STANDARD_READ_TIMEOUT,
                 binary=binary,
                 on_retry=self._retry_progress(endpoint),
+                on_progress=self._transport_progress(endpoint),
             )
         except ExecutionDeadlineExceeded:
             raise
-        except ResponseDeadlineExceeded as exc:
-            raise OpenDartResponseDeadlineError(
-                safe_request_failure("OpenDART", endpoint, exc),
-            ) from None
         except Exception as exc:
             # API 키·URL·응답 본문은 노출하지 않고 실패 종류만 남긴다.
             if isinstance(exc, ProviderError):
@@ -169,31 +167,7 @@ class OpenDartClient:
                 year=year, quarter=quarter, batch=batch_number,
                 batch_count=batch_count, company_count=len(batch),
             )
-            try:
-                batch_rows = self._multi_account_batch(batch, year, quarter)
-            except OpenDartResponseDeadlineError:
-                if len(batch) <= 50:
-                    raise
-                self._progress(
-                    "open_dart_batch_split", endpoint="fnlttMultiAcnt.json",
-                    year=year, quarter=quarter, batch=batch_number,
-                    batch_count=batch_count, company_count=len(batch), split_size=50,
-                )
-                batch_rows = []
-                for split_start in range(0, len(batch), 50):
-                    split = batch[split_start:split_start + 50]
-                    self._progress(
-                        "open_dart_split_batch_start", endpoint="fnlttMultiAcnt.json",
-                        year=year, quarter=quarter, batch=batch_number,
-                        split=split_start // 50 + 1, company_count=len(split),
-                    )
-                    split_rows = self._multi_account_batch(split, year, quarter)
-                    batch_rows.extend(split_rows)
-                    self._progress(
-                        "open_dart_split_batch_done", endpoint="fnlttMultiAcnt.json",
-                        year=year, quarter=quarter, batch=batch_number,
-                        split=split_start // 50 + 1, row_count=len(split_rows),
-                    )
+            batch_rows = self._multi_account_batch(batch, year, quarter)
             rows.extend(batch_rows)
             self._progress(
                 "open_dart_batch_done", endpoint="fnlttMultiAcnt.json",

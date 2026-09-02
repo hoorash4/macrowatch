@@ -439,7 +439,9 @@ class SourceContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/earnings-v2-korea.yml").read_text(encoding="utf-8")
         self.assertIn("recalculate_only:", workflow)
         self.assertIn("args+=(--recalculate-only)", workflow)
-        self.assertIn("github.event_name == 'schedule' && 'true'", workflow)
+        self.assertNotIn("schedule:", workflow)
+        self.assertNotIn("github.event_name == 'schedule'", workflow)
+        self.assertIn("WRITE: ${{ inputs.write }}", workflow)
         self.assertIn('[[ "$WRITE" == "true" ]] && args+=(--write)', workflow)
         self.assertNotIn("diagnose_kosdaq_51_100", workflow)
 
@@ -714,3 +716,4 @@ class KoreaForeignFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

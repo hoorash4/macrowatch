@@ -22,7 +22,6 @@ from earnings_v2.providers import (
     EcosFxClient,
     KisClient,
     OpenDartClient,
-    OpenDartResponseDeadlineError,
     ProviderError,
 )
 from earnings_v2.transform import (
@@ -327,11 +326,11 @@ class OpenDartTransportTests(unittest.TestCase):
         client = OpenDartClient("secret", session=session, interval=0)
         client.multi_accounts([f"{index:08d}" for index in range(150)], 2026, 2)
         self.assertEqual(len(session.calls), 2)
-        self.assertEqual(session.calls[0][1]["timeout"], (5, 12))
+        self.assertEqual(session.calls[0][1]["timeout"], (5, 20))
         self.assertEqual(len(session.calls[0][1]["params"]["corp_code"].split(",")), 100)
         self.assertEqual(len(session.calls[1][1]["params"]["corp_code"].split(",")), 50)
 
-    def test_multi_account_splits_only_timed_out_hundred_company_batch(self):
+    def test_multi_account_does_not_split_a_failed_hundred_company_batch(self):
         class Client(OpenDartClient):
             def __init__(self):
                 super().__init__("secret", interval=0)
@@ -340,46 +339,12 @@ class OpenDartTransportTests(unittest.TestCase):
             def _multi_account_batch(self, corp_codes, year, quarter):
                 batch = list(corp_codes)
                 self.calls.append(batch)
-                if batch[0] == "00000100" and len(batch) == 100:
-                    raise OpenDartResponseDeadlineError("deadline")
-                return [{"corp_code": code} for code in batch]
+                raise ProviderError("failed")
 
         client = Client()
-        rows = client.multi_accounts([f"{index:08d}" for index in range(250)], 2026, 2)
-
-        self.assertEqual([len(batch) for batch in client.calls], [100, 100, 50, 50, 50])
-        self.assertEqual(client.calls.count([f"{index:08d}" for index in range(100)]), 1)
-        self.assertEqual(len(rows), 250)
-
-    def test_multi_account_does_not_split_other_provider_errors(self):
-        class Client(OpenDartClient):
-            def __init__(self):
-                super().__init__("secret", interval=0)
-                self.calls = 0
-
-            def _multi_account_batch(self, corp_codes, year, quarter):
-                self.calls += 1
-                raise ProviderError("rejected")
-
-        client = Client()
-        with self.assertRaisesRegex(ProviderError, "rejected"):
+        with self.assertRaisesRegex(ProviderError, "failed"):
             client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
-        self.assertEqual(client.calls, 1)
-
-    def test_multi_account_stops_when_fifty_company_split_times_out(self):
-        class Client(OpenDartClient):
-            def __init__(self):
-                super().__init__("secret", interval=0)
-                self.calls = []
-
-            def _multi_account_batch(self, corp_codes, year, quarter):
-                self.calls.append(len(corp_codes))
-                raise OpenDartResponseDeadlineError("deadline")
-
-        client = Client()
-        with self.assertRaisesRegex(OpenDartResponseDeadlineError, "deadline"):
-            client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
-        self.assertEqual(client.calls, [100, 50])
+        self.assertEqual([len(batch) for batch in client.calls], [100])
 
     def test_provider_error_does_not_expose_key(self):
         class Session:
@@ -478,7 +443,7 @@ class ProviderReliabilityTests(unittest.TestCase):
             )
         self.assertEqual(session.calls, 1)
 
-    def test_streaming_response_can_outlive_attempt_wait_without_retry(self):
+    def test_streaming_response_has_no_total_deadline_when_disabled(self):
         clock = [0.0]
 
         class Response:
@@ -492,7 +457,7 @@ class ProviderReliabilityTests(unittest.TestCase):
             @staticmethod
             def iter_content(chunk_size):
                 self.assertEqual(chunk_size, 64 * 1024)
-                clock[0] = 15.0
+                clock[0] = 45.0
                 yield b'{"status":"000"}'
 
         class Session:
@@ -505,14 +470,45 @@ class ProviderReliabilityTests(unittest.TestCase):
         session = Session()
         result = bounded_request(
             session, "GET", "https://provider.invalid",
-            provider="test", operation="stream", total_timeout=40,
-            attempt_timeout=12,
+            provider="test", operation="stream", total_timeout=None,
+            attempt_timeout=None,
             connect_timeout=5, read_timeout=20,
             monotonic=lambda: clock[0], sleep=lambda _seconds: None,
         )
 
         self.assertEqual(result, {"status": "000"})
         self.assertEqual(session.calls, 1)
+
+    def test_transport_progress_reports_headers_and_completed_body(self):
+        events = []
+
+        class Response:
+            status_code = 200
+            headers = {"Content-Length": "16", "Content-Type": "application/json"}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def iter_content(chunk_size):
+                yield b'{"status":"000"}'
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        result = bounded_request(
+            Session(), "GET", "https://provider.invalid",
+            provider="test", operation="stream", total_timeout=None,
+            attempt_timeout=None, connect_timeout=5, read_timeout=20,
+            on_progress=lambda event, details: events.append((event, details)),
+        )
+        self.assertEqual(result, {"status": "000"})
+        self.assertEqual([event for event, _details in events], ["headers", "body"])
+        self.assertTrue(events[-1][1]["complete"])
+        self.assertEqual(events[-1][1]["chunk_count"], 1)
 
     def test_provider_retries_share_one_total_budget(self):
         clock = [0.0]

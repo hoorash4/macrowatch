@@ -49,18 +49,49 @@ def provider_session() -> requests.Session:
     return requests.Session()
 
 
-def _response_bytes(response: Any, deadline: float, monotonic: Any) -> bytes:
+def _emit_progress(callback: Any | None, event: str, **details: Any) -> None:
+    if callback is not None:
+        callback(event, details)
+
+
+def _response_bytes(
+    response: Any,
+    deadline: float | None,
+    monotonic: Any,
+    on_progress: Any | None,
+    attempt: int,
+    started: float,
+) -> bytes:
     if not hasattr(response, "iter_content"):
-        return bytes(getattr(response, "content", b""))
+        content = bytes(getattr(response, "content", b""))
+        _emit_progress(
+            on_progress, "body", attempt=attempt, complete=True,
+            elapsed_seconds=round(monotonic() - started, 3),
+            bytes_received=len(content), chunk_count=1 if content else 0,
+        )
+        return content
     chunks: list[bytes] = []
-    for chunk in response.iter_content(chunk_size=64 * 1024):
-        if monotonic() > deadline:
+    byte_count = 0
+    chunk_count = 0
+    complete = False
+    try:
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if deadline is not None and monotonic() > deadline:
+                raise ResponseDeadlineExceeded("response total deadline exceeded")
+            if chunk:
+                chunks.append(chunk)
+                byte_count += len(chunk)
+                chunk_count += 1
+        if deadline is not None and monotonic() > deadline:
             raise ResponseDeadlineExceeded("response total deadline exceeded")
-        if chunk:
-            chunks.append(chunk)
-    if monotonic() > deadline:
-        raise ResponseDeadlineExceeded("response total deadline exceeded")
-    return b"".join(chunks)
+        complete = True
+        return b"".join(chunks)
+    finally:
+        _emit_progress(
+            on_progress, "body", attempt=attempt, complete=complete,
+            elapsed_seconds=round(monotonic() - started, 3),
+            bytes_received=byte_count, chunk_count=chunk_count,
+        )
 
 
 def _retry_delay(response: Any, attempt: int) -> float:
@@ -78,46 +109,63 @@ def bounded_request(
     *,
     provider: str,
     operation: str,
-    total_timeout: float,
+    total_timeout: float | None,
     attempt_timeout: float | None,
     connect_timeout: float,
     read_timeout: float,
     binary: bool = False,
     on_retry: Any | None = None,
+    on_progress: Any | None = None,
     monotonic: Any = time.monotonic,
     sleep: Any = time.sleep,
     **kwargs: Any,
 ) -> Any:
-    """연결·읽기·응답 총시간·재시도를 하나의 요청 예산 안에서 관리한다."""
+    """연결·읽기·선택적 응답 총시간·재시도를 하나의 정책에서 관리한다."""
     started = monotonic()
-    deadline = started + total_timeout
+    deadline = started + total_timeout if total_timeout is not None else None
     last_error: Exception | None = None
     for attempt in range(1, RETRY_TOTAL + 2):
-        remaining = deadline - monotonic()
-        if remaining <= 0:
+        remaining = deadline - monotonic() if deadline is not None else None
+        if remaining is not None and remaining <= 0:
             last_error = ResponseDeadlineExceeded("request total deadline exceeded")
             break
         response: Any = None
         try:
-            attempt_remaining = min(
-                remaining,
-                attempt_timeout if attempt_timeout is not None else remaining,
-            )
+            attempt_remaining = attempt_timeout
+            if remaining is not None:
+                attempt_remaining = min(remaining, attempt_timeout or remaining)
+            connect = min(connect_timeout, attempt_remaining) if attempt_remaining is not None else connect_timeout
+            read = min(read_timeout, attempt_remaining) if attempt_remaining is not None else read_timeout
             call = getattr(session, method.lower())
             response = call(
                 url,
-                timeout=(min(connect_timeout, attempt_remaining), min(read_timeout, attempt_remaining)),
+                timeout=(connect, read),
                 stream=True,
                 **kwargs,
+            )
+            headers = getattr(response, "headers", {}) or {}
+            _emit_progress(
+                on_progress, "headers", attempt=attempt,
+                elapsed_seconds=round(monotonic() - started, 3),
+                status_code=getattr(response, "status_code", None),
+                content_type=headers.get("Content-Type"),
+                content_encoding=headers.get("Content-Encoding"),
+                content_length=headers.get("Content-Length"),
             )
             response.raise_for_status()
             # 단순 테스트 대역은 iter_content가 없으므로 기존 json() 계약을 사용한다.
             if not binary and not hasattr(response, "iter_content"):
-                return response.json()
+                payload = response.json()
+                _emit_progress(
+                    on_progress, "body", attempt=attempt, complete=True,
+                    elapsed_seconds=round(monotonic() - started, 3),
+                    bytes_received=len(bytes(getattr(response, "content", b""))), chunk_count=0,
+                )
+                return payload
             # attempt_timeout은 연결 및 멈춘 소켓을 재시도하기 위한 대기
             # 상한이다. 응답 바이트가 계속 들어오는 정상 스트림은 요청 전체
             # deadline 안에서 완료되도록 두고 중간에 재시도하지 않는다.
-            content = _response_bytes(response, deadline, monotonic)
+            content = _response_bytes(response, deadline, monotonic, on_progress, attempt, started)
             if binary:
                 return content
             return json.loads(content.decode("utf-8-sig"))
@@ -135,10 +183,11 @@ def bounded_request(
             if not retryable or attempt > RETRY_TOTAL:
                 break
             delay = _retry_delay(response, attempt)
-            if monotonic() + delay >= deadline:
+            if deadline is not None and monotonic() + delay >= deadline:
                 break
             if on_retry is not None:
-                on_retry(attempt, safe_request_failure(provider, operation, exc), round(deadline - monotonic(), 3))
+                remaining_budget = round(deadline - monotonic(), 3) if deadline is not None else None
+                on_retry(attempt, safe_request_failure(provider, operation, exc), remaining_budget)
             sleep(delay)
     assert last_error is not None
     raise last_error

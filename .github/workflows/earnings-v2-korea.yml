@@ -1,9 +1,7 @@
 name: Earnings V2 Korea quarter
 
 on:
-  schedule:
-    # 19:30 KST. 정기공시 신규 접수와 매출 대기 기업만 증분 갱신합니다.
-    - cron: "30 10 * * *"
+  # 최근 3개 분기 백필이 검증될 때까지 수동 실행만 허용한다.
   workflow_dispatch:
     inputs:
       year:
@@ -56,11 +54,10 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
-          # 자동 증분은 짧게, 수동 분기 백필은 누락 보완 시간을 포함해 넉넉히 둡니다.
-          EARNINGS_V2_DEADLINE_SECONDS: ${{ github.event_name == 'schedule' && '240' || '600' }}
-          YEAR: ${{ inputs.year || '' }}
-          QUARTER: ${{ inputs.quarter || '' }}
-          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
+          EARNINGS_V2_DEADLINE_SECONDS: "600"
+          YEAR: ${{ inputs.year }}
+          QUARTER: ${{ inputs.quarter }}
+          WRITE: ${{ inputs.write }}
           RECALCULATE_ONLY: ${{ inputs.recalculate_only }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
@@ -72,17 +69,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            args=(--daily)
-            hard_timeout=270
-          else
-            [[ "$YEAR" =~ ^[0-9]{4}$ ]]
-            args=(--year "$YEAR" --quarter "$QUARTER")
-            hard_timeout=660
-          fi
+          [[ "$YEAR" =~ ^[0-9]{4}$ ]]
+          args=(--year "$YEAR" --quarter "$QUARTER")
           [[ "$WRITE" == "true" ]] && args+=(--write)
           [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
           # 애플리케이션 마감선보다 30초 뒤의 외부 제한은 실패 상태 기록까지
           # 고장 난 경우에만 사용하는 최후 강제 종료 안전망이다.
-          timeout --signal=TERM --kill-after=10s "${hard_timeout}s" python -m earnings_v2.cli "${args[@]}"
+          timeout --signal=TERM --kill-after=10s 660s python -m earnings_v2.cli "${args[@]}"
 

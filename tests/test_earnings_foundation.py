@@ -127,8 +127,8 @@ class EarningsFoundationTests(unittest.TestCase):
         self.assertIn(OPEN_DART_WORKER_MIGRATION.name, self.deploy_workflow)
         self.assertIn(SLIM_STORAGE_MIGRATION.name, self.deploy_workflow)
         self.assertIn("inputs.sync_identifiers == true", self.open_dart_workflow)
-        self.assertIn("github.event.schedule == '30 10 * * 1-5'", self.open_dart_workflow)
-        self.assertIn('"backend/earnings/**"', self.open_dart_workflow)
+        self.assertNotIn("schedule:", self.open_dart_workflow)
+        self.assertNotIn("push:", self.open_dart_workflow)
         self.assertIn("inputs.max_batches || '50'", self.open_dart_workflow)
         self.assertIn('default: "50"', self.open_dart_workflow)
 
@@ -224,3 +224,4 @@ class EarningsFoundationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
