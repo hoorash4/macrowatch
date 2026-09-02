@@ -19,7 +19,7 @@ from .transform import (
 )
 
 
-TARGETS = {"kr_largecap": 100, "kr_kosdaq": 50}
+TARGETS = {"kr_largecap": 100, "kr_kosdaq": 100}
 EXCHANGES = {"kr_largecap": "KOSPI", "kr_kosdaq": "KOSDAQ"}
 # V6부터 부분 기업행을 보존하고 잠정 바구니와 확정 총합을 분리한다.
 CALCULATION_VERSION = 6
@@ -255,57 +255,6 @@ class KoreaEarningsV2Pipeline:
             by_company.items(),
             key=lambda item: (-item[1][0].market_cap, item[1][0].stock_code),
         )
-
-    def diagnose_kosdaq_slice(self, year: int, quarter: int, start_rank: int, end_rank: int) -> dict[str, Any]:
-        """DB 저장 없이 코스닥 시총 구간의 누적 손익 부호만 점검한다."""
-        if start_rank < 1 or end_rank < start_rank or end_rank - start_rank + 1 > 100:
-            raise ValueError("diagnostic rank range must contain 1 to 100 companies")
-        corp_map = self.dart.corporation_map()
-        reference_date, candidates = self._market_cap_candidates("kr_kosdaq", year, quarter, corp_map)
-        if len(candidates) < end_rank:
-            raise RuntimeError(f"kr_kosdaq candidates are {len(candidates)}/{end_rank}")
-        selected = candidates[start_rank - 1:end_rank]
-        identities = [CompanyIdentity(
-            company_id=f"kr:{corp_code}", company_name=official_name or security.name,
-            stock_code=security.stock_code, corp_code=corp_code, market_id="kr_kosdaq",
-            rank=rank, market_cap=security.market_cap, reference_date=reference_date,
-        ) for rank, (corp_code, (security, official_name)) in enumerate(selected, start_rank)]
-        codes = [row.corp_code for row in identities]
-        grouped = _group(self.dart.multi_accounts(codes, year, quarter), codes)
-        rows = []
-        for identity in identities:
-            fact = extract_company_fact(
-                identity.corp_code, identity.company_id, year, quarter,
-                grouped[identity.corp_code],
-            )
-            rows.append({
-                "rank": identity.rank,
-                "company": identity.company_name,
-                "operating_income_cumulative": fact.source_operating_income_cumulative if fact else None,
-                "net_income_cumulative": fact.source_net_income_cumulative if fact else None,
-            })
-        return {
-            "period": f"{year}Q{quarter}",
-            "reference_date": reference_date,
-            "rank_range": [start_rank, end_rank],
-            "companies": len(rows),
-            "operating_loss_companies": sum(
-                row["operating_income_cumulative"] is not None and row["operating_income_cumulative"] < 0
-                for row in rows
-            ),
-            "net_loss_companies": sum(
-                row["net_income_cumulative"] is not None and row["net_income_cumulative"] < 0
-                for row in rows
-            ),
-            "missing_operating_income": sum(row["operating_income_cumulative"] is None for row in rows),
-            "missing_net_income": sum(row["net_income_cumulative"] is None for row in rows),
-            "loss_companies": [row for row in rows if (
-                row["operating_income_cumulative"] is not None and row["operating_income_cumulative"] < 0
-            ) or (
-                row["net_income_cumulative"] is not None and row["net_income_cumulative"] < 0
-            )],
-            "database_written": False,
-        }
 
     def _try_kis_top_line(
         self,

@@ -5,9 +5,9 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_v2.aggregation import aggregate_market
-from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling, Security
+from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling
 from earnings_v2.cli import completed_successfully, parser
-from earnings_v2.pipeline import KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
+from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.providers import KisClient, OpenDartClient, ProviderError
 from earnings_v2.transform import (
     calculate_financial_point,
@@ -101,7 +101,7 @@ class SimulatedRepository:
     def __init__(self) -> None:
         self.universes = {
             ("kr_largecap", 2026, 2): simulated_universe("kr_largecap", 100),
-            ("kr_kosdaq", 2026, 2): simulated_universe("kr_kosdaq", 50),
+            ("kr_kosdaq", 2026, 2): simulated_universe("kr_kosdaq", 100),
         }
         self.company_rows: dict[tuple[str, int, int], dict] = {}
         self.market_rows: dict[tuple[str, int, int], dict] = {}
@@ -333,6 +333,9 @@ class OpenDartTransportTests(unittest.TestCase):
 
 
 class CliContractTests(unittest.TestCase):
+    def test_korean_market_targets_are_one_hundred_each(self):
+        self.assertEqual(TARGETS, {"kr_largecap": 100, "kr_kosdaq": 100})
+
     def test_year_backfill_always_runs_oldest_quarter_first(self):
         pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=object(), repository=object())
         visited: list[int] = []
@@ -357,66 +360,6 @@ class CliContractTests(unittest.TestCase):
     def test_recalculation_mode_is_an_explicit_cli_path(self):
         args = parser().parse_args(["--year", "2026", "--quarter", "2", "--write", "--recalculate-only"])
         self.assertTrue(args.recalculate_only)
-
-    def test_kosdaq_slice_diagnostic_is_an_explicit_cli_path(self):
-        args = parser().parse_args([
-            "--year", "2026", "--quarter", "2", "--diagnose-kosdaq-slice", "51", "100",
-        ])
-        self.assertEqual(args.diagnose_kosdaq_slice, [51, 100])
-
-
-class ReadOnlyDiagnosticTests(unittest.TestCase):
-    def test_kosdaq_slice_uses_one_financial_batch_and_never_writes(self):
-        class Dart(SimulatedDart):
-            @staticmethod
-            def corporation_map():
-                return {
-                    f"{rank:06d}": (f"{rank:08d}", f"company-{rank}")
-                    for rank in range(1, 121)
-                }
-
-            def multi_accounts(self, corp_codes, year, quarter):
-                codes = tuple(corp_codes)
-                self.financial_calls.append((codes, year, quarter))
-                rows = []
-                for code in codes:
-                    rank = int(code)
-                    operating = "-10" if rank in {51, 80, 100} else "10"
-                    net = "-8" if rank in {52, 80} else "8"
-                    rows.extend([
-                        row(code, "매출액", current="100", cumulative="200", account_id="ifrs-full_Revenue"),
-                        row(code, "영업이익", current=operating, cumulative=operating, account_id="dart_OperatingIncomeLoss"),
-                        row(code, "당기순이익", current=net, cumulative=net, account_id="ifrs-full_ProfitLoss"),
-                    ])
-                return rows
-
-        class Krx:
-            @staticmethod
-            def last_trading_day(_market_id, reference_date):
-                return reference_date, [
-                    Security(f"{rank:06d}", f"company-{rank}", Decimal(1000 - rank), reference_date)
-                    for rank in range(1, 121)
-                ]
-
-        class NoWriteRepository:
-            def __getattr__(self, name):
-                if name.startswith(("upsert", "replace", "save", "delete")):
-                    raise AssertionError(f"diagnostic attempted repository write: {name}")
-                raise AttributeError(name)
-
-        dart = Dart()
-        pipeline = KoreaEarningsV2Pipeline(krx=Krx(), dart=dart, repository=NoWriteRepository())
-        result = pipeline.diagnose_kosdaq_slice(2026, 2, 51, 100)
-
-        self.assertEqual(len(dart.financial_calls), 1)
-        self.assertEqual(len(dart.financial_calls[0][0]), 50)
-        self.assertEqual(result["companies"], 50)
-        self.assertEqual(result["operating_loss_companies"], 3)
-        self.assertEqual(result["net_loss_companies"], 2)
-        self.assertEqual(result["missing_operating_income"], 0)
-        self.assertEqual(result["missing_net_income"], 0)
-        self.assertFalse(result["database_written"])
-
 
 class DailyCheckpointTests(unittest.TestCase):
     def test_daily_run_deduplicates_boundary_receipts_and_advances_after_success(self):
@@ -511,7 +454,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertTrue(all(len(periods) == 3 for _companies, periods in repository.company_period_calls))
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["reported_company_count"], 100)
-        self.assertEqual(repository.market_rows[("kr_kosdaq", 2026, 2)]["reported_company_count"], 50)
+        self.assertEqual(repository.market_rows[("kr_kosdaq", 2026, 2)]["reported_company_count"], 100)
 
         calls_after_first_run = list(dart.financial_calls)
         second = pipeline.run_daily(write=True, today=date(2026, 9, 2))

@@ -32,12 +32,11 @@ on:
         required: true
         default: false
         type: boolean
-      diagnose_kosdaq_51_100:
-        description: Read-only count of cumulative losses in KOSDAQ ranks 51-100
+      incremental:
+        description: Keep stored facts and collect only new or missing companies
         required: true
         default: false
         type: boolean
-
 permissions:
   contents: read
 
@@ -65,7 +64,7 @@ jobs:
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
           ALLOW_REVIEW: ${{ inputs.allow_review }}
           RECALCULATE_ONLY: ${{ inputs.recalculate_only }}
-          DIAGNOSE_KOSDAQ_51_100: ${{ inputs.diagnose_kosdaq_51_100 }}
+          INCREMENTAL: ${{ inputs.incremental }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
@@ -80,15 +79,12 @@ jobs:
             args=(--daily)
           else
             [[ "$YEAR" =~ ^[0-9]{4}$ ]]
-            if [[ "$DIAGNOSE_KOSDAQ_51_100" == "true" ]]; then
-              args=(--year "$YEAR" --quarter "$QUARTER" --diagnose-kosdaq-slice 51 100)
-            else
-              args=(--year "$YEAR" --quarter "$QUARTER")
-              [[ "$WRITE" == "true" ]] && args+=(--write)
-              [[ "$ALLOW_REVIEW" == "true" ]] && args+=(--allow-review)
-              [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
-            fi
+            args=(--year "$YEAR" --quarter "$QUARTER")
           fi
+          [[ "$WRITE" == "true" ]] && args+=(--write)
+          [[ "$ALLOW_REVIEW" == "true" ]] && args+=(--allow-review)
+          [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
+          [[ "$INCREMENTAL" == "true" ]] && args+=(--incremental)
           # 요청별 제한과 별개로 분기 프로세스 전체에도 명시적인 상한을 둔다.
           # 124는 정상 실패로 처리되며 다음 분기를 자동 실행하지 않는다.
           timeout --signal=TERM --kill-after=10s 270s python -m earnings_v2.cli "${args[@]}"
