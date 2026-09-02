@@ -14,7 +14,13 @@ from typing import Any
 
 import requests
 
-from .http import ExecutionDeadlineExceeded, bounded_request, provider_session, safe_request_failure
+from .http import (
+    ExecutionDeadlineExceeded,
+    ResponseDeadlineExceeded,
+    bounded_request,
+    provider_session,
+    safe_request_failure,
+)
 from .models import PeriodicFiling, Security
 
 
@@ -28,6 +34,10 @@ KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
 
 class ProviderError(RuntimeError):
     """API 키나 전체 요청 URL을 노출하지 않는 공급자 오류."""
+
+
+class OpenDartResponseDeadlineError(ProviderError):
+    """OpenDART 응답 전체가 허용 시간을 넘긴 경우에만 배치 분할을 허용한다."""
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -111,6 +121,10 @@ class OpenDartClient:
             )
         except ExecutionDeadlineExceeded:
             raise
+        except ResponseDeadlineExceeded as exc:
+            raise OpenDartResponseDeadlineError(
+                safe_request_failure("OpenDART", endpoint, exc),
+            ) from None
         except Exception as exc:
             # API 키·URL·응답 본문은 노출하지 않고 실패 종류만 남긴다.
             if isinstance(exc, ProviderError):
@@ -155,12 +169,31 @@ class OpenDartClient:
                 year=year, quarter=quarter, batch=batch_number,
                 batch_count=batch_count, company_count=len(batch),
             )
-            payload = self._get("fnlttMultiAcnt.json", {
-                "corp_code": ",".join(batch),
-                "bsns_year": str(year),
-                "reprt_code": REPORT_CODES[quarter],
-            })
-            batch_rows = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            try:
+                batch_rows = self._multi_account_batch(batch, year, quarter)
+            except OpenDartResponseDeadlineError:
+                if len(batch) <= 50:
+                    raise
+                self._progress(
+                    "open_dart_batch_split", endpoint="fnlttMultiAcnt.json",
+                    year=year, quarter=quarter, batch=batch_number,
+                    batch_count=batch_count, company_count=len(batch), split_size=50,
+                )
+                batch_rows = []
+                for split_start in range(0, len(batch), 50):
+                    split = batch[split_start:split_start + 50]
+                    self._progress(
+                        "open_dart_split_batch_start", endpoint="fnlttMultiAcnt.json",
+                        year=year, quarter=quarter, batch=batch_number,
+                        split=split_start // 50 + 1, company_count=len(split),
+                    )
+                    split_rows = self._multi_account_batch(split, year, quarter)
+                    batch_rows.extend(split_rows)
+                    self._progress(
+                        "open_dart_split_batch_done", endpoint="fnlttMultiAcnt.json",
+                        year=year, quarter=quarter, batch=batch_number,
+                        split=split_start // 50 + 1, row_count=len(split_rows),
+                    )
             rows.extend(batch_rows)
             self._progress(
                 "open_dart_batch_done", endpoint="fnlttMultiAcnt.json",
@@ -168,6 +201,14 @@ class OpenDartClient:
                 batch_count=batch_count, row_count=len(batch_rows),
             )
         return rows
+
+    def _multi_account_batch(self, corp_codes: list[str], year: int, quarter: int) -> list[dict[str, Any]]:
+        payload = self._get("fnlttMultiAcnt.json", {
+            "corp_code": ",".join(corp_codes),
+            "bsns_year": str(year),
+            "reprt_code": REPORT_CODES[quarter],
+        })
+        return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
     def periodic_filings(self, start: date, end: date) -> list[PeriodicFiling]:
         """접수번호로 중복을 구분할 수 있는 정기공시 목록을 반환한다."""
@@ -437,3 +478,4 @@ class EcosFxClient:
         rate = max(candidates, key=lambda item: item[0])[1]
         self.cache[reference_date] = rate
         return rate
+

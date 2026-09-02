@@ -18,7 +18,13 @@ from earnings_v2.http import (
     provider_session,
     resilient_session,
 )
-from earnings_v2.providers import EcosFxClient, KisClient, OpenDartClient, ProviderError
+from earnings_v2.providers import (
+    EcosFxClient,
+    KisClient,
+    OpenDartClient,
+    OpenDartResponseDeadlineError,
+    ProviderError,
+)
 from earnings_v2.transform import (
     calculate_financial_point,
     calculate_financial_series,
@@ -324,6 +330,56 @@ class OpenDartTransportTests(unittest.TestCase):
         self.assertEqual(session.calls[0][1]["timeout"], (5, 12))
         self.assertEqual(len(session.calls[0][1]["params"]["corp_code"].split(",")), 100)
         self.assertEqual(len(session.calls[1][1]["params"]["corp_code"].split(",")), 50)
+
+    def test_multi_account_splits_only_timed_out_hundred_company_batch(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+                self.calls = []
+
+            def _multi_account_batch(self, corp_codes, year, quarter):
+                batch = list(corp_codes)
+                self.calls.append(batch)
+                if batch[0] == "00000100" and len(batch) == 100:
+                    raise OpenDartResponseDeadlineError("deadline")
+                return [{"corp_code": code} for code in batch]
+
+        client = Client()
+        rows = client.multi_accounts([f"{index:08d}" for index in range(250)], 2026, 2)
+
+        self.assertEqual([len(batch) for batch in client.calls], [100, 100, 50, 50, 50])
+        self.assertEqual(client.calls.count([f"{index:08d}" for index in range(100)]), 1)
+        self.assertEqual(len(rows), 250)
+
+    def test_multi_account_does_not_split_other_provider_errors(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+                self.calls = 0
+
+            def _multi_account_batch(self, corp_codes, year, quarter):
+                self.calls += 1
+                raise ProviderError("rejected")
+
+        client = Client()
+        with self.assertRaisesRegex(ProviderError, "rejected"):
+            client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
+        self.assertEqual(client.calls, 1)
+
+    def test_multi_account_stops_when_fifty_company_split_times_out(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+                self.calls = []
+
+            def _multi_account_batch(self, corp_codes, year, quarter):
+                self.calls.append(len(corp_codes))
+                raise OpenDartResponseDeadlineError("deadline")
+
+        client = Client()
+        with self.assertRaisesRegex(OpenDartResponseDeadlineError, "deadline"):
+            client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
+        self.assertEqual(client.calls, [100, 50])
 
     def test_provider_error_does_not_expose_key(self):
         class Session:
