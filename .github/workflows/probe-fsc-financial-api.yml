@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Probe documented financial-company sample history
+      - name: Probe FSC snapshot-date behavior
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         shell: python
@@ -23,21 +23,31 @@ jobs:
 
           key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
           base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
-          crno = "1101113892240"
-          counts = {}
-          details = {}
-          for year in range(2000, 2027):
-              query = urllib.parse.urlencode({
+          cases = [
+              ("sample", "1101113892240", "20200408", None),
+              ("sample", "1101113892240", "20200408", "2015"),
+              ("sample", "1101113892240", "20260902", None),
+              ("kbfg", "1101113975517", "20260902", None),
+              ("kbfg", "1101113975517", "20260902", "2015"),
+              ("kbbank", "1101112365321", "20260902", None),
+              ("kbbank", "1101112365321", "20260902", "2015"),
+          ]
+          for name, crno, bas_dt, year in cases:
+              params = {
                   "serviceKey": key, "pageNo": 1, "numOfRows": 1000,
-                  "resultType": "json", "crno": crno, "bizYear": year,
-              }, safe="%")
+                  "resultType": "json", "crno": crno, "basDt": bas_dt,
+              }
+              if year:
+                  params["bizYear"] = year
+              query = urllib.parse.urlencode(params, safe="%")
               proc = subprocess.run(
                   ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
                    "--connect-timeout", "8", "--max-time", "15", base + "?" + query],
                   text=True, capture_output=True
               )
               if proc.returncode:
-                  raise SystemExit(f"network failure year={year}: {proc.stderr.strip()}")
+                  print(f"NETWORK name={name} basDt={bas_dt} year={year} error={proc.stderr.strip()}", flush=True)
+                  continue
               payload = json.loads(proc.stdout)
               response = payload.get("response", {})
               header = response.get("header", {})
@@ -48,13 +58,4 @@ jobs:
                   items = [items]
               if not isinstance(items, list):
                   items = []
-              counts[year] = int(body.get("totalCount") or 0)
-              if items:
-                  details[year] = items
-          available = [year for year, total in counts.items() if total > 0]
-          print("SAMPLE_CRNO=", crno, flush=True)
-          print("COUNTS=", json.dumps(counts, ensure_ascii=False), flush=True)
-          print(f"RANGE oldest={min(available) if available else None} newest={max(available) if available else None}", flush=True)
-          if available:
-              print("OLDEST_ROWS=", json.dumps(details[min(available)], ensure_ascii=False), flush=True)
-              print("Y2015_ROWS=", json.dumps(details.get(2015, []), ensure_ascii=False), flush=True)
+              print(f"CASE name={name} basDt={bas_dt} year={year} header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} rows={json.dumps(items, ensure_ascii=False)}", flush=True)
