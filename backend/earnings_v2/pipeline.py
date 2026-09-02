@@ -3,16 +3,20 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from typing import Any, Iterable
 
-from .aggregation import aggregate_market, calculate_market_series
+from .aggregation import aggregate_market, calculate_market_point
 from .models import CompanyIdentity, FinancialFact, MarketFact, PeriodicFiling, Security
 from .providers import EcosFxClient, KisClient, KrxClient, OpenDartClient
 from .repository import EarningsV2Repository
-from .transform import calculate_financial_series, decimal_value, extract_company_fact
+from .transform import (
+    calculate_financial_point,
+    decimal_value,
+    extract_company_fact,
+    update_seasonal_window,
+)
 
 
 TARGETS = {"kr_largecap": 100, "kr_kosdaq": 50}
@@ -27,6 +31,58 @@ def quarter_end(year: int, quarter: int) -> date:
 
 def previous_period(year: int, quarter: int) -> tuple[int, int]:
     return (year - 1, 4) if quarter == 1 else (year, quarter - 1)
+
+
+def _seasonal_window_index(rows: Iterable[dict[str, Any]]) -> dict[tuple[str, str, int], tuple[list[int], list[Decimal]]]:
+    windows: dict[tuple[str, str, int], tuple[list[int], list[Decimal]]] = {}
+    for row in rows:
+        pairs = [
+            (int(year), parsed)
+            for year, value in zip(row.get("sample_years") or [], row.get("sample_values") or [])
+            if (parsed := decimal_value(value)) is not None
+        ]
+        windows[(str(row["entity_id"]), str(row["metric"]), int(row["fiscal_quarter"]))] = (
+            [year for year, _ in pairs],
+            [value for _, value in pairs],
+        )
+    return windows
+
+
+def _window_samples(
+    windows: dict[tuple[str, str, int], tuple[list[int], list[Decimal]]],
+    entity_id: str,
+    metric: str,
+    quarter: int,
+    before_year: int,
+) -> list[Decimal]:
+    years, values = windows.get((entity_id, metric, quarter), ([], []))
+    return [value for year, value in zip(years, values) if year < before_year]
+
+
+def _advance_window(
+    windows: dict[tuple[str, str, int], tuple[list[int], list[Decimal]]],
+    *,
+    entity_type: str,
+    entity_id: str,
+    metric: str,
+    year: int,
+    quarter: int,
+    value: Decimal | None,
+) -> dict[str, Any] | None:
+    key = (entity_id, metric, quarter)
+    if key not in windows and value is None:
+        return None
+    years, values = windows.get(key, ([], []))
+    updated_years, updated_values = update_seasonal_window(years, values, year=year, value=value)
+    windows[key] = (updated_years, updated_values)
+    return {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "metric": metric,
+        "fiscal_quarter": quarter,
+        "sample_years": updated_years,
+        "sample_values": updated_values,
+    }
 
 
 def latest_completed_quarter(today: date) -> tuple[int, int]:
@@ -227,61 +283,122 @@ class KoreaEarningsV2Pipeline:
             facts[identity.company_id] = fact
         return facts, issues
 
-    def _stored_current_facts(self, identities: Iterable[CompanyIdentity], year: int, quarter: int
-                              ) -> tuple[dict[str, FinancialFact], set[str]]:
-        company_ids = [row.company_id for row in identities]
-        facts: dict[str, FinancialFact] = {}
+    @staticmethod
+    def _stored_facts(
+        records: Iterable[dict[str, Any]],
+        current_key: tuple[int, int],
+    ) -> tuple[dict[tuple[str, int, int], FinancialFact], set[str]]:
+        facts: dict[tuple[str, int, int], FinancialFact] = {}
         manual_ids: set[str] = set()
-        for record in self.repository.company_history(company_ids):
+        for record in records:
             if int(record.get("calculation_version") or 0) < CALCULATION_VERSION:
                 continue
             fact = _financial_from_db(record)
-            if fact.key != (year, quarter):
-                continue
-            facts[fact.company_id] = fact
-            if str(record.get("source") or "") == "manual":
+            facts[(fact.company_id, *fact.key)] = fact
+            if fact.key == current_key and str(record.get("source") or "") == "manual":
                 manual_ids.add(fact.company_id)
         return facts, manual_ids
 
-    def _calculated_histories(self, facts: dict[str, FinancialFact]) -> dict[str, list[FinancialFact]]:
-        histories: dict[str, list[FinancialFact]] = defaultdict(list)
-        for record in self.repository.company_history(facts):
-            if int(record.get("calculation_version") or 0) >= CALCULATION_VERSION:
-                row = _financial_from_db(record)
-                histories[row.company_id].append(row)
-        for company_id, fact in facts.items():
-            histories[company_id] = [row for row in histories[company_id] if row.key != fact.key] + [fact]
-        return {company_id: calculate_financial_series(rows) for company_id, rows in histories.items()}
-
-    def _market_rows(self, universes: dict[str, list[CompanyIdentity]], histories: dict[str, list[FinancialFact]],
-                     year: int, quarter: int) -> dict[str, list[MarketFact]]:
-        output: dict[str, list[MarketFact]] = {}
-        prior_year, prior_quarter = previous_period(year, quarter)
-        for market_id, members in universes.items():
-            previous_members = [_identity_from_universe(row) for row in self.repository.universe(market_id, prior_year, prior_quarter)]
-            needed_ids = {row.company_id for row in members + previous_members}
-            stored: dict[str, list[FinancialFact]] = defaultdict(list)
-            for record in self.repository.company_history(needed_ids):
-                if int(record.get("calculation_version") or 0) >= CALCULATION_VERSION:
-                    item = _financial_from_db(record)
-                    stored[item.company_id].append(item)
-            for company_id, rows in histories.items():
-                if company_id in needed_ids:
-                    stored[company_id] = rows
-            current_facts = {member.company_id: next((row for row in stored.get(member.company_id, []) if row.key == (year, quarter)), None) for member in members}
-            comparison_facts = {member.company_id: next((row for row in stored.get(member.company_id, []) if row.key == (prior_year, prior_quarter)), None) for member in previous_members}
-            market = aggregate_market(
-                market_id, year, quarter, members, current_facts, TARGETS[market_id],
-                comparison_members=previous_members, comparison_facts=comparison_facts,
+    def _calculate_company_points(
+        self,
+        current: dict[str, FinancialFact],
+        references: dict[tuple[str, int, int], FinancialFact],
+        changed_ids: set[str],
+        year: int,
+        quarter: int,
+    ) -> tuple[dict[str, FinancialFact], list[dict[str, Any]]]:
+        windows = _seasonal_window_index(self.repository.seasonal_windows("company", changed_ids))
+        previous_key = previous_period(year, quarter)
+        calculated = dict(current)
+        window_rows: list[dict[str, Any]] = []
+        for company_id in changed_ids:
+            row = current.get(company_id)
+            if row is None:
+                continue
+            samples = {
+                metric: _window_samples(windows, company_id, metric, quarter, year)
+                for metric in ("operating_income", "net_income")
+            }
+            value, raw_samples = calculate_financial_point(
+                row,
+                previous=references.get((company_id, *previous_key)),
+                prior_year=references.get((company_id, year - 1, quarter)),
+                seasonal_samples=samples,
             )
-            existing: dict[tuple[int, int], MarketFact] = {}
-            for record in self.repository.market_history(market_id):
-                if int(record.get("calculation_version") or 0) >= CALCULATION_VERSION:
-                    prior = _market_from_db(record)
-                    existing[prior.key] = prior
-            existing[market.key] = market
-            output[market_id] = calculate_market_series(existing.values())
-        return output
+            calculated[company_id] = value
+            for metric, raw_sample in raw_samples.items():
+                window_row = _advance_window(
+                    windows,
+                    entity_type="company",
+                    entity_id=company_id,
+                    metric=metric,
+                    year=year,
+                    quarter=quarter,
+                    value=raw_sample,
+                )
+                if window_row is not None:
+                    window_rows.append(window_row)
+        return calculated, window_rows
+
+    def _market_rows(
+        self,
+        universes: dict[str, list[CompanyIdentity]],
+        previous_universes: dict[str, list[CompanyIdentity]],
+        current_facts: dict[str, FinancialFact],
+        references: dict[tuple[str, int, int], FinancialFact],
+        year: int,
+        quarter: int,
+    ) -> tuple[list[MarketFact], list[dict[str, Any]]]:
+        previous_key = previous_period(year, quarter)
+        prior_markets = {
+            (row.market_id, *row.key): row
+            for record in self.repository.market_periods(TARGETS, [previous_key, (year - 1, quarter)])
+            if int(record.get("calculation_version") or 0) >= CALCULATION_VERSION
+            for row in [_market_from_db(record)]
+        }
+        windows = _seasonal_window_index(self.repository.seasonal_windows("market", TARGETS))
+        output: list[MarketFact] = []
+        window_rows: list[dict[str, Any]] = []
+        for market_id, members in universes.items():
+            previous_members = previous_universes.get(market_id, [])
+            comparison_facts = {
+                member.company_id: references.get((member.company_id, *previous_key))
+                for member in previous_members
+            }
+            market = aggregate_market(
+                market_id,
+                year,
+                quarter,
+                members,
+                {member.company_id: current_facts.get(member.company_id) for member in members},
+                TARGETS[market_id],
+                comparison_members=previous_members,
+                comparison_facts=comparison_facts,
+            )
+            samples = {
+                metric: _window_samples(windows, market_id, metric, quarter, year)
+                for metric in ("operating_income", "net_income")
+            }
+            calculated, raw_samples = calculate_market_point(
+                market,
+                previous=prior_markets.get((market_id, *previous_key)),
+                prior_year=prior_markets.get((market_id, year - 1, quarter)),
+                seasonal_samples=samples,
+            )
+            output.append(calculated)
+            for metric, raw_sample in raw_samples.items():
+                window_row = _advance_window(
+                    windows,
+                    entity_type="market",
+                    entity_id=market_id,
+                    metric=metric,
+                    year=year,
+                    quarter=quarter,
+                    value=raw_sample,
+                )
+                if window_row is not None:
+                    window_rows.append(window_row)
+        return output, window_rows
 
     def _save_universes(self, universes: dict[str, list[CompanyIdentity]], year: int, quarter: int) -> None:
         identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
@@ -330,7 +447,29 @@ class KoreaEarningsV2Pipeline:
             if write and discovered:
                 self._save_universes(discovered, year, quarter)
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
-            stored_current, manual_ids = self._stored_current_facts(identities, year, quarter)
+            previous_key = previous_period(year, quarter)
+            previous_universes = {
+                market_id: [
+                    _identity_from_universe(row)
+                    for row in self.repository.universe(market_id, *previous_key)
+                ]
+                for market_id in TARGETS
+            }
+            history_ids = {
+                row.company_id
+                for rows in [*universes.values(), *previous_universes.values()]
+                for row in rows
+            }
+            stored_rows = self.repository.company_periods(
+                history_ids,
+                [(year, quarter), previous_key, (year - 1, quarter)],
+            )
+            stored, manual_ids = self._stored_facts(stored_rows, (year, quarter))
+            stored_current = {
+                identity.company_id: stored[(identity.company_id, year, quarter)]
+                for identity in identities
+                if (identity.company_id, year, quarter) in stored
+            }
             selected = [row for row in identities if row.company_id not in manual_ids]
             if incremental:
                 provider_refresh = refresh_corp_codes or set()
@@ -369,17 +508,24 @@ class KoreaEarningsV2Pipeline:
                     if top_line is None:
                         issues.append({"company": identity.company_name, "field": "top_line", "reason": "provider value missing"})
             facts = {**preserved, **fresh_facts, **pending_top_lines}
-            histories = self._calculated_histories(facts)
-            markets = self._market_rows(universes, histories, year, quarter)
-            current_facts = [row for rows in histories.values() for row in rows if row.key == (year, quarter)]
-            current_markets = [row for rows in markets.values() for row in rows if row.key == (year, quarter)]
+            changed_ids = set(fresh_facts) | set(pending_top_lines)
+            current_by_company, company_window_rows = self._calculate_company_points(
+                facts, stored, changed_ids, year, quarter,
+            )
+            current_markets, market_window_rows = self._market_rows(
+                universes, previous_universes, current_by_company, stored, year, quarter,
+            )
+            current_facts = list(current_by_company.values())
             if write:
-                changed_ids = set(fresh_facts) | set(pending_top_lines)
                 self.repository.upsert_company_quarters(
                     row.db_row(calculation_version=CALCULATION_VERSION)
                     for row in current_facts if row.company_id in changed_ids
                 )
+                if company_window_rows:
+                    self.repository.upsert_seasonal_windows(company_window_rows)
                 self.repository.upsert_market_quarters(row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets)
+                if market_window_rows:
+                    self.repository.upsert_seasonal_windows(market_window_rows)
             ready = not issues and all(row.completion_status == "complete" for row in current_markets)
             status = "ready" if ready else "incomplete"
             summary = {
@@ -418,14 +564,47 @@ class KoreaEarningsV2Pipeline:
             universes[market_id] = [_identity_from_universe(row) for row in frozen]
 
         identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
-        stored_current, _manual_ids = self._stored_current_facts(identities, year, quarter)
-        histories = self._calculated_histories(stored_current)
-        markets = self._market_rows(universes, histories, year, quarter)
-        current_markets = [row for rows in markets.values() for row in rows if row.key == (year, quarter)]
+        previous_key = previous_period(year, quarter)
+        previous_universes = {
+            market_id: [
+                _identity_from_universe(row)
+                for row in self.repository.universe(market_id, *previous_key)
+            ]
+            for market_id in TARGETS
+        }
+        history_ids = {
+            row.company_id
+            for rows in [*universes.values(), *previous_universes.values()]
+            for row in rows
+        }
+        stored_rows = self.repository.company_periods(
+            history_ids,
+            [(year, quarter), previous_key, (year - 1, quarter)],
+        )
+        stored, _manual_ids = self._stored_facts(stored_rows, (year, quarter))
+        stored_current = {
+            identity.company_id: stored[(identity.company_id, year, quarter)]
+            for identity in identities
+            if (identity.company_id, year, quarter) in stored
+        }
+        current_by_company, company_window_rows = self._calculate_company_points(
+            stored_current, stored, set(stored_current), year, quarter,
+        )
+        current_markets, market_window_rows = self._market_rows(
+            universes, previous_universes, current_by_company, stored, year, quarter,
+        )
         if write:
+            self.repository.upsert_company_quarters(
+                row.db_row(calculation_version=CALCULATION_VERSION)
+                for row in current_by_company.values()
+            )
+            if company_window_rows:
+                self.repository.upsert_seasonal_windows(company_window_rows)
             self.repository.upsert_market_quarters(
                 row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets
             )
+            if market_window_rows:
+                self.repository.upsert_seasonal_windows(market_window_rows)
         return {
             "period": f"{year}Q{quarter}",
             "write": write,

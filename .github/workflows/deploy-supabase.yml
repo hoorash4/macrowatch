@@ -139,6 +139,10 @@ jobs:
           # was never applied and removes it when an earlier deploy reached it.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260902014500_remove_earnings_v2_margin_deltas.sql
+          # Incremental seasonal windows keep only the ten same-season samples
+          # needed by the active V2 calculation path.
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260903001000_add_earnings_v2_seasonal_windows.sql
 
       - name: Deploy Edge Functions
         run: |

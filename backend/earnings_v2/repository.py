@@ -76,9 +76,40 @@ class EarningsV2Repository:
         result = self.rpc("earnings_v2_get_company_quarters_many", {"p_company_ids": list(dict.fromkeys(company_ids))})
         return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
 
+    def company_periods(self, company_ids: Iterable[str], periods: Iterable[tuple[int, int]]) -> list[dict[str, Any]]:
+        unique_periods = list(dict.fromkeys(periods))
+        result = self.rpc("earnings_v2_get_company_quarters_for_periods", {
+            "p_company_ids": list(dict.fromkeys(company_ids)),
+            "p_periods": [
+                {"fiscal_year": year, "fiscal_quarter": quarter}
+                for year, quarter in unique_periods
+            ],
+        })
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
     def market_history(self, market_id: str) -> list[dict[str, Any]]:
         result = self.rpc("earnings_v2_get_market_quarters", {"p_market_id": market_id})
         return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
+    def market_periods(self, market_ids: Iterable[str], periods: Iterable[tuple[int, int]]) -> list[dict[str, Any]]:
+        result = self.rpc("earnings_v2_get_market_quarters_for_periods", {
+            "p_market_ids": list(dict.fromkeys(market_ids)),
+            "p_periods": [
+                {"market_year": year, "market_quarter": quarter}
+                for year, quarter in dict.fromkeys(periods)
+            ],
+        })
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
+    def seasonal_windows(self, entity_type: str, entity_ids: Iterable[str]) -> list[dict[str, Any]]:
+        result = self.rpc("earnings_v2_get_seasonal_windows", {
+            "p_entity_type": entity_type,
+            "p_entity_ids": list(dict.fromkeys(entity_ids)),
+        })
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
+    def upsert_seasonal_windows(self, rows: Iterable[dict[str, Any]]) -> int:
+        return int(self.rpc("earnings_v2_upsert_seasonal_windows", {"p_rows": list(rows)}) or 0)
 
     def universe(self, market_id: str, year: int, quarter: int) -> list[dict[str, Any]]:
         result = self.rpc("earnings_v2_v6_get_universe", {

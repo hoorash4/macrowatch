@@ -10,10 +10,12 @@ from earnings_v2.cli import completed_successfully, parser
 from earnings_v2.pipeline import KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.providers import KisClient, OpenDartClient
 from earnings_v2.transform import (
+    calculate_financial_point,
     calculate_financial_series,
     conventional_growth,
     extract_company_fact,
     profit_margin,
+    update_seasonal_window,
 )
 
 
@@ -103,8 +105,10 @@ class SimulatedRepository:
         }
         self.company_rows: dict[tuple[str, int, int], dict] = {}
         self.market_rows: dict[tuple[str, int, int], dict] = {}
+        self.seasonal_rows: dict[tuple[str, str, str, int], dict] = {}
         self.states: dict[str, dict] = {}
         self.saved_states: list[tuple[str, str, dict, str | None]] = []
+        self.company_period_calls: list[tuple[set[str], tuple[tuple[int, int], ...]]] = []
 
     def seed_company(self, company_id: str, *, top_line: Decimal | None = Decimal("100"),
                      operating_income: Decimal = Decimal("10"), net_income: Decimal = Decimal("8"),
@@ -123,8 +127,42 @@ class SimulatedRepository:
         wanted = set(company_ids)
         return [dict(row) for (company_id, _year, _quarter), row in self.company_rows.items() if company_id in wanted]
 
+    def company_periods(self, company_ids, periods):
+        wanted = set(company_ids)
+        wanted_periods = tuple(dict.fromkeys(periods))
+        self.company_period_calls.append((wanted, wanted_periods))
+        return [
+            dict(row)
+            for (company_id, year, quarter), row in self.company_rows.items()
+            if company_id in wanted and (year, quarter) in wanted_periods
+        ]
+
     def market_history(self, market_id):
         return [dict(row) for (stored_market, _year, _quarter), row in self.market_rows.items() if stored_market == market_id]
+
+    def market_periods(self, market_ids, periods):
+        wanted = set(market_ids)
+        wanted_periods = set(periods)
+        return [
+            dict(row)
+            for (market_id, year, quarter), row in self.market_rows.items()
+            if market_id in wanted and (year, quarter) in wanted_periods
+        ]
+
+    def seasonal_windows(self, entity_type, entity_ids):
+        wanted = set(entity_ids)
+        return [
+            dict(row)
+            for (stored_type, entity_id, _metric, _quarter), row in self.seasonal_rows.items()
+            if stored_type == entity_type and entity_id in wanted
+        ]
+
+    def upsert_seasonal_windows(self, rows):
+        materialized = list(rows)
+        for row in materialized:
+            key = (row["entity_type"], row["entity_id"], row["metric"], row["fiscal_quarter"])
+            self.seasonal_rows[key] = dict(row)
+        return len(materialized)
 
     def upsert_company_quarters(self, rows):
         materialized = list(rows)
@@ -386,6 +424,8 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(first["refreshed_companies"], 1)
         self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,), (target_corp,)])
         self.assertEqual(kis.calls, [])
+        self.assertTrue(repository.company_period_calls)
+        self.assertTrue(all(len(periods) == 3 for _companies, periods in repository.company_period_calls))
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["reported_company_count"], 100)
         self.assertEqual(repository.market_rows[("kr_kosdaq", 2026, 2)]["reported_company_count"], 50)
@@ -581,6 +621,33 @@ class GrowthAndAggregationTests(unittest.TestCase):
         calculated = calculate_financial_series(rows)
         self.assertEqual(calculated[1].operating_income_qoq_state, "insufficient_history")
         self.assertEqual(calculated[-1].operating_income_qoq_state, "normal")
+
+    def test_incremental_point_uses_saved_window_without_recalculating_history(self):
+        current = fact(2026, 2, "130")
+        calculated, raw = calculate_financial_point(
+            current,
+            previous=fact(2026, 1, "100"),
+            prior_year=fact(2025, 2, "110"),
+            seasonal_samples={
+                "operating_income": [Decimal("10"), Decimal("20")],
+                "net_income": [Decimal("10"), Decimal("20")],
+            },
+        )
+        self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("15"))
+        self.assertEqual(raw["operating_income"], Decimal("30"))
+
+    def test_seasonal_window_replaces_same_year_and_keeps_only_ten_samples(self):
+        years, values = update_seasonal_window(
+            range(2015, 2025),
+            [Decimal(year) for year in range(2015, 2025)],
+            year=2025,
+            value=Decimal("99"),
+        )
+        self.assertEqual(years, list(range(2016, 2026)))
+        self.assertEqual(values[-1], Decimal("99"))
+        years, values = update_seasonal_window(years, values, year=2025, value=Decimal("100"))
+        self.assertEqual(len(years), 10)
+        self.assertEqual(values[-1], Decimal("100"))
 
     def test_loss_to_loss_growth_uses_absolute_prior_denominator(self):
         self.assertEqual(conventional_growth(Decimal("-70"), Decimal("-100")), (Decimal("30.0"), "normal"))

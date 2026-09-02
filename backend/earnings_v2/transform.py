@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -206,47 +207,107 @@ def _ordinal(year: int, quarter: int) -> int:
     return year * 4 + quarter - 1
 
 
+def calculate_financial_point(
+    row: FinancialFact,
+    *,
+    previous: FinancialFact | None,
+    prior_year: FinancialFact | None,
+    seasonal_samples: dict[str, list[Decimal]] | None = None,
+) -> tuple[FinancialFact, dict[str, Decimal | None]]:
+    """한 분기만 계산하고, 다음 계절창에 넣을 원시 QoQ를 함께 반환한다.
+
+    ``seasonal_samples``에는 현재 분기보다 앞선 동일 계절 전환값만 들어온다.
+    따라서 신규 공시 처리에서는 과거 분기 전체를 다시 계산할 필요가 없다.
+    """
+    samples_by_metric = seasonal_samples or {}
+    updates: dict[str, Any] = {
+        "operating_margin_pct": profit_margin(row.operating_income, row.top_line),
+        "net_margin_pct": profit_margin(row.net_income, row.top_line),
+    }
+    raw_samples: dict[str, Decimal | None] = {}
+    for field, prefix in (("operating_income", "operating_income"), ("net_income", "net_income")):
+        compatible_year = (
+            prior_year is not None
+            and row.currency == prior_year.currency
+            and row.consolidation_scope == prior_year.consolidation_scope
+        )
+        yoy = conventional_growth(getattr(row, field), getattr(prior_year, field) if compatible_year else None)
+        if prior_year is not None and not compatible_year:
+            yoy = (None, "currency_mismatch" if row.currency != prior_year.currency else "scope_mismatch")
+        updates[f"{prefix}_yoy_pct"], updates[f"{prefix}_yoy_state"] = yoy
+
+        consecutive = (
+            previous is not None
+            and _ordinal(row.fiscal_year, row.fiscal_quarter)
+            - _ordinal(previous.fiscal_year, previous.fiscal_quarter) == 1
+        )
+        compatible = (
+            consecutive
+            and row.currency == previous.currency
+            and row.consolidation_scope == previous.consolidation_scope
+        )
+        raw = conventional_growth(getattr(row, field), getattr(previous, field) if compatible else None)
+        if previous is not None and consecutive and not compatible:
+            raw = (None, "currency_mismatch" if row.currency != previous.currency else "scope_mismatch")
+        raw_samples[prefix] = raw[0] if raw[1] == "normal" else None
+        if raw[1] != "normal" or raw[0] is None:
+            qoq = raw
+        else:
+            samples = samples_by_metric.get(prefix, [])[-MAX_SEASONAL_SAMPLES:]
+            qoq = (
+                (raw[0] - Decimal(str(median(samples))), "normal")
+                if len(samples) >= MIN_SEASONAL_SAMPLES
+                else (None, "insufficient_history")
+            )
+        updates[f"{prefix}_qoq_sa_pct"], updates[f"{prefix}_qoq_state"] = qoq
+    return row.with_changes(is_pending=row.is_pending or not row.fully_complete, **updates), raw_samples
+
+
 def calculate_financial_series(rows: Iterable[FinancialFact]) -> list[FinancialFact]:
     ordered = sorted(rows, key=lambda row: row.key)
     by_key = {row.key: row for row in ordered}
     result: list[FinancialFact] = []
-    for index, row in enumerate(ordered):
-        updates: dict[str, Any] = {
-            "operating_margin_pct": profit_margin(row.operating_income, row.top_line),
-            "net_margin_pct": profit_margin(row.net_income, row.top_line),
+    windows: dict[tuple[str, int], list[Decimal]] = defaultdict(list)
+    for row in ordered:
+        samples = {
+            prefix: windows[(prefix, row.fiscal_quarter)]
+            for prefix in ("operating_income", "net_income")
         }
-        for field, prefix in (("operating_income", "operating_income"), ("net_income", "net_income")):
-            prior_year = by_key.get((row.fiscal_year - 1, row.fiscal_quarter))
-            compatible_year = prior_year is not None and row.currency == prior_year.currency and row.consolidation_scope == prior_year.consolidation_scope
-            yoy = conventional_growth(getattr(row, field), getattr(prior_year, field) if compatible_year else None)
-            if prior_year is not None and not compatible_year:
-                yoy = (None, "currency_mismatch" if row.currency != prior_year.currency else "scope_mismatch")
-            updates[f"{prefix}_yoy_pct"], updates[f"{prefix}_yoy_state"] = yoy
-
-            previous = ordered[index - 1] if index else None
-            consecutive = previous is not None and _ordinal(row.fiscal_year, row.fiscal_quarter) - _ordinal(previous.fiscal_year, previous.fiscal_quarter) == 1
-            compatible = consecutive and row.currency == previous.currency and row.consolidation_scope == previous.consolidation_scope
-            raw = conventional_growth(getattr(row, field), getattr(previous, field) if compatible else None)
-            if previous is not None and consecutive and not compatible:
-                raw = (None, "currency_mismatch" if row.currency != previous.currency else "scope_mismatch")
-            if raw[1] != "normal" or raw[0] is None:
-                qoq = raw
-            else:
-                samples: list[Decimal] = []
-                # 목표 시점 이전의 동일 분기 전환만 사용한다. 최근 최대 10년이며
-                # 두 표본보다 적으면 계절조정값을 만들지 않는다.
-                for candidate_index in range(1, index):
-                    candidate = ordered[candidate_index]
-                    prior = ordered[candidate_index - 1]
-                    if candidate.fiscal_quarter != row.fiscal_quarter:
-                        continue
-                    if _ordinal(candidate.fiscal_year, candidate.fiscal_quarter) - _ordinal(prior.fiscal_year, prior.fiscal_quarter) != 1:
-                        continue
-                    value, state = conventional_growth(getattr(candidate, field), getattr(prior, field))
-                    if state == "normal" and value is not None:
-                        samples.append(value)
-                samples = samples[-MAX_SEASONAL_SAMPLES:]
-                qoq = (raw[0] - Decimal(str(median(samples))), "normal") if len(samples) >= MIN_SEASONAL_SAMPLES else (None, "insufficient_history")
-            updates[f"{prefix}_qoq_sa_pct"], updates[f"{prefix}_qoq_state"] = qoq
-        result.append(row.with_changes(is_pending=row.is_pending or not row.fully_complete, **updates))
+        calculated, raw = calculate_financial_point(
+            row,
+            previous=by_key.get(previous_period_key(row.fiscal_year, row.fiscal_quarter)),
+            prior_year=by_key.get((row.fiscal_year - 1, row.fiscal_quarter)),
+            seasonal_samples=samples,
+        )
+        result.append(calculated)
+        for prefix, value in raw.items():
+            if value is not None:
+                window = windows[(prefix, row.fiscal_quarter)]
+                window.append(value)
+                del window[:-MAX_SEASONAL_SAMPLES]
     return result
+
+
+def previous_period_key(year: int, quarter: int) -> tuple[int, int]:
+    return (year - 1, 4) if quarter == 1 else (year, quarter - 1)
+
+
+def update_seasonal_window(
+    sample_years: Iterable[int],
+    sample_values: Iterable[Decimal],
+    *,
+    year: int,
+    value: Decimal | None,
+) -> tuple[list[int], list[Decimal]]:
+    """같은 연도의 표본을 교체하고 최근 10개만 남긴다.
+
+    정정으로 정상 QoQ가 아니게 된 경우 ``value=None``을 전달하면 해당
+    연도 표본이 제거된다. 원본 분기 실적은 이 캐시 정리와 무관하게 보존한다.
+    """
+    samples = {int(sample_year): sample_value for sample_year, sample_value in zip(sample_years, sample_values)}
+    if value is None:
+        samples.pop(year, None)
+    else:
+        samples[year] = value
+    retained = sorted(samples.items())[-MAX_SEASONAL_SAMPLES:]
+    return [sample_year for sample_year, _ in retained], [sample_value for _, sample_value in retained]

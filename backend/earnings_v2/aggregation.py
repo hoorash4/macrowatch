@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from .models import CompanyIdentity, FinancialFact, MarketFact
-from .transform import calculate_financial_series
+from .transform import calculate_financial_point, calculate_financial_series
 
 
 ZERO = Decimal(0)
@@ -143,3 +143,47 @@ def calculate_market_series(rows: Iterable[MarketFact]) -> list[MarketFact]:
         )
         for source, metric in zip(ordered, metrics, strict=True)
     ]
+
+
+def calculate_market_point(
+    row: MarketFact,
+    *,
+    previous: MarketFact | None,
+    prior_year: MarketFact | None,
+    seasonal_samples: dict[str, list[Decimal]] | None = None,
+) -> tuple[MarketFact, dict[str, Decimal | None]]:
+    """시장 합계 한 분기만 기업과 동일한 산식으로 계산한다."""
+    def synthetic(source: MarketFact | None) -> FinancialFact | None:
+        if source is None:
+            return None
+        return FinancialFact(
+            company_id=source.market_id,
+            fiscal_year=source.market_year,
+            fiscal_quarter=source.market_quarter,
+            period_end=source.reference_date,
+            top_line=source.top_line_total,
+            operating_income=source.operating_income_total,
+            net_income=source.net_income_total,
+            currency="UNIT",
+            consolidation_scope="CFS",
+            source_filing_id="market",
+            filing_date=source.reference_date,
+            is_pending=source.completion_status == "collecting",
+        )
+
+    metric, raw_samples = calculate_financial_point(
+        synthetic(row),
+        previous=synthetic(previous),
+        prior_year=synthetic(prior_year),
+        seasonal_samples=seasonal_samples,
+    )
+    return row.with_changes(
+        operating_income_yoy_pct=metric.operating_income_yoy_pct,
+        operating_income_yoy_state=metric.operating_income_yoy_state,
+        net_income_yoy_pct=metric.net_income_yoy_pct,
+        net_income_yoy_state=metric.net_income_yoy_state,
+        operating_income_qoq_sa_pct=metric.operating_income_qoq_sa_pct,
+        operating_income_qoq_state=metric.operating_income_qoq_state,
+        net_income_qoq_sa_pct=metric.net_income_qoq_sa_pct,
+        net_income_qoq_state=metric.net_income_qoq_state,
+    ), raw_samples
