@@ -108,8 +108,18 @@ class OpenDartClient:
                         chunks.append(chunk)
                 return b"".join(chunks)
             payload = response.json()
-        except Exception:
-            raise ProviderError(f"OpenDART {endpoint} request failed") from None
+        except ProviderError:
+            raise
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            raise ProviderError(f"OpenDART {endpoint} returned HTTP {status}") from None
+        except requests.exceptions.Timeout as exc:
+            raise ProviderError(f"OpenDART {endpoint} timed out ({type(exc).__name__})") from None
+        except requests.exceptions.RequestException as exc:
+            raise ProviderError(f"OpenDART {endpoint} transport failed ({type(exc).__name__})") from None
+        except Exception as exc:
+            # API 키·URL·응답 본문은 노출하지 않고 실패 종류만 남긴다.
+            raise ProviderError(f"OpenDART {endpoint} request failed ({type(exc).__name__})") from None
         if not isinstance(payload, dict):
             raise ProviderError(f"OpenDART {endpoint} returned invalid JSON")
         status = str(payload.get("status") or "")

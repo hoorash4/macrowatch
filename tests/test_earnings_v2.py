@@ -296,6 +296,7 @@ class OpenDartTransportTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as captured:
             client.multi_accounts(["00000001"], 2026, 1)
         self.assertNotIn("secret", str(captured.exception))
+        self.assertIn("RuntimeError", str(captured.exception))
 
     def test_periodic_filings_preserve_unique_receipt_numbers(self):
         class Response:
