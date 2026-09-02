@@ -1,0 +1,73 @@
+name: Temporary Samsung Life FSC probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Inspect Samsung Life and quarterly coverage
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        shell: python
+        run: |
+          import collections
+          import json
+          import os
+          import subprocess
+          import time
+          import urllib.parse
+
+          key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
+          if not key:
+              raise SystemExit("DATA_GO_KR_SERVICE_KEY is missing")
+          base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
+          query = urllib.parse.urlencode({
+              "serviceKey": key, "pageNo": 1, "numOfRows": 1000, "resultType": "json",
+          }, safe="%")
+          raw = None
+          for attempt in range(1, 4):
+              started = time.monotonic()
+              proc = subprocess.run(
+                  ["curl", "-4", "--http1.1", "--silent", "--show-error", "--fail-with-body",
+                   "--connect-timeout", "8", "--max-time", "60", base + "?" + query],
+                  text=True, capture_output=True
+              )
+              elapsed = time.monotonic() - started
+              print(f"ATTEMPT={attempt} exit={proc.returncode} elapsed={elapsed:.1f}s", flush=True)
+              if proc.returncode == 0:
+                  raw = proc.stdout
+                  break
+              print("ERROR=", proc.stderr.strip(), flush=True)
+              if proc.stdout or elapsed > 12:
+                  break
+              time.sleep(2)
+          if raw is None:
+              raise SystemExit("API request failed")
+
+          payload = json.loads(raw)
+          response = payload.get("response", {})
+          header = response.get("header", {})
+          body = response.get("body", {})
+          wrapped = body.get("items", {})
+          items = wrapped.get("item", []) if isinstance(wrapped, dict) else wrapped
+          if isinstance(items, dict):
+              items = [items]
+          if not isinstance(items, list):
+              items = []
+
+          samsung_crno = "1101110005953"
+          samsung = [row for row in items if str(row.get("crno")) == samsung_crno]
+          year_counts = collections.Counter(str(row.get("bizYear")) for row in items if row.get("bizYear"))
+          monthday_counts = collections.Counter(str(row.get("basDt"))[4:] for row in items if row.get("basDt"))
+          latest = max((str(row.get("basDt")) for row in items if row.get("basDt")), default=None)
+          print(f"GLOBAL header={json.dumps(header, ensure_ascii=False)} total={body.get('totalCount')} returned={len(items)} latest={latest}", flush=True)
+          print("YEAR_COUNTS=", json.dumps(dict(sorted(year_counts.items())), ensure_ascii=False), flush=True)
+          print("MONTHDAY_COUNTS=", json.dumps(dict(sorted(monthday_counts.items())), ensure_ascii=False), flush=True)
+          print(f"SAMSUNG_LIFE crno={samsung_crno} count={len(samsung)}", flush=True)
+          print("SAMSUNG_ROWS=", json.dumps(samsung, ensure_ascii=False), flush=True)
