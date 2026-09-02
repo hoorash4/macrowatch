@@ -450,13 +450,27 @@ class OpenDartTransportTests(unittest.TestCase):
 
         client = Client()
         self.assertEqual(client.company_profile("00123456"), {"industry_code": "64110"})
-        self.assertEqual(client.single_accounts("00123456", 2026, 2, "CFS"), [{"corp_code": "00123456"}])
+        self.assertEqual(client.single_accounts("00123456", 2026, 2, "CFS"), [
+            {"corp_code": "00123456", "fs_div": "CFS"},
+        ])
         self.assertEqual(client.requests, [
             ("company.json", {"corp_code": "00123456"}, False),
             ("fnlttSinglAcntAll.json", {
                 "corp_code": "00123456", "bsns_year": "2026",
                 "reprt_code": "11012", "fs_div": "CFS",
             }, False),
+        ])
+
+    def test_single_accounts_preserves_provider_scope_when_present(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+
+            def _get(self, endpoint, params, *, binary=False):
+                return {"status": "000", "list": [{"fs_div": "OFS", "account_nm": "영업수익"}]}
+
+        self.assertEqual(Client().single_accounts("00123456", 2026, 1, "CFS"), [
+            {"fs_div": "OFS", "account_nm": "영업수익"},
         ])
 
     def test_periodic_filing_period_uses_report_reference_month(self):
@@ -1239,15 +1253,28 @@ class QuarterlyExtractionTests(unittest.TestCase):
         self.assertEqual(value.top_line, Decimal("80"))
         self.assertEqual(value.source_top_line_cumulative, Decimal("250"))
 
-    def test_cfs_and_ofs_are_not_mixed(self):
+    def test_cfs_is_preferred_even_when_ofs_is_more_complete(self):
         current = [
             row("1", "매출액", current="100", cumulative="100", scope="CFS"),
             row("1", "영업이익", current="20", cumulative="20", scope="CFS"),
             *complete("1", current="50", cumulative="50", scope="OFS"),
         ]
         value = extract_company_fact("1", "kr:1", 2026, 1, current, [])
-        self.assertEqual(value.consolidation_scope, "OFS")
-        self.assertEqual(value.net_income, Decimal("50"))
+        self.assertEqual(value.consolidation_scope, "CFS")
+        self.assertIsNone(value.net_income)
+
+    def test_scope_change_does_not_block_cumulative_subtraction(self):
+        previous = extract_company_fact(
+            "1", "kr:1", 2026, 1,
+            complete("1", current="40", cumulative="40", scope="OFS"),
+        )
+        current = extract_company_fact(
+            "1", "kr:1", 2026, 2,
+            complete("1", current="60", cumulative="100", scope="CFS"),
+            previous_fact=previous,
+        )
+        self.assertEqual(current.consolidation_scope, "CFS")
+        self.assertEqual(current.top_line, Decimal("60"))
 
     def test_income_leaves_are_not_summed_as_top_line(self):
         current = [
@@ -1399,6 +1426,21 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("15"))
         self.assertEqual(raw["operating_income"], Decimal("30"))
 
+    def test_scope_change_does_not_block_yoy_or_qoq(self):
+        current = fact(2026, 2, "130").with_changes(consolidation_scope="CFS")
+        calculated, raw = calculate_financial_point(
+            current,
+            previous=fact(2026, 1, "100").with_changes(consolidation_scope="OFS"),
+            prior_year=fact(2025, 2, "100").with_changes(consolidation_scope="OFS"),
+            seasonal_samples={
+                "operating_income": [Decimal("10"), Decimal("20")],
+                "net_income": [Decimal("10"), Decimal("20")],
+            },
+        )
+        self.assertEqual(calculated.operating_income_yoy_pct, Decimal("30.0"))
+        self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("15"))
+        self.assertEqual(raw["operating_income"], Decimal("30"))
+
     def test_seasonal_window_replaces_same_year_and_keeps_only_ten_samples(self):
         years, values = update_seasonal_window(
             range(2015, 2025),
@@ -1511,3 +1553,4 @@ class GrowthAndAggregationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

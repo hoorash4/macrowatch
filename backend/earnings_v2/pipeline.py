@@ -340,7 +340,9 @@ class KoreaEarningsV2Pipeline:
                 )
             if candidate is not None:
                 best = candidate
-            if best is not None and best.fully_complete:
+            # 연결 손익계산서가 존재하면 완결 여부와 무관하게 연결을 쓴다.
+            # 빠진 항목은 별도재무제표와 섞지 않고 KIS 경로에서 보완한다.
+            if best is not None:
                 break
         if best is None or (existing_count and best.consolidation_scope != fact.consolidation_scope):
             return fact
@@ -994,3 +996,4 @@ class KoreaEarningsV2Pipeline:
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
         return results
+

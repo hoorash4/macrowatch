@@ -52,6 +52,20 @@ def _statement_rows(rows: Iterable[dict[str, Any]], scope: str) -> list[dict[str
     ]
 
 
+def _preferred_statement_rows(
+    rows: Iterable[dict[str, Any]],
+    required_scope: str | None = None,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """연결을 우선하고 연결 손익계산서가 없을 때만 별도를 선택한다."""
+    scopes = (required_scope,) if required_scope in {"CFS", "OFS"} else ("CFS", "OFS")
+    materialized = list(rows)
+    for scope in scopes:
+        selected = _statement_rows(materialized, scope)
+        if selected:
+            return scope, selected
+    return None, []
+
+
 def _metric_row(
     rows: Iterable[dict[str, Any]],
     accepted_ids: set[str],
@@ -114,12 +128,11 @@ def _stored_cumulative(
     previous_fact: FinancialFact | None,
     field: str,
     *,
-    scope: str,
     source_currency: str,
 ) -> Decimal | None:
     if previous_fact is None:
         return None
-    if previous_fact.consolidation_scope != scope or previous_fact.source_currency != source_currency:
+    if previous_fact.source_currency != source_currency:
         return None
     return getattr(previous_fact, f"source_{field}_cumulative")
 
@@ -153,67 +166,53 @@ def extract_company_fact(
     경우에만 호출자가 채우는 제한적 공급자 폴백이다.
     """
     previous_rows = previous_rows or []
-    candidates: list[FinancialFact] = []
-    scopes = (consolidation_scope,) if consolidation_scope in {"CFS", "OFS"} else ("CFS", "OFS")
-    for scope in scopes:
-        current = _statement_rows(current_rows, scope)
-        previous = _statement_rows(previous_rows, scope)
-        if not current:
-            continue
-        current_op = _metric_row(current, OP_IDS, OP_NAMES)
-        current_net = _metric_row(current, NET_IDS, NET_NAMES)
-        current_top = _top_line_row(current)
-        previous_op = _metric_row(previous, OP_IDS, OP_NAMES)
-        previous_net = _metric_row(previous, NET_IDS, NET_NAMES)
-        previous_top = _top_line_row(previous)
-        filing_id, filing_date = _filing_identity(current, year, quarter, corp_code)
-        representative = current_op or current_net or current_top or current[0]
-        source_currency = str(representative.get("currency") or "KRW").strip().upper()
-        current_cumulative = {
-            "top_line": _cumulative_amount(current_top, quarter),
-            "operating_income": _cumulative_amount(current_op, quarter),
-            "net_income": _cumulative_amount(current_net, quarter),
-        }
-        fallback_previous = {
-            "top_line": _cumulative_amount(previous_top, quarter - 1),
-            "operating_income": _cumulative_amount(previous_op, quarter - 1),
-            "net_income": _cumulative_amount(previous_net, quarter - 1),
-        } if quarter > 1 else {"top_line": None, "operating_income": None, "net_income": None}
-        previous_cumulative = {}
-        for field in current_cumulative:
-            stored_value = _stored_cumulative(
-                previous_fact, field, scope=scope, source_currency=source_currency,
-            )
-            previous_cumulative[field] = (
-                stored_value if stored_value is not None else fallback_previous[field]
-            )
-        fact = FinancialFact(
-            company_id=company_id,
-            fiscal_year=year,
-            fiscal_quarter=quarter,
-            period_end=date(year, quarter * 3, 31 if quarter in {1, 4} else 30),
-            top_line=_standalone(current_cumulative["top_line"], previous_cumulative["top_line"], quarter),
-            operating_income=_standalone(current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter),
-            net_income=_standalone(current_cumulative["net_income"], previous_cumulative["net_income"], quarter),
-            currency=source_currency,
-            consolidation_scope=scope,
-            source_filing_id=filing_id,
-            filing_date=filing_date,
-            source_currency=source_currency,
-            source_top_line_cumulative=current_cumulative["top_line"],
-            source_operating_income_cumulative=current_cumulative["operating_income"],
-            source_net_income_cumulative=current_cumulative["net_income"],
-        )
-        candidates.append(fact)
-    if not candidates:
+    scope, current = _preferred_statement_rows(current_rows, consolidation_scope)
+    if scope is None:
         return None
-    # 동일 확보 개수면 연결을 우선한다. 서로 다른 범위의 필드를 합치지 않는다.
-    return max(
-        candidates,
-        key=lambda row: (
-            sum(value is not None for value in (row.top_line, row.operating_income, row.net_income)),
-            1 if row.consolidation_scope == "CFS" else 0,
-        ),
+    _, previous = _preferred_statement_rows(previous_rows)
+    current_op = _metric_row(current, OP_IDS, OP_NAMES)
+    current_net = _metric_row(current, NET_IDS, NET_NAMES)
+    current_top = _top_line_row(current)
+    previous_op = _metric_row(previous, OP_IDS, OP_NAMES)
+    previous_net = _metric_row(previous, NET_IDS, NET_NAMES)
+    previous_top = _top_line_row(previous)
+    filing_id, filing_date = _filing_identity(current, year, quarter, corp_code)
+    representative = current_op or current_net or current_top or current[0]
+    source_currency = str(representative.get("currency") or "KRW").strip().upper()
+    current_cumulative = {
+        "top_line": _cumulative_amount(current_top, quarter),
+        "operating_income": _cumulative_amount(current_op, quarter),
+        "net_income": _cumulative_amount(current_net, quarter),
+    }
+    fallback_previous = {
+        "top_line": _cumulative_amount(previous_top, quarter - 1),
+        "operating_income": _cumulative_amount(previous_op, quarter - 1),
+        "net_income": _cumulative_amount(previous_net, quarter - 1),
+    } if quarter > 1 else {"top_line": None, "operating_income": None, "net_income": None}
+    previous_cumulative = {}
+    for field in current_cumulative:
+        stored_value = _stored_cumulative(
+            previous_fact, field, source_currency=source_currency,
+        )
+        previous_cumulative[field] = (
+            stored_value if stored_value is not None else fallback_previous[field]
+        )
+    return FinancialFact(
+        company_id=company_id,
+        fiscal_year=year,
+        fiscal_quarter=quarter,
+        period_end=date(year, quarter * 3, 31 if quarter in {1, 4} else 30),
+        top_line=_standalone(current_cumulative["top_line"], previous_cumulative["top_line"], quarter),
+        operating_income=_standalone(current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter),
+        net_income=_standalone(current_cumulative["net_income"], previous_cumulative["net_income"], quarter),
+        currency=source_currency,
+        consolidation_scope=scope,
+        source_filing_id=filing_id,
+        filing_date=filing_date,
+        source_currency=source_currency,
+        source_top_line_cumulative=current_cumulative["top_line"],
+        source_operating_income_cumulative=current_cumulative["operating_income"],
+        source_net_income_cumulative=current_cumulative["net_income"],
     )
 
 
@@ -264,11 +263,10 @@ def calculate_financial_point(
         compatible_year = (
             prior_year is not None
             and row.currency == prior_year.currency
-            and row.consolidation_scope == prior_year.consolidation_scope
         )
         yoy = conventional_growth(getattr(row, field), getattr(prior_year, field) if compatible_year else None)
         if prior_year is not None and not compatible_year:
-            yoy = (None, "currency_mismatch" if row.currency != prior_year.currency else "scope_mismatch")
+            yoy = (None, "currency_mismatch")
         updates[f"{prefix}_yoy_pct"], updates[f"{prefix}_yoy_state"] = yoy
 
         consecutive = (
@@ -279,11 +277,10 @@ def calculate_financial_point(
         compatible = (
             consecutive
             and row.currency == previous.currency
-            and row.consolidation_scope == previous.consolidation_scope
         )
         raw = conventional_growth(getattr(row, field), getattr(previous, field) if compatible else None)
         if previous is not None and consecutive and not compatible:
-            raw = (None, "currency_mismatch" if row.currency != previous.currency else "scope_mismatch")
+            raw = (None, "currency_mismatch")
         raw_samples[prefix] = raw[0] if raw[1] == "normal" else None
         if raw[1] != "normal" or raw[0] is None:
             qoq = raw

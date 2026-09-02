@@ -198,13 +198,25 @@ class OpenDartClient:
         quarter: int,
         consolidation_scope: str,
     ) -> list[dict[str, Any]]:
+        scope = consolidation_scope.strip().upper()
         payload = self._get("fnlttSinglAcntAll.json", {
             "corp_code": corp_code,
             "bsns_year": str(year),
             "reprt_code": REPORT_CODES[quarter],
-            "fs_div": consolidation_scope,
+            "fs_div": scope,
         })
-        return [row for row in payload.get("list", []) if isinstance(row, dict)]
+        rows: list[dict[str, Any]] = []
+        for raw in payload.get("list", []):
+            if not isinstance(raw, dict):
+                continue
+            row = dict(raw)
+            # fnlttSinglAcntAll은 fs_div로 범위를 지정해도 응답 행에는
+            # fs_div를 싣지 않는다. 요청으로 이미 확정된 범위를 보존해야
+            # 공통 변환기가 개별 호출 결과를 같은 계약으로 처리할 수 있다.
+            if not str(row.get("fs_div") or "").strip():
+                row["fs_div"] = scope
+            rows.append(row)
+        return rows
 
     def periodic_filings(self, start: date, end: date) -> list[PeriodicFiling]:
         """접수번호로 중복을 구분할 수 있는 정기공시 목록을 반환한다."""
@@ -478,3 +490,4 @@ class EcosFxClient:
         latest = max(candidates, key=lambda item: item[0])
         self.cache[reference_date] = latest
         return latest
+
