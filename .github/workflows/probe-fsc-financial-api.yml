@@ -1,0 +1,56 @@
+name: Temporary FSC financial API probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe 2015 KB Financial records
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        shell: python
+        run: |
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          key = os.environ.get("DATA_GO_KR_SERVICE_KEY", "").strip()
+          if not key:
+              raise SystemExit("DATA_GO_KR_SERVICE_KEY is missing")
+
+          base = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2"
+          query = (
+              f"?serviceKey={key}&numOfRows=100&pageNo=1&resultType=json"
+              "&crno=1101113975517&bizYear=2015"
+          )
+          request = urllib.request.Request(base + query, headers={"User-Agent": "MacroWatch-FSC-Probe/1.0"})
+          with urllib.request.urlopen(request, timeout=45) as response:
+              raw = response.read().decode("utf-8", errors="replace")
+              print("http_status=", response.status)
+              print("content_type=", response.headers.get("content-type"))
+
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError:
+              print("response_prefix=", raw[:500])
+              raise SystemExit("API did not return JSON")
+
+          header = payload.get("FnCoSummFinaStat_header") or payload.get("response", {}).get("header") or {}
+          body = payload.get("FnCoSummFinaStat_body") or payload.get("response", {}).get("body") or {}
+          items = body.get("items", {}).get("item", [])
+          if isinstance(items, dict):
+              items = [items]
+          safe_fields = (
+              "basDt", "bizYear", "rptCd", "rptCdNm", "fnclDcd", "fnclDcdNm",
+              "fncoSaleAmt", "fncoBzopPft", "iclsPalClcAmt", "fncoCrtmNpf", "curCd"
+          )
+          print("result=", json.dumps(header, ensure_ascii=False))
+          print("total_count=", body.get("totalCount"))
+          print("records=", json.dumps([{k: row.get(k) for k in safe_fields} for row in items], ensure_ascii=False))
