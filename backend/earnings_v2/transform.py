@@ -102,7 +102,9 @@ def _cumulative_amount(row: dict[str, Any] | None, quarter: int) -> Decimal | No
         return None
     # OpenDART와 KIS의 보완 경로를 같은 계약으로 맞춘다. 원천의 당기값은
     # 사용하지 않고, 연초부터의 누적값만 받아 직전 누적값을 차감한다.
-    return decimal_value(row.get("thstrm_add_amount"))
+    # 연간보고서에는 연간 누적값이 thstrm_amount로 제공된다.
+    source_field = "thstrm_amount" if quarter == 4 else "thstrm_add_amount"
+    return decimal_value(row.get(source_field))
 
 
 def _standalone(current: Decimal | None, previous: Decimal | None, quarter: int) -> Decimal | None:

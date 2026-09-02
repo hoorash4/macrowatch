@@ -682,10 +682,11 @@ class QuarterlyExtractionTests(unittest.TestCase):
     def test_q4_uses_annual_minus_q3_cumulative(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2026, 4,
-            complete("00000001", current="250", cumulative="250"),
+            complete("00000001", current="250", cumulative=""),
             complete("00000001", current="70", cumulative="170"),
         )
         self.assertEqual(value.top_line, Decimal("80"))
+        self.assertEqual(value.source_top_line_cumulative, Decimal("250"))
 
     def test_cfs_and_ofs_are_not_mixed(self):
         current = [
