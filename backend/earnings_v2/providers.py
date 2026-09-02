@@ -251,7 +251,7 @@ class KrxClient:
 
 
 class KisClient:
-    """OpenDART에서 매출만 빠진 국내 기업을 보충한다."""
+    """OpenDART에서 빠진 국내 분기 손익을 KIS 누적값으로 보충한다."""
 
     def __init__(
         self,
@@ -301,7 +301,7 @@ class KisClient:
         self._token = token
         return token
 
-    def quarter_top_line(self, ticker: str, year: int, quarter: int) -> Decimal | None:
+    def quarter_financials(self, ticker: str, year: int, quarter: int) -> dict[str, Decimal | None]:
         remaining = self.interval - (time.monotonic() - self._last_request)
         if self._last_request and remaining > 0:
             time.sleep(remaining)
@@ -324,21 +324,31 @@ class KisClient:
                 raise RuntimeError
         except Exception:
             raise ProviderError(f"KIS top-line request failed for {ticker}") from None
-        cumulative: dict[int, Decimal] = {}
+        fields = {
+            "top_line": "sale_account",
+            "operating_income": "bsop_prti",
+            "net_income": "thtr_ntin",
+        }
+        cumulative: dict[str, dict[int, Decimal]] = {field: {} for field in fields}
         for row in payload.get("output", []) if isinstance(payload, dict) else []:
             period = re.sub(r"\D", "", str(row.get("stac_yymm") or ""))
-            amount = _decimal(row.get("sale_account"))
-            if len(period) != 6 or int(period[:4]) != year or amount is None:
+            if len(period) != 6 or int(period[:4]) != year:
                 continue
             month = int(period[4:])
             if month in {3, 6, 9, 12}:
-                cumulative[month // 3] = amount
-        current = cumulative.get(quarter)
-        previous = cumulative.get(quarter - 1) if quarter > 1 else Decimal(0)
-        if current is None or previous is None:
-            return None
-        # KIS 손익계산서 단위는 억원이다.
-        return (current - previous) * Decimal("100000000")
+                for field, response_key in fields.items():
+                    amount = _decimal(row.get(response_key))
+                    if amount is not None:
+                        cumulative[field][month // 3] = amount
+        result: dict[str, Decimal | None] = {}
+        for field, values in cumulative.items():
+            current = values.get(quarter)
+            previous = values.get(quarter - 1) if quarter > 1 else Decimal(0)
+            result[field] = (
+                (current - previous) * Decimal("100000000")
+                if current is not None and previous is not None else None
+            )
+        return result
 
 
 class EcosFxClient:

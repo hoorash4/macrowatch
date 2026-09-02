@@ -100,11 +100,9 @@ def _top_line_row(rows: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
 def _cumulative_amount(row: dict[str, Any] | None, quarter: int) -> Decimal | None:
     if row is None:
         return None
-    if quarter == 1:
-        return decimal_value(row.get("thstrm_add_amount")) or decimal_value(row.get("thstrm_amount"))
-    if quarter in {2, 3}:
-        return decimal_value(row.get("thstrm_add_amount"))
-    return decimal_value(row.get("thstrm_amount")) or decimal_value(row.get("thstrm_add_amount"))
+    # OpenDART와 KIS의 보완 경로를 같은 계약으로 맞춘다. 원천의 당기값은
+    # 사용하지 않고, 연초부터의 누적값만 받아 직전 누적값을 차감한다.
+    return decimal_value(row.get("thstrm_add_amount"))
 
 
 def _standalone(current: Decimal | None, previous: Decimal | None, quarter: int) -> Decimal | None:

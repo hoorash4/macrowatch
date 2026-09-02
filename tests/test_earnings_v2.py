@@ -217,13 +217,20 @@ class SimulatedKis:
     def request_count(self):
         return len(self.calls)
 
-    def quarter_top_line(self, ticker, year, quarter):
+    def quarter_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
-        return self.values.get(ticker)
+        value = self.values.get(ticker)
+        if isinstance(value, dict):
+            return value
+        return {
+            "top_line": value,
+            "operating_income": Decimal("10") if value is not None else None,
+            "net_income": Decimal("8") if value is not None else None,
+        }
 
 
 class FailingKis(SimulatedKis):
-    def quarter_top_line(self, ticker, year, quarter):
+    def quarter_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
         raise ProviderError(f"KIS top-line request failed for {ticker}")
 
@@ -675,7 +682,7 @@ class QuarterlyExtractionTests(unittest.TestCase):
     def test_q4_uses_annual_minus_q3_cumulative(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2026, 4,
-            complete("00000001", current="250", cumulative=""),
+            complete("00000001", current="250", cumulative="250"),
             complete("00000001", current="70", cumulative="170"),
         )
         self.assertEqual(value.top_line, Decimal("80"))
@@ -730,8 +737,8 @@ class KisFallbackTests(unittest.TestCase):
                 return {
                     "rt_cd": "0",
                     "output": [
-                        {"stac_yymm": "202603", "sale_account": "100"},
-                        {"stac_yymm": "202606", "sale_account": "250"},
+                        {"stac_yymm": "202603", "sale_account": "100", "bsop_prti": "10", "thtr_ntin": "8"},
+                        {"stac_yymm": "202606", "sale_account": "250", "bsop_prti": "30", "thtr_ntin": "20"},
                     ],
                 }
 
@@ -745,7 +752,11 @@ class KisFallbackTests(unittest.TestCase):
 
         session = Session()
         client = KisClient("key", "secret", cached_token=lambda: "token", session=session, interval=0)
-        self.assertEqual(client.quarter_top_line("005930", 2026, 2), Decimal("15000000000"))
+        self.assertEqual(client.quarter_financials("005930", 2026, 2), {
+            "top_line": Decimal("15000000000"),
+            "operating_income": Decimal("2000000000"),
+            "net_income": Decimal("1200000000"),
+        })
         self.assertEqual(session.kwargs["params"]["FID_DIV_CLS_CODE"], "1")
 
 

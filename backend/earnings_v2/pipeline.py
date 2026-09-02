@@ -256,7 +256,7 @@ class KoreaEarningsV2Pipeline:
             key=lambda item: (-item[1][0].market_cap, item[1][0].stock_code),
         )
 
-    def _try_kis_top_line(
+    def _try_kis_missing_financials(
         self,
         identity: CompanyIdentity,
         fact: FinancialFact,
@@ -265,10 +265,10 @@ class KoreaEarningsV2Pipeline:
         *,
         stage: str,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
-        """KIS 보완 실패를 기업 한 건의 대기 상태로 격리한다."""
+        """KIS로 OpenDART 누락 손익만 보완하고, 실패는 기업 단위 대기로 격리한다."""
         self._progress(f"{stage}_start", company=identity.company_name, ticker=identity.stock_code)
         try:
-            top_line = self.kis.quarter_top_line(identity.stock_code, year, quarter)
+            values = self.kis.quarter_financials(identity.stock_code, year, quarter)
         except ProviderError as error:
             self._progress(f"{stage}_failed", company=identity.company_name)
             return fact.with_changes(is_pending=True), {
@@ -276,8 +276,18 @@ class KoreaEarningsV2Pipeline:
                 "field": "top_line",
                 "reason": str(error),
             }
-        self._progress(f"{stage}_done", company=identity.company_name, found=top_line is not None)
-        return fact.with_changes(top_line=top_line, is_pending=top_line is None), None
+        changes = {
+            field: value
+            for field, value in values.items()
+            if getattr(fact, field) is None and value is not None
+        }
+        updated = fact.with_changes(**changes)
+        updated = updated.with_changes(is_pending=not updated.fully_complete)
+        self._progress(
+            f"{stage}_done", company=identity.company_name,
+            filled=sorted(changes), complete=updated.fully_complete,
+        )
+        return updated, None
 
     def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
                            previous_facts: dict[str, FinancialFact] | None = None,
@@ -336,8 +346,8 @@ class KoreaEarningsV2Pipeline:
                 else:
                     fact = fact.with_changes(is_pending=True)
                     issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
-            if fact.top_line is None and fact.profit_complete and year >= 2019 and self.kis is not None:
-                fact, kis_issue = self._try_kis_top_line(
+            if not fact.fully_complete and year >= 2019 and self.kis is not None:
+                fact, kis_issue = self._try_kis_missing_financials(
                     identity, fact, year, quarter, stage="kis_top_line",
                 )
                 if kis_issue is not None:
@@ -576,14 +586,16 @@ class KoreaEarningsV2Pipeline:
                         or not fact.profit_complete
                     ):
                         continue
-                    retried, kis_issue = self._try_kis_top_line(
+                    retried, kis_issue = self._try_kis_missing_financials(
                         identity, fact, year, quarter, stage="kis_top_line_retry",
                     )
                     pending_top_lines[identity.company_id] = retried
                     if kis_issue is not None:
                         issues.append(kis_issue)
-                    elif retried.top_line is None:
-                        issues.append({"company": identity.company_name, "field": "top_line", "reason": "provider value missing"})
+                    else:
+                        for field in ("top_line", "operating_income", "net_income"):
+                            if getattr(retried, field) is None:
+                                issues.append({"company": identity.company_name, "field": field, "reason": "provider value missing"})
             facts = {**preserved, **fresh_facts, **pending_top_lines}
             changed_ids = set(fresh_facts) | set(pending_top_lines)
             current_by_company, company_window_rows = self._calculate_company_points(
