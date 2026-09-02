@@ -13,7 +13,6 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--year", type=int)
     result.add_argument("--quarter", type=int, choices=(1, 2, 3, 4))
     result.add_argument("--daily", action="store_true", help="최근 완료 분기의 신규 공시·대기 기업만 갱신")
-    result.add_argument("--incremental", action="store_true", help="지정 분기의 저장값은 보존하고 신규·누락 기업만 갱신")
     result.add_argument("--recalculate-only", action="store_true", help="외부 API 호출 없이 저장된 분기값만 재집계")
     result.add_argument("--write", action="store_true", help="기업군·부분 실적·잠정 또는 확정 집계를 V2 DB에 저장")
     result.add_argument("--allow-review", action="store_true", help="불완전 분기 뒤의 다음 분기도 계속 검사")
@@ -30,10 +29,8 @@ def main() -> None:
     argument_parser = parser()
     args = argument_parser.parse_args()
     pipeline = KoreaEarningsV2Pipeline.from_env()
-    if args.daily and (args.recalculate_only or args.incremental):
-        argument_parser.error("--daily는 --recalculate-only 또는 --incremental과 함께 사용할 수 없습니다")
-    if args.recalculate_only and args.incremental:
-        argument_parser.error("--recalculate-only와 --incremental은 함께 사용할 수 없습니다")
+    if args.daily and args.recalculate_only:
+        argument_parser.error("--daily와 --recalculate-only는 함께 사용할 수 없습니다")
     if args.daily:
         result = pipeline.run_daily(write=args.write)
     elif args.year is None:
@@ -41,13 +38,7 @@ def main() -> None:
     elif args.quarter and args.recalculate_only:
         result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)
     elif args.quarter:
-        result = pipeline.run_quarter(
-            args.year,
-            args.quarter,
-            write=args.write,
-            allow_review=args.allow_review,
-            incremental=args.incremental,
-        )
+        result = pipeline.run_quarter(args.year, args.quarter, write=args.write, allow_review=args.allow_review)
     else:
         result = pipeline.run_year(args.year, write=args.write, allow_review=args.allow_review)
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))

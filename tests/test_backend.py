@@ -436,8 +436,6 @@ class SourceContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/earnings-v2-korea.yml").read_text(encoding="utf-8")
         self.assertIn("recalculate_only:", workflow)
         self.assertIn("args+=(--recalculate-only)", workflow)
-        self.assertIn("incremental:", workflow)
-        self.assertIn("args+=(--incremental)", workflow)
         self.assertIn("github.event_name == 'schedule' && 'true'", workflow)
         self.assertIn('[[ "$WRITE" == "true" ]] && args+=(--write)', workflow)
         self.assertNotIn("diagnose_kosdaq_51_100", workflow)
