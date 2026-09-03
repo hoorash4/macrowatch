@@ -21,6 +21,10 @@ class ResponseDeadlineExceeded(TimeoutError):
     """바이트가 계속 들어오더라도 응답 전체가 총시간을 넘으면 발생한다."""
 
 
+class InvalidJsonResponse(ValueError):
+    """JSON 공급자가 정상 HTTP 상태로 비정상 본문을 반환하면 발생한다."""
+
+
 def resilient_session() -> requests.Session:
     """Supabase의 읽기 GET만 어댑터 계층에서 제한적으로 재시도한다."""
     retry = Retry(
@@ -155,7 +159,10 @@ def bounded_request(
             response.raise_for_status()
             # 단순 테스트 대역은 iter_content가 없으므로 기존 json() 계약을 사용한다.
             if not binary and not hasattr(response, "iter_content"):
-                payload = response.json()
+                try:
+                    payload = response.json()
+                except (ValueError, UnicodeError) as exc:
+                    raise InvalidJsonResponse("response body is not valid JSON") from exc
                 _emit_progress(
                     on_progress, "body", attempt=attempt, complete=True,
                     elapsed_seconds=round(monotonic() - started, 3),
@@ -168,7 +175,10 @@ def bounded_request(
             content = _response_bytes(response, deadline, monotonic, on_progress, attempt, started)
             if binary:
                 return content
-            return json.loads(content.decode("utf-8-sig"))
+            try:
+                return json.loads(content.decode("utf-8-sig"))
+            except (ValueError, UnicodeError) as exc:
+                raise InvalidJsonResponse("response body is not valid JSON") from exc
         except ExecutionDeadlineExceeded:
             raise
         except Exception as exc:
@@ -177,7 +187,10 @@ def bounded_request(
             if status is None:
                 status = getattr(response, "status_code", None)
             retryable = (
-                isinstance(exc, (requests.Timeout, requests.ConnectionError, ResponseDeadlineExceeded))
+                isinstance(exc, (
+                    requests.Timeout, requests.ConnectionError,
+                    ResponseDeadlineExceeded, InvalidJsonResponse,
+                ))
                 or status in RETRYABLE_STATUS_CODES
             )
             if not retryable or attempt > RETRY_TOTAL:

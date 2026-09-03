@@ -13,6 +13,7 @@ from earnings_v2.http import (
     RETRYABLE_STATUS_CODES,
     RETRY_TOTAL,
     ExecutionDeadlineExceeded,
+    InvalidJsonResponse,
     ResponseDeadlineExceeded,
     bounded_request,
     provider_session,
@@ -595,6 +596,84 @@ class ProviderReliabilityTests(unittest.TestCase):
         self.assertEqual([event for event, _details in events], ["headers", "body"])
         self.assertTrue(events[-1][1]["complete"])
         self.assertEqual(events[-1][1]["chunk_count"], 1)
+
+    def test_provider_retries_invalid_json_response_only_after_body_completes(self):
+        retries = []
+
+        class Response:
+            status_code = 200
+            headers = {"Content-Type": "text/html"}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            def __init__(self, content):
+                self.content = content
+
+            def iter_content(self, chunk_size):
+                self.assert_chunk_size(chunk_size)
+                yield self.content
+
+            @staticmethod
+            def assert_chunk_size(chunk_size):
+                self.assertEqual(chunk_size, 64 * 1024)
+
+        class Session:
+            calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return Response(b"<html>temporary error</html>")
+                return Response(b'{"status":"000"}')
+
+        session = Session()
+        result = bounded_request(
+            session, "GET", "https://provider.invalid",
+            provider="test", operation="json", total_timeout=None,
+            attempt_timeout=None, connect_timeout=5, read_timeout=20,
+            sleep=lambda _seconds: None,
+            on_retry=lambda attempt, reason, remaining: retries.append(
+                (attempt, reason, remaining)
+            ),
+        )
+
+        self.assertEqual(result, {"status": "000"})
+        self.assertEqual(session.calls, 2)
+        self.assertEqual(len(retries), 1)
+        self.assertIn("InvalidJsonResponse", retries[0][1])
+
+    def test_provider_stops_after_invalid_json_retry_limit(self):
+        class Response:
+            status_code = 200
+            headers = {"Content-Type": "text/html"}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def iter_content(chunk_size):
+                yield b"<html>temporary error</html>"
+
+        class Session:
+            calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                return Response()
+
+        session = Session()
+        with self.assertRaises(InvalidJsonResponse):
+            bounded_request(
+                session, "GET", "https://provider.invalid",
+                provider="test", operation="json", total_timeout=None,
+                attempt_timeout=None, connect_timeout=5, read_timeout=20,
+                sleep=lambda _seconds: None,
+            )
+
+        self.assertEqual(session.calls, RETRY_TOTAL + 1)
 
     def test_provider_retries_share_one_total_budget(self):
         clock = [0.0]
