@@ -42,7 +42,7 @@ class EarningsV25DiagnosticTests(unittest.TestCase):
           <TR><TH>과목</TH><TH>당분기</TH><TH>전분기</TH></TR>
           <TR><TD>영업수익</TD><TD>7,924,894</TD><TD>1</TD></TR>
           <TR><TD>영업이익</TD><TD>560,387</TD><TD>1</TD></TR>
-          <TR><TD>연결당기순이익</TD><TD>1,268,273</TD><TD>1</TD></TR>
+          <TR><TD>분(당)기순이익</TD><TD>1,268,273</TD><TD>1</TD></TR>
         </TABLE>
         """
         parsed = parse_raw_filing_archive(
