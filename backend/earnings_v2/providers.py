@@ -15,7 +15,10 @@ from typing import Any
 import requests
 
 from .http import (
+    RETRYABLE_STATUS_CODES,
     ExecutionDeadlineExceeded,
+    InvalidJsonResponse,
+    ResponseDeadlineExceeded,
     bounded_request,
     provider_session,
     safe_request_failure,
@@ -33,6 +36,21 @@ KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
 
 class ProviderError(RuntimeError):
     """API 키나 전체 요청 URL을 노출하지 않는 공급자 오류."""
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def _retryable_request_error(error: Exception) -> bool:
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    return (
+        isinstance(error, (
+            requests.Timeout, requests.ConnectionError,
+            ResponseDeadlineExceeded, InvalidJsonResponse,
+        ))
+        or status in RETRYABLE_STATUS_CODES
+    )
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -102,7 +120,14 @@ class OpenDartClient:
             provider="OpenDART", endpoint=endpoint, event=event, **details,
         )
 
-    def _get(self, endpoint: str, params: dict[str, str], *, binary: bool = False) -> Any:
+    def _get(
+        self,
+        endpoint: str,
+        params: dict[str, str],
+        *,
+        binary: bool = False,
+        retry_total: int | None = None,
+    ) -> Any:
         self._wait()
         self.request_count += 1
         try:
@@ -118,6 +143,7 @@ class OpenDartClient:
                 connect_timeout=CONNECT_TIMEOUT,
                 read_timeout=STANDARD_READ_TIMEOUT,
                 binary=binary,
+                **({"retry_total": retry_total} if retry_total is not None else {}),
                 on_retry=self._retry_progress(endpoint),
                 on_progress=self._transport_progress(endpoint),
             )
@@ -127,7 +153,10 @@ class OpenDartClient:
             # API 키·URL·응답 본문은 노출하지 않고 실패 종류만 남긴다.
             if isinstance(exc, ProviderError):
                 raise
-            raise ProviderError(safe_request_failure("OpenDART", endpoint, exc)) from None
+            raise ProviderError(
+                safe_request_failure("OpenDART", endpoint, exc),
+                retryable=_retryable_request_error(exc),
+            ) from None
         if binary:
             return payload
         if not isinstance(payload, dict):
@@ -167,7 +196,35 @@ class OpenDartClient:
                 year=year, quarter=quarter, batch=batch_number,
                 batch_count=batch_count, company_count=len(batch),
             )
-            batch_rows = self._multi_account_batch(batch, year, quarter)
+            try:
+                # 최대 크기 요청만 두 번 시도한다. 두 번째까지 전송 계층 오류가
+                # 반복될 때 해당 묶음만 50+50으로 격리해 한 번씩 호출한다.
+                batch_rows = self._multi_account_batch(
+                    batch, year, quarter,
+                    retry_total=1 if len(batch) == 100 else None,
+                )
+            except ProviderError as exc:
+                if len(batch) != 100 or not exc.retryable:
+                    raise
+                self._progress(
+                    "open_dart_batch_split_start", endpoint="fnlttMultiAcnt.json",
+                    year=year, quarter=quarter, batch=batch_number,
+                    company_count=len(batch), split_size=50,
+                )
+                batch_rows = []
+                for split_start in range(0, len(batch), 50):
+                    split_batch = batch[split_start:split_start + 50]
+                    split_number = split_start // 50 + 1
+                    split_rows = self._multi_account_batch(
+                        split_batch, year, quarter, retry_total=0,
+                    )
+                    batch_rows.extend(split_rows)
+                    self._progress(
+                        "open_dart_batch_split_done", endpoint="fnlttMultiAcnt.json",
+                        year=year, quarter=quarter, batch=batch_number,
+                        split=split_number, split_count=2,
+                        company_count=len(split_batch), row_count=len(split_rows),
+                    )
             rows.extend(batch_rows)
             self._progress(
                 "open_dart_batch_done", endpoint="fnlttMultiAcnt.json",
@@ -176,12 +233,19 @@ class OpenDartClient:
             )
         return rows
 
-    def _multi_account_batch(self, corp_codes: list[str], year: int, quarter: int) -> list[dict[str, Any]]:
+    def _multi_account_batch(
+        self,
+        corp_codes: list[str],
+        year: int,
+        quarter: int,
+        *,
+        retry_total: int | None = None,
+    ) -> list[dict[str, Any]]:
         payload = self._get("fnlttMultiAcnt.json", {
             "corp_code": ",".join(corp_codes),
             "bsns_year": str(year),
             "reprt_code": REPORT_CODES[quarter],
-        })
+        }, retry_total=retry_total)
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
     def company_profile(self, corp_code: str) -> dict[str, str] | None:
