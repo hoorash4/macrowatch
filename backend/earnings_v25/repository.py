@@ -161,14 +161,14 @@ class EarningsV2Repository:
 
     def save_state(self, operation: str, status: str, cursor: dict[str, Any], error: str | None = None) -> None:
         self.rpc("earnings_v2_save_pipeline_state", {
-            "p_source": "korea_v2", "p_operation": operation, "p_cursor": cursor,
+            "p_source": "korea_v25", "p_operation": operation, "p_cursor": cursor,
             "p_status": status, "p_last_success_at": datetime.now(timezone.utc) if status in {"ready", "incomplete"} else None,
             "p_last_error": error,
         })
 
     def pipeline_state(self, operation: str) -> dict[str, Any] | None:
         result = self.rpc("earnings_v2_get_pipeline_state", {
-            "p_source": "korea_v2", "p_operation": operation,
+            "p_source": "korea_v25", "p_operation": operation,
         })
         if isinstance(result, list):
             return result[0] if result and isinstance(result[0], dict) else None

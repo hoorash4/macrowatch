@@ -322,18 +322,27 @@ class OpenDartClient:
             rows.append(row)
         return status, rows
 
-    def periodic_filings(self, start: date, end: date) -> list[PeriodicFiling]:
+    def periodic_filings(
+        self,
+        start: date,
+        end: date,
+        *,
+        corp_code: str | None = None,
+    ) -> list[PeriodicFiling]:
         """접수번호로 중복을 구분할 수 있는 정기공시 목록을 반환한다."""
         result: dict[str, PeriodicFiling] = {}
         page = 1
         while True:
-            payload = self._get("list.json", {
+            params = {
                 "bgn_de": start.strftime("%Y%m%d"),
                 "end_de": end.strftime("%Y%m%d"),
                 "pblntf_ty": "A",
                 "page_no": str(page),
                 "page_count": "100",
-            })
+            }
+            if corp_code:
+                params["corp_code"] = corp_code
+            payload = self._get("list.json", params)
             items = [row for row in payload.get("list", []) if isinstance(row, dict)]
             for row in items:
                 code = str(row.get("corp_code") or "").strip()
@@ -357,6 +366,18 @@ class OpenDartClient:
                 break
             page += 1
         return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
+
+    def filing_archive(self, receipt_no: str) -> bytes:
+        """Download an accepted filing through OpenDART document.xml."""
+        receipt = str(receipt_no).strip()
+        if not re.fullmatch(r"\d{14}", receipt):
+            raise ValueError(f"Invalid OpenDART receipt number: {receipt_no!r}")
+        content = self._get(
+            "document.xml", {"rcept_no": receipt}, binary=True,
+        )
+        if not isinstance(content, bytes) or not content.startswith(b"PK"):
+            raise ProviderError("OpenDART document.xml returned no ZIP archive")
+        return content
 
     def delisting_filings(
         self,

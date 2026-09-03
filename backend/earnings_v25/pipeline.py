@@ -17,7 +17,8 @@ from .models import (
     QuarterFxRate,
     Security,
 )
-from .providers import EcosFxClient, KrxClient, OpenDartClient, ProviderError
+from .providers import EcosFxClient, KrxClient, OpenDartClient, ProviderError, REPORT_CODES
+from .raw_dart_financials import RawDartStatement, parse_raw_filing_archive
 from .repository import EarningsV2Repository
 from .runtime import execution_deadline
 from .transform import (
@@ -490,6 +491,99 @@ class KoreaEarningsV2Pipeline:
             })
         return fact.with_changes(**changes) if changes else fact
 
+    @staticmethod
+    def _raw_standalone_value(
+        statement: RawDartStatement,
+        field: str,
+        quarter: int,
+        previous_fact: FinancialFact | None,
+    ) -> Decimal | None:
+        cumulative = statement.cumulative[field]
+        reported = statement.standalone[field]
+        if quarter == 1:
+            return reported if reported is not None else cumulative
+        if quarter in {2, 3}:
+            if reported is not None:
+                return reported
+            previous = (
+                getattr(previous_fact, f"source_{field}_cumulative")
+                if previous_fact is not None
+                and previous_fact.source_currency == "KRW"
+                else None
+            )
+            return cumulative - previous if cumulative is not None and previous is not None else None
+        if cumulative is None:
+            return None
+        previous = (
+            getattr(previous_fact, f"source_{field}_cumulative")
+            if previous_fact is not None
+            and previous_fact.source_currency == "KRW"
+            else None
+        )
+        return cumulative - previous if previous is not None else cumulative / Decimal(4)
+
+    def _raw_open_dart_missing_financials(
+        self,
+        identity: CompanyIdentity,
+        fact: FinancialFact,
+        year: int,
+        quarter: int,
+        previous_fact: FinancialFact | None,
+    ) -> FinancialFact:
+        """Fill only missing fields from the accepted filing's raw archive."""
+        filings = [
+            filing for filing in self.dart.periodic_filings(
+                quarter_end(year, quarter), quarter_resolution_end(year, quarter),
+                corp_code=identity.corp_code,
+            )
+            if filing_period(filing) == (year, quarter)
+        ]
+        if not filings:
+            raise ProviderError(
+                f"OpenDART periodic filing not found for {identity.corp_code} {year}Q{quarter}"
+            )
+        # Later receipts include accepted corrections, so use the latest filing
+        # for the same fiscal period deterministically.
+        filing = max(filings, key=lambda row: (row.received_on, row.receipt_no))
+        statements = parse_raw_filing_archive(
+            self.dart.filing_archive(filing.receipt_no),
+            report_code=REPORT_CODES[quarter],
+            fiscal_year=year,
+        )
+        existing_count = sum(
+            getattr(fact, field) is not None
+            for field in ("top_line", "operating_income", "net_income")
+        )
+        if existing_count:
+            statement = statements.get(fact.consolidation_scope)
+        else:
+            statement = statements.get("CFS") or statements.get("OFS")
+        if statement is None:
+            raise ProviderError(
+                f"OpenDART raw filing has no compatible statement for {identity.corp_code}"
+            )
+
+        changes: dict[str, Any] = {}
+        for field in ("top_line", "operating_income", "net_income"):
+            if getattr(fact, field) is not None:
+                continue
+            standalone = self._raw_standalone_value(
+                statement, field, quarter, previous_fact,
+            )
+            if standalone is not None:
+                changes[field] = standalone
+                changes[f"source_{field}_cumulative"] = statement.cumulative[field]
+        if not changes:
+            return fact
+        changes.update({
+            "consolidation_scope": statement.consolidation_scope,
+            "source_filing_id": f"open_dart_raw:{filing.receipt_no}",
+            "filing_date": filing.received_on,
+            "currency": "KRW",
+            "source_currency": "KRW",
+        })
+        return fact.with_changes(**changes)
+
     def _resolve_missing_financials(
         self,
         identity: CompanyIdentity,
@@ -536,6 +630,16 @@ class KoreaEarningsV2Pipeline:
             f"{stage}_open_dart_done", company=identity.company_name,
             complete=fact.fully_complete,
         )
+
+        if not fact.fully_complete:
+            self._progress(f"{stage}_raw_dart_start", company=identity.company_name)
+            fact = self._raw_open_dart_missing_financials(
+                identity, fact, year, quarter, previous_fact,
+            )
+            self._progress(
+                f"{stage}_raw_dart_done", company=identity.company_name,
+                complete=fact.fully_complete,
+            )
 
         # 이 추정은 사용자가 허용한 과거 백필 전용 규칙이다. 자동 수집은
         # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.

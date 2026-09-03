@@ -1,0 +1,60 @@
+name: Earnings V2.5 raw DART backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Fiscal year (2016-2018 only)
+        required: true
+        default: "2016"
+        type: choice
+        options: ["2016", "2017", "2018"]
+      quarter:
+        description: One fiscal quarter
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "2", "3", "4"]
+      write:
+        description: Replace the selected quarter after validation
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-v25-raw-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Replace one fiscal quarter from OpenDART
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          EARNINGS_V2_DEADLINE_SECONDS: "1200"
+          KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WRITE: ${{ inputs.write }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}" --require-complete)
+          if [[ "$WRITE" == "true" ]]; then
+            args+=(--write)
+          fi
+          python -m earnings_v25.cli "${args[@]}"
