@@ -66,6 +66,44 @@ class EarningsV25DiagnosticTests(unittest.TestCase):
             Decimal("30"),
         )
 
+    def test_raw_parser_strips_only_presentation_notes_from_exact_accounts(self) -> None:
+        document = """
+        <P>연결손익계산서</P><P>2016년 1월 1일부터 2016년 3월 31일까지</P>
+        <P>(단위 : 원)</P><TABLE>
+          <TR><TH>과목</TH><TH>당분기</TH><TH>전분기</TH></TR>
+          <TR><TD>영업수익&lt;주석39&gt;</TD><TD>100</TD><TD>90</TD></TR>
+          <TR><TD>영업이익</TD><TD>10</TD><TD>9</TD></TR>
+          <TR><TD>분기순이익&amp;cr; (대손준비금 반영후 조정이익)</TD><TD>8</TD><TD>7</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_raw_filing_archive(
+            archive(document), report_code="11013", fiscal_year=2016,
+        )
+        self.assertEqual(parsed["CFS"].cumulative["top_line"], Decimal("100"))
+        self.assertEqual(parsed["CFS"].cumulative["net_income"], Decimal("8"))
+
+    def test_raw_parser_accepts_published_mixed_period_and_connected_net_income(self) -> None:
+        document = """
+        <P>연결손익계산서</P><P>2016년 1월 1일부터 2016년 3월 31일까지</P>
+        <P>(단위 : 백만원)</P><TABLE>
+          <TR><TH>과목</TH><TH>당분기</TH><TH>전분기</TH></TR>
+          <TR><TD>영업수익</TD><TD>100</TD><TD>90</TD></TR>
+          <TR><TD>영업이익</TD><TD>10</TD><TD>9</TD></TR>
+          <TR><TD>당(분)기순이익</TD><TD>8</TD><TD>7</TD></TR>
+        </TABLE>
+        """
+        parsed = parse_raw_filing_archive(
+            archive(document), report_code="11013", fiscal_year=2016,
+        )
+        self.assertEqual(parsed["CFS"].cumulative["net_income"], Decimal("8000000"))
+
+        connected = document.replace("당(분)기순이익", "당기연결순이익")
+        parsed = parse_raw_filing_archive(
+            archive(connected), report_code="11013", fiscal_year=2016,
+        )
+        self.assertEqual(parsed["CFS"].cumulative["net_income"], Decimal("8000000"))
+
 
 if __name__ == "__main__":
     unittest.main()
+
