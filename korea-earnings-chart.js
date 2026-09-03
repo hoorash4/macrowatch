@@ -11,6 +11,7 @@
     ...METRICS.map((metric) => ({ id: `korea-earnings-qoq-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'qoqPct', kind: 'qoq', height: 102, includeZero: true, unit: '%', showPeriodLabels: false })),
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
+  const DISPLAY_START_YEAR = 2019;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
   const state = { series: [], years: 5 };
 
@@ -41,7 +42,7 @@
 
   // V2 공개 RPC의 분기 총합 행을 차트 전용 구조로만 변환합니다.
   function seriesFromMarketRows(rows) {
-    return rows.map((row) => ({
+    return rows.filter((row) => Number(row.market_year) >= DISPLAY_START_YEAR).map((row) => ({
       fiscalYear: Number(row.market_year), fiscalQuarter: Number(row.market_quarter),
       reportedCount: Number(row.reported_company_count) || 0,
       pendingCount: Number(row.pending_company_count) || 0,
@@ -307,3 +308,4 @@
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
+
