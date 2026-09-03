@@ -1007,7 +1007,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(dart.financial_calls, calls_after_first_run)
         self.assertEqual(kis.calls, [])
 
-    def test_pending_financial_company_skips_single_open_dart_and_uses_kis(self):
+    def test_pending_financial_company_uses_single_open_dart_before_kis(self):
         target_company = "kr:00000099"
         repository = self.populated_repository()
         repository.seed_company(target_company, top_line=None, pending=True)
@@ -1024,16 +1024,16 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
         self.assertEqual(dart.financial_calls, [])
-        self.assertEqual(dart.single_calls, [])
+        self.assertTrue(dart.single_calls)
         self.assertEqual(dart.profile_calls, [])
-        self.assertEqual(kis.calls, [(target_ticker, 2026, 2)])
+        self.assertEqual(kis.calls, [])
         self.assertEqual(result["retried_pending_companies"], 1)
         stored = repository.company_rows[(target_company, 2026, 2)]
-        self.assertEqual(stored["top_line"], Decimal("250"))
+        self.assertEqual(stored["top_line"], Decimal("20"))
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
 
-    def test_financial_fallback_uses_kis_before_2019(self):
+    def test_financial_fallback_uses_single_open_dart_before_kis(self):
         identity = CompanyIdentity(
             company_id="kr:00000099", company_name="과거금융사",
             stock_code="000099", corp_code="00000099",
@@ -1062,8 +1062,8 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         )
 
         self.assertIsNone(issue)
-        self.assertEqual(kis.calls, [(identity.stock_code, 2015, 3)])
-        self.assertEqual(dart.single_calls, [])
+        self.assertEqual(kis.calls, [])
+        self.assertTrue(dart.single_calls)
         self.assertTrue(resolved.fully_complete)
         self.assertFalse(resolved.is_pending)
 
@@ -1305,6 +1305,11 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(dart.financial_calls, [])
 
     def test_pending_kis_retry_failure_does_not_abort_daily_run(self):
+        class MissingSingleDart(SimulatedDart):
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return []
+
         target_company = "kr:00000099"
         repository = self.populated_repository()
         repository.seed_company(target_company, top_line=None, pending=True)
@@ -1313,11 +1318,12 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         }
         kis = FailingKis()
         pipeline = KoreaEarningsV2Pipeline(
-            krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository, kis=kis,
+            krx=SimulatedKrx(), dart=MissingSingleDart(), repository=repository, kis=kis,
         )
 
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
+        self.assertTrue(pipeline.dart.single_calls)
         self.assertEqual(kis.calls, [("000099", 2026, 2)])
         self.assertEqual(result["status"], "incomplete")
         self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
