@@ -31,6 +31,37 @@ def _complete(fact: FinancialFact | None) -> bool:
     return fact is not None and fact.fully_complete and not fact.is_pending
 
 
+def _provisional_totals(
+    members: Iterable[CompanyIdentity],
+    current_facts: Mapping[str, FinancialFact],
+    placeholder_ids: Mapping[str, str],
+    previous_facts: Mapping[str, FinancialFact],
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """항목별로 현재 실제값을 우선하고 없을 때만 직전값을 사용한다."""
+    values: dict[str, list[Decimal]] = {
+        "top_line": [], "operating_income": [], "net_income": [],
+    }
+    for member in members:
+        current = current_facts.get(member.company_id)
+        placeholder = previous_facts.get(placeholder_ids.get(member.company_id, ""))
+        for field in values:
+            # 시장 합계의 기준 통화는 KRW다. pending 행의 확보값을 살리되
+            # 아직 환산되지 않은 외화 금액까지 섞지는 않는다.
+            value = getattr(current, field, None) if current is not None and current.currency == "KRW" else None
+            if value is None:
+                value = (
+                    getattr(placeholder, field, None)
+                    if placeholder is not None and placeholder.currency == "KRW"
+                    else None
+                )
+            if value is not None:
+                values[field].append(value)
+    return tuple(
+        sum(items, ZERO) if items else None
+        for items in values.values()
+    )
+
+
 def aggregate_market(
     market_id: str,
     year: int,
@@ -64,12 +95,9 @@ def aggregate_market(
         previous_members = sorted(comparison_members, key=lambda row: row.rank)
         previous_facts = comparison_facts or {}
         if len(previous_members) != target_count:
-            # 최초 기준 분기에는 비교 바구니가 없다. 확보된 실제값만으로
-            # 잠정 합계를 만들며, 없는 자리를 임의 값으로 채우지 않는다.
-            provisional = [
-                current_facts[row.company_id]
-                for row in members if _complete(current_facts.get(row.company_id))
-            ]
+            # 최초 기준 분기에는 비교 바구니가 없다. 각 항목에서 확보된
+            # 현재 실제값만 합산하고 없는 항목은 채우지 않는다.
+            placeholder_ids: dict[str, str] = {}
         else:
             current_ids = {row.company_id for row in members}
             previous_ids = {row.company_id for row in previous_members}
@@ -82,23 +110,23 @@ def aggregate_market(
                 for entrant, departed in zip(entrants, exits, strict=True)
             }
 
-            provisional = []
-            for member in members:
-                current = current_facts.get(member.company_id)
-                if _complete(current):
-                    provisional.append(current)
-                    continue
-                placeholder_id = member.company_id if member.company_id in previous_ids else exit_for_entrant[member.company_id]
-                placeholder = previous_facts.get(placeholder_id)
-                if _complete(placeholder):
-                    provisional.append(placeholder)
-        if not provisional:
+            placeholder_ids = {
+                member.company_id: (
+                    member.company_id
+                    if member.company_id in previous_ids
+                    else exit_for_entrant[member.company_id]
+                )
+                for member in members
+            }
+        top, operating, net = _provisional_totals(
+            members, current_facts, placeholder_ids, previous_facts,
+        )
+        if top is None and operating is None and net is None:
             return MarketFact(
                 market_id, year, quarter, reference_date,
                 None, None, None, None, None,
                 reported, pending, target_count, "collecting",
             )
-        top, operating, net = _totals(provisional)
         status = "provisional"
 
     return MarketFact(
@@ -187,3 +215,4 @@ def calculate_market_point(
         net_income_qoq_sa_pct=metric.net_income_qoq_sa_pct,
         net_income_qoq_state=metric.net_income_qoq_state,
     ), raw_samples
+
