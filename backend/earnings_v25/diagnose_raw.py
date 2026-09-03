@@ -97,12 +97,16 @@ def inspect_raw_archive(
                 continue
             units = _UNIT.findall(local_prefix + table[:1000])
             title_text = re.sub(r"<[^>]+>", " ", local_prefix + table)
+            title_matches = list(_STATEMENT_TITLE.finditer(title_text))
             tables.append({
                 "document": document_name,
                 "table_index": table_index,
                 "scope": _scope_for_table(local_prefix, table),
                 "unit": units[-1] if units else None,
                 "statement_title_confirmed": _STATEMENT_TITLE.search(title_text) is not None,
+                "statement_title_distance": (
+                    len(title_text) - title_matches[-1].end() if title_matches else None
+                ),
                 "eligible_for_current_parser": (
                     bool(units)
                     and any(row["recognized_metric"] == "operating_income" for row in rows)
