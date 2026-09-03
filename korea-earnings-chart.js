@@ -50,12 +50,14 @@
       lifecycleStatus: row.lifecycle_status,
       metrics: {
         operating_income: {
-          amount: finite(row.operating_income_total), yoyPct: finite(row.operating_income_yoy_pct),
+          amount: finite(row.operating_income_sa_total), rawAmount: finite(row.operating_income_total),
+          yoyPct: finite(row.operating_income_yoy_pct),
           yoyState: row.operating_income_yoy_state, qoqPct: finite(row.operating_income_qoq_sa_pct),
           qoqState: row.operating_income_qoq_state,
         },
         net_income: {
-          amount: finite(row.net_income_total), yoyPct: finite(row.net_income_yoy_pct),
+          amount: finite(row.net_income_sa_total), rawAmount: finite(row.net_income_total),
+          yoyPct: finite(row.net_income_yoy_pct),
           yoyState: row.net_income_yoy_state, qoqPct: finite(row.net_income_qoq_sa_pct),
           qoqState: row.net_income_qoq_state,
         },
@@ -120,7 +122,11 @@
   }
   function formatChartValue(point, metric, spec) {
     const raw = metricValue(point, metric.key, spec.valueKey);
-    if (Number.isFinite(raw)) return spec.kind === 'amount' ? `${formatAmount(raw)}원` : formatSigned(raw, spec.unit);
+    if (Number.isFinite(raw)) {
+      if (spec.kind !== 'amount') return formatSigned(raw, spec.unit);
+      const actual = metricValue(point, metric.key, 'rawAmount');
+      return `${formatAmount(raw)}원${Number.isFinite(actual) ? ` (원본 ${formatAmount(actual)}원)` : ''}`;
+    }
     return STATE_LABELS[metricState(point, metric.key, spec.kind)] || '—';
   }
 
@@ -133,7 +139,7 @@
     const element = document.getElementById('korea-earnings-summary'), latest = points.at(-1);
     if (!element || !latest) return;
     const status = latest.lifecycleStatus === 'complete' ? '확정' : latest.lifecycleStatus === 'provisional' ? '잠정' : '수집 중';
-    const values = METRICS.map((metric) => `<span>${metric.label} 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
+    const values = METRICS.map((metric) => `<span>${metric.label} 계절조정 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
     element.innerHTML = `<strong>${periodLabel(latest)}</strong>${values}<span>실적 반영 ${latest.reportedCount}/${latest.universeCount}사</span><span>${status}${latest.pendingCount ? ` · 대기 ${latest.pendingCount}사` : ''}</span>`;
   }
 
