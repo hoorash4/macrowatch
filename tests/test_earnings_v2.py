@@ -380,21 +380,95 @@ class OpenDartTransportTests(unittest.TestCase):
         self.assertEqual(len(session.calls[0][1]["params"]["corp_code"].split(",")), 100)
         self.assertEqual(len(session.calls[1][1]["params"]["corp_code"].split(",")), 50)
 
-    def test_multi_account_does_not_split_a_failed_hundred_company_batch(self):
+    def test_multi_account_splits_only_retryable_failed_hundred_company_batch(self):
         class Client(OpenDartClient):
             def __init__(self):
                 super().__init__("secret", interval=0)
                 self.calls = []
 
-            def _multi_account_batch(self, corp_codes, year, quarter):
+            def _multi_account_batch(self, corp_codes, year, quarter, *, retry_total=None):
                 batch = list(corp_codes)
-                self.calls.append(batch)
-                raise ProviderError("failed")
+                self.calls.append((batch, retry_total))
+                if len(batch) == 100:
+                    raise ProviderError("failed", retryable=True)
+                return []
 
         client = Client()
-        with self.assertRaisesRegex(ProviderError, "failed"):
+        client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
+        self.assertEqual(
+            [(len(batch), retry_total) for batch, retry_total in client.calls],
+            [(100, 1), (50, 0), (50, 0)],
+        )
+
+    def test_multi_account_retries_hundred_twice_then_calls_each_half_once(self):
+        class Response:
+            status_code = 200
+
+            def __init__(self, content, content_type):
+                self.content = content
+                self.headers = {"Content-Type": content_type}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            def iter_content(self, chunk_size):
+                assert chunk_size == 64 * 1024
+                yield self.content
+
+        class Session:
+            def __init__(self):
+                self.batch_sizes = []
+
+            def get(self, _url, **kwargs):
+                size = len(kwargs["params"]["corp_code"].split(","))
+                self.batch_sizes.append(size)
+                if size == 100:
+                    return Response(b"<html>temporary error</html>", "text/html")
+                return Response(b'{"status":"000","list":[]}', "application/json")
+
+        session = Session()
+        client = OpenDartClient("secret", session=session, interval=0)
+
+        client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
+
+        self.assertEqual(session.batch_sizes, [100, 100, 50, 50])
+
+    def test_multi_account_does_not_split_non_retryable_failure(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+                self.calls = []
+
+            def _multi_account_batch(self, corp_codes, year, quarter, *, retry_total=None):
+                self.calls.append((list(corp_codes), retry_total))
+                raise ProviderError("rejected")
+
+        client = Client()
+        with self.assertRaisesRegex(ProviderError, "rejected"):
             client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
-        self.assertEqual([len(batch) for batch in client.calls], [100])
+        self.assertEqual([(len(batch), retries) for batch, retries in client.calls], [(100, 1)])
+
+    def test_multi_account_stops_when_a_split_batch_fails(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+                self.calls = []
+
+            def _multi_account_batch(self, corp_codes, year, quarter, *, retry_total=None):
+                batch = list(corp_codes)
+                self.calls.append((batch, retry_total))
+                if len(batch) == 100:
+                    raise ProviderError("failed", retryable=True)
+                raise ProviderError("split failed", retryable=True)
+
+        client = Client()
+        with self.assertRaisesRegex(ProviderError, "split failed"):
+            client.multi_accounts([f"{index:08d}" for index in range(100)], 2026, 2)
+        self.assertEqual(
+            [(len(batch), retries) for batch, retries in client.calls],
+            [(100, 1), (50, 0)],
+        )
 
     def test_provider_error_does_not_expose_key(self):
         class Session:
@@ -957,7 +1031,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
     def test_financial_fallback_uses_kis_before_2019(self):
         identity = CompanyIdentity(
-            company_id="kr:00000099", company_name="Historical Financial",
+            company_id="kr:00000099", company_name="과거금융사",
             stock_code="000099", corp_code="00000099",
             market_id="kr_largecap", rank=1, market_cap=Decimal("1"),
             reference_date=date(2015, 9, 30), industry_code="64110",
