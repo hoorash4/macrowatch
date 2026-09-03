@@ -1392,6 +1392,20 @@ class QuarterlyExtractionTests(unittest.TestCase):
         value = extract_company_fact("00000001", "kr:1", 2026, 1, complete("00000001", current="40", cumulative="40"), [])
         self.assertEqual(value.operating_income, Decimal("40"))
 
+    def test_q1_uses_current_amount_for_both_values_when_cumulative_is_blank(self):
+        value = extract_company_fact(
+            "00000001", "kr:1", 2016, 1,
+            complete("00000001", current="40", cumulative=""),
+            [],
+        )
+
+        self.assertEqual(value.top_line, Decimal("40"))
+        self.assertEqual(value.operating_income, Decimal("40"))
+        self.assertEqual(value.net_income, Decimal("40"))
+        self.assertEqual(value.source_top_line_cumulative, Decimal("40"))
+        self.assertEqual(value.source_operating_income_cumulative, Decimal("40"))
+        self.assertEqual(value.source_net_income_cumulative, Decimal("40"))
+
     def test_q2_always_subtracts_q1_cumulative(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2026, 2,
