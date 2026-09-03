@@ -8,11 +8,7 @@ app_key = os.environ["KIS_APP_KEY"]
 app_secret = os.environ["KIS_APP_SECRET"]
 token_response = requests.post(
     f"{BASE}/oauth2/tokenP",
-    json={
-        "grant_type": "client_credentials",
-        "appkey": app_key,
-        "appsecret": app_secret,
-    },
+    json={"grant_type": "client_credentials", "appkey": app_key, "appsecret": app_secret},
     timeout=20,
 )
 token_response.raise_for_status()
@@ -46,11 +42,15 @@ for ticker in ("005930", "032830"):
         if str(payload.get("rt_cd", "0")) != "0":
             raise RuntimeError(f"{ticker} rejected: {payload.get('msg_cd', 'unknown')}")
         rows = payload.get("output", [])
-        periods = [
-            re.sub(r"\\D", "", str(row.get("stac_yymm") or ""))
-            for row in rows
-            if re.fullmatch(r"\\d{6}", re.sub(r"\\D", "", str(row.get("stac_yymm") or "")))
-        ]
+        if page == 1 and rows:
+            date_keys = sorted(key for key in rows[0] if "yymm" in key.lower() or "date" in key.lower())
+            print(f"TICKER={ticker} DATE_KEYS={','.join(date_keys)}", flush=True)
+        periods = []
+        for row in rows:
+            raw = str(row.get("stac_yymm") or "")
+            period = re.sub(r"[^0-9]", "", raw)
+            if len(period) == 6:
+                periods.append(period)
         all_periods.extend(periods)
         next_flag = str(response.headers.get("tr_cont") or "").upper()
         print(f"TICKER={ticker} PAGE={page} ROWS={len(rows)} TR_CONT={next_flag or '-'} PERIODS={','.join(periods)}", flush=True)
