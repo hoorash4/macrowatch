@@ -1,0 +1,40 @@
+name: Earnings V2.5 structured diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Fiscal year (2016-2018 only)
+        required: true
+        default: "2016"
+        type: choice
+        options: ["2016", "2017", "2018"]
+      quarter:
+        description: Fiscal quarter
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "2", "3", "4"]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect pending company structured responses
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings_v25.diagnose_structured --year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}"
