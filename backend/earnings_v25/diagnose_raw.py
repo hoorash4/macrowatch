@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from datetime import timedelta
 from io import BytesIO
 from typing import Any
 from zipfile import BadZipFile, ZipFile
@@ -137,13 +138,10 @@ def inspect_raw_archive(
     }
 
 
-def _corp_code(row: dict[str, Any], corporation_map: dict[str, tuple[str, str]]) -> str | None:
+def _corp_code(row: dict[str, Any]) -> str | None:
     company_id = str(row.get("company_id") or "")
     match = re.fullmatch(r"kr:(\d{8})", company_id)
-    if match:
-        return match.group(1)
-    mapped = corporation_map.get(str(row.get("stock_code") or "").strip())
-    return mapped[0] if mapped else None
+    return match.group(1) if match else None
 
 
 def main() -> None:
@@ -158,13 +156,12 @@ def main() -> None:
         if int(row.get("market_year") or 0) == args.year
         and int(row.get("market_quarter") or 0) == args.quarter
     ]
-    corporation_map = dart.corporation_map()
     completed = 0
     errors = 0
 
     for row in pending:
         company = str(row.get("company_name") or row.get("company_id") or "unknown")
-        corp_code = _corp_code(row, corporation_map)
+        corp_code = _corp_code(row)
         if corp_code is None:
             errors += 1
             print(json.dumps({
@@ -177,7 +174,7 @@ def main() -> None:
             filings = [
                 filing for filing in dart.periodic_filings(
                     quarter_end(args.year, args.quarter),
-                    quarter_resolution_end(args.year, args.quarter),
+                    quarter_resolution_end(args.year, args.quarter) + timedelta(days=14),
                     corp_code=corp_code,
                 )
                 if filing_period(filing) == (args.year, args.quarter)
