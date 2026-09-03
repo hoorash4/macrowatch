@@ -500,9 +500,10 @@ class KisClient:
         self._token = token
         return token
 
-    def quarter_cumulative_financials(
-        self, ticker: str, year: int, quarter: int,
-    ) -> dict[str, dict[str, Decimal | None]]:
+    def financial_history(
+        self, ticker: str,
+    ) -> dict[tuple[int, int], dict[str, Decimal | None]]:
+        """한 번의 KIS 응답에 포함된 모든 분기 누적 손익을 반환한다."""
         remaining = self.interval - (time.monotonic() - self._last_request)
         if self._last_request and remaining > 0:
             time.sleep(remaining)
@@ -541,24 +542,35 @@ class KisClient:
             "operating_income": "bsop_prti",
             "net_income": "thtr_ntin",
         }
-        cumulative: dict[str, dict[int, Decimal]] = {field: {} for field in fields}
+        history: dict[tuple[int, int], dict[str, Decimal | None]] = {}
         for row in payload.get("output", []) if isinstance(payload, dict) else []:
             period = re.sub(r"\D", "", str(row.get("stac_yymm") or ""))
-            if len(period) != 6 or int(period[:4]) != year:
+            if len(period) != 6:
                 continue
+            year = int(period[:4])
             month = int(period[4:])
             if month in {3, 6, 9, 12}:
-                for field, response_key in fields.items():
-                    amount = _decimal(row.get(response_key))
-                    if amount is not None:
-                        cumulative[field][month // 3] = amount
+                history[(year, month // 3)] = {
+                    field: (
+                        amount * Decimal("100000000")
+                        if (amount := _decimal(row.get(response_key))) is not None
+                        else None
+                    )
+                    for field, response_key in fields.items()
+                }
+        return history
+
+    def quarter_cumulative_financials(
+        self, ticker: str, year: int, quarter: int,
+    ) -> dict[str, dict[str, Decimal | None]]:
+        history = self.financial_history(ticker)
+        current_values = history.get((year, quarter), {})
+        previous_values = history.get((year, quarter - 1), {}) if quarter > 1 else {}
         result: dict[str, dict[str, Decimal | None]] = {}
-        for field, values in cumulative.items():
-            current = values.get(quarter)
-            previous = values.get(quarter - 1) if quarter > 1 else None
+        for field in ("top_line", "operating_income", "net_income"):
             result[field] = {
-                "current": current * Decimal("100000000") if current is not None else None,
-                "previous": previous * Decimal("100000000") if previous is not None else None,
+                "current": current_values.get(field),
+                "previous": previous_values.get(field),
             }
         return result
 

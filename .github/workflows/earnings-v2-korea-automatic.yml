@@ -2,8 +2,15 @@ name: Earnings V2 Korea automatic
 
 on:
   # 최소 15년 역사 백필이 검증될 때까지 예약 실행은 추가하지 않는다.
+  # 재개 시 10:30 UTC(KST 19:30)는 dart, 11:30 UTC(KST 20:30)는 kis로 실행한다.
   workflow_dispatch:
     inputs:
+      phase:
+        description: Automatic collection phase
+        required: true
+        default: all
+        type: choice
+        options: [dart, kis, all]
       write:
         description: Persist automatic collection results
         required: true
@@ -28,12 +35,13 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Collect new filings and retry pending companies
+      - name: Run the selected automatic collection phase
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           EARNINGS_V2_AUTOMATIC_DEADLINE_SECONDS: "240"
           WRITE: ${{ inputs.write }}
+          PHASE: ${{ inputs.phase }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
@@ -46,4 +54,5 @@ jobs:
           set -euo pipefail
           args=()
           [[ "$WRITE" == "true" ]] && args+=(--write)
+          args+=(--phase "$PHASE")
           timeout --signal=TERM --kill-after=10s 300s python -m earnings_v2.automatic_cli "${args[@]}"

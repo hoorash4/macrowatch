@@ -554,6 +554,7 @@ class KoreaEarningsV2AutomaticPipeline:
         profile_updates: dict[str, dict[str, str]] | None = None,
         stage: str = "financial_fallback",
         allow_backfill_zero_top_line: bool = False,
+        use_kis: bool = True,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
         if fact.fully_complete:
             return fact.with_changes(is_pending=False), None
@@ -589,7 +590,7 @@ class KoreaEarningsV2AutomaticPipeline:
             complete=fact.fully_complete,
         )
 
-        if not fact.fully_complete and self.kis is not None:
+        if use_kis and not fact.fully_complete and self.kis is not None:
             fact, kis_issue = self._try_kis_missing_financials(
                 identity, fact, year, quarter, stage=f"{stage}_kis",
                 propagate_provider_error=not tolerate_provider_errors,
@@ -626,8 +627,9 @@ class KoreaEarningsV2AutomaticPipeline:
                            *, usd_krw_rate: Decimal | None = None,
                            tolerate_provider_errors: bool = False,
                            force_previous_cumulative: bool = False,
-                           persist_profiles: bool = False,
-                           allow_backfill_zero_top_line: bool = False,
+                            persist_profiles: bool = False,
+                            allow_backfill_zero_top_line: bool = False,
+                            use_kis: bool = True,
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
@@ -678,6 +680,7 @@ class KoreaEarningsV2AutomaticPipeline:
                     tolerate_provider_errors=tolerate_provider_errors,
                     profile_updates=profile_updates,
                     allow_backfill_zero_top_line=allow_backfill_zero_top_line,
+                    use_kis=use_kis,
                 )
                 if fallback_issue is not None:
                     issues.append(fallback_issue)
@@ -870,6 +873,9 @@ class KoreaEarningsV2AutomaticPipeline:
                     discover_delistings: bool = False,
                     trust_previous_backfill: bool = False,
                     allow_backfill_zero_top_line: bool = False,
+                    use_kis_for_fresh: bool = True,
+                    retry_pending: bool = True,
+                    refresh_only: bool = False,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if not incremental:
             raise ValueError("automatic collection requires incremental mode")
@@ -884,6 +890,9 @@ class KoreaEarningsV2AutomaticPipeline:
                     discover_delistings=discover_delistings,
                     trust_previous_backfill=trust_previous_backfill,
                     allow_backfill_zero_top_line=allow_backfill_zero_top_line,
+                    use_kis_for_fresh=use_kis_for_fresh,
+                    retry_pending=retry_pending,
+                    refresh_only=refresh_only,
                 )
         operation = f"{year}Q{quarter}"
         if write:
@@ -965,12 +974,15 @@ class KoreaEarningsV2AutomaticPipeline:
                     and row.corp_code not in delisting_events
                     and (
                         row.corp_code in provider_refresh
-                        or row.company_id not in stored_current
-                        or (
-                            stored_current[row.company_id].is_pending
-                            and (
-                                stored_current[row.company_id].fully_complete
-                                or stored_current[row.company_id].source_currency != "KRW"
+                        if refresh_only else (
+                            row.corp_code in provider_refresh
+                            or row.company_id not in stored_current
+                            or (
+                                stored_current[row.company_id].is_pending
+                                and (
+                                    stored_current[row.company_id].fully_complete
+                                    or stored_current[row.company_id].source_currency != "KRW"
+                                )
                             )
                         )
                     )
@@ -1001,6 +1013,7 @@ class KoreaEarningsV2AutomaticPipeline:
                     force_previous_cumulative=not incremental and not trust_previous_backfill,
                     persist_profiles=write,
                     allow_backfill_zero_top_line=allow_backfill_zero_top_line,
+                    use_kis=use_kis_for_fresh,
                 )
                 if selected else ({}, [])
             )
@@ -1061,7 +1074,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 issues = [item for item in issues if item.get("company") not in resolved_names]
             pending_fallbacks: dict[str, FinancialFact] = {}
             profile_updates: dict[str, dict[str, str]] = {}
-            if incremental:
+            if incremental and retry_pending:
                 selected_ids = {row.company_id for row in selected}
                 for identity in identities:
                     fact = stored_current.get(identity.company_id)
@@ -1199,9 +1212,180 @@ class KoreaEarningsV2AutomaticPipeline:
             "status": "ready",
         }
 
+    @staticmethod
+    def _merge_kis_history(
+        fact: FinancialFact,
+        history: dict[tuple[int, int], dict[str, Decimal | None]],
+        previous_fact: FinancialFact | None,
+    ) -> FinancialFact:
+        """KIS 누적 원자료로 자동수집의 null 필드만 보충한다."""
+        current_values = history.get(fact.key, {})
+        previous_values = (
+            history.get((fact.fiscal_year, fact.fiscal_quarter - 1), {})
+            if fact.fiscal_quarter > 1 else {}
+        )
+        changes: dict[str, Any] = {}
+        for field in ("top_line", "operating_income", "net_income"):
+            current = current_values.get(field)
+            cumulative_field = f"source_{field}_cumulative"
+            if current is not None and getattr(fact, cumulative_field) is None:
+                changes[cumulative_field] = current
+            if getattr(fact, field) is not None or current is None:
+                continue
+            if fact.fiscal_quarter == 1:
+                standalone = current
+            else:
+                previous = previous_values.get(field)
+                if (
+                    previous is None
+                    and previous_fact is not None
+                    and previous_fact.source_currency == "KRW"
+                ):
+                    previous = getattr(previous_fact, cumulative_field)
+                if previous is None:
+                    continue
+                standalone = current - previous
+            changes[field] = standalone
+        if not changes:
+            return fact
+        updated = fact.with_changes(**changes)
+        return updated.with_changes(is_pending=not updated.fully_complete)
+
+    def run_kis_pending(
+        self,
+        *,
+        write: bool = True,
+        today: date | None = None,
+        deadline_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        """회사당 KIS 한 번으로 응답 전체 기간의 대기 분기를 보충한다."""
+        if deadline_seconds is not None:
+            with execution_deadline(deadline_seconds):
+                return self.run_kis_pending(write=write, today=today)
+        current_day = today or date.today()
+        state = self.repository.pipeline_state("daily_kis") or {}
+        cursor = state.get("cursor") if isinstance(state.get("cursor"), dict) else {}
+        already_processed = (
+            {str(value) for value in cursor.get("company_ids", [])}
+            if str(cursor.get("last_checked_date") or "") == current_day.isoformat()
+            else set()
+        )
+        if self.kis is None:
+            raise ValueError("KIS credentials are required for the KIS pending phase")
+
+        pending_rows = self.repository.pending_rows()
+        pending_by_company: dict[str, dict[tuple[int, int], dict[str, Any]]] = {}
+        company_details: dict[str, tuple[str, str]] = {}
+        for row in pending_rows:
+            company_id = str(row["company_id"])
+            key = (int(row["market_year"]), int(row["market_quarter"]))
+            pending_by_company.setdefault(company_id, {})[key] = row
+            company_details[company_id] = (
+                str(row.get("company_name") or company_id),
+                str(row.get("stock_code") or "").strip(),
+            )
+
+        company_ids = list(pending_by_company)
+        stored_rows = self.repository.company_history(company_ids) if company_ids else []
+        stored = {
+            (fact.company_id, fact.fiscal_year, fact.fiscal_quarter): fact
+            for row in stored_rows
+            if int(row.get("calculation_version") or 0) >= CALCULATION_VERSION
+            and str(row.get("source") or "") != "manual"
+            for fact in [_financial_from_db(row)]
+        }
+        changed: dict[tuple[str, int, int], FinancialFact] = {}
+        issues: list[dict[str, str]] = []
+        processed = set(already_processed)
+        called_companies = 0
+        returned_periods = 0
+        for company_id, pending_periods in pending_by_company.items():
+            if company_id in already_processed:
+                continue
+            company_name, ticker = company_details[company_id]
+            if not ticker:
+                processed.add(company_id)
+                issues.append({"company": company_name, "field": "stock_code", "reason": "KIS ticker missing"})
+                continue
+            self._progress("kis_pending_start", company=company_name, ticker=ticker)
+            try:
+                history = self.kis.financial_history(ticker)
+                called_companies += 1
+                returned_periods += len(history)
+            except ProviderError as error:
+                called_companies += 1
+                processed.add(company_id)
+                issues.append({"company": company_name, "field": "kis", "reason": str(error)})
+                self._progress("kis_pending_failed", company=company_name)
+                continue
+            processed.add(company_id)
+            company_changed = 0
+            for year, quarter in pending_periods:
+                key = (company_id, year, quarter)
+                fact = stored.get(key)
+                if fact is None:
+                    issues.append({
+                        "company": company_name,
+                        "field": f"{year}Q{quarter}",
+                        "reason": "pending company quarter was not found",
+                    })
+                    continue
+                previous_key = previous_period(year, quarter)
+                updated = self._merge_kis_history(
+                    fact,
+                    history,
+                    stored.get((company_id, *previous_key)),
+                )
+                if updated != fact:
+                    stored[key] = updated
+                    changed[key] = updated
+                    company_changed += 1
+            self._progress(
+                "kis_pending_done", company=company_name,
+                returned_periods=len(history), changed_periods=company_changed,
+            )
+
+        changed_periods = sorted({(year, quarter) for _, year, quarter in changed})
+        if write and changed:
+            self.repository.upsert_company_quarters(
+                fact.db_row(calculation_version=CALCULATION_VERSION)
+                for fact in changed.values()
+            )
+            for year, quarter in changed_periods:
+                self.recalculate_quarter(year, quarter, write=True)
+
+        unresolved = sum(
+            1
+            for company_id, periods in pending_by_company.items()
+            for year, quarter in periods
+            if (
+                (candidate := stored.get((company_id, year, quarter))) is None
+                or candidate.is_pending
+            )
+        )
+        status = "ready" if unresolved == 0 and not issues else "incomplete"
+        summary = {
+            "date": current_day.isoformat(), "write": write, "mode": "kis_pending",
+            "pending_companies": len(pending_by_company),
+            "called_companies": called_companies,
+            "skipped_same_day_companies": len(already_processed & set(pending_by_company)),
+            "returned_periods": returned_periods,
+            "changed_company_periods": len(changed),
+            "recalculated_periods": [f"{year}Q{quarter}" for year, quarter in changed_periods],
+            "unresolved_company_periods": unresolved,
+            "issues": issues, "status": status,
+            "requests": {"kis": self.kis.request_count},
+        }
+        if write:
+            self.repository.save_state("daily_kis", status, {
+                "last_checked_date": current_day.isoformat(),
+                "company_ids": sorted(processed),
+            })
+        return summary
+
     def run_daily(self, *, write: bool = True, today: date | None = None,
                   deadline_seconds: int | None = None) -> dict[str, Any]:
-        """마지막 정상 확인일 이후의 신규 접수번호만 증분 처리한다."""
+        """마지막 확인 이후의 신규 공시를 DART만으로 증분 처리한다."""
         if deadline_seconds is not None:
             with execution_deadline(deadline_seconds):
                 return self.run_daily(write=write, today=today)
@@ -1249,19 +1433,6 @@ class KoreaEarningsV2AutomaticPipeline:
                 filing.db_row() for filing in new_delistings
             )
         year, quarter = latest_completed_quarter(current_day)
-        stale_rows = self.repository.pending_rows()
-        stale_periods = sorted({
-            (int(row["market_year"]), int(row["market_quarter"]))
-            for row in stale_rows
-            if (int(row["market_year"]), int(row["market_quarter"])) != (year, quarter)
-        })
-        stale_results = [
-            self.run_quarter(
-                stale_year, stale_quarter, write=write, incremental=True,
-                discover_delistings=True,
-            )
-            for stale_year, stale_quarter in stale_periods
-        ]
         refresh_corp_codes = {
             filing.corp_code for filing in new_filings if filing_period(filing) == (year, quarter)
         }
@@ -1270,6 +1441,9 @@ class KoreaEarningsV2AutomaticPipeline:
             refresh_corp_codes=refresh_corp_codes,
             delisting_filings=new_delistings,
             allow_backfill_zero_top_line=False,
+            use_kis_for_fresh=False,
+            retry_pending=False,
+            refresh_only=True,
         )
         result["filing_discovery"] = {
             "checked_from": checked_on.isoformat(),
@@ -1278,16 +1452,7 @@ class KoreaEarningsV2AutomaticPipeline:
             "refreshed_companies": len(refresh_corp_codes),
             "new_delisting_receipts": len(new_delistings),
         }
-        result["stale_pending_retries"] = [
-            {
-                "period": stale_result["period"],
-                "status": stale_result["status"],
-                "retried_pending_companies": stale_result["retried_pending_companies"],
-            }
-            for stale_result in stale_results
-        ]
-        if any(stale_result["status"] != "ready" for stale_result in stale_results):
-            result["status"] = "incomplete"
+        result["stale_pending_retries"] = []
         if write:
             self.repository.save_state("daily_filings", result["status"], {
                 "last_checked_date": current_day.isoformat(),

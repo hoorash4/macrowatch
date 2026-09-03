@@ -307,10 +307,20 @@ class SimulatedKis:
     def __init__(self, values=None):
         self.values = values or {}
         self.calls: list[tuple[str, int, int]] = []
+        self.history_calls: list[str] = []
 
     @property
     def request_count(self):
-        return len(self.calls)
+        return len(self.calls) + len(self.history_calls)
+
+    def financial_history(self, ticker):
+        self.history_calls.append(ticker)
+        value = self.values.get(ticker)
+        if isinstance(value, dict) and all(
+            isinstance(key, tuple) and len(key) == 2 for key in value
+        ):
+            return value
+        return {}
 
     def quarter_cumulative_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
@@ -338,6 +348,10 @@ class SimulatedKis:
 
 
 class FailingKis(SimulatedKis):
+    def financial_history(self, ticker):
+        self.history_calls.append(ticker)
+        raise ProviderError(f"KIS top-line request failed for {ticker}")
+
     def quarter_cumulative_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
         raise ProviderError(f"KIS top-line request failed for {ticker}")
@@ -1071,7 +1085,7 @@ class DailyCheckpointTests(unittest.TestCase):
         pipeline.run_quarter = lambda *_args, **_kwargs: {"status": "incomplete"}
         pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
-    def test_daily_retries_stale_pending_periods_before_current_quarter(self):
+    def test_dart_daily_does_not_retry_stale_pending_periods(self):
         class Repository:
             saved = []
 
@@ -1115,16 +1129,11 @@ class DailyCheckpointTests(unittest.TestCase):
         pipeline.run_quarter = run_quarter
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
-        self.assertEqual([(year, quarter) for year, quarter, _ in calls], [
-            (2026, 1), (2026, 2),
-        ])
-        self.assertTrue(calls[0][2]["discover_delistings"])
-        self.assertEqual(result["status"], "incomplete")
-        self.assertEqual(result["stale_pending_retries"], [{
-            "period": "2026Q1", "status": "incomplete",
-            "retried_pending_companies": 2,
-        }])
-        self.assertEqual(repository.saved[-1][0:2], ("daily_filings", "incomplete"))
+        self.assertEqual([(year, quarter) for year, quarter, _ in calls], [(2026, 2)])
+        self.assertFalse(calls[0][2]["use_kis_for_fresh"])
+        self.assertFalse(calls[0][2]["retry_pending"])
+        self.assertTrue(calls[0][2]["refresh_only"])
+        self.assertEqual(result["stale_pending_retries"], [])
 
 
 class IncrementalLifecycleSimulationTests(unittest.TestCase):
@@ -1169,7 +1178,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(dart.financial_calls, calls_after_first_run)
         self.assertEqual(kis.calls, [])
 
-    def test_pending_financial_company_uses_single_open_dart_before_kis(self):
+    def test_dart_daily_does_not_repeat_pending_company_fallbacks(self):
         target_company = "kr:00000099"
         repository = self.populated_repository()
         repository.seed_company(target_company, top_line=None, pending=True)
@@ -1186,14 +1195,13 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
         self.assertEqual(dart.financial_calls, [])
-        self.assertTrue(dart.single_calls)
+        self.assertEqual(dart.single_calls, [])
         self.assertEqual(dart.profile_calls, [])
         self.assertEqual(kis.calls, [])
-        self.assertEqual(result["retried_pending_companies"], 1)
+        self.assertEqual(result["retried_pending_companies"], 0)
         stored = repository.company_rows[(target_company, 2026, 2)]
-        self.assertEqual(stored["top_line"], Decimal("20"))
-        self.assertFalse(stored["is_pending"])
-        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
+        self.assertIsNone(stored["top_line"])
+        self.assertTrue(stored["is_pending"])
 
     def test_delisting_decision_carries_previous_quarter_and_skips_all_providers(self):
         target_company = "kr:00000099"
@@ -1345,7 +1353,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertTrue(resolved.fully_complete)
         self.assertFalse(resolved.is_pending)
 
-    def test_profit_incomplete_pending_company_uses_single_provider_path(self):
+    def test_dart_daily_leaves_existing_pending_company_for_kis_phase(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
         repository = self.populated_repository()
@@ -1359,14 +1367,12 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
-        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["status"], "incomplete")
         self.assertEqual(dart.financial_calls, [])
-        self.assertEqual([call[0] for call in dart.single_calls], [target_corp])
-        self.assertEqual([call[2] for call in dart.single_calls], [2])
-        self.assertEqual(repository.company_profiles[target_company]["industry_code"], "62010")
+        self.assertEqual(dart.single_calls, [])
         stored = repository.company_rows[(target_company, 2026, 2)]
-        self.assertEqual(stored["operating_income"], Decimal("20"))
-        self.assertFalse(stored["is_pending"])
+        self.assertIsNone(stored["operating_income"])
+        self.assertTrue(stored["is_pending"])
 
     def test_backfill_can_complete_loss_company_with_zero_top_line(self):
         class NoRevenueDart(SimulatedDart):
@@ -1658,7 +1664,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(fx.request_count, 1)
         self.assertEqual(dart.financial_calls, [])
 
-    def test_pending_kis_retry_failure_does_not_abort_daily_run(self):
+    def test_pending_kis_failure_is_isolated_from_other_companies(self):
         class MissingSingleDart(SimulatedDart):
             def single_accounts(self, corp_code, year, quarter, scope):
                 self.single_calls.append((corp_code, year, quarter, scope))
@@ -1670,16 +1676,111 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         repository.company_profiles[target_company] = {
             "industry_code": "64110", "entity_kind": "financial",
         }
+        repository.stale_pending_rows = [{
+            "market_id": "kr_largecap", "market_year": 2026, "market_quarter": 2,
+            "company_id": target_company, "company_name": "failed",
+            "stock_code": "000099",
+        }]
         kis = FailingKis()
         pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=MissingSingleDart(), repository=repository, kis=kis,
         )
 
+        result = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(pipeline.dart.single_calls, [])
+        self.assertEqual(kis.history_calls, ["000099"])
+        self.assertEqual(result["status"], "incomplete")
+        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+
+    def test_kis_phase_uses_one_call_to_fill_multiple_pending_periods_without_overwrite(self):
+        target_company = "kr:00000099"
+        ticker = "000099"
+        repository = self.populated_repository()
+        q1 = FinancialFact(
+            target_company, 2026, 1, date(2026, 3, 31),
+            None, Decimal("999"), Decimal("8"), "KRW", "CFS",
+            "dart:q1", date(2026, 5, 15),
+            source_top_line_cumulative=None,
+            source_operating_income_cumulative=Decimal("10"),
+            source_net_income_cumulative=Decimal("8"),
+            is_pending=True,
+        )
+        q2 = FinancialFact(
+            target_company, 2026, 2, date(2026, 6, 30),
+            None, None, None, "KRW", "CFS",
+            "dart:q2", date(2026, 8, 14), is_pending=True,
+        )
+        repository.company_rows[(target_company, 2026, 1)] = q1.db_row(calculation_version=6)
+        repository.company_rows[(target_company, 2026, 2)] = q2.db_row(calculation_version=6)
+        repository.stale_pending_rows = [
+            {"market_id": "kr_largecap", "market_year": 2026, "market_quarter": quarter,
+             "company_id": target_company, "company_name": "target", "stock_code": ticker}
+            for quarter in (1, 2)
+        ]
+        history = {
+            (2026, 1): {
+                "top_line": Decimal("100"), "operating_income": Decimal("10"),
+                "net_income": Decimal("8"),
+            },
+            (2026, 2): {
+                "top_line": Decimal("250"), "operating_income": Decimal("30"),
+                "net_income": Decimal("20"),
+            },
+        }
+        kis = SimulatedKis({ticker: history})
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository, kis=kis,
+        )
+        recalculated = []
+        pipeline.recalculate_quarter = lambda year, quarter, **_kwargs: recalculated.append((year, quarter)) or {"status": "ready"}
+
+        result = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
+        second = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
+
+        stored_q1 = repository.company_rows[(target_company, 2026, 1)]
+        stored_q2 = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(kis.history_calls, [ticker])
+        self.assertEqual(result["changed_company_periods"], 2)
+        self.assertEqual(second["skipped_same_day_companies"], 1)
+        self.assertEqual(stored_q1["top_line"], Decimal("100"))
+        self.assertEqual(stored_q1["operating_income"], Decimal("999"))
+        self.assertEqual(stored_q2["top_line"], Decimal("150"))
+        self.assertEqual(stored_q2["operating_income"], Decimal("20"))
+        self.assertEqual(stored_q2["net_income"], Decimal("12"))
+        self.assertEqual(recalculated, [(2026, 1), (2026, 2)])
+
+    def test_new_filing_runs_dart_fallback_but_defers_kis(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        receipt = PeriodicFiling(
+            target_corp, "20260902000011", date(2026, 9, 2), "반기보고서 (2026.06)",
+        )
+
+        class MissingDart(SimulatedDart):
+            def multi_accounts(self, corp_codes, year, quarter):
+                rows = super().multi_accounts(corp_codes, year, quarter)
+                return [row for row in rows if row["corp_code"] != target_corp]
+
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return []
+
+        repository = self.populated_repository()
+        repository.company_rows.pop((target_company, 2026, 2))
+        dart = MissingDart([receipt])
+        kis = SimulatedKis({"000099": {}})
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
+        )
+
         result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
-        self.assertTrue(pipeline.dart.single_calls)
-        self.assertEqual(kis.calls, [("000099", 2026, 2)])
-        self.assertEqual(result["status"], "incomplete")
+        self.assertEqual(result["refreshed_companies"], 1)
+        self.assertEqual(len(dart.financial_calls), 1)
+        self.assertTrue(dart.single_calls)
+        self.assertEqual(kis.history_calls, [])
+        self.assertEqual(kis.calls, [])
         self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
 
     def test_manual_company_is_excluded_even_when_a_new_receipt_exists(self):
@@ -2105,6 +2206,34 @@ class KisFallbackTests(unittest.TestCase):
             "current": Decimal("25000000000"),
             "previous": Decimal("10000000000"),
         })
+
+    def test_kis_history_preserves_every_returned_quarter_from_one_response(self):
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "rt_cd": "0",
+                    "output": [
+                        {"stac_yymm": "201903", "sale_account": "1", "bsop_prti": "2", "thtr_ntin": "3"},
+                        {"stac_yymm": "202606", "sale_account": "4", "bsop_prti": "5", "thtr_ntin": "6"},
+                    ],
+                }
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        client = KisClient("key", "secret", cached_token=lambda: "token", session=Session(), interval=0)
+        history = client.financial_history("005930")
+
+        self.assertEqual(set(history), {(2019, 1), (2026, 2)})
+        self.assertEqual(history[(2019, 1)]["top_line"], Decimal("100000000"))
+        self.assertEqual(client.request_count, 1)
 
     def test_backfill_kis_prefers_kis_previous_cumulative(self):
         identity = member("kr:00000001", 1, quarter=3)
