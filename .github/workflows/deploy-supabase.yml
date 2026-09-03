@@ -66,75 +66,15 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260827_add_korea_foreign_flow.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_earnings_foundation.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_earnings_ingestion_ops.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_define_market_cap_earnings_universes.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_open_dart_ingestion_functions.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_open_dart_financial_worker_functions.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_open_dart_backfill_filing_identity.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_slim_earnings_storage.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_sec_earnings_functions.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_add_sector_intraday_prices.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_schedule_sector_flow.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260828_add_equity_bond_relative_value.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260829_add_earnings_growth_metrics.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260829_expand_market_index_prices.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260829_add_company_earnings_price_gaps.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260829_make_target_alerts_retryable.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260830_make_earnings_universe_collection_dynamic.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260830_add_market_earnings_analysis.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260830_add_quarterly_earnings_universe_reader.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260830_add_market_earnings_averages.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260830160231_label_market_earnings_fallback_averages.sql
-          # The 20260831173/174/175 repair migrations contain one-time data
-          # quarantine and queue-reset DML. They were applied once and must not
-          # be replayed on every deploy; doing so can resurrect completed work.
-          # Historical files above are replayed for idempotent deployments.
-          # Always finish with the queue split, replay-safe quality schema and
-          # the final provider boundary. Older definitions must not reclaim
-          # incompatible jobs after a deployment replay.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831_add_earnings_collector_variant.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235950_finalize_earnings_quality_schema.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235960_parallelize_legacy_dart_companies.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235980_restore_legacy_earnings_2015.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235990_fix_earnings_filing_metadata_merge.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235995_repair_legacy_2015_shifted_headers_v3.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260831235997_preserve_legacy_filing_job_priority.sql
-          # Final active earnings contract: operating income and net income only.
-          # Retired revenue migrations are preserved in migration history but
-          # never replayed by the active deployment path.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260901011000_remove_earnings_revenue_collection.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260901012000_remove_earnings_revenue_derivatives.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260901013000_enforce_profit_only_earnings_schema.sql
           # This cleanup is harmless when the short-lived margin-delta schema
           # was never applied and removes it when an earlier deploy reached it.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
@@ -143,9 +83,21 @@ jobs:
           # needed by the active V2 calculation path.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260903001000_add_earnings_v2_seasonal_windows.sql
+          # Keep the retired V1 schema absent even when the deployment is replayed.
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260904000000_remove_earnings_v1.sql
 
       - name: Deploy Edge Functions
         run: |
+          # Retire only the three V1 functions. Shared tables and every V2/automatic
+          # function remain untouched. Re-running this cleanup is harmless.
+          deployed_functions="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json)"
+          for fn in earnings-company-prices earnings-index-prices earnings-universe; do
+            if jq -e --arg fn "$fn" 'any(.[]; .slug == $fn)' <<<"$deployed_functions" >/dev/null; then
+              supabase --agent yes functions delete "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+            fi
+          done
+
           for fn in supabase/functions/*; do
             name="$(basename "$fn")"
             [ "$name" = "_shared" ] && continue

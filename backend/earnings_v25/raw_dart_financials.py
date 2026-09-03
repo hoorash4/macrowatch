@@ -13,7 +13,7 @@ from io import BytesIO
 import re
 from zipfile import BadZipFile, ZipFile
 
-from earnings.legacy_dart_financials import (
+from .legacy_dart_financials import (
     _STATEMENT_TITLE,
     _TableParser,
     _UNIT,
