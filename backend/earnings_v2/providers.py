@@ -32,7 +32,13 @@ KIS_BASE = "https://openapi.koreainvestment.com:9443"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
-DELISTING_TITLES = {"상장폐지결정": "decision", "상장폐지": "final"}
+DELISTING_TITLES = {
+    "상장폐지결정": "decision",
+    "상장폐지": "final",
+    # 합병으로 소멸하는 상장사의 거래소 최종 공시 제목이다. 예정·우려·
+    # 사유발생은 포함하지 않고 실제 폐지만 명시적으로 허용한다.
+    "상장폐지(피흡수합병)": "final",
+}
 
 
 class ProviderError(RuntimeError):

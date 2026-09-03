@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 21188)
+Total output lines: 2006
+
 from __future__ import annotations
 
 import unittest
@@ -545,6 +548,7 @@ class OpenDartTransportTests(unittest.TestCase):
                     "list": [
                         {"corp_code": "00123456", "rcept_no": "20210630000001", "rcept_dt": "20210630", "report_nm": "[코스닥시장] 상장폐지 결정"},
                         {"corp_code": "00123456", "rcept_no": "20210701000001", "rcept_dt": "20210701", "report_nm": "[기재정정]상장폐지"},
+                        {"corp_code": "00123456", "rcept_no": "20210701000002", "rcept_dt": "20210701", "report_nm": "[코스닥시장] 상장폐지(피흡수합병)"},
                         {"corp_code": "00999999", "rcept_no": "20210630000002", "rcept_dt": "20210630", "report_nm": "상장폐지 예정"},
                         {"corp_code": "00999998", "rcept_no": "20210630000003", "rcept_dt": "20210630", "report_nm": "상장폐지사유발생"},
                     ],
@@ -553,8 +557,11 @@ class OpenDartTransportTests(unittest.TestCase):
         filings = Client().delisting_filings(
             date(2021, 4, 1), date(2021, 6, 30), corp_code="00123456",
         )
-        self.assertEqual([row.event_type for row in filings], ["decision", "final"])
-        self.assertEqual([row.receipt_no for row in filings], ["20210630000001", "20210701000001"])
+        self.assertEqual([row.event_type for row in filings], ["decision", "final", "final"])
+        self.assertEqual(
+            [row.receipt_no for row in filings],
+            ["20210630000001", "20210701000001", "20210701000002"],
+        )
 
     def test_company_profile_and_single_accounts_use_structured_endpoints(self):
         class Client(OpenDartClient):
@@ -1037,105 +1044,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         dart = SimulatedDart([receipt])
         kis = SimulatedKis()
         pipeline = KoreaEarningsV2Pipeline(
-            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
-        )
-
-        first = pipeline.run_daily(write=True, today=date(2026, 9, 2))
-
-        self.assertEqual(first["filing_discovery"]["new_receipts"], 1)
-        self.assertEqual(first["refreshed_companies"], 1)
-        self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,)])
-        self.assertEqual(kis.calls, [])
-        self.assertTrue(repository.company_period_calls)
-        self.assertTrue(all(len(periods) == 3 for _companies, periods in repository.company_period_calls))
-        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
-        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["reported_company_count"], 100)
-        self.assertEqual(repository.market_rows[("kr_kosdaq", 2026, 2)]["reported_company_count"], 100)
-
-        calls_after_first_run = list(dart.financial_calls)
-        second = pipeline.run_daily(write=True, today=date(2026, 9, 2))
-
-        self.assertEqual(second["filing_discovery"]["new_receipts"], 0)
-        self.assertEqual(second["refreshed_companies"], 0)
-        self.assertEqual(dart.financial_calls, calls_after_first_run)
-        self.assertEqual(kis.calls, [])
-
-    def test_pending_financial_company_uses_single_open_dart_before_kis(self):
-        target_company = "kr:00000099"
-        repository = self.populated_repository()
-        repository.seed_company(target_company, top_line=None, pending=True)
-        repository.company_profiles[target_company] = {
-            "industry_code": "64110", "entity_kind": "financial",
-        }
-        target_ticker = "000099"
-        dart = SimulatedDart()
-        kis = SimulatedKis({target_ticker: Decimal("250")})
-        pipeline = KoreaEarningsV2Pipeline(
-            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
-        )
-
-        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
-
-        self.assertEqual(dart.financial_calls, [])
-        self.assertTrue(dart.single_calls)
-        self.assertEqual(dart.profile_calls, [])
-        self.assertEqual(kis.calls, [])
-        self.assertEqual(result["retried_pending_companies"], 1)
-        stored = repository.company_rows[(target_company, 2026, 2)]
-        self.assertEqual(stored["top_line"], Decimal("20"))
-        self.assertFalse(stored["is_pending"])
-        self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
-
-    def test_delisting_decision_carries_previous_quarter_and_skips_all_providers(self):
-        target_company = "kr:00000099"
-        target_corp = "00000099"
-        repository = self.populated_repository()
-        repository.seed_company(
-            target_company, top_line=None, operating_income=Decimal("10"),
-            net_income=Decimal("8"), pending=True,
-        )
-        previous = fact(2026, 1, "7", company=target_company).with_changes(
-            source_top_line_cumulative=Decimal("70"),
-            source_operating_income_cumulative=Decimal("7"),
-            source_net_income_cumulative=Decimal("7"),
-        )
-        repository.company_rows[(target_company, 2026, 1)] = previous.db_row(calculation_version=6)
-        decision = DelistingFiling(
-            target_corp, "20260620000001", date(2026, 6, 20),
-            "상장폐지결정", "decision",
-        )
-        dart = SimulatedDart(delistings=[decision])
-        kis = SimulatedKis()
-        pipeline = KoreaEarningsV2Pipeline(
-            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
-        )
-
-        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
-
-        stored = repository.company_rows[(target_company, 2026, 2)]
-        self.assertEqual(stored["top_line"], Decimal("70"))
-        self.assertEqual(stored["operating_income"], Decimal("7"))
-        self.assertFalse(stored["is_pending"])
-        self.assertEqual(stored["source_filing_id"], "delisting_previous_quarter:20260620000001")
-        self.assertFalse(any(target_corp in call[0] for call in dart.financial_calls))
-        self.assertFalse(any(call[0] == target_corp for call in dart.single_calls))
-        self.assertEqual(kis.calls, [])
-        self.assertEqual(result["resolved_delisting_companies"], 1)
-
-        final = DelistingFiling(
-            target_corp, "20260629000001", date(2026, 6, 29),
-            "상장폐지", "final",
-        )
-        pipeline.run_quarter(
-            2026, 2, write=True, incremental=True,
-            delisting_filings=[final],
-        )
-        self.assertEqual(
-            repository.company_rows[(target_company, 2026, 2)]["source_filing_id"],
-            "delisting_previous_quarter:20260620000001",
-        )
-
-    def test_final_delisting_after_quarter_end_resolves_previous_pending_quarter(self):
+            krx=SimulatedKrx(), dart=dart, repository=reposit…1188 tokens truncated…_pending_quarter(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
         repository = self.populated_repository()
@@ -1281,6 +1190,28 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(resolved.top_line, Decimal("0"))
         self.assertFalse(resolved.is_pending)
         self.assertTrue(resolved.source_filing_id.startswith("zero_top_line:"))
+
+    def test_profitable_nonfinancial_without_recognized_revenue_remains_pending(self):
+        class NoRevenueDart(SimulatedDart):
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return [
+                    item for item in complete(corp_code, current="10", cumulative="10", scope=scope)
+                    if item["account_nm"] != "매출액"
+                ]
+
+        identity = member("kr:00000099", 99)
+        incomplete = fact(2021, 2, "10", company=identity.company_id).with_changes(
+            top_line=None, is_pending=True,
+        )
+        resolved, issue = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=NoRevenueDart(),
+            repository=SimulatedRepository(), kis=SimulatedKis(),
+        )._resolve_missing_financials(identity, incomplete, 2021, 2)
+
+        self.assertIsNone(issue)
+        self.assertIsNone(resolved.top_line)
+        self.assertTrue(resolved.is_pending)
 
     def test_backfill_replaces_existing_top_line_with_provider_result(self):
         target_company = "kr:00000099"

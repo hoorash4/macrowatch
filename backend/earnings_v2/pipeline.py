@@ -589,6 +589,8 @@ class KoreaEarningsV2Pipeline:
             fact.top_line is None
             and fact.profit_complete
             and entity_kind == "general"
+            and fact.operating_income is not None
+            and fact.operating_income < 0
         ):
             previous_top = (
                 previous_fact.source_top_line_cumulative
