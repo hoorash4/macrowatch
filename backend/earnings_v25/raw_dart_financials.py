@@ -32,7 +32,8 @@ ALIASES = {
     "operating_income": {"영업이익", "영업이익손실", "영업손익", "영업손실"},
     "net_income": {
         "순이익", "순이익손실", "당기순이익", "당기순이익손실",
-        "당기순손익", "당기순손실", "분당기순이익", "분당기순이익손실",
+        "당기순손익", "당기순손실", "당분기순이익", "당분기순이익손실",
+        "분당기순이익", "분당기순이익손실", "당기연결순이익",
         "분기순이익", "분기순이익손실",
         "반기순이익", "반기순이익손실", "연결분기순이익",
         "연결반기순이익", "연결당기순이익",
@@ -53,8 +54,18 @@ class RawDartStatement:
 
 
 def _metric_for_label(value: str) -> str | None:
-    label = _normalize(value)
-    account_label = _normalize(re.split(r"[（(]", value, maxsplit=1)[0])
+    # DART cells can append presentation-only note markers and reserve-adjusted
+    # profit explanations to an otherwise exact account name. Remove only
+    # those decorations; do not fuzzy-match or combine financial concepts.
+    canonical = re.sub(r"[（(](당|분)[）)]", r"\1", value)
+    canonical = re.split(
+        r"&cr;|<\s*주석|[（(]\s*(?:주석|대손준비금|비상위험준비금)",
+        canonical,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    label = _normalize(canonical)
+    account_label = _normalize(re.split(r"[（(]", canonical, maxsplit=1)[0])
     for metric, aliases in ALIASES.items():
         if label in aliases or account_label in aliases:
             return metric
@@ -155,3 +166,4 @@ def parse_raw_filing_archive(
     if not result:
         raise RawDartParseError("No unique income statement was found in the filing archive")
     return result
+
