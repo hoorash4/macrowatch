@@ -18,7 +18,7 @@ from .models import (
     Security,
 )
 from .providers import EcosFxClient, KrxClient, OpenDartClient, ProviderError, REPORT_CODES
-from .raw_dart_financials import RawDartStatement, parse_raw_filing_archive
+from .raw_dart_financials import RawDartParseError, RawDartStatement, parse_raw_filing_archive
 from .repository import EarningsV2Repository
 from .runtime import execution_deadline
 from .transform import (
@@ -634,9 +634,19 @@ class KoreaEarningsV2Pipeline:
 
         if not fact.fully_complete:
             self._progress(f"{stage}_raw_dart_start", company=identity.company_name)
-            fact = self._raw_open_dart_missing_financials(
-                identity, fact, year, quarter, previous_fact,
-            )
+            try:
+                fact = self._raw_open_dart_missing_financials(
+                    identity, fact, year, quarter, previous_fact,
+                )
+            except RawDartParseError as error:
+                # Multiple equally plausible statement tables are a data
+                # ambiguity, not a provider failure. Preserve nulls for review
+                # instead of selecting a value by guess or aborting the quarter.
+                self._progress(
+                    f"{stage}_raw_dart_ambiguous",
+                    company=identity.company_name,
+                    reason=str(error),
+                )
             self._progress(
                 f"{stage}_raw_dart_done", company=identity.company_name,
                 complete=fact.fully_complete,
@@ -1277,3 +1287,4 @@ class KoreaEarningsV2Pipeline:
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
         return results
+
