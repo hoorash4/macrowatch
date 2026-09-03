@@ -17,7 +17,7 @@ from io import BytesIO
 import re
 from zipfile import BadZipFile, ZipFile
 
-from earnings.open_dart_parser import REPORT_QUARTERS
+REPORT_QUARTERS = {"11013": 1, "11012": 2, "11014": 3, "11011": 4}
 
 
 _TABLE_TAG = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)

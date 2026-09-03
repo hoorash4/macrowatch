@@ -16,6 +16,3 @@ verify_jwt = false
 
 [functions.korea-foreign-flow]
 verify_jwt = true
-
-[functions.earnings-index-prices]
-verify_jwt = true

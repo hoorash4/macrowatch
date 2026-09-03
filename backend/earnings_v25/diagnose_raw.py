@@ -10,7 +10,7 @@ from io import BytesIO
 from typing import Any
 from zipfile import BadZipFile, ZipFile
 
-from earnings.legacy_dart_financials import (
+from .legacy_dart_financials import (
     _STATEMENT_TITLE,
     _TableParser,
     _UNIT,
