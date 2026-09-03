@@ -1,6 +1,9 @@
 name: Earnings V2.5 raw DART diagnostic
 
 on:
+  push:
+    paths:
+      - ".github/workflows/earnings-v25-raw-diagnostic.yml"
   workflow_dispatch:
     inputs:
       year:
@@ -42,5 +45,5 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -m earnings_v25.diagnose_raw --year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}"
+        run: python -m earnings_v25.diagnose_raw --year "${{ inputs.year || '2016' }}" --quarter "${{ inputs.quarter || '1' }}"
 
