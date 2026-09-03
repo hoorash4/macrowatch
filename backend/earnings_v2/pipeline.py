@@ -394,20 +394,20 @@ class KoreaEarningsV2Pipeline:
                     "entity_kind": entity_kind,
                 }
 
-        # 금융업은 전체계정 단일 조회로도 매출 총액을 확정하기 어려우므로 KIS로 직행한다.
-        if entity_kind != "financial":
-            self._progress(f"{stage}_open_dart_start", company=identity.company_name)
-            try:
-                fact = self._single_open_dart_missing_financials(
-                    identity, fact, year, quarter, previous_fact, previous_rows or [],
-                )
-            except ProviderError:
-                if not tolerate_provider_errors:
-                    raise
-            self._progress(
-                f"{stage}_open_dart_done", company=identity.company_name,
-                complete=fact.fully_complete,
+        # 업종과 관계없이 전체계정 단일 조회로 먼저 누락값을 보완한다.
+        # 그래도 완결되지 않은 기업만 KIS로 넘겨 불필요한 보완 호출을 줄인다.
+        self._progress(f"{stage}_open_dart_start", company=identity.company_name)
+        try:
+            fact = self._single_open_dart_missing_financials(
+                identity, fact, year, quarter, previous_fact, previous_rows or [],
             )
+        except ProviderError:
+            if not tolerate_provider_errors:
+                raise
+        self._progress(
+            f"{stage}_open_dart_done", company=identity.company_name,
+            complete=fact.fully_complete,
+        )
 
         if not fact.fully_complete and self.kis is not None:
             fact, kis_issue = self._try_kis_missing_financials(
