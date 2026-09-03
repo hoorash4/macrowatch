@@ -21,6 +21,11 @@ on:
         required: true
         type: choice
         options: ["1", "2", "3", "4"]
+      pending_only:
+        description: Retry only pending companies in every selected quarter
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -38,9 +43,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install dependencies
-        run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Backfill requested fiscal range
+      - name: Process requested fiscal range
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
@@ -49,6 +52,7 @@ jobs:
           START_QUARTER: ${{ inputs.start_quarter }}
           END_YEAR: ${{ inputs.end_year }}
           END_QUARTER: ${{ inputs.end_quarter }}
+          PENDING_ONLY: ${{ inputs.pending_only }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
@@ -69,11 +73,14 @@ jobs:
             year=$((index / 4))
             quarter=$((index % 4 + 1))
             args=(--year "$year" --quarter "$quarter" --write)
-            if [[ "$first" == "false" ]]; then
+            if [[ "$PENDING_ONLY" == "true" ]]; then
+              args+=(--pending-only)
+            elif [[ "$first" == "false" ]]; then
               args+=(--trust-previous-backfill)
             fi
-            echo "::group::Backfill ${year}Q${quarter}"
+            echo "::group::Process ${year}Q${quarter}"
             timeout --signal=TERM --kill-after=10s 660s python -m earnings_v2.cli "${args[@]}"
             echo "::endgroup::"
             first=false
           done
+
