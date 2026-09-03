@@ -32,6 +32,11 @@ on:
         required: true
         default: false
         type: boolean
+      pending_only:
+        description: Retry only pending companies in the selected historical quarter
+        required: true
+        default: false
+        type: boolean
       trust_previous_backfill:
         description: Use cumulative source freshly written by the preceding backfill quarter
         required: true
@@ -64,6 +69,7 @@ jobs:
           QUARTER: ${{ inputs.quarter || '' }}
           WRITE: ${{ inputs.write }}
           RECALCULATE_ONLY: ${{ inputs.recalculate_only }}
+          PENDING_ONLY: ${{ inputs.pending_only }}
           TRUST_PREVIOUS_BACKFILL: ${{ inputs.trust_previous_backfill }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
@@ -79,6 +85,7 @@ jobs:
           args=(--year "$YEAR" --quarter "$QUARTER")
           [[ "$WRITE" == "true" ]] && args+=(--write)
           [[ "$RECALCULATE_ONLY" == "true" ]] && args+=(--recalculate-only)
+          [[ "$PENDING_ONLY" == "true" ]] && args+=(--pending-only)
           [[ "$TRUST_PREVIOUS_BACKFILL" == "true" ]] && args+=(--trust-previous-backfill)
           # 애플리케이션 마감선보다 30초 뒤의 외부 제한은 실패 상태 기록까지
           # 고장 난 경우에만 사용하는 최후 강제 종료 안전망이다.
