@@ -1964,6 +1964,36 @@ class QuarterlyExtractionTests(unittest.TestCase):
         self.assertEqual(value.net_income, Decimal("60"))
         self.assertTrue(value.source_filing_id.startswith("annual_without_q3_average:"))
 
+    def test_q4_does_not_subtract_fetched_q3_in_another_currency(self):
+        current = [
+            {**item, "currency": "USD"}
+            for item in complete("00000001", current="400", cumulative="")
+        ]
+        previous = complete("00000001", current="100", cumulative="300")
+
+        value = extract_company_fact(
+            "00000001", "kr:1", 2023, 4, current, previous,
+        )
+
+        self.assertEqual(value.operating_income, Decimal("100"))
+        self.assertEqual(value.source_currency, "USD")
+        self.assertTrue(value.source_filing_id.startswith("annual_without_q3_average:"))
+
+    def test_automatic_q4_currency_change_remains_missing(self):
+        current = [
+            {**item, "currency": "USD"}
+            for item in complete("00000001", current="400", cumulative="")
+        ]
+        previous = complete("00000001", current="100", cumulative="300")
+
+        value = extract_company_fact(
+            "00000001", "kr:1", 2023, 4, current, previous,
+            allow_annual_average=False,
+        )
+
+        self.assertIsNone(value.operating_income)
+        self.assertEqual(value.source_currency, "USD")
+
     def test_automatic_q4_without_q3_cumulative_remains_missing(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2021, 4,
@@ -2415,7 +2445,7 @@ class GrowthAndAggregationTests(unittest.TestCase):
         stored = fact(2026, 2, "10").db_row(calculation_version=6)
         self.assertFalse(stored["is_pending"])
 
-    def test_pending_company_is_excluded_even_when_profit_values_exist(self):
+    def test_pending_company_contributes_each_available_current_metric(self):
         current_members = [member("a", 1), member("b", 2)]
         previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
         current = {
@@ -2427,7 +2457,9 @@ class GrowthAndAggregationTests(unittest.TestCase):
             "kr_largecap", 2026, 2, current_members, current, 2,
             comparison_members=previous_members, comparison_facts=previous,
         )
-        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.top_line_total, Decimal("320"))
+        self.assertEqual(market.operating_income_total, Decimal("1011"))
+        self.assertEqual(market.net_income_total, Decimal("1011"))
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
@@ -2439,7 +2471,7 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
-    def test_incomplete_prior_placeholder_is_omitted_from_provisional_total(self):
+    def test_incomplete_prior_placeholder_contributes_its_available_metrics(self):
         current_members = [member("a", 1), member("b", 2)]
         previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
         current = {"a": fact(2026, 2, "12", company="a")}
@@ -2448,7 +2480,26 @@ class GrowthAndAggregationTests(unittest.TestCase):
             "kr_largecap", 2026, 2, current_members, current, 2,
             comparison_members=previous_members, comparison_facts=previous,
         )
-        self.assertEqual(market.operating_income_total, Decimal("12"))
+        self.assertEqual(market.top_line_total, Decimal("120"))
+        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.net_income_total, Decimal("32"))
+        self.assertEqual(market.completion_status, "provisional")
+
+    def test_unconverted_pending_currency_uses_krw_placeholder(self):
+        current_members = [member("a", 1), member("b", 2)]
+        previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
+        current = {
+            "a": fact(2026, 2, "12", company="a"),
+            "b": fact(2026, 2, "999", company="b").with_changes(currency="EUR", is_pending=True),
+        }
+        previous = {"a": fact(2026, 1, "10", company="a"), "b": fact(2026, 1, "20", company="b")}
+
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members, current, 2,
+            comparison_members=previous_members, comparison_facts=previous,
+        )
+
+        self.assertEqual(market.operating_income_total, Decimal("32"))
         self.assertEqual(market.completion_status, "provisional")
 
     def test_market_db_row_maps_domain_status_to_database_lifecycle(self):
@@ -2470,7 +2521,7 @@ class GrowthAndAggregationTests(unittest.TestCase):
             "kr_largecap", 2026, 2, current_members, current, 2,
             comparison_members=previous_members, comparison_facts=previous,
         )
-        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.operating_income_total, Decimal("42"))
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
@@ -2494,3 +2545,4 @@ class GrowthAndAggregationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
