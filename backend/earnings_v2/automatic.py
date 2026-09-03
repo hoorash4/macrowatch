@@ -1286,7 +1286,20 @@ class KoreaEarningsV2AutomaticPipeline:
             )
 
         company_ids = list(pending_by_company)
-        stored_rows = self.repository.company_history(company_ids) if company_ids else []
+        reference_periods = {
+            period
+            for periods in pending_by_company.values()
+            for period in periods
+        }
+        reference_periods.update(
+            previous_period(year, quarter)
+            for year, quarter in tuple(reference_periods)
+            if quarter > 1
+        )
+        stored_rows = (
+            self.repository.company_periods(company_ids, sorted(reference_periods))
+            if company_ids else []
+        )
         stored = {
             (fact.company_id, fact.fiscal_year, fact.fiscal_quarter): fact
             for row in stored_rows

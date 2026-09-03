@@ -1743,6 +1743,8 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(kis.history_calls, [ticker])
         self.assertEqual(result["changed_company_periods"], 2)
         self.assertEqual(second["skipped_same_day_companies"], 1)
+        self.assertTrue(repository.company_period_calls)
+        self.assertEqual(repository.company_period_calls[0][1], ((2026, 1), (2026, 2)))
         self.assertEqual(stored_q1["top_line"], Decimal("100"))
         self.assertEqual(stored_q1["operating_income"], Decimal("999"))
         self.assertEqual(stored_q2["top_line"], Decimal("150"))
