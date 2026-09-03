@@ -131,20 +131,22 @@ def _standalone(
     previous: Decimal | None,
     quarter: int,
     reported_current: Decimal | None,
+    *,
+    allow_annual_average: bool,
 ) -> Decimal | None:
-    if current is None:
-        return None
     if quarter == 1:
-        return current
-    if previous is not None:
-        return current - previous
-    # 신규·분할 상장처럼 직전 누적 원본이 존재하지 않는 중간 분기는
-    # OpenDART 손익계산서의 당해 분기 칼럼을 그대로 쓸 수 있다.
+        return reported_current if reported_current is not None else current
+    # 분·반기보고서는 당해 분기와 누적을 모두 제공한다. Q2·Q3은 누적
+    # 차감으로 다시 만들지 않고 공시가 제공한 당해값을 그대로 보존한다.
     if quarter in {2, 3}:
         return reported_current
-    # 4분기 연간보고서는 단독 분기 칼럼이 없으므로 사용자가 확정한
-    # 흐름용 근사치(연간 누적 / 4)를 마지막 수단으로 사용한다.
-    return current / Decimal(4)
+    if current is None:
+        return None
+    if previous is not None:
+        return current - previous
+    # 4분기 연간보고서는 단독 분기 칼럼이 없다. 연간 / 4 근사치는
+    # 과거 백필에서만 허용하고 자동 수집은 null/관리자 검토로 남긴다.
+    return current / Decimal(4) if allow_annual_average else None
 
 
 def _stored_cumulative(
@@ -181,12 +183,13 @@ def extract_company_fact(
     *,
     previous_fact: FinancialFact | None = None,
     consolidation_scope: str | None = None,
+    allow_annual_average: bool = True,
 ) -> FinancialFact | None:
     """원본 누적값을 보존하면서 한 범위의 단독 분기 실적을 만든다.
 
-    정상 백필·증분 실행은 직전 분기에 저장한 누적 원본을 사용한다.
-    ``previous_rows``는 과거 기업군에 없던 기업처럼 저장 원본이 없는
-    경우에만 호출자가 채우는 제한적 공급자 폴백이다.
+    Q1~Q3은 공시가 제공한 당해값을 보존하고 Q4만 직전 Q3 누적을
+    차감한다. ``previous_rows``는 Q4의 저장 원본이 없는 경우에만
+    호출자가 채우는 제한적 공급자 폴백이다.
     """
     previous_rows = previous_rows or []
     scope, current = _preferred_statement_rows(current_rows, consolidation_scope)
@@ -225,7 +228,7 @@ def extract_company_fact(
         previous_cumulative[field] = (
             stored_value if stored_value is not None else fallback_previous[field]
         )
-    used_annual_average = quarter == 4 and any(
+    used_annual_average = allow_annual_average and quarter == 4 and any(
         current_cumulative[field] is not None and previous_cumulative[field] is None
         for field in current_cumulative
     )
@@ -238,9 +241,18 @@ def extract_company_fact(
         fiscal_year=year,
         fiscal_quarter=quarter,
         period_end=date(year, quarter * 3, 31 if quarter in {1, 4} else 30),
-        top_line=_standalone(current_cumulative["top_line"], previous_cumulative["top_line"], quarter, current_period["top_line"]),
-        operating_income=_standalone(current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter, current_period["operating_income"]),
-        net_income=_standalone(current_cumulative["net_income"], previous_cumulative["net_income"], quarter, current_period["net_income"]),
+        top_line=_standalone(
+            current_cumulative["top_line"], previous_cumulative["top_line"], quarter,
+            current_period["top_line"], allow_annual_average=allow_annual_average,
+        ),
+        operating_income=_standalone(
+            current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter,
+            current_period["operating_income"], allow_annual_average=allow_annual_average,
+        ),
+        net_income=_standalone(
+            current_cumulative["net_income"], previous_cumulative["net_income"], quarter,
+            current_period["net_income"], allow_annual_average=allow_annual_average,
+        ),
         currency=source_currency,
         consolidation_scope=scope,
         source_filing_id=source_filing_id,
@@ -379,4 +391,3 @@ def update_seasonal_window(
         samples[year] = value
     retained = sorted(samples.items())[-MAX_SEASONAL_SAMPLES:]
     return [sample_year for sample_year, _ in retained], [sample_value for _, sample_value in retained]
-

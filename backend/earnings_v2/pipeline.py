@@ -291,11 +291,14 @@ class KoreaEarningsV2Pipeline:
         *,
         stage: str,
         propagate_provider_error: bool = False,
+        previous_fact: FinancialFact | None = None,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
         """KIS로 OpenDART 누락 손익만 보완하고, 실패는 기업 단위 대기로 격리한다."""
         self._progress(f"{stage}_start", company=identity.company_name, ticker=identity.stock_code)
         try:
-            values = self.kis.quarter_financials(identity.stock_code, year, quarter)
+            values = self.kis.quarter_cumulative_financials(
+                identity.stock_code, year, quarter,
+            )
         except ProviderError as error:
             self._progress(f"{stage}_failed", company=identity.company_name)
             if propagate_provider_error:
@@ -305,16 +308,38 @@ class KoreaEarningsV2Pipeline:
                 "field": "top_line",
                 "reason": str(error),
             }
-        changes = {
-            field: value
-            for field, value in values.items()
-            if getattr(fact, field) is None and value is not None
-        }
+        changes: dict[str, Decimal] = {}
+        for field, cumulative in values.items():
+            if getattr(fact, field) is not None:
+                continue
+            current = cumulative.get("current")
+            if current is None:
+                continue
+            if quarter == 1:
+                standalone = current
+            else:
+                # 백필은 같은 KIS 응답의 직전 누적을 가장 먼저 사용한다.
+                previous = cumulative.get("previous")
+                if (
+                    previous is None
+                    and previous_fact is not None
+                    and previous_fact.source_currency == "KRW"
+                ):
+                    previous = getattr(previous_fact, f"source_{field}_cumulative")
+                standalone = (
+                    current - previous
+                    if previous is not None else current / Decimal(quarter)
+                )
+            changes[field] = standalone
+            changes[f"source_{field}_cumulative"] = current
         updated = fact.with_changes(**changes)
         updated = updated.with_changes(is_pending=not updated.fully_complete)
         self._progress(
             f"{stage}_done", company=identity.company_name,
-            filled=sorted(changes), complete=updated.fully_complete,
+            filled=sorted(
+                field for field in ("top_line", "operating_income", "net_income")
+                if field in changes
+            ), complete=updated.fully_complete,
         )
         return updated, None
 
@@ -491,8 +516,9 @@ class KoreaEarningsV2Pipeline:
                 identity.corp_code, identity.company_id, year, quarter,
                 rows, prior_rows, previous_fact=previous_fact,
                 consolidation_scope=fact.consolidation_scope if existing_count else None,
+                allow_annual_average=False,
             )
-            needs_previous = candidate is not None and quarter > 1 and any(
+            needs_previous = candidate is not None and quarter == 4 and any(
                 getattr(candidate, f"source_{field}_cumulative") is not None
                 and getattr(candidate, field) is None
                 for field in ("top_line", "operating_income", "net_income")
@@ -503,6 +529,7 @@ class KoreaEarningsV2Pipeline:
                     identity.corp_code, identity.company_id, year, quarter,
                     rows, prior_rows, previous_fact=previous_fact,
                     consolidation_scope=fact.consolidation_scope if existing_count else None,
+                    allow_annual_average=True,
                 )
             if candidate is not None:
                 best = candidate
@@ -580,6 +607,7 @@ class KoreaEarningsV2Pipeline:
             fact, kis_issue = self._try_kis_missing_financials(
                 identity, fact, year, quarter, stage=f"{stage}_kis",
                 propagate_provider_error=not tolerate_provider_errors,
+                previous_fact=previous_fact,
             )
             if kis_issue is not None:
                 return fact, kis_issue
@@ -624,7 +652,7 @@ class KoreaEarningsV2Pipeline:
         # 해당 기업만 폴백한다. 현재 누적값 자체가 없는 필드는 재호출해도
         # 해결되지 않으므로 폴백 대상에서 제외한다.
         fallback_codes = []
-        if quarter > 1:
+        if quarter == 4:
             for identity in identities:
                 if force_previous_cumulative:
                     fallback_codes.append(identity.corp_code)
@@ -633,6 +661,7 @@ class KoreaEarningsV2Pipeline:
                 preview = extract_company_fact(
                     identity.corp_code, identity.company_id, year, quarter,
                     current[identity.corp_code], previous_fact=prior,
+                    allow_annual_average=False,
                 )
                 needs_previous = preview is not None and any(
                     source_value is not None and standalone_value is None

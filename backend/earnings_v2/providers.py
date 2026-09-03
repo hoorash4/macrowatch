@@ -500,7 +500,9 @@ class KisClient:
         self._token = token
         return token
 
-    def quarter_financials(self, ticker: str, year: int, quarter: int) -> dict[str, Decimal | None]:
+    def quarter_cumulative_financials(
+        self, ticker: str, year: int, quarter: int,
+    ) -> dict[str, dict[str, Decimal | None]]:
         remaining = self.interval - (time.monotonic() - self._last_request)
         if self._last_request and remaining > 0:
             time.sleep(remaining)
@@ -550,12 +552,25 @@ class KisClient:
                     amount = _decimal(row.get(response_key))
                     if amount is not None:
                         cumulative[field][month // 3] = amount
-        result: dict[str, Decimal | None] = {}
+        result: dict[str, dict[str, Decimal | None]] = {}
         for field, values in cumulative.items():
             current = values.get(quarter)
-            previous = values.get(quarter - 1) if quarter > 1 else Decimal(0)
+            previous = values.get(quarter - 1) if quarter > 1 else None
+            result[field] = {
+                "current": current * Decimal("100000000") if current is not None else None,
+                "previous": previous * Decimal("100000000") if previous is not None else None,
+            }
+        return result
+
+    def quarter_financials(self, ticker: str, year: int, quarter: int) -> dict[str, Decimal | None]:
+        """기존 호출자를 위한 단독 분기값 호환 경로."""
+        cumulative = self.quarter_cumulative_financials(ticker, year, quarter)
+        result: dict[str, Decimal | None] = {}
+        for field, values in cumulative.items():
+            current = values["current"]
+            previous = values["previous"] if quarter > 1 else Decimal(0)
             result[field] = (
-                (current - previous) * Decimal("100000000")
+                current - previous
                 if current is not None and previous is not None else None
             )
         return result
@@ -619,4 +634,3 @@ class EcosFxClient:
         latest = max(candidates, key=lambda item: item[0])
         self.cache[reference_date] = latest
         return latest
-

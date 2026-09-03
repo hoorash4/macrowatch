@@ -291,11 +291,14 @@ class KoreaEarningsV2AutomaticPipeline:
         *,
         stage: str,
         propagate_provider_error: bool = False,
+        previous_fact: FinancialFact | None = None,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
         """KIS로 OpenDART 누락 손익만 보완하고, 실패는 기업 단위 대기로 격리한다."""
         self._progress(f"{stage}_start", company=identity.company_name, ticker=identity.stock_code)
         try:
-            values = self.kis.quarter_financials(identity.stock_code, year, quarter)
+            values = self.kis.quarter_cumulative_financials(
+                identity.stock_code, year, quarter,
+            )
         except ProviderError as error:
             self._progress(f"{stage}_failed", company=identity.company_name)
             if propagate_provider_error:
@@ -305,16 +308,37 @@ class KoreaEarningsV2AutomaticPipeline:
                 "field": "top_line",
                 "reason": str(error),
             }
-        changes = {
-            field: value
-            for field, value in values.items()
-            if getattr(fact, field) is None and value is not None
-        }
+        changes: dict[str, Decimal] = {}
+        for field, cumulative in values.items():
+            if getattr(fact, field) is not None:
+                continue
+            current = cumulative.get("current")
+            if current is None:
+                continue
+            if quarter == 1:
+                standalone = current
+            else:
+                # 자동 수집은 확정된 DB 직전 누적만 신뢰한다. 없으면 추정하거나
+                # 과거 KIS를 다시 호출하지 않고 null/관리자 검토로 남긴다.
+                previous = (
+                    getattr(previous_fact, f"source_{field}_cumulative")
+                    if previous_fact is not None
+                    and previous_fact.source_currency == "KRW"
+                    else None
+                )
+                if previous is None:
+                    continue
+                standalone = current - previous
+            changes[field] = standalone
+            changes[f"source_{field}_cumulative"] = current
         updated = fact.with_changes(**changes)
         updated = updated.with_changes(is_pending=not updated.fully_complete)
         self._progress(
             f"{stage}_done", company=identity.company_name,
-            filled=sorted(changes), complete=updated.fully_complete,
+            filled=sorted(
+                field for field in ("top_line", "operating_income", "net_income")
+                if field in changes
+            ), complete=updated.fully_complete,
         )
         return updated, None
 
@@ -491,19 +515,8 @@ class KoreaEarningsV2AutomaticPipeline:
                 identity.corp_code, identity.company_id, year, quarter,
                 rows, prior_rows, previous_fact=previous_fact,
                 consolidation_scope=fact.consolidation_scope if existing_count else None,
+                allow_annual_average=False,
             )
-            needs_previous = candidate is not None and quarter > 1 and any(
-                getattr(candidate, f"source_{field}_cumulative") is not None
-                and getattr(candidate, field) is None
-                for field in ("top_line", "operating_income", "net_income")
-            )
-            if needs_previous:
-                prior_rows.extend(self.dart.single_accounts(identity.corp_code, year, quarter - 1, scope))
-                candidate = extract_company_fact(
-                    identity.corp_code, identity.company_id, year, quarter,
-                    rows, prior_rows, previous_fact=previous_fact,
-                    consolidation_scope=fact.consolidation_scope if existing_count else None,
-                )
             if candidate is not None:
                 best = candidate
             # 연결 손익계산서가 존재하면 완결 여부와 무관하게 연결을 쓴다.
@@ -580,6 +593,7 @@ class KoreaEarningsV2AutomaticPipeline:
             fact, kis_issue = self._try_kis_missing_financials(
                 identity, fact, year, quarter, stage=f"{stage}_kis",
                 propagate_provider_error=not tolerate_provider_errors,
+                previous_fact=previous_fact,
             )
             if kis_issue is not None:
                 return fact, kis_issue
@@ -624,26 +638,9 @@ class KoreaEarningsV2AutomaticPipeline:
         # 해당 기업만 폴백한다. 현재 누적값 자체가 없는 필드는 재호출해도
         # 해결되지 않으므로 폴백 대상에서 제외한다.
         fallback_codes = []
-        if quarter > 1:
+        if quarter > 1 and force_previous_cumulative:
             for identity in identities:
-                if force_previous_cumulative:
-                    fallback_codes.append(identity.corp_code)
-                    continue
-                prior = previous_facts.get(identity.company_id)
-                preview = extract_company_fact(
-                    identity.corp_code, identity.company_id, year, quarter,
-                    current[identity.corp_code], previous_fact=prior,
-                )
-                needs_previous = preview is not None and any(
-                    source_value is not None and standalone_value is None
-                    for source_value, standalone_value in (
-                        (preview.source_top_line_cumulative, preview.top_line),
-                        (preview.source_operating_income_cumulative, preview.operating_income),
-                        (preview.source_net_income_cumulative, preview.net_income),
-                    )
-                )
-                if needs_previous:
-                    fallback_codes.append(identity.corp_code)
+                fallback_codes.append(identity.corp_code)
         previous = (
             _group(self.dart.multi_accounts(fallback_codes, year, quarter - 1), fallback_codes)
             if fallback_codes else {}
@@ -655,7 +652,8 @@ class KoreaEarningsV2AutomaticPipeline:
         for identity in identities:
             fact = extract_company_fact(identity.corp_code, identity.company_id, year, quarter,
                                         current[identity.corp_code], previous.get(identity.corp_code, []),
-                                        previous_fact=previous_facts.get(identity.company_id))
+                                        previous_fact=previous_facts.get(identity.company_id),
+                                        allow_annual_average=False)
             if fact is None:
                 fact = FinancialFact(
                     identity.company_id, year, quarter, end, None, None, None, "KRW", "CFS",
@@ -1251,6 +1249,19 @@ class KoreaEarningsV2AutomaticPipeline:
                 filing.db_row() for filing in new_delistings
             )
         year, quarter = latest_completed_quarter(current_day)
+        stale_rows = self.repository.pending_rows()
+        stale_periods = sorted({
+            (int(row["market_year"]), int(row["market_quarter"]))
+            for row in stale_rows
+            if (int(row["market_year"]), int(row["market_quarter"])) != (year, quarter)
+        })
+        stale_results = [
+            self.run_quarter(
+                stale_year, stale_quarter, write=write, incremental=True,
+                discover_delistings=True,
+            )
+            for stale_year, stale_quarter in stale_periods
+        ]
         refresh_corp_codes = {
             filing.corp_code for filing in new_filings if filing_period(filing) == (year, quarter)
         }
@@ -1267,6 +1278,16 @@ class KoreaEarningsV2AutomaticPipeline:
             "refreshed_companies": len(refresh_corp_codes),
             "new_delisting_receipts": len(new_delistings),
         }
+        result["stale_pending_retries"] = [
+            {
+                "period": stale_result["period"],
+                "status": stale_result["status"],
+                "retried_pending_companies": stale_result["retried_pending_companies"],
+            }
+            for stale_result in stale_results
+        ]
+        if any(stale_result["status"] != "ready" for stale_result in stale_results):
+            result["status"] = "incomplete"
         if write:
             self.repository.save_state("daily_filings", result["status"], {
                 "last_checked_date": current_day.isoformat(),
@@ -1277,4 +1298,3 @@ class KoreaEarningsV2AutomaticPipeline:
                 ),
             })
         return result
-

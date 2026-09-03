@@ -457,6 +457,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("timedelta(days=14)", pipeline)
         self.assertNotIn("recent_periodic_corp_codes", pipeline)
         self.assertIn('pipeline_state("daily_filings")', pipeline)
+        self.assertIn("self.repository.pending_rows()", pipeline)
+        self.assertIn('self.rpc("earnings_v2_list_pending"', repository)
         self.assertIn('"boundary_receipt_ids"', pipeline)
         self.assertIn("filing.receipt_no in boundary_receipts", pipeline)
         self.assertNotIn("def run_year", pipeline)

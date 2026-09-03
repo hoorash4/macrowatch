@@ -129,6 +129,7 @@ class SimulatedRepository:
         self.company_period_calls: list[tuple[set[str], tuple[tuple[int, int], ...]]] = []
         self.company_profiles: dict[str, dict] = {}
         self.delisting_rows: dict[str, dict] = {}
+        self.stale_pending_rows: list[dict] = []
         self.fx_rates: dict[tuple[int, int, str, str], dict] = {
             (2026, 2, "USD", "KRW"): {
                 "fiscal_year": 2026, "fiscal_quarter": 2,
@@ -241,6 +242,9 @@ class SimulatedRepository:
     def pipeline_state(self, operation):
         return self.states.get(operation)
 
+    def pending_rows(self):
+        return [dict(row) for row in self.stale_pending_rows]
+
     def save_state(self, operation, status, cursor, error=None):
         record = {"status": status, "cursor": dict(cursor), "last_error": error}
         self.states[operation] = record
@@ -308,20 +312,33 @@ class SimulatedKis:
     def request_count(self):
         return len(self.calls)
 
-    def quarter_financials(self, ticker, year, quarter):
+    def quarter_cumulative_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
         value = self.values.get(ticker)
-        if isinstance(value, dict):
+        if isinstance(value, dict) and value and all(
+            isinstance(item, dict) for item in value.values()
+        ):
             return value
+        if isinstance(value, dict):
+            return {
+                field: {"current": amount, "previous": Decimal(0)}
+                for field, amount in value.items()
+            }
         return {
-            "top_line": value,
-            "operating_income": Decimal("10") if value is not None else None,
-            "net_income": Decimal("8") if value is not None else None,
+            "top_line": {"current": value, "previous": Decimal(0)},
+            "operating_income": {
+                "current": Decimal("10") if value is not None else None,
+                "previous": Decimal(0),
+            },
+            "net_income": {
+                "current": Decimal("8") if value is not None else None,
+                "previous": Decimal(0),
+            },
         }
 
 
 class FailingKis(SimulatedKis):
-    def quarter_financials(self, ticker, year, quarter):
+    def quarter_cumulative_financials(self, ticker, year, quarter):
         self.calls.append((ticker, year, quarter))
         raise ProviderError(f"KIS top-line request failed for {ticker}")
 
@@ -993,6 +1010,10 @@ class DailyCheckpointTests(unittest.TestCase):
             def save_state(self, operation, status, cursor, error=None):
                 self.saved.append((operation, status, cursor, error))
 
+            @staticmethod
+            def pending_rows():
+                return []
+
         class Dart:
             @staticmethod
             def periodic_filings(start, end):
@@ -1032,6 +1053,10 @@ class DailyCheckpointTests(unittest.TestCase):
             def save_state(*_args, **_kwargs):
                 return None
 
+            @staticmethod
+            def pending_rows():
+                return []
+
         class Dart:
             @staticmethod
             def periodic_filings(start, end):
@@ -1045,6 +1070,61 @@ class DailyCheckpointTests(unittest.TestCase):
         pipeline = KoreaEarningsV2AutomaticPipeline(krx=object(), dart=Dart(), repository=Repository())
         pipeline.run_quarter = lambda *_args, **_kwargs: {"status": "incomplete"}
         pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+    def test_daily_retries_stale_pending_periods_before_current_quarter(self):
+        class Repository:
+            saved = []
+
+            @staticmethod
+            def pipeline_state(_operation):
+                return None
+
+            @staticmethod
+            def pending_rows():
+                return [
+                    {"market_year": 2026, "market_quarter": 1},
+                    {"market_year": 2026, "market_quarter": 1},
+                ]
+
+            def save_state(self, operation, status, cursor, error=None):
+                self.saved.append((operation, status, cursor, error))
+
+        class Dart:
+            @staticmethod
+            def periodic_filings(_start, _end):
+                return []
+
+            @staticmethod
+            def delisting_filings(_start, _end, *, corp_code=None):
+                return []
+
+        calls = []
+        repository = Repository()
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=object(), dart=Dart(), repository=repository,
+        )
+
+        def run_quarter(year, quarter, **kwargs):
+            calls.append((year, quarter, kwargs))
+            return {
+                "period": f"{year}Q{quarter}",
+                "status": "incomplete" if quarter == 1 else "ready",
+                "retried_pending_companies": 2 if quarter == 1 else 0,
+            }
+
+        pipeline.run_quarter = run_quarter
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual([(year, quarter) for year, quarter, _ in calls], [
+            (2026, 1), (2026, 2),
+        ])
+        self.assertTrue(calls[0][2]["discover_delistings"])
+        self.assertEqual(result["status"], "incomplete")
+        self.assertEqual(result["stale_pending_retries"], [{
+            "period": "2026Q1", "status": "incomplete",
+            "retried_pending_companies": 2,
+        }])
+        self.assertEqual(repository.saved[-1][0:2], ("daily_filings", "incomplete"))
 
 
 class IncrementalLifecycleSimulationTests(unittest.TestCase):
@@ -1440,7 +1520,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             (tuple(f"{rank:08d}" for rank in range(1, 101)) + tuple(f"{1000 + rank:08d}" for rank in range(1, 101)), 2026, 2),
         ])
 
-    def test_oldest_backfill_quarter_forces_previous_cumulative_refresh(self):
+    def test_non_q4_backfill_does_not_fetch_previous_dart_rows(self):
         repository = self.populated_repository()
         dart = SimulatedDart()
         pipeline = KoreaEarningsV2Pipeline(
@@ -1449,7 +1529,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         pipeline.run_quarter(2026, 2, write=True)
 
-        self.assertEqual([call[2] for call in dart.financial_calls], [2, 1])
+        self.assertEqual([call[2] for call in dart.financial_calls], [2])
 
     def test_backfill_provider_failure_stops_before_replacement(self):
         target_company = "kr:00000099"
@@ -1680,13 +1760,13 @@ class QuarterlyExtractionTests(unittest.TestCase):
         self.assertEqual(value.source_operating_income_cumulative, Decimal("40"))
         self.assertEqual(value.source_net_income_cumulative, Decimal("40"))
 
-    def test_q2_always_subtracts_q1_cumulative(self):
+    def test_q2_preserves_reported_current_even_when_it_differs_from_cumulative_change(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2026, 2,
-            complete("00000001", current="60", cumulative="100"),
+            complete("00000001", current="55", cumulative="100"),
             complete("00000001", current="40", cumulative="40"),
         )
-        self.assertEqual(value.operating_income, Decimal("60"))
+        self.assertEqual(value.operating_income, Decimal("55"))
 
     def test_q2_uses_saved_source_cumulative_without_previous_api_rows(self):
         previous = extract_company_fact(
@@ -1721,13 +1801,13 @@ class QuarterlyExtractionTests(unittest.TestCase):
         self.assertEqual(facts[identity.company_id].operating_income, Decimal("20"))
         self.assertEqual(issues, [])
 
-    def test_q3_always_subtracts_q2_cumulative(self):
+    def test_q3_preserves_reported_current_even_when_it_differs_from_cumulative_change(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2026, 3,
-            complete("00000001", current="70", cumulative="170"),
+            complete("00000001", current="65", cumulative="170"),
             complete("00000001", current="60", cumulative="100"),
         )
-        self.assertEqual(value.net_income, Decimal("70"))
+        self.assertEqual(value.net_income, Decimal("65"))
 
     def test_q3_without_previous_cumulative_uses_reported_current_period(self):
         value = extract_company_fact(
@@ -1758,6 +1838,92 @@ class QuarterlyExtractionTests(unittest.TestCase):
         self.assertEqual(value.operating_income, Decimal("60"))
         self.assertEqual(value.net_income, Decimal("60"))
         self.assertTrue(value.source_filing_id.startswith("annual_without_q3_average:"))
+
+    def test_automatic_q4_without_q3_cumulative_remains_missing(self):
+        value = extract_company_fact(
+            "00000001", "kr:1", 2021, 4,
+            complete("00000001", current="240", cumulative=""),
+            [], allow_annual_average=False,
+        )
+        self.assertIsNone(value.top_line)
+        self.assertIsNone(value.operating_income)
+        self.assertIsNone(value.net_income)
+        self.assertFalse(value.source_filing_id.startswith("annual_without_q3_average:"))
+
+    def test_automatic_q4_uses_db_q3_without_fetching_previous_dart(self):
+        identity = member("kr:00000001", 1, quarter=4)
+
+        class AnnualDart(SimulatedDart):
+            def multi_accounts(self, corp_codes, year, quarter):
+                codes = tuple(corp_codes)
+                self.financial_calls.append((codes, year, quarter))
+                return [
+                    item for corp in codes
+                    for item in complete(corp, current="400", cumulative="")
+                ]
+
+        previous = fact(2026, 3, "10", company=identity.company_id).with_changes(
+            source_top_line_cumulative=Decimal("300"),
+            source_operating_income_cumulative=Decimal("300"),
+            source_net_income_cumulative=Decimal("300"),
+        )
+        dart = AnnualDart()
+        values, issues = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=dart, repository=SimulatedRepository(),
+        ).collect_financials(
+            [identity], 2026, 4, {identity.company_id: previous},
+        )
+        self.assertEqual(values[identity.company_id].top_line, Decimal("100"))
+        self.assertEqual(issues, [])
+        self.assertEqual([call[2] for call in dart.financial_calls], [4])
+
+    def test_automatic_q4_without_db_q3_does_not_fetch_or_average(self):
+        identity = member("kr:00000001", 1, quarter=4)
+
+        class AnnualDart(SimulatedDart):
+            def multi_accounts(self, corp_codes, year, quarter):
+                codes = tuple(corp_codes)
+                self.financial_calls.append((codes, year, quarter))
+                return [
+                    item for corp in codes
+                    for item in complete(corp, current="400", cumulative="")
+                ]
+
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return complete(corp_code, current="400", cumulative="", scope=scope)
+
+        dart = AnnualDart()
+        values, _issues = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=dart, repository=SimulatedRepository(),
+        ).collect_financials([identity], 2026, 4)
+        self.assertIsNone(values[identity.company_id].top_line)
+        self.assertTrue(values[identity.company_id].is_pending)
+        self.assertEqual([call[2] for call in dart.financial_calls], [4])
+        self.assertEqual({call[2] for call in dart.single_calls}, {4})
+
+    def test_backfill_q4_fetches_q3_when_db_cumulative_is_missing(self):
+        identity = member("kr:00000001", 1, quarter=4)
+
+        class AnnualDart(SimulatedDart):
+            def multi_accounts(self, corp_codes, year, quarter):
+                codes = tuple(corp_codes)
+                self.financial_calls.append((codes, year, quarter))
+                current, cumulative = (
+                    ("400", "") if quarter == 4 else ("100", "300")
+                )
+                return [
+                    item for corp in codes
+                    for item in complete(corp, current=current, cumulative=cumulative)
+                ]
+
+        dart = AnnualDart()
+        values, issues = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=SimulatedRepository(),
+        ).collect_financials([identity], 2026, 4)
+        self.assertEqual(values[identity.company_id].top_line, Decimal("100"))
+        self.assertEqual(issues, [])
+        self.assertEqual([call[2] for call in dart.financial_calls], [4, 3])
 
     def test_cfs_is_preferred_even_when_ofs_is_more_complete(self):
         current = [
@@ -1835,6 +2001,20 @@ class QuarterlyExtractionTests(unittest.TestCase):
 
 
 class KisFallbackTests(unittest.TestCase):
+    @staticmethod
+    def _incomplete(company_id="kr:00000001"):
+        return fact(2026, 3, "10", company=company_id).with_changes(
+            top_line=None, is_pending=True,
+        )
+
+    @staticmethod
+    def _kis_values(current, previous):
+        return {
+            "top_line": {"current": current, "previous": previous},
+            "operating_income": {"current": None, "previous": None},
+            "net_income": {"current": None, "previous": None},
+        }
+
     def test_kis_converts_cumulative_hundred_million_krw_to_standalone_won(self):
         class Response:
             ok = True
@@ -1897,6 +2077,108 @@ class KisFallbackTests(unittest.TestCase):
             "operating_income": Decimal("0"),
             "net_income": Decimal("0"),
         })
+
+    def test_kis_exposes_current_and_previous_cumulative_values(self):
+        class Response:
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "rt_cd": "0",
+                    "output": [
+                        {"stac_yymm": "202603", "sale_account": "100", "bsop_prti": "10", "thtr_ntin": "8"},
+                        {"stac_yymm": "202606", "sale_account": "250", "bsop_prti": "30", "thtr_ntin": "20"},
+                    ],
+                }
+
+        class Session:
+            @staticmethod
+            def get(*_args, **_kwargs):
+                return Response()
+
+        client = KisClient("key", "secret", cached_token=lambda: "token", session=Session(), interval=0)
+        values = client.quarter_cumulative_financials("005930", 2026, 2)
+        self.assertEqual(values["top_line"], {
+            "current": Decimal("25000000000"),
+            "previous": Decimal("10000000000"),
+        })
+
+    def test_backfill_kis_prefers_kis_previous_cumulative(self):
+        identity = member("kr:00000001", 1, quarter=3)
+        previous = fact(2026, 2, "10", company=identity.company_id).with_changes(
+            source_top_line_cumulative=Decimal("150"),
+        )
+        kis = SimulatedKis({identity.stock_code: self._kis_values(Decimal("300"), Decimal("180"))})
+        resolved, issue = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=SimulatedRepository(), kis=kis,
+        )._try_kis_missing_financials(
+            identity, self._incomplete(identity.company_id), 2026, 3,
+            stage="test", previous_fact=previous,
+        )
+        self.assertIsNone(issue)
+        self.assertEqual(resolved.top_line, Decimal("120"))
+        self.assertEqual(resolved.source_top_line_cumulative, Decimal("300"))
+
+    def test_backfill_kis_uses_db_previous_then_quarter_average(self):
+        identity = member("kr:00000001", 1, quarter=3)
+        previous = fact(2026, 2, "10", company=identity.company_id).with_changes(
+            source_top_line_cumulative=Decimal("150"),
+        )
+        values = self._kis_values(Decimal("300"), None)
+        with_db, _ = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=SimulatedRepository(),
+            kis=SimulatedKis({identity.stock_code: values}),
+        )._try_kis_missing_financials(
+            identity, self._incomplete(identity.company_id), 2026, 3,
+            stage="test", previous_fact=previous,
+        )
+        without_db, _ = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=SimulatedRepository(),
+            kis=SimulatedKis({identity.stock_code: values}),
+        )._try_kis_missing_financials(
+            identity, self._incomplete(identity.company_id), 2026, 3,
+            stage="test",
+        )
+        self.assertEqual(with_db.top_line, Decimal("150"))
+        self.assertEqual(without_db.top_line, Decimal("100"))
+
+    def test_automatic_kis_uses_only_db_previous_cumulative(self):
+        identity = member("kr:00000001", 1, quarter=3)
+        previous = fact(2026, 2, "10", company=identity.company_id).with_changes(
+            source_top_line_cumulative=Decimal("150"),
+        )
+        values = self._kis_values(Decimal("300"), Decimal("180"))
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=SimulatedRepository(),
+            kis=SimulatedKis({identity.stock_code: values}),
+        )
+        resolved, _ = pipeline._try_kis_missing_financials(
+            identity, self._incomplete(identity.company_id), 2026, 3,
+            stage="test", previous_fact=previous,
+        )
+        unresolved, _ = pipeline._try_kis_missing_financials(
+            identity, self._incomplete(identity.company_id), 2026, 3,
+            stage="test",
+        )
+        self.assertEqual(resolved.top_line, Decimal("150"))
+        self.assertIsNone(unresolved.top_line)
+        self.assertTrue(unresolved.is_pending)
+
+    def test_kis_missing_current_cumulative_stays_pending(self):
+        identity = member("kr:00000001", 1, quarter=3)
+        resolved, issue = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=SimulatedRepository(),
+            kis=SimulatedKis({identity.stock_code: self._kis_values(None, Decimal("180"))}),
+        )._try_kis_missing_financials(
+            identity, self._incomplete(identity.company_id), 2026, 3,
+            stage="test",
+        )
+        self.assertIsNone(issue)
+        self.assertIsNone(resolved.top_line)
+        self.assertTrue(resolved.is_pending)
 
 
 class GrowthAndAggregationTests(unittest.TestCase):

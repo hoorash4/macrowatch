@@ -176,6 +176,10 @@ class EarningsV2Repository:
             return result[0] if result and isinstance(result[0], dict) else None
         return result if isinstance(result, dict) else None
 
+    def pending_rows(self) -> list[dict[str, Any]]:
+        result = self.rpc("earnings_v2_list_pending", {})
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
     def cached_kis_token(self) -> str | None:
         response = self.session.get(
             f"{self.url}/rest/v1/app_settings",
@@ -206,4 +210,3 @@ class EarningsV2Repository:
         )
         if not response.ok:
             raise StoreError("Could not persist the shared KIS access token")
-
