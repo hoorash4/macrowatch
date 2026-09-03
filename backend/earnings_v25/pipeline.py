@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Iterable
 
@@ -533,7 +533,8 @@ class KoreaEarningsV2Pipeline:
         """Fill only missing fields from the accepted filing's raw archive."""
         filings = [
             filing for filing in self.dart.periodic_filings(
-                quarter_end(year, quarter), quarter_resolution_end(year, quarter),
+                quarter_end(year, quarter),
+                quarter_resolution_end(year, quarter) + timedelta(days=14),
                 corp_code=identity.corp_code,
             )
             if filing_period(filing) == (year, quarter)
