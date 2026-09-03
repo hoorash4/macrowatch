@@ -122,12 +122,29 @@ def _cumulative_amount(row: dict[str, Any] | None, quarter: int) -> Decimal | No
     return decimal_value(row.get(source_field))
 
 
-def _standalone(current: Decimal | None, previous: Decimal | None, quarter: int) -> Decimal | None:
+def _current_period_amount(row: dict[str, Any] | None) -> Decimal | None:
+    return decimal_value(row.get("thstrm_amount")) if row is not None else None
+
+
+def _standalone(
+    current: Decimal | None,
+    previous: Decimal | None,
+    quarter: int,
+    reported_current: Decimal | None,
+) -> Decimal | None:
     if current is None:
         return None
     if quarter == 1:
         return current
-    return current - previous if previous is not None else None
+    if previous is not None:
+        return current - previous
+    # 신규·분할 상장처럼 직전 누적 원본이 존재하지 않는 중간 분기는
+    # OpenDART 손익계산서의 당해 분기 칼럼을 그대로 쓸 수 있다.
+    if quarter in {2, 3}:
+        return reported_current
+    # 4분기 연간보고서는 단독 분기 칼럼이 없으므로 사용자가 확정한
+    # 흐름용 근사치(연간 누적 / 4)를 마지막 수단으로 사용한다.
+    return current / Decimal(4)
 
 
 def _stored_cumulative(
@@ -190,6 +207,11 @@ def extract_company_fact(
         "operating_income": _cumulative_amount(current_op, quarter),
         "net_income": _cumulative_amount(current_net, quarter),
     }
+    current_period = {
+        "top_line": _current_period_amount(current_top),
+        "operating_income": _current_period_amount(current_op),
+        "net_income": _current_period_amount(current_net),
+    }
     fallback_previous = {
         "top_line": _cumulative_amount(previous_top, quarter - 1),
         "operating_income": _cumulative_amount(previous_op, quarter - 1),
@@ -203,17 +225,25 @@ def extract_company_fact(
         previous_cumulative[field] = (
             stored_value if stored_value is not None else fallback_previous[field]
         )
+    used_annual_average = quarter == 4 and any(
+        current_cumulative[field] is not None and previous_cumulative[field] is None
+        for field in current_cumulative
+    )
+    source_filing_id = (
+        f"annual_without_q3_average:{filing_id}"
+        if used_annual_average else filing_id
+    )
     return FinancialFact(
         company_id=company_id,
         fiscal_year=year,
         fiscal_quarter=quarter,
         period_end=date(year, quarter * 3, 31 if quarter in {1, 4} else 30),
-        top_line=_standalone(current_cumulative["top_line"], previous_cumulative["top_line"], quarter),
-        operating_income=_standalone(current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter),
-        net_income=_standalone(current_cumulative["net_income"], previous_cumulative["net_income"], quarter),
+        top_line=_standalone(current_cumulative["top_line"], previous_cumulative["top_line"], quarter, current_period["top_line"]),
+        operating_income=_standalone(current_cumulative["operating_income"], previous_cumulative["operating_income"], quarter, current_period["operating_income"]),
+        net_income=_standalone(current_cumulative["net_income"], previous_cumulative["net_income"], quarter, current_period["net_income"]),
         currency=source_currency,
         consolidation_scope=scope,
-        source_filing_id=filing_id,
+        source_filing_id=source_filing_id,
         filing_date=filing_date,
         source_currency=source_currency,
         source_top_line_cumulative=current_cumulative["top_line"],

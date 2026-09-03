@@ -57,6 +57,7 @@ def main() -> None:
         result = pipeline.run_quarter(
             args.year, args.quarter, write=args.write,
             incremental=args.pending_only,
+            discover_delistings=True,
             trust_previous_backfill=args.trust_previous_backfill,
             deadline_seconds=deadline_seconds,
         )

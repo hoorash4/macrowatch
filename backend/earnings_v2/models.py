@@ -23,6 +23,18 @@ class PeriodicFiling:
 
 
 @dataclass(frozen=True)
+class DelistingFiling:
+    corp_code: str
+    receipt_no: str
+    received_on: date
+    report_name: str
+    event_type: str
+
+    def db_row(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class CompanyIdentity:
     company_id: str
     company_name: str
@@ -146,3 +158,4 @@ class MarketFact:
         row["lifecycle_status"] = row.pop("completion_status")
         row["calculation_version"] = calculation_version
         return row
+

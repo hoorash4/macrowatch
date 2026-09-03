@@ -8,7 +8,15 @@ from decimal import Decimal
 from typing import Any, Iterable
 
 from .aggregation import aggregate_market, calculate_market_point
-from .models import CompanyIdentity, FinancialFact, MarketFact, PeriodicFiling, QuarterFxRate, Security
+from .models import (
+    CompanyIdentity,
+    DelistingFiling,
+    FinancialFact,
+    MarketFact,
+    PeriodicFiling,
+    QuarterFxRate,
+    Security,
+)
 from .providers import EcosFxClient, KisClient, KrxClient, OpenDartClient, ProviderError
 from .repository import EarningsV2Repository
 from .runtime import execution_deadline
@@ -28,6 +36,21 @@ CALCULATION_VERSION = 6
 
 def quarter_end(year: int, quarter: int) -> date:
     return date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
+
+
+def quarter_start(year: int, quarter: int) -> date:
+    return date(year, (quarter - 1) * 3 + 1, 1)
+
+
+def quarter_resolution_end(year: int, quarter: int) -> date:
+    """해당 분기 실적이 통상 확정되는 시점까지 최종 상폐공시를 찾는다."""
+    if quarter == 1:
+        return date(year, 5, 15)
+    if quarter == 2:
+        return date(year, 8, 14)
+    if quarter == 3:
+        return date(year, 11, 14)
+    return date(year + 1, 3, 31)
 
 
 def previous_period(year: int, quarter: int) -> tuple[int, int]:
@@ -296,6 +319,149 @@ class KoreaEarningsV2Pipeline:
         return updated, None
 
     @staticmethod
+    def _delisting_event_map(
+        events: Iterable[DelistingFiling],
+    ) -> dict[str, DelistingFiling]:
+        """기업별 최초 결정공시를 우선하고, 없으면 최초 최종공시를 쓴다."""
+        grouped: dict[str, list[DelistingFiling]] = {}
+        for event in events:
+            grouped.setdefault(event.corp_code, []).append(event)
+        result: dict[str, DelistingFiling] = {}
+        for corp_code, candidates in grouped.items():
+            ordered = sorted(candidates, key=lambda row: (row.received_on, row.receipt_no))
+            result[corp_code] = next(
+                (row for row in ordered if row.event_type == "decision"), ordered[0],
+            )
+        return result
+
+    def _stored_delisting_events(
+        self,
+        identities: Iterable[CompanyIdentity],
+        year: int,
+        quarter: int,
+        supplied: Iterable[DelistingFiling] = (),
+    ) -> dict[str, DelistingFiling]:
+        identities = list(identities)
+        start = quarter_start(year, quarter)
+        quarter_last_day = quarter_end(year, quarter)
+        end = quarter_resolution_end(year, quarter)
+        rows = self.repository.delisting_events(
+            (row.corp_code for row in identities), start, end,
+        )
+        events = [
+            DelistingFiling(
+                corp_code=str(row["corp_code"]),
+                receipt_no=str(row["receipt_no"]),
+                received_on=date.fromisoformat(str(row["received_on"])),
+                report_name=str(row["report_name"]),
+                event_type=str(row["event_type"]),
+            )
+            for row in rows
+        ]
+        events.extend(event for event in supplied if start <= event.received_on <= end)
+        events = [
+            event for event in events
+            if (
+                event.event_type == "final"
+                or event.received_on <= quarter_last_day
+            )
+        ]
+        return self._delisting_event_map(events)
+
+    def _discover_delisting_events(
+        self,
+        identities: Iterable[CompanyIdentity],
+        year: int,
+        quarter: int,
+        *,
+        write: bool,
+    ) -> list[DelistingFiling]:
+        """과거 재처리는 미완결 기업만 회사별 거래소공시를 확인한다."""
+        start = quarter_start(year, quarter)
+        quarter_last_day = quarter_end(year, quarter)
+        end = quarter_resolution_end(year, quarter)
+        events: dict[str, DelistingFiling] = {}
+        for identity in identities:
+            for event in self.dart.delisting_filings(
+                start, end, corp_code=identity.corp_code,
+            ):
+                if event.event_type == "final" or event.received_on <= quarter_last_day:
+                    events[event.receipt_no] = event
+        ordered = sorted(events.values(), key=lambda row: (row.received_on, row.receipt_no))
+        if write and ordered:
+            self.repository.upsert_delisting_events(event.db_row() for event in ordered)
+        return ordered
+
+    @staticmethod
+    def _delisting_fact(
+        identity: CompanyIdentity,
+        previous: FinancialFact,
+        event: DelistingFiling,
+        year: int,
+        quarter: int,
+    ) -> FinancialFact:
+        cumulative: dict[str, Decimal | None] = {}
+        for field in ("top_line", "operating_income", "net_income"):
+            value = getattr(previous, field)
+            if quarter == 1:
+                cumulative[field] = value
+            else:
+                prior_cumulative = getattr(previous, f"source_{field}_cumulative")
+                cumulative[field] = (
+                    prior_cumulative + value
+                    if prior_cumulative is not None and value is not None else None
+                )
+        return FinancialFact(
+            company_id=identity.company_id,
+            fiscal_year=year,
+            fiscal_quarter=quarter,
+            period_end=quarter_end(year, quarter),
+            top_line=previous.top_line,
+            operating_income=previous.operating_income,
+            net_income=previous.net_income,
+            currency=previous.currency,
+            consolidation_scope=previous.consolidation_scope,
+            source_filing_id=f"delisting_previous_quarter:{event.receipt_no}",
+            filing_date=event.received_on,
+            source="open_dart",
+            source_currency=previous.source_currency,
+            source_top_line_cumulative=cumulative["top_line"],
+            source_operating_income_cumulative=cumulative["operating_income"],
+            source_net_income_cumulative=cumulative["net_income"],
+            is_pending=False,
+        )
+
+    def _previous_fact_for_delisting(
+        self,
+        identity: CompanyIdentity,
+        year: int,
+        quarter: int,
+        stored: dict[tuple[str, int, int], FinancialFact],
+        *,
+        usd_krw_rate: Decimal,
+        write: bool,
+    ) -> FinancialFact | None:
+        previous_key = previous_period(year, quarter)
+        previous = stored.get((identity.company_id, *previous_key))
+        if previous is not None and previous.fully_complete and not previous.is_pending:
+            return previous
+        # 직전 분기에 상위 100개가 아니었던 기업도 있으므로, 상폐 처리에
+        # 필요한 정확한 직전 분기 한 건만 공급자에서 새로 구한다.
+        fetched, _issues = self.collect_financials(
+            [identity], previous_key[0], previous_key[1], {},
+            usd_krw_rate=usd_krw_rate,
+            tolerate_provider_errors=True,
+            force_previous_cumulative=previous_key[1] > 1,
+            persist_profiles=write,
+        )
+        candidate = fetched.get(identity.company_id)
+        return (
+            candidate
+            if candidate is not None and candidate.fully_complete and not candidate.is_pending
+            else None
+        )
+
+    @staticmethod
     def _entity_kind(industry_code: str | None) -> str | None:
         digits = re.sub(r"\D", "", industry_code or "")
         if not digits:
@@ -416,6 +582,25 @@ class KoreaEarningsV2Pipeline:
             )
             if kis_issue is not None:
                 return fact, kis_issue
+        # 비금융 손익계산서에 영업손익·순손익은 있으나 매출 계정이 없고
+        # 개별 DART와 KIS도 값을 주지 않으면 무매출 0원으로 확정한다.
+        # 금융사는 수익 계정 구조가 달라 이 규칙에서 명시적으로 제외한다.
+        if (
+            fact.top_line is None
+            and fact.profit_complete
+            and entity_kind == "general"
+        ):
+            previous_top = (
+                previous_fact.source_top_line_cumulative
+                if previous_fact is not None else None
+            )
+            fact = fact.with_changes(
+                top_line=Decimal(0),
+                source_top_line_cumulative=(
+                    Decimal(0) if quarter == 1 or previous_top is None else previous_top
+                ),
+                source_filing_id=f"zero_top_line:{fact.source_filing_id}",
+            )
         return fact.with_changes(is_pending=not fact.fully_complete), None
 
     def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
@@ -677,6 +862,8 @@ class KoreaEarningsV2Pipeline:
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
                     incremental: bool = False,
                     refresh_corp_codes: set[str] | None = None,
+                    delisting_filings: Iterable[DelistingFiling] | None = None,
+                    discover_delistings: bool = False,
                     trust_previous_backfill: bool = False,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if deadline_seconds is not None:
@@ -684,6 +871,8 @@ class KoreaEarningsV2Pipeline:
                 return self.run_quarter(
                     year, quarter, write=write,
                     incremental=incremental, refresh_corp_codes=refresh_corp_codes,
+                    delisting_filings=delisting_filings,
+                    discover_delistings=discover_delistings,
                     trust_previous_backfill=trust_previous_backfill,
                 )
         operation = f"{year}Q{quarter}"
@@ -732,16 +921,39 @@ class KoreaEarningsV2Pipeline:
                 reference_periods.insert(0, (year, quarter))
             stored_rows = self.repository.company_periods(history_ids, reference_periods)
             stored, manual_ids = self._stored_facts(stored_rows, (year, quarter))
+            supplied_delistings = list(delisting_filings or [])
+            delisting_checked_codes: set[str] = set()
             if incremental:
                 stored_current = {
                     identity.company_id: stored[(identity.company_id, year, quarter)]
                     for identity in identities
                     if (identity.company_id, year, quarter) in stored
                 }
+                delisting_events = self._stored_delisting_events(
+                    identities, year, quarter, supplied_delistings,
+                )
+                if discover_delistings:
+                    historical_candidates = [
+                        identity for identity in identities
+                        if stored_current.get(identity.company_id) is not None
+                        and stored_current[identity.company_id].is_pending
+                        and identity.corp_code not in delisting_events
+                    ]
+                    delisting_checked_codes.update(
+                        identity.corp_code for identity in historical_candidates
+                    )
+                    discovered_events = self._discover_delisting_events(
+                        historical_candidates, year, quarter, write=write,
+                    )
+                    delisting_events = self._delisting_event_map([
+                        *delisting_events.values(), *discovered_events,
+                    ])
                 provider_refresh = refresh_corp_codes or set()
                 selected = [
                     row for row in identities
-                    if row.company_id not in manual_ids and (
+                    if row.company_id not in manual_ids
+                    and row.corp_code not in delisting_events
+                    and (
                         row.corp_code in provider_refresh
                         or row.company_id not in stored_current
                         or (
@@ -757,7 +969,12 @@ class KoreaEarningsV2Pipeline:
             else:
                 # 명시적 백필은 자동/수동 여부와 관계없이 공급자 원자료로 전부 교체한다.
                 stored_current = {}
-                selected = identities
+                delisting_events = self._stored_delisting_events(
+                    identities, year, quarter, supplied_delistings,
+                )
+                selected = [
+                    row for row in identities if row.corp_code not in delisting_events
+                ]
                 preserved = {}
             # 저장된 직전 누적 원본을 재사용한다. 시간순 백필의 최초 경계에서
             # 누적 원본이 없을 때만 collect_financials가 직전 분기를 추가 호출한다.
@@ -776,6 +993,61 @@ class KoreaEarningsV2Pipeline:
                 )
                 if selected else ({}, [])
             )
+            if discover_delistings:
+                candidate_facts = {**preserved, **fresh_facts}
+                undiscovered_pending = [
+                    identity for identity in identities
+                    if identity.corp_code not in delisting_events
+                    and identity.corp_code not in delisting_checked_codes
+                    and (candidate := candidate_facts.get(identity.company_id)) is not None
+                    and candidate.is_pending
+                ]
+                discovered_events = self._discover_delisting_events(
+                    undiscovered_pending, year, quarter, write=write,
+                )
+                delisting_events = self._delisting_event_map([
+                    *delisting_events.values(), *discovered_events,
+                ])
+
+            identities_by_code = {row.corp_code: row for row in identities}
+            current_candidates = {**preserved, **fresh_facts}
+            delisting_facts: dict[str, FinancialFact] = {}
+            for corp_code, event in delisting_events.items():
+                identity = identities_by_code.get(corp_code)
+                if identity is None or identity.company_id in manual_ids:
+                    continue
+                existing = current_candidates.get(identity.company_id)
+                if existing is not None and not existing.is_pending:
+                    # 결정공시로 이미 처리된 기업은 뒤이은 최종 상폐공시에
+                    # 다시 반응하지 않으며, 정상 공시값도 덮어쓰지 않는다.
+                    continue
+                previous = self._previous_fact_for_delisting(
+                    identity, year, quarter, stored,
+                    usd_krw_rate=fx_rate.rate, write=write,
+                )
+                if previous is None:
+                    issues.append({
+                        "company": identity.company_name,
+                        "field": "delisting_previous_quarter",
+                        "reason": "previous-quarter financials unavailable",
+                    })
+                    continue
+                delisting_facts[identity.company_id] = self._delisting_fact(
+                    identity, previous, event, year, quarter,
+                )
+                self._progress(
+                    "delisting_previous_quarter_applied",
+                    company=identity.company_name,
+                    receipt_no=event.receipt_no,
+                )
+            if delisting_facts:
+                resolved_names = {
+                    identities_by_code[corp_code].company_name
+                    for corp_code in delisting_events
+                    if identities_by_code.get(corp_code) is not None
+                    and identities_by_code[corp_code].company_id in delisting_facts
+                }
+                issues = [item for item in issues if item.get("company") not in resolved_names]
             pending_fallbacks: dict[str, FinancialFact] = {}
             profile_updates: dict[str, dict[str, str]] = {}
             if incremental:
@@ -784,6 +1056,7 @@ class KoreaEarningsV2Pipeline:
                     fact = stored_current.get(identity.company_id)
                     if (
                         identity.company_id in manual_ids
+                        or identity.corp_code in delisting_events
                         or identity.company_id in selected_ids
                         or fact is None
                         or not fact.is_pending
@@ -805,8 +1078,8 @@ class KoreaEarningsV2Pipeline:
                                 issues.append({"company": identity.company_name, "field": field, "reason": "provider value missing"})
             if write and profile_updates:
                 self.repository.upsert_company_profiles(profile_updates.values())
-            facts = {**preserved, **fresh_facts, **pending_fallbacks}
-            changed_ids = set(fresh_facts) | set(pending_fallbacks)
+            facts = {**preserved, **fresh_facts, **pending_fallbacks, **delisting_facts}
+            changed_ids = set(fresh_facts) | set(pending_fallbacks) | set(delisting_facts)
             current_by_company, company_window_rows = self._calculate_company_points(
                 facts, stored, changed_ids, year, quarter,
             )
@@ -836,6 +1109,7 @@ class KoreaEarningsV2Pipeline:
                 "companies": len(identities), "facts": len(current_facts),
                 "refreshed_companies": len(fresh_facts),
                 "retried_pending_companies": len(pending_fallbacks),
+                "resolved_delisting_companies": len(delisting_facts),
                 "complete_facts": sum(not row.is_pending for row in current_facts),
                 "markets": {row.market_id: row.completion_status for row in current_markets},
                 "issues": issues,
@@ -952,10 +1226,19 @@ class KoreaEarningsV2Pipeline:
             if re.fullmatch(r"\d{14}", str(value))
         }
         filings = self.dart.periodic_filings(checked_on, current_day)
+        delistings = self.dart.delisting_filings(checked_on, current_day)
         new_filings = [
             filing for filing in filings
             if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
         ]
+        new_delistings = [
+            filing for filing in delistings
+            if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
+        ]
+        if write and new_delistings:
+            self.repository.upsert_delisting_events(
+                filing.db_row() for filing in new_delistings
+            )
         year, quarter = latest_completed_quarter(current_day)
         refresh_corp_codes = {
             filing.corp_code for filing in new_filings if filing_period(filing) == (year, quarter)
@@ -963,18 +1246,22 @@ class KoreaEarningsV2Pipeline:
         result = self.run_quarter(
             year, quarter, write=write, incremental=True,
             refresh_corp_codes=refresh_corp_codes,
+            delisting_filings=new_delistings,
         )
         result["filing_discovery"] = {
             "checked_from": checked_on.isoformat(),
             "checked_through": current_day.isoformat(),
             "new_receipts": len(new_filings),
             "refreshed_companies": len(refresh_corp_codes),
+            "new_delisting_receipts": len(new_delistings),
         }
         if write:
             self.repository.save_state("daily_filings", result["status"], {
                 "last_checked_date": current_day.isoformat(),
                 "boundary_receipt_ids": sorted(
-                    filing.receipt_no for filing in filings if filing.received_on == current_day
+                    filing.receipt_no
+                    for filing in [*filings, *delistings]
+                    if filing.received_on == current_day
                 ),
             })
         return result
@@ -990,6 +1277,7 @@ class KoreaEarningsV2Pipeline:
         for quarter in range(1, 5):
             result = self.run_quarter(
                 year, quarter, write=write,
+                discover_delistings=True,
                 trust_previous_backfill=write and quarter > 1,
                 deadline_seconds=deadline_seconds,
             )

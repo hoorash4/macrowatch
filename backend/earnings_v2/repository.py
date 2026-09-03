@@ -143,6 +143,24 @@ class EarningsV2Repository:
     def upsert_quarter_fx_rate(self, row: dict[str, Any]) -> int:
         return int(self.rpc("earnings_v2_upsert_quarter_fx_rate", {"p_row": row}) or 0)
 
+    def upsert_delisting_events(self, rows: Iterable[dict[str, Any]]) -> int:
+        return int(self.rpc(
+            "earnings_v2_upsert_delisting_events", {"p_rows": list(rows)},
+        ) or 0)
+
+    def delisting_events(
+        self,
+        corp_codes: Iterable[str],
+        start: Any,
+        end: Any,
+    ) -> list[dict[str, Any]]:
+        result = self.rpc("earnings_v2_get_delisting_events", {
+            "p_corp_codes": list(dict.fromkeys(corp_codes)),
+            "p_start": start,
+            "p_end": end,
+        })
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
     def save_state(self, operation: str, status: str, cursor: dict[str, Any], error: str | None = None) -> None:
         self.rpc("earnings_v2_save_pipeline_state", {
             "p_source": "korea_v2", "p_operation": operation, "p_cursor": cursor,
@@ -188,3 +206,4 @@ class EarningsV2Repository:
         )
         if not response.ok:
             raise StoreError("Could not persist the shared KIS access token")
+

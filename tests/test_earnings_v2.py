@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_v2.aggregation import aggregate_market
-from earnings_v2.models import CompanyIdentity, FinancialFact, PeriodicFiling
+from earnings_v2.models import CompanyIdentity, DelistingFiling, FinancialFact, PeriodicFiling
 from earnings_v2.cli import DAILY_DEADLINE_SECONDS, QUARTER_DEADLINE_SECONDS, completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.http import (
@@ -126,6 +126,7 @@ class SimulatedRepository:
         self.saved_states: list[tuple[str, str, dict, str | None]] = []
         self.company_period_calls: list[tuple[set[str], tuple[tuple[int, int], ...]]] = []
         self.company_profiles: dict[str, dict] = {}
+        self.delisting_rows: dict[str, dict] = {}
         self.fx_rates: dict[tuple[int, int, str, str], dict] = {
             (2026, 2, "USD", "KRW"): {
                 "fiscal_year": 2026, "fiscal_quarter": 2,
@@ -165,6 +166,19 @@ class SimulatedRepository:
         for row in materialized:
             self.company_profiles[row["company_id"]] = dict(row)
         return len(materialized)
+
+    def upsert_delisting_events(self, rows):
+        materialized = list(rows)
+        for row in materialized:
+            self.delisting_rows[row["receipt_no"]] = dict(row)
+        return len(materialized)
+
+    def delisting_events(self, corp_codes, start, end):
+        wanted = set(corp_codes)
+        return [
+            dict(row) for row in self.delisting_rows.values()
+            if row["corp_code"] in wanted and start <= row["received_on"] <= end
+        ]
 
     def company_history(self, company_ids):
         wanted = set(company_ids)
@@ -232,8 +246,9 @@ class SimulatedRepository:
 
 
 class SimulatedDart:
-    def __init__(self, filings=()):
+    def __init__(self, filings=(), delistings=()):
         self.filings = list(filings)
+        self.delistings = list(delistings)
         self.financial_calls: list[tuple[tuple[str, ...], int, int]] = []
         self.profile_calls: list[str] = []
         self.single_calls: list[tuple[str, int, int, str]] = []
@@ -244,6 +259,12 @@ class SimulatedDart:
 
     def periodic_filings(self, _start, _end):
         return list(self.filings)
+
+    def delisting_filings(self, _start, _end, *, corp_code=None):
+        return [
+            row for row in self.delistings
+            if corp_code is None or row.corp_code == corp_code
+        ]
 
     def multi_accounts(self, corp_codes, year, quarter):
         codes = tuple(corp_codes)
@@ -510,6 +531,30 @@ class OpenDartTransportTests(unittest.TestCase):
         filings = client.periodic_filings(date(2026, 8, 1), date(2026, 8, 14))
         self.assertEqual(len(filings), 1)
         self.assertEqual(filings[0].receipt_no, "20260814000001")
+
+    def test_delisting_filings_accept_only_normalized_exact_titles(self):
+        class Client(OpenDartClient):
+            def __init__(self):
+                super().__init__("secret", interval=0)
+
+            def _get(self, endpoint, params, *, binary=False, retry_total=None):
+                if endpoint != "list.json" or params.get("pblntf_ty") != "I":
+                    raise AssertionError("unexpected OpenDART request")
+                return {
+                    "status": "000", "total_page": 1,
+                    "list": [
+                        {"corp_code": "00123456", "rcept_no": "20210630000001", "rcept_dt": "20210630", "report_nm": "[코스닥시장] 상장폐지 결정"},
+                        {"corp_code": "00123456", "rcept_no": "20210701000001", "rcept_dt": "20210701", "report_nm": "[기재정정]상장폐지"},
+                        {"corp_code": "00999999", "rcept_no": "20210630000002", "rcept_dt": "20210630", "report_nm": "상장폐지 예정"},
+                        {"corp_code": "00999998", "rcept_no": "20210630000003", "rcept_dt": "20210630", "report_nm": "상장폐지사유발생"},
+                    ],
+                }
+
+        filings = Client().delisting_filings(
+            date(2021, 4, 1), date(2021, 6, 30), corp_code="00123456",
+        )
+        self.assertEqual([row.event_type for row in filings], ["decision", "final"])
+        self.assertEqual([row.receipt_no for row in filings], ["20210630000001", "20210701000001"])
 
     def test_company_profile_and_single_accounts_use_structured_endpoints(self):
         class Client(OpenDartClient):
@@ -928,6 +973,10 @@ class DailyCheckpointTests(unittest.TestCase):
                     PeriodicFiling("00000002", "20260902000001", date(2026, 9, 2), "반기보고서 (2026.06)"),
                 ]
 
+            @staticmethod
+            def delisting_filings(_start, _end, *, corp_code=None):
+                return []
+
         repository = Repository()
         pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=repository)
         captured = {}
@@ -958,6 +1007,10 @@ class DailyCheckpointTests(unittest.TestCase):
             @staticmethod
             def periodic_filings(start, end):
                 self.assertEqual((start, end), (date(2026, 9, 2), date(2026, 9, 2)))
+                return []
+
+            @staticmethod
+            def delisting_filings(_start, _end, *, corp_code=None):
                 return []
 
         pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=Repository())
@@ -991,7 +1044,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         self.assertEqual(first["filing_discovery"]["new_receipts"], 1)
         self.assertEqual(first["refreshed_companies"], 1)
-        self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,), (target_corp,)])
+        self.assertEqual([call[0] for call in dart.financial_calls], [(target_corp,)])
         self.assertEqual(kis.calls, [])
         self.assertTrue(repository.company_period_calls)
         self.assertTrue(all(len(periods) == 3 for _companies, periods in repository.company_period_calls))
@@ -1032,6 +1085,122 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(stored["top_line"], Decimal("20"))
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
+
+    def test_delisting_decision_carries_previous_quarter_and_skips_all_providers(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.seed_company(
+            target_company, top_line=None, operating_income=Decimal("10"),
+            net_income=Decimal("8"), pending=True,
+        )
+        previous = fact(2026, 1, "7", company=target_company).with_changes(
+            source_top_line_cumulative=Decimal("70"),
+            source_operating_income_cumulative=Decimal("7"),
+            source_net_income_cumulative=Decimal("7"),
+        )
+        repository.company_rows[(target_company, 2026, 1)] = previous.db_row(calculation_version=6)
+        decision = DelistingFiling(
+            target_corp, "20260620000001", date(2026, 6, 20),
+            "상장폐지결정", "decision",
+        )
+        dart = SimulatedDart(delistings=[decision])
+        kis = SimulatedKis()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
+        )
+
+        result = pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertEqual(stored["top_line"], Decimal("70"))
+        self.assertEqual(stored["operating_income"], Decimal("7"))
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(stored["source_filing_id"], "delisting_previous_quarter:20260620000001")
+        self.assertFalse(any(target_corp in call[0] for call in dart.financial_calls))
+        self.assertFalse(any(call[0] == target_corp for call in dart.single_calls))
+        self.assertEqual(kis.calls, [])
+        self.assertEqual(result["resolved_delisting_companies"], 1)
+
+        final = DelistingFiling(
+            target_corp, "20260629000001", date(2026, 6, 29),
+            "상장폐지", "final",
+        )
+        pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            delisting_filings=[final],
+        )
+        self.assertEqual(
+            repository.company_rows[(target_company, 2026, 2)]["source_filing_id"],
+            "delisting_previous_quarter:20260620000001",
+        )
+
+    def test_final_delisting_after_quarter_end_resolves_previous_pending_quarter(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.seed_company(
+            target_company, top_line=None,
+            operating_income=None, net_income=None, pending=True,
+        )
+        previous = fact(2026, 1, "9", company=target_company).with_changes(
+            source_top_line_cumulative=Decimal("90"),
+            source_operating_income_cumulative=Decimal("9"),
+            source_net_income_cumulative=Decimal("9"),
+        )
+        repository.company_rows[(target_company, 2026, 1)] = previous.db_row(
+            calculation_version=6,
+        )
+        final = DelistingFiling(
+            target_corp, "20260712000001", date(2026, 7, 12),
+            "상장폐지", "final",
+        )
+        dart = SimulatedDart(delistings=[final])
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart, repository=repository,
+            kis=SimulatedKis(),
+        )
+
+        result = pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            discover_delistings=True,
+        )
+
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(stored["top_line"], Decimal("90"))
+        self.assertEqual(
+            stored["source_filing_id"],
+            "delisting_previous_quarter:20260712000001",
+        )
+        self.assertEqual(result["resolved_delisting_companies"], 1)
+
+    def test_next_quarter_delisting_decision_does_not_resolve_prior_quarter(self):
+        repository = self.populated_repository()
+        target_company = "kr:00000099"
+        repository.seed_company(
+            target_company, top_line=None,
+            operating_income=None, net_income=None, pending=True,
+        )
+        decision = DelistingFiling(
+            "00000099", "20260712000002", date(2026, 7, 12),
+            "상장폐지결정", "decision",
+        )
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(delistings=[decision]),
+            repository=repository, kis=SimulatedKis(),
+        )
+
+        result = pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            discover_delistings=True,
+        )
+
+        self.assertFalse(
+            str(repository.company_rows[(target_company, 2026, 2)]["source_filing_id"])
+            .startswith("delisting_previous_quarter:")
+        )
+        self.assertEqual(result["resolved_delisting_companies"], 0)
 
     def test_financial_fallback_uses_single_open_dart_before_kis(self):
         identity = CompanyIdentity(
@@ -1083,12 +1252,35 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ready")
         self.assertEqual(dart.financial_calls, [])
-        self.assertEqual([call[0] for call in dart.single_calls], [target_corp, target_corp])
-        self.assertEqual([call[2] for call in dart.single_calls], [2, 1])
+        self.assertEqual([call[0] for call in dart.single_calls], [target_corp])
+        self.assertEqual([call[2] for call in dart.single_calls], [2])
         self.assertEqual(repository.company_profiles[target_company]["industry_code"], "62010")
         stored = repository.company_rows[(target_company, 2026, 2)]
         self.assertEqual(stored["operating_income"], Decimal("20"))
         self.assertFalse(stored["is_pending"])
+
+    def test_nonfinancial_statement_without_revenue_is_completed_with_zero_top_line(self):
+        class NoRevenueDart(SimulatedDart):
+            def single_accounts(self, corp_code, year, quarter, scope):
+                self.single_calls.append((corp_code, year, quarter, scope))
+                return [
+                    item for item in complete(corp_code, current="-10", cumulative="-10", scope=scope)
+                    if item["account_nm"] != "매출액"
+                ]
+
+        identity = member("kr:00000099", 99)
+        incomplete = fact(2020, 4, "-10", company=identity.company_id).with_changes(
+            top_line=None, is_pending=True,
+        )
+        resolved, issue = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=NoRevenueDart(),
+            repository=SimulatedRepository(), kis=SimulatedKis(),
+        )._resolve_missing_financials(identity, incomplete, 2020, 4)
+
+        self.assertIsNone(issue)
+        self.assertEqual(resolved.top_line, Decimal("0"))
+        self.assertFalse(resolved.is_pending)
+        self.assertTrue(resolved.source_filing_id.startswith("zero_top_line:"))
 
     def test_backfill_replaces_existing_top_line_with_provider_result(self):
         target_company = "kr:00000099"
@@ -1455,6 +1647,16 @@ class QuarterlyExtractionTests(unittest.TestCase):
         )
         self.assertEqual(value.net_income, Decimal("70"))
 
+    def test_q3_without_previous_cumulative_uses_reported_current_period(self):
+        value = extract_company_fact(
+            "00000001", "kr:1", 2022, 3,
+            complete("00000001", current="70", cumulative="170"),
+            [],
+        )
+        self.assertEqual(value.top_line, Decimal("70"))
+        self.assertEqual(value.operating_income, Decimal("70"))
+        self.assertEqual(value.net_income, Decimal("70"))
+
     def test_q4_uses_annual_minus_q3_cumulative(self):
         value = extract_company_fact(
             "00000001", "kr:1", 2026, 4,
@@ -1463,6 +1665,17 @@ class QuarterlyExtractionTests(unittest.TestCase):
         )
         self.assertEqual(value.top_line, Decimal("80"))
         self.assertEqual(value.source_top_line_cumulative, Decimal("250"))
+
+    def test_q4_without_q3_cumulative_uses_annual_quarter_average(self):
+        value = extract_company_fact(
+            "00000001", "kr:1", 2021, 4,
+            complete("00000001", current="240", cumulative=""),
+            [],
+        )
+        self.assertEqual(value.top_line, Decimal("60"))
+        self.assertEqual(value.operating_income, Decimal("60"))
+        self.assertEqual(value.net_income, Decimal("60"))
+        self.assertTrue(value.source_filing_id.startswith("annual_without_q3_average:"))
 
     def test_cfs_is_preferred_even_when_ofs_is_more_complete(self):
         current = [

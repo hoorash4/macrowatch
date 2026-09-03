@@ -23,7 +23,7 @@ from .http import (
     provider_session,
     safe_request_failure,
 )
-from .models import PeriodicFiling, Security
+from .models import DelistingFiling, PeriodicFiling, Security
 
 
 OPEN_DART_BASE = "https://opendart.fss.or.kr/api"
@@ -32,6 +32,7 @@ KIS_BASE = "https://openapi.koreainvestment.com:9443"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
+DELISTING_TITLES = {"상장폐지결정": "decision", "상장폐지": "final"}
 
 
 class ProviderError(RuntimeError):
@@ -63,6 +64,14 @@ def _decimal(value: Any) -> Decimal | None:
         return Decimal(text)
     except InvalidOperation:
         return None
+
+
+def normalized_disclosure_title(value: Any) -> str:
+    """정정·시장 접두사와 공백만 제거하고 공시 제목 본문은 보존한다."""
+    title = str(value or "").strip()
+    while re.match(r"^\s*\[[^\]]+\]", title):
+        title = re.sub(r"^\s*\[[^\]]+\]\s*", "", title, count=1)
+    return re.sub(r"\s+", "", title)
 
 
 CONNECT_TIMEOUT = 5
@@ -311,6 +320,56 @@ class OpenDartClient:
                         receipt_no=receipt,
                         received_on=date.fromisoformat(f"{received[:4]}-{received[4:6]}-{received[6:]}"),
                         report_name=report,
+                    )
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
+
+    def delisting_filings(
+        self,
+        start: date,
+        end: date,
+        *,
+        corp_code: str | None = None,
+    ) -> list[DelistingFiling]:
+        """거래소공시 중 상장폐지 결정·확정 제목만 완전 일치로 반환한다."""
+        result: dict[str, DelistingFiling] = {}
+        page = 1
+        while True:
+            params = {
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "I",
+                "page_no": str(page),
+                "page_count": "100",
+            }
+            if corp_code:
+                params["corp_code"] = corp_code
+            payload = self._get("list.json", params)
+            items = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            for row in items:
+                code = str(row.get("corp_code") or "").strip()
+                receipt = str(row.get("rcept_no") or "").strip()
+                received = str(row.get("rcept_dt") or "").strip()
+                report = str(row.get("report_nm") or "").strip()
+                event_type = DELISTING_TITLES.get(normalized_disclosure_title(report))
+                if (
+                    event_type is not None
+                    and (corp_code is None or code == corp_code)
+                    and re.fullmatch(r"\d{8}", code)
+                    and re.fullmatch(r"\d{14}", receipt)
+                    and re.fullmatch(r"\d{8}", received)
+                ):
+                    result[receipt] = DelistingFiling(
+                        corp_code=code,
+                        receipt_no=receipt,
+                        received_on=date.fromisoformat(
+                            f"{received[:4]}-{received[4:6]}-{received[6:]}"
+                        ),
+                        report_name=report,
+                        event_type=event_type,
                     )
             total_pages = int(payload.get("total_page") or 1)
             if page >= total_pages:
