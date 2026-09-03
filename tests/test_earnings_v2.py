@@ -2374,16 +2374,26 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertIsNone(rows[-1].operating_income_yoy_pct)
         self.assertEqual(rows[-1].operating_income_yoy_state, "black_turn")
 
-    def test_seasonal_qoq_requires_three_historical_same_quarter_transitions(self):
+    def test_historical_seasonal_qoq_uses_full_leave_one_out_sample(self):
         rows = [
             fact(2020, 4, "100"), fact(2021, 1, "110"), fact(2021, 2, "100"), fact(2021, 3, "100"), fact(2021, 4, "100"),
             fact(2022, 1, "120"), fact(2022, 2, "100"), fact(2022, 3, "100"), fact(2022, 4, "100"),
             fact(2023, 1, "130"), fact(2023, 2, "100"), fact(2023, 3, "100"), fact(2023, 4, "100"), fact(2024, 1, "140"),
         ]
         calculated = calculate_financial_series(rows)
-        self.assertEqual(calculated[1].operating_income_qoq_state, "insufficient_history")
-        self.assertEqual(calculated[9].operating_income_qoq_state, "insufficient_history")
+        self.assertEqual(calculated[1].operating_income_qoq_state, "normal")
+        self.assertEqual(calculated[1].operating_income_qoq_sa_pct, Decimal("-20"))
+        self.assertEqual(calculated[9].operating_income_qoq_state, "normal")
         self.assertEqual(calculated[-1].operating_income_qoq_state, "normal")
+
+    def test_historical_seasonal_qoq_starts_at_2019(self):
+        rows = [
+            fact(2018, 4, "100"), fact(2019, 1, "110"),
+            fact(2019, 2, "100"), fact(2019, 3, "100"), fact(2019, 4, "100"),
+        ]
+        calculated = calculate_financial_series(rows)
+        self.assertEqual(calculated[1].operating_income_qoq_state, "missing_prior")
+        self.assertIsNone(calculated[1].operating_income_qoq_sa_pct)
 
     def test_incremental_point_uses_saved_window_without_recalculating_history(self):
         current = fact(2026, 2, "130")
