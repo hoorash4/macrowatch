@@ -876,6 +876,40 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.market_rows[("kr_largecap", 2026, 2)]["lifecycle_status"], "complete")
 
+    def test_financial_fallback_uses_kis_before_2019(self):
+        identity = CompanyIdentity(
+            company_id="kr:00000099", company_name="Historical Financial",
+            stock_code="000099", corp_code="00000099",
+            market_id="kr_largecap", rank=1, market_cap=Decimal("1"),
+            reference_date=date(2015, 9, 30), industry_code="64110",
+            entity_kind="financial",
+        )
+        incomplete = fact(2015, 3, "1", company=identity.company_id).with_changes(
+            top_line=None, operating_income=None, net_income=None, is_pending=True,
+        )
+        dart = SimulatedDart()
+        kis = SimulatedKis({
+            identity.stock_code: {
+                "top_line": Decimal("100"),
+                "operating_income": Decimal("10"),
+                "net_income": Decimal("8"),
+            },
+        })
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=dart,
+            repository=SimulatedRepository(), kis=kis,
+        )
+
+        resolved, issue = pipeline._resolve_missing_financials(
+            identity, incomplete, 2015, 3,
+        )
+
+        self.assertIsNone(issue)
+        self.assertEqual(kis.calls, [(identity.stock_code, 2015, 3)])
+        self.assertEqual(dart.single_calls, [])
+        self.assertTrue(resolved.fully_complete)
+        self.assertFalse(resolved.is_pending)
+
     def test_profit_incomplete_pending_company_uses_single_provider_path(self):
         target_company = "kr:00000099"
         target_corp = "00000099"

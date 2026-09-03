@@ -409,7 +409,7 @@ class KoreaEarningsV2Pipeline:
                 complete=fact.fully_complete,
             )
 
-        if not fact.fully_complete and year >= 2019 and self.kis is not None:
+        if not fact.fully_complete and self.kis is not None:
             fact, kis_issue = self._try_kis_missing_financials(
                 identity, fact, year, quarter, stage=f"{stage}_kis",
                 propagate_provider_error=not tolerate_provider_errors,
