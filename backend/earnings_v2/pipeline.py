@@ -540,6 +540,7 @@ class KoreaEarningsV2Pipeline:
         tolerate_provider_errors: bool = False,
         profile_updates: dict[str, dict[str, str]] | None = None,
         stage: str = "financial_fallback",
+        allow_backfill_zero_top_line: bool = False,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
         if fact.fully_complete:
             return fact.with_changes(is_pending=False), None
@@ -582,10 +583,11 @@ class KoreaEarningsV2Pipeline:
             )
             if kis_issue is not None:
                 return fact, kis_issue
-        # 비금융 손익계산서에 영업손익·순손익은 있으나 매출 계정이 없고
-        # 개별 DART와 KIS도 값을 주지 않으면 무매출 0원으로 확정한다.
-        # 금융사는 수익 계정 구조가 달라 이 규칙에서 명시적으로 제외한다.
+        # 이 추정은 사용자가 허용한 과거 백필 전용 규칙이다. 자동 수집은
+        # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.
         if (
+            allow_backfill_zero_top_line
+            and
             fact.top_line is None
             and fact.profit_complete
             and entity_kind == "general"
@@ -611,6 +613,7 @@ class KoreaEarningsV2Pipeline:
                            tolerate_provider_errors: bool = False,
                            force_previous_cumulative: bool = False,
                            persist_profiles: bool = False,
+                           allow_backfill_zero_top_line: bool = False,
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
         codes = [row.corp_code for row in identities]
@@ -676,6 +679,7 @@ class KoreaEarningsV2Pipeline:
                     previous_rows=previous.get(identity.corp_code, []),
                     tolerate_provider_errors=tolerate_provider_errors,
                     profile_updates=profile_updates,
+                    allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                 )
                 if fallback_issue is not None:
                     issues.append(fallback_issue)
@@ -867,6 +871,7 @@ class KoreaEarningsV2Pipeline:
                     delisting_filings: Iterable[DelistingFiling] | None = None,
                     discover_delistings: bool = False,
                     trust_previous_backfill: bool = False,
+                    allow_backfill_zero_top_line: bool = True,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if deadline_seconds is not None:
             with execution_deadline(deadline_seconds):
@@ -876,6 +881,7 @@ class KoreaEarningsV2Pipeline:
                     delisting_filings=delisting_filings,
                     discover_delistings=discover_delistings,
                     trust_previous_backfill=trust_previous_backfill,
+                    allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                 )
         operation = f"{year}Q{quarter}"
         if write:
@@ -992,6 +998,7 @@ class KoreaEarningsV2Pipeline:
                     tolerate_provider_errors=incremental,
                     force_previous_cumulative=not incremental and not trust_previous_backfill,
                     persist_profiles=write,
+                    allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                 )
                 if selected else ({}, [])
             )
@@ -1070,6 +1077,7 @@ class KoreaEarningsV2Pipeline:
                         tolerate_provider_errors=True,
                         profile_updates=profile_updates,
                         stage="pending_retry",
+                        allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                     )
                     pending_fallbacks[identity.company_id] = retried
                     if fallback_issue is not None:
@@ -1249,6 +1257,7 @@ class KoreaEarningsV2Pipeline:
             year, quarter, write=write, incremental=True,
             refresh_corp_codes=refresh_corp_codes,
             delisting_filings=new_delistings,
+            allow_backfill_zero_top_line=False,
         )
         result["filing_discovery"] = {
             "checked_from": checked_on.isoformat(),
