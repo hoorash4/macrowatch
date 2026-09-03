@@ -215,11 +215,24 @@ def extract_company_fact(
         "operating_income": _current_period_amount(current_op),
         "net_income": _current_period_amount(current_net),
     }
+    previous_rows_by_field = {
+        "top_line": previous_top,
+        "operating_income": previous_op,
+        "net_income": previous_net,
+    }
+    # DB 원본뿐 아니라 추가 호출한 직전분기 원본도 현재 누적과 통화가
+    # 같을 때만 차감한다. 통화가 바뀐 숫자를 그대로 빼면 환산 단계에서
+    # 시장 합계를 오염시키는 초대형 음수가 만들어진다.
     fallback_previous = {
-        "top_line": _cumulative_amount(previous_top, quarter - 1),
-        "operating_income": _cumulative_amount(previous_op, quarter - 1),
-        "net_income": _cumulative_amount(previous_net, quarter - 1),
-    } if quarter > 1 else {"top_line": None, "operating_income": None, "net_income": None}
+        field: (
+            _cumulative_amount(previous_row, quarter - 1)
+            if quarter > 1
+            and previous_row is not None
+            and str(previous_row.get("currency") or "KRW").strip().upper() == source_currency
+            else None
+        )
+        for field, previous_row in previous_rows_by_field.items()
+    }
     previous_cumulative = {}
     for field in current_cumulative:
         stored_value = _stored_cumulative(
@@ -391,3 +404,4 @@ def update_seasonal_window(
         samples[year] = value
     retained = sorted(samples.items())[-MAX_SEASONAL_SAMPLES:]
     return [sample_year for sample_year, _ in retained], [sample_value for _, sample_value in retained]
+
