@@ -1,0 +1,46 @@
+name: Earnings V2.5 raw DART diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Fiscal year (2016-2018 only)
+        required: true
+        default: "2016"
+        type: choice
+        options: ["2016", "2017", "2018"]
+      quarter:
+        description: One fiscal quarter
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "2", "3", "4"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-v25-raw-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect pending raw DART filings without database writes
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          EARNINGS_V2_DEADLINE_SECONDS: "1200"
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m earnings_v25.diagnose_raw --year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}"
+
