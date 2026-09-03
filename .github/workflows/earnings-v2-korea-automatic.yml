@@ -1,0 +1,49 @@
+name: Earnings V2 Korea automatic
+
+on:
+  # 최소 15년 역사 백필이 검증될 때까지 예약 실행은 추가하지 않는다.
+  workflow_dispatch:
+    inputs:
+      write:
+        description: Persist automatic collection results
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-v2-korea-automatic
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Collect new filings and retry pending companies
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          EARNINGS_V2_AUTOMATIC_DEADLINE_SECONDS: "240"
+          WRITE: ${{ inputs.write }}
+          KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          [[ "$WRITE" == "true" ]] && args+=(--write)
+          timeout --signal=TERM --kill-after=10s 300s python -m earnings_v2.automatic_cli "${args[@]}"

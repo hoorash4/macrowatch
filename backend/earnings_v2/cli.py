@@ -10,7 +10,6 @@ from .pipeline import KoreaEarningsV2Pipeline
 from .runtime import execution_deadline
 
 
-DAILY_DEADLINE_SECONDS = 240
 QUARTER_DEADLINE_SECONDS = 600
 
 
@@ -18,7 +17,6 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="MacroWatch Earnings V2 Korean quarterly pipeline")
     result.add_argument("--year", type=int)
     result.add_argument("--quarter", type=int, choices=(1, 2, 3, 4))
-    result.add_argument("--daily", action="store_true", help="최근 완료 분기의 신규 공시·대기 기업만 갱신")
     result.add_argument("--pending-only", action="store_true", help="지정한 과거 분기의 대기 기업만 재처리")
     result.add_argument("--recalculate-only", action="store_true", help="외부 API 호출 없이 저장된 분기값만 재집계")
     result.add_argument("--trust-previous-backfill", action="store_true", help="같은 백필에서 직전에 새로 저장한 누적 원자료 사용")
@@ -36,21 +34,16 @@ def main() -> None:
     argument_parser = parser()
     args = argument_parser.parse_args()
     pipeline = KoreaEarningsV2Pipeline.from_env()
-    if args.daily and args.recalculate_only:
-        argument_parser.error("--daily와 --recalculate-only는 함께 사용할 수 없습니다")
-    if args.pending_only and (args.daily or args.recalculate_only or args.quarter is None):
+    if args.pending_only and (args.recalculate_only or args.quarter is None):
         argument_parser.error("--pending-only는 명시적 분기 재처리에만 사용할 수 있습니다")
     if args.pending_only and args.trust_previous_backfill:
         argument_parser.error("--pending-only와 --trust-previous-backfill은 함께 사용할 수 없습니다")
-    if args.trust_previous_backfill and (args.daily or args.recalculate_only or args.quarter is None):
+    if args.trust_previous_backfill and (args.recalculate_only or args.quarter is None):
         argument_parser.error("--trust-previous-backfill은 명시적 분기 백필에만 사용할 수 있습니다")
-    default_deadline = DAILY_DEADLINE_SECONDS if args.daily else QUARTER_DEADLINE_SECONDS
-    deadline_seconds = int(os.getenv("EARNINGS_V2_DEADLINE_SECONDS", str(default_deadline)))
-    if args.daily:
-        result = pipeline.run_daily(write=args.write, deadline_seconds=deadline_seconds)
-    elif args.year is None:
-        argument_parser.error("--daily가 아니면 --year가 필요합니다")
-    elif args.quarter and args.recalculate_only:
+    deadline_seconds = int(os.getenv("EARNINGS_V2_DEADLINE_SECONDS", str(QUARTER_DEADLINE_SECONDS)))
+    if args.year is None:
+        argument_parser.error("--year가 필요합니다")
+    if args.quarter and args.recalculate_only:
         with execution_deadline(deadline_seconds):
             result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)
     elif args.quarter:
@@ -72,10 +65,9 @@ def main() -> None:
     # incomplete는 모든 기업의 처리 판단이 끝난 잠정 데이터 상태다.
     # 공급자 오류처럼 실행이 끝나지 않은 경우에는 파이프라인이 예외를
     # 발생시키고, 명시적인 failed 결과도 여기서 비정상 종료한다.
-    if not args.daily and not args.recalculate_only and not completed_successfully(result):
+    if not args.recalculate_only and not completed_successfully(result):
         sys.exit(2)
 
 
 if __name__ == "__main__":
     main()
-

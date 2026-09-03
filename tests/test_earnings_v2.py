@@ -6,8 +6,10 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_v2.aggregation import aggregate_market
+from earnings_v2.automatic import KoreaEarningsV2AutomaticPipeline
+from earnings_v2.automatic_cli import DAILY_DEADLINE_SECONDS as AUTOMATIC_DEADLINE_SECONDS
 from earnings_v2.models import CompanyIdentity, DelistingFiling, FinancialFact, PeriodicFiling
-from earnings_v2.cli import DAILY_DEADLINE_SECONDS, QUARTER_DEADLINE_SECONDS, completed_successfully, parser
+from earnings_v2.cli import QUARTER_DEADLINE_SECONDS, completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.http import (
     RETRYABLE_STATUS_CODES,
@@ -900,9 +902,9 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(TARGETS, {"kr_largecap": 100, "kr_kosdaq": 100})
 
     def test_application_deadline_precedes_workflow_hard_stop(self):
-        self.assertEqual(DAILY_DEADLINE_SECONDS, 240)
+        self.assertEqual(AUTOMATIC_DEADLINE_SECONDS, 240)
         self.assertEqual(QUARTER_DEADLINE_SECONDS, 600)
-        self.assertLess(DAILY_DEADLINE_SECONDS, 270)
+        self.assertLess(AUTOMATIC_DEADLINE_SECONDS, 300)
         self.assertLess(QUARTER_DEADLINE_SECONDS, 660)
 
     def test_year_backfill_always_runs_oldest_quarter_first(self):
@@ -953,6 +955,29 @@ class CliContractTests(unittest.TestCase):
         args = parser().parse_args(["--year", "2017", "--quarter", "3", "--write", "--pending-only"])
         self.assertTrue(args.pending_only)
 
+    def test_backfill_cli_has_no_automatic_mode(self):
+        self.assertNotIn("--daily", parser().format_help())
+
+    def test_automatic_pipeline_exposes_no_year_backfill(self):
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=object(), dart=object(), repository=object(),
+        )
+
+        self.assertFalse(hasattr(pipeline, "run_year"))
+        self.assertEqual(AUTOMATIC_DEADLINE_SECONDS, 240)
+
+    def test_automatic_pipeline_rejects_backfill_policies_before_provider_calls(self):
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=object(), dart=object(), repository=object(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "incremental mode"):
+            pipeline.run_quarter(2026, 2, incremental=False)
+        with self.assertRaisesRegex(ValueError, "backfill policy"):
+            pipeline.run_quarter(2026, 2, allow_backfill_zero_top_line=True)
+        with self.assertRaisesRegex(ValueError, "backfill policy"):
+            pipeline.run_quarter(2026, 2, trust_previous_backfill=True)
+
 class DailyCheckpointTests(unittest.TestCase):
     def test_daily_run_deduplicates_boundary_receipts_and_advances_after_success(self):
         class Repository:
@@ -982,7 +1007,7 @@ class DailyCheckpointTests(unittest.TestCase):
                 return []
 
         repository = Repository()
-        pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=repository)
+        pipeline = KoreaEarningsV2AutomaticPipeline(krx=object(), dart=Dart(), repository=repository)
         captured = {}
 
         def run_quarter(year, quarter, **kwargs):
@@ -1017,7 +1042,7 @@ class DailyCheckpointTests(unittest.TestCase):
             def delisting_filings(_start, _end, *, corp_code=None):
                 return []
 
-        pipeline = KoreaEarningsV2Pipeline(krx=object(), dart=Dart(), repository=Repository())
+        pipeline = KoreaEarningsV2AutomaticPipeline(krx=object(), dart=Dart(), repository=Repository())
         pipeline.run_quarter = lambda *_args, **_kwargs: {"status": "incomplete"}
         pipeline.run_daily(write=True, today=date(2026, 9, 2))
 
@@ -1040,7 +1065,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         repository = self.populated_repository(missing_company=target_company)
         dart = SimulatedDart([receipt])
         kis = SimulatedKis()
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
         )
 
@@ -1074,7 +1099,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         target_ticker = "000099"
         dart = SimulatedDart()
         kis = SimulatedKis({target_ticker: Decimal("250")})
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
         )
 
@@ -1110,7 +1135,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         )
         dart = SimulatedDart(delistings=[decision])
         kis = SimulatedKis()
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
         )
 
@@ -1160,7 +1185,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             "상장폐지", "final",
         )
         dart = SimulatedDart(delistings=[final])
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository,
             kis=SimulatedKis(),
         )
@@ -1190,7 +1215,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             "00000099", "20260712000002", date(2026, 7, 12),
             "상장폐지결정", "decision",
         )
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=SimulatedDart(delistings=[decision]),
             repository=repository, kis=SimulatedKis(),
         )
@@ -1248,7 +1273,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             target_company, top_line=None, operating_income=None, net_income=None, pending=True,
         )
         dart = SimulatedDart()
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=SimulatedKis(),
         )
 
@@ -1305,7 +1330,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             operating_income=Decimal("-10"), net_income=Decimal("-10"),
             pending=True,
         )
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=NoRevenueDart(),
             repository=repository, kis=SimulatedKis(),
         )
@@ -1539,7 +1564,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         repository.fx_rates.clear()
         fx = FailingFx()
         dart = UsdDart(target_corp, [receipt])
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository,
             kis=SimulatedKis(), fx=fx,
         )
@@ -1566,7 +1591,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             "industry_code": "64110", "entity_kind": "financial",
         }
         kis = FailingKis()
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=MissingSingleDart(), repository=repository, kis=kis,
         )
 
@@ -1586,7 +1611,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             PeriodicFiling(target_corp, "20260902000002", date(2026, 9, 2), "반기보고서 (2026.06)"),
         ])
         kis = SimulatedKis()
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository, kis=kis,
         )
 
@@ -1608,7 +1633,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         dart = SimulatedDart([
             PeriodicFiling("00000001", "20260902000003", date(2026, 9, 2), "반기보고서 (2026.06)"),
         ])
-        pipeline = KoreaEarningsV2Pipeline(
+        pipeline = KoreaEarningsV2AutomaticPipeline(
             krx=SimulatedKrx(), dart=dart, repository=repository,
         )
         pipeline.run_quarter = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("simulated failure"))
@@ -2034,4 +2059,3 @@ class GrowthAndAggregationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

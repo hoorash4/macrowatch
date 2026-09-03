@@ -446,7 +446,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("diagnose_kosdaq_51_100", workflow)
 
     def test_earnings_v2_daily_collection_is_receipt_checkpointed(self):
-        pipeline = (ROOT / "backend/earnings_v2/pipeline.py").read_text(encoding="utf-8")
+        pipeline = (ROOT / "backend/earnings_v2/automatic.py").read_text(encoding="utf-8")
+        automatic_cli = (ROOT / "backend/earnings_v2/automatic_cli.py").read_text(encoding="utf-8")
+        automatic_workflow = (ROOT / ".github/workflows/earnings-v2-korea-automatic.yml").read_text(encoding="utf-8")
         providers = (ROOT / "backend/earnings_v2/providers.py").read_text(encoding="utf-8")
         repository = (ROOT / "backend/earnings_v2/repository.py").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902224500_add_earnings_v2_daily_checkpoint_read.sql").read_text(encoding="utf-8")
@@ -457,6 +459,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('pipeline_state("daily_filings")', pipeline)
         self.assertIn('"boundary_receipt_ids"', pipeline)
         self.assertIn("filing.receipt_no in boundary_receipts", pipeline)
+        self.assertNotIn("def run_year", pipeline)
+        self.assertIn("KoreaEarningsV2AutomaticPipeline", automatic_cli)
+        self.assertIn("python -m earnings_v2.automatic_cli", automatic_workflow)
+        self.assertNotIn("schedule:", automatic_workflow)
+        self.assertNotIn("--year", automatic_workflow)
+        self.assertNotIn("--quarter", automatic_workflow)
+        self.assertNotIn("replace_company_quarters_for_backfill", pipeline)
         self.assertIn("def periodic_filings", providers)
         self.assertIn("result[receipt] = PeriodicFiling", providers)
         self.assertIn('self.rpc("earnings_v2_get_pipeline_state"', repository)
@@ -716,4 +725,3 @@ class KoreaForeignFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

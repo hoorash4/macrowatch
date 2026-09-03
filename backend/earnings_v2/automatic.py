@@ -202,8 +202,8 @@ def _identity_from_universe(row: dict[str, Any]) -> CompanyIdentity:
     )
 
 
-class KoreaEarningsV2Pipeline:
-    """분기 기업군, 부분 실적, 잠정·확정 집계를 한 생명주기로 관리한다."""
+class KoreaEarningsV2AutomaticPipeline:
+    """백필 추정과 전체 교체를 허용하지 않는 운영 자동수집 전용 파이프라인."""
 
     def __init__(self, *, krx: KrxClient, dart: OpenDartClient, repository: EarningsV2Repository,
                  kis: KisClient | None = None, fx: EcosFxClient | None = None) -> None:
@@ -214,7 +214,7 @@ class KoreaEarningsV2Pipeline:
         print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
 
     @classmethod
-    def from_env(cls) -> "KoreaEarningsV2Pipeline":
+    def from_env(cls) -> "KoreaEarningsV2AutomaticPipeline":
         repository = EarningsV2Repository.from_env()
         kis = None
         if os.getenv("KIS_APP_KEY", "").strip() and os.getenv("KIS_APP_SECRET", "").strip():
@@ -866,13 +866,17 @@ class KoreaEarningsV2Pipeline:
         return snapshot
 
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
-                    incremental: bool = False,
+                    incremental: bool = True,
                     refresh_corp_codes: set[str] | None = None,
                     delisting_filings: Iterable[DelistingFiling] | None = None,
                     discover_delistings: bool = False,
                     trust_previous_backfill: bool = False,
-                    allow_backfill_zero_top_line: bool = True,
+                    allow_backfill_zero_top_line: bool = False,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
+        if not incremental:
+            raise ValueError("automatic collection requires incremental mode")
+        if trust_previous_backfill or allow_backfill_zero_top_line:
+            raise ValueError("backfill policy is not available in automatic collection")
         if deadline_seconds is not None:
             with execution_deadline(deadline_seconds):
                 return self.run_quarter(
@@ -1102,10 +1106,7 @@ class KoreaEarningsV2Pipeline:
                     row.db_row(calculation_version=CALCULATION_VERSION)
                     for row in current_facts if row.company_id in changed_ids
                 ]
-                if incremental:
-                    self.repository.upsert_company_quarters(company_rows)
-                else:
-                    self.repository.replace_company_quarters_for_backfill(company_rows)
+                self.repository.upsert_company_quarters(company_rows)
                 if company_window_rows:
                     self.repository.upsert_seasonal_windows(company_window_rows)
                 self.repository.upsert_market_quarters(row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets)
@@ -1200,21 +1201,80 @@ class KoreaEarningsV2Pipeline:
             "status": "ready",
         }
 
-    def run_year(self, year: int, *, write: bool = False,
-                 deadline_seconds: int | None = None) -> list[dict[str, Any]]:
-        """백필은 참조 분기가 먼저 존재하도록 항상 1분기부터 순서대로 실행한다.
+    def run_daily(self, *, write: bool = True, today: date | None = None,
+                  deadline_seconds: int | None = None) -> dict[str, Any]:
+        """마지막 정상 확인일 이후의 신규 접수번호만 증분 처리한다."""
+        if deadline_seconds is not None:
+            with execution_deadline(deadline_seconds):
+                return self.run_daily(write=write, today=today)
+        current_day = today or date.today()
+        state = self.repository.pipeline_state("daily_filings") or {}
+        cursor = state.get("cursor") if isinstance(state.get("cursor"), dict) else {}
+        try:
+            return self._run_daily_from_cursor(current_day, cursor, write=write)
+        except Exception as error:
+            # 자동 실행은 실패 시 기존 체크포인트를 그대로 유지한다. 다음 실행이
+            # 같은 공시 경계를 다시 읽어 공급자 장애로 자료가 건너뛰지 않게 한다.
+            if write:
+                self.repository.save_state(
+                    "daily_filings", "failed", cursor, str(error)[:2000],
+                )
+            raise
 
-        incomplete는 처리가 끝난 잠정 데이터이므로 다음 분기로 진행한다.
-        실제 공급자·저장 오류는 run_quarter의 예외가 전파되어 즉시 중단된다.
-        """
-        results = []
-        for quarter in range(1, 5):
-            result = self.run_quarter(
-                year, quarter, write=write,
-                discover_delistings=True,
-                trust_previous_backfill=write and quarter > 1,
-                deadline_seconds=deadline_seconds,
+    def _run_daily_from_cursor(
+        self, current_day: date, cursor: dict[str, Any], *, write: bool,
+    ) -> dict[str, Any]:
+        checked_text = str(cursor.get("last_checked_date") or "")
+        try:
+            checked_on = date.fromisoformat(checked_text)
+        except ValueError:
+            checked_on = current_day
+        if checked_on > current_day:
+            checked_on = current_day
+
+        boundary_receipts = {
+            str(value) for value in cursor.get("boundary_receipt_ids", [])
+            if re.fullmatch(r"\d{14}", str(value))
+        }
+        filings = self.dart.periodic_filings(checked_on, current_day)
+        delistings = self.dart.delisting_filings(checked_on, current_day)
+        new_filings = [
+            filing for filing in filings
+            if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
+        ]
+        new_delistings = [
+            filing for filing in delistings
+            if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
+        ]
+        if write and new_delistings:
+            self.repository.upsert_delisting_events(
+                filing.db_row() for filing in new_delistings
             )
-            results.append(result)
-            print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
-        return results
+        year, quarter = latest_completed_quarter(current_day)
+        refresh_corp_codes = {
+            filing.corp_code for filing in new_filings if filing_period(filing) == (year, quarter)
+        }
+        result = self.run_quarter(
+            year, quarter, write=write, incremental=True,
+            refresh_corp_codes=refresh_corp_codes,
+            delisting_filings=new_delistings,
+            allow_backfill_zero_top_line=False,
+        )
+        result["filing_discovery"] = {
+            "checked_from": checked_on.isoformat(),
+            "checked_through": current_day.isoformat(),
+            "new_receipts": len(new_filings),
+            "refreshed_companies": len(refresh_corp_codes),
+            "new_delisting_receipts": len(new_delistings),
+        }
+        if write:
+            self.repository.save_state("daily_filings", result["status"], {
+                "last_checked_date": current_day.isoformat(),
+                "boundary_receipt_ids": sorted(
+                    filing.receipt_no
+                    for filing in [*filings, *delistings]
+                    if filing.received_on == current_day
+                ),
+            })
+        return result
+
