@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - ".github/workflows/earnings-v25-raw-diagnostic.yml"
+      - "backend/earnings_v25/diagnose_raw.py"
   workflow_dispatch:
     inputs:
       year:
