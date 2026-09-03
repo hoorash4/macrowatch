@@ -118,6 +118,7 @@ def bounded_request(
     connect_timeout: float,
     read_timeout: float,
     binary: bool = False,
+    retry_total: int = RETRY_TOTAL,
     on_retry: Any | None = None,
     on_progress: Any | None = None,
     monotonic: Any = time.monotonic,
@@ -125,10 +126,11 @@ def bounded_request(
     **kwargs: Any,
 ) -> Any:
     """연결·읽기·선택적 응답 총시간·재시도를 하나의 정책에서 관리한다."""
+    retry_limit = max(int(retry_total), 0)
     started = monotonic()
     deadline = started + total_timeout if total_timeout is not None else None
     last_error: Exception | None = None
-    for attempt in range(1, RETRY_TOTAL + 2):
+    for attempt in range(1, retry_limit + 2):
         remaining = deadline - monotonic() if deadline is not None else None
         if remaining is not None and remaining <= 0:
             last_error = ResponseDeadlineExceeded("request total deadline exceeded")
@@ -193,7 +195,7 @@ def bounded_request(
                 ))
                 or status in RETRYABLE_STATUS_CODES
             )
-            if not retryable or attempt > RETRY_TOTAL:
+            if not retryable or attempt > retry_limit:
                 break
             delay = _retry_delay(response, attempt)
             if deadline is not None and monotonic() + delay >= deadline:
