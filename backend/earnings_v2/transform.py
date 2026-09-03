@@ -14,6 +14,7 @@ from .models import FinancialFact
 HUNDRED = Decimal("100")
 MAX_SEASONAL_SAMPLES = 10
 MIN_SEASONAL_SAMPLES = 3
+SEASONAL_HISTORY_START_YEAR = 2019
 OP_IDS = {"dartoperatingincomeloss", "ifrsfulloperatingprofitloss"}
 NET_IDS = {"ifrsfullprofitloss", "dartprofitloss"}
 REVENUE_IDS = {
@@ -359,25 +360,41 @@ def calculate_financial_point(
 def calculate_financial_series(rows: Iterable[FinancialFact]) -> list[FinancialFact]:
     ordered = sorted(rows, key=lambda row: row.key)
     by_key = {row.key: row for row in ordered}
-    result: list[FinancialFact] = []
-    windows: dict[tuple[str, int], list[Decimal]] = defaultdict(list)
-    for row in ordered:
-        samples = {
-            prefix: windows[(prefix, row.fiscal_quarter)]
-            for prefix in ("operating_income", "net_income")
-        }
+    provisional: list[FinancialFact] = []
+    raw_by_index: list[dict[str, Decimal | None]] = []
+    samples: dict[tuple[str, int], list[tuple[int, Decimal]]] = defaultdict(list)
+    for index, row in enumerate(ordered):
+        previous = by_key.get(previous_period_key(row.fiscal_year, row.fiscal_quarter))
+        if row.fiscal_year == SEASONAL_HISTORY_START_YEAR and row.fiscal_quarter == 1:
+            previous = None
         calculated, raw = calculate_financial_point(
             row,
-            previous=by_key.get(previous_period_key(row.fiscal_year, row.fiscal_quarter)),
+            previous=previous,
             prior_year=by_key.get((row.fiscal_year - 1, row.fiscal_quarter)),
-            seasonal_samples=samples,
+            seasonal_samples={},
         )
-        result.append(calculated)
+        provisional.append(calculated)
+        raw_by_index.append(raw)
         for prefix, value in raw.items():
-            if value is not None:
-                window = windows[(prefix, row.fiscal_quarter)]
-                window.append(value)
-                del window[:-MAX_SEASONAL_SAMPLES]
+            if value is not None and row.fiscal_year >= SEASONAL_HISTORY_START_YEAR:
+                samples[(prefix, row.fiscal_quarter)].append((index, value))
+
+    result: list[FinancialFact] = []
+    for index, row in enumerate(provisional):
+        updates: dict[str, Any] = {}
+        for prefix in ("operating_income", "net_income"):
+            raw = raw_by_index[index][prefix]
+            if raw is None:
+                continue
+            peers = [
+                value
+                for sample_index, value in samples[(prefix, row.fiscal_quarter)]
+                if sample_index != index
+            ][-MAX_SEASONAL_SAMPLES:]
+            if len(peers) >= MIN_SEASONAL_SAMPLES:
+                updates[f"{prefix}_qoq_sa_pct"] = raw - Decimal(str(median(peers)))
+                updates[f"{prefix}_qoq_state"] = "normal"
+        result.append(row.with_changes(**updates))
     return result
 
 
