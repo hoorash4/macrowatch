@@ -1213,6 +1213,23 @@ class KoreaEarningsV2AutomaticPipeline:
         }
 
     @staticmethod
+    def _merge_kis_cumulative_only(
+        fact: FinancialFact,
+        history: dict[tuple[int, int], dict[str, Decimal | None]],
+    ) -> FinancialFact:
+        """기존 당해값을 보존하면서 비어 있는 KIS 누적 원본만 채운다."""
+        if fact.source_currency != "KRW":
+            return fact
+        values = history.get(fact.key, {})
+        changes = {
+            f"source_{field}_cumulative": cumulative
+            for field in ("top_line", "operating_income", "net_income")
+            if getattr(fact, f"source_{field}_cumulative") is None
+            and (cumulative := values.get(field)) is not None
+        }
+        return fact.with_changes(**changes) if changes else fact
+
+    @staticmethod
     def _merge_kis_history(
         fact: FinancialFact,
         history: dict[tuple[int, int], dict[str, Decimal | None]],
@@ -1273,7 +1290,17 @@ class KoreaEarningsV2AutomaticPipeline:
         if self.kis is None:
             raise ValueError("KIS credentials are required for the KIS pending phase")
 
-        pending_rows = self.repository.pending_rows()
+        all_pending_rows = self.repository.pending_rows()
+        current_period = latest_completed_quarter(current_day)
+        comparison_periods = {
+            current_period,
+            previous_period(*current_period),
+        }
+        pending_rows = [
+            row for row in all_pending_rows
+            if (int(row["market_year"]), int(row["market_quarter"])) in comparison_periods
+        ]
+        ignored_older_pending = len(all_pending_rows) - len(pending_rows)
         pending_by_company: dict[str, dict[tuple[int, int], dict[str, Any]]] = {}
         company_details: dict[str, tuple[str, str]] = {}
         for row in pending_rows:
@@ -1294,7 +1321,6 @@ class KoreaEarningsV2AutomaticPipeline:
         reference_periods.update(
             previous_period(year, quarter)
             for year, quarter in tuple(reference_periods)
-            if quarter > 1
         )
         stored_rows = (
             self.repository.company_periods(company_ids, sorted(reference_periods))
@@ -1308,6 +1334,8 @@ class KoreaEarningsV2AutomaticPipeline:
             for fact in [_financial_from_db(row)]
         }
         changed: dict[tuple[str, int, int], FinancialFact] = {}
+        recalculation_periods: set[tuple[int, int]] = set()
+        cumulative_reference_updates: set[tuple[str, int, int]] = set()
         issues: list[dict[str, str]] = []
         processed = set(already_processed)
         called_companies = 0
@@ -1344,14 +1372,31 @@ class KoreaEarningsV2AutomaticPipeline:
                     })
                     continue
                 previous_key = previous_period(year, quarter)
+                previous_db_key = (company_id, *previous_key)
+                previous_fact = stored.get(previous_db_key)
+                if previous_fact is not None:
+                    updated_previous = self._merge_kis_cumulative_only(previous_fact, history)
+                    if updated_previous != previous_fact:
+                        stored[previous_db_key] = updated_previous
+                        changed[previous_db_key] = updated_previous
+                        cumulative_reference_updates.add(previous_db_key)
+                        previous_fact = updated_previous
                 updated = self._merge_kis_history(
                     fact,
                     history,
-                    stored.get((company_id, *previous_key)),
+                    previous_fact,
                 )
                 if updated != fact:
                     stored[key] = updated
                     changed[key] = updated
+                    if (
+                        any(
+                            getattr(updated, field) != getattr(fact, field)
+                            for field in ("top_line", "operating_income", "net_income")
+                        )
+                        or updated.is_pending != fact.is_pending
+                    ):
+                        recalculation_periods.add((year, quarter))
                     company_changed += 1
             self._progress(
                 "kis_pending_done", company=company_name,
@@ -1364,7 +1409,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 fact.db_row(calculation_version=CALCULATION_VERSION)
                 for fact in changed.values()
             )
-            for year, quarter in changed_periods:
+            for year, quarter in sorted(recalculation_periods):
                 self.recalculate_quarter(year, quarter, write=True)
 
         unresolved = sum(
@@ -1380,11 +1425,16 @@ class KoreaEarningsV2AutomaticPipeline:
         summary = {
             "date": current_day.isoformat(), "write": write, "mode": "kis_pending",
             "pending_companies": len(pending_by_company),
+            "comparison_periods": [f"{year}Q{quarter}" for year, quarter in sorted(comparison_periods)],
+            "ignored_older_pending_periods": ignored_older_pending,
             "called_companies": called_companies,
             "skipped_same_day_companies": len(already_processed & set(pending_by_company)),
             "returned_periods": returned_periods,
             "changed_company_periods": len(changed),
-            "recalculated_periods": [f"{year}Q{quarter}" for year, quarter in changed_periods],
+            "filled_reference_cumulative_periods": len(cumulative_reference_updates),
+            "recalculated_periods": [
+                f"{year}Q{quarter}" for year, quarter in sorted(recalculation_periods)
+            ],
             "unresolved_company_periods": unresolved,
             "issues": issues, "status": status,
             "requests": {"kis": self.kis.request_count},

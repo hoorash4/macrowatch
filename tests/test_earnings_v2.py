@@ -1711,14 +1711,27 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             None, None, None, "KRW", "CFS",
             "dart:q2", date(2026, 8, 14), is_pending=True,
         )
+        old = FinancialFact(
+            target_company, 2025, 4, date(2025, 12, 31),
+            None, None, None, "KRW", "CFS",
+            "dart:old", date(2026, 3, 31), is_pending=True,
+        )
+        repository.company_rows[(target_company, 2025, 4)] = old.db_row(calculation_version=6)
         repository.company_rows[(target_company, 2026, 1)] = q1.db_row(calculation_version=6)
         repository.company_rows[(target_company, 2026, 2)] = q2.db_row(calculation_version=6)
         repository.stale_pending_rows = [
             {"market_id": "kr_largecap", "market_year": 2026, "market_quarter": quarter,
              "company_id": target_company, "company_name": "target", "stock_code": ticker}
             for quarter in (1, 2)
-        ]
+        ] + [{
+            "market_id": "kr_largecap", "market_year": 2025, "market_quarter": 4,
+            "company_id": target_company, "company_name": "target", "stock_code": ticker,
+        }]
         history = {
+            (2025, 4): {
+                "top_line": Decimal("400"), "operating_income": Decimal("40"),
+                "net_income": Decimal("32"),
+            },
             (2026, 1): {
                 "top_line": Decimal("100"), "operating_income": Decimal("10"),
                 "net_income": Decimal("8"),
@@ -1740,16 +1753,25 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         stored_q1 = repository.company_rows[(target_company, 2026, 1)]
         stored_q2 = repository.company_rows[(target_company, 2026, 2)]
+        stored_old = repository.company_rows[(target_company, 2025, 4)]
         self.assertEqual(kis.history_calls, [ticker])
-        self.assertEqual(result["changed_company_periods"], 2)
+        self.assertEqual(result["changed_company_periods"], 3)
+        self.assertEqual(result["filled_reference_cumulative_periods"], 1)
+        self.assertEqual(result["comparison_periods"], ["2026Q1", "2026Q2"])
+        self.assertEqual(result["ignored_older_pending_periods"], 1)
         self.assertEqual(second["skipped_same_day_companies"], 1)
         self.assertTrue(repository.company_period_calls)
-        self.assertEqual(repository.company_period_calls[0][1], ((2026, 1), (2026, 2)))
+        self.assertEqual(
+            repository.company_period_calls[0][1],
+            ((2025, 4), (2026, 1), (2026, 2)),
+        )
         self.assertEqual(stored_q1["top_line"], Decimal("100"))
         self.assertEqual(stored_q1["operating_income"], Decimal("999"))
         self.assertEqual(stored_q2["top_line"], Decimal("150"))
         self.assertEqual(stored_q2["operating_income"], Decimal("20"))
         self.assertEqual(stored_q2["net_income"], Decimal("12"))
+        self.assertIsNone(stored_old["top_line"])
+        self.assertEqual(stored_old["source_top_line_cumulative"], Decimal("400"))
         self.assertEqual(recalculated, [(2026, 1), (2026, 2)])
 
     def test_new_filing_runs_dart_fallback_but_defers_kis(self):
