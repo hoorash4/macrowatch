@@ -900,6 +900,10 @@ class CliContractTests(unittest.TestCase):
         args = parser().parse_args(["--year", "2026", "--quarter", "2", "--write", "--recalculate-only"])
         self.assertTrue(args.recalculate_only)
 
+    def test_pending_only_mode_is_an_explicit_historical_quarter_path(self):
+        args = parser().parse_args(["--year", "2017", "--quarter", "3", "--write", "--pending-only"])
+        self.assertTrue(args.pending_only)
+
 class DailyCheckpointTests(unittest.TestCase):
     def test_daily_run_deduplicates_boundary_receipts_and_advances_after_success(self):
         class Repository:
