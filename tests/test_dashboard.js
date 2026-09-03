@@ -121,6 +121,10 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
   const serverRows = [{
+    market_year: 2018, market_quarter: 4,
+    target_company_count: 100, reported_company_count: 100, pending_company_count: 0,
+    lifecycle_status: 'complete', operating_income_total: '999', net_income_total: '999',
+  }, {
     market_year: 2025, market_quarter: 2,
     target_company_count: 100, reported_company_count: 98, pending_company_count: 2,
     lifecycle_status: 'provisional', operating_income_total: '90', net_income_total: '70',
@@ -130,6 +134,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
     net_income_qoq_sa_pct: null, net_income_qoq_state: 'red_turn',
   }];
   const series = context.window.MacroWatchKoreaEarnings.seriesFromMarketRows(serverRows);
+  assert.equal(series.length, 1, '화면에는 2019년 이후 실적만 표시한다');
   const latest = series.at(-1).metrics.operating_income;
   assert.equal(series.at(-1).reportedCount, 98);
   assert.equal(latest.amount, 90);
@@ -581,3 +586,4 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.66rem;[\s\S]*font-weight:500;/);
   assert.doesNotMatch(styles, /margin-left:\.28rem/);
 });
+
