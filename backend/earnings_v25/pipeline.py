@@ -806,8 +806,59 @@ class KoreaEarningsV2Pipeline:
             if fact.fully_complete:
                 return fact.with_changes(is_pending=False), None
 
-        # V2.5는 2016~18 금융위 보완 전용이다. 이미 실패한 OpenDART
-        # 단일·원문 경로를 대기기업마다 반복하지 않는다.
+        # 금융위 원자료가 채우지 못한 항목은 기존 OpenDART 단일·원문
+        # 경로로 이어서 보완한다. 공급자별 성공값은 빈 항목에만 적용한다.
+        self._progress(f"{stage}_open_dart_start", company=identity.company_name)
+        try:
+            fact = self._single_open_dart_missing_financials(
+                identity, fact, year, quarter, previous_fact, previous_rows or [],
+            )
+        except ProviderError:
+            if not tolerate_provider_errors:
+                raise
+        self._progress(
+            f"{stage}_open_dart_done", company=identity.company_name,
+            complete=fact.fully_complete,
+        )
+
+        if not fact.fully_complete:
+            self._progress(f"{stage}_raw_dart_start", company=identity.company_name)
+            try:
+                fact = self._raw_open_dart_missing_financials(
+                    identity, fact, year, quarter, previous_fact,
+                )
+            except RawDartParseError as error:
+                self._progress(
+                    f"{stage}_raw_dart_ambiguous",
+                    company=identity.company_name,
+                    reason=str(error),
+                )
+            self._progress(
+                f"{stage}_raw_dart_done", company=identity.company_name,
+                complete=fact.fully_complete,
+            )
+
+        # 이 추정은 사용자가 허용한 과거 백필 전용 규칙이다. 자동 수집은
+        # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.
+        if (
+            allow_backfill_zero_top_line
+            and fact.top_line is None
+            and fact.profit_complete
+            and entity_kind == "general"
+            and fact.operating_income is not None
+            and fact.operating_income < 0
+        ):
+            previous_top = (
+                previous_fact.source_top_line_cumulative
+                if previous_fact is not None else None
+            )
+            fact = fact.with_changes(
+                top_line=Decimal(0),
+                source_top_line_cumulative=(
+                    Decimal(0) if quarter == 1 or previous_top is None else previous_top
+                ),
+                source_filing_id=f"zero_top_line:{fact.source_filing_id}",
+            )
         return fact.with_changes(is_pending=not fact.fully_complete), None
 
 

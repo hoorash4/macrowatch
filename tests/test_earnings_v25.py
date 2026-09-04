@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
@@ -157,6 +158,60 @@ class EarningsV25DiagnosticTests(unittest.TestCase):
             archive(connected), report_code="11013", fiscal_year=2016,
         )
         self.assertEqual(parsed["CFS"].cumulative["net_income"], Decimal("8000000"))
+
+
+    def test_incomplete_fact_continues_through_single_and_raw_dart(self) -> None:
+        pipeline = object.__new__(KoreaEarningsV2Pipeline)
+        pipeline.dart = SimpleNamespace(
+            company_profile=lambda _corp_code: {"industry_code": "62010"},
+        )
+        pipeline.financial_company = None
+        calls: list[str] = []
+
+        def single(_identity, fact, *_args):
+            calls.append("single")
+            return fact
+
+        def raw(_identity, fact, *_args):
+            calls.append("raw")
+            return fact.with_changes(
+                net_income=Decimal("8"),
+                source_net_income_cumulative=Decimal("8"),
+            )
+
+        pipeline._single_open_dart_missing_financials = single
+        pipeline._raw_open_dart_missing_financials = raw
+        identity = SimpleNamespace(
+            company_id="kr:test",
+            company_name="테스트기업",
+            corp_code="00000001",
+            industry_code="62010",
+        )
+        fact = FinancialFact(
+            company_id="kr:test",
+            fiscal_year=2018,
+            fiscal_quarter=4,
+            period_end=date(2018, 12, 31),
+            top_line=Decimal("100"),
+            operating_income=Decimal("10"),
+            net_income=None,
+            currency="KRW",
+            consolidation_scope="CFS",
+            source_filing_id="pending",
+            filing_date=date(2019, 4, 1),
+            source_top_line_cumulative=Decimal("400"),
+            source_operating_income_cumulative=Decimal("40"),
+            is_pending=True,
+        )
+
+        resolved, issue = pipeline._resolve_missing_financials(
+            identity, fact, 2018, 4, tolerate_provider_errors=False,
+        )
+
+        self.assertIsNone(issue)
+        self.assertEqual(calls, ["single", "raw"])
+        self.assertEqual(resolved.net_income, Decimal("8"))
+        self.assertFalse(resolved.is_pending)
 
 
 if __name__ == "__main__":
