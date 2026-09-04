@@ -455,6 +455,7 @@ class KoreaEarningsV2Pipeline:
         year: int,
         quarter: int,
         previous_fact: FinancialFact | None,
+        crno: str,
         previous_rows: list[dict[str, Any]],
     ) -> FinancialFact:
         existing_count = sum(
@@ -665,7 +666,7 @@ class KoreaEarningsV2Pipeline:
         self._progress("financial_company_source_start", company=identity.company_name)
         try:
             snapshot = self._financial_company_snapshot(
-                self.financial_company.quarter_financials(identity.company_name, year, quarter),
+                self.financial_company.quarter_financials(crno, year, quarter),
                 fact,
             )
         except ProviderError as error:
@@ -780,9 +781,15 @@ class KoreaEarningsV2Pipeline:
         # 2016~18년 금융회사 대기는 구조화·원문 DART가 이미 실패한 결과다.
         # 금융위 원자료를 먼저 보완해 완료되면 같은 DART 재호출을 하지 않는다.
         if entity_kind == "financial":
-            fact = self._financial_company_missing_financials(
-                identity, fact, year, quarter, previous_fact,
-            )
+            try:
+                financial_profile = self.dart.company_profile(identity.corp_code)
+            except ProviderError:
+                financial_profile = None
+            crno = str((financial_profile or {}).get("jurir_no") or "").strip()
+            if re.fullmatch(r"\d{13}", crno):
+                fact = self._financial_company_missing_financials(
+                    identity, fact, year, quarter, previous_fact, crno,
+                )
             if fact.fully_complete:
                 return fact.with_changes(is_pending=False), None
 
