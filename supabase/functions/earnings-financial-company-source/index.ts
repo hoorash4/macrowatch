@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const FINANCIALS_URL = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2";
+const INCOME_STATEMENT_URL = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoIs_V2";
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 type SourceItem = Record<string, unknown>;
@@ -11,7 +12,7 @@ function json(body: unknown, status = 200, headers: HeadersInit = {}) {
 
 class FinancialSourceError extends Error {
   constructor(
-    readonly source: "basic-info" | "financials",
+    readonly source: "basic-info" | "financials" | "income-statement",
     readonly reason: string,
     message: string,
   ) {
@@ -71,17 +72,18 @@ function sourceError(payload: Record<string, unknown>) {
 }
 
 async function fetchSource(
-  source: "basic-info" | "financials",
+  source: "basic-info" | "financials" | "income-statement",
   url: string,
   serviceKey: string,
   params: Record<string, string>,
+  numOfRows = "100",
 ): Promise<Record<string, unknown>> {
   // 포털 키가 이미 인코딩된 형태여도 한 번만 인코딩해 전달한다.
   const query = new URLSearchParams({
     serviceKey: decodeURIComponent(serviceKey),
     resultType: "json",
     pageNo: "1",
-    numOfRows: "100",
+    numOfRows,
     ...params,
   });
   const response = await fetch(`${url}?${query}`, { signal: AbortSignal.timeout(25_000) });
@@ -119,6 +121,31 @@ Deno.serve(async (request) => {
     }
     const serviceKey = request.headers.get("X-Public-Data-API-Key")?.trim();
     if (!serviceKey) throw new Error("공공데이터 API 인증키가 전달되지 않았습니다.");
+
+    const mode = String(body.mode ?? "summary");
+    if (mode === "income_statement") {
+      const incomePayload = await fetchSource("income-statement", INCOME_STATEMENT_URL, serviceKey, {
+        crno,
+        bizYear: String(fiscalYear),
+      }, "9999");
+      const accounts = readItems(incomePayload, "FnCoIs_body").map((item) => ({
+        basDt: item.basDt,
+        crno: item.crno,
+        bizYear: item.bizYear,
+        fnclDcd: item.fnclDcd,
+        fnclDcdNm: item.fnclDcdNm,
+        acitId: item.acitId,
+        acitNm: item.acitNm,
+        thqrAcitAmt: item.thqrAcitAmt,
+        crtmAcitAmt: item.crtmAcitAmt,
+        lsqtAcitAmt: item.lsqtAcitAmt,
+        pvtrAcitAmt: item.pvtrAcitAmt,
+        bpvtrAcitAmt: item.bpvtrAcitAmt,
+        curCd: item.curCd,
+      }));
+      return json(accounts.length ? { status: "ok", crno, accounts } : { status: "no_report", crno });
+    }
+    if (mode !== "summary") return json({ error: "지원하지 않는 조회 모드입니다." }, 400);
 
     const financialPayload = await fetchSource("financials", FINANCIALS_URL, serviceKey, {
       crno,
