@@ -113,10 +113,6 @@ def inspect_raw_archive(
                     and any(row["recognized_metric"] == "operating_income" for row in rows)
                 ),
                 "rows": rows,
-                "table_markup": table if any(
-                    row["recognized_metric"] == "net_income" and not row["amounts"]
-                    for row in rows
-                ) else None,
             })
 
     try:
