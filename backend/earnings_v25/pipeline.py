@@ -455,7 +455,6 @@ class KoreaEarningsV2Pipeline:
         year: int,
         quarter: int,
         previous_fact: FinancialFact | None,
-        crno: str,
         previous_rows: list[dict[str, Any]],
     ) -> FinancialFact:
         existing_count = sum(
@@ -549,6 +548,7 @@ class KoreaEarningsV2Pipeline:
         year: int,
         quarter: int,
         previous_fact: FinancialFact | None,
+        crno: str,
     ) -> FinancialFact:
         """Fill only missing fields from the accepted filing's raw archive."""
         filings = [
