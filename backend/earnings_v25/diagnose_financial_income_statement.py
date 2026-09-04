@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from urllib.parse import unquote
-
 from .http import bounded_request, provider_session, safe_request_failure
 from .providers import OpenDartClient
 
@@ -75,7 +73,8 @@ def main() -> None:
                 attempt_timeout=30,
                 connect_timeout=5,
                 read_timeout=30,
-            )        except Exception as error:
+            )
+        except Exception as error:
             print(json.dumps({
                 "stage": "financial_income_statement_probe",
                 "company": name,
