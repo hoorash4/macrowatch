@@ -96,7 +96,7 @@ class FinancialCompanySupplementTests(unittest.TestCase):
         )
         self.assertEqual(
             request.call_args.kwargs["json"],
-            {"crno": "1234567890123", "fiscal_year": 2018, "fiscal_quarter": 3},
+            {"crno": "1234567890123", "fiscal_year": 2018},
         )
 
 
