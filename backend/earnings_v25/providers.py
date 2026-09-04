@@ -63,7 +63,6 @@ class FinancialCompanySnapshot:
     net_income_cumulative: Decimal | None
 
 
-
 def _retryable_request_error(error: Exception) -> bool:
     status = getattr(getattr(error, "response", None), "status_code", None)
     return (
@@ -282,9 +281,13 @@ class OpenDartClient:
     def company_profile(self, corp_code: str) -> dict[str, str] | None:
         payload = self._get("company.json", {"corp_code": corp_code})
         industry_code = str(payload.get("induty_code") or "").strip()
-        if not industry_code:
-            return None
-        return {"industry_code": industry_code}
+        jurir_no = re.sub(r"\D", "", str(payload.get("jurir_no") or ""))
+        profile: dict[str, str] = {}
+        if industry_code:
+            profile["industry_code"] = industry_code
+        if re.fullmatch(r"\d{13}", jurir_no):
+            profile["jurir_no"] = jurir_no
+        return profile or None
 
     def single_accounts(
         self,
@@ -497,7 +500,7 @@ class FinancialCompanyClient:
 
     def quarter_financials(
         self,
-        company_name: str,
+        crno: str,
         year: int,
         quarter: int,
     ) -> list[FinancialCompanySnapshot]:
@@ -515,7 +518,7 @@ class FinancialCompanyClient:
                     "apikey": self.service_key,
                     "Content-Type": "application/json",
                 },
-                json={"company_name": company_name, "fiscal_year": year},
+                json={"crno": crno, "fiscal_year": year},
                 total_timeout=30,
                 attempt_timeout=12,
                 connect_timeout=CONNECT_TIMEOUT,
@@ -565,7 +568,6 @@ class FinancialCompanyClient:
     @staticmethod
     def _progress(stage: str, **details: Any) -> None:
         print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
-
 
 
 class KrxClient:
@@ -686,3 +688,4 @@ class EcosFxClient:
         latest = max(candidates, key=lambda item: item[0])
         self.cache[reference_date] = latest
         return latest
+
