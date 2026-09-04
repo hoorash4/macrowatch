@@ -41,20 +41,28 @@ jobs:
               )} for row in payload.get("list", [])]
               print(json.dumps({"corp_code": corp_code, "status": payload.get("status"), "rows": rows}, ensure_ascii=False))
               if corp_code in {"00311030", "00111722"}:
-                  list_query = urllib.parse.urlencode({
-                      "crtfc_key": os.environ["OPENDART_API_KEY"],
-                      "corp_code": corp_code,
-                      "bgn_de": start,
-                      "end_de": end,
-                      "page_count": "100",
-                  })
-                  with urllib.request.urlopen(
-                      "https://opendart.fss.or.kr/api/list.json?" + list_query,
-                      timeout=30,
-                  ) as response:
-                      disclosures = json.load(response)
-                  selected = [{key: row.get(key) for key in ("rcept_no", "rcept_dt", "report_nm", "pblntf_ty", "pblntf_detail_ty")}
-                              for row in disclosures.get("list", [])
-                              if "합병" in str(row.get("report_nm")) or "상장폐지" in str(row.get("report_nm"))]
+                  selected = []
+                  page = 1
+                  while True:
+                      list_query = urllib.parse.urlencode({
+                          "crtfc_key": os.environ["OPENDART_API_KEY"],
+                          "corp_code": corp_code,
+                          "bgn_de": start,
+                          "end_de": end,
+                          "pblntf_ty": "B",
+                          "page_no": page,
+                          "page_count": "100",
+                      })
+                      with urllib.request.urlopen(
+                          "https://opendart.fss.or.kr/api/list.json?" + list_query,
+                          timeout=30,
+                      ) as response:
+                          disclosures = json.load(response)
+                      selected.extend({key: row.get(key) for key in ("rcept_no", "rcept_dt", "report_nm", "pblntf_ty", "pblntf_detail_ty")}
+                                      for row in disclosures.get("list", [])
+                                      if "합병" in str(row.get("report_nm")) or "상장폐지" in str(row.get("report_nm")))
+                      if page >= int(disclosures.get("total_page") or 1):
+                          break
+                      page += 1
                   print(json.dumps({"corp_code": corp_code, "disclosures": selected}, ensure_ascii=False))
           PY
