@@ -10,10 +10,7 @@ from urllib.parse import unquote
 from .http import bounded_request, provider_session, safe_request_failure
 from .providers import OpenDartClient
 
-FINANCIAL_INCOME_STATEMENT_URL = (
-    "https://apis.data.go.kr/1160100/service/"
-    "GetFnCoFinaStatCredInfoService_V2/getFnCoIs_V2"
-)
+FINANCIAL_COMPANY_FUNCTION = "earnings-financial-company-source"
 SAMPLES = {
     "032830": "삼성생명",
     "105560": "KB금융",
@@ -26,15 +23,8 @@ ACCOUNT_PATTERN = re.compile(r"매출|수익|영업|손익|순이익|당기", re
 
 
 def _items(payload: dict[str, object]) -> list[dict[str, object]]:
-    body = payload.get("FnCoIs_body")
-    if not isinstance(body, dict):
-        response = payload.get("response")
-        body = response.get("body") if isinstance(response, dict) else None
-    items = body.get("items") if isinstance(body, dict) else None
-    item = items.get("item") if isinstance(items, dict) else None
-    if isinstance(item, list):
-        return [row for row in item if isinstance(row, dict)]
-    return [item] if isinstance(item, dict) else []
+    accounts = payload.get("accounts")
+    return [row for row in accounts if isinstance(row, dict)] if isinstance(accounts, list) else []
 
 
 def _source_error(payload: dict[str, object]) -> str | None:
@@ -49,8 +39,11 @@ def _source_error(payload: dict[str, object]) -> str | None:
 def main() -> None:
     dart = OpenDartClient.from_env()
     public_key = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
-    if not public_key:
-        raise SystemExit("Missing DATA_GO_KR_SERVICE_KEY")
+    supabase_url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    internal_token = os.getenv("EARNINGS_FINANCIAL_SOURCE_TOKEN", "").strip()
+    if not all((public_key, supabase_url, service_key, internal_token)):
+        raise SystemExit("Missing financial source proxy credentials")
 
     corp_map = dart.corporation_map()
     session = provider_session()
@@ -67,31 +60,29 @@ def main() -> None:
         try:
             payload = bounded_request(
                 session,
-                "GET",
-                FINANCIAL_INCOME_STATEMENT_URL,
+                "POST",
+                f"{supabase_url}/functions/v1/{FINANCIAL_COMPANY_FUNCTION}",
                 provider="Financial Services Commission",
-                operation="getFnCoIs_V2",
-                params={
-                    "serviceKey": unquote(public_key),
-                    "resultType": "json",
-                    "pageNo": "1",
-                    "numOfRows": "9999",
-                    "crno": crno,
-                    "bizYear": "2018",
+                operation="income-statement-proxy",
+                headers={
+                    "Authorization": f"Bearer {internal_token}",
+                    "apikey": service_key,
+                    "Content-Type": "application/json",
+                    "X-Public-Data-API-Key": public_key,
                 },
-                total_timeout=None,
-                attempt_timeout=None,
+                json={"crno": crno, "fiscal_year": 2018, "mode": "income_statement"},
+                total_timeout=90,
+                attempt_timeout=30,
                 connect_timeout=5,
                 read_timeout=30,
-            )
-        except Exception as error:
+            )        except Exception as error:
             print(json.dumps({
                 "stage": "financial_income_statement_probe",
                 "company": name,
                 "stock_code": stock_code,
                 "fiscal_year": 2018,
                 "status": "transport_error",
-                "error": safe_request_failure("Financial Services Commission", "getFnCoIs_V2", error),
+                "error": safe_request_failure("Financial Services Commission", "income-statement-proxy", error),
             }, ensure_ascii=False), flush=True)
             continue
         rows = _items(payload)
