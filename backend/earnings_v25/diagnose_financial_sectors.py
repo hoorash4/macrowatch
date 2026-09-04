@@ -56,59 +56,42 @@ def main() -> None:
         "X-Public-Data-API-Key": required["DATA_GO_KR_SERVICE_KEY"],
         "Content-Type": "application/json",
     }
-    titles = (
-        "은행_재무현황_요약손익계산서(18.12월이전)",
-        "은행_재무현황_요약손익계산서(18.12월이후)",
-        "은행_재무현황_요약손익계산서(18.12이전)",
-    )
-    for title in titles:
-        try:
-            response = requests.post(
-                endpoint,
-                headers=headers,
-                json={
-                    "mode": "sector_financial",
-                    "sector": "bank",
-                    "bas_ym": base_month,
-                    "title": title,
-                    "num_of_rows": 9999,
-                },
-                timeout=(5, 35),
-            )
-            response.raise_for_status()
-            payload = response.json()
-            raw_rows = payload.get("rows") if isinstance(payload, dict) else None
-            raw_rows = [row for row in raw_rows if isinstance(row, dict)] if isinstance(raw_rows, list) else []
-            rows = [row for row in raw_rows if str(row.get("basYm") or "") == base_month]
-            print(json.dumps({
-                "stage": "financial_sector_schema",
+    try:
+        response = requests.post(
+            endpoint,
+            headers=headers,
+            json={
+                "mode": "sector_financial",
                 "sector": "bank",
-                "base_month": base_month,
-                "status": "ok" if rows else "no_report",
-                "requested_title": title,
-                "row_count": len(rows),
-                "field_names": sorted({
-                    key for row in rows for key in row
-                    if key not in {"crno", "fncoCd", "fncoNm", "basYm", "title"}
-                }),
-                "account_names": sorted({
-                    str(value).strip() for row in rows for key, value in row.items()
-                    if key.lower().endswith(("cdnm", "acitnm")) and str(value or "").strip()
-                }),
-                "sample_rows": rows[:12],
-            }, ensure_ascii=False), flush=True)
-            if rows:
-                break
-        except requests.RequestException as error:
-            print(json.dumps({
-                "stage": "financial_sector_schema",
-                "sector": "bank",
-                "base_month": base_month,
-                "status": "transport_error",
-                "requested_title": title,
-                "error_type": type(error).__name__,
-                "http_status": getattr(error.response, "status_code", None),
-            }, ensure_ascii=False), flush=True)
+                "bas_ym": base_month,
+                "num_of_rows": 100,
+            },
+            timeout=(5, 35),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        raw_rows = payload.get("rows") if isinstance(payload, dict) else None
+        raw_rows = [row for row in raw_rows if isinstance(row, dict)] if isinstance(raw_rows, list) else []
+        rows = [row for row in raw_rows if str(row.get("basYm") or "") == base_month]
+        print(json.dumps({
+            "stage": "financial_sector_schema",
+            "sector": "bank",
+            "base_month": base_month,
+            "status": "ok" if raw_rows else "no_report",
+            "raw_row_count": len(raw_rows),
+            "filtered_row_count": len(rows),
+            "titles": _titles(raw_rows),
+            "base_months": sorted({str(row.get("basYm") or "") for row in raw_rows}),
+        }, ensure_ascii=False), flush=True)
+    except requests.RequestException as error:
+        print(json.dumps({
+            "stage": "financial_sector_schema",
+            "sector": "bank",
+            "base_month": base_month,
+            "status": "transport_error",
+            "error_type": type(error).__name__,
+            "http_status": getattr(error.response, "status_code", None),
+        }, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
