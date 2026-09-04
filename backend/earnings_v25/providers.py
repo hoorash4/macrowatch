@@ -524,7 +524,7 @@ class FinancialCompanyClient:
                     "Content-Type": "application/json",
                     "X-Public-Data-API-Key": self.public_data_key,
                 },
-                json={"crno": crno, "fiscal_year": year, "fiscal_quarter": quarter},
+                json={"crno": crno, "fiscal_year": year},
                 total_timeout=30,
                 attempt_timeout=12,
                 connect_timeout=CONNECT_TIMEOUT,
