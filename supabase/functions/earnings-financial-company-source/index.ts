@@ -111,20 +111,16 @@ Deno.serve(async (request) => {
     const body = await request.json() as Record<string, unknown>;
     const crno = String(body.crno ?? "").replaceAll(/\D/g, "");
     const fiscalYear = Number(body.fiscal_year);
-    const fiscalQuarter = Number(body.fiscal_quarter);
     if (
       !/^\d{13}$/.test(crno)
       || !Number.isInteger(fiscalYear) || fiscalYear < 1900 || fiscalYear > 2100
-      || !Number.isInteger(fiscalQuarter) || fiscalQuarter < 1 || fiscalQuarter > 4
     ) {
       return json({ error: "13자리 crno와 유효한 fiscal_year·fiscal_quarter가 필요합니다." }, 400);
     }
     const serviceKey = request.headers.get("X-Public-Data-API-Key")?.trim();
     if (!serviceKey) throw new Error("공공데이터 API 인증키가 전달되지 않았습니다.");
 
-    const basDt = `${fiscalYear}${["0331", "0630", "0930", "1231"][fiscalQuarter - 1]}`;
     const financialPayload = await fetchSource("financials", FINANCIALS_URL, serviceKey, {
-      basDt,
       crno,
       bizYear: String(fiscalYear),
     });
