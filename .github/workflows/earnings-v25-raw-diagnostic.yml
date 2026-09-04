@@ -53,6 +53,6 @@ jobs:
         run: |
           python -m unittest discover -s tests -p "test_earnings_v2*.py" -q
           for period in 2016:1 2016:3 2016:4 2018:1 2018:2 2018:3; do
-            python -m earnings_v25.cli --year "${period%:*}" --quarter "${period#*:}" --pending-only
+            python -m earnings_v25.cli --year "${period%:*}" --quarter "${period#*:}" --pending-only --write
           done
 
