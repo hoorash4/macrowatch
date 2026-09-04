@@ -11,9 +11,29 @@ function json(body: unknown, status = 200, headers: HeadersInit = {}) {
 }
 
 class FinancialSourceError extends Error {
-  constructor(readonly source: "basic-info" | "financials", message: string) {
+  constructor(
+    readonly source: "basic-info" | "financials",
+    readonly reason: string,
+    message: string,
+  ) {
     super(message);
   }
+}
+
+function upstreamReason(raw: string, fallback: string) {
+  try {
+    const payload = JSON.parse(raw) as Record<string, unknown>;
+    const serviceHeader = payload.OpenAPI_ServiceResponse && typeof payload.OpenAPI_ServiceResponse === "object"
+      ? (payload.OpenAPI_ServiceResponse as Record<string, unknown>).cmmMsgHeader
+      : null;
+    const error = serviceHeader && typeof serviceHeader === "object"
+      ? String((serviceHeader as Record<string, unknown>).returnReasonCode ?? "")
+      : sourceError(payload) ?? "";
+    if (/^[A-Za-z0-9_-]{1,60}$/.test(error)) return error;
+  } catch {
+    // JSON 오류 응답이 아니면 상태 기반 이유만 기록한다.
+  }
+  return fallback;
 }
 
 function isFinancialSourceRequest(request: Request): boolean {
@@ -75,10 +95,22 @@ async function fetchSource(
     ...params,
   });
   const response = await fetch(`${url}?${query}`, { signal: AbortSignal.timeout(25_000) });
-  if (!response.ok) throw new FinancialSourceError(source, `금융위원회 API HTTP ${response.status}`);
-  const payload = await response.json() as Record<string, unknown>;
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new FinancialSourceError(
+      source,
+      upstreamReason(raw, `UPSTREAM_HTTP_${response.status}`),
+      `금융위원회 API HTTP ${response.status}`,
+    );
+  }
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new FinancialSourceError(source, "INVALID_JSON", "금융위원회 API JSON 응답 오류");
+  }
   const error = sourceError(payload);
-  if (error) throw new FinancialSourceError(source, `금융위원회 API 응답 오류 (${error})`);
+  if (error) throw new FinancialSourceError(source, error, `금융위원회 API 응답 오류 (${error})`);
   return payload;
 }
 
@@ -132,10 +164,11 @@ Deno.serve(async (request) => {
     return json(reports.length ? { status: "ok", crno, reports } : { status: "no_report", crno });
   } catch (error) {
     const source = error instanceof FinancialSourceError ? error.source : "runtime";
+    const reason = error instanceof FinancialSourceError ? error.reason : "RUNTIME_ERROR";
     return json(
       { error: error instanceof Error ? error.message : "금융위원회 원자료 조회 실패" },
       502,
-      { "X-Financial-Source-Stage": source },
+      { "X-Financial-Source-Stage": source, "X-Financial-Source-Reason": reason },
     );
   }
 });
