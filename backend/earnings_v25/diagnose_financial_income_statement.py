@@ -7,8 +7,7 @@ import os
 import re
 from urllib.parse import unquote
 
-import requests
-
+from .http import bounded_request, provider_session, safe_request_failure
 from .providers import OpenDartClient
 
 FINANCIAL_INCOME_STATEMENT_URL = (
@@ -54,6 +53,7 @@ def main() -> None:
         raise SystemExit("Missing DATA_GO_KR_SERVICE_KEY")
 
     corp_map = dart.corporation_map()
+    session = provider_session()
     for stock_code, name in SAMPLES.items():
         mapping = corp_map.get(stock_code)
         if mapping is None:
@@ -64,47 +64,62 @@ def main() -> None:
         if not re.fullmatch(r"\d{13}", crno):
             print(json.dumps({"stage": "financial_income_statement_probe", "company": name, "status": "no_crno"}, ensure_ascii=False), flush=True)
             continue
-        for fiscal_year in (2018, 2019):
-            response = requests.get(
+        try:
+            payload = bounded_request(
+                session,
+                "GET",
                 FINANCIAL_INCOME_STATEMENT_URL,
+                provider="Financial Services Commission",
+                operation="getFnCoIs_V2",
                 params={
                     "serviceKey": unquote(public_key),
                     "resultType": "json",
                     "pageNo": "1",
                     "numOfRows": "9999",
                     "crno": crno,
-                    "bizYear": str(fiscal_year),
+                    "bizYear": "2018",
                 },
-                timeout=(5, 30),
+                total_timeout=None,
+                attempt_timeout=None,
+                connect_timeout=5,
+                read_timeout=30,
             )
-            response.raise_for_status()
-            payload = response.json()
-            rows = _items(payload)
-            matched = [
-                {
-                    "basDt": row.get("basDt"),
-                    "fnclDcd": row.get("fnclDcd"),
-                    "fnclDcdNm": row.get("fnclDcdNm"),
-                    "acitId": row.get("acitId"),
-                    "acitNm": row.get("acitNm"),
-                    "thqrAcitAmt": row.get("thqrAcitAmt"),
-                    "crtmAcitAmt": row.get("crtmAcitAmt"),
-                    "lsqtAcitAmt": row.get("lsqtAcitAmt"),
-                    "curCd": row.get("curCd"),
-                }
-                for row in rows
-                if ACCOUNT_PATTERN.search(str(row.get("acitNm") or ""))
-            ]
+        except Exception as error:
             print(json.dumps({
                 "stage": "financial_income_statement_probe",
                 "company": name,
                 "stock_code": stock_code,
-                "fiscal_year": fiscal_year,
-                "status": "source_error" if _source_error(payload) else "ok",
-                "source_error": _source_error(payload),
-                "row_count": len(rows),
-                "matching_accounts": matched,
+                "fiscal_year": 2018,
+                "status": "transport_error",
+                "error": safe_request_failure("Financial Services Commission", "getFnCoIs_V2", error),
             }, ensure_ascii=False), flush=True)
+            continue
+        rows = _items(payload)
+        matched = [
+            {
+                "basDt": row.get("basDt"),
+                "fnclDcd": row.get("fnclDcd"),
+                "fnclDcdNm": row.get("fnclDcdNm"),
+                "acitId": row.get("acitId"),
+                "acitNm": row.get("acitNm"),
+                "thqrAcitAmt": row.get("thqrAcitAmt"),
+                "crtmAcitAmt": row.get("crtmAcitAmt"),
+                "lsqtAcitAmt": row.get("lsqtAcitAmt"),
+                "curCd": row.get("curCd"),
+            }
+            for row in rows
+            if ACCOUNT_PATTERN.search(str(row.get("acitNm") or ""))
+        ]
+        print(json.dumps({
+            "stage": "financial_income_statement_probe",
+            "company": name,
+            "stock_code": stock_code,
+            "fiscal_year": 2018,
+            "status": "source_error" if _source_error(payload) else "ok",
+            "source_error": _source_error(payload),
+            "row_count": len(rows),
+            "matching_accounts": matched,
+        }, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
