@@ -39,4 +39,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
         run: python -m earnings_v25.diagnose_financial_sectors --year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}"
