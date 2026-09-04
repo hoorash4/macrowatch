@@ -55,7 +55,7 @@ class FinancialCompanySupplementTests(unittest.TestCase):
             source_operating_income_cumulative=Decimal("60"),
             source_net_income_cumulative=Decimal("40"),
         )
-        resolved = pipeline._financial_company_missing_financials(identity(), fact(), 2018, 3, previous)
+        resolved = pipeline._financial_company_missing_financials(identity(), fact(), 2018, 3, previous, "1234567890123")
         self.assertEqual(resolved.top_line, Decimal("100"))
         self.assertEqual(resolved.operating_income, Decimal("30"))
         self.assertEqual(resolved.net_income, Decimal("20"))
@@ -70,7 +70,7 @@ class FinancialCompanySupplementTests(unittest.TestCase):
         )])
         pipeline = KoreaEarningsV2Pipeline(krx=None, dart=None, repository=None, financial_company=client)
         resolved = pipeline._financial_company_missing_financials(
-            identity(), fact(top_line=Decimal("101"), scope="CFS"), 2018, 3, None,
+            identity(), fact(top_line=Decimal("101"), scope="CFS"), 2018, 3, None, "1234567890123",
         )
         self.assertEqual(resolved.top_line, Decimal("101"))
         self.assertIsNone(resolved.operating_income)
