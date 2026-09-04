@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 import unittest
+from unittest.mock import patch
 
 from earnings_v2.models import CompanyIdentity, FinancialFact
 from earnings_v25.pipeline import KoreaEarningsV2Pipeline
-from earnings_v25.providers import FinancialCompanySnapshot
+from earnings_v25.providers import FinancialCompanyClient, FinancialCompanySnapshot
 
 
 class StubFinancialCompany:
@@ -76,6 +77,23 @@ class FinancialCompanySupplementTests(unittest.TestCase):
         self.assertIsNone(resolved.operating_income)
         self.assertIsNone(resolved.net_income)
         self.assertEqual(resolved.source, "open_dart")
+
+    def test_passes_github_public_data_key_only_to_the_protected_proxy(self) -> None:
+        client = FinancialCompanyClient(
+            "https://example.supabase.co",
+            "service-role-key",
+            "internal-token",
+            "data-go-key",
+            session=object(),
+        )
+        with patch("earnings_v25.providers.bounded_request", return_value={
+            "status": "no_report", "crno": "1234567890123",
+        }) as request:
+            self.assertEqual(client.quarter_financials("1234567890123", 2018, 3), [])
+        self.assertEqual(
+            request.call_args.kwargs["headers"]["X-Public-Data-API-Key"],
+            "data-go-key",
+        )
 
 
 if __name__ == "__main__":

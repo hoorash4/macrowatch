@@ -114,8 +114,8 @@ Deno.serve(async (request) => {
     if (!/^\d{13}$/.test(crno) || !Number.isInteger(fiscalYear) || fiscalYear < 1900 || fiscalYear > 2100) {
       return json({ error: "13자리 crno와 유효한 fiscal_year가 필요합니다." }, 400);
     }
-    const serviceKey = Deno.env.get("PUBLIC_DATA_API_KEY");
-    if (!serviceKey) throw new Error("PUBLIC_DATA_API_KEY가 설정되지 않았습니다.");
+    const serviceKey = request.headers.get("X-Public-Data-API-Key")?.trim();
+    if (!serviceKey) throw new Error("공공데이터 API 인증키가 전달되지 않았습니다.");
 
     const financialPayload = await fetchSource("financials", FINANCIALS_URL, serviceKey, {
       crno,
