@@ -43,16 +43,8 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           EARNINGS_V2_DEADLINE_SECONDS: "1200"
-          KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
-          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
-          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          python -m unittest discover -s tests -p "test_earnings_v2*.py" -q
-          for period in 2016:1 2016:3 2016:4 2018:1 2018:2 2018:3; do
-            python -m earnings_v25.cli --year "${period%:*}" --quarter "${period#*:}" --pending-only --write
-          done
+        run: python -m earnings_v25.diagnose_raw --year "${{ inputs.year || '2016' }}" --quarter "${{ inputs.quarter || '1' }}"
 
