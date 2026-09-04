@@ -10,8 +10,8 @@ from zipfile import ZipFile
 
 from earnings_v25.diagnose_structured import parser, relevant_accounts
 from earnings_v25.models import FinancialFact
-from earnings_v25.pipeline import KoreaEarningsV2Pipeline
-from earnings_v25.providers import EcosFxClient
+from earnings_v25.pipeline import KoreaEarningsV2Pipeline, _LazyKrwRates
+from earnings_v25.providers import EcosFxClient, ProviderError
 from earnings_v25.raw_dart_financials import parse_raw_filing_archive
 
 
@@ -23,6 +23,30 @@ def archive(document: str) -> bytes:
 
 
 class EarningsV25DiagnosticTests(unittest.TestCase):
+    def test_lazy_fx_does_not_load_until_foreign_currency_is_requested(self) -> None:
+        calls: list[str] = []
+        rates = _LazyKrwRates(
+            lambda currency: calls.append(currency) or Decimal("10")
+        )
+
+        self.assertEqual(calls, [])
+        self.assertEqual(rates.get("JPY"), Decimal("10"))
+        self.assertEqual(rates.get("jpy"), Decimal("10"))
+        self.assertEqual(calls, ["JPY"])
+
+    def test_lazy_fx_caches_provider_failure_per_currency(self) -> None:
+        calls: list[str] = []
+
+        def unavailable(currency: str) -> Decimal:
+            calls.append(currency)
+            raise ProviderError("temporary ECOS failure")
+
+        rates = _LazyKrwRates(unavailable)
+
+        self.assertIsNone(rates.get("JPY"))
+        self.assertIsNone(rates.get("JPY"))
+        self.assertEqual(calls, ["JPY"])
+
     @patch("earnings_v25.providers.bounded_request")
     def test_ecos_normalizes_usd_and_jpy_to_one_currency_unit(self, request_mock) -> None:
         request_mock.return_value = {

@@ -5,7 +5,7 @@ import os
 import re
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .aggregation import aggregate_market, calculate_market_point
 from .models import (
@@ -41,6 +41,37 @@ TARGETS = {"kr_largecap": 100, "kr_kosdaq": 100}
 EXCHANGES = {"kr_largecap": "KOSPI", "kr_kosdaq": "KOSDAQ"}
 # V6부터 부분 기업행을 보존하고 잠정 바구니와 확정 총합을 분리한다.
 CALCULATION_VERSION = 6
+
+
+class _LazyKrwRates(Mapping[str, Decimal]):
+    """분기 외화 환율을 실제 사용 시점에 통화별 한 번만 조회한다."""
+
+    def __init__(self, loader: Callable[[str], Decimal]) -> None:
+        self._loader = loader
+        self._rates: dict[str, Decimal] = {}
+        self._unavailable: set[str] = set()
+
+    def __getitem__(self, currency: str) -> Decimal:
+        currency = currency.upper()
+        if currency in self._rates:
+            return self._rates[currency]
+        if currency in self._unavailable:
+            raise KeyError(currency)
+        try:
+            rate = self._loader(currency)
+        except ProviderError:
+            self._unavailable.add(currency)
+            raise KeyError(currency) from None
+        if rate <= 0:
+            raise ValueError(f"{currency}/KRW rate must be positive")
+        self._rates[currency] = rate
+        return rate
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._rates)
+
+    def __len__(self) -> int:
+        return len(self._rates)
 
 
 def quarter_end(year: int, quarter: int) -> date:
@@ -942,7 +973,7 @@ class KoreaEarningsV2Pipeline:
                     fact = converted
                 else:
                     fact = fact.with_changes(is_pending=True)
-                    issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
+                    issues.append({"company": identity.company_name, "field": "currency", "reason": f"missing {fact.currency}/KRW quarter rate"})
             if fact.currency == "KRW" and not fact.fully_complete:
                 fact, fallback_issue = self._resolve_missing_financials(
                     identity, fact, year, quarter,
@@ -1206,11 +1237,13 @@ class KoreaEarningsV2Pipeline:
             self._progress("krx_universe_done", **{market: len(rows) for market, rows in universes.items()})
             if write and discovered:
                 self._save_universes(discovered, year, quarter)
-            fx_rates = self._ensure_quarter_fx_rates(universes, year, quarter, write=write)
-            krw_rates = {
-                base_currency: snapshot.rate
-                for base_currency, snapshot in fx_rates.items()
-            }
+            # 원화 실적만 있는 일반 분기에는 ECOS를 호출하지 않는다. 외화 사실을
+            # 실제로 만났을 때만 해당 통화의 분기 환율을 DB 우선으로 한 번 조회한다.
+            krw_rates = _LazyKrwRates(
+                lambda base_currency: self._ensure_quarter_fx_rate(
+                    universes, year, quarter, base_currency, write=write,
+                ).rate
+            )
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
             previous_key = previous_period(year, quarter)
             previous_universes = {
