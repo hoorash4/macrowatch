@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Iterable
 
 from .aggregation import aggregate_market, calculate_market_point
+from .financial_company import FinancialCompanyClient, merge_financial_company
 from .models import (
     CompanyIdentity,
     DelistingFiling,
@@ -206,8 +207,10 @@ class KoreaEarningsV2Pipeline:
     """분기 기업군, 부분 실적, 잠정·확정 집계를 한 생명주기로 관리한다."""
 
     def __init__(self, *, krx: KrxClient, dart: OpenDartClient, repository: EarningsV2Repository,
-                 kis: KisClient | None = None, fx: EcosFxClient | None = None) -> None:
+                 kis: KisClient | None = None, fx: EcosFxClient | None = None,
+                 financial_company: FinancialCompanyClient | None = None) -> None:
         self.krx, self.dart, self.repository, self.kis, self.fx = krx, dart, repository, kis, fx
+        self.financial_company = financial_company
 
     @staticmethod
     def _progress(stage: str, **details: Any) -> None:
@@ -221,7 +224,8 @@ class KoreaEarningsV2Pipeline:
             kis = KisClient(os.environ["KIS_APP_KEY"], os.environ["KIS_APP_SECRET"],
                             cached_token=repository.cached_kis_token, save_token=repository.save_kis_token)
         fx = EcosFxClient(os.environ["ECOS_API_KEY"]) if os.getenv("ECOS_API_KEY", "").strip() else None
-        return cls(krx=KrxClient.from_env(), dart=OpenDartClient.from_env(), repository=repository, kis=kis, fx=fx)
+        return cls(krx=KrxClient.from_env(), dart=OpenDartClient.from_env(), repository=repository,
+                   kis=kis, fx=fx, financial_company=FinancialCompanyClient.from_env())
 
     def _latest_public_operating_income(self, company_ids: Iterable[str], reference_date: date) -> dict[str, Decimal]:
         latest: dict[str, tuple[tuple[int, int], Decimal]] = {}
@@ -603,14 +607,34 @@ class KoreaEarningsV2Pipeline:
             complete=fact.fully_complete,
         )
 
+        kis_issue = None
         if not fact.fully_complete and self.kis is not None:
             fact, kis_issue = self._try_kis_missing_financials(
                 identity, fact, year, quarter, stage=f"{stage}_kis",
                 propagate_provider_error=not tolerate_provider_errors,
                 previous_fact=previous_fact,
             )
-            if kis_issue is not None:
-                return fact, kis_issue
+        if (not fact.fully_complete and entity_kind == "financial"
+                and getattr(self, "financial_company", None) is not None):
+            self._progress("financial_company_source_start", company=identity.company_name)
+            try:
+                financial_profile = self.dart.company_profile(identity.corp_code)
+                crno = str((financial_profile or {}).get("jurir_no") or "").strip()
+                if re.fullmatch(r"\d{13}", crno):
+                    snapshots = self.financial_company.quarter_financials(crno, year, quarter, industry_code)
+                    fact = merge_financial_company(fact, snapshots, year, quarter, previous_fact)
+                else:
+                    self._progress("financial_company_source_missing_identity", company=identity.company_name)
+            except ProviderError as error:
+                self._progress("financial_company_source_failed", company=identity.company_name, reason=str(error))
+                if not tolerate_provider_errors:
+                    raise
+                return fact.with_changes(is_pending=True), {
+                    "company": identity.company_name, "field": "financial_services_commission", "reason": str(error),
+                }
+            self._progress("financial_company_source_done", company=identity.company_name, complete=fact.fully_complete)
+        if kis_issue is not None and not fact.fully_complete:
+            return fact, kis_issue
         # 이 추정은 사용자가 허용한 과거 백필 전용 규칙이다. 자동 수집은
         # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.
         if (
@@ -1247,3 +1271,4 @@ class KoreaEarningsV2Pipeline:
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
         return results
+
