@@ -78,7 +78,11 @@ jobs:
                           archive = zipfile.ZipFile(io.BytesIO(response.read()))
                       snippets = []
                       for name in archive.namelist():
-                          text = archive.read(name).decode("utf-8", errors="ignore")
+                          content = archive.read(name)
+                          try:
+                              text = content.decode("utf-8")
+                          except UnicodeDecodeError:
+                              text = content.decode("cp949", errors="ignore")
                           text = re.sub(r"<[^>]+>", " ", text)
                           text = re.sub(r"\s+", " ", text)
                           for keyword in ("합병방법", "존속회사", "소멸회사", "합병기일"):
