@@ -6,8 +6,14 @@ const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 type SourceItem = Record<string, unknown>;
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+function json(body: unknown, status = 200, headers: HeadersInit = {}) {
+  return new Response(JSON.stringify(body), { status, headers: { ...JSON_HEADERS, ...headers } });
+}
+
+class FinancialSourceError extends Error {
+  constructor(readonly source: "basic-info" | "financials", message: string) {
+    super(message);
+  }
 }
 
 function isFinancialSourceRequest(request: Request): boolean {
@@ -55,6 +61,7 @@ function sourceError(payload: Record<string, unknown>) {
 }
 
 async function fetchSource(
+  source: "basic-info" | "financials",
   url: string,
   serviceKey: string,
   params: Record<string, string>,
@@ -68,10 +75,10 @@ async function fetchSource(
     ...params,
   });
   const response = await fetch(`${url}?${query}`, { signal: AbortSignal.timeout(25_000) });
-  if (!response.ok) throw new Error(`금융위원회 API HTTP ${response.status}`);
+  if (!response.ok) throw new FinancialSourceError(source, `금융위원회 API HTTP ${response.status}`);
   const payload = await response.json() as Record<string, unknown>;
   const error = sourceError(payload);
-  if (error) throw new Error(`금융위원회 API 응답 오류 (${error})`);
+  if (error) throw new FinancialSourceError(source, `금융위원회 API 응답 오류 (${error})`);
   return payload;
 }
 
@@ -102,13 +109,13 @@ Deno.serve(async (request) => {
     const serviceKey = Deno.env.get("PUBLIC_DATA_API_KEY");
     if (!serviceKey) throw new Error("PUBLIC_DATA_API_KEY가 설정되지 않았습니다.");
 
-    const basicPayload = await fetchSource(BASIC_INFO_URL, serviceKey, { fncoNm: companyName });
+    const basicPayload = await fetchSource("basic-info", BASIC_INFO_URL, serviceKey, { fncoNm: companyName });
     const company = chooseCompany(readItems(basicPayload, "FnCoBasiInfo_body"), companyName);
     if (company === "ambiguous") return json({ status: "ambiguous" });
     const crno = String(company?.crno ?? "").replaceAll(/\D/g, "");
     if (!company || crno.length !== 13) return json({ status: "not_found" });
 
-    const financialPayload = await fetchSource(FINANCIALS_URL, serviceKey, {
+    const financialPayload = await fetchSource("financials", FINANCIALS_URL, serviceKey, {
       crno,
       bizYear: String(fiscalYear),
     });
@@ -124,7 +131,12 @@ Deno.serve(async (request) => {
     }));
     return json(reports.length ? { status: "ok", crno, reports } : { status: "no_report", crno });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "금융위원회 원자료 조회 실패" }, 502);
+    const source = error instanceof FinancialSourceError ? error.source : "runtime";
+    return json(
+      { error: error instanceof Error ? error.message : "금융위원회 원자료 조회 실패" },
+      502,
+      { "X-Financial-Source-Stage": source },
+    );
   }
 });
 
