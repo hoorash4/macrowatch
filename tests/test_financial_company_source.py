@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+import unittest
+
+from earnings_v2.models import CompanyIdentity, FinancialFact
+from earnings_v25.pipeline import KoreaEarningsV2Pipeline
+from earnings_v25.providers import FinancialCompanySnapshot
+
+
+class StubFinancialCompany:
+    def __init__(self, snapshots: list[FinancialCompanySnapshot]) -> None:
+        self.snapshots = snapshots
+        self.request_count = 0
+
+    def quarter_financials(self, _company_name: str, _year: int, _quarter: int) -> list[FinancialCompanySnapshot]:
+        self.request_count += 1
+        return self.snapshots
+
+
+def identity() -> CompanyIdentity:
+    return CompanyIdentity(
+        company_id="company", company_name="테스트금융", stock_code="000000",
+        corp_code="00000000", market_id="kr_largecap", rank=1,
+        market_cap=Decimal("1"), reference_date=date(2018, 9, 28),
+        entity_kind="financial",
+    )
+
+
+def fact(*, top_line: Decimal | None = None, scope: str = "CFS") -> FinancialFact:
+    return FinancialFact(
+        company_id="company", fiscal_year=2018, fiscal_quarter=3,
+        period_end=date(2018, 9, 30), top_line=top_line,
+        operating_income=None, net_income=None, currency="KRW",
+        consolidation_scope=scope, source_filing_id="open_dart:test",
+        filing_date=date(2018, 11, 14),
+    )
+
+
+class FinancialCompanySupplementTests(unittest.TestCase):
+    def test_fills_only_missing_metrics_and_subtracts_previous_cumulative(self) -> None:
+        client = StubFinancialCompany([FinancialCompanySnapshot(
+            crno="1234567890123", report_code="11014", consolidation_scope="CFS",
+            currency="KRW", top_line_cumulative=Decimal("300"),
+            operating_income_cumulative=Decimal("90"), net_income_cumulative=Decimal("60"),
+        )])
+        pipeline = KoreaEarningsV2Pipeline(krx=None, dart=None, repository=None, financial_company=client)
+        previous = FinancialFact(
+            company_id="company", fiscal_year=2018, fiscal_quarter=2,
+            period_end=date(2018, 6, 30), top_line=Decimal("100"),
+            operating_income=Decimal("30"), net_income=Decimal("20"), currency="KRW",
+            consolidation_scope="CFS", source_filing_id="stored", filing_date=date(2018, 8, 14),
+            source_top_line_cumulative=Decimal("200"),
+            source_operating_income_cumulative=Decimal("60"),
+            source_net_income_cumulative=Decimal("40"),
+        )
+        resolved = pipeline._financial_company_missing_financials(identity(), fact(), 2018, 3, previous)
+        self.assertEqual(resolved.top_line, Decimal("100"))
+        self.assertEqual(resolved.operating_income, Decimal("30"))
+        self.assertEqual(resolved.net_income, Decimal("20"))
+        self.assertEqual(resolved.source, "financial_services_commission")
+        self.assertEqual(client.request_count, 1)
+
+    def test_does_not_mix_other_scope_into_partial_fact(self) -> None:
+        client = StubFinancialCompany([FinancialCompanySnapshot(
+            crno="1234567890123", report_code="11014", consolidation_scope="OFS",
+            currency="KRW", top_line_cumulative=Decimal("300"),
+            operating_income_cumulative=Decimal("90"), net_income_cumulative=Decimal("60"),
+        )])
+        pipeline = KoreaEarningsV2Pipeline(krx=None, dart=None, repository=None, financial_company=client)
+        resolved = pipeline._financial_company_missing_financials(
+            identity(), fact(top_line=Decimal("101"), scope="CFS"), 2018, 3, None,
+        )
+        self.assertEqual(resolved.top_line, Decimal("101"))
+        self.assertIsNone(resolved.operating_income)
+        self.assertIsNone(resolved.net_income)
+        self.assertEqual(resolved.source, "open_dart")
+
+
+if __name__ == "__main__":
+    unittest.main()

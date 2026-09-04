@@ -8,6 +8,7 @@ import time
 import zipfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -29,6 +30,7 @@ from .models import DelistingFiling, PeriodicFiling, Security
 OPEN_DART_BASE = "https://opendart.fss.or.kr/api"
 KRX_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
+FINANCIAL_COMPANY_FUNCTION = "earnings-financial-company-source"
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
 DELISTING_TITLES = {
@@ -46,6 +48,20 @@ class ProviderError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
         self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class FinancialCompanySnapshot:
+    """금융위원회 요약재무제표의 한 보고서·재무제표 범위 원본값."""
+
+    crno: str
+    report_code: str
+    consolidation_scope: str | None
+    currency: str
+    top_line_cumulative: Decimal | None
+    operating_income_cumulative: Decimal | None
+    net_income_cumulative: Decimal | None
+
 
 
 def _retryable_request_error(error: Exception) -> bool:
@@ -428,6 +444,125 @@ class OpenDartClient:
                 break
             page += 1
         return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
+
+
+def _financial_company_report_code(row: dict[str, Any]) -> str | None:
+    """금융위 API의 보고서 코드를 OpenDART와 같은 분기 식별자로 정규화한다."""
+    report_code = str(row.get("rptCd") or "").strip()
+    if report_code in REPORT_CODES.values():
+        return report_code
+    report_name = str(row.get("rptCdNm") or "")
+    month_match = re.search(r"(?:^|[^0-9])(03|06|09|12)(?:[^0-9]|$)", report_name)
+    if month_match is None:
+        return None
+    return {"03": "11013", "06": "11012", "09": "11014", "12": "11011"}[month_match.group(1)]
+
+
+def _financial_company_scope(row: dict[str, Any]) -> str | None:
+    """명시된 연결·별도 구분만 사용한다. 알 수 없는 범위는 추측하지 않는다."""
+    value = " ".join(
+        str(row.get(field) or "")
+        for field in ("fnclDcd", "fnclDcdNm")
+    ).upper()
+    if "CFS" in value or "연결" in value:
+        return "CFS"
+    if "OFS" in value or "별도" in value or "개별" in value:
+        return "OFS"
+    return None
+
+
+class FinancialCompanyClient:
+    """보호된 Supabase 프록시를 통해 금융위원회 금융회사 원자료를 조회한다.
+
+    공공데이터포털 키는 Supabase 비밀 환경에만 남긴다. Python/Actions에는
+    이미 필요한 서비스 역할 키만 있으므로 별도 키 복제나 노출이 없다.
+    """
+
+    def __init__(self, supabase_url: str, service_key: str, *, session: Any | None = None) -> None:
+        self.supabase_url = supabase_url.rstrip("/")
+        self.service_key = service_key.strip()
+        if not self.supabase_url or not self.service_key:
+            raise ValueError("Supabase URL and service key are required for financial-company lookup")
+        self.session = session or _session()
+        self.request_count = 0
+
+    @classmethod
+    def from_env(cls) -> "FinancialCompanyClient | None":
+        url = os.getenv("SUPABASE_URL", "").strip()
+        service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        return cls(url, service_key) if url and service_key else None
+
+    def quarter_financials(
+        self,
+        company_name: str,
+        year: int,
+        quarter: int,
+    ) -> list[FinancialCompanySnapshot]:
+        self.request_count += 1
+        operation = "financial-company-source"
+        try:
+            payload = bounded_request(
+                self.session,
+                "POST",
+                f"{self.supabase_url}/functions/v1/{FINANCIAL_COMPANY_FUNCTION}",
+                provider="Financial Services Commission",
+                operation=operation,
+                headers={
+                    "Authorization": f"Bearer {self.service_key}",
+                    "apikey": self.service_key,
+                    "Content-Type": "application/json",
+                },
+                json={"company_name": company_name, "fiscal_year": year},
+                total_timeout=30,
+                attempt_timeout=12,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=STANDARD_READ_TIMEOUT,
+                on_retry=lambda attempt, reason, remaining: self._progress(
+                    "provider_request_retry",
+                    provider="Financial Services Commission", endpoint=operation,
+                    attempt=attempt, reason=reason, remaining_budget_seconds=remaining,
+                ),
+            )
+        except ExecutionDeadlineExceeded:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                safe_request_failure("Financial Services Commission", operation, exc),
+                retryable=_retryable_request_error(exc),
+            ) from None
+        if not isinstance(payload, dict):
+            raise ProviderError("Financial Services Commission returned invalid JSON")
+        status = str(payload.get("status") or "")
+        if status in {"not_found", "ambiguous", "no_report"}:
+            return []
+        if status != "ok":
+            raise ProviderError("Financial Services Commission rejected the request")
+
+        crno = str(payload.get("crno") or "").strip()
+        reports = payload.get("reports")
+        if not re.fullmatch(r"\d{13}", crno) or not isinstance(reports, list):
+            raise ProviderError("Financial Services Commission returned invalid financial-company data")
+        target_report = REPORT_CODES[quarter]
+        snapshots: list[FinancialCompanySnapshot] = []
+        for raw in reports:
+            if not isinstance(raw, dict) or _financial_company_report_code(raw) != target_report:
+                continue
+            currency = str(raw.get("curCd") or "KRW").strip().upper()
+            snapshots.append(FinancialCompanySnapshot(
+                crno=crno,
+                report_code=target_report,
+                consolidation_scope=_financial_company_scope(raw),
+                currency=currency or "KRW",
+                top_line_cumulative=_decimal(raw.get("fncoSaleAmt")),
+                operating_income_cumulative=_decimal(raw.get("fncoBzopPft")),
+                net_income_cumulative=_decimal(raw.get("fncoCrtmNpf")),
+            ))
+        return snapshots
+
+    @staticmethod
+    def _progress(stage: str, **details: Any) -> None:
+        print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
+
 
 
 class KrxClient:

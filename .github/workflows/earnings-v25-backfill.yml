@@ -20,6 +20,11 @@ on:
         required: true
         default: false
         type: boolean
+      pending_only:
+        description: Retry only existing pending companies; preserves completed facts
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -50,10 +55,16 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           WRITE: ${{ inputs.write }}
+          PENDING_ONLY: ${{ inputs.pending_only }}
         shell: bash
         run: |
           set -euo pipefail
-          args=(--year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}" --require-complete)
+          args=(--year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}")
+          if [[ "$PENDING_ONLY" == "true" ]]; then
+            args+=(--pending-only)
+          else
+            args+=(--require-complete)
+          fi
           if [[ "$WRITE" == "true" ]]; then
             args+=(--write)
           fi

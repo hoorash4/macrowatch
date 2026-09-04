@@ -16,3 +16,6 @@ verify_jwt = false
 
 [functions.korea-foreign-flow]
 verify_jwt = true
+
+[functions.earnings-financial-company-source]
+verify_jwt = true
