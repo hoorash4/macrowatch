@@ -10,9 +10,9 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
-function isServiceRoleRequest(request: Request): boolean {
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  return Boolean(serviceRoleKey) && request.headers.get("Authorization") === `Bearer ${serviceRoleKey}`;
+function isFinancialSourceRequest(request: Request): boolean {
+  const internalToken = Deno.env.get("EARNINGS_FINANCIAL_SOURCE_TOKEN");
+  return Boolean(internalToken) && request.headers.get("Authorization") === `Bearer ${internalToken}`;
 }
 
 function compactName(value: unknown) {
@@ -91,7 +91,7 @@ function chooseCompany(items: SourceItem[], companyName: string): SourceItem | n
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
-  if (!isServiceRoleRequest(request)) return json({ error: "서버 호출만 허용됩니다." }, 401);
+  if (!isFinancialSourceRequest(request)) return json({ error: "서버 호출만 허용됩니다." }, 401);
   try {
     const body = await request.json() as Record<string, unknown>;
     const companyName = String(body.company_name ?? "").trim();

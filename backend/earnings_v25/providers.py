@@ -475,14 +475,16 @@ class FinancialCompanyClient:
     """보호된 Supabase 프록시를 통해 금융위원회 금융회사 원자료를 조회한다.
 
     공공데이터포털 키는 Supabase 비밀 환경에만 남긴다. Python/Actions에는
-    이미 필요한 서비스 역할 키만 있으므로 별도 키 복제나 노출이 없다.
+    호출 전용 비밀 토큰만 별도로 사용하며, 공공데이터포털 키는 복제하지 않는다.
     """
 
-    def __init__(self, supabase_url: str, service_key: str, *, session: Any | None = None) -> None:
+    def __init__(self, supabase_url: str, service_key: str, internal_token: str,
+                 *, session: Any | None = None) -> None:
         self.supabase_url = supabase_url.rstrip("/")
         self.service_key = service_key.strip()
-        if not self.supabase_url or not self.service_key:
-            raise ValueError("Supabase URL and service key are required for financial-company lookup")
+        self.internal_token = internal_token.strip()
+        if not self.supabase_url or not self.service_key or not self.internal_token:
+            raise ValueError("Supabase URL, service key, and internal token are required for financial-company lookup")
         self.session = session or _session()
         self.request_count = 0
 
@@ -490,7 +492,8 @@ class FinancialCompanyClient:
     def from_env(cls) -> "FinancialCompanyClient | None":
         url = os.getenv("SUPABASE_URL", "").strip()
         service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-        return cls(url, service_key) if url and service_key else None
+        internal_token = os.getenv("EARNINGS_FINANCIAL_SOURCE_TOKEN", "").strip()
+        return cls(url, service_key, internal_token) if url and service_key and internal_token else None
 
     def quarter_financials(
         self,
@@ -508,7 +511,7 @@ class FinancialCompanyClient:
                 provider="Financial Services Commission",
                 operation=operation,
                 headers={
-                    "Authorization": f"Bearer {self.service_key}",
+                    "Authorization": f"Bearer {self.internal_token}",
                     "apikey": self.service_key,
                     "Content-Type": "application/json",
                 },
