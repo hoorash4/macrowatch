@@ -88,51 +88,6 @@ function readItems(payload: Record<string, unknown>, bodyKey: string): SourceIte
   });
 }
 
-function describePayload(payload: Record<string, unknown>) {
-  const response = payload.response && typeof payload.response === "object"
-    ? payload.response as Record<string, unknown>
-    : null;
-  const body = response?.body && typeof response.body === "object"
-    ? response.body as Record<string, unknown>
-    : null;
-  const items = body?.items;
-  const tableList = body?.tableList;
-  const first = Array.isArray(items)
-    ? items[0]
-    : items && typeof items === "object"
-      ? (Array.isArray((items as Record<string, unknown>).item)
-        ? ((items as Record<string, unknown>).item as unknown[])[0]
-        : (items as Record<string, unknown>).item)
-      : null;
-  const firstTable = Array.isArray(tableList)
-    ? tableList[0]
-    : tableList && typeof tableList === "object"
-      ? (Array.isArray((tableList as Record<string, unknown>).table)
-        ? ((tableList as Record<string, unknown>).table as unknown[])[0]
-        : (tableList as Record<string, unknown>).table)
-      : null;
-  return {
-    top_level_keys: Object.keys(payload),
-    response_keys: response ? Object.keys(response) : [],
-    body_keys: body ? Object.keys(body) : [],
-    items_type: Array.isArray(items) ? "array" : typeof items,
-    items_keys: items && typeof items === "object" && !Array.isArray(items) ? Object.keys(items) : [],
-    first_item: first && typeof first === "object" ? first : null,
-    table_list_type: Array.isArray(tableList) ? "array" : typeof tableList,
-    table_list_keys: tableList && typeof tableList === "object" && !Array.isArray(tableList)
-      ? Object.keys(tableList)
-      : [],
-    first_table: firstTable && typeof firstTable === "object"
-      ? {
-        keys: Object.keys(firstTable as Record<string, unknown>),
-        title: (firstTable as Record<string, unknown>).title ?? null,
-        total_count: (firstTable as Record<string, unknown>).totalCount ?? null,
-        first_item: itemRows((firstTable as Record<string, unknown>).items)[0] ?? null,
-      }
-      : null,
-  };
-}
-
 function sourceError(payload: Record<string, unknown>) {
   const response = payload.response && typeof payload.response === "object"
     ? payload.response as Record<string, unknown>
