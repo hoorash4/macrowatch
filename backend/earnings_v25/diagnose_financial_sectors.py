@@ -119,6 +119,7 @@ def main() -> None:
                     "requested_title": title,
                     "status": payload.get("status"),
                     "row_count": len(rows),
+                    "payload_shape": payload.get("payload_shape"),
                     "titles": _titles(rows),
                     "base_month_range": [base_months[0], base_months[-1]] if base_months else [],
                     "field_names": field_names,
