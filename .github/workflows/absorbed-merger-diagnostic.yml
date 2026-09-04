@@ -21,6 +21,7 @@ jobs:
           import json, os, urllib.parse, urllib.request
           for corp_code, start, end in (
               ("00311030", "20150101", "20171231"),
+              ("00111722", "20150101", "20171231"),
               ("00838421", "20170101", "20191231"),
           ):
               query = urllib.parse.urlencode({
