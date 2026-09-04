@@ -9,7 +9,8 @@ alter table earnings_v2.company_quarters
         'open_dart'::text,
         'sec_edgar'::text,
         'manual'::text,
-        'financial_services_commission'::text
+        'financial_services_commission'::text,
+        'mixed'::text
       ]
     )
   );
