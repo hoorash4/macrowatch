@@ -92,6 +92,8 @@ def main() -> None:
                     request_body["bas_ym"] = requested_month
                 if title:
                     request_body["title"] = title
+                if not requested_month and not title:
+                    request_body["num_of_rows"] = 100
                 response = requests.post(
                     endpoint,
                     headers=headers,
