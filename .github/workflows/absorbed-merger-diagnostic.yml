@@ -1,0 +1,42 @@
+name: Absorbed merger diagnostic
+
+on:
+  push:
+    branches: [codex/absorbed-merger-events]
+    paths: [.github/workflows/absorbed-merger-diagnostic.yml]
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect structured merger rows
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          for corp_code, start, end in (
+              ("00311030", "20150101", "20171231"),
+              ("00838421", "20170101", "20191231"),
+          ):
+              query = urllib.parse.urlencode({
+                  "crtfc_key": os.environ["OPENDART_API_KEY"],
+                  "corp_code": corp_code,
+                  "bgn_de": start,
+                  "end_de": end,
+              })
+              with urllib.request.urlopen(
+                  "https://opendart.fss.or.kr/api/cmpMgDecsn.json?" + query,
+                  timeout=30,
+              ) as response:
+                  payload = json.load(response)
+              rows = [{key: row.get(key) for key in (
+                  "rcept_no", "corp_code", "corp_name", "mg_mth", "mg_stn",
+                  "mgptncmp_cmpnm", "mgsc_mgdt",
+              )} for row in payload.get("list", [])]
+              print(json.dumps({"corp_code": corp_code, "status": payload.get("status"), "rows": rows}, ensure_ascii=False))
+          PY
