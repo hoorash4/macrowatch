@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 from io import BytesIO
 from zipfile import ZipFile
 
 from earnings_v25.diagnose_structured import parser, relevant_accounts
+from earnings_v25.models import FinancialFact
 from earnings_v25.pipeline import KoreaEarningsV2Pipeline
+from earnings_v25.providers import EcosFxClient
 from earnings_v25.raw_dart_financials import parse_raw_filing_archive
 
 
@@ -18,6 +22,57 @@ def archive(document: str) -> bytes:
 
 
 class EarningsV25DiagnosticTests(unittest.TestCase):
+    @patch("earnings_v25.providers.bounded_request")
+    def test_ecos_normalizes_usd_and_jpy_to_one_currency_unit(self, request_mock) -> None:
+        request_mock.return_value = {
+            "StatisticSearch": {
+                "row": [{"TIME": "20181228", "DATA_VALUE": "1000"}],
+            },
+        }
+
+        for currency, item_code, expected in (
+            ("USD", "0000001", Decimal("1000")),
+            ("JPY", "0000002", Decimal("10")),
+        ):
+            with self.subTest(currency=currency):
+                client = EcosFxClient("test-key", session=object())
+                observed_on, rate = client.latest_krw(currency, date(2018, 12, 31))
+                self.assertEqual(observed_on, date(2018, 12, 28))
+                self.assertEqual(rate, expected)
+                self.assertIn(f"/{item_code}", request_mock.call_args.args[2])
+
+    def test_jpy_fact_conversion_preserves_source_values(self) -> None:
+        fact = FinancialFact(
+            company_id="test-company",
+            fiscal_year=2018,
+            fiscal_quarter=4,
+            period_end=date(2018, 12, 31),
+            top_line=Decimal("100"),
+            operating_income=Decimal("20"),
+            net_income=Decimal("10"),
+            currency="JPY",
+            consolidation_scope="CFS",
+            source_filing_id="test",
+            filing_date=date(2019, 3, 1),
+            source_currency="JPY",
+            source_top_line_cumulative=Decimal("400"),
+            source_operating_income_cumulative=Decimal("80"),
+            source_net_income_cumulative=Decimal("40"),
+        )
+
+        converted = KoreaEarningsV2Pipeline._convert_fact_to_krw(
+            fact, {"JPY": Decimal("10")},
+        )
+
+        self.assertIsNotNone(converted)
+        assert converted is not None
+        self.assertEqual(converted.currency, "KRW")
+        self.assertEqual(converted.top_line, Decimal("1000"))
+        self.assertEqual(converted.operating_income, Decimal("200"))
+        self.assertEqual(converted.net_income, Decimal("100"))
+        self.assertEqual(converted.source_currency, "JPY")
+        self.assertEqual(converted.source_top_line_cumulative, Decimal("400"))
+
     def test_requires_supported_quarter(self) -> None:
         args = parser().parse_args(["--year", "2016", "--quarter", "1"])
         self.assertEqual((args.year, args.quarter), (2016, 1))

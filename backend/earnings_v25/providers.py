@@ -30,6 +30,11 @@ from .models import DelistingFiling, PeriodicFiling, Security
 OPEN_DART_BASE = "https://opendart.fss.or.kr/api"
 KRX_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
+ECOS_KRW_SPECS = {
+    "USD": ("0000001", Decimal("1")),
+    # ECOS 731Y001의 엔화 값은 100엔당 원화이므로 1엔당 원화로 정규화한다.
+    "JPY": ("0000002", Decimal("0.01")),
+}
 FINANCIAL_COMPANY_FUNCTION = "earnings-financial-company-source"
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 FINANCIAL_SECTOR_SPECS: dict[str, dict[str, Any]] = {
@@ -872,29 +877,37 @@ class KrxClient:
 
 
 class EcosFxClient:
-    """기준일 이전의 최근 USD/KRW 종가를 조회한다."""
+    """기준일 이전의 최근 외화/KRW 종가를 1 외화 단위 기준으로 조회한다."""
 
     def __init__(self, api_key: str, *, session: Any | None = None) -> None:
         if not api_key.strip():
             raise ValueError("ECOS API key is required")
         self.api_key = api_key.strip()
         self.session = session or _session()
-        self.cache: dict[date, tuple[date, Decimal]] = {}
+        self.cache: dict[tuple[str, date], tuple[date, Decimal]] = {}
         self.request_count = 0
 
-    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
-        if reference_date in self.cache:
-            return self.cache[reference_date]
+    def latest_krw(self, base_currency: str, reference_date: date) -> tuple[date, Decimal]:
+        base_currency = base_currency.upper()
+        spec = ECOS_KRW_SPECS.get(base_currency)
+        if spec is None:
+            raise ProviderError(f"ECOS does not support {base_currency}/KRW")
+        cache_key = (base_currency, reference_date)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        item_code, unit_multiplier = spec
+        operation = f"{base_currency}/KRW"
         start = reference_date - timedelta(days=10)
         url = (
             f"{ECOS_BASE}/{self.api_key}/json/kr/1/100/731Y001/D/"
-            f"{start:%Y%m%d}/{reference_date:%Y%m%d}/0000001"
+            f"{start:%Y%m%d}/{reference_date:%Y%m%d}/{item_code}"
         )
         self.request_count += 1
         try:
             payload = bounded_request(
                 self.session, "GET", url,
-                provider="ECOS", operation="USD/KRW",
+                provider="ECOS", operation=operation,
                 total_timeout=ECOS_TOTAL_TIMEOUT,
                 attempt_timeout=9,
                 connect_timeout=CONNECT_TIMEOUT,
@@ -903,19 +916,19 @@ class EcosFxClient:
         except ExecutionDeadlineExceeded:
             raise
         except Exception as exc:
-            raise ProviderError(safe_request_failure("ECOS", "USD/KRW", exc)) from None
+            raise ProviderError(safe_request_failure("ECOS", operation, exc)) from None
         if not isinstance(payload, dict):
-            raise ProviderError("ECOS USD/KRW returned invalid JSON")
+            raise ProviderError(f"ECOS {operation} returned invalid JSON")
         result = payload.get("RESULT")
         if isinstance(result, dict):
             code = re.sub(r"[^0-9A-Za-z_-]", "", str(result.get("CODE") or "unknown"))
-            raise ProviderError(f"ECOS USD/KRW rejected the request ({code})")
+            raise ProviderError(f"ECOS {operation} rejected the request ({code})")
         statistic = payload.get("StatisticSearch")
         rows = statistic.get("row") if isinstance(statistic, dict) else None
         if not isinstance(rows, list):
-            raise ProviderError("ECOS USD/KRW returned invalid data")
+            raise ProviderError(f"ECOS {operation} returned invalid data")
         candidates: list[tuple[date, Decimal]] = []
-        for row in rows if isinstance(rows, list) else []:
+        for row in rows:
             value = _decimal(row.get("DATA_VALUE"))
             observed = str(row.get("TIME") or "")
             if (
@@ -923,10 +936,19 @@ class EcosFxClient:
                 and re.fullmatch(r"\d{8}", observed)
                 and observed <= reference_date.strftime("%Y%m%d")
             ):
-                candidates.append((date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"), value))
+                normalized = value * unit_multiplier
+                candidates.append((
+                    date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"),
+                    normalized,
+                ))
         if not candidates:
-            raise ProviderError("ECOS returned no USD/KRW value near quarter end")
+            raise ProviderError(f"ECOS returned no {operation} value near quarter end")
         latest = max(candidates, key=lambda item: item[0])
-        self.cache[reference_date] = latest
+        self.cache[cache_key] = latest
         return latest
 
+    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
+        return self.latest_krw("USD", reference_date)
+
+    def latest_jpy_krw(self, reference_date: date) -> tuple[date, Decimal]:
+        return self.latest_krw("JPY", reference_date)
