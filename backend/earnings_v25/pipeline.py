@@ -724,6 +724,22 @@ class KoreaEarningsV2Pipeline:
                 if industry_code is not None
                 else self.financial_company.quarter_financials(crno, year, quarter)
             )
+            # Upgrade an incomplete separate statement only when a complete
+            # consolidated statement is available. Replace the entire metric
+            # set, never mix CFS revenue into OFS profits.
+            consolidated = next((item for item in snapshots
+                if item.consolidation_scope == "CFS" and item.currency == "KRW"
+                and all(getattr(item, f"{field}_cumulative") is not None
+                        or getattr(item, f"{field}_standalone") is not None
+                        for field in ("top_line", "operating_income", "net_income"))), None)
+            if fact.consolidation_scope == "OFS" and consolidated is not None:
+                self._progress("financial_company_scope_upgrade", company=identity.company_name,
+                               previous_scope="OFS", selected_scope="CFS")
+                fact = fact.with_changes(
+                    consolidation_scope="CFS", top_line=None, operating_income=None, net_income=None,
+                    source_top_line_cumulative=None, source_operating_income_cumulative=None,
+                    source_net_income_cumulative=None,
+                )
             snapshot = self._financial_company_snapshot(snapshots, fact)
         except ProviderError as error:
             # 보완 공급자의 일시 실패는 이미 검증된 DART 경로를 막지 않는다.
