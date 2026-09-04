@@ -806,6 +806,10 @@ class KoreaEarningsV2Pipeline:
             if fact.fully_complete:
                 return fact.with_changes(is_pending=False), None
 
+        # V2.5는 2016~18 금융위 보완 전용이다. 이미 실패한 OpenDART
+        # 단일·원문 경로를 대기기업마다 반복하지 않는다.
+        return fact.with_changes(is_pending=not fact.fully_complete), None
+
         # 업종과 관계없이 전체계정 단일 조회로 먼저 누락값을 보완한다.
         self._progress(f"{stage}_open_dart_start", company=identity.company_name)
         try:
