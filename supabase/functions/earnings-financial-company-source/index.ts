@@ -128,14 +128,14 @@ Deno.serve(async (request) => {
       const basYm = String(body.bas_ym ?? "");
       const title = String(body.title ?? "").trim();
       const url = SECTOR_FINANCIAL_URLS[sector];
-      if (!url || !/^\d{6}$/.test(basYm)) {
-        return json({ error: "지원 업종과 YYYYMM 형식의 bas_ym이 필요합니다." }, 400);
+      if (!url || (basYm && !/^\d{6}$/.test(basYm))) {
+        return json({ error: "지원 업종과 선택적인 YYYYMM 형식의 bas_ym이 필요합니다." }, 400);
       }
       const sectorPayload = await fetchSource(
         "sector-financial",
         url,
         serviceKey,
-        { basYm, ...(title ? { title } : {}) },
+        { ...(basYm ? { basYm } : {}), ...(title ? { title } : {}) },
         "9999",
       );
       const rows = readItems(sectorPayload, "");
