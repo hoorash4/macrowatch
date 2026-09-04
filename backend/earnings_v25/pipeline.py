@@ -590,9 +590,9 @@ class KoreaEarningsV2Pipeline:
             if filing_period(filing) == (year, quarter)
         ]
         if not filings:
-            raise ProviderError(
-                f"OpenDART periodic filing not found for {identity.corp_code} {year}Q{quarter}"
-            )
+            # 정상 응답에 대상 분기 공시가 없는 것은 공급자 장애가 아니다.
+            # 기존 사실을 그대로 두어 이 기업만 incomplete로 유지한다.
+            return fact
         # Later receipts include accepted corrections, so use the latest filing
         # for the same fiscal period deterministically.
         filing = max(filings, key=lambda row: (row.received_on, row.receipt_no))
