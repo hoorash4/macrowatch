@@ -46,5 +46,8 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -m earnings_v25.diagnose_raw --year "${{ inputs.year || '2016' }}" --quarter "${{ inputs.quarter || '1' }}"
+        run: |
+          for period in 2016:1 2016:3 2016:4 2018:1 2018:2 2018:3; do
+            python -m earnings_v25.diagnose_raw --year "${period%:*}" --quarter "${period#*:}"
+          done
 
