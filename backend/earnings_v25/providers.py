@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
+
 from .http import (
     RETRYABLE_STATUS_CODES,
     ExecutionDeadlineExceeded,
@@ -527,6 +529,114 @@ class OpenDartClient:
                 break
             page += 1
         return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
+
+    def merger_decision_corp_codes(self, start: date, end: date) -> set[str]:
+        """기간 중 회사합병 결정 공시를 낸 회사 코드만 가볍게 찾는다."""
+        result: set[str] = set()
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "B",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            items = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            for row in items:
+                code = str(row.get("corp_code") or "").strip()
+                title = normalized_disclosure_title(row.get("report_nm"))
+                if re.fullmatch(r"\d{8}", code) and title.endswith("회사합병결정)"):
+                    result.add(code)
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return result
+
+    def _merger_decision_disclosures(
+        self, start: date, end: date, *, corp_code: str,
+    ) -> list[dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "corp_code": corp_code,
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "B",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            for row in payload.get("list", []):
+                if not isinstance(row, dict):
+                    continue
+                receipt = str(row.get("rcept_no") or "").strip()
+                title = normalized_disclosure_title(row.get("report_nm"))
+                if re.fullmatch(r"\d{14}", receipt) and title.endswith("회사합병결정)"):
+                    rows[receipt] = row
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return sorted(rows.values(), key=lambda row: str(row.get("rcept_no") or ""), reverse=True)
+
+    def absorbed_merger_filings(
+        self, start: date, end: date, *, corp_code: str,
+    ) -> list[DelistingFiling]:
+        """구조화 합병 공시 중 공시회사 자신이 소멸하는 건만 반환한다."""
+        payload = self._get("cmpMgDecsn.json", {
+            "corp_code": corp_code,
+            "bgn_de": start.strftime("%Y%m%d"),
+            "end_de": end.strftime("%Y%m%d"),
+        })
+        result: dict[str, DelistingFiling] = {}
+        for row in payload.get("list", []):
+            if not isinstance(row, dict):
+                continue
+            parsed = parse_absorbed_merger(row, expected_corp_code=corp_code)
+            if parsed is None:
+                continue
+            result[parsed.receipt_no] = DelistingFiling(
+                corp_code=parsed.corp_code,
+                receipt_no=parsed.receipt_no,
+                received_on=parsed.received_on,
+                report_name=parsed.report_name,
+                event_type="absorbed_merger",
+                effective_on=parsed.effective_on,
+            )
+        if not result:
+            for disclosure in self._merger_decision_disclosures(
+                start, end, corp_code=corp_code,
+            ):
+                title = str(disclosure.get("report_nm") or "")
+                if title.lstrip().startswith("[첨부정정]"):
+                    continue
+                receipt = str(disclosure.get("rcept_no") or "").strip()
+                try:
+                    archive = self._get(
+                        "document.xml", {"rcept_no": receipt}, binary=True,
+                    )
+                except ProviderError:
+                    continue
+                parsed = parse_absorbed_merger_archive(
+                    archive,
+                    expected_corp_code=corp_code,
+                    corp_name=str(disclosure.get("corp_name") or ""),
+                    receipt_no=receipt,
+                )
+                if parsed is None:
+                    continue
+                result[parsed.receipt_no] = DelistingFiling(
+                    corp_code=parsed.corp_code,
+                    receipt_no=parsed.receipt_no,
+                    received_on=parsed.received_on,
+                    report_name=parsed.report_name,
+                    event_type="absorbed_merger",
+                    effective_on=parsed.effective_on,
+                )
+                break
+        return sorted(result.values(), key=lambda row: (row.event_on, row.receipt_no))
 
 
 def _financial_company_report_code(row: dict[str, Any]) -> str | None:

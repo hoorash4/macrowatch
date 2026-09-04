@@ -66,7 +66,7 @@ jobs:
                       page += 1
                   print(json.dumps({"corp_code": corp_code, "disclosures": selected}, ensure_ascii=False))
                   if corp_code == "00311030" and selected:
-                      receipt_no = next(row["rcept_no"] for row in selected if "기재정정" in row["report_nm"])
+                      receipt_no = selected[-1]["rcept_no"]
                       document_query = urllib.parse.urlencode({
                           "crtfc_key": os.environ["OPENDART_API_KEY"],
                           "rcept_no": receipt_no,
@@ -90,4 +90,22 @@ jobs:
                               if position >= 0:
                                   snippets.append(text[position:position + 500])
                       print(json.dumps({"corp_code": corp_code, "receipt_no": receipt_no, "snippets": snippets[:8]}, ensure_ascii=False))
+          PY
+      - name: Verify production parsers
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          PYTHONPATH: backend
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python - <<'PY'
+          import json
+          from datetime import date
+          from earnings_v2.providers import OpenDartClient
+          client = OpenDartClient.from_env()
+          for corp_code, start, end in (
+              ("00311030", date(2015, 1, 1), date(2017, 12, 31)),
+              ("00838421", date(2017, 1, 1), date(2019, 12, 31)),
+          ):
+              events = client.absorbed_merger_filings(start, end, corp_code=corp_code)
+              print(json.dumps({"corp_code": corp_code, "events": [event.db_row() for event in events]}, ensure_ascii=False, default=str))
           PY

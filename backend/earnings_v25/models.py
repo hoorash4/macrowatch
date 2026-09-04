@@ -30,6 +30,11 @@ class DelistingFiling:
     received_on: date
     report_name: str
     event_type: str
+    effective_on: date | None = None
+
+    @property
+    def event_on(self) -> date:
+        return self.effective_on or self.received_on
 
     def db_row(self) -> dict[str, Any]:
         return asdict(self)

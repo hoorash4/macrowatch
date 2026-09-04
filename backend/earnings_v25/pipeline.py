@@ -340,7 +340,7 @@ class KoreaEarningsV2Pipeline:
             grouped.setdefault(event.corp_code, []).append(event)
         result: dict[str, DelistingFiling] = {}
         for corp_code, candidates in grouped.items():
-            ordered = sorted(candidates, key=lambda row: (row.received_on, row.receipt_no))
+            ordered = sorted(candidates, key=lambda row: (row.event_on, row.receipt_no))
             result[corp_code] = next(
                 (row for row in ordered if row.event_type == "decision"), ordered[0],
             )
@@ -367,15 +367,19 @@ class KoreaEarningsV2Pipeline:
                 received_on=date.fromisoformat(str(row["received_on"])),
                 report_name=str(row["report_name"]),
                 event_type=str(row["event_type"]),
+                effective_on=(
+                    date.fromisoformat(str(row["effective_on"]))
+                    if row.get("effective_on") else None
+                ),
             )
             for row in rows
         ]
-        events.extend(event for event in supplied if start <= event.received_on <= end)
+        events.extend(event for event in supplied if start <= event.event_on <= end)
         events = [
             event for event in events
             if (
-                event.event_type == "final"
-                or event.received_on <= quarter_last_day
+                event.event_type in {"final", "absorbed_merger"}
+                or event.event_on <= quarter_last_day
             )
         ]
         return self._delisting_event_map(events)
@@ -397,9 +401,16 @@ class KoreaEarningsV2Pipeline:
             for event in self.dart.delisting_filings(
                 start, end, corp_code=identity.corp_code,
             ):
-                if event.event_type == "final" or event.received_on <= quarter_last_day:
+                if event.event_type == "final" or event.event_on <= quarter_last_day:
                     events[event.receipt_no] = event
-        ordered = sorted(events.values(), key=lambda row: (row.received_on, row.receipt_no))
+            merger_loader = getattr(self.dart, "absorbed_merger_filings", None)
+            if callable(merger_loader):
+                for event in merger_loader(
+                    date(year - 1, 1, 1), end, corp_code=identity.corp_code,
+                ):
+                    if start <= event.event_on <= end:
+                        events[event.receipt_no] = event
+        ordered = sorted(events.values(), key=lambda row: (row.event_on, row.receipt_no))
         if write and ordered:
             self.repository.upsert_delisting_events(event.db_row() for event in ordered)
         return ordered

@@ -4,11 +4,14 @@ import unittest
 import requests
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
+from zipfile import ZipFile
 
 from earnings_v2.aggregation import aggregate_market
 from earnings_v2.automatic import KoreaEarningsV2AutomaticPipeline
 from earnings_v2.automatic_cli import DAILY_DEADLINE_SECONDS as AUTOMATIC_DEADLINE_SECONDS
 from earnings_v2.models import CompanyIdentity, DelistingFiling, FinancialFact, PeriodicFiling
+from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
 from earnings_v2.cli import QUARTER_DEADLINE_SECONDS, completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.http import (
@@ -180,7 +183,8 @@ class SimulatedRepository:
         wanted = set(corp_codes)
         return [
             dict(row) for row in self.delisting_rows.values()
-            if row["corp_code"] in wanted and start <= row["received_on"] <= end
+            if row["corp_code"] in wanted
+            and start <= (row.get("effective_on") or row["received_on"]) <= end
         ]
 
     def company_history(self, company_ids):
@@ -252,9 +256,10 @@ class SimulatedRepository:
 
 
 class SimulatedDart:
-    def __init__(self, filings=(), delistings=()):
+    def __init__(self, filings=(), delistings=(), mergers=()):
         self.filings = list(filings)
         self.delistings = list(delistings)
+        self.mergers = list(mergers)
         self.financial_calls: list[tuple[tuple[str, ...], int, int]] = []
         self.profile_calls: list[str] = []
         self.single_calls: list[tuple[str, int, int, str]] = []
@@ -271,6 +276,12 @@ class SimulatedDart:
             row for row in self.delistings
             if corp_code is None or row.corp_code == corp_code
         ]
+
+    def merger_decision_corp_codes(self, _start, _end):
+        return {row.corp_code for row in self.mergers}
+
+    def absorbed_merger_filings(self, _start, _end, *, corp_code):
+        return [row for row in self.mergers if row.corp_code == corp_code]
 
     def multi_accounts(self, corp_codes, year, quarter):
         codes = tuple(corp_codes)
@@ -381,6 +392,53 @@ class SimulatedKrx:
 
 
 class OpenDartTransportTests(unittest.TestCase):
+    def test_structured_merger_parser_accepts_only_absorbed_company(self):
+        absorbed = parse_absorbed_merger({
+            "corp_code": "00838421",
+            "rcept_no": "20180117001035",
+            "corp_name": "씨제이이앤엠 주식회사",
+            "mgptncmp_cmpnm": "주식회사 씨제이오쇼핑\n(CJ O SHOPPING CO., Ltd)",
+            "mg_mth": "주식회사 씨제이오쇼핑이 씨제이이앤엠 주식회사를 흡수합병",
+            "mgsc_mgdt": "2018년 07월 01일",
+        }, expected_corp_code="00838421")
+        survivor = parse_absorbed_merger({
+            "corp_code": "00123456",
+            "rcept_no": "20180117001036",
+            "corp_name": "주식회사 씨제이오쇼핑",
+            "mgptncmp_cmpnm": "씨제이이앤엠 주식회사",
+            "mg_mth": "주식회사 씨제이오쇼핑이 씨제이이앤엠 주식회사를 흡수합병",
+            "mgsc_mgdt": "2018.07.01",
+        }, expected_corp_code="00123456")
+
+        self.assertIsNotNone(absorbed)
+        assert absorbed is not None
+        self.assertEqual(absorbed.effective_on, date(2018, 7, 1))
+        self.assertIsNone(survivor)
+
+    def test_legacy_merger_archive_requires_explicit_dissolved_company(self):
+        document = """
+        <TABLE><TR><TD>합병방법</TD><TD>미래에셋대우 주식회사가 미래에셋증권 주식회사를 흡수합병
+        - 존속법인 : 미래에셋대우 주식회사 - 소멸법인 : 미래에셋증권 주식회사</TD></TR>
+        <TR><TD>합병기일</TD><TD>2016년 11월 01일</TD></TR></TABLE>
+        """
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr("report.xml", document.encode("cp949"))
+
+        event = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00311030",
+            corp_name="미래에셋증권", receipt_no="20160513004518",
+        )
+        survivor = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00111722",
+            corp_name="미래에셋대우", receipt_no="20160513004348",
+        )
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.effective_on, date(2016, 11, 1))
+        self.assertIsNone(survivor)
+
     def test_corporation_map_streams_the_archive(self):
         class Response:
             @staticmethod
@@ -1251,6 +1309,53 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             repository.company_rows[(target_company, 2026, 2)]["source_filing_id"],
             "delisting_previous_quarter:20260620000001",
         )
+
+    def test_absorbed_merger_uses_effective_date_and_previous_quarter(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.seed_company(
+            target_company, top_line=None,
+            operating_income=None, net_income=None, pending=True,
+        )
+        previous = fact(2026, 1, "9", company=target_company).with_changes(
+            source_top_line_cumulative=Decimal("90"),
+            source_operating_income_cumulative=Decimal("9"),
+            source_net_income_cumulative=Decimal("9"),
+        )
+        repository.company_rows[(target_company, 2026, 1)] = previous.db_row(
+            calculation_version=6,
+        )
+        merger = DelistingFiling(
+            target_corp, "20260117000001", date(2026, 1, 17),
+            "회사합병 결정(피흡수합병)", "absorbed_merger",
+            effective_on=date(2026, 7, 1),
+        )
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(mergers=[merger]),
+            repository=repository, kis=SimulatedKis(),
+        )
+
+        before_effective = pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            delisting_filings=[merger], event_effective_cutoff=date(2026, 6, 30),
+            retry_pending=False,
+        )
+        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+        self.assertEqual(before_effective["resolved_delisting_companies"], 0)
+
+        after_effective = pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            delisting_filings=[merger], event_effective_cutoff=date(2026, 7, 1),
+        )
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(stored["top_line"], Decimal("90"))
+        self.assertEqual(
+            stored["source_filing_id"],
+            "delisting_previous_quarter:20260117000001",
+        )
+        self.assertEqual(after_effective["resolved_delisting_companies"], 1)
 
     def test_final_delisting_after_quarter_end_resolves_previous_pending_quarter(self):
         target_company = "kr:00000099"
