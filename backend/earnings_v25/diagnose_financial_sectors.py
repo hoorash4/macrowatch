@@ -7,98 +7,60 @@ import json
 import os
 from collections.abc import Iterable
 from typing import Any
-from urllib.parse import unquote
 
 import requests
 
 
-SECTOR_ENDPOINTS = {
-    "domestic_bank": (
-        "https://apis.data.go.kr/1160100/service/"
-        "GetDomBankInfoService/getDomBankFinaInfo"
-    ),
-    "financial_holding": (
-        "https://apis.data.go.kr/1160100/service/"
-        "GetFinaHoldCompInfoService/getFinaHoldCompFinaInfo"
-    ),
-    "life_insurance": (
-        "https://apis.data.go.kr/1160100/service/"
-        "GetLifeInsuCompInfoService/getLifeInsuCompFinaInfo"
-    ),
-    "non_life_insurance": (
-        "https://apis.data.go.kr/1160100/service/"
-        "GetFireInsuCompInfoService/getFireInsuCompFinaInfo"
-    ),
-    "credit_card": (
-        "https://apis.data.go.kr/1160100/service/"
-        "GetCreditCardCompInfoService/getCreditCardCompFinaInfo"
-    ),
-    "securities": (
-        "https://apis.data.go.kr/1160100/service/"
-        "GetSecuCompInfoService/getSecuCompFinaInfo"
-    ),
-}
+SECTORS = ("bank", "holding", "life", "nonlife", "card", "securities")
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(
-        description="Inspect registered sector-specific financial-statistics schemas",
-    )
+    result = argparse.ArgumentParser(description="Inspect sector-specific financial-statistics schemas")
     result.add_argument("--year", type=int, required=True, choices=(2016, 2017, 2018))
     result.add_argument("--quarter", type=int, required=True, choices=(1, 2, 3, 4))
     return result
 
 
-def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    response = payload.get("response")
-    body = response.get("body") if isinstance(response, dict) else None
-    items = body.get("items") if isinstance(body, dict) else None
-    item = items.get("item") if isinstance(items, dict) else None
-    if isinstance(item, list):
-        return [row for row in item if isinstance(row, dict)]
-    return [item] if isinstance(item, dict) else []
-
-
-def _error_code(payload: dict[str, Any]) -> str | None:
-    response = payload.get("response")
-    header = response.get("header") if isinstance(response, dict) else None
-    code = str(header.get("resultCode") or "") if isinstance(header, dict) else ""
-    return None if code in {"", "00", "000"} else code
-
-
 def _titles(rows: Iterable[dict[str, Any]]) -> list[str]:
-    values = {
+    return sorted({
         str(row.get("title") or "").strip()
         for row in rows
         if str(row.get("title") or "").strip()
-    }
-    return sorted(values)
+    })
 
 
 def main() -> None:
     args = parser().parse_args()
-    api_key = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
-    if not api_key:
-        raise SystemExit("Missing DATA_GO_KR_SERVICE_KEY")
+    required = {
+        "SUPABASE_URL": os.getenv("SUPABASE_URL", "").strip(),
+        "SUPABASE_SERVICE_ROLE_KEY": os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip(),
+        "EARNINGS_FINANCIAL_SOURCE_TOKEN": os.getenv("EARNINGS_FINANCIAL_SOURCE_TOKEN", "").strip(),
+        "DATA_GO_KR_SERVICE_KEY": os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip(),
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise SystemExit(f"Missing {', '.join(missing)}")
 
     base_month = f"{args.year}{args.quarter * 3:02d}"
-    for sector, endpoint in SECTOR_ENDPOINTS.items():
+    endpoint = f"{required['SUPABASE_URL'].rstrip('/')}/functions/v1/earnings-financial-company-source"
+    headers = {
+        "Authorization": f"Bearer {required['EARNINGS_FINANCIAL_SOURCE_TOKEN']}",
+        "apikey": required["SUPABASE_SERVICE_ROLE_KEY"],
+        "X-Public-Data-API-Key": required["DATA_GO_KR_SERVICE_KEY"],
+        "Content-Type": "application/json",
+    }
+    for sector in SECTORS:
         try:
-            response = requests.get(
+            response = requests.post(
                 endpoint,
-                params={
-                    "serviceKey": unquote(api_key),
-                    "resultType": "json",
-                    "pageNo": "1",
-                    "numOfRows": "9999",
-                    "basYm": base_month,
-                },
-                timeout=(5, 30),
+                headers=headers,
+                json={"mode": "sector_financial", "sector": sector, "bas_ym": base_month},
+                timeout=(5, 35),
             )
             response.raise_for_status()
             payload = response.json()
-            error = _error_code(payload)
-            rows = _items(payload)
+            rows = payload.get("rows") if isinstance(payload, dict) else None
+            rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
             field_names = sorted({
                 key for row in rows for key in row
                 if key not in {"crno", "fncoCd", "fncoNm", "basYm", "title"}
@@ -107,11 +69,14 @@ def main() -> None:
                 "stage": "financial_sector_schema",
                 "sector": sector,
                 "base_month": base_month,
-                "status": "source_error" if error else "ok",
-                "source_error": error,
+                "status": payload.get("status"),
                 "row_count": len(rows),
                 "titles": _titles(rows),
                 "field_names": field_names,
+                "sample_companies": sorted({
+                    str(row.get("fncoNm") or "").strip() for row in rows
+                    if str(row.get("fncoNm") or "").strip()
+                })[:10],
             }, ensure_ascii=False), flush=True)
         except requests.RequestException as error:
             print(json.dumps({
@@ -120,13 +85,7 @@ def main() -> None:
                 "base_month": base_month,
                 "status": "transport_error",
                 "error_type": type(error).__name__,
-            }, ensure_ascii=False), flush=True)
-        except ValueError:
-            print(json.dumps({
-                "stage": "financial_sector_schema",
-                "sector": sector,
-                "base_month": base_month,
-                "status": "invalid_json",
+                "http_status": getattr(error.response, "status_code", None),
             }, ensure_ascii=False), flush=True)
 
 
