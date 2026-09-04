@@ -80,8 +80,10 @@ def main() -> None:
         "X-Public-Data-API-Key": required["DATA_GO_KR_SERVICE_KEY"],
         "Content-Type": "application/json",
     }
-    for sector, titles in TITLE_CANDIDATES.items():
-        probes = ((None, None), *((base_month, title) for title in titles))
+    sample_probes = {
+        "card": (("200612", "신용카드_재무현황_요약재무상태표(자산)(07.12월이전)"),),
+    }
+    for sector, probes in sample_probes.items():
         for requested_month, title in probes:
             try:
                 request_body = {
