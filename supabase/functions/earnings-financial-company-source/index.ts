@@ -66,6 +66,31 @@ function readItems(payload: Record<string, unknown>, bodyKey: string): SourceIte
   return item && typeof item === "object" ? [item as SourceItem] : [];
 }
 
+function describePayload(payload: Record<string, unknown>) {
+  const response = payload.response && typeof payload.response === "object"
+    ? payload.response as Record<string, unknown>
+    : null;
+  const body = response?.body && typeof response.body === "object"
+    ? response.body as Record<string, unknown>
+    : null;
+  const items = body?.items;
+  const first = Array.isArray(items)
+    ? items[0]
+    : items && typeof items === "object"
+      ? (Array.isArray((items as Record<string, unknown>).item)
+        ? ((items as Record<string, unknown>).item as unknown[])[0]
+        : (items as Record<string, unknown>).item)
+      : null;
+  return {
+    top_level_keys: Object.keys(payload),
+    response_keys: response ? Object.keys(response) : [],
+    body_keys: body ? Object.keys(body) : [],
+    items_type: Array.isArray(items) ? "array" : typeof items,
+    items_keys: items && typeof items === "object" && !Array.isArray(items) ? Object.keys(items) : [],
+    first_item: first && typeof first === "object" ? first : null,
+  };
+}
+
 function sourceError(payload: Record<string, unknown>) {
   const response = payload.response && typeof payload.response === "object"
     ? payload.response as Record<string, unknown>
@@ -148,6 +173,7 @@ Deno.serve(async (request) => {
         sector,
         basYm,
         row_count: rows.length,
+        payload_shape: describePayload(sectorPayload),
         rows,
       });
     }
