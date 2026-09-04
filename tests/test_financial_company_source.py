@@ -94,6 +94,10 @@ class FinancialCompanySupplementTests(unittest.TestCase):
             request.call_args.kwargs["headers"]["X-Public-Data-API-Key"],
             "data-go-key",
         )
+        self.assertEqual(
+            request.call_args.kwargs["json"],
+            {"crno": "1234567890123", "fiscal_year": 2018, "fiscal_quarter": 3},
+        )
 
 
 if __name__ == "__main__":
