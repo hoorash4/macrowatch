@@ -215,7 +215,9 @@ def safe_request_failure(provider: str, operation: str, error: Exception) -> str
     if status is not None:
         headers = getattr(response, "headers", {}) or {}
         stage = headers.get("X-Financial-Source-Stage")
-        suffix = f" ({stage})" if stage else ""
+        reason = headers.get("X-Financial-Source-Reason")
+        details = ": ".join(value for value in (stage, reason) if value)
+        suffix = f" ({details})" if details else ""
         return f"{provider} {operation} returned HTTP {status}{suffix}"
     if isinstance(error, ExecutionDeadlineExceeded):
         return str(error)
