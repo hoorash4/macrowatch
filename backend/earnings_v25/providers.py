@@ -32,6 +32,78 @@ KRX_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
 FINANCIAL_COMPANY_FUNCTION = "earnings-financial-company-source"
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
+FINANCIAL_SECTOR_SPECS: dict[str, dict[str, Any]] = {
+    "bank": {
+        "industry_prefixes": ("641",),
+        "title": "은행_재무현황_주요자금조달운용_요약손익계산서(은행)",
+        "scope": "OFS",
+        "name_field": "bnkSmryPlSbjCdNm",
+        "cumulative_field": "bnkSmryPlSbjCmtlAt",
+        "standalone_field": "bnkSmryPlSbjThqrAmt",
+        "top_line": ("영업수익",),
+        "operating_income": ("영업이익",),
+        "net_income": ("당기순이익",),
+    },
+    "holding": {
+        "industry_prefixes": ("64992",),
+        "title": "금융지주_재무현황_요약연결손익계산서",
+        "scope": "CFS",
+        "name_field": "smryLnkPlAcitCdNm",
+        "cumulative_field": "smryLnkPlAcitCmtlAmt",
+        "standalone_field": "smryLnkPlAcitAmt",
+        "top_line": ("영업수익",),
+        "operating_income": ("영업이익",),
+        "net_income": ("연결당기순이익", "총당기순이익"),
+    },
+    "life": {
+        "industry_prefixes": ("65110",),
+        "title": "생보_재무현황_요약손익계산서(전체)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "smryPlAcitCmtlAmt",
+        "standalone_field": "smryPlAcitThqrAmt",
+        "top_line_sum": (
+            "보험손익_보험영업수익",
+            "투자손익_투자영업수익",
+            "특별계정손익_특별계정수익",
+        ),
+        "operating_income": ("영업이익",),
+        "net_income": ("당기순이익",),
+    },
+    "nonlife": {
+        "industry_prefixes": ("65121",),
+        "title": "손보_재무현황_요약손익계산서(전체)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "smryPlAcitCmtlAmt",
+        "standalone_field": "smryPlAcitThqrAmt",
+        "top_line_sum": ("경과보험료", "투자영업수익", "특별계정이익_특별계정수익"),
+        "operating_income": ("총영업이익",),
+        "net_income": ("당기순이익(또는 당기순손실)",),
+    },
+    "card": {
+        "industry_prefixes": ("64913",),
+        "title": "신용카드_재무현황_요약손익계산서(08.03월이후)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "smryPlAcitCmtlAmt",
+        "standalone_field": "smryPlAcitThqrAmt",
+        "top_line": ("영업수익",),
+        "operating_income": ("영업이익",),
+        "net_income": ("당기순이익(손실)",),
+    },
+    "securities": {
+        "industry_prefixes": ("66121",),
+        "title": "증권_재무현황_요약손익계산서(11.06월이후)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "cmtlAmt",
+        "standalone_field": "thqrAmt",
+        "top_line": ("[영업수익]",),
+        "operating_income": ("[영업이익(손실)]",),
+        "net_income": ("[당기순이익(손실)]",),
+    },
+}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
 DELISTING_TITLES = {
     "상장폐지결정": "decision",
@@ -61,6 +133,9 @@ class FinancialCompanySnapshot:
     top_line_cumulative: Decimal | None
     operating_income_cumulative: Decimal | None
     net_income_cumulative: Decimal | None
+    top_line_standalone: Decimal | None = None
+    operating_income_standalone: Decimal | None = None
+    net_income_standalone: Decimal | None = None
 
 
 def _retryable_request_error(error: Exception) -> bool:
@@ -494,6 +569,7 @@ class FinancialCompanyClient:
             raise ValueError("Supabase URL, service key, internal token, and public-data key are required for financial-company lookup")
         self.session = session or _session()
         self.request_count = 0
+        self._sector_rows_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
     @classmethod
     def from_env(cls) -> "FinancialCompanyClient | None":
@@ -503,16 +579,25 @@ class FinancialCompanyClient:
         public_data_key = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
         return cls(url, service_key, internal_token, public_data_key) if url and service_key and internal_token and public_data_key else None
 
-    def quarter_financials(
+    @staticmethod
+    def _sector_for_industry(industry_code: str | None) -> str | None:
+        code = str(industry_code or "").strip()
+        for sector, spec in FINANCIAL_SECTOR_SPECS.items():
+            if any(code.startswith(prefix) for prefix in spec["industry_prefixes"]):
+                return sector
+        return None
+
+    def _source_request(
         self,
-        crno: str,
-        year: int,
-        quarter: int,
-    ) -> list[FinancialCompanySnapshot]:
+        payload: dict[str, Any],
+        *,
+        operation: str,
+        total_timeout: float = 30,
+        attempt_timeout: float = 12,
+    ) -> dict[str, Any]:
         self.request_count += 1
-        operation = "financial-company-source"
         try:
-            payload = bounded_request(
+            result = bounded_request(
                 self.session,
                 "POST",
                 f"{self.supabase_url}/functions/v1/{FINANCIAL_COMPANY_FUNCTION}",
@@ -524,9 +609,9 @@ class FinancialCompanyClient:
                     "Content-Type": "application/json",
                     "X-Public-Data-API-Key": self.public_data_key,
                 },
-                json={"crno": crno, "fiscal_year": year},
-                total_timeout=30,
-                attempt_timeout=12,
+                json=payload,
+                total_timeout=total_timeout,
+                attempt_timeout=attempt_timeout,
                 connect_timeout=CONNECT_TIMEOUT,
                 read_timeout=STANDARD_READ_TIMEOUT,
                 on_retry=lambda attempt, reason, remaining: self._progress(
@@ -542,17 +627,167 @@ class FinancialCompanyClient:
                 safe_request_failure("Financial Services Commission", operation, exc),
                 retryable=_retryable_request_error(exc),
             ) from None
-        if not isinstance(payload, dict):
+        if not isinstance(result, dict):
             raise ProviderError("Financial Services Commission returned invalid JSON")
+        return result
+
+    def _sector_rows(self, sector: str, base_month: str) -> list[dict[str, Any]]:
+        cache_key = (sector, base_month)
+        cached = self._sector_rows_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        spec = FINANCIAL_SECTOR_SPECS[sector]
+        rows: list[dict[str, Any]] = []
+        seen_pages: set[tuple[str, str, str, int]] = set()
+        for page_no in range(1, 6):
+            payload = self._source_request(
+                {
+                    "mode": "sector_financial",
+                    "sector": sector,
+                    "bas_ym": base_month,
+                    "title": spec["title"],
+                    "num_of_rows": 9999,
+                    "page_no": page_no,
+                },
+                operation=f"sector-financial:{sector}:{page_no}",
+                total_timeout=60,
+                attempt_timeout=30,
+            )
+            status = str(payload.get("status") or "")
+            if status == "no_report":
+                break
+            if status != "ok":
+                raise ProviderError("Financial Services Commission rejected the sector request")
+            raw_rows = payload.get("rows")
+            if not isinstance(raw_rows, list):
+                raise ProviderError("Financial Services Commission returned invalid sector data")
+            page_rows = [row for row in raw_rows if isinstance(row, dict)]
+            if not page_rows:
+                break
+            signature = (
+                str(page_rows[0].get("crno") or ""),
+                str(page_rows[-1].get("crno") or ""),
+                str(page_rows[-1].get(spec["name_field"]) or ""),
+                len(page_rows),
+            )
+            if signature in seen_pages:
+                break
+            seen_pages.add(signature)
+            rows.extend(page_rows)
+            if len(page_rows) < 9999:
+                break
+        self._sector_rows_cache[cache_key] = rows
+        return rows
+
+    @staticmethod
+    def _sector_amount(
+        account_rows: dict[str, dict[str, Any]],
+        labels: tuple[str, ...],
+        field: str,
+    ) -> Decimal | None:
+        for label in labels:
+            if label in account_rows:
+                return _decimal(account_rows[label].get(field))
+        return None
+
+    @staticmethod
+    def _sector_sum(
+        account_rows: dict[str, dict[str, Any]],
+        labels: tuple[str, ...],
+        field: str,
+    ) -> Decimal | None:
+        values = [
+            _decimal(account_rows[label].get(field))
+            for label in labels
+            if label in account_rows
+        ]
+        if len(values) != len(labels) or any(value is None for value in values):
+            return None
+        return sum((value for value in values if value is not None), Decimal(0))
+
+    def _sector_quarter_financials(
+        self,
+        crno: str,
+        year: int,
+        quarter: int,
+        sector: str,
+    ) -> list[FinancialCompanySnapshot]:
+        spec = FINANCIAL_SECTOR_SPECS[sector]
+        base_month = f"{year}{quarter * 3:02d}"
+        rows = [
+            row for row in self._sector_rows(sector, base_month)
+            if str(row.get("crno") or "").strip() == crno
+            and str(row.get("basYm") or "").strip() == base_month
+        ]
+        account_rows = {
+            str(row.get(spec["name_field"]) or "").strip(): row
+            for row in rows
+            if str(row.get(spec["name_field"]) or "").strip()
+        }
+        if not account_rows:
+            return []
+
+        cumulative_field = str(spec["cumulative_field"])
+        standalone_field = str(spec["standalone_field"])
+        top_sum = spec.get("top_line_sum")
+        if isinstance(top_sum, tuple):
+            top_line_cumulative = self._sector_sum(account_rows, top_sum, cumulative_field)
+            top_line_standalone = self._sector_sum(account_rows, top_sum, standalone_field)
+        else:
+            labels = spec["top_line"]
+            top_line_cumulative = self._sector_amount(account_rows, labels, cumulative_field)
+            top_line_standalone = self._sector_amount(account_rows, labels, standalone_field)
+
+        return [FinancialCompanySnapshot(
+            crno=crno,
+            report_code=REPORT_CODES[quarter],
+            consolidation_scope=str(spec["scope"]),
+            currency="KRW",
+            top_line_cumulative=top_line_cumulative,
+            operating_income_cumulative=self._sector_amount(
+                account_rows, spec["operating_income"], cumulative_field,
+            ),
+            net_income_cumulative=self._sector_amount(
+                account_rows, spec["net_income"], cumulative_field,
+            ),
+            top_line_standalone=top_line_standalone,
+            operating_income_standalone=self._sector_amount(
+                account_rows, spec["operating_income"], standalone_field,
+            ),
+            net_income_standalone=self._sector_amount(
+                account_rows, spec["net_income"], standalone_field,
+            ),
+        )]
+
+    def quarter_financials(
+        self,
+        crno: str,
+        year: int,
+        quarter: int,
+        industry_code: str | None = None,
+    ) -> list[FinancialCompanySnapshot]:
+        sector = self._sector_for_industry(industry_code)
+        if sector is not None:
+            sector_snapshots = self._sector_quarter_financials(
+                crno, year, quarter, sector,
+            )
+            if sector_snapshots:
+                return sector_snapshots
+
+        payload = self._source_request(
+            {"crno": crno, "fiscal_year": year},
+            operation="financial-company-source",
+        )
         status = str(payload.get("status") or "")
         if status in {"not_found", "ambiguous", "no_report"}:
             return []
         if status != "ok":
             raise ProviderError("Financial Services Commission rejected the request")
 
-        crno = str(payload.get("crno") or "").strip()
+        returned_crno = str(payload.get("crno") or "").strip()
         reports = payload.get("reports")
-        if not re.fullmatch(r"\d{13}", crno) or not isinstance(reports, list):
+        if not re.fullmatch(r"\d{13}", returned_crno) or not isinstance(reports, list):
             raise ProviderError("Financial Services Commission returned invalid financial-company data")
         target_report = REPORT_CODES[quarter]
         snapshots: list[FinancialCompanySnapshot] = []
@@ -561,7 +796,7 @@ class FinancialCompanyClient:
                 continue
             currency = str(raw.get("curCd") or "KRW").strip().upper()
             snapshots.append(FinancialCompanySnapshot(
-                crno=crno,
+                crno=returned_crno,
                 report_code=target_report,
                 consolidation_scope=_financial_company_scope(raw),
                 currency=currency or "KRW",
