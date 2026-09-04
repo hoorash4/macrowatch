@@ -66,7 +66,7 @@ jobs:
                       page += 1
                   print(json.dumps({"corp_code": corp_code, "disclosures": selected}, ensure_ascii=False))
                   if corp_code == "00311030" and selected:
-                      receipt_no = selected[0]["rcept_no"]
+                      receipt_no = selected[-1]["rcept_no"]
                       document_query = urllib.parse.urlencode({
                           "crtfc_key": os.environ["OPENDART_API_KEY"],
                           "rcept_no": receipt_no,
