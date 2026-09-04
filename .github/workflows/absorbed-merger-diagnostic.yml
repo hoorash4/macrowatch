@@ -18,7 +18,7 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: |
           python - <<'PY'
-          import json, os, urllib.parse, urllib.request
+          import io, json, os, re, urllib.parse, urllib.request, zipfile
           for corp_code, start, end in (
               ("00311030", "20150101", "20171231"),
               ("00111722", "20150101", "20171231"),
@@ -65,4 +65,25 @@ jobs:
                           break
                       page += 1
                   print(json.dumps({"corp_code": corp_code, "disclosures": selected}, ensure_ascii=False))
+                  if corp_code == "00311030" and selected:
+                      receipt_no = selected[0]["rcept_no"]
+                      document_query = urllib.parse.urlencode({
+                          "crtfc_key": os.environ["OPENDART_API_KEY"],
+                          "rcept_no": receipt_no,
+                      })
+                      with urllib.request.urlopen(
+                          "https://opendart.fss.or.kr/api/document.xml?" + document_query,
+                          timeout=30,
+                      ) as response:
+                          archive = zipfile.ZipFile(io.BytesIO(response.read()))
+                      snippets = []
+                      for name in archive.namelist():
+                          text = archive.read(name).decode("utf-8", errors="ignore")
+                          text = re.sub(r"<[^>]+>", " ", text)
+                          text = re.sub(r"\s+", " ", text)
+                          for keyword in ("합병방법", "존속회사", "소멸회사", "합병기일"):
+                              position = text.find(keyword)
+                              if position >= 0:
+                                  snippets.append(text[position:position + 500])
+                      print(json.dumps({"corp_code": corp_code, "receipt_no": receipt_no, "snippets": snippets[:8]}, ensure_ascii=False))
           PY
