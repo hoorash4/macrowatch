@@ -548,7 +548,6 @@ class KoreaEarningsV2Pipeline:
         year: int,
         quarter: int,
         previous_fact: FinancialFact | None,
-        crno: str,
     ) -> FinancialFact:
         """Fill only missing fields from the accepted filing's raw archive."""
         filings = [
@@ -659,6 +658,7 @@ class KoreaEarningsV2Pipeline:
         year: int,
         quarter: int,
         previous_fact: FinancialFact | None,
+        crno: str,
     ) -> FinancialFact:
         """금융위원회 원자료로만 빈 지표를 보완한다. 기존 값은 덮어쓰지 않는다."""
         if self.financial_company is None:
