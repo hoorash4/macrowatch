@@ -3,7 +3,9 @@ name: Absorbed merger diagnostic
 on:
   push:
     branches: [codex/absorbed-merger-events]
-    paths: [.github/workflows/absorbed-merger-diagnostic.yml]
+    paths:
+      - .github/workflows/absorbed-merger-diagnostic.yml
+      - backend/corporate_events.py
 
 jobs:
   inspect:

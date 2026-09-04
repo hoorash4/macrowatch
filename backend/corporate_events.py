@@ -58,19 +58,24 @@ def parse_absorbed_merger(
         return None
 
     # 공시회사와 상대회사의 방향이 명시된 흡수합병 문장만 인정한다.
-    # 단순히 '흡수합병'이라는 단어가 있거나 회사가 존속하는 경우는 제외한다.
-    absorbed_patterns = (
-        rf"{re.escape(counterparty)}(?:가|이){re.escape(company)}(?:을|를)흡수합병",
-        rf"{re.escape(company)}(?:은|는)?피흡수합병",
-        rf"{re.escape(company)}(?:은|는)?.{{0,20}}(?:소멸|해산)",
-    )
-    survivor_patterns = (
-        rf"{re.escape(company)}(?:가|이){re.escape(counterparty)}(?:을|를)흡수합병",
-        rf"{re.escape(company)}(?:은|는)?.{{0,20}}존속",
-    )
-    if any(re.search(pattern, method) for pattern in survivor_patterns):
+    # '존속회사:' 같은 뒤쪽 설명을 앞 문장과 잘못 연결하지 않도록 명시
+    # 역할 표시는 역할명→회사명 방향으로만 읽는다.
+    role_text = _company_token(row.get("mg_mth"))
+    if any(marker + company in role_text for marker in ("존속회사", "존속법인")):
         return None
-    if not any(re.search(pattern, method) for pattern in absorbed_patterns):
+    explicitly_absorbed = any(
+        marker + company in role_text
+        for marker in ("소멸회사", "소멸법인", "피합병회사", "피합병법인")
+    )
+    absorbed_by_direction = re.search(
+        rf"{re.escape(counterparty)}(?:가|이){re.escape(company)}(?:을|를)흡수합병",
+        method,
+    ) is not None
+    survives_by_direction = re.search(
+        rf"{re.escape(company)}(?:가|이){re.escape(counterparty)}(?:을|를)흡수합병",
+        method,
+    ) is not None
+    if survives_by_direction or not (explicitly_absorbed or absorbed_by_direction):
         return None
 
     return AbsorbedMergerEvent(

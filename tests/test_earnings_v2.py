@@ -396,9 +396,9 @@ class OpenDartTransportTests(unittest.TestCase):
         absorbed = parse_absorbed_merger({
             "corp_code": "00838421",
             "rcept_no": "20180117001035",
-            "corp_name": "씨제이이앤엠 주식회사",
-            "mgptncmp_cmpnm": "주식회사 씨제이오쇼핑\n(CJ O SHOPPING CO., Ltd)",
-            "mg_mth": "주식회사 씨제이오쇼핑이 씨제이이앤엠 주식회사를 흡수합병",
+            "corp_name": "씨제이이앤엠",
+            "mgptncmp_cmpnm": "(주)씨제이오쇼핑\n(CJ O SHOPPING CO., Ltd)",
+            "mg_mth": "(주)씨제이오쇼핑이 씨제이이앤엠(주)를 흡수합병\n- 존속회사: (주)씨제이오쇼핑\n- 소멸회사: 씨제이이앤엠(주)",
             "mgsc_mgdt": "2018년 07월 01일",
         }, expected_corp_code="00838421")
         survivor = parse_absorbed_merger({
