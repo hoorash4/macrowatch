@@ -152,12 +152,13 @@ async function fetchSource(
   serviceKey: string,
   params: Record<string, string>,
   numOfRows = "100",
+  pageNo = "1",
 ): Promise<Record<string, unknown>> {
   // 포털 키가 이미 인코딩된 형태여도 한 번만 인코딩해 전달한다.
   const query = new URLSearchParams({
     serviceKey: decodeURIComponent(serviceKey),
     resultType: "json",
-    pageNo: "1",
+    pageNo,
     numOfRows,
     ...params,
   });
@@ -198,6 +199,10 @@ Deno.serve(async (request) => {
       const numOfRows = Number.isInteger(requestedRows) && requestedRows >= 1 && requestedRows <= 9999
         ? String(requestedRows)
         : "9999";
+      const requestedPage = Number(body.page_no ?? 1);
+      const pageNo = Number.isInteger(requestedPage) && requestedPage >= 1
+        ? String(requestedPage)
+        : "1";
       const url = SECTOR_FINANCIAL_URLS[sector];
       if (!url || (basYm && !/^\d{6}$/.test(basYm))) {
         return json({ error: "지원 업종과 선택적인 YYYYMM 형식의 bas_ym이 필요합니다." }, 400);
@@ -208,14 +213,15 @@ Deno.serve(async (request) => {
         serviceKey,
         { ...(basYm ? { basYm } : {}), ...(title ? { title } : {}) },
         numOfRows,
+        pageNo,
       );
       const rows = readItems(sectorPayload, "");
       return json({
         status: rows.length ? "ok" : "no_report",
         sector,
         basYm,
+        page_no: Number(pageNo),
         row_count: rows.length,
-        payload_shape: describePayload(sectorPayload),
         rows,
       });
     }
