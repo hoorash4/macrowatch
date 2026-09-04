@@ -98,7 +98,7 @@ def _amount(value: str) -> Decimal | None:
         parsed = Decimal(text)
     except InvalidOperation:
         return None
-    return -parsed if negative else parsed
+    return -abs(parsed) if negative else parsed
 
 
 class _TableParser(HTMLParser):

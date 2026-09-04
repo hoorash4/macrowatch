@@ -56,6 +56,7 @@ def _diagnostic_row(row: list[str]) -> dict[str, Any] | None:
         ]
         return {
             "label": cell,
+            "cells": row,
             "normalized_label": normalized,
             "recognized_metric": _metric_for_label(cell),
             "amounts": amounts,
@@ -155,10 +156,15 @@ def main() -> None:
 
     repository = EarningsV2Repository.from_env()
     dart = OpenDartClient.from_env()
+    identities = {
+        row["company_id"]: row
+        for market in ("kr_largecap", "kr_kosdaq")
+        for row in repository.universe(market, args.year, args.quarter)
+    }
     pending = [
-        row for row in repository.pending_rows()
-        if int(row.get("market_year") or 0) == args.year
-        and int(row.get("market_quarter") or 0) == args.quarter
+        {**row, "company_name": identities[row["company_id"]].get("company_name")}
+        for row in repository.company_periods(identities, [(args.year, args.quarter)])
+        if row.get("is_pending")
     ]
     completed = 0
     errors = 0
@@ -221,4 +227,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

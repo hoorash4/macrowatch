@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Callable, Iterable, Iterator, Mapping
@@ -649,7 +650,20 @@ class KoreaEarningsV2Pipeline:
             if item.consolidation_scope == fact.consolidation_scope
         ]
         if matching_scope:
-            return matching_scope[0]
+            chosen = matching_scope[0]
+            changes = {}
+            for field in ("top_line", "operating_income", "net_income"):
+                if (getattr(chosen, f"{field}_cumulative") is not None
+                        or getattr(chosen, f"{field}_standalone") is not None):
+                    continue
+                other = next((item for item in matching_scope[1:]
+                              if item.currency == chosen.currency
+                              and (getattr(item, f"{field}_cumulative") is not None
+                                   or getattr(item, f"{field}_standalone") is not None)), None)
+                if other is not None:
+                    for suffix in ("cumulative", "standalone"):
+                        changes[f"{field}_{suffix}"] = getattr(other, f"{field}_{suffix}")
+            return replace(chosen, **changes) if changes else chosen
         if all(getattr(fact, field) is None for field in (
             "top_line", "operating_income", "net_income",
         )):
@@ -697,13 +711,35 @@ class KoreaEarningsV2Pipeline:
             return fact
         self._progress("financial_company_source_start", company=identity.company_name)
         try:
-            snapshots = (
+            candidate_reader = getattr(self.financial_company, "quarter_financial_candidates", None)
+            snapshots = candidate_reader(
+                crno, year, quarter, industry_code,
+                preferred_scope=fact.consolidation_scope if any(
+                    getattr(fact, field) is not None for field in
+                    ("top_line", "operating_income", "net_income")) else None,
+            ) if candidate_reader is not None else (
                 self.financial_company.quarter_financials(
                     crno, year, quarter, industry_code,
                 )
                 if industry_code is not None
                 else self.financial_company.quarter_financials(crno, year, quarter)
             )
+            # Upgrade an incomplete separate statement only when a complete
+            # consolidated statement is available. Replace the entire metric
+            # set, never mix CFS revenue into OFS profits.
+            consolidated = next((item for item in snapshots
+                if item.consolidation_scope == "CFS" and item.currency == "KRW"
+                and all(getattr(item, f"{field}_cumulative") is not None
+                        or getattr(item, f"{field}_standalone") is not None
+                        for field in ("top_line", "operating_income", "net_income"))), None)
+            if fact.consolidation_scope == "OFS" and consolidated is not None:
+                self._progress("financial_company_scope_upgrade", company=identity.company_name,
+                               previous_scope="OFS", selected_scope="CFS")
+                fact = fact.with_changes(
+                    consolidation_scope="CFS", top_line=None, operating_income=None, net_income=None,
+                    source_top_line_cumulative=None, source_operating_income_cumulative=None,
+                    source_net_income_cumulative=None,
+                )
             snapshot = self._financial_company_snapshot(snapshots, fact)
         except ProviderError as error:
             # 보완 공급자의 일시 실패는 이미 검증된 DART 경로를 막지 않는다.
@@ -715,7 +751,12 @@ class KoreaEarningsV2Pipeline:
             )
             return fact
         if snapshot is None:
-            self._progress("financial_company_source_empty", company=identity.company_name)
+            self._progress(
+                "financial_company_source_scope_mismatch" if snapshots else "financial_company_source_empty",
+                company=identity.company_name,
+                expected_scope=fact.consolidation_scope,
+                returned_scopes=[item.consolidation_scope for item in snapshots],
+            )
             return fact
         if snapshot.currency != "KRW":
             self._progress(
@@ -1558,4 +1599,3 @@ class KoreaEarningsV2Pipeline:
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
         return results
-

@@ -765,6 +765,26 @@ class FinancialCompanyClient:
             ),
         )]
 
+    def quarter_financial_candidates(
+        self, crno: str, year: int, quarter: int,
+        industry_code: str | None = None, *, preferred_scope: str | None = None,
+    ) -> list[FinancialCompanySnapshot]:
+        """V2.5-only: supplement partial sector reports with the common API."""
+        sector = self._sector_for_industry(industry_code)
+        candidates = self._sector_quarter_financials(crno, year, quarter, sector) if sector else []
+        fields = ("top_line", "operating_income", "net_income")
+        if any(
+            (preferred_scope is None or item.consolidation_scope == preferred_scope)
+            and all(getattr(item, f"{field}_cumulative") is not None
+                    or getattr(item, f"{field}_standalone") is not None for field in fields)
+            for item in candidates
+        ):
+            return candidates
+        common = self.quarter_financials(crno, year, quarter, None)
+        if any(item.crno != crno for item in common):
+            raise ProviderError("Financial Services Commission returned a different company")
+        return candidates + common
+
     def quarter_financials(
         self,
         crno: str,
