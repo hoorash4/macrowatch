@@ -49,6 +49,15 @@ function isFinancialSourceRequest(request: Request): boolean {
   return Boolean(internalToken) && request.headers.get("Authorization") === `Bearer ${internalToken}`;
 }
 
+function itemRows(items: unknown): SourceItem[] {
+  if (!items || typeof items !== "object") return [];
+  const item = (items as Record<string, unknown>).item;
+  if (Array.isArray(item)) {
+    return item.filter((row): row is SourceItem => Boolean(row) && typeof row === "object");
+  }
+  return item && typeof item === "object" ? [item as SourceItem] : [];
+}
+
 function readItems(payload: Record<string, unknown>, bodyKey: string): SourceItem[] {
   const response = payload.response && typeof payload.response === "object"
     ? payload.response as Record<string, unknown>
@@ -58,12 +67,25 @@ function readItems(payload: Record<string, unknown>, bodyKey: string): SourceIte
     : payload[bodyKey] && typeof payload[bodyKey] === "object"
       ? payload[bodyKey] as Record<string, unknown>
       : null;
-  const items = body?.items && typeof body.items === "object"
-    ? body.items as Record<string, unknown>
-    : null;
-  const item = items?.item;
-  if (Array.isArray(item)) return item.filter((row): row is SourceItem => Boolean(row) && typeof row === "object");
-  return item && typeof item === "object" ? [item as SourceItem] : [];
+  if (!body) return [];
+
+  const directRows = itemRows(body.items);
+  if (directRows.length) return directRows;
+
+  const rawTableList = body.tableList;
+  const tables = Array.isArray(rawTableList)
+    ? rawTableList
+    : rawTableList && typeof rawTableList === "object"
+      ? [rawTableList]
+      : [];
+  return tables.flatMap((rawTable) => {
+    if (!rawTable || typeof rawTable !== "object") return [];
+    const table = rawTable as Record<string, unknown>;
+    const title = String(table.title ?? "").trim();
+    return itemRows(table.items).map((row) => (
+      title && !row.title ? { ...row, title } : row
+    ));
+  });
 }
 
 function describePayload(payload: Record<string, unknown>) {
@@ -100,7 +122,14 @@ function describePayload(payload: Record<string, unknown>) {
     table_list_keys: tableList && typeof tableList === "object" && !Array.isArray(tableList)
       ? Object.keys(tableList)
       : [],
-    first_table: firstTable && typeof firstTable === "object" ? firstTable : null,
+    first_table: firstTable && typeof firstTable === "object"
+      ? {
+        keys: Object.keys(firstTable as Record<string, unknown>),
+        title: (firstTable as Record<string, unknown>).title ?? null,
+        total_count: (firstTable as Record<string, unknown>).totalCount ?? null,
+        first_item: itemRows((firstTable as Record<string, unknown>).items)[0] ?? null,
+      }
+      : null,
   };
 }
 
