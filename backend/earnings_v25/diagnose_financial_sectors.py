@@ -11,37 +11,13 @@ from typing import Any
 import requests
 
 
-TITLE_CANDIDATES = {
-    "bank": (
-        "은행_재무현황_요약손익계산서",
-        "은행_재무현황_요약손익계산서(은행)",
-        "은행_재무현황_요약재무상태표(자산-은행)",
-    ),
-    "holding": (
-        "금융지주_재무현황_요약연결손익계산서",
-        "금융지주_재무현황_요약손익계산서",
-        "금융지주_재무현황_요약연결재무상태표(자산)",
-    ),
-    "life": (
-        "생보_재무현황_요약손익계산서",
-        "생보_재무현황_요약손익계산서(전체)",
-        "생보_재무현황_요약재무상태표(자산-전체)",
-    ),
-    "nonlife": (
-        "손보_재무현황_요약손익계산서",
-        "손보_재무현황_요약손익계산서(전체)",
-        "손보_재무현황_요약재무상태표(자산-전체)",
-    ),
-    "card": (
-        "신용카드_재무현황_요약손익계산서",
-        "신용카드_재무현황_요약손익계산서(07.12월이후)",
-        "신용카드_재무현황_요약재무상태표(자산)",
-    ),
-    "securities": (
-        "증권_재무현황_요약손익계산서",
-        "증권_재무현황_요약손익계산서(07.03이후)",
-        "증권_재무현황_요약재무상태표(자산)",
-    ),
+INCOME_STATEMENT_TITLES = {
+    "bank": "은행_재무현황_요약손익계산서",
+    "holding": "금융지주_재무현황_요약연결손익계산서",
+    "life": "생보_재무현황_요약손익계산서(전체)",
+    "nonlife": "손보_재무현황_요약손익계산서(전체)",
+    "card": "신용카드_재무현황_요약손익계산서(08.03월이후)",
+    "securities": "증권_재무현황_요약손익계산서(11.06월이후)",
 }
 
 
@@ -80,7 +56,7 @@ def main() -> None:
         "X-Public-Data-API-Key": required["DATA_GO_KR_SERVICE_KEY"],
         "Content-Type": "application/json",
     }
-    for sector in ("bank", "holding", "life", "nonlife", "card", "securities"):
+    for sector, title in INCOME_STATEMENT_TITLES.items():
         try:
             response = requests.post(
                 endpoint,
@@ -89,6 +65,7 @@ def main() -> None:
                     "mode": "sector_financial",
                     "sector": sector,
                     "bas_ym": base_month,
+                    "title": title,
                     "num_of_rows": 9999,
                 },
                 timeout=(5, 35),
@@ -97,6 +74,7 @@ def main() -> None:
             payload = response.json()
             rows = payload.get("rows") if isinstance(payload, dict) else None
             rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+            rows = [row for row in rows if str(row.get("basYm") or "") == base_month]
             field_names = sorted({
                 key for row in rows for key in row
                 if key not in {"crno", "fncoCd", "fncoNm", "basYm", "title"}
@@ -105,14 +83,16 @@ def main() -> None:
                 "stage": "financial_sector_schema",
                 "sector": sector,
                 "base_month": base_month,
-                "status": payload.get("status"),
+                "status": "ok" if rows else "no_report",
+                "requested_title": title,
                 "row_count": len(rows),
                 "titles": _titles(rows),
                 "field_names": field_names,
-                "sample_companies": sorted({
-                    str(row.get("fncoNm") or "").strip() for row in rows
-                    if str(row.get("fncoNm") or "").strip()
-                })[:10],
+                "account_names": sorted({
+                    str(value).strip() for row in rows for key, value in row.items()
+                    if key.lower().endswith(("cdnm", "acitnm")) and str(value or "").strip()
+                }),
+                "sample_rows": rows[:12],
             }, ensure_ascii=False), flush=True)
         except requests.RequestException as error:
             print(json.dumps({
