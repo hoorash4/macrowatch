@@ -270,6 +270,11 @@ class OpenDartClient:
             return None
         return {"industry_code": industry_code}
 
+    def company_registration_number(self, corp_code: str) -> str | None:
+        payload = self._get("company.json", {"corp_code": corp_code})
+        number = re.sub(r"\D", "", str(payload.get("jurir_no") or ""))
+        return number if re.fullmatch(r"\d{13}", number) else None
+
     def single_accounts(
         self,
         corp_code: str,
