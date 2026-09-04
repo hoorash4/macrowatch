@@ -659,19 +659,21 @@ class KoreaEarningsV2Pipeline:
         quarter: int,
         previous_fact: FinancialFact | None,
         crno: str,
-        industry_code: str | None,
+        industry_code: str | None = None,
     ) -> FinancialFact:
         """금융위원회 원자료로만 빈 지표를 보완한다. 기존 값은 덮어쓰지 않는다."""
         if self.financial_company is None:
             return fact
         self._progress("financial_company_source_start", company=identity.company_name)
         try:
-            snapshot = self._financial_company_snapshot(
+            snapshots = (
                 self.financial_company.quarter_financials(
                     crno, year, quarter, industry_code,
-                ),
-                fact,
+                )
+                if industry_code is not None
+                else self.financial_company.quarter_financials(crno, year, quarter)
             )
+            snapshot = self._financial_company_snapshot(snapshots, fact)
         except ProviderError as error:
             # 보완 공급자의 일시 실패는 이미 검증된 DART 경로를 막지 않는다.
             # 다음 단계에서 기존 단일·원문 DART 경로로 이어진다.
