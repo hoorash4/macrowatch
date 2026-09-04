@@ -56,42 +56,67 @@ def main() -> None:
         "X-Public-Data-API-Key": required["DATA_GO_KR_SERVICE_KEY"],
         "Content-Type": "application/json",
     }
-    try:
-        response = requests.post(
-            endpoint,
-            headers=headers,
-            json={
-                "mode": "sector_financial",
-                "sector": "bank",
-                "bas_ym": base_month,
-                "num_of_rows": 100,
-            },
-            timeout=(5, 35),
-        )
-        response.raise_for_status()
-        payload = response.json()
-        raw_rows = payload.get("rows") if isinstance(payload, dict) else None
-        raw_rows = [row for row in raw_rows if isinstance(row, dict)] if isinstance(raw_rows, list) else []
-        rows = [row for row in raw_rows if str(row.get("basYm") or "") == base_month]
-        print(json.dumps({
-            "stage": "financial_sector_schema",
-            "sector": "bank",
-            "base_month": base_month,
-            "status": "ok" if raw_rows else "no_report",
-            "raw_row_count": len(raw_rows),
-            "filtered_row_count": len(rows),
-            "titles": _titles(raw_rows),
-            "base_months": sorted({str(row.get("basYm") or "") for row in raw_rows}),
-        }, ensure_ascii=False), flush=True)
-    except requests.RequestException as error:
-        print(json.dumps({
-            "stage": "financial_sector_schema",
-            "sector": "bank",
-            "base_month": base_month,
-            "status": "transport_error",
-            "error_type": type(error).__name__,
-            "http_status": getattr(error.response, "status_code", None),
-        }, ensure_ascii=False), flush=True)
+    probes = {
+        "bank": (
+            "은행_재무현황_주요자금조달운용_요약손익계산서(은행)",
+            {"수익합계", "영업수익", "영업이익", "당기순이익", "당기순손익"},
+        ),
+        "life": (
+            "생보_재무현황_요약손익계산서(전체)",
+            {"보험손익_보험영업수익", "투자손익_투자영업수익", "특별계정손익_특별계정수익", "영업이익", "당기순이익"},
+        ),
+        "nonlife": (
+            "손보_재무현황_요약손익계산서(전체)",
+            {"보험손익_보험영업수익", "투자손익_투자영업수익", "특별계정이익_특별계정수익", "영업이익", "총영업이익", "당기순이익(또는 당기순손실)"},
+        ),
+    }
+    for sector, (title, targets) in probes.items():
+        try:
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                json={
+                    "mode": "sector_financial",
+                    "sector": sector,
+                    "bas_ym": base_month,
+                    "title": title,
+                    "num_of_rows": 9999,
+                },
+                timeout=(5, 45),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_rows = payload.get("rows") if isinstance(payload, dict) else None
+            raw_rows = [row for row in raw_rows if isinstance(row, dict)] if isinstance(raw_rows, list) else []
+            rows = [row for row in raw_rows if str(row.get("basYm") or "") == base_month]
+            matched: dict[str, list[dict[str, Any]]] = {}
+            for row in rows:
+                names = [
+                    str(value).strip() for key, value in row.items()
+                    if key.lower().endswith(("cdnm", "acitnm")) and str(value or "").strip()
+                ]
+                for name in names:
+                    if name in targets and len(matched.setdefault(name, [])) < 2:
+                        matched[name].append(row)
+            print(json.dumps({
+                "stage": "financial_sector_metric_probe",
+                "sector": sector,
+                "base_month": base_month,
+                "status": "ok" if rows else "no_report",
+                "requested_title": title,
+                "row_count": len(rows),
+                "matched": matched,
+            }, ensure_ascii=False), flush=True)
+        except requests.RequestException as error:
+            print(json.dumps({
+                "stage": "financial_sector_metric_probe",
+                "sector": sector,
+                "base_month": base_month,
+                "status": "transport_error",
+                "requested_title": title,
+                "error_type": type(error).__name__,
+                "http_status": getattr(error.response, "status_code", None),
+            }, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
