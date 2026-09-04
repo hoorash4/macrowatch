@@ -618,8 +618,7 @@ class KoreaEarningsV2Pipeline:
                 and getattr(self, "financial_company", None) is not None):
             self._progress("financial_company_source_start", company=identity.company_name)
             try:
-                financial_profile = self.dart.company_profile(identity.corp_code)
-                crno = str((financial_profile or {}).get("jurir_no") or "").strip()
+                crno = self.dart.company_registration_number(identity.corp_code) or ""
                 if re.fullmatch(r"\d{13}", crno):
                     snapshots = self.financial_company.quarter_financials(crno, year, quarter, industry_code)
                     fact = merge_financial_company(fact, snapshots, year, quarter, previous_fact)
@@ -1271,4 +1270,3 @@ class KoreaEarningsV2Pipeline:
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, default=str), flush=True)
         return results
-
