@@ -81,17 +81,21 @@ def main() -> None:
         "Content-Type": "application/json",
     }
     for sector, titles in TITLE_CANDIDATES.items():
-        for title in titles:
+        probes = ((None, None), *((base_month, title) for title in titles))
+        for requested_month, title in probes:
             try:
+                request_body = {
+                    "mode": "sector_financial",
+                    "sector": sector,
+                }
+                if requested_month:
+                    request_body["bas_ym"] = requested_month
+                if title:
+                    request_body["title"] = title
                 response = requests.post(
                     endpoint,
                     headers=headers,
-                    json={
-                        "mode": "sector_financial",
-                        "sector": sector,
-                        "bas_ym": base_month,
-                        "title": title,
-                    },
+                    json=request_body,
                     timeout=(5, 35),
                 )
                 response.raise_for_status()
@@ -102,27 +106,32 @@ def main() -> None:
                     key for row in rows for key in row
                     if key not in {"crno", "fncoCd", "fncoNm", "basYm", "title"}
                 })
+                base_months = sorted({
+                    str(row.get("basYm") or "").strip() for row in rows
+                    if str(row.get("basYm") or "").strip()
+                })
                 print(json.dumps({
                     "stage": "financial_sector_schema",
                     "sector": sector,
-                    "base_month": base_month,
+                    "base_month": requested_month,
                     "requested_title": title,
                     "status": payload.get("status"),
                     "row_count": len(rows),
                     "titles": _titles(rows),
+                    "base_month_range": [base_months[0], base_months[-1]] if base_months else [],
                     "field_names": field_names,
                     "sample_companies": sorted({
                         str(row.get("fncoNm") or "").strip() for row in rows
                         if str(row.get("fncoNm") or "").strip()
                     })[:10],
                 }, ensure_ascii=False), flush=True)
-                if rows:
+                if title and rows:
                     break
             except requests.RequestException as error:
                 print(json.dumps({
                     "stage": "financial_sector_schema",
                     "sector": sector,
-                    "base_month": base_month,
+                    "base_month": requested_month,
                     "requested_title": title,
                     "status": "transport_error",
                     "error_type": type(error).__name__,
