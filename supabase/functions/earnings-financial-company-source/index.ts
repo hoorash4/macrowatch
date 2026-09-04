@@ -2,6 +2,14 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const FINANCIALS_URL = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoSummFinaStat_V2";
 const INCOME_STATEMENT_URL = "https://apis.data.go.kr/1160100/service/GetFnCoFinaStatCredInfoService_V2/getFnCoIs_V2";
+const SECTOR_FINANCIAL_URLS: Record<string, string> = {
+  bank: "https://apis.data.go.kr/1160100/service/GetDomeBankInfoService/getDomeBankFinaInfo",
+  holding: "https://apis.data.go.kr/1160100/service/GetFinaHoldCompInfoService/getFinaHoldCompFinaInfo",
+  life: "https://apis.data.go.kr/1160100/service/GetLifeInsuCompInfoService/getLifeInsuCompFinaInfo",
+  nonlife: "https://apis.data.go.kr/1160100/service/GetNonlInsuCompInfoService/getNonlInsuCompFinaInfo",
+  card: "https://apis.data.go.kr/1160100/service/GetCredCardCompInfoService/getCredCardCompFinaInfo",
+  securities: "https://apis.data.go.kr/1160100/service/GetSecuCompInfoService/getSecuCompFinaInfo",
+};
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 type SourceItem = Record<string, unknown>;
@@ -12,7 +20,7 @@ function json(body: unknown, status = 200, headers: HeadersInit = {}) {
 
 class FinancialSourceError extends Error {
   constructor(
-    readonly source: "basic-info" | "financials" | "income-statement",
+    readonly source: "basic-info" | "financials" | "income-statement" | "sector-financial",
     readonly reason: string,
     message: string,
   ) {
@@ -72,7 +80,7 @@ function sourceError(payload: Record<string, unknown>) {
 }
 
 async function fetchSource(
-  source: "basic-info" | "financials" | "income-statement",
+  source: "basic-info" | "financials" | "income-statement" | "sector-financial",
   url: string,
   serviceKey: string,
   params: Record<string, string>,
@@ -111,18 +119,43 @@ Deno.serve(async (request) => {
   if (!isFinancialSourceRequest(request)) return json({ error: "서버 호출만 허용됩니다." }, 401);
   try {
     const body = await request.json() as Record<string, unknown>;
+    const mode = String(body.mode ?? "summary");
+    const serviceKey = request.headers.get("X-Public-Data-API-Key")?.trim();
+    if (!serviceKey) throw new Error("공공데이터 API 인증키가 전달되지 않았습니다.");
+
+    if (mode === "sector_financial") {
+      const sector = String(body.sector ?? "");
+      const basYm = String(body.bas_ym ?? "");
+      const title = String(body.title ?? "").trim();
+      const url = SECTOR_FINANCIAL_URLS[sector];
+      if (!url || !/^\d{6}$/.test(basYm)) {
+        return json({ error: "지원 업종과 YYYYMM 형식의 bas_ym이 필요합니다." }, 400);
+      }
+      const sectorPayload = await fetchSource(
+        "sector-financial",
+        url,
+        serviceKey,
+        { basYm, ...(title ? { title } : {}) },
+        "9999",
+      );
+      const rows = readItems(sectorPayload, "");
+      return json({
+        status: rows.length ? "ok" : "no_report",
+        sector,
+        basYm,
+        row_count: rows.length,
+        rows,
+      });
+    }
+
     const crno = String(body.crno ?? "").replaceAll(/\D/g, "");
     const fiscalYear = Number(body.fiscal_year);
     if (
       !/^\d{13}$/.test(crno)
       || !Number.isInteger(fiscalYear) || fiscalYear < 1900 || fiscalYear > 2100
     ) {
-      return json({ error: "13자리 crno와 유효한 fiscal_year·fiscal_quarter가 필요합니다." }, 400);
+      return json({ error: "13자리 crno와 유효한 fiscal_year가 필요합니다." }, 400);
     }
-    const serviceKey = request.headers.get("X-Public-Data-API-Key")?.trim();
-    if (!serviceKey) throw new Error("공공데이터 API 인증키가 전달되지 않았습니다.");
-
-    const mode = String(body.mode ?? "summary");
     if (mode === "income_statement") {
       const incomePayload = await fetchSource("income-statement", INCOME_STATEMENT_URL, serviceKey, {
         crno,
