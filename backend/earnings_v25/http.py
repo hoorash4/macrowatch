@@ -213,7 +213,10 @@ def safe_request_failure(provider: str, operation: str, error: Exception) -> str
     response: Any = getattr(error, "response", None)
     status = getattr(response, "status_code", None)
     if status is not None:
-        return f"{provider} {operation} returned HTTP {status}"
+        headers = getattr(response, "headers", {}) or {}
+        stage = headers.get("X-Financial-Source-Stage")
+        suffix = f" ({stage})" if stage else ""
+        return f"{provider} {operation} returned HTTP {status}{suffix}"
     if isinstance(error, ExecutionDeadlineExceeded):
         return str(error)
     if isinstance(error, ResponseDeadlineExceeded):
@@ -227,3 +230,4 @@ def safe_request_failure(provider: str, operation: str, error: Exception) -> str
     if isinstance(error, requests.ConnectionError):
         return f"{provider} {operation} connection failed ({type(error).__name__})"
     return f"{provider} {operation} request failed ({type(error).__name__})"
+
