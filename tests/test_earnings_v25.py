@@ -184,6 +184,32 @@ class EarningsV25DiagnosticTests(unittest.TestCase):
         self.assertEqual(parsed["CFS"].cumulative["net_income"], Decimal("8000000"))
 
 
+    def test_absent_periodic_filing_keeps_company_incomplete(self) -> None:
+        pipeline = object.__new__(KoreaEarningsV2Pipeline)
+        pipeline.dart = SimpleNamespace(periodic_filings=lambda *_args, **_kwargs: [])
+        identity = SimpleNamespace(corp_code="00311030")
+        fact = FinancialFact(
+            company_id="kr:006800",
+            fiscal_year=2016,
+            fiscal_quarter=4,
+            period_end=date(2016, 12, 31),
+            top_line=None,
+            operating_income=None,
+            net_income=None,
+            currency="KRW",
+            consolidation_scope="CFS",
+            source_filing_id="pending:00311030:2016:Q4",
+            filing_date=date(2016, 12, 31),
+            is_pending=True,
+        )
+
+        resolved = pipeline._raw_open_dart_missing_financials(
+            identity, fact, 2016, 4, previous_fact=None,
+        )
+
+        self.assertIs(resolved, fact)
+        self.assertTrue(resolved.is_pending)
+
     def test_incomplete_fact_continues_through_single_and_raw_dart(self) -> None:
         pipeline = object.__new__(KoreaEarningsV2Pipeline)
         pipeline.dart = SimpleNamespace(
