@@ -659,6 +659,7 @@ class KoreaEarningsV2Pipeline:
         quarter: int,
         previous_fact: FinancialFact | None,
         crno: str,
+        industry_code: str | None,
     ) -> FinancialFact:
         """금융위원회 원자료로만 빈 지표를 보완한다. 기존 값은 덮어쓰지 않는다."""
         if self.financial_company is None:
@@ -666,7 +667,9 @@ class KoreaEarningsV2Pipeline:
         self._progress("financial_company_source_start", company=identity.company_name)
         try:
             snapshot = self._financial_company_snapshot(
-                self.financial_company.quarter_financials(crno, year, quarter),
+                self.financial_company.quarter_financials(
+                    crno, year, quarter, industry_code,
+                ),
                 fact,
             )
         except ProviderError as error:
@@ -699,13 +702,20 @@ class KoreaEarningsV2Pipeline:
             "operating_income": snapshot.operating_income_cumulative,
             "net_income": snapshot.net_income_cumulative,
         }
+        reported_standalone = {
+            "top_line": snapshot.top_line_standalone,
+            "operating_income": snapshot.operating_income_standalone,
+            "net_income": snapshot.net_income_standalone,
+        }
         changes: dict[str, Any] = {}
         for field, source_value in cumulative.items():
             if getattr(fact, field) is not None:
                 continue
-            standalone = self._financial_company_standalone_value(
-                source_value, quarter, previous_cumulative[field],
-            )
+            standalone = reported_standalone[field]
+            if standalone is None:
+                standalone = self._financial_company_standalone_value(
+                    source_value, quarter, previous_cumulative[field],
+                )
             if standalone is not None:
                 changes[field] = standalone
                 changes[f"source_{field}_cumulative"] = source_value
@@ -789,6 +799,7 @@ class KoreaEarningsV2Pipeline:
             if re.fullmatch(r"\d{13}", crno):
                 fact = self._financial_company_missing_financials(
                     identity, fact, year, quarter, previous_fact, crno,
+                    industry_code,
                 )
             if fact.fully_complete:
                 return fact.with_changes(is_pending=False), None
