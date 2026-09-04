@@ -56,6 +56,7 @@ def _diagnostic_row(row: list[str]) -> dict[str, Any] | None:
         ]
         return {
             "label": cell,
+            "cells": row,
             "normalized_label": normalized,
             "recognized_metric": _metric_for_label(cell),
             "amounts": amounts,
@@ -112,6 +113,10 @@ def inspect_raw_archive(
                     and any(row["recognized_metric"] == "operating_income" for row in rows)
                 ),
                 "rows": rows,
+                "table_markup": table if any(
+                    row["recognized_metric"] == "net_income" and not row["amounts"]
+                    for row in rows
+                ) else None,
             })
 
     try:
