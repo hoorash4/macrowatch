@@ -8,7 +8,7 @@ from test_earnings_v2 import fact, member
 from earnings_v2.financial_company import FinancialCompanyClient, merge_financial_company
 from earnings_v2.http import ExecutionDeadlineExceeded
 from earnings_v2.pipeline import KoreaEarningsV2Pipeline
-from earnings_v2.providers import ProviderError
+from earnings_v2.providers import ProviderError, OpenDartClient
 from earnings_v25.providers import FinancialCompanySnapshot, FINANCIAL_SECTOR_SPECS, REPORT_CODES
 
 
@@ -53,7 +53,7 @@ class FscBackfillTests(unittest.TestCase):
                 incomplete = original.with_changes(net_income=None, is_pending=True)
                 pipeline = KoreaEarningsV2Pipeline(
                     krx=None, repository=None, kis=object(),
-                    dart=SimpleNamespace(company_profile=lambda _: {"jurir_no": "1234567890123"}),
+                    dart=SimpleNamespace(company_registration_number=lambda _: "1234567890123"),
                     financial_company=SimpleNamespace(quarter_financials=lambda *args: calls.append("fsc") or [self.snapshot()]))
                 pipeline._single_open_dart_missing_financials = lambda *args: calls.append("dart") or (original if complete_at == "dart" else incomplete)
                 pipeline._try_kis_missing_financials = lambda *args, **kwargs: (calls.append("kis") or (original if complete_at == "kis" else incomplete), None)
@@ -81,9 +81,16 @@ class FscBackfillTests(unittest.TestCase):
         with self.assertRaises(ExecutionDeadlineExceeded):
             client._source_request({}, operation="test")
 
+    def test_registration_number_from_actual_profile_parser(self):
+        client = OpenDartClient("test")
+        client._get = lambda *args: {"jurir_no": "123456-7890123", "induty_code": "65110"}
+        self.assertEqual(client.company_registration_number("test"), "1234567890123")
+        self.assertEqual(client.company_profile("test"), {"industry_code": "65110"})
+        client._get = lambda *args: {"jurir_no": ""}
+        self.assertIsNone(client.company_registration_number("test"))
+
     def test_wrong_company_rejected(self):
         client = FinancialCompanyClient("https://example.test", "service", "token", "key")
         client._sector_quarter_financials = lambda *args: [self.snapshot(crno="9999999999999")]
         with self.assertRaises(ProviderError):
             client.quarter_financials("1234567890123", 2025, 2, "641")
-
