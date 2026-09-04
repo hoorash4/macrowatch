@@ -84,45 +84,50 @@ def main() -> None:
         for title in titles:
             try:
                 response = requests.post(
-                endpoint,
-                headers=headers,
-                json={"mode": "sector_financial", "sector": sector, "bas_ym": base_month, "title": title},
-                timeout=(5, 35),
-            )
-            response.raise_for_status()
-            payload = response.json()
-            rows = payload.get("rows") if isinstance(payload, dict) else None
-            rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
-            field_names = sorted({
-                key for row in rows for key in row
-                if key not in {"crno", "fncoCd", "fncoNm", "basYm", "title"}
-            })
-            print(json.dumps({
-                "stage": "financial_sector_schema",
-                "sector": sector,
-                "base_month": base_month,
-                "requested_title": title,
-                "status": payload.get("status"),
-                "row_count": len(rows),
-                "titles": _titles(rows),
-                "field_names": field_names,
-                "sample_companies": sorted({
-                    str(row.get("fncoNm") or "").strip() for row in rows
-                    if str(row.get("fncoNm") or "").strip()
-                })[:10],
-            }, ensure_ascii=False), flush=True)
+                    endpoint,
+                    headers=headers,
+                    json={
+                        "mode": "sector_financial",
+                        "sector": sector,
+                        "bas_ym": base_month,
+                        "title": title,
+                    },
+                    timeout=(5, 35),
+                )
+                response.raise_for_status()
+                payload = response.json()
+                rows = payload.get("rows") if isinstance(payload, dict) else None
+                rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+                field_names = sorted({
+                    key for row in rows for key in row
+                    if key not in {"crno", "fncoCd", "fncoNm", "basYm", "title"}
+                })
+                print(json.dumps({
+                    "stage": "financial_sector_schema",
+                    "sector": sector,
+                    "base_month": base_month,
+                    "requested_title": title,
+                    "status": payload.get("status"),
+                    "row_count": len(rows),
+                    "titles": _titles(rows),
+                    "field_names": field_names,
+                    "sample_companies": sorted({
+                        str(row.get("fncoNm") or "").strip() for row in rows
+                        if str(row.get("fncoNm") or "").strip()
+                    })[:10],
+                }, ensure_ascii=False), flush=True)
                 if rows:
                     break
             except requests.RequestException as error:
-            print(json.dumps({
-                "stage": "financial_sector_schema",
-                "sector": sector,
-                "base_month": base_month,
-                "requested_title": title,
-                "status": "transport_error",
-                "error_type": type(error).__name__,
-                "http_status": getattr(error.response, "status_code", None),
-            }, ensure_ascii=False), flush=True)
+                print(json.dumps({
+                    "stage": "financial_sector_schema",
+                    "sector": sector,
+                    "base_month": base_month,
+                    "requested_title": title,
+                    "status": "transport_error",
+                    "error_type": type(error).__name__,
+                    "http_status": getattr(error.response, "status_code", None),
+                }, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
