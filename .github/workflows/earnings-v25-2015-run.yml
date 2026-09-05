@@ -1,0 +1,37 @@
+name: Earnings V2.5 2015 run
+
+on:
+  push:
+    branches: [codex/v25-2015]
+    paths: [.github/workflows/earnings-v25-2015-run.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-v25-raw-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Backfill 2015 sequentially
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          EARNINGS_V2_DEADLINE_SECONDS: "1200"
+          KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: python -m earnings_v25.cli --year 2015 --write
