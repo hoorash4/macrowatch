@@ -4,7 +4,7 @@ import csv
 import re
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from html import unescape
 from typing import Any, Iterable
@@ -22,6 +22,7 @@ SEC_ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 OEF_TRUST_CIK = "0001100663"
 OEF_SERIES_ID = "S000004306"
 QQQ_TRUST_CIK = "0001067839"
+INDEX_TRADING_DAY_LOOKBACK_DAYS = 7
 
 SourceHolding = tuple[str, str, Decimal | None]
 
@@ -225,47 +226,6 @@ def extract_oef_nport_holdings(html: str) -> list[tuple[str, str, Decimal]]:
     return result
 
 
-def extract_qqq_legacy_holdings(html: str) -> list[SourceHolding]:
-    """Read company names and holding values from QQQ's 2019 NPORT-EX schedule."""
-    if not re.search(r"(?is)Invesco\s+QQQ\s+Trust", html):
-        raise ProviderError("NPORT-EX filing was not the Invesco QQQ Trust schedule")
-    rows: list[SourceHolding] = []
-    for row in re.findall(r"(?is)<TR\b[^>]*>(.*?)</TR>", html):
-        cells = [_plain_html(cell) for cell in re.findall(r"(?is)<TD\b[^>]*>(.*?)</TD>", row)]
-        if not cells:
-            continue
-        name = cells[0]
-        numeric_cells: list[Decimal] = []
-        for cell in cells[1:]:
-            number = cell.replace(",", "").replace("$", "").strip()
-            if re.fullmatch(r"\(?\d+(?:\.\d+)?\)?", number):
-                numeric_cells.append(Decimal(number.strip("()")))
-        if (
-            name and len(numeric_cells) >= 2 and re.search(r"[A-Za-z]", name)
-            and not name.upper().startswith(("TOTAL", "SHARES", "VALUE"))
-        ):
-            rows.append(("", name, numeric_cells[-1]))
-    result = list(dict.fromkeys(rows))
-    if len(result) < 100:
-        raise ProviderError(f"QQQ NPORT-EX yielded only {len(result)} company holdings")
-    return result
-
-
-def fund_report_date(document: str) -> date | None:
-    iso = re.search(r"<(?:\w+:)?repPdDate>(\d{4}-\d{2}-\d{2})</", document)
-    if iso:
-        return date.fromisoformat(iso.group(1))
-    heading = re.search(
-        r"(?is)Invesco\s+QQQ\s+Trust.{0,2000}?"
-        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
-        r"\s+(\d{1,2}),\s+(\d{4})",
-        _plain_html(document[:10_000]),
-    )
-    if heading:
-        return datetime.strptime(" ".join(heading.groups()), "%B %d %Y").date()
-    return None
-
-
 def extract_oef_series_accessions(atom: str, reference_date: date) -> list[str]:
     """Select OEF series filings whose normal filing window can cover a report date."""
     try:
@@ -284,28 +244,6 @@ def extract_oef_series_accessions(atom: str, reference_date: date) -> list[str]:
             continue
         if accession and earliest <= filed <= latest:
             result.append(accession)
-    return result
-
-
-def extract_series_filing_entries(atom: str, reference_date: date) -> list[tuple[str, str]]:
-    """Return accession and form for series filings in the normal report window."""
-    try:
-        root = ET.fromstring(atom)
-    except ET.ParseError as exc:
-        raise ProviderError("SEC series feed was malformed") from exc
-    namespace = {"atom": "http://www.w3.org/2005/Atom"}
-    earliest, latest = reference_date + timedelta(days=30), reference_date + timedelta(days=120)
-    result: list[tuple[str, str]] = []
-    for entry in root.findall("atom:entry", namespace):
-        filed_text = entry.findtext("atom:content/atom:filing-date", namespaces=namespace)
-        accession = entry.findtext("atom:content/atom:accession-number", namespaces=namespace)
-        filing_type = entry.findtext("atom:content/atom:filing-type", namespaces=namespace)
-        try:
-            filed = date.fromisoformat(str(filed_text))
-        except ValueError:
-            continue
-        if accession and filing_type and earliest <= filed <= latest:
-            result.append((accession, filing_type))
     return result
 
 
@@ -426,39 +364,10 @@ class USIndexConstituentClient:
         )
 
     def _qqq_nport_rows(self, reference_date: date) -> list[SourceHolding] | None:
-        rows = self._fund_nport_rows(
+        return self._fund_nport_rows(
             reference_date, cik_or_series=QQQ_TRUST_CIK, cik=QQQ_TRUST_CIK,
             series_pattern=r"Invesco\s+QQQ\s+Trust", operation="QQQ",
         )
-        if rows is not None:
-            return rows
-        feed_url = "https://www.sec.gov/cgi-bin/browse-edgar?" + urlencode({
-            "action": "getcompany", "CIK": QQQ_TRUST_CIK, "type": "NPORT",
-            "owner": "exclude", "count": "100", "output": "atom",
-        })
-        atom = _decode_filing(self._binary(feed_url, "QQQ NPORT filing feed"))
-        for accession, filing_type in extract_series_filing_entries(atom, reference_date):
-            if filing_type != "NPORT-EX":
-                continue
-            index = self._json(
-                "GET", _filing_url(accession, "index.json", QQQ_TRUST_CIK), "QQQ NPORT-EX index",
-                headers={"User-Agent": self.sec.user_agent, "Accept-Encoding": "gzip, deflate"},
-            )
-            items = index.get("directory", {}).get("item", []) if isinstance(index.get("directory"), dict) else []
-            documents = [
-                str(item.get("name")) for item in items if isinstance(item, dict)
-                and re.search(r"(?i)\.(?:htm|html)$", str(item.get("name") or ""))
-                and "-index" not in str(item.get("name") or "").lower()
-            ]
-            for document_name in documents:
-                document = _decode_filing(self._binary(
-                    _filing_url(accession, document_name, QQQ_TRUST_CIK),
-                    f"QQQ NPORT-EX {reference_date.isoformat()}",
-                ))
-                report_date = fund_report_date(document)
-                if report_date and is_quarter_end_report_date(report_date.isoformat(), reference_date):
-                    return extract_qqq_legacy_holdings(document)
-        return None
 
     def _oef_legacy_accessions(self) -> set[str]:
         if self._oef_legacy_accessions_cache is not None:
@@ -682,14 +591,22 @@ class USIndexConstituentClient:
         return [MarketSecurity(**{**item[0].__dict__, "rank": index}) for index, item in enumerate(ranked, start=1)]
 
     def nasdaq100(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
-        payload = self._json(
-            "POST", NASDAQ_WEIGHTING_URL, f"Nasdaq-100 constituents {reference_date.isoformat()}",
-            data={"id": "NDX", "tradeDate": reference_date.isoformat(), "timeOfDay": "close"},
-            headers={"User-Agent": self.sec.user_agent, "Accept": "application/json"},
-        )
-        rows = [(str(item.get("Symbol") or "").strip().upper(), str(item.get("Name") or "").strip(), None)
-                for item in payload.get("aaData", []) if isinstance(item, dict)]
-        rows = [(ticker, name, value) for ticker, name, value in rows if ticker and name]
+        rows: list[SourceHolding] = []
+        # Calendar quarter-end may be a weekend or market holiday. The first
+        # valid response while walking backward is the nearest trading day;
+        # the bound prevents a provider outage from silently selecting stale data.
+        for lag in range(INDEX_TRADING_DAY_LOOKBACK_DAYS + 1):
+            trading_date = reference_date - timedelta(days=lag)
+            payload = self._json(
+                "POST", NASDAQ_WEIGHTING_URL, f"Nasdaq-100 constituents {trading_date.isoformat()}",
+                data={"id": "NDX", "tradeDate": trading_date.isoformat(), "timeOfDay": "close"},
+                headers={"User-Agent": self.sec.user_agent, "Accept": "application/json"},
+            )
+            rows = [(str(item.get("Symbol") or "").strip().upper(), str(item.get("Name") or "").strip(), None)
+                    for item in payload.get("aaData", []) if isinstance(item, dict)]
+            rows = [(ticker, name, value) for ticker, name, value in rows if ticker and name]
+            if len(rows) >= 100:
+                break
         if len(rows) < 100:
             qqq_rows = self._qqq_nport_rows(reference_date)
             if qqq_rows is None:

@@ -15,10 +15,7 @@ from earnings_us.constituents import (
     extract_oef_holdings,
     extract_oef_nport_holdings,
     extract_oef_series_accessions,
-    extract_qqq_legacy_holdings,
     extract_series_accessions,
-    extract_series_filing_entries,
-    fund_report_date,
     legacy_report_date,
     is_quarter_end_report_date,
     extract_nport_equity_holdings,
@@ -172,21 +169,6 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(legacy_report_date("2019-03-31", date(2019, 6, 30)), date(2019, 3, 31))
         self.assertIsNone(legacy_report_date("2019-07-31", date(2019, 6, 30)))
 
-    def test_series_filing_entries_include_nport_ex_in_report_window(self):
-        atom = """<feed xmlns='http://www.w3.org/2005/Atom'><entry><content>
-            <filing-date>2019-08-28</filing-date><filing-type>NPORT-EX</filing-type>
-            <accession-number>qqq-ex</accession-number>
-        </content></entry></feed>"""
-        self.assertEqual(extract_series_filing_entries(atom, date(2019, 6, 30)), [("qqq-ex", "NPORT-EX")])
-
-    def test_qqq_nport_ex_extracts_company_rows_and_heading_date(self):
-        row = "<TR><TD>{name}</TD><TD>{shares}</TD><TD>$</TD><TD>{value}</TD></TR>"
-        document = "Invesco QQQ Trust June 30, 2019" + "".join(
-            row.format(name=f"Company {index}", shares=index + 1, value=(index + 1) * 10)
-            for index in range(100)
-        )
-        self.assertEqual(fund_report_date(document), date(2019, 6, 30))
-        self.assertEqual(len(extract_qqq_legacy_holdings(document)), 100)
 
     def test_generic_nport_parser_accepts_qqq_series(self):
         investments = "".join(
@@ -223,6 +205,33 @@ class USEarningsTransformTests(unittest.TestCase):
         result = client.nasdaq100(date(2024, 6, 30), directory)
 
         self.assertEqual(len(result), 100)
+
+    def test_nasdaq_uses_nearest_trading_day_before_calendar_quarter_end(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        source = [
+            {"Symbol": f"T{index:03}", "Name": f"Company {index}"}
+            for index in range(100)
+        ]
+        directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(100)}
+        requested: list[str] = []
+        client = USIndexConstituentClient(FakeSec())
+
+        def response(*args, **kwargs):
+            requested.append(kwargs["data"]["tradeDate"])
+            return {"aaData": source if kwargs["data"]["tradeDate"] == "2019-06-28" else []}
+
+        client._json = response
+        client._qqq_nport_rows = lambda reference_date: self.fail("official trading-day data should win")
+
+        result = client.nasdaq100(date(2019, 6, 30), directory)
+
+        self.assertEqual(len(result), 100)
+        self.assertEqual(requested, ["2019-06-30", "2019-06-29", "2019-06-28"])
 
     def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
         class FakeSec:
