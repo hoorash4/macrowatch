@@ -15,6 +15,11 @@ test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만
   assert.match(pathValue, /^M 0\.00 10\.00 C /);
   assert.match(pathValue, /20\.00 15\.00$/);
   assert.doesNotMatch(pathValue, /\sL\s/);
+  const segments = context.window.MacroWatchAnalysisChart.monotonePathSegments([
+    { x: 0, y: 10 }, { x: 10, y: 20 }, { x: 20, y: 15 },
+  ], [null, 'complete', 'provisional']);
+  assert.equal(segments.length, 2);
+  assert.match(segments[1].path, /C 13\.33/);
 });
 
 // 브라우저 전역을 최소한으로 흉내 내어 script.js의 순수 보조 함수만 검증한다.
@@ -151,14 +156,14 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.qoqPct, 10);
   assert.equal(series.at(-1).metrics.net_income.yoyState, 'black_turn');
-  const segments = context.window.MacroWatchKoreaEarnings.lineSegments([
+  const edgeStates = context.window.MacroWatchKoreaEarnings.provisionalEdgeStates([
     { index: 0, value: 10, lifecycleStatus: 'complete' },
     { index: 1, value: 12, lifecycleStatus: 'complete' },
     { index: 2, value: 12, lifecycleStatus: 'provisional' },
   ]);
   assert.equal(
-    JSON.stringify(segments.map((segment) => [segment.provisional, segment.points.map((point) => point.index)])),
-    JSON.stringify([[false, [0, 1]], [true, [1, 2]]]),
+    JSON.stringify(edgeStates),
+    JSON.stringify([null, 'complete', 'provisional']),
     '잠정 분기로 이어지는 선은 직전 확정점부터 점선 구간으로 분리한다',
   );
   const amountDomain = context.window.MacroWatchKoreaEarnings.axisDomain([90, 100]);
@@ -191,7 +196,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /kind: 'growth'[^\n]*includeZero: true/);
   assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
-  assert.match(source, /function lineSegments/);
+  assert.match(source, /function provisionalEdgeStates/);
   assert.match(html, /시총 상위 100 합산 실적\(계절조정\)/);
   assert.match(html, /이익률/);
   assert.match(html, /YoY 이익 증가율/);

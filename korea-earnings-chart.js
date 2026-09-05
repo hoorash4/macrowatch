@@ -92,44 +92,20 @@
     return { min: domainMin, max: domainMax, ticks };
   }
 
-  function linePath(points, yMin, yMax, width, height, padding, pointCount = points.length) {
-    const segments = [];
-    let segment = [];
-    points.forEach((point, index) => {
-      if (!Number.isFinite(point.value)) {
-        if (segment.length) segments.push(segment);
-        segment = [];
-        return;
-      }
-      segment.push({
-        x: scale(point.index ?? index, 0, Math.max(pointCount - 1, 1), padding.left, width - padding.right),
-        y: scale(point.value, yMin, yMax, height - padding.bottom, padding.top),
-      });
+  function provisionalEdgeStates(points) {
+    return points.map((point, index) => {
+      if (index === 0 || !Number.isFinite(point.value) || !Number.isFinite(points[index - 1].value)) return null;
+      return points[index - 1].lifecycleStatus !== 'complete' || point.lifecycleStatus !== 'complete'
+        ? 'provisional' : 'complete';
     });
-    if (segment.length) segments.push(segment);
-    return segments.map((segmentPoints) => window.MacroWatchAnalysisChart.monotonePath(segmentPoints)).join(' ');
   }
 
-  // 잠정 구간은 직전 확정점과 연결해 점선으로 표시한다. 두 점 중 하나라도
-  // 미확정이면 그 구간 전체를 점선으로 두어, 확정값처럼 보이지 않게 한다.
-  function lineSegments(points) {
-    const segments = [];
-    let active = null;
-    for (let index = 1; index < points.length; index += 1) {
-      const previous = points[index - 1], current = points[index];
-      if (!Number.isFinite(previous.value) || !Number.isFinite(current.value)) {
-        active = null;
-        continue;
-      }
-      const provisional = previous.lifecycleStatus !== 'complete' || current.lifecycleStatus !== 'complete';
-      if (active && active.provisional === provisional) {
-        active.points.push(current);
-      } else {
-        active = { provisional, points: [previous, current] };
-        segments.push(active);
-      }
-    }
-    return segments;
+  function lineSegments(points, yMin, yMax, width, height, padding) {
+    const scaled = points.map((point, index) => ({
+      x: Number.isFinite(point.value) ? scale(index, 0, Math.max(points.length - 1, 1), padding.left, width - padding.right) : null,
+      y: Number.isFinite(point.value) ? scale(point.value, yMin, yMax, height - padding.bottom, padding.top) : null,
+    }));
+    return window.MacroWatchAnalysisChart.monotonePathSegments(scaled, provisionalEdgeStates(points));
   }
 
   function metricValue(point, metricKey, valueKey) { return point.metrics[metricKey]?.[valueKey] ?? null; }
@@ -199,10 +175,10 @@
       const metricPoints = points.map((point, index) => ({
         ...point, index, value: chartValue(point, metric.key, spec),
       }));
-      return { ...metric, points: metricPoints, segments: lineSegments(metricPoints) };
+      return { ...metric, points: metricPoints, segments: lineSegments(metricPoints, domain.min, domain.max, chartWidth, spec.height, padding) };
     });
     const lines = metricSeries.flatMap((metric) => metric.segments.map((segment, index) => (
-      `<path data-korea-earnings-line="${metric.key}" data-segment-index="${index}" d="${linePath(segment.points, domain.min, domain.max, chartWidth, spec.height, padding, metric.points.length)}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}${segment.provisional ? ' korea-earnings-line--provisional' : ''}"/>`
+      `<path data-korea-earnings-line="${metric.key}" data-segment-index="${index}" d="${segment.path}" class="korea-earnings-line korea-earnings-line--${spec.kind} korea-earnings-line--${metric.className}${segment.key === 'provisional' ? ' korea-earnings-line--provisional' : ''}"/>`
     ))).join('');
     const dots = metricSeries.flatMap((metric) => metric.points.map((point, index) => Number.isFinite(point.value)
       ? `<circle data-korea-earnings-point="${metric.key}" data-point-index="${index}" cx="${x(index)}" cy="${y(point.value)}" r="${spec.kind === 'amount' ? 2.8 : 2.4}" class="korea-earnings-point korea-earnings-point--${metric.className}"/>` : '')).join('');
@@ -263,10 +239,8 @@
         grid.classList.toggle('korea-earnings-grid--zero', Math.abs(value) < Number.EPSILON);
       });
       metricSeries.forEach((metric) => lineElements.get(metric.key)?.forEach((line) => {
-        const segment = metric.segments[Number(line.dataset.segmentIndex)];
-        if (segment) line.setAttribute(
-          'd', linePath(segment.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding, metric.points.length),
-        );
+        const segment = lineSegments(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding)[Number(line.dataset.segmentIndex)];
+        if (segment) line.setAttribute('d', segment.path);
       }));
       pointElements.forEach((point) => {
         const metricKey = point.dataset.koreaEarningsPoint;
@@ -340,7 +314,7 @@
   });
   // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'earnings') render(); });
-  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain, lineSegments });
+  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
 
