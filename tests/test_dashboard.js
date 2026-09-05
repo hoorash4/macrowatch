@@ -181,10 +181,10 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /kind: 'growth'[^\n]*includeZero: true/);
   assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
-  assert.match(html, /기업군 계절조정 합산 실적/);
+  assert.match(html, /시총 상위 100 합산 실적\(계절조정\)/);
   assert.match(html, /이익률/);
-  assert.match(html, /이익 증가율/);
-  assert.match(html, /계절조정 전분기 이익 증가율/);
+  assert.match(html, /YoY 이익 증가율/);
+  assert.match(html, /QoQ 이익 증가율\(계절조정\)/);
   assert.doesNotMatch(html, /기업당 단순평균/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
