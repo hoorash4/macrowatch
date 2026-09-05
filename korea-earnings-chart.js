@@ -11,15 +11,16 @@
     { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
     { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
   ];
-  // 시장별로 데이터와 UI 상태만 분리하고 차트·집계 표현 규칙은 하나의 렌더러를 공유합니다.
+  // 시장별 데이터와 기간 상태는 분리하되, 하나의 카드에서 선택한 시장만 렌더링합니다.
   const MARKET_CONFIGS = [
-    { marketId: 'kr_largecap', label: 'KOSPI', cardSelector: '[data-earnings-market-card="kr_largecap"]' },
-    { marketId: 'kr_kosdaq', label: 'KOSDAQ', cardSelector: '[data-earnings-market-card="kr_kosdaq"]' },
+    { marketId: 'kr_largecap', label: 'KOSPI' },
+    { marketId: 'kr_kosdaq', label: 'KOSDAQ' },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const DISPLAY_START_YEAR = 2016;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
-  const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: 5 } }));
+  const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: 5, loadError: null } }));
+  const marketCard = { root: null, selectedMarketId: 'kr_largecap' };
   const companyCard = {
     label: '개별 기업', type: 'company', root: null,
     state: { series: [], years: 5, candidates: [], selected: null },
@@ -376,6 +377,40 @@
     });
   }
 
+  function selectedMarket() {
+    return markets.find((market) => market.marketId === marketCard.selectedMarketId) || markets[0];
+  }
+
+  function renderSelectedMarket() {
+    const market = selectedMarket();
+    market.root = marketCard.root;
+    if (!market.root) return;
+    if (market.state.loadError) { setStatus(market, `${market.label} 100 집계 실적을 불러오지 못했습니다.`); return; }
+    render(market);
+  }
+
+  function connectMarketControls() {
+    const controls = marketCard.root?.querySelector('[data-earnings-ranges]');
+    const select = marketCard.root?.querySelector('[data-market-earnings-select]');
+    controls?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-earnings-range]');
+      if (!button) return;
+      const market = selectedMarket();
+      market.state.years = button.dataset.earningsRange === 'max' ? 'max' : Number(button.dataset.earningsRange);
+      controls.querySelectorAll('[data-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
+      renderSelectedMarket();
+    });
+    select?.addEventListener('change', () => {
+      marketCard.selectedMarketId = select.value;
+      const market = selectedMarket();
+      controls?.querySelectorAll('[data-earnings-range]').forEach((item) => {
+        const range = item.dataset.earningsRange === 'max' ? 'max' : Number(item.dataset.earningsRange);
+        item.classList.toggle('is-active', range === market.state.years);
+      });
+      renderSelectedMarket();
+    });
+  }
+
   function connectCompanySearch(supabaseClient) {
     const input = companyCard.root?.querySelector('[data-company-earnings-search]');
     const list = companyCard.root?.querySelector('[data-company-earnings-suggestions]');
@@ -390,14 +425,12 @@
   }
 
   async function load({ supabaseClient }) {
-    const activeMarkets = markets.filter((market) => market.root);
-    if ((!activeMarkets.length && !companyCard.root) || !supabaseClient) return;
-    const marketLoads = activeMarkets.map(async (market) => {
+    if ((!marketCard.root && !companyCard.root) || !supabaseClient) return;
+    const marketLoads = marketCard.root ? markets.map(async (market) => {
       const response = await supabaseClient.rpc('earnings_v2_public_market_series', { p_market_id: market.marketId });
-      if (response.error) { setStatus(market, `${market.label} 100 집계 실적을 불러오지 못했습니다.`); return; }
+      if (response.error) { market.state.loadError = response.error; return; }
       market.state.series = seriesFromMarketRows(response.data || []);
-      render(market);
-    });
+    }) : [];
     const companyLoad = (async () => {
       if (!companyCard.root) return;
       const response = await supabaseClient.rpc('earnings_v2_public_latest_company_options');
@@ -407,17 +440,16 @@
       await selectCompany(companyCard.state.candidates[0], supabaseClient);
     })();
     await Promise.all([...marketLoads, companyLoad]);
+    renderSelectedMarket();
   }
 
-  markets.forEach((market) => {
-    market.root = document.querySelector(market.cardSelector);
-    connectRangeControls(market);
-  });
+  marketCard.root = document.querySelector('[data-market-earnings-card]');
+  connectMarketControls();
   companyCard.root = document.querySelector('[data-earnings-company-card]');
   connectRangeControls(companyCard);
   // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
-    if (detail?.view === 'earnings') [...markets, companyCard].forEach((card) => render(card));
+    if (detail?.view === 'earnings') { renderSelectedMarket(); render(companyCard); }
   });
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, seriesFromCompanyRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);

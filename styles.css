@@ -980,6 +980,9 @@ body:has(#app-shell:not(.hidden)) {
 
 /* 합산 금액 본차트와 이익률·증가율 보조차트는 하나의 분석 배경 안에서 같은 시점을 공유합니다. */
 .korea-earnings-toolbar { display:flex; justify-content:flex-end; padding:.1rem .15rem .45rem; }
+.market-earnings-heading-control { display:flex; align-items:center; gap:.75rem; }
+.market-earnings-select { border:1px solid #cbd5e1; border-radius:.5rem; background:#fff; color:#334155; cursor:pointer; font:inherit; font-size:.78rem; font-weight:700; line-height:1.2; padding:.48rem .68rem; }
+.market-earnings-select:focus-visible { outline:2px solid #64748b; outline-offset:2px; }
 .company-earnings-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; padding:.1rem .15rem .45rem; }
 .company-earnings-search { position:relative; min-width:13rem; max-width:22rem; flex:1; }
 .company-earnings-search input { width:100%; border:1px solid #cbd5e1; border-radius:.5rem; background:#fff; padding:.42rem .65rem; color:#0f172a; font-size:.78rem; outline:none; }
@@ -1024,6 +1027,7 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-legend-line--operating-income { background:#2563a8; }
 .korea-earnings-legend-line--net-income { background:#b7791f; }
 @media (max-width:640px) {
+  .market-earnings-heading-control { align-items:flex-start; flex-direction:column; gap:.45rem; }
   .korea-earnings-toolbar .analysis-chart-range-controls { align-self:flex-end; }
   .company-earnings-toolbar { align-items:stretch; flex-direction:column; }
   .company-earnings-search { max-width:none; }
