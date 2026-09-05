@@ -608,20 +608,26 @@ class USIndexConstituentClient:
         return [MarketSecurity(**{**item[0].__dict__, "rank": index}) for index, item in enumerate(ranked, start=1)]
 
     def nasdaq100(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
+        def weighting_rows(trading_date: date) -> list[SourceHolding]:
+            payload = self._json(
+                "POST", NASDAQ_WEIGHTING_URL, f"Nasdaq-100 constituents {trading_date.isoformat()}",
+                data={"id": "NDX", "tradeDate": trading_date.isoformat(), "timeOfDay": "close"},
+                headers={"User-Agent": self.sec.user_agent, "Accept": "application/json"},
+            )
+            source = [
+                (str(item.get("Symbol") or "").strip().upper(), str(item.get("Name") or "").strip(), None)
+                for item in payload.get("aaData", [])
+                if isinstance(item, dict)
+            ]
+            return [(ticker, name, value) for ticker, name, value in source if ticker and name]
+
         rows: list[SourceHolding] = []
         # Calendar quarter-end may be a weekend or market holiday. The first
         # valid response while walking backward is the nearest trading day;
         # the bound prevents a provider outage from silently selecting stale data.
         for lag in range(INDEX_TRADING_DAY_LOOKBACK_DAYS + 1):
             trading_date = reference_date - timedelta(days=lag)
-            payload = self._json(
-                "POST", NASDAQ_WEIGHTING_URL, f"Nasdaq-100 constituents {trading_date.isoformat()}",
-                data={"id": "NDX", "tradeDate": trading_date.isoformat(), "timeOfDay": "close"},
-                headers={"User-Agent": self.sec.user_agent, "Accept": "application/json"},
-            )
-            rows = [(str(item.get("Symbol") or "").strip().upper(), str(item.get("Name") or "").strip(), None)
-                    for item in payload.get("aaData", []) if isinstance(item, dict)]
-            rows = [(ticker, name, value) for ticker, name, value in rows if ticker and name]
+            rows = weighting_rows(trading_date)
             if len(rows) >= 100:
                 break
         if len(rows) < 100:
@@ -638,6 +644,22 @@ class USIndexConstituentClient:
             selection_error = exc
         qqq_rows = self._qqq_nport_rows(reference_date)
         if qqq_rows is None:
+            # A quarter-end corporate action can temporarily leave the official
+            # close snapshot above 100 legal companies. Accept the first later
+            # trading-day snapshot only when it contains exactly the same basket
+            # minus removals; a newly introduced ticker would change the period.
+            prior_tickers = {ticker for ticker, _, _ in rows}
+            for lead in range(1, INDEX_TRADING_DAY_LOOKBACK_DAYS + 1):
+                later_rows = weighting_rows(reference_date + timedelta(days=lead))
+                later_tickers = {ticker for ticker, _, _ in later_rows}
+                if len(later_rows) < 100 or not later_tickers.issubset(prior_tickers):
+                    continue
+                try:
+                    later_companies = self._securities("us_nasdaq100", reference_date, later_rows, directory)
+                except ProviderError:
+                    continue
+                if len(later_companies) == 100:
+                    return later_companies
             raise ProviderError(
                 f"Nasdaq-100 could not select 100 companies for {reference_date}; {selection_error}"
             )

@@ -21,6 +21,7 @@ from earnings_us.constituents import (
     extract_nport_equity_holdings,
 )
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
+from earnings_us.providers import ProviderError
 from earnings_us.transform import extract_new_sec_facts
 
 
@@ -232,6 +233,70 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(len(result), 100)
         self.assertEqual(requested, ["2019-06-30", "2019-06-29", "2019-06-28"])
+
+    def test_nasdaq_accepts_later_subset_after_temporary_quarter_end_overflow(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        prior = [
+            {"Symbol": f"T{index:03}", "Name": f"Company {index}"}
+            for index in range(101)
+        ]
+        later = prior[:100]
+        directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(101)}
+        requested: list[str] = []
+        client = USIndexConstituentClient(FakeSec())
+
+        def response(*args, **kwargs):
+            trading_date = kwargs["data"]["tradeDate"]
+            requested.append(trading_date)
+            if trading_date == "2017-12-29":
+                return {"aaData": prior}
+            if trading_date == "2018-01-02":
+                return {"aaData": later}
+            return {"aaData": []}
+
+        client._json = response
+        client._qqq_nport_rows = lambda reference_date: None
+
+        result = client.nasdaq100(date(2017, 12, 31), directory)
+
+        self.assertEqual(len(result), 100)
+        self.assertNotIn("T100", {item.ticker for item in result})
+        self.assertEqual(requested, ["2017-12-31", "2017-12-30", "2017-12-29", "2018-01-01", "2018-01-02"])
+
+    def test_nasdaq_rejects_later_snapshot_that_introduces_a_company(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        prior = [
+            {"Symbol": f"T{index:03}", "Name": f"Company {index}"}
+            for index in range(101)
+        ]
+        later = prior[:99] + [{"Symbol": "NEW", "Name": "New Company"}]
+        directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(101)}
+        directory["NEW"] = "0000009999"
+        client = USIndexConstituentClient(FakeSec())
+
+        def response(*args, **kwargs):
+            trading_date = kwargs["data"]["tradeDate"]
+            if trading_date == "2017-12-29":
+                return {"aaData": prior}
+            if trading_date == "2018-01-02":
+                return {"aaData": later}
+            return {"aaData": []}
+
+        client._json = response
+        client._qqq_nport_rows = lambda reference_date: None
+
+        with self.assertRaisesRegex(ProviderError, "could not select 100 companies"):
+            client.nasdaq100(date(2017, 12, 31), directory)
 
     def test_historical_ticker_reuse_resolves_the_period_issuer(self):
         old_cik = "0001570585"
