@@ -268,6 +268,89 @@ class EarningsV25DiagnosticTests(unittest.TestCase):
         self.assertEqual(resolved.net_income, Decimal("8"))
         self.assertFalse(resolved.is_pending)
 
+    def test_missing_raw_archive_keeps_company_incomplete(self) -> None:
+        pipeline = object.__new__(KoreaEarningsV2Pipeline)
+        pipeline.dart = SimpleNamespace(
+            company_profile=lambda _corp_code: {"industry_code": "62010"},
+        )
+        pipeline.financial_company = None
+        pipeline._progress = lambda *_args, **_kwargs: None
+        pipeline._single_open_dart_missing_financials = lambda _identity, fact, *_args: fact
+
+        def raw(*_args):
+            raise ProviderError("OpenDART document.xml returned no ZIP archive")
+
+        pipeline._raw_open_dart_missing_financials = raw
+        identity = SimpleNamespace(
+            company_id="kr:test",
+            company_name="테스트기업",
+            corp_code="00000001",
+            industry_code="62010",
+        )
+        fact = FinancialFact(
+            company_id="kr:test",
+            fiscal_year=2015,
+            fiscal_quarter=1,
+            period_end=date(2015, 3, 31),
+            top_line=None,
+            operating_income=None,
+            net_income=None,
+            currency="KRW",
+            consolidation_scope="CFS",
+            source_filing_id="pending",
+            filing_date=date(2015, 5, 15),
+            is_pending=True,
+        )
+
+        resolved, issue = pipeline._resolve_missing_financials(
+            identity, fact, 2015, 1, tolerate_provider_errors=False,
+        )
+
+        self.assertIsNone(issue)
+        self.assertEqual(resolved.top_line, fact.top_line)
+        self.assertEqual(resolved.operating_income, fact.operating_income)
+        self.assertEqual(resolved.net_income, fact.net_income)
+        self.assertTrue(resolved.is_pending)
+
+    def test_retryable_raw_archive_error_still_stops_backfill(self) -> None:
+        pipeline = object.__new__(KoreaEarningsV2Pipeline)
+        pipeline.dart = SimpleNamespace(
+            company_profile=lambda _corp_code: {"industry_code": "62010"},
+        )
+        pipeline.financial_company = None
+        pipeline._progress = lambda *_args, **_kwargs: None
+        pipeline._single_open_dart_missing_financials = lambda _identity, fact, *_args: fact
+
+        def raw(*_args):
+            raise ProviderError("temporary transport failure", retryable=True)
+
+        pipeline._raw_open_dart_missing_financials = raw
+        identity = SimpleNamespace(
+            company_id="kr:test",
+            company_name="테스트기업",
+            corp_code="00000001",
+            industry_code="62010",
+        )
+        fact = FinancialFact(
+            company_id="kr:test",
+            fiscal_year=2015,
+            fiscal_quarter=1,
+            period_end=date(2015, 3, 31),
+            top_line=None,
+            operating_income=None,
+            net_income=None,
+            currency="KRW",
+            consolidation_scope="CFS",
+            source_filing_id="pending",
+            filing_date=date(2015, 5, 15),
+            is_pending=True,
+        )
+
+        with self.assertRaises(ProviderError):
+            pipeline._resolve_missing_financials(
+                identity, fact, 2015, 1, tolerate_provider_errors=False,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
