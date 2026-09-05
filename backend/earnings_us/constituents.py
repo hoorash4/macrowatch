@@ -413,6 +413,8 @@ class USIndexConstituentClient:
         if key in self._name_cik_cache:
             return self._name_cik_cache[key]
         expanded = re.sub(r"(?i)INT['’]L", "INTL", search_name)
+        expanded = re.sub(r"(?i)\b21ST\b", "TWENTY FIRST", expanded)
+        expanded = re.sub(r"(?i)\bCENTRY\b", "CENTURY", expanded)
         for short, full in {
             r"\bCOMM\b": "COMMUNICATIONS", r"\bGP\b": "GROUP",
             r"\bINTL\b": "INTERNATIONAL", r"\bPHARM\b": "PHARMACEUTICALS",

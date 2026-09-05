@@ -349,6 +349,30 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(client._cik_for_ticker("LILA", date(2017, 9, 30)), "0001570585")
         self.assertEqual(client._cik_for_ticker("LILA", date(2017, 12, 31)), "0001712184")
 
+    def test_historical_name_search_expands_ordinal_and_source_typo(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        queries: list[str] = []
+        client = USIndexConstituentClient(FakeSec())
+
+        def response(*args, **kwargs):
+            query = kwargs["params"]["q"]
+            queries.append(query)
+            if query == "TWENTY FIRST CENTURY FOX A":
+                return {"hits": {"hits": [{"_source": {
+                    "display_names": ["TWENTY-FIRST CENTURY FOX, INC. (CIK 0001308161)"],
+                }}]}}
+            return {"hits": {"hits": []}}
+
+        client._json = response
+
+        self.assertEqual(client._cik_for_name("21ST CENTRY FOX A CM", date(2016, 3, 31)), "0001308161")
+        self.assertIn("TWENTY FIRST CENTURY FOX A", queries)
+
     def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
         class FakeSec:
             def company_ticker_rows(self):
