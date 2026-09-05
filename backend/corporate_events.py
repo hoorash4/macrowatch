@@ -114,7 +114,8 @@ def parse_absorbed_merger_archive(
     company = _company_token(corp_name)
     compact = _company_token(text)
     if not company or not any(
-        marker + company in compact for marker in ("소멸회사", "소멸법인")
+        marker + company in compact
+        for marker in ("소멸회사", "소멸법인", "피합병회사", "피합병법인")
     ):
         return None
 
