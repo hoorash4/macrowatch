@@ -73,18 +73,7 @@ class USEarningsAutomaticPipeline:
             else:
                 securities.extend(self.constituents.nasdaq100(reference_date, directory))
         if write:
-            self.repository.upsert_companies({
-                "company_id": item.company_id, "country": "US", "company_name": item.name,
-                "reporting_currency": "USD", "entity_kind": "general", "listed_from": None, "delisted_on": None,
-            } for item in securities)
-            self.repository.upsert_identifiers({
-                "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
-                "exchange": item.market_id, "valid_from": item.reference_date, "valid_to": None, "is_primary": True,
-            } for item in securities)
-            self.repository.upsert_identifiers({
-                "company_id": item.company_id, "identifier_type": "cik", "identifier_value": item.cik,
-                "exchange": None, "valid_from": item.reference_date, "valid_to": None, "is_primary": True,
-            } for item in securities if item.cik)
+            self.persist_universe_securities(securities)
             for market in pending_markets:
                 rows = [item for item in securities if item.market_id == market]
                 self.repository.save_us_universe(market, year, quarter, rows)
@@ -95,6 +84,31 @@ class USEarningsAutomaticPipeline:
         if write:
             self.repository.save_us_state("snapshot", "ready", {"period": summary["period"]})
         return summary
+
+    def persist_universe_securities(self, securities: list[MarketSecurity]) -> None:
+        """Persist shared index members once per database conflict key."""
+        companies = {item.company_id: item for item in securities}
+        self.repository.upsert_companies({
+            "company_id": item.company_id, "country": "US", "company_name": item.name,
+            "reporting_currency": "USD", "entity_kind": "general", "listed_from": None, "delisted_on": None,
+        } for item in companies.values())
+
+        ticker_rows = {}
+        cik_rows = {}
+        for item in securities:
+            ticker_key = (item.company_id, item.ticker, item.reference_date)
+            ticker_rows.setdefault(ticker_key, {
+                "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
+                "exchange": item.market_id, "valid_from": item.reference_date, "valid_to": None, "is_primary": True,
+            })
+            if item.cik:
+                cik_key = (item.company_id, item.cik, item.reference_date)
+                cik_rows.setdefault(cik_key, {
+                    "company_id": item.company_id, "identifier_type": "cik", "identifier_value": item.cik,
+                    "exchange": None, "valid_from": item.reference_date, "valid_to": None, "is_primary": True,
+                })
+        self.repository.upsert_identifiers(ticker_rows.values())
+        self.repository.upsert_identifiers(cik_rows.values())
 
     def daily_edgar(self, *, today: date | None = None, write: bool = True) -> dict[str, Any]:
         current_day = today or date.today()

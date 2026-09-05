@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from earnings_us.models import market_period
+from earnings_us.models import MarketSecurity, market_period
 from earnings_us.backfill_cli import period_range
 from earnings_us.constituents import (
     USIndexConstituentClient,
@@ -16,7 +16,7 @@ from earnings_us.constituents import (
     extract_oef_series_accessions,
     extract_nport_equity_holdings,
 )
-from earnings_us.pipeline import in_snapshot_window
+from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
 from earnings_us.transform import extract_new_sec_facts
 
 
@@ -51,6 +51,31 @@ def payload():
 
 
 class USEarningsTransformTests(unittest.TestCase):
+    def test_shared_index_members_are_persisted_once_per_database_key(self):
+        class FakeRepository:
+            def __init__(self):
+                self.companies = []
+                self.identifier_batches = []
+
+            def upsert_companies(self, rows):
+                self.companies = list(rows)
+
+            def upsert_identifiers(self, rows):
+                self.identifier_batches.append(list(rows))
+
+        repository = FakeRepository()
+        pipeline = USEarningsAutomaticPipeline(repository, None, None)
+        reference_date = date(2026, 6, 30)
+        shared = [
+            MarketSecurity("SHR", "Shared Inc", "0000000001", Decimal("1"), 1, reference_date, market)
+            for market in ("us_sp100", "us_nasdaq100")
+        ]
+
+        pipeline.persist_universe_securities(shared)
+
+        self.assertEqual(len(repository.companies), 1)
+        self.assertEqual([len(batch) for batch in repository.identifier_batches], [1, 1])
+
     def test_universe_backfill_periods_run_newest_to_oldest(self):
         periods = period_range(2026, 2, 2016, 1)
         self.assertEqual(periods[:3], [(2026, 2), (2026, 1), (2025, 4)])

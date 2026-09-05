@@ -38,18 +38,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         by_market = {"us_sp100": sp100, "us_nasdaq100": nasdaq100}
         if write:
             securities = [*sp100, *nasdaq100]
-            self.repository.upsert_companies({
-                "company_id": item.company_id, "country": "US", "company_name": item.name,
-                "reporting_currency": "USD", "entity_kind": "general", "listed_from": None, "delisted_on": None,
-            } for item in securities)
-            self.repository.upsert_identifiers({
-                "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
-                "exchange": item.market_id, "valid_from": reference_date, "valid_to": None, "is_primary": True,
-            } for item in securities)
-            self.repository.upsert_identifiers({
-                "company_id": item.company_id, "identifier_type": "cik", "identifier_value": item.cik,
-                "exchange": None, "valid_from": reference_date, "valid_to": None, "is_primary": True,
-            } for item in securities if item.cik)
+            self.persist_universe_securities(securities)
             for market, rows in by_market.items():
                 self.repository.save_us_universe(market, year, quarter, rows)
             self.repository.save_us_state("universe_backfill", "ready", {"period": f"{year}Q{quarter}"})
