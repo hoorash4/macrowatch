@@ -49,6 +49,6 @@ class USEarningsRepository(EarningsV2Repository):
             "market_id": item.market_id, "market_year": year, "market_quarter": quarter,
             "reference_date": item.reference_date, "company_id": item.company_id,
             "market_cap_rank": item.rank, "market_cap": item.market_cap,
-            "currency": "USD", "selection_method": "direct_market_cap",
+            "currency": "USD", "selection_method": "index_constituent",
         } for item in rows]
         return self.replace_universe(market_id, year, quarter, records)

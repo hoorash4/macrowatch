@@ -2,7 +2,7 @@ name: Earnings U.S. automatic
 
 on:
   schedule:
-    # KST 07:30 SEC filings, then KST 08:30 quarter-end market-cap snapshot.
+    # KST 07:30 SEC filings, then KST 08:30 quarter-end index snapshot.
     # Run every day because the U.S. Friday close is Saturday morning in Korea.
     - cron: "30 22 * * *"
     - cron: "30 23 * * *"
@@ -44,9 +44,7 @@ jobs:
           PYTHONPATH: backend
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
           PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 22 * * *' && 'edgar' || 'snapshot') || inputs.phase }}
-          SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash4@users.noreply.github.com)"
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash

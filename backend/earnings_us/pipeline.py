@@ -8,12 +8,13 @@ from typing import Any
 
 from .aggregation import aggregate_us_market, with_market_metrics
 from .models import MarketSecurity, USCompany, USFinancialFact, market_period
-from .providers import KisMarketCapClient, ProviderError, SecEdgarClient
+from .constituents import USIndexConstituentClient
+from .providers import ProviderError, SecEdgarClient
 from .repository import USEarningsRepository
 from .transform import extract_new_sec_facts
 
 
-MARKETS = ("us_nyse", "us_nasdaq")
+MARKETS = ("us_sp100", "us_nasdaq100")
 
 
 def latest_completed_period(today: date) -> tuple[int, int]:
@@ -43,12 +44,13 @@ def fact_from_row(row: dict[str, Any]) -> USFinancialFact:
 
 
 class USEarningsAutomaticPipeline:
-    def __init__(self, repository: USEarningsRepository, sec: SecEdgarClient, kis: KisMarketCapClient) -> None:
-        self.repository, self.sec, self.kis = repository, sec, kis
+    def __init__(self, repository: USEarningsRepository, sec: SecEdgarClient, constituents: USIndexConstituentClient) -> None:
+        self.repository, self.sec, self.constituents = repository, sec, constituents
 
     @classmethod
     def from_env(cls) -> "USEarningsAutomaticPipeline":
-        return cls(USEarningsRepository.from_env(), SecEdgarClient.from_env(), KisMarketCapClient.from_env())
+        sec = SecEdgarClient.from_env()
+        return cls(USEarningsRepository.from_env(), sec, USIndexConstituentClient(sec))
 
     def snapshot(self, *, today: date | None = None, write: bool = True) -> dict[str, Any]:
         current_day = today or date.today()
@@ -65,7 +67,11 @@ class USEarningsAutomaticPipeline:
         directory = self.sec.ticker_directory()
         securities: list[MarketSecurity] = []
         for market in pending_markets:
-            securities.extend(self.kis.ranking(market_id=market, reference_date=period_end(year, quarter), ticker_to_cik=directory))
+            reference_date = period_end(year, quarter)
+            if market == "us_sp100":
+                securities.extend(self.constituents.sp100_current(reference_date, directory))
+            else:
+                securities.extend(self.constituents.nasdaq100(reference_date, directory))
         if write:
             self.repository.upsert_companies({
                 "company_id": item.company_id, "country": "US", "company_name": item.name,
@@ -84,7 +90,8 @@ class USEarningsAutomaticPipeline:
                 self.repository.save_us_universe(market, year, quarter, rows)
         summary = {"period": f"{year}Q{quarter}", "status": "ready", "write": write,
                    "markets": {market: len([item for item in securities if item.market_id == market]) for market in pending_markets},
-                   "missing_cik": sum(item.cik is None for item in securities), "requests": {"kis": self.kis.request_count, "sec": self.sec.request_count}}
+                   "missing_cik": sum(item.cik is None for item in securities),
+                   "requests": {"index_sources": self.constituents.request_count, "sec": self.sec.request_count}}
         if write:
             self.repository.save_us_state("snapshot", "ready", {"period": summary["period"]})
         return summary

@@ -1,0 +1,64 @@
+name: Earnings U.S. universe backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: Newest calendar year
+        required: true
+        default: "2026"
+      start_quarter:
+        description: Newest calendar quarter
+        required: true
+        default: "2"
+      end_year:
+        description: Oldest calendar year
+        required: true
+        default: "2016"
+      end_quarter:
+        description: Oldest calendar quarter
+        required: true
+        default: "1"
+      write:
+        description: Persist validated universes
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-us-universe-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Backfill official index universes newest to oldest
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --phase universe
+            --start-year "${{ inputs.start_year }}"
+            --start-quarter "${{ inputs.start_quarter }}"
+            --end-year "${{ inputs.end_year }}"
+            --end-quarter "${{ inputs.end_quarter }}"
+          )
+          [[ "${{ inputs.write }}" == "true" ]] && args+=(--write)
+          python -m earnings_us.backfill_cli "${args[@]}"

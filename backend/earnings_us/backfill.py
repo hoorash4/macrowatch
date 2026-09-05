@@ -29,6 +29,36 @@ def _all_financial_accessions(payload: dict) -> set[str]:
 class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     """Automatic collector's SEC interpretation, with authoritative period replacement."""
 
+    def freeze_universe_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
+        """Persist one exact historical index membership only after both 100-company sets validate."""
+        reference_date = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
+        directory = self.sec.ticker_directory()
+        sp100 = self.constituents.sp100_historical(reference_date, directory)
+        nasdaq100 = self.constituents.nasdaq100(reference_date, directory)
+        by_market = {"us_sp100": sp100, "us_nasdaq100": nasdaq100}
+        if write:
+            securities = [*sp100, *nasdaq100]
+            self.repository.upsert_companies({
+                "company_id": item.company_id, "country": "US", "company_name": item.name,
+                "reporting_currency": "USD", "entity_kind": "general", "listed_from": None, "delisted_on": None,
+            } for item in securities)
+            self.repository.upsert_identifiers({
+                "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
+                "exchange": item.market_id, "valid_from": reference_date, "valid_to": None, "is_primary": True,
+            } for item in securities)
+            self.repository.upsert_identifiers({
+                "company_id": item.company_id, "identifier_type": "cik", "identifier_value": item.cik,
+                "exchange": None, "valid_from": reference_date, "valid_to": None, "is_primary": True,
+            } for item in securities if item.cik)
+            for market, rows in by_market.items():
+                self.repository.save_us_universe(market, year, quarter, rows)
+            self.repository.save_us_state("universe_backfill", "ready", {"period": f"{year}Q{quarter}"})
+        return {
+            "period": f"{year}Q{quarter}", "write": write, "status": "ready",
+            "markets": {market: len(rows) for market, rows in by_market.items()},
+            "requests": {"index_sources": self.constituents.request_count, "sec": self.sec.request_count},
+        }
+
     def backfill_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
         rows = [member for market in MARKETS for member in self.repository.us_universe(market, year, quarter)]
         unique = {member.company_id: member for member in rows}

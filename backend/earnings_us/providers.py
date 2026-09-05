@@ -117,6 +117,7 @@ class SecEdgarClient:
         self.user_agent = user_agent
         self.session = session or provider_session()
         self.interval, self._last_request, self.request_count = interval, 0.0, 0
+        self._company_ticker_rows_cache: list[tuple[str, str, str]] | None = None
 
     @classmethod
     def from_env(cls) -> "SecEdgarClient":
@@ -140,16 +141,24 @@ class SecEdgarClient:
             raise ProviderError(f"SEC EDGAR {operation} returned invalid JSON")
         return payload
 
-    def ticker_directory(self) -> dict[str, str]:
+    def company_ticker_rows(self) -> list[tuple[str, str, str]]:
+        if self._company_ticker_rows_cache is not None:
+            return list(self._company_ticker_rows_cache)
         payload = self._get(SEC_TICKERS_URL, "company tickers")
-        result: dict[str, str] = {}
+        result: list[tuple[str, str, str]] = []
         for row in payload.values():
             if not isinstance(row, dict):
                 continue
-            ticker, cik = str(row.get("ticker") or "").strip().upper(), normalize_cik(row.get("cik_str"))
-            if ticker and cik:
-                result[ticker] = cik
-        return result
+            ticker = str(row.get("ticker") or "").strip().upper()
+            title = str(row.get("title") or "").strip()
+            cik = normalize_cik(row.get("cik_str"))
+            if ticker and title and cik:
+                result.append((ticker, title, cik))
+        self._company_ticker_rows_cache = result
+        return list(result)
+
+    def ticker_directory(self) -> dict[str, str]:
+        return {ticker: cik for ticker, _, cik in self.company_ticker_rows()}
 
     def submissions(self, cik: str) -> dict[str, Any]:
         return self._get(f"{SEC_DATA_BASE}/submissions/CIK{normalize_cik(cik)}.json", f"submissions {cik}")

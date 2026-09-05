@@ -5,6 +5,17 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_us.models import market_period
+from earnings_us.backfill_cli import period_range
+from earnings_us.constituents import (
+    USIndexConstituentClient,
+    _decode_filing,
+    _name_match_score,
+    _normal_name,
+    extract_oef_holdings,
+    extract_oef_nport_holdings,
+    extract_oef_series_accessions,
+    extract_nport_equity_holdings,
+)
 from earnings_us.pipeline import in_snapshot_window
 from earnings_us.transform import extract_new_sec_facts
 
@@ -40,6 +51,119 @@ def payload():
 
 
 class USEarningsTransformTests(unittest.TestCase):
+    def test_universe_backfill_periods_run_newest_to_oldest(self):
+        periods = period_range(2026, 2, 2016, 1)
+        self.assertEqual(periods[:3], [(2026, 2), (2026, 1), (2025, 4)])
+        self.assertEqual(periods[-1], (2016, 1))
+        self.assertEqual(len(periods), 42)
+
+    def test_legacy_oef_preserves_values_for_ranked_company_selection(self):
+        row = "<TR><TD>Company {index}</TD><TD>1</TD><TD>1000</TD></TR>"
+        document = (
+            "Schedule of Investments iSHARES S&amp;P 100 ETF COMMON STOCKS"
+            + "".join(row.format(index=index) for index in range(100))
+            + "<TR><TD>Temporary Stub</TD><TD>1</TD><TD>1</TD></TR>"
+            + "TOTAL INVESTMENTS"
+        )
+        result = extract_oef_holdings(document)
+        self.assertEqual(len(result), 101)
+        self.assertIn(("Temporary Stub", Decimal("1")), result)
+
+    def test_initial_nport_without_tickers_keeps_issuer_and_weight(self):
+        investments = "".join(
+            f"<invstOrSec><name>Company {index}</name><identifiers><isin value='US{index:010}'/>"
+            f"</identifiers><assetCat>EC</assetCat><pctVal>{100 - index / 100}</pctVal></invstOrSec>"
+            for index in range(100)
+        ) + "".join(
+            f"<invstOrSec><name>Non-equity {index}</name><identifiers><cusip value='CASH{index}'/>"
+            f"</identifiers><assetCat>STIV</assetCat><pctVal>5</pctVal></invstOrSec>"
+            for index in range(2)
+        )
+        document = (
+            "<edgarSubmission xmlns='http://www.sec.gov/edgar/nport'><formData><genInfo>"
+            "<seriesName>iShares S&amp;P 100 ETF</seriesName></genInfo><invstOrSecs>"
+            f"{investments}</invstOrSecs></formData></edgarSubmission>"
+        )
+        result = extract_oef_nport_holdings(document)
+        self.assertEqual(len(result), 100)
+        self.assertEqual(result[0], ("", "Company 0", Decimal("100.0")))
+
+    def test_oef_series_feed_selects_only_normal_report_window(self):
+        atom = """<feed xmlns='http://www.w3.org/2005/Atom'>
+          <entry><content><accession-number>right</accession-number><filing-date>2020-02-27</filing-date></content></entry>
+          <entry><content><accession-number>early</accession-number><filing-date>2020-01-05</filing-date></content></entry>
+          <entry><content><accession-number>late</accession-number><filing-date>2020-05-15</filing-date></content></entry>
+        </feed>"""
+        self.assertEqual(extract_oef_series_accessions(atom, date(2019, 12, 31)), ["right"])
+
+    def test_generic_nport_parser_accepts_qqq_series(self):
+        investments = "".join(
+            f"<invstOrSec><name>Company {index}</name><assetCat>EC</assetCat>"
+            f"<pctVal>{100 - index / 100}</pctVal></invstOrSec>"
+            for index in range(100)
+        )
+        document = (
+            "<edgarSubmission xmlns='http://www.sec.gov/edgar/nport'><formData><genInfo>"
+            "<seriesName>Invesco QQQ Trust, Series 1</seriesName></genInfo><invstOrSecs>"
+            f"{investments}</invstOrSecs></formData></edgarSubmission>"
+        )
+        self.assertEqual(len(extract_nport_equity_holdings(document, r"Invesco\s+QQQ\s+Trust")), 100)
+
+    def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
+        class FakeSec:
+            def company_ticker_rows(self):
+                return []
+
+        rows = [
+            (f"T{index:03}", f"Company {index}", Decimal(1000 - index))
+            for index in range(101)
+        ]
+        rows.append(("T000B", "Company 0 Class B", Decimal("10")))
+        directory = {ticker: str(index + 1).zfill(10) for index, (ticker, _, _) in enumerate(rows[:-1])}
+        directory["T000B"] = directory["T000"]
+        client = USIndexConstituentClient(FakeSec())
+        result = client._securities("us_sp100", date(2016, 3, 31), rows, directory)
+        self.assertEqual(len(result), 100)
+        self.assertNotIn("T100", {item.ticker for item in result})
+
+    def test_historical_issuer_name_allows_unambiguous_word_expansion(self):
+        self.assertEqual(_name_match_score("ALEXION PHARM INC", "ALEXION PHARMACEUTICALS INC"), 200)
+        self.assertEqual(_name_match_score("DISCOVERY COMM A", "DISCOVERY COMMUNICATIONS INC"), 200)
+        self.assertEqual(_name_match_score("CTRIP.COM INTL LTD", "CTRIP.COM INTERNATIONAL LTD"), 300)
+        self.assertEqual(_name_match_score("VIACOM INC CL B", "VIACOM INC"), 100)
+        self.assertEqual(_name_match_score("Lowe's Cos Inc", "LOWES COMPANIES INC"), 100)
+        self.assertGreater(
+            _name_match_score("WHOLE FOODS MARKET", "WHOLE FOODS MARKET INC"),
+            _name_match_score("WHOLE FOODS MARKET", "WHOLE FOODS MARKET CALIFORNIA INC"),
+        )
+        self.assertEqual(_name_match_score("EI DU PONT DE NEMOURS", "SYNGENTA AG"), 0)
+        self.assertGreater(_name_match_score("DU PONT DE NEMOURS", "DUPONT E I DE NEMOURS & CO"), 0)
+        self.assertEqual(_name_match_score("ABC HOLDINGS", "ABC BANK CORPORATION"), 0)
+
+    def test_legacy_sec_names_and_encoding_are_normalized(self):
+        self.assertEqual(_decode_filing("Lowe’s".encode("windows-1252")), "Lowe’s")
+        self.assertEqual(_normal_name("KINDER MORGAN INC./DE"), _normal_name("Kinder Morgan Inc."))
+        self.assertEqual(_normal_name("US BANCORP\\DE\\"), _normal_name("U.S. Bancorp"))
+        self.assertEqual(_normal_name("Allergan PLC a"), _normal_name("Allergan PLC"))
+
+    def test_nport_preserves_weights_for_ranked_company_selection(self):
+        row = """
+            Item C.1. Identification of investment
+            Name of issuer <div class='fakeBox'>Normal {index}<span></span>
+            Ticker (if ISIN is not available) <div class='fakeBox'>N{index:03}<span></span>
+            Percentage value compared to net assets <div class='fakeBox'>0.100<span></span>
+        """
+        document = "Name of Series iShares S&amp;P 100 ETF" + "".join(row.format(index=index) for index in range(100))
+        document += """
+            Item C.1. Identification of investment
+            Name of issuer <div class='fakeBox'>Temporary Stub<span></span>
+            Ticker (if ISIN is not available) <div class='fakeBox'>TMPV<span></span>
+            Percentage value compared to net assets <div class='fakeBox'>0.001<span></span>
+        """
+        result = extract_oef_nport_holdings(document)
+        self.assertEqual(len(result), 101)
+        self.assertIn(("TMPV", "Temporary Stub", Decimal("0.001")), result)
+
     def test_snapshot_is_not_allowed_to_create_a_late_prior_quarter_universe(self):
         self.assertTrue(in_snapshot_window(date(2026, 10, 1)))
         self.assertFalse(in_snapshot_window(date(2026, 9, 5)))
