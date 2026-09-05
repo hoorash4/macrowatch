@@ -407,6 +407,7 @@ class KoreaEarningsV2AutomaticPipeline:
         quarter: int,
         *,
         write: bool,
+        effective_cutoff: date | None = None,
     ) -> list[DelistingFiling]:
         """과거 재처리는 미완결 기업만 회사별 거래소공시를 확인한다."""
         start = quarter_start(year, quarter)
@@ -417,14 +418,16 @@ class KoreaEarningsV2AutomaticPipeline:
             for event in self.dart.delisting_filings(
                 start, end, corp_code=identity.corp_code,
             ):
-                if event.event_type == "final" or event.event_on <= quarter_last_day:
+                if ((effective_cutoff is None or event.event_on <= effective_cutoff)
+                        and (event.event_type == "final" or event.event_on <= quarter_last_day)):
                     events[event.receipt_no] = event
             merger_loader = getattr(self.dart, "absorbed_merger_filings", None)
             if callable(merger_loader):
                 for event in merger_loader(
                     date(year - 1, 1, 1), end, corp_code=identity.corp_code,
                 ):
-                    if start <= event.event_on <= end:
+                    if (start <= event.event_on <= end
+                            and (effective_cutoff is None or event.event_on <= effective_cutoff)):
                         events[event.receipt_no] = event
         ordered = sorted(events.values(), key=lambda row: (row.event_on, row.receipt_no))
         if write and ordered:
@@ -981,6 +984,7 @@ class KoreaEarningsV2AutomaticPipeline:
                     )
                     discovered_events = self._discover_delisting_events(
                         historical_candidates, year, quarter, write=write,
+                        effective_cutoff=event_effective_cutoff,
                     )
                     delisting_events = self._delisting_event_map([
                         *delisting_events.values(), *discovered_events,
@@ -1047,6 +1051,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 ]
                 discovered_events = self._discover_delisting_events(
                     undiscovered_pending, year, quarter, write=write,
+                    effective_cutoff=event_effective_cutoff,
                 )
                 delisting_events = self._delisting_event_map([
                     *delisting_events.values(), *discovered_events,

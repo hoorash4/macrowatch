@@ -82,6 +82,33 @@ class MissingMetricsTests(unittest.TestCase):
         self.assertEqual((result.top_line,result.operating_income,result.net_income), (100,10,5))
         self.assertEqual(result.consolidation_scope,'CFS')
 
+    def test_opposite_scope_fills_only_missing_metric(self):
+        snapshot = FinancialCompanySnapshot(
+            '1234567890123', '11013', 'OFS', 'KRW', Decimal(100), Decimal(99), Decimal(88),
+        )
+        pipeline = object.__new__(KoreaEarningsV2Pipeline)
+        pipeline.financial_company = SimpleNamespace(
+            quarter_financial_candidates=lambda *args, **kwargs: [snapshot],
+        )
+        pipeline._progress = lambda *args, **kwargs: None
+        fact = FinancialFact(
+            company_id='kr:test', fiscal_year=2016, fiscal_quarter=1,
+            period_end=date(2016, 3, 31), top_line=None,
+            operating_income=Decimal(10), net_income=Decimal(5),
+            currency='KRW', consolidation_scope='CFS', source_filing_id='open_dart:test',
+            filing_date=date(2016, 5, 1), source='open_dart', is_pending=True,
+        )
+
+        result = pipeline._financial_company_missing_financials(
+            SimpleNamespace(company_name='test'), fact, 2016, 1, None,
+            snapshot.crno, '64992',
+        )
+
+        self.assertEqual((result.top_line, result.operating_income, result.net_income), (100, 10, 5))
+        self.assertEqual(result.consolidation_scope, 'CFS')
+        self.assertEqual(result.source, 'mixed')
+        self.assertFalse(result.is_pending)
+
 
 if __name__ == '__main__':
     unittest.main()
