@@ -6,15 +6,20 @@
     { key: 'net_income', label: '순이익', className: 'net-income' },
   ];
   const CHARTS = [
-    { id: 'korea-earnings-amount-chart', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
-    { id: 'korea-earnings-margin-chart', valueKey: 'marginPct', kind: 'margin', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
-    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
-    { id: 'korea-earnings-qoq-chart', valueKey: 'qoqPct', kind: 'qoq', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'amount', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
+    { key: 'margin', valueKey: 'marginPct', kind: 'margin', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+  ];
+  // 시장별로 데이터와 UI 상태만 분리하고 차트·집계 표현 규칙은 하나의 렌더러를 공유합니다.
+  const MARKET_CONFIGS = [
+    { marketId: 'kr_largecap', label: 'KOSPI', cardSelector: '[data-earnings-market-card="kr_largecap"]' },
+    { marketId: 'kr_kosdaq', label: 'KOSDAQ', cardSelector: '[data-earnings-market-card="kr_kosdaq"]' },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const DISPLAY_START_YEAR = 2016;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
-  const state = { series: [], years: 5 };
+  const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: 5 } }));
 
   // Number(null)은 0이므로 DB의 계산 불가값을 먼저 걸러야 가짜 0점이 생기지 않습니다.
   function finite(value) {
@@ -131,21 +136,21 @@
     return STATE_LABELS[metricState(point, metric.key, spec.kind)] || '—';
   }
 
-  function visiblePoints() {
-    const usable = state.series.filter((row) => METRICS.some((metric) => CHARTS.some((chart) => Number.isFinite(metricValue(row, metric.key, chart.valueKey)))));
-    return state.years === 'max' ? usable : usable.slice(-Number(state.years) * 4);
+  function visiblePoints(market) {
+    const usable = market.state.series.filter((row) => METRICS.some((metric) => CHARTS.some((chart) => Number.isFinite(metricValue(row, metric.key, chart.valueKey)))));
+    return market.state.years === 'max' ? usable : usable.slice(-Number(market.state.years) * 4);
   }
 
-  function updateSummary(points) {
-    const element = document.getElementById('korea-earnings-summary'), latest = points.at(-1);
+  function updateSummary(market, points) {
+    const element = market.root?.querySelector('[data-earnings-summary]'), latest = points.at(-1);
     if (!element || !latest) return;
     const status = latest.lifecycleStatus === 'complete' ? '확정' : latest.lifecycleStatus === 'provisional' ? '잠정' : '수집 중';
     const values = METRICS.map((metric) => `<span>${metric.label} 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
     element.innerHTML = `<strong>${periodLabel(latest)}</strong>${values}<span>실적 반영 ${latest.reportedCount}/${latest.universeCount}사</span><span>${status}${latest.pendingCount ? ` · 대기 ${latest.pendingCount}사` : ''}</span>`;
   }
 
-  function renderChart(spec, points) {
-    const container = document.getElementById(spec.id);
+  function renderChart(market, spec, points) {
+    const container = market.root?.querySelector(`[data-earnings-chart="${spec.key}"]`);
     if (!container) return null;
     // 모든 차트에서 영업이익과 순이익을 같은 축에 함께 표시해 두 지표의
     // 절대 수준과 변화 방향을 한눈에 비교합니다.
@@ -272,48 +277,58 @@
   }
 
   // 어느 보조차트에 마우스를 두더라도 같은 분기의 세로선과 각 차트 값을 함께 표시합니다.
-  function synchronizeCursors(charts) {
+  function synchronizeCursors(charts, root) {
     charts.forEach((chart) => chart.hit.addEventListener('pointermove', (event) => {
       const index = chart.indexFromEvent(event);
       charts.forEach((target) => target.showCursor(index));
     }));
-    const stack = document.querySelector('.korea-earnings-chart-stack');
+    const stack = root?.querySelector('.korea-earnings-chart-stack');
     if (stack) stack.onpointerleave = () => charts.forEach((chart) => chart.hideCursor());
   }
 
-  function setStatus(message) {
+  function setStatus(market, message) {
     CHARTS.forEach((chart) => {
-      const container = document.getElementById(chart.id);
+      const container = market.root?.querySelector(`[data-earnings-chart="${chart.key}"]`);
       if (container) container.innerHTML = `<div class="analysis-empty-state-light flex min-h-40 items-center justify-center border border-dashed p-5 text-sm text-slate-500">${message}</div>`;
     });
   }
 
-  function render() {
-    const points = visiblePoints();
-    if (!points.length) { setStatus('비교 가능한 KOSPI 시총 상위기업 실적이 아직 없습니다.'); return; }
-    updateSummary(points);
-    const charts = CHARTS.map((chart) => renderChart(chart, points)).filter(Boolean);
+  function render(market) {
+    if (!market.root) return;
+    const points = visiblePoints(market);
+    if (!points.length) { setStatus(market, `비교 가능한 ${market.label} 시총 상위기업 실적이 아직 없습니다.`); return; }
+    updateSummary(market, points);
+    const charts = CHARTS.map((chart) => renderChart(market, chart, points)).filter(Boolean);
     synchronizeFrames(charts.map((chart) => chart.frame));
-    synchronizeCursors(charts);
+    synchronizeCursors(charts, market.root);
   }
 
   async function load({ supabaseClient }) {
-    if (!document.getElementById('korea-earnings-amount-chart') || !supabaseClient) return;
-    const response = await supabaseClient.rpc('earnings_v2_public_market_series', { p_market_id: 'kr_largecap' });
-    if (response.error) { setStatus('KOSPI 100 집계 실적을 불러오지 못했습니다.'); return; }
-    state.series = seriesFromMarketRows(response.data || []);
-    render();
+    const activeMarkets = markets.filter((market) => market.root);
+    if (!activeMarkets.length || !supabaseClient) return;
+    await Promise.all(activeMarkets.map(async (market) => {
+      const response = await supabaseClient.rpc('earnings_v2_public_market_series', { p_market_id: market.marketId });
+      if (response.error) { setStatus(market, `${market.label} 100 집계 실적을 불러오지 못했습니다.`); return; }
+      market.state.series = seriesFromMarketRows(response.data || []);
+      render(market);
+    }));
   }
 
-  document.querySelector('[data-korea-earnings-ranges]')?.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-korea-earnings-range]');
-    if (!button) return;
-    state.years = button.dataset.koreaEarningsRange === 'max' ? 'max' : Number(button.dataset.koreaEarningsRange);
-    document.querySelectorAll('[data-korea-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
-    render();
+  markets.forEach((market) => {
+    market.root = document.querySelector(market.cardSelector);
+    const controls = market.root?.querySelector('[data-earnings-ranges]');
+    controls?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-earnings-range]');
+      if (!button) return;
+      market.state.years = button.dataset.earningsRange === 'max' ? 'max' : Number(button.dataset.earningsRange);
+      controls.querySelectorAll('[data-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
+      render(market);
+    });
   });
   // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
-  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'earnings') render(); });
+  window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
+    if (detail?.view === 'earnings') markets.forEach((market) => render(market));
+  });
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
