@@ -331,6 +331,7 @@ class USIndexConstituentClient:
         self.session = session or provider_session()
         self.request_count = 0
         self._name_cik_cache: dict[tuple[str, int | None], str | None] = {}
+        self._historical_ticker_by_cik: dict[str, str] = {}
         self._oef_legacy_accessions_cache: set[str] | None = None
 
     def _json(self, method: str, url: str, operation: str, **kwargs: Any) -> dict[str, Any]:
@@ -468,11 +469,19 @@ class USIndexConstituentClient:
                     display_text = str(display)
                     cik_match = re.search(r"CIK\s+(\d+)", display_text)
                     if cik_match:
+                        display_cik = normalize_cik(cik_match.group(1)) or ""
+                        ticker_match = re.search(
+                            r"\(([^()]*)\)\s*\(CIK\s+\d+\)", display_text, flags=re.IGNORECASE,
+                        )
+                        if ticker_match and display_cik:
+                            tickers = re.findall(r"\b[A-Z][A-Z0-9.-]{0,9}\b", ticker_match.group(1).upper())
+                            if tickers:
+                                self._historical_ticker_by_cik.setdefault(display_cik, tickers[0])
                         raw_name = re.sub(
                             r"\s*[\\/][A-Z]{2,}[\\/]?\s*$", "",
                             display_text.split("(", 1)[0].strip(), flags=re.IGNORECASE,
                         )
-                        candidates.append((raw_name, _normal_name(raw_name), normalize_cik(cik_match.group(1)) or ""))
+                        candidates.append((raw_name, _normal_name(raw_name), display_cik))
             if any(normalized == normalized_name and cik for _, normalized, cik in candidates):
                 break
         exact_ciks = {cik for _, normalized, cik in candidates if normalized == normalized_name and cik}
@@ -567,7 +576,8 @@ class USIndexConstituentClient:
             return next(iter(matches)) if best >= 100 and len(matches) == 1 else None
 
         def store(ticker: str, name: str, cik: str, selection_value: Decimal | None) -> None:
-            security = MarketSecurity(ticker=ticker or ticker_by_cik.get(cik, ""), name=name, cik=cik, market_cap=Decimal(0), rank=0,
+            resolved_ticker = ticker or ticker_by_cik.get(cik, "") or self._historical_ticker_by_cik.get(cik, "")
+            security = MarketSecurity(ticker=resolved_ticker, name=name, cik=cik, market_cap=Decimal(0), rank=0,
                                       reference_date=reference_date, market_id=market_id)
             current = by_company.get(security.company_id)
             value = selection_value or Decimal(0)
@@ -633,6 +643,12 @@ class USIndexConstituentClient:
             by_company.values(),
             key=(lambda item: (-item[1], item[0].ticker)) if weighted else (lambda item: (item[0].ticker, item[0].name)),
         )[:100]
+        missing_tickers = [item[0].name for item in ranked if not item[0].ticker]
+        if missing_tickers:
+            raise ProviderError(
+                f"{market_id} could not resolve ticker for {len(missing_tickers)} issuer(s): "
+                f"{', '.join(missing_tickers[:20])}"
+            )
         return [MarketSecurity(**{**item[0].__dict__, "rank": index}) for index, item in enumerate(ranked, start=1)]
 
     def nasdaq100(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:

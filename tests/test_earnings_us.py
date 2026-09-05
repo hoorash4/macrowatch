@@ -373,6 +373,32 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(client._cik_for_name("21ST CENTRY FOX A CM", date(2016, 3, 31)), "0001308161")
         self.assertIn("TWENTY FIRST CENTURY FOX A", queries)
 
+    def test_historical_name_search_recovers_period_ticker(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        client = USIndexConstituentClient(FakeSec())
+        client._json = lambda *args, **kwargs: {
+            "hits": {"hits": [{"_source": {"display_names": [
+                "EXXON MOBIL CORP (XOM) (CIK 0000034088)",
+            ]}}]}
+        }
+
+        cik = client._cik_for_name("Exxon Mobil Corp.", date(2022, 6, 30))
+        rows = [("", "Exxon Mobil Corp.", Decimal("1"))] + [
+            (f"T{index:03}", f"Company {index}", Decimal("1")) for index in range(99)
+        ]
+        directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(99)}
+        client._cik_for_name = lambda name, reference_date=None: cik if name.startswith("Exxon") else directory.get(name.replace("Company ", "T"))
+
+        result = client._securities("us_sp100", date(2022, 6, 30), rows, directory)
+
+        self.assertEqual(cik, "0000034088")
+        self.assertEqual(next(item.ticker for item in result if item.cik == cik), "XOM")
+
     def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
         class FakeSec:
             def company_ticker_rows(self):
