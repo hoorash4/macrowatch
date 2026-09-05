@@ -460,8 +460,10 @@ class OpenDartTransportTests(unittest.TestCase):
 
     def test_legacy_merger_archive_accepts_explicit_absorbed_company(self):
         document = """
-        <TABLE><TR><TD>합병 당사회사</TD><TD>합병회사 : 주식회사 지에스리테일
-        피합병회사 : 주식회사 지에스홈쇼핑</TD></TR>
+        <TABLE><TR><TD>회 사 명 :</TD><TD>(주) GS홈쇼핑</TD></TR>
+        <TR><TD>대 표 이 사 :</TD><TD>김호성</TD></TR>
+        <TR><TD>합병 당사회사</TD><TD>합병회사 : 주식회사 GS리테일
+        피합병회사 : 주식회사 GS홈쇼핑</TD></TR>
         <TR><TD>합병기일</TD><TD>2021년 07월 01일</TD></TR></TABLE>
         """
         buffer = BytesIO()
@@ -472,14 +474,27 @@ class OpenDartTransportTests(unittest.TestCase):
             buffer.getvalue(), expected_corp_code="00207755",
             corp_name="지에스홈쇼핑", receipt_no="20201110000001",
         )
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.effective_on, date(2021, 7, 1))
+
+    def test_legacy_merger_archive_does_not_mark_reporting_survivor(self):
+        document = """
+        <TABLE><TR><TD>회 사 명 :</TD><TD>(주) GS리테일</TD></TR>
+        <TR><TD>대 표 이 사 :</TD><TD>허연수</TD></TR>
+        <TR><TD>합병방법</TD><TD>주식회사 GS리테일이 주식회사 GS홈쇼핑을 흡수합병
+        - 존속회사: 주식회사 GS리테일 - 소멸회사: 주식회사 GS홈쇼핑</TD></TR>
+        <TR><TD>합병기일</TD><TD>2021년 07월 01일</TD></TR></TABLE>
+        """
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr("report.xml", document.encode("cp949"))
+
         survivor = parse_absorbed_merger_archive(
             buffer.getvalue(), expected_corp_code="00676928",
             corp_name="지에스리테일", receipt_no="20201110000002",
         )
 
-        self.assertIsNotNone(event)
-        assert event is not None
-        self.assertEqual(event.effective_on, date(2021, 7, 1))
         self.assertIsNone(survivor)
 
     def test_corporation_map_streams_the_archive(self):

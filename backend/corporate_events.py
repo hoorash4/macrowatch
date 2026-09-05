@@ -40,6 +40,16 @@ def _method_token(value: Any) -> str:
     return re.sub(r"\s+", "", text).lower()
 
 
+def _reported_company_token(text: str) -> str:
+    """공시 표지에 적힌 보고 회사명을 반환한다."""
+    match = re.search(
+        r"회\s*사\s*명\s*[:：]\s*(.{1,100}?)"
+        r"(?=\s*대\s*표\s*(?:이\s*사|자)\s*[:：])",
+        text,
+    )
+    return _company_token(match.group(1)) if match else ""
+
+
 def parse_absorbed_merger(
     row: Mapping[str, Any], *, expected_corp_code: str,
 ) -> AbsorbedMergerEvent | None:
@@ -111,11 +121,15 @@ def parse_absorbed_merger_archive(
                 continue
     text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", item) for item in decoded))
     text = re.sub(r"\s+", " ", text)
-    company = _company_token(corp_name)
+    # 목록 API 회사명과 원문 표기가 다를 수 있다(예: 지에스홈쇼핑/GS홈쇼핑).
+    # 원문 표지의 회사명은 해당 corp_code가 제출한 공시의 자기 식별자이므로,
+    # 존재하면 역할 판정에도 같은 원문 표기를 사용한다.
+    company = _reported_company_token(text) or _company_token(corp_name)
     compact = _company_token(text)
     if not company or not any(
-        marker + company in compact
+        marker + suffix + company in compact
         for marker in ("소멸회사", "소멸법인", "피합병회사", "피합병법인")
+        for suffix in ("", "인")
     ):
         return None
 
