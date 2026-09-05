@@ -323,6 +323,32 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(len(result), 100)
         self.assertEqual(next(item.cik for item in result if item.ticker == "LILA"), old_cik)
 
+    def test_historical_ticker_search_excludes_an_issuer_created_too_late(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        client = USIndexConstituentClient(FakeSec())
+        client._json = lambda *args, **kwargs: {
+            "hits": {"hits": [
+                {"_source": {
+                    "file_date": "2018-02-14",
+                    "display_names": ["Liberty Latin America Ltd. (LILA, LILAK) (CIK 0001712184)"],
+                    "ciks": ["0001712184"],
+                }},
+                {"_source": {
+                    "file_date": "2017-02-16",
+                    "display_names": ["Liberty Global plc (LBTYA, LBTYK) (CIK 0001570585)"],
+                    "ciks": ["0001570585"],
+                }},
+            ]}
+        }
+
+        self.assertEqual(client._cik_for_ticker("LILA", date(2017, 9, 30)), "0001570585")
+        self.assertEqual(client._cik_for_ticker("LILA", date(2017, 12, 31)), "0001712184")
+
     def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
         class FakeSec:
             def company_ticker_rows(self):
@@ -377,6 +403,9 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(_name_match_score("EI DU PONT DE NEMOURS", "SYNGENTA AG"), 0)
         self.assertGreater(_name_match_score("DU PONT DE NEMOURS", "DUPONT E I DE NEMOURS & CO"), 0)
         self.assertEqual(_name_match_score("ABC HOLDINGS", "ABC BANK CORPORATION"), 0)
+        self.assertEqual(_name_match_score("MARRIOT INT CL A", "Marriott International Inc."), 200)
+        self.assertEqual(_name_match_score("VODAFONE GRP PLC ADS", "Vodafone Group plc"), 200)
+        self.assertEqual(_name_match_score("21ST CENTRY FOX A CM", "Twenty-First Century Fox Inc."), 299)
 
     def test_legacy_sec_names_and_encoding_are_normalized(self):
         self.assertEqual(_decode_filing("Lowe’s".encode("windows-1252")), "Lowe’s")

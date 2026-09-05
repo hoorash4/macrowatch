@@ -60,14 +60,27 @@ def _name_match_score(query: str, candidate: str) -> int:
     four-character word prefix, and legal suffixes do not contribute.
     """
     ignored = {
-        "a", "and", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
+        "a", "ads", "and", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
         "inc", "incorporated", "ltd", "limited", "nv", "nvs", "ord", "ordinary", "plc", "sh",
         "share", "shares", "sr", "srs", "the",
     }
     aliases = {
-        "comm": "communications", "gp": "group", "intl": "international",
+        "21st": "twentyfirst", "comm": "communications", "gp": "group", "grp": "group", "int": "international",
+        "intl": "international",
         "pharm": "pharmaceuticals", "vntrs": "ventures",
     }
+
+    def same_word(left: str, right: str) -> bool:
+        if left == right or (len(left) >= 4 and right.startswith(left)) or (len(right) >= 4 and left.startswith(right)):
+            return True
+        # Official historical feeds contain occasional one-letter omissions.
+        # Permit one edit only for long words sharing a stable four-letter stem.
+        if min(len(left), len(right)) < 6 or left[:4] != right[:4] or abs(len(left) - len(right)) > 1:
+            return False
+        if len(left) == len(right):
+            return sum(a != b for a, b in zip(left, right)) <= 1
+        shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+        return any(shorter == longer[:index] + longer[index + 1:] for index in range(len(longer)))
 
     def words(value: str) -> list[str]:
         value = re.sub(r"(?i)(?<=[a-z])['’]s\b", "", value)
@@ -83,8 +96,7 @@ def _name_match_score(query: str, candidate: str) -> int:
     if query_compact and query_compact == candidate_compact:
         return len(query_words) * 100
     matched = sum(
-        any(word == item or (len(word) >= 4 and item.startswith(word)) or (len(item) >= 4 and word.startswith(item))
-            for item in candidate_words)
+        any(same_word(word, item) for item in candidate_words)
         for word in query_words
     )
     if matched != len(query_words):
@@ -492,8 +504,17 @@ class USIndexConstituentClient:
             )
         except ProviderError:
             return None
-        pattern = re.compile(rf"\(\s*{re.escape(value)}\s*(?:,|\))", re.IGNORECASE)
-        hits = payload.get("hits", {}).get("hits", []) if isinstance(payload.get("hits"), dict) else ()
+        pattern = re.compile(rf"\(\s*{re.escape(value)}\s*(?:,|\))|,\s*{re.escape(value)}\s*(?:,|\))", re.IGNORECASE)
+        hits = list(payload.get("hits", {}).get("hits", [])) if isinstance(payload.get("hits"), dict) else []
+        if reference_date:
+            latest_relevant_filing = reference_date + timedelta(days=120)
+            hits = [
+                hit for hit in hits
+                if not isinstance(hit, dict)
+                or not isinstance(hit.get("_source"), dict)
+                or not str(hit["_source"].get("file_date") or "")
+                or str(hit["_source"].get("file_date")) <= latest_relevant_filing.isoformat()
+            ]
         for hit in hits:
             source = hit.get("_source") if isinstance(hit, dict) else None
             if not isinstance(source, dict):
@@ -578,7 +599,7 @@ class USIndexConstituentClient:
         # below the SEC's public request-rate limit.
         def resolve(item: tuple[SourceHolding, str | None]) -> tuple[str, str, Decimal | None, str | None]:
             (ticker, name, selection_value), fallback_cik = item
-            cik = self._cik_for_ticker(ticker, reference_date) or self._cik_for_name(name, reference_date) or fallback_cik
+            cik = self._cik_for_name(name, reference_date) or self._cik_for_ticker(ticker, reference_date) or fallback_cik
             return ticker, name, selection_value, cik
 
         with ThreadPoolExecutor(max_workers=4) as executor:
