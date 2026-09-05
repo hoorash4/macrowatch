@@ -390,7 +390,7 @@ class USIndexConstituentClient:
             r"(?i)\b(?:SRS?|SERIES|CL(?:ASS)?|ORD(?:INARY)?|SHS?|SHARES?|COMMON|CM|NVS)(?:\s+[A-Z])?\b",
             " ", search_name,
         )
-        search_name = re.sub(r"\s+", " ", search_name).strip()
+        search_name = re.sub(r"\s+", " ", search_name).strip(" ,")
         normalized_name = _normal_name(search_name)
         key = (normalized_name, reference_date.year if reference_date else None)
         if key in self._name_cik_cache:
