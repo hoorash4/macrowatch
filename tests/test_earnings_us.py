@@ -8,12 +8,14 @@ from earnings_us.models import MarketSecurity, market_period
 from earnings_us.backfill_cli import period_range
 from earnings_us.constituents import (
     USIndexConstituentClient,
+    archive_covers_filing_window,
     _decode_filing,
     _name_match_score,
     _normal_name,
     extract_oef_holdings,
     extract_oef_nport_holdings,
     extract_oef_series_accessions,
+    is_quarter_end_report_date,
     extract_nport_equity_holdings,
 )
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
@@ -51,6 +53,16 @@ def payload():
 
 
 class USEarningsTransformTests(unittest.TestCase):
+    def test_archive_selection_uses_post_quarter_filing_dates(self):
+        entry = {"filingFrom": "2023-01-01", "filingTo": "2023-03-31"}
+
+        self.assertTrue(archive_covers_filing_window(entry, date(2022, 12, 31)))
+        self.assertFalse(archive_covers_filing_window(entry, date(2022, 6, 30)))
+
+    def test_weekend_quarter_end_accepts_last_fund_reporting_day(self):
+        self.assertTrue(is_quarter_end_report_date("2022-12-30", date(2022, 12, 31)))
+        self.assertFalse(is_quarter_end_report_date("2022-11-30", date(2022, 12, 31)))
+
     def test_shared_index_members_are_persisted_once_per_database_key(self):
         class FakeRepository:
             def __init__(self):

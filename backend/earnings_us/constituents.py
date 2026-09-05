@@ -234,6 +234,28 @@ def extract_oef_series_accessions(atom: str, reference_date: date) -> list[str]:
     return result
 
 
+def archive_covers_filing_window(entry: dict[str, Any], reference_date: date) -> bool:
+    """Return whether a submissions shard can contain a filing for the report date."""
+    try:
+        filing_from = date.fromisoformat(str(entry.get("filingFrom")))
+        filing_to = date.fromisoformat(str(entry.get("filingTo")))
+    except ValueError:
+        return False
+    earliest = reference_date + timedelta(days=30)
+    latest = reference_date + timedelta(days=120)
+    return filing_from <= latest and filing_to >= earliest
+
+
+def is_quarter_end_report_date(value: str, reference_date: date) -> bool:
+    """Accept the last fund reporting day when calendar quarter-end is not a trading day."""
+    try:
+        report_date = date.fromisoformat(value)
+    except ValueError:
+        return False
+    lag = (reference_date - report_date).days
+    return report_date.year == reference_date.year and report_date.month == reference_date.month and 0 <= lag <= 7
+
+
 class USIndexConstituentClient:
     """Official index/ETF membership sources, normalized to SEC company identities."""
 
@@ -279,7 +301,7 @@ class USIndexConstituentClient:
             document = _decode_filing(self._binary(_filing_url(accession, "primary_doc.xml", cik),
                                                    f"{operation} N-PORT {reference_date.isoformat()}"))
             report_date = re.search(r"<(?:\w+:)?repPdDate>(\d{4}-\d{2}-\d{2})</", document)
-            if report_date is None or report_date.group(1) != reference_date.isoformat():
+            if report_date is None or not is_quarter_end_report_date(report_date.group(1), reference_date):
                 continue
             return extract_nport_equity_holdings(document, series_pattern)
         return None
@@ -558,15 +580,9 @@ class USIndexConstituentClient:
         for entry in filings.get("files", []) if isinstance(filings, dict) else ():
             if not isinstance(entry, dict) or not entry.get("name"):
                 continue
-            # SEC already publishes the date span for each archive shard.  A
-            # historical quarter is contained in exactly one such shard, so do
-            # not download every archive index for every quarter.
-            try:
-                filing_from = date.fromisoformat(str(entry.get("filingFrom")))
-                filing_to = date.fromisoformat(str(entry.get("filingTo")))
-            except ValueError:
-                continue
-            if not filing_from <= reference_date <= filing_to:
+            # Archive metadata describes filing dates, not report dates. Select
+            # only shards overlapping the fund's normal post-quarter filing window.
+            if not archive_covers_filing_window(entry, reference_date):
                 continue
             payload = self._json("GET", f"https://data.sec.gov/submissions/{entry['name']}", "OEF archived submissions",
                                  headers={"User-Agent": self.sec.user_agent, "Accept-Encoding": "gzip, deflate"})
@@ -579,7 +595,11 @@ class USIndexConstituentClient:
             for form, report_date, accession, document in zip(
                 data.get("form", []), data.get("reportDate", []), data.get("accessionNumber", []), data.get("primaryDocument", []), strict=False
             ):
-                if str(form) in {"N-CSR", "N-CSRS", "N-Q"} and str(report_date) == target and accession and document:
+                if (
+                    str(form) in {"N-CSR", "N-CSRS", "N-Q"}
+                    and is_quarter_end_report_date(str(report_date), reference_date)
+                    and accession and document
+                ):
                     candidates.append((str(accession), str(document)))
         if not candidates:
             raise ProviderError(f"OEF has no SEC holdings filing for {target}")
