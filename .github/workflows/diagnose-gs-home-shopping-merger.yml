@@ -39,7 +39,7 @@ jobs:
           for row in rows:
               receipt = str(row.get("rcept_no") or "")
               corp_name = str(row.get("corp_name") or "")
-              archive = client.filing_archive(receipt)
+              archive = client._get("document.xml", {"rcept_no": receipt}, binary=True)
               decoded = []
               with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
                   print("filing", receipt, repr(corp_name), bundle.namelist())
