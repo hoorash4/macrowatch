@@ -340,7 +340,7 @@ class KoreaEarningsV2Pipeline:
             grouped.setdefault(event.corp_code, []).append(event)
         result: dict[str, DelistingFiling] = {}
         for corp_code, candidates in grouped.items():
-            ordered = sorted(candidates, key=lambda row: (row.received_on, row.receipt_no))
+            ordered = sorted(candidates, key=lambda row: (row.event_on, row.receipt_no))
             result[corp_code] = next(
                 (row for row in ordered if row.event_type == "decision"), ordered[0],
             )
@@ -367,15 +367,19 @@ class KoreaEarningsV2Pipeline:
                 received_on=date.fromisoformat(str(row["received_on"])),
                 report_name=str(row["report_name"]),
                 event_type=str(row["event_type"]),
+                effective_on=(
+                    date.fromisoformat(str(row["effective_on"]))
+                    if row.get("effective_on") else None
+                ),
             )
             for row in rows
         ]
-        events.extend(event for event in supplied if start <= event.received_on <= end)
+        events.extend(event for event in supplied if start <= event.event_on <= end)
         events = [
             event for event in events
             if (
-                event.event_type == "final"
-                or event.received_on <= quarter_last_day
+                event.event_type in {"final", "absorbed_merger"}
+                or event.event_on <= quarter_last_day
             )
         ]
         return self._delisting_event_map(events)
@@ -397,9 +401,16 @@ class KoreaEarningsV2Pipeline:
             for event in self.dart.delisting_filings(
                 start, end, corp_code=identity.corp_code,
             ):
-                if event.event_type == "final" or event.received_on <= quarter_last_day:
+                if event.event_type == "final" or event.event_on <= quarter_last_day:
                     events[event.receipt_no] = event
-        ordered = sorted(events.values(), key=lambda row: (row.received_on, row.receipt_no))
+            merger_loader = getattr(self.dart, "absorbed_merger_filings", None)
+            if callable(merger_loader):
+                for event in merger_loader(
+                    date(year - 1, 1, 1), end, corp_code=identity.corp_code,
+                ):
+                    if start <= event.event_on <= end:
+                        events[event.receipt_no] = event
+        ordered = sorted(events.values(), key=lambda row: (row.event_on, row.receipt_no))
         if write and ordered:
             self.repository.upsert_delisting_events(event.db_row() for event in ordered)
         return ordered
@@ -641,22 +652,19 @@ class KoreaEarningsV2Pipeline:
         snapshots: Iterable[FinancialCompanySnapshot],
         fact: FinancialFact,
     ) -> FinancialCompanySnapshot | None:
-        """현재 행의 연결/별도 기준과 같은 금융위 원본만 선택한다."""
+        """기존 값을 보존하면서 빈 지표를 채울 금융위 원본을 선택한다."""
         candidates = list(snapshots)
         if not candidates:
             return None
-        matching_scope = [
-            item for item in candidates
-            if item.consolidation_scope == fact.consolidation_scope
-        ]
-        if matching_scope:
-            chosen = matching_scope[0]
+
+        def merged_scope(scope_candidates: list[FinancialCompanySnapshot]) -> FinancialCompanySnapshot:
+            chosen = scope_candidates[0]
             changes = {}
             for field in ("top_line", "operating_income", "net_income"):
                 if (getattr(chosen, f"{field}_cumulative") is not None
                         or getattr(chosen, f"{field}_standalone") is not None):
                     continue
-                other = next((item for item in matching_scope[1:]
+                other = next((item for item in scope_candidates[1:]
                               if item.currency == chosen.currency
                               and (getattr(item, f"{field}_cumulative") is not None
                                    or getattr(item, f"{field}_standalone") is not None)), None)
@@ -664,6 +672,40 @@ class KoreaEarningsV2Pipeline:
                     for suffix in ("cumulative", "standalone"):
                         changes[f"{field}_{suffix}"] = getattr(other, f"{field}_{suffix}")
             return replace(chosen, **changes) if changes else chosen
+
+        matching_scope = [
+            item for item in candidates
+            if item.consolidation_scope == fact.consolidation_scope
+        ]
+        if matching_scope:
+            chosen = merged_scope(matching_scope)
+            if any(
+                getattr(fact, field, None) is None
+                and (getattr(chosen, f"{field}_cumulative") is not None
+                     or getattr(chosen, f"{field}_standalone") is not None)
+                for field in ("top_line", "operating_income", "net_income")
+            ):
+                return chosen
+
+        # 2016~2018 금융위 원본은 연결/별도 범위가 DART와 다르게 표기되는
+        # 사례가 있다. 이미 확보한 값은 유지하고, 반대 범위에서 빈 지표만
+        # 보완한다. 결과 행의 범위는 아래 저장 단계에서 기존 값 기준으로 유지된다.
+        missing_fields = [
+            field for field in ("top_line", "operating_income", "net_income")
+            if getattr(fact, field, None) is None
+        ]
+        for scope in ("CFS", "OFS", None):
+            scoped = [item for item in candidates if item.consolidation_scope == scope]
+            if not scoped:
+                continue
+            chosen = merged_scope(scoped)
+            if any(
+                getattr(chosen, f"{field}_cumulative") is not None
+                or getattr(chosen, f"{field}_standalone") is not None
+                for field in missing_fields
+            ):
+                return chosen
+
         if all(getattr(fact, field) is None for field in (
             "top_line", "operating_income", "net_income",
         )):
@@ -671,10 +713,6 @@ class KoreaEarningsV2Pipeline:
                 scoped = [item for item in candidates if item.consolidation_scope == scope]
                 if scoped:
                     return scoped[0]
-            # API가 범위를 명시하지 않았더라도 단 하나의 보고서만 반환하면
-            # 그 값은 연결·별도 혼합 없이 그대로 쓸 수 있다.
-            if len(candidates) == 1:
-                return candidates[0]
         return None
 
     @staticmethod
@@ -821,6 +859,10 @@ class KoreaEarningsV2Pipeline:
             "currency": "KRW",
             "source_currency": "KRW",
         })
+        changes["is_pending"] = not all(
+            changes.get(field, getattr(fact, field)) is not None
+            for field in ("top_line", "operating_income", "net_income")
+        )
         resolved = fact.with_changes(**changes)
         self._progress(
             "financial_company_source_done",

@@ -352,7 +352,7 @@ class KoreaEarningsV2AutomaticPipeline:
             grouped.setdefault(event.corp_code, []).append(event)
         result: dict[str, DelistingFiling] = {}
         for corp_code, candidates in grouped.items():
-            ordered = sorted(candidates, key=lambda row: (row.received_on, row.receipt_no))
+            ordered = sorted(candidates, key=lambda row: (row.event_on, row.receipt_no))
             result[corp_code] = next(
                 (row for row in ordered if row.event_type == "decision"), ordered[0],
             )
@@ -364,6 +364,7 @@ class KoreaEarningsV2AutomaticPipeline:
         year: int,
         quarter: int,
         supplied: Iterable[DelistingFiling] = (),
+        effective_cutoff: date | None = None,
     ) -> dict[str, DelistingFiling]:
         identities = list(identities)
         start = quarter_start(year, quarter)
@@ -379,15 +380,22 @@ class KoreaEarningsV2AutomaticPipeline:
                 received_on=date.fromisoformat(str(row["received_on"])),
                 report_name=str(row["report_name"]),
                 event_type=str(row["event_type"]),
+                effective_on=(
+                    date.fromisoformat(str(row["effective_on"]))
+                    if row.get("effective_on") else None
+                ),
             )
             for row in rows
         ]
-        events.extend(event for event in supplied if start <= event.received_on <= end)
+        events.extend(event for event in supplied if start <= event.event_on <= end)
         events = [
             event for event in events
             if (
-                event.event_type == "final"
-                or event.received_on <= quarter_last_day
+                (effective_cutoff is None or event.event_on <= effective_cutoff)
+                and (
+                    event.event_type in {"final", "absorbed_merger"}
+                    or event.event_on <= quarter_last_day
+                )
             )
         ]
         return self._delisting_event_map(events)
@@ -399,6 +407,7 @@ class KoreaEarningsV2AutomaticPipeline:
         quarter: int,
         *,
         write: bool,
+        effective_cutoff: date | None = None,
     ) -> list[DelistingFiling]:
         """과거 재처리는 미완결 기업만 회사별 거래소공시를 확인한다."""
         start = quarter_start(year, quarter)
@@ -409,9 +418,18 @@ class KoreaEarningsV2AutomaticPipeline:
             for event in self.dart.delisting_filings(
                 start, end, corp_code=identity.corp_code,
             ):
-                if event.event_type == "final" or event.received_on <= quarter_last_day:
+                if ((effective_cutoff is None or event.event_on <= effective_cutoff)
+                        and (event.event_type == "final" or event.event_on <= quarter_last_day)):
                     events[event.receipt_no] = event
-        ordered = sorted(events.values(), key=lambda row: (row.received_on, row.receipt_no))
+            merger_loader = getattr(self.dart, "absorbed_merger_filings", None)
+            if callable(merger_loader):
+                for event in merger_loader(
+                    date(year - 1, 1, 1), end, corp_code=identity.corp_code,
+                ):
+                    if (start <= event.event_on <= end
+                            and (effective_cutoff is None or event.event_on <= effective_cutoff)):
+                        events[event.receipt_no] = event
+        ordered = sorted(events.values(), key=lambda row: (row.event_on, row.receipt_no))
         if write and ordered:
             self.repository.upsert_delisting_events(event.db_row() for event in ordered)
         return ordered
@@ -876,6 +894,7 @@ class KoreaEarningsV2AutomaticPipeline:
                     use_kis_for_fresh: bool = True,
                     retry_pending: bool = True,
                     refresh_only: bool = False,
+                    event_effective_cutoff: date | None = None,
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if not incremental:
             raise ValueError("automatic collection requires incremental mode")
@@ -893,6 +912,7 @@ class KoreaEarningsV2AutomaticPipeline:
                     use_kis_for_fresh=use_kis_for_fresh,
                     retry_pending=retry_pending,
                     refresh_only=refresh_only,
+                    event_effective_cutoff=event_effective_cutoff,
                 )
         operation = f"{year}Q{quarter}"
         if write:
@@ -950,6 +970,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 }
                 delisting_events = self._stored_delisting_events(
                     identities, year, quarter, supplied_delistings,
+                    effective_cutoff=event_effective_cutoff,
                 )
                 if discover_delistings:
                     historical_candidates = [
@@ -963,6 +984,7 @@ class KoreaEarningsV2AutomaticPipeline:
                     )
                     discovered_events = self._discover_delisting_events(
                         historical_candidates, year, quarter, write=write,
+                        effective_cutoff=event_effective_cutoff,
                     )
                     delisting_events = self._delisting_event_map([
                         *delisting_events.values(), *discovered_events,
@@ -993,6 +1015,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 stored_current = {}
                 delisting_events = self._stored_delisting_events(
                     identities, year, quarter, supplied_delistings,
+                    effective_cutoff=event_effective_cutoff,
                 )
                 selected = [
                     row for row in identities if row.corp_code not in delisting_events
@@ -1028,6 +1051,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 ]
                 discovered_events = self._discover_delisting_events(
                     undiscovered_pending, year, quarter, write=write,
+                    effective_cutoff=event_effective_cutoff,
                 )
                 delisting_events = self._delisting_event_map([
                     *delisting_events.values(), *discovered_events,
@@ -1483,12 +1507,26 @@ class KoreaEarningsV2AutomaticPipeline:
         }
         filings = self.dart.periodic_filings(checked_on, current_day)
         delistings = self.dart.delisting_filings(checked_on, current_day)
+        merger_code_loader = getattr(self.dart, "merger_decision_corp_codes", None)
+        merger_event_loader = getattr(self.dart, "absorbed_merger_filings", None)
+        merger_corp_codes = (
+            merger_code_loader(checked_on, current_day)
+            if callable(merger_code_loader) and callable(merger_event_loader)
+            else set()
+        )
+        absorbed_mergers = [
+            event
+            for corp_code in merger_corp_codes
+            for event in merger_event_loader(
+                checked_on, current_day, corp_code=corp_code,
+            )
+        ]
         new_filings = [
             filing for filing in filings
             if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
         ]
         new_delistings = [
-            filing for filing in delistings
+            filing for filing in [*delistings, *absorbed_mergers]
             if not (filing.received_on == checked_on and filing.receipt_no in boundary_receipts)
         ]
         if write and new_delistings:
@@ -1507,6 +1545,7 @@ class KoreaEarningsV2AutomaticPipeline:
             use_kis_for_fresh=False,
             retry_pending=False,
             refresh_only=True,
+            event_effective_cutoff=current_day,
         )
         result["filing_discovery"] = {
             "checked_from": checked_on.isoformat(),
@@ -1514,6 +1553,10 @@ class KoreaEarningsV2AutomaticPipeline:
             "new_receipts": len(new_filings),
             "refreshed_companies": len(refresh_corp_codes),
             "new_delisting_receipts": len(new_delistings),
+            "new_absorbed_merger_receipts": len([
+                filing for filing in new_delistings
+                if filing.event_type == "absorbed_merger"
+            ]),
         }
         result["stale_pending_retries"] = []
         if write:
@@ -1521,7 +1564,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 "last_checked_date": current_day.isoformat(),
                 "boundary_receipt_ids": sorted(
                     filing.receipt_no
-                    for filing in [*filings, *delistings]
+                    for filing in [*filings, *delistings, *absorbed_mergers]
                     if filing.received_on == current_day
                 ),
             })
