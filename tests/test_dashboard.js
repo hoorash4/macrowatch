@@ -151,6 +151,16 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.qoqPct, 10);
   assert.equal(series.at(-1).metrics.net_income.yoyState, 'black_turn');
+  const segments = context.window.MacroWatchKoreaEarnings.lineSegments([
+    { index: 0, value: 10, lifecycleStatus: 'complete' },
+    { index: 1, value: 12, lifecycleStatus: 'complete' },
+    { index: 2, value: 12, lifecycleStatus: 'provisional' },
+  ]);
+  assert.equal(
+    JSON.stringify(segments.map((segment) => [segment.provisional, segment.points.map((point) => point.index)])),
+    JSON.stringify([[false, [0, 1]], [true, [1, 2]]]),
+    '잠정 분기로 이어지는 선은 직전 확정점부터 점선 구간으로 분리한다',
+  );
   const amountDomain = context.window.MacroWatchKoreaEarnings.axisDomain([90, 100]);
   assert.ok(amountDomain.min > 0, '양수 금액축은 더 이상 0에 고정하지 않는다');
   assert.ok(amountDomain.min < 90 && amountDomain.max > 100);
@@ -181,6 +191,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /kind: 'growth'[^\n]*includeZero: true/);
   assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
+  assert.match(source, /function lineSegments/);
   assert.match(html, /시총 상위 100 합산 실적\(계절조정\)/);
   assert.match(html, /이익률/);
   assert.match(html, /YoY 이익 증가율/);
@@ -190,6 +201,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
   assert.doesNotMatch(source, /korea_foreign_flow_daily|usdkrw_rate/);
   assert.match(styles, /\.korea-earnings-line--qoq[^}]*stroke-dasharray/);
+  assert.match(styles, /\.korea-earnings-line--provisional[^}]*stroke-dasharray/);
   assert.match(styles, /\.korea-earnings-chart-panel \+ \.korea-earnings-chart-panel/);
   assert.doesNotMatch(styles, /\.korea-earnings-chart-panel--aux\s*\{[^}]*background/);
   assert.match(source, /showPeriodLabels: true/);

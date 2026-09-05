@@ -1000,6 +1000,7 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-line--margin { stroke-width:2.2; }
 .korea-earnings-line--growth { stroke-width:2.2; }
 .korea-earnings-line--qoq { stroke-width:2; stroke-dasharray:6 4; }
+.korea-earnings-line--provisional { stroke-dasharray:6 4; opacity:.82; }
 .korea-earnings-line--operating-income { stroke:#2563a8; }
 .korea-earnings-line--net-income { stroke:#b7791f; }
 .korea-earnings-point { stroke:#fff; stroke-width:1.25; }
