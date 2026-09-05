@@ -458,6 +458,30 @@ class OpenDartTransportTests(unittest.TestCase):
         self.assertEqual(event.effective_on, date(2016, 11, 1))
         self.assertIsNone(survivor)
 
+    def test_legacy_merger_archive_accepts_explicit_absorbed_company(self):
+        document = """
+        <TABLE><TR><TD>합병 당사회사</TD><TD>합병회사 : 주식회사 지에스리테일
+        피합병회사 : 주식회사 지에스홈쇼핑</TD></TR>
+        <TR><TD>합병기일</TD><TD>2021년 07월 01일</TD></TR></TABLE>
+        """
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr("report.xml", document.encode("cp949"))
+
+        event = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00207755",
+            corp_name="지에스홈쇼핑", receipt_no="20201110000001",
+        )
+        survivor = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00676928",
+            corp_name="지에스리테일", receipt_no="20201110000002",
+        )
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.effective_on, date(2021, 7, 1))
+        self.assertIsNone(survivor)
+
     def test_corporation_map_streams_the_archive(self):
         class Response:
             @staticmethod
