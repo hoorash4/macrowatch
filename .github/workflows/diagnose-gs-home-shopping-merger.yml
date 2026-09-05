@@ -40,6 +40,9 @@ jobs:
               receipt = str(row.get("rcept_no") or "")
               corp_name = str(row.get("corp_name") or "")
               archive = client._get("document.xml", {"rcept_no": receipt}, binary=True)
+              if not archive.startswith(b"PK"):
+                  print("non_zip", receipt, repr(corp_name), len(archive), archive[:147])
+                  continue
               decoded = []
               with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
                   print("filing", receipt, repr(corp_name), bundle.namelist())
