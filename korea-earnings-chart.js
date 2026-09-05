@@ -140,7 +140,7 @@
     const element = document.getElementById('korea-earnings-summary'), latest = points.at(-1);
     if (!element || !latest) return;
     const status = latest.lifecycleStatus === 'complete' ? '확정' : latest.lifecycleStatus === 'provisional' ? '잠정' : '수집 중';
-    const values = METRICS.map((metric) => `<span>${metric.label} 계절조정 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
+    const values = METRICS.map((metric) => `<span>${metric.label} 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
     element.innerHTML = `<strong>${periodLabel(latest)}</strong>${values}<span>실적 반영 ${latest.reportedCount}/${latest.universeCount}사</span><span>${status}${latest.pendingCount ? ` · 대기 ${latest.pendingCount}사` : ''}</span>`;
   }
 

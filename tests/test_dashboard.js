@@ -197,6 +197,8 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
   assert.match(source, /function provisionalEdgeStates/);
+  assert.match(source, /\$\{metric\.label\} 합계/);
+  assert.doesNotMatch(source, /\$\{metric\.label\} 계절조정 합계/);
   assert.match(html, /시총 상위 100 합산 실적\(계절조정\)/);
   assert.match(html, /이익률/);
   assert.match(html, /YoY 이익 증가율/);
