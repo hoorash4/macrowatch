@@ -1,6 +1,6 @@
 """Read V2.5 financial facts from an official DART filing archive.
 
-The 2016-2018 structured financial endpoints can return status 013 even when
+The 2015-2018 structured financial endpoints can return status 013 even when
 the accepted filing contains an income statement.  This module reuses the
 well-tested legacy table mechanics without changing the legacy or V2 paths.
 """

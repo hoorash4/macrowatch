@@ -23,12 +23,12 @@ from .legacy_dart_financials import (
 )
 
 from .pipeline import filing_period, quarter_end, quarter_resolution_end
+from .policy import MAX_BACKFILL_YEAR, MIN_BACKFILL_YEAR, SUPPORTED_YEARS
 from .providers import OpenDartClient, REPORT_CODES
 from .raw_dart_financials import RawDartParseError, _metric_for_label, parse_raw_filing_archive
 from .repository import EarningsV2Repository
 
 
-SUPPORTED_YEARS = range(2016, 2019)
 RELEVANT_TOKENS = (
     "매출", "수익", "영업이익", "영업손익", "영업손실",
     "당기순", "분기순", "반기순", "순이익", "순손익", "순손실",
@@ -152,7 +152,10 @@ def _corp_code(row: dict[str, Any]) -> str | None:
 def main() -> None:
     args = parser().parse_args()
     if args.year not in SUPPORTED_YEARS:
-        raise SystemExit("V2.5 diagnostics only allow fiscal years 2016 through 2018")
+        raise SystemExit(
+            f"V2.5 diagnostics only allow fiscal years "
+            f"{MIN_BACKFILL_YEAR} through {MAX_BACKFILL_YEAR}"
+        )
 
     repository = EarningsV2Repository.from_env()
     dart = OpenDartClient.from_env()

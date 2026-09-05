@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: Fiscal year (2016-2018 only)
+        description: Fiscal year (2015-2018 only)
         required: true
         default: "2016"
         type: choice
-        options: ["2016", "2017", "2018"]
+        options: ["2015", "2016", "2017", "2018"]
       quarter:
         description: One fiscal quarter
         required: true

@@ -11,6 +11,7 @@ from zipfile import ZipFile
 from earnings_v25.diagnose_structured import parser, relevant_accounts
 from earnings_v25.models import FinancialFact
 from earnings_v25.pipeline import KoreaEarningsV2Pipeline, _LazyKrwRates
+from earnings_v25.policy import SUPPORTED_YEARS
 from earnings_v25.providers import EcosFxClient, ProviderError
 from earnings_v25.raw_dart_financials import parse_raw_filing_archive
 
@@ -101,6 +102,10 @@ class EarningsV25DiagnosticTests(unittest.TestCase):
     def test_requires_supported_quarter(self) -> None:
         args = parser().parse_args(["--year", "2016", "--quarter", "1"])
         self.assertEqual((args.year, args.quarter), (2016, 1))
+
+    def test_v25_supports_2015_but_not_pre_structured_years(self) -> None:
+        self.assertIn(2015, SUPPORTED_YEARS)
+        self.assertNotIn(2014, SUPPORTED_YEARS)
 
     def test_reports_historical_account_names_and_ignores_balance_sheet(self) -> None:
         rows = [

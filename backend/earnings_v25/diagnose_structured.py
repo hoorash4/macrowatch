@@ -6,11 +6,11 @@ from collections import Counter
 from typing import Any
 
 from .providers import OpenDartClient, ProviderError
+from .policy import MAX_BACKFILL_YEAR, MIN_BACKFILL_YEAR, SUPPORTED_YEARS
 from .repository import EarningsV2Repository
 from .transform import extract_company_fact, normalize_label
 
 
-SUPPORTED_YEARS = range(2016, 2019)
 INCOME_STATEMENTS = {"IS", "CIS"}
 RELEVANT_TOKENS = (
     "매출", "수익", "영업이익", "영업손익", "영업손실",
@@ -56,7 +56,10 @@ def relevant_accounts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def main() -> None:
     args = parser().parse_args()
     if args.year not in SUPPORTED_YEARS:
-        raise SystemExit("V2.5 diagnostics only allow fiscal years 2016 through 2018")
+        raise SystemExit(
+            f"V2.5 diagnostics only allow fiscal years "
+            f"{MIN_BACKFILL_YEAR} through {MAX_BACKFILL_YEAR}"
+        )
 
     repository = EarningsV2Repository.from_env()
     dart = OpenDartClient.from_env()
