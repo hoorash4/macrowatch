@@ -301,17 +301,28 @@ class SimulatedDart:
         return complete(corp_code, current="20", cumulative="120", scope=scope)
 
 
-class UsdDart(SimulatedDart):
-    def __init__(self, target_corp: str, filings=()):
+class ForeignCurrencyDart(SimulatedDart):
+    def __init__(self, target_corp: str, currency: str, filings=()):
         super().__init__(filings)
         self.target_corp = target_corp
+        self.currency = currency
 
     def multi_accounts(self, corp_codes, year, quarter):
         rows = super().multi_accounts(corp_codes, year, quarter)
         return [
-            {**item, "currency": "USD"} if item["corp_code"] == self.target_corp else item
+            {**item, "currency": self.currency} if item["corp_code"] == self.target_corp else item
             for item in rows
         ]
+
+
+class UsdDart(ForeignCurrencyDart):
+    def __init__(self, target_corp: str, filings=()):
+        super().__init__(target_corp, "USD", filings)
+
+
+class JpyDart(ForeignCurrencyDart):
+    def __init__(self, target_corp: str, filings=()):
+        super().__init__(target_corp, "JPY", filings)
 
 
 class SimulatedKis:
@@ -376,6 +387,10 @@ class FailingFx:
         self.request_count += 1
         raise ProviderError("ECOS USD/KRW timed out (ConnectTimeout)")
 
+    def latest_krw(self, base_currency, _reference_date):
+        self.request_count += 1
+        raise ProviderError(f"ECOS {base_currency}/KRW timed out (ConnectTimeout)")
+
 
 class FixedFx:
     def __init__(self, rate=Decimal("1300")):
@@ -383,6 +398,10 @@ class FixedFx:
         self.request_count = 0
 
     def latest_usd_krw(self, reference_date):
+        self.request_count += 1
+        return reference_date, self.rate
+
+    def latest_krw(self, _base_currency, reference_date):
         self.request_count += 1
         return reference_date, self.rate
 
@@ -984,6 +1003,36 @@ class ProviderReliabilityTests(unittest.TestCase):
         self.assertEqual(observed_on, date(2025, 6, 30))
         self.assertEqual(rate, Decimal("1360.25"))
         self.assertEqual(client.request_count, 1)
+
+    def test_ecos_normalizes_jpy_quote_to_one_yen(self):
+        class Response:
+            content = b"{}"
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"StatisticSearch": {"row": [
+                    {"TIME": "20250630", "DATA_VALUE": "950"},
+                ]}}
+
+        class Session:
+            calls = []
+
+            def get(self, url, **_kwargs):
+                self.calls.append(url)
+                return Response()
+
+        session = Session()
+        client = EcosFxClient("secret", session=session)
+
+        observed_on, rate = client.latest_krw("JPY", date(2025, 6, 30))
+
+        self.assertEqual(observed_on, date(2025, 6, 30))
+        self.assertEqual(rate, Decimal("9.50"))
+        self.assertIn("/0000002", session.calls[0])
 
 
 class CliContractTests(unittest.TestCase):
@@ -1688,7 +1737,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             pipeline.run_quarter(2026, 2, write=True)
 
         self.assertEqual(fx.request_count, 1)
-        self.assertEqual(pipeline.dart.financial_calls, [])
+        self.assertTrue(pipeline.dart.financial_calls)
         stored = repository.company_rows[(target_company, 2026, 2)]
         self.assertEqual(stored["top_line"], Decimal("100"))
         self.assertFalse(stored["is_pending"])
@@ -1721,6 +1770,36 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
 
         self.assertEqual(second_fx.request_count, 0)
         self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("26000"))
+
+    def test_quarter_fx_snapshot_converts_jpy_per_one_yen(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.fx_rates.clear()
+        fx = FixedFx(Decimal("10"))
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=JpyDart(target_corp), repository=repository,
+            kis=SimulatedKis(), fx=fx,
+        )
+
+        pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(fx.request_count, 1)
+        self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("200"))
+        self.assertIn((2026, 2, "JPY", "KRW"), repository.fx_rates)
+
+    def test_krw_only_quarter_does_not_query_ecos(self):
+        repository = self.populated_repository()
+        repository.fx_rates.clear()
+        fx = FixedFx()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository,
+            kis=SimulatedKis(), fx=fx,
+        )
+
+        pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(fx.request_count, 0)
 
     def test_backfill_application_deadline_stops_before_replacement(self):
         target_company = "kr:00000099"
