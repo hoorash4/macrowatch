@@ -643,12 +643,6 @@ class USIndexConstituentClient:
             by_company.values(),
             key=(lambda item: (-item[1], item[0].ticker)) if weighted else (lambda item: (item[0].ticker, item[0].name)),
         )[:100]
-        missing_tickers = [item[0].name for item in ranked if not item[0].ticker]
-        if missing_tickers:
-            raise ProviderError(
-                f"{market_id} could not resolve ticker for {len(missing_tickers)} issuer(s): "
-                f"{', '.join(missing_tickers[:20])}"
-            )
         return [MarketSecurity(**{**item[0].__dict__, "rank": index}) for index, item in enumerate(ranked, start=1)]
 
     def nasdaq100(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
