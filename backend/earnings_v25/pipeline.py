@@ -947,6 +947,14 @@ class KoreaEarningsV2Pipeline:
                     company=identity.company_name,
                     reason=str(error),
                 )
+            except ProviderError as error:
+                if error.retryable:
+                    raise
+                self._progress(
+                    f"{stage}_raw_dart_unavailable",
+                    company=identity.company_name,
+                    reason=str(error),
+                )
             self._progress(
                 f"{stage}_raw_dart_done", company=identity.company_name,
                 complete=fact.fully_complete,
