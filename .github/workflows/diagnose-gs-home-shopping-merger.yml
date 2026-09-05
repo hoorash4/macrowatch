@@ -1,0 +1,66 @@
+name: Diagnose GS Home Shopping merger source
+
+on:
+  push:
+    branches: ["codex/diagnose-gs-home-shopping-origin"]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect public merger filing text
+        env:
+          PYTHONPATH: backend
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        run: |
+          python - <<'PY'
+          import html
+          import io
+          import re
+          import zipfile
+          from datetime import date
+
+          from corporate_events import _company_token, parse_absorbed_merger_archive
+          from earnings_v2.providers import OpenDartClient
+
+          client = OpenDartClient.from_env()
+          rows = client._merger_decision_disclosures(
+              date(2020, 1, 1), date(2021, 8, 14), corp_code="00207755"
+          )
+          print("disclosures", len(rows))
+          for row in rows:
+              receipt = str(row.get("rcept_no") or "")
+              corp_name = str(row.get("corp_name") or "")
+              archive = client.filing_archive(receipt)
+              decoded = []
+              with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                  print("filing", receipt, repr(corp_name), bundle.namelist())
+                  for name in bundle.namelist():
+                      content = bundle.read(name)
+                      for encoding in ("utf-8", "cp949", "euc-kr", "utf-16"):
+                          try:
+                              decoded.append(content.decode(encoding))
+                              break
+                          except UnicodeDecodeError:
+                              continue
+              text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", item) for item in decoded))
+              text = re.sub(r"\s+", " ", text)
+              for keyword in ("소멸", "피합병", "합병기일", "합병예정일자", "해산"):
+                  for match in list(re.finditer(keyword, text))[:3]:
+                      print(keyword, repr(text[max(0, match.start()-80):match.end()+120]))
+              print("company_token", _company_token(corp_name))
+              print("parsed", parse_absorbed_merger_archive(
+                  archive,
+                  expected_corp_code="00207755",
+                  corp_name=corp_name,
+                  receipt_no=receipt,
+              ))
+          PY
