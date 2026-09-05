@@ -618,14 +618,18 @@ class USIndexConstituentClient:
             if qqq_rows is None:
                 raise ProviderError(f"Nasdaq-100 source returned {len(rows)}/100 securities and QQQ had no weights")
             return self._securities("us_nasdaq100", reference_date, qqq_rows, directory)
+        selection_error: ProviderError | None = None
         try:
             return self._securities("us_nasdaq100", reference_date, rows, directory)
         except ProviderError as exc:
             if "without source weights for selection" not in str(exc):
                 raise
+            selection_error = exc
         qqq_rows = self._qqq_nport_rows(reference_date)
         if qqq_rows is None:
-            raise ProviderError(f"Nasdaq-100 returned more than 100 companies and QQQ had no weights for {reference_date}")
+            raise ProviderError(
+                f"Nasdaq-100 could not select 100 companies for {reference_date}; {selection_error}"
+            )
         return self._securities("us_nasdaq100", reference_date, qqq_rows, directory)
 
     def sp100_current(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
