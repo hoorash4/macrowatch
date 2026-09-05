@@ -62,7 +62,8 @@ class FinancialCompanyClient(ExistingFinancialCompanyClient):
 
 def merge_financial_company(fact: FinancialFact, snapshots: list[FinancialCompanySnapshot],
                             year: int, quarter: int,
-                            previous_fact: FinancialFact | None) -> FinancialFact:
+                            previous_fact: FinancialFact | None,
+                            *, allow_average_when_missing_previous: bool = True) -> FinancialFact:
     fields = ("top_line", "operating_income", "net_income")
     if fact.fully_complete:
         return fact
@@ -91,7 +92,13 @@ def merge_financial_company(fact: FinancialFact, snapshots: list[FinancialCompan
                         if previous_fact is not None and previous_fact.source_currency == "KRW"
                         and previous_fact.fiscal_year == year
                         and previous_fact.fiscal_quarter == quarter - 1 else None)
-            standalone = cumulative - previous if previous is not None else cumulative / Decimal(quarter)
+            standalone = (
+                cumulative - previous
+                if previous is not None else (
+                    cumulative / Decimal(quarter)
+                    if allow_average_when_missing_previous else None
+                )
+            )
         if standalone is not None:
             changes[field] = standalone
             changes[f"source_{field}_cumulative"] = cumulative
