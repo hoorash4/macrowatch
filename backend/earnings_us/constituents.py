@@ -167,13 +167,13 @@ def extract_nport_equity_holdings(document: str, series_pattern: str) -> list[tu
         symbol = ""
         if ticker is not None:
             symbol = str(ticker.get("value") or ticker.text or "").strip().upper()
+            if not re.fullmatch(r"[A-Z][A-Z0-9./-]{0,9}", symbol):
+                symbol = ""
         try:
             weight = Decimal((allocation.text or "").strip()) if allocation is not None else Decimal("NaN")
         except Exception:
             continue
-        if name and weight.is_finite() and weight >= 0 and (
-            not symbol or re.fullmatch(r"[A-Z][A-Z0-9./-]{0,9}", symbol)
-        ):
+        if name and weight.is_finite() and weight >= 0:
             rows.append((symbol, name, weight))
     result = list(dict.fromkeys(rows))
     if len(result) < 100:
@@ -429,6 +429,10 @@ class USIndexConstituentClient:
 
     def _securities(self, market_id: str, reference_date: date, rows: Iterable[SourceHolding], directory: dict[str, str]) -> list[MarketSecurity]:
         by_company: dict[str, tuple[MarketSecurity, Decimal, bool]] = {}
+        ticker_by_cik: dict[str, str] = {}
+        for ticker, cik in directory.items():
+            if ticker and (cik not in ticker_by_cik or ticker < ticker_by_cik[cik]):
+                ticker_by_cik[cik] = ticker
         unresolved: list[str] = []
         pending: list[SourceHolding] = []
         issuer_directory: dict[str, set[str]] = {}
@@ -446,7 +450,7 @@ class USIndexConstituentClient:
             return next(iter(matches)) if best >= 100 and len(matches) == 1 else None
 
         def store(ticker: str, name: str, cik: str, selection_value: Decimal | None) -> None:
-            security = MarketSecurity(ticker=ticker or cik, name=name, cik=cik, market_cap=Decimal(0), rank=0,
+            security = MarketSecurity(ticker=ticker or ticker_by_cik.get(cik, ""), name=name, cik=cik, market_cap=Decimal(0), rank=0,
                                       reference_date=reference_date, market_id=market_id)
             current = by_company.get(security.company_id)
             value = selection_value or Decimal(0)
@@ -454,7 +458,7 @@ class USIndexConstituentClient:
                 by_company[security.company_id] = (security, value, selection_value is not None)
                 return
             representative, total, has_value = current
-            if security.ticker < representative.ticker:
+            if security.ticker and (not representative.ticker or security.ticker < representative.ticker):
                 representative = security
             by_company[security.company_id] = (
                 representative,

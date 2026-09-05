@@ -119,6 +119,26 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(len(result), 100)
         self.assertEqual(result[0], ("", "Company 0", Decimal("100.0")))
 
+    def test_nport_keeps_issuer_when_provider_ticker_is_not_a_symbol(self):
+        investments = "".join(
+            f"<invstOrSec><name>Company {index}</name><identifiers><ticker value='T{index:03}'/>"
+            f"</identifiers><assetCat>EC</assetCat><pctVal>1</pctVal></invstOrSec>"
+            for index in range(99)
+        )
+        investments += (
+            "<invstOrSec><name>Blackrock Inc</name><identifiers><ticker value='2481632'/>"
+            "</identifiers><assetCat>EC</assetCat><pctVal>1</pctVal></invstOrSec>"
+        )
+        document = (
+            "<edgarSubmission xmlns='http://www.sec.gov/edgar/nport'><formData><genInfo>"
+            "<seriesName>iShares S&amp;P 100 ETF</seriesName></genInfo><invstOrSecs>"
+            f"{investments}</invstOrSecs></formData></edgarSubmission>"
+        )
+
+        result = extract_oef_nport_holdings(document)
+
+        self.assertIn(("", "Blackrock Inc", Decimal("1")), result)
+
     def test_oef_series_feed_selects_only_normal_report_window(self):
         atom = """<feed xmlns='http://www.w3.org/2005/Atom'>
           <entry><content><accession-number>right</accession-number><filing-date>2020-02-27</filing-date></content></entry>
@@ -156,6 +176,24 @@ class USEarningsTransformTests(unittest.TestCase):
         result = client._securities("us_sp100", date(2016, 3, 31), rows, directory)
         self.assertEqual(len(result), 100)
         self.assertNotIn("T100", {item.ticker for item in result})
+
+    def test_company_selection_recovers_symbol_when_nport_ticker_is_not_usable(self):
+        class FakeSec:
+            def company_ticker_rows(self):
+                return [("BLK", "Blackrock Inc", "0002012383")]
+
+        rows = [("", "Blackrock Inc", Decimal("1"))] + [
+            (f"T{index:03}", f"Company {index}", Decimal("1")) for index in range(99)
+        ]
+        directory = {"BLK": "0002012383", **{
+            f"T{index:03}": str(index + 1).zfill(10) for index in range(99)
+        }}
+
+        result = USIndexConstituentClient(FakeSec())._securities(
+            "us_sp100", date(2025, 3, 31), rows, directory
+        )
+
+        self.assertIn("BLK", {item.ticker for item in result})
 
     def test_historical_issuer_name_allows_unambiguous_word_expansion(self):
         self.assertEqual(_name_match_score("ALEXION PHARM INC", "ALEXION PHARMACEUTICALS INC"), 200)

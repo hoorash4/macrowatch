@@ -105,12 +105,13 @@ class USEarningsAutomaticPipeline:
         ticker_rows = {}
         cik_rows = {}
         for item in securities:
-            ticker_key = (item.company_id, item.ticker, item.reference_date)
-            ticker_rows.setdefault(ticker_key, {
-                "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
-                "exchange": item.market_id, "valid_from": item.reference_date, "valid_to": None,
-                "is_primary": not historical,
-            })
+            if item.ticker:
+                ticker_key = (item.company_id, item.ticker, item.reference_date)
+                ticker_rows.setdefault(ticker_key, {
+                    "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
+                    "exchange": item.market_id, "valid_from": item.reference_date, "valid_to": None,
+                    "is_primary": not historical,
+                })
             if item.cik:
                 cik_key = (item.company_id, item.cik, item.reference_date)
                 cik_rows.setdefault(cik_key, {
