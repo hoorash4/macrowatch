@@ -7,8 +7,9 @@
   ];
   const CHARTS = [
     { id: 'korea-earnings-amount-chart', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
-    ...METRICS.map((metric) => ({ id: `korea-earnings-growth-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'yoyPct', kind: 'growth', height: 102, includeZero: true, unit: '%', showPeriodLabels: false })),
-    ...METRICS.map((metric) => ({ id: `korea-earnings-qoq-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'qoqPct', kind: 'qoq', height: 102, includeZero: true, unit: '%', showPeriodLabels: false })),
+    { id: 'korea-earnings-margin-chart', valueKey: 'marginPct', kind: 'margin', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+    { id: 'korea-earnings-growth-chart', valueKey: 'yoyPct', kind: 'growth', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+    { id: 'korea-earnings-qoq-chart', valueKey: 'qoqPct', kind: 'qoq', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const DISPLAY_START_YEAR = 2016;
@@ -51,13 +52,13 @@
       metrics: {
         operating_income: {
           amount: finite(row.operating_income_sa_total), rawAmount: finite(row.operating_income_total),
-          yoyPct: finite(row.operating_income_yoy_pct),
+          marginPct: finite(row.operating_margin_pct), yoyPct: finite(row.operating_income_yoy_pct),
           yoyState: row.operating_income_yoy_state, qoqPct: finite(row.operating_income_qoq_sa_pct),
           qoqState: row.operating_income_qoq_state,
         },
         net_income: {
           amount: finite(row.net_income_sa_total), rawAmount: finite(row.net_income_total),
-          yoyPct: finite(row.net_income_yoy_pct),
+          marginPct: finite(row.net_margin_pct), yoyPct: finite(row.net_income_yoy_pct),
           yoyState: row.net_income_yoy_state, qoqPct: finite(row.net_income_qoq_sa_pct),
           qoqState: row.net_income_qoq_state,
         },
@@ -113,7 +114,9 @@
 
   const STATE_LABELS = Object.freeze({ black_turn: '흑전', red_turn: '적전', from_zero: '계산 불가' });
   function metricState(point, metricKey, kind) {
-    return point.metrics[metricKey]?.[kind === 'growth' ? 'yoyState' : 'qoqState'] || '';
+    if (kind === 'growth') return point.metrics[metricKey]?.yoyState || '';
+    if (kind === 'qoq') return point.metrics[metricKey]?.qoqState || '';
+    return '';
   }
   function chartValue(point, metricKey, spec) {
     const value = metricValue(point, metricKey, spec.valueKey);
@@ -146,12 +149,9 @@
   function renderChart(spec, points) {
     const container = document.getElementById(spec.id);
     if (!container) return null;
-    // 금액 본차트는 세 항목을 함께 비교하지만 증가율과 델타는 항목별
-    // 독립 축을 사용합니다. 한 항목의 큰 기저효과가 다른 선을 눌러
-    // 사실상 직선으로 보이게 하는 문제를 값 절삭 없이 피합니다.
-    const chartMetrics = spec.metricKey
-      ? METRICS.filter((metric) => metric.key === spec.metricKey)
-      : METRICS;
+    // 모든 차트에서 영업이익과 순이익을 같은 축에 함께 표시해 두 지표의
+    // 절대 수준과 변화 방향을 한눈에 비교합니다.
+    const chartMetrics = METRICS;
     const values = points.flatMap((point) => chartMetrics.map((metric) => chartValue(point, metric.key, spec))).filter(Number.isFinite);
     if (!values.length) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-40 items-center justify-center border border-dashed p-5 text-sm text-slate-500">표시할 비교 자료가 없습니다.</div>';
@@ -309,7 +309,7 @@
     document.querySelectorAll('[data-korea-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
     render();
   });
-  // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 세 차트 폭을 다시 맞춥니다.
+  // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => { if (detail?.view === 'earnings') render(); });
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain });
   window.MacroWatchDashboard?.registerLoader(load);

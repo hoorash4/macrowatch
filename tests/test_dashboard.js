@@ -134,6 +134,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
     target_company_count: 100, reported_company_count: 98, pending_company_count: 2,
     lifecycle_status: 'provisional', operating_income_total: '90', net_income_total: '70',
     operating_income_sa_total: '95', net_income_sa_total: '75',
+    operating_margin_pct: '12.5', net_margin_pct: '9.25',
     operating_income_yoy_pct: '20', operating_income_yoy_state: 'normal',
     net_income_yoy_pct: null, net_income_yoy_state: 'black_turn',
     operating_income_qoq_sa_pct: '10', operating_income_qoq_state: 'normal',
@@ -146,6 +147,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.equal(series.at(-1).reportedCount, 98);
   assert.equal(latest.amount, 95);
   assert.equal(latest.rawAmount, 90);
+  assert.equal(latest.marginPct, 12.5);
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.qoqPct, 10);
   assert.equal(series.at(-1).metrics.net_income.yoyState, 'black_turn');
@@ -161,24 +163,28 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.ok(qoqDomain.ticks.includes(0), '계절조정 QoQ축은 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
-  assert.match(html, /id="korea-earnings-growth-operating-income-chart"/);
-  assert.match(html, /id="korea-earnings-growth-net-income-chart"/);
-  assert.match(html, /id="korea-earnings-qoq-operating-income-chart"/);
-  assert.match(html, /id="korea-earnings-qoq-net-income-chart"/);
+  assert.match(html, /id="korea-earnings-margin-chart"/);
+  assert.match(html, /id="korea-earnings-growth-chart"/);
+  assert.match(html, /id="korea-earnings-qoq-chart"/);
+  assert.doesNotMatch(html, /korea-earnings-subchart/);
   assert.doesNotMatch(html, /data-korea-earnings-metric=/);
   assert.match(html, /KOSPI 시총 상위기업 실적 모멘텀/);
   assert.match(source, /earnings_v2_public_market_series/);
   assert.match(source, /kind: 'amount'/);
+  assert.match(source, /kind: 'margin'/);
   assert.match(source, /kind: 'growth'/);
   assert.match(source, /kind: 'qoq'/);
-  assert.match(source, /metricKey: metric\.key/);
-  assert.match(source, /const chartMetrics = spec\.metricKey/);
+  assert.match(source, /const chartMetrics = METRICS/);
+  assert.match(source, /operating_margin_pct/);
+  assert.match(source, /net_margin_pct/);
+  assert.match(source, /kind: 'margin'[^\n]*includeZero: true/);
   assert.match(source, /kind: 'growth'[^\n]*includeZero: true/);
   assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
   assert.match(html, /기업군 계절조정 합산 실적/);
-  assert.match(html, /전년동기 증가율/);
-  assert.match(html, /계절조정 전분기 증가율/);
+  assert.match(html, /이익률/);
+  assert.match(html, /이익 증가율/);
+  assert.match(html, /계절조정 전분기 이익 증가율/);
   assert.doesNotMatch(html, /기업당 단순평균/);
   assert.doesNotMatch(source, /earnings_universe_snapshots/);
   assert.doesNotMatch(source, /earnings_quarterly_financials/);
