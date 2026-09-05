@@ -583,7 +583,13 @@ class USIndexConstituentClient:
             raise ProviderError(f"{market_id} resolved to {len(by_company)}/100 distinct companies")
         weighted = all(has_value for _, _, has_value in by_company.values())
         if len(by_company) > 100 and not weighted:
-            raise ProviderError(f"{market_id} returned {len(by_company)} companies without source weights for selection")
+            identifiers = ", ".join(
+                f"{security.ticker}:{company_id}"
+                for company_id, (security, _, _) in sorted(by_company.items())
+            )
+            raise ProviderError(
+                f"{market_id} returned {len(by_company)} companies without source weights for selection: {identifiers}"
+            )
         ranked = sorted(
             by_company.values(),
             key=(lambda item: (-item[1], item[0].ticker)) if weighted else (lambda item: (item[0].ticker, item[0].name)),
