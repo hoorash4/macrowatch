@@ -160,6 +160,29 @@ class USEarningsTransformTests(unittest.TestCase):
         )
         self.assertEqual(len(extract_nport_equity_holdings(document, r"Invesco\s+QQQ\s+Trust")), 100)
 
+    def test_nasdaq_uses_qqq_filing_when_historical_api_is_empty(self):
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return []
+
+        rows = [
+            (f"T{index:03}", f"Company {index}", Decimal(100 - index))
+            for index in range(100)
+        ]
+        directory = {
+            ticker: str(index + 1).zfill(10)
+            for index, (ticker, _, _) in enumerate(rows)
+        }
+        client = USIndexConstituentClient(FakeSec())
+        client._json = lambda *args, **kwargs: {"aaData": []}
+        client._qqq_nport_rows = lambda reference_date: rows
+
+        result = client.nasdaq100(date(2024, 6, 30), directory)
+
+        self.assertEqual(len(result), 100)
+
     def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
         class FakeSec:
             def company_ticker_rows(self):

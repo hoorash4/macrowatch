@@ -513,7 +513,10 @@ class USIndexConstituentClient:
                 for item in payload.get("aaData", []) if isinstance(item, dict)]
         rows = [(ticker, name, value) for ticker, name, value in rows if ticker and name]
         if len(rows) < 100:
-            raise ProviderError(f"Nasdaq-100 source returned {len(rows)}/100 securities")
+            qqq_rows = self._qqq_nport_rows(reference_date)
+            if qqq_rows is None:
+                raise ProviderError(f"Nasdaq-100 source returned {len(rows)}/100 securities and QQQ had no weights")
+            return self._securities("us_nasdaq100", reference_date, qqq_rows, directory)
         try:
             return self._securities("us_nasdaq100", reference_date, rows, directory)
         except ProviderError as exc:
