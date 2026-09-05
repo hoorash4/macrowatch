@@ -932,7 +932,9 @@ function renderCreditStressComponents(rows) {
   const pathFor = (item, scale, includeLatest = true) => {
     return monotoneSeriesPath(
       data.map((row, index) => ({ ...row, _chartIndex: index }))
-        .filter((row) => includeLatest || !row.is_latest),
+        // 최신 빠른 지표 행에는 월간 파산보호 신청치가 없습니다. null을 좌표식에 넘기면
+        // JavaScript가 0으로 강제 변환하므로, 값이 있는 행만 해당 시계열에 그립니다.
+        .filter((row) => (includeLatest || !row.is_latest) && Number.isFinite(toCreditStressNumber(row[item.key]))),
       (row) => x(row._chartIndex),
       (row) => scale.y(toCreditStressNumber(row[item.key])),
     );

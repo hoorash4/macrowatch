@@ -247,6 +247,12 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.doesNotMatch(styles, /\.korea-earnings-line--revenue/);
 });
 
+test('미국 신용위험 그래프는 파산보호 신청값이 없는 최신 행을 0으로 그리지 않는다', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  assert.match(source, /Number\.isFinite\(toCreditStressNumber\(row\[item\.key\]\)\)/);
+  assert.match(source, /null을 좌표식에 넘기면[\s\S]*?0으로 강제 변환/);
+});
+
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
   const start = script.indexOf('async function handleAddTarget(e)');
