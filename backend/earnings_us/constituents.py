@@ -524,8 +524,10 @@ class USIndexConstituentClient:
         pending: list[SourceHolding] = []
         issuer_directory: dict[str, set[str]] = {}
         issuer_rows = [(title, cik) for _, title, cik in self.sec.company_ticker_rows()]
+        issuer_titles_by_cik: dict[str, list[str]] = {}
         for title, cik in issuer_rows:
             issuer_directory.setdefault(_normal_name(title), set()).add(cik)
+            issuer_titles_by_cik.setdefault(cik, []).append(title)
 
         def current_directory_cik(name: str) -> str | None:
             exact = issuer_directory.get(_normal_name(name), set())
@@ -555,6 +557,14 @@ class USIndexConstituentClient:
 
         for ticker, name, selection_value in rows:
             cik = next((directory[item] for item in ticker_candidates(ticker) if item in directory), None) if ticker else None
+            # A ticker can be reused by a different issuer after a spin-off or
+            # reorganization.  Trust today's ticker directory for a historical
+            # row only when its issuer name still describes the source company.
+            current_titles = issuer_titles_by_cik.get(cik, ()) if cik is not None else ()
+            if cik is not None and name and current_titles and not any(
+                _name_match_score(name, title) >= 100 for title in current_titles
+            ):
+                cik = None
             if cik is None:
                 cik = current_directory_cik(name)
             if cik is None:

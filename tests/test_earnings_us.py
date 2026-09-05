@@ -233,6 +233,31 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(len(result), 100)
         self.assertEqual(requested, ["2019-06-30", "2019-06-29", "2019-06-28"])
 
+    def test_historical_ticker_reuse_resolves_the_period_issuer(self):
+        old_cik = "0001570585"
+        new_cik = "0001712184"
+        regular = [
+            (f"T{index:03}", f"Company {index}", str(index + 1).zfill(10))
+            for index in range(99)
+        ]
+
+        class FakeSec:
+            def company_ticker_rows(self):
+                return regular + [("LILA", "Liberty Latin America Ltd.", new_cik)]
+
+        client = USIndexConstituentClient(FakeSec())
+        client._cik_for_name = lambda name, reference_date=None: old_cik if "LILAC" in name else None
+        client._cik_for_ticker = lambda ticker, reference_date=None: None
+        directory = {ticker: cik for ticker, _, cik in regular}
+        directory["LILA"] = new_cik
+        rows = [(ticker, name, None) for ticker, name, _ in regular]
+        rows.append(("LILA", "LIBERTY LILAC CL A", None))
+
+        result = client._securities("us_nasdaq100", date(2017, 12, 31), rows, directory)
+
+        self.assertEqual(len(result), 100)
+        self.assertEqual(next(item.cik for item in result if item.ticker == "LILA"), old_cik)
+
     def test_company_selection_aggregates_share_classes_and_keeps_top_100(self):
         class FakeSec:
             def company_ticker_rows(self):
