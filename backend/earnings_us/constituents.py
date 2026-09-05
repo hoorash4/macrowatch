@@ -40,6 +40,11 @@ def _issuer_name(value: str) -> str:
         if suffix is None or suffix.group(1).strip().lower() == "the":
             break
         value = value[:suffix.start()].rstrip(" ,")
+    value = re.sub(
+        r"((?i:\b(?:inc|corp|co|ltd|plc|llc))\.?)\s+[a-z](?:\s*,\s*[a-z])*\s*$",
+        r"\1",
+        value,
+    )
     value = re.sub(r"(?i),?\s*(?:ADR|NEW\s+YORK\s+SHARES?)\b", " ", value)
     return re.sub(r"\s+", " ", value).strip(" ,")
 

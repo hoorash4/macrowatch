@@ -412,6 +412,7 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(_normal_name("KINDER MORGAN INC./DE"), _normal_name("Kinder Morgan Inc."))
         self.assertEqual(_normal_name("US BANCORP\\DE\\"), _normal_name("U.S. Bancorp"))
         self.assertEqual(_normal_name("Allergan PLC a"), _normal_name("Allergan PLC"))
+        self.assertEqual(_normal_name("Celgene Corp. a,b"), _normal_name("Celgene Corp."))
         self.assertEqual(_normal_name("NetEase, Inc., ADR (China)"), _normal_name("NetEase Inc"))
         self.assertEqual(
             _normal_name("ASML Holding N.V., New York Shares (Netherlands)"),
