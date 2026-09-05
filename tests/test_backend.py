@@ -483,6 +483,15 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("'last_checked_date', (now() at time zone 'Asia/Seoul')::date", initializer)
         self.assertIn("on conflict (source, operation) do nothing", initializer)
 
+    def test_earnings_v2_public_history_and_seasonal_refresh_start_at_2016(self):
+        migration = (ROOT / "supabase/migrations/20260905090000_expand_earnings_chart_to_2016.sql").read_text(encoding="utf-8")
+
+        self.assertEqual(migration.count("market_year >= 2016"), 5)
+        self.assertNotIn("market_year >= 2019", migration)
+        self.assertIn("create or replace function earnings_v2.refresh_market_seasonal_adjustment()", migration)
+        self.assertIn("create or replace function public.earnings_v2_public_market_series", migration)
+        self.assertIn("select earnings_v2.refresh_market_seasonal_adjustment();", migration)
+
     def test_target_alerts_use_db_tokens_retry_queue_and_visible_failures(self):
         checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")
