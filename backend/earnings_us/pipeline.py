@@ -46,6 +46,7 @@ def fact_from_row(row: dict[str, Any]) -> USFinancialFact:
 class USEarningsAutomaticPipeline:
     def __init__(self, repository: USEarningsRepository, sec: SecEdgarClient, constituents: USIndexConstituentClient) -> None:
         self.repository, self.sec, self.constituents = repository, sec, constituents
+        self._historical_company_ids: set[str] = set()
 
     @classmethod
     def from_env(cls) -> "USEarningsAutomaticPipeline":
@@ -85,13 +86,21 @@ class USEarningsAutomaticPipeline:
             self.repository.save_us_state("snapshot", "ready", {"period": summary["period"]})
         return summary
 
-    def persist_universe_securities(self, securities: list[MarketSecurity]) -> None:
+    def persist_universe_securities(self, securities: list[MarketSecurity], *, historical: bool = False) -> None:
         """Persist shared index members once per database conflict key."""
         companies = {item.company_id: item for item in securities}
-        self.repository.upsert_companies({
-            "company_id": item.company_id, "country": "US", "company_name": item.name,
-            "reporting_currency": "USD", "entity_kind": "general", "listed_from": None, "delisted_on": None,
-        } for item in companies.values())
+        if historical:
+            companies = {
+                company_id: item for company_id, item in companies.items()
+                if company_id not in self._historical_company_ids
+            }
+        if companies:
+            self.repository.upsert_companies({
+                "company_id": item.company_id, "country": "US", "company_name": item.name,
+                "reporting_currency": "USD", "entity_kind": "general", "listed_from": None, "delisted_on": None,
+            } for item in companies.values())
+            if historical:
+                self._historical_company_ids.update(companies)
 
         ticker_rows = {}
         cik_rows = {}
@@ -99,13 +108,15 @@ class USEarningsAutomaticPipeline:
             ticker_key = (item.company_id, item.ticker, item.reference_date)
             ticker_rows.setdefault(ticker_key, {
                 "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
-                "exchange": item.market_id, "valid_from": item.reference_date, "valid_to": None, "is_primary": True,
+                "exchange": item.market_id, "valid_from": item.reference_date, "valid_to": None,
+                "is_primary": not historical,
             })
             if item.cik:
                 cik_key = (item.company_id, item.cik, item.reference_date)
                 cik_rows.setdefault(cik_key, {
                     "company_id": item.company_id, "identifier_type": "cik", "identifier_value": item.cik,
-                    "exchange": None, "valid_from": item.reference_date, "valid_to": None, "is_primary": True,
+                    "exchange": None, "valid_from": item.reference_date, "valid_to": None,
+                    "is_primary": not historical,
                 })
         self.repository.upsert_identifiers(ticker_rows.values())
         self.repository.upsert_identifiers(cik_rows.values())

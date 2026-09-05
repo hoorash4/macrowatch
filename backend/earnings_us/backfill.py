@@ -38,7 +38,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         by_market = {"us_sp100": sp100, "us_nasdaq100": nasdaq100}
         if write:
             securities = [*sp100, *nasdaq100]
-            self.persist_universe_securities(securities)
+            self.persist_universe_securities(securities, historical=True)
             for market, rows in by_market.items():
                 self.repository.save_us_universe(market, year, quarter, rows)
             self.repository.save_us_state("universe_backfill", "ready", {"period": f"{year}Q{quarter}"})

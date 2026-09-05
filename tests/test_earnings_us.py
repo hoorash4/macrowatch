@@ -54,11 +54,11 @@ class USEarningsTransformTests(unittest.TestCase):
     def test_shared_index_members_are_persisted_once_per_database_key(self):
         class FakeRepository:
             def __init__(self):
-                self.companies = []
+                self.company_batches = []
                 self.identifier_batches = []
 
             def upsert_companies(self, rows):
-                self.companies = list(rows)
+                self.company_batches.append(list(rows))
 
             def upsert_identifiers(self, rows):
                 self.identifier_batches.append(list(rows))
@@ -71,10 +71,16 @@ class USEarningsTransformTests(unittest.TestCase):
             for market in ("us_sp100", "us_nasdaq100")
         ]
 
-        pipeline.persist_universe_securities(shared)
+        pipeline.persist_universe_securities(shared, historical=True)
+        older = [
+            MarketSecurity("OLD", "Old Shared Inc", "0000000001", Decimal("1"), 1, date(2026, 3, 31), market)
+            for market in ("us_sp100", "us_nasdaq100")
+        ]
+        pipeline.persist_universe_securities(older, historical=True)
 
-        self.assertEqual(len(repository.companies), 1)
-        self.assertEqual([len(batch) for batch in repository.identifier_batches], [1, 1])
+        self.assertEqual([len(batch) for batch in repository.company_batches], [1])
+        self.assertEqual([len(batch) for batch in repository.identifier_batches], [1, 1, 1, 1])
+        self.assertTrue(all(not row["is_primary"] for batch in repository.identifier_batches for row in batch))
 
     def test_universe_backfill_periods_run_newest_to_oldest(self):
         periods = period_range(2026, 2, 2016, 1)
