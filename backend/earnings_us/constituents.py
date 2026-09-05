@@ -521,7 +521,7 @@ class USIndexConstituentClient:
             if ticker and (cik not in ticker_by_cik or ticker < ticker_by_cik[cik]):
                 ticker_by_cik[cik] = ticker
         unresolved: list[str] = []
-        pending: list[SourceHolding] = []
+        pending: list[tuple[SourceHolding, str | None]] = []
         issuer_directory: dict[str, set[str]] = {}
         issuer_rows = [(title, cik) for _, title, cik in self.sec.company_ticker_rows()]
         issuer_titles_by_cik: dict[str, list[str]] = {}
@@ -564,20 +564,21 @@ class USIndexConstituentClient:
             if cik is not None and name and current_titles and not any(
                 _name_match_score(name, title) >= 100 for title in current_titles
             ):
-                cik = None
+                pending.append(((ticker, name, selection_value), cik))
+                continue
             if cik is None:
                 cik = current_directory_cik(name)
             if cik is None:
-                pending.append((ticker, name, selection_value))
+                pending.append(((ticker, name, selection_value), None))
                 continue
             store(ticker, name, cik, selection_value)
 
         # Current SEC's ticker directory intentionally omits delisted historic
         # symbols. Resolve only that small remainder concurrently, staying well
         # below the SEC's public request-rate limit.
-        def resolve(row: SourceHolding) -> tuple[str, str, Decimal | None, str | None]:
-            ticker, name, selection_value = row
-            cik = self._cik_for_name(name, reference_date) or self._cik_for_ticker(ticker, reference_date)
+        def resolve(item: tuple[SourceHolding, str | None]) -> tuple[str, str, Decimal | None, str | None]:
+            (ticker, name, selection_value), fallback_cik = item
+            cik = self._cik_for_ticker(ticker, reference_date) or self._cik_for_name(name, reference_date) or fallback_cik
             return ticker, name, selection_value, cik
 
         with ThreadPoolExecutor(max_workers=4) as executor:

@@ -246,8 +246,8 @@ class USEarningsTransformTests(unittest.TestCase):
                 return regular + [("LILA", "Liberty Latin America Ltd.", new_cik)]
 
         client = USIndexConstituentClient(FakeSec())
-        client._cik_for_name = lambda name, reference_date=None: old_cik if "LILAC" in name else None
-        client._cik_for_ticker = lambda ticker, reference_date=None: None
+        client._cik_for_name = lambda name, reference_date=None: None
+        client._cik_for_ticker = lambda ticker, reference_date=None: old_cik if ticker == "LILA" else None
         directory = {ticker: cik for ticker, _, cik in regular}
         directory["LILA"] = new_cik
         rows = [(ticker, name, None) for ticker, name, _ in regular]
