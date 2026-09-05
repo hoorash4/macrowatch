@@ -1,0 +1,57 @@
+name: Earnings U.S. automatic
+
+on:
+  schedule:
+    # KST 07:30 SEC filings, then KST 08:30 quarter-end market-cap snapshot.
+    # Run every day because the U.S. Friday close is Saturday morning in Korea.
+    - cron: "30 22 * * *"
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Automatic collection phase
+        required: true
+        default: all
+        type: choice
+        options: [snapshot, edgar, all]
+      write:
+        description: Persist U.S. collection results
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-us-automatic
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Run selected U.S. collection phase
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
+          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 22 * * *' && 'edgar' || 'snapshot') || inputs.phase }}
+          SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash4@users.noreply.github.com)"
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--phase "$PHASE")
+          [[ "$WRITE" == "true" ]] && args+=(--write)
+          timeout --signal=TERM --kill-after=10s 660s python -m earnings_us.automatic_cli "${args[@]}"
