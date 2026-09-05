@@ -15,6 +15,11 @@ from earnings_us.constituents import (
     extract_oef_holdings,
     extract_oef_nport_holdings,
     extract_oef_series_accessions,
+    extract_qqq_legacy_holdings,
+    extract_series_accessions,
+    extract_series_filing_entries,
+    fund_report_date,
+    legacy_report_date,
     is_quarter_end_report_date,
     extract_nport_equity_holdings,
 )
@@ -159,6 +164,30 @@ class USEarningsTransformTests(unittest.TestCase):
         </feed>"""
         self.assertEqual(extract_oef_series_accessions(atom, date(2019, 12, 31)), ["right"])
 
+    def test_legacy_series_feed_and_report_date_cover_prior_quarter_end(self):
+        atom = """<feed xmlns='http://www.w3.org/2005/Atom'><entry><content>
+            <accession-number>legacy-oef</accession-number>
+        </content></entry></feed>"""
+        self.assertEqual(extract_series_accessions(atom), {"legacy-oef"})
+        self.assertEqual(legacy_report_date("2019-03-31", date(2019, 6, 30)), date(2019, 3, 31))
+        self.assertIsNone(legacy_report_date("2019-07-31", date(2019, 6, 30)))
+
+    def test_series_filing_entries_include_nport_ex_in_report_window(self):
+        atom = """<feed xmlns='http://www.w3.org/2005/Atom'><entry><content>
+            <filing-date>2019-08-28</filing-date><filing-type>NPORT-EX</filing-type>
+            <accession-number>qqq-ex</accession-number>
+        </content></entry></feed>"""
+        self.assertEqual(extract_series_filing_entries(atom, date(2019, 6, 30)), [("qqq-ex", "NPORT-EX")])
+
+    def test_qqq_nport_ex_extracts_company_rows_and_heading_date(self):
+        row = "<TR><TD>{name}</TD><TD>{shares}</TD><TD>$</TD><TD>{value}</TD></TR>"
+        document = "Invesco QQQ Trust June 30, 2019" + "".join(
+            row.format(name=f"Company {index}", shares=index + 1, value=(index + 1) * 10)
+            for index in range(100)
+        )
+        self.assertEqual(fund_report_date(document), date(2019, 6, 30))
+        self.assertEqual(len(extract_qqq_legacy_holdings(document)), 100)
+
     def test_generic_nport_parser_accepts_qqq_series(self):
         investments = "".join(
             f"<invstOrSec><name>Company {index}</name><assetCat>EC</assetCat>"
@@ -237,6 +266,7 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(_name_match_score("VIACOM INC CL B", "VIACOM INC"), 100)
         self.assertEqual(_name_match_score("Lowe's Cos Inc", "LOWES COMPANIES INC"), 100)
         self.assertEqual(_name_match_score("Eli Lilly and Co", "ELI LILLY & Co"), 200)
+        self.assertEqual(_name_match_score("Alphabet Inc., Class C, NVS (a)", "Alphabet Inc"), 100)
         self.assertGreater(
             _name_match_score("WHOLE FOODS MARKET", "WHOLE FOODS MARKET INC"),
             _name_match_score("WHOLE FOODS MARKET", "WHOLE FOODS MARKET CALIFORNIA INC"),
@@ -250,6 +280,11 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(_normal_name("KINDER MORGAN INC./DE"), _normal_name("Kinder Morgan Inc."))
         self.assertEqual(_normal_name("US BANCORP\\DE\\"), _normal_name("U.S. Bancorp"))
         self.assertEqual(_normal_name("Allergan PLC a"), _normal_name("Allergan PLC"))
+        self.assertEqual(_normal_name("NetEase, Inc., ADR (China)"), _normal_name("NetEase Inc"))
+        self.assertEqual(
+            _normal_name("ASML Holding N.V., New York Shares (Netherlands)"),
+            _normal_name("ASML Holding N.V."),
+        )
 
     def test_nport_preserves_weights_for_ranked_company_selection(self):
         row = """

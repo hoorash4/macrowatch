@@ -4,7 +4,7 @@ import csv
 import re
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import unescape
 from typing import Any, Iterable
@@ -31,8 +31,20 @@ def _plain_html(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _issuer_name(value: str) -> str:
+    """Remove fund-schedule annotations that are not part of an SEC issuer name."""
+    value = value.strip()
+    while True:
+        suffix = re.search(r"\s*\(([^()]*)\)\s*$", value)
+        if suffix is None or suffix.group(1).strip().lower() == "the":
+            break
+        value = value[:suffix.start()].rstrip(" ,")
+    value = re.sub(r"(?i),?\s*(?:ADR|NEW\s+YORK\s+SHARES?)\b", " ", value)
+    return re.sub(r"\s+", " ", value).strip(" ,")
+
+
 def _normal_name(value: str) -> str:
-    value = re.sub(r"\s*[\\/][A-Z]{2,}[\\/]?\s*$", "", value.strip(), flags=re.IGNORECASE)
+    value = re.sub(r"\s*[\\/][A-Z]{2,}[\\/]?\s*$", "", _issuer_name(value), flags=re.IGNORECASE)
     value = re.sub(r"(?i)(\b(?:INC|CORP|CO|LTD|PLC|LLC))\.?\s+[a-z]\s*$", r"\1", value)
     value = re.sub(r"\s*\(the\)\s*$", "", value, flags=re.IGNORECASE)
     return re.sub(r"[^a-z0-9]", "", value.lower())
@@ -48,7 +60,7 @@ def _name_match_score(query: str, candidate: str) -> int:
     """
     ignored = {
         "a", "and", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
-        "inc", "incorporated", "ltd", "limited", "nv", "ord", "ordinary", "plc", "sh",
+        "inc", "incorporated", "ltd", "limited", "nv", "nvs", "ord", "ordinary", "plc", "sh",
         "share", "shares", "sr", "srs", "the",
     }
     aliases = {
@@ -213,6 +225,47 @@ def extract_oef_nport_holdings(html: str) -> list[tuple[str, str, Decimal]]:
     return result
 
 
+def extract_qqq_legacy_holdings(html: str) -> list[SourceHolding]:
+    """Read company names and holding values from QQQ's 2019 NPORT-EX schedule."""
+    if not re.search(r"(?is)Invesco\s+QQQ\s+Trust", html):
+        raise ProviderError("NPORT-EX filing was not the Invesco QQQ Trust schedule")
+    rows: list[SourceHolding] = []
+    for row in re.findall(r"(?is)<TR\b[^>]*>(.*?)</TR>", html):
+        cells = [_plain_html(cell) for cell in re.findall(r"(?is)<TD\b[^>]*>(.*?)</TD>", row)]
+        if not cells:
+            continue
+        name = cells[0]
+        numeric_cells: list[Decimal] = []
+        for cell in cells[1:]:
+            number = cell.replace(",", "").replace("$", "").strip()
+            if re.fullmatch(r"\(?\d+(?:\.\d+)?\)?", number):
+                numeric_cells.append(Decimal(number.strip("()")))
+        if (
+            name and len(numeric_cells) >= 2 and re.search(r"[A-Za-z]", name)
+            and not name.upper().startswith(("TOTAL", "SHARES", "VALUE"))
+        ):
+            rows.append(("", name, numeric_cells[-1]))
+    result = list(dict.fromkeys(rows))
+    if len(result) < 100:
+        raise ProviderError(f"QQQ NPORT-EX yielded only {len(result)} company holdings")
+    return result
+
+
+def fund_report_date(document: str) -> date | None:
+    iso = re.search(r"<(?:\w+:)?repPdDate>(\d{4}-\d{2}-\d{2})</", document)
+    if iso:
+        return date.fromisoformat(iso.group(1))
+    heading = re.search(
+        r"(?is)Invesco\s+QQQ\s+Trust.{0,2000}?"
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"\s+(\d{1,2}),\s+(\d{4})",
+        _plain_html(document[:10_000]),
+    )
+    if heading:
+        return datetime.strptime(" ".join(heading.groups()), "%B %d %Y").date()
+    return None
+
+
 def extract_oef_series_accessions(atom: str, reference_date: date) -> list[str]:
     """Select OEF series filings whose normal filing window can cover a report date."""
     try:
@@ -234,6 +287,43 @@ def extract_oef_series_accessions(atom: str, reference_date: date) -> list[str]:
     return result
 
 
+def extract_series_filing_entries(atom: str, reference_date: date) -> list[tuple[str, str]]:
+    """Return accession and form for series filings in the normal report window."""
+    try:
+        root = ET.fromstring(atom)
+    except ET.ParseError as exc:
+        raise ProviderError("SEC series feed was malformed") from exc
+    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    earliest, latest = reference_date + timedelta(days=30), reference_date + timedelta(days=120)
+    result: list[tuple[str, str]] = []
+    for entry in root.findall("atom:entry", namespace):
+        filed_text = entry.findtext("atom:content/atom:filing-date", namespaces=namespace)
+        accession = entry.findtext("atom:content/atom:accession-number", namespaces=namespace)
+        filing_type = entry.findtext("atom:content/atom:filing-type", namespaces=namespace)
+        try:
+            filed = date.fromisoformat(str(filed_text))
+        except ValueError:
+            continue
+        if accession and filing_type and earliest <= filed <= latest:
+            result.append((accession, filing_type))
+    return result
+
+
+def extract_series_accessions(atom: str) -> set[str]:
+    """Return filing accessions from a SEC series-specific Atom feed."""
+    try:
+        root = ET.fromstring(atom)
+    except ET.ParseError as exc:
+        raise ProviderError("SEC series feed was malformed") from exc
+    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    return {
+        accession
+        for entry in root.findall("atom:entry", namespace)
+        for accession in [entry.findtext("atom:content/atom:accession-number", namespaces=namespace)]
+        if accession
+    }
+
+
 def archive_covers_filing_window(entry: dict[str, Any], reference_date: date) -> bool:
     """Return whether a submissions shard can contain a filing for the report date."""
     try:
@@ -242,6 +332,18 @@ def archive_covers_filing_window(entry: dict[str, Any], reference_date: date) ->
     except ValueError:
         return False
     earliest = reference_date + timedelta(days=30)
+    latest = reference_date + timedelta(days=120)
+    return filing_from <= latest and filing_to >= earliest
+
+
+def archive_covers_legacy_window(entry: dict[str, Any], reference_date: date) -> bool:
+    """Return whether a shard can hold the nearest legacy fund report."""
+    try:
+        filing_from = date.fromisoformat(str(entry.get("filingFrom")))
+        filing_to = date.fromisoformat(str(entry.get("filingTo")))
+    except ValueError:
+        return False
+    earliest = reference_date - timedelta(days=120)
     latest = reference_date + timedelta(days=120)
     return filing_from <= latest and filing_to >= earliest
 
@@ -256,6 +358,16 @@ def is_quarter_end_report_date(value: str, reference_date: date) -> bool:
     return report_date.year == reference_date.year and report_date.month == reference_date.month and 0 <= lag <= 7
 
 
+def legacy_report_date(value: str, reference_date: date) -> date | None:
+    """Accept the latest legacy fund report no more than one quarter old."""
+    try:
+        report_date = date.fromisoformat(value)
+    except ValueError:
+        return None
+    lag = (reference_date - report_date).days
+    return report_date if 0 <= lag <= 100 else None
+
+
 class USIndexConstituentClient:
     """Official index/ETF membership sources, normalized to SEC company identities."""
 
@@ -264,6 +376,7 @@ class USIndexConstituentClient:
         self.session = session or provider_session()
         self.request_count = 0
         self._name_cik_cache: dict[tuple[str, int | None], str | None] = {}
+        self._oef_legacy_accessions_cache: set[str] | None = None
 
     def _json(self, method: str, url: str, operation: str, **kwargs: Any) -> dict[str, Any]:
         try:
@@ -313,16 +426,59 @@ class USIndexConstituentClient:
         )
 
     def _qqq_nport_rows(self, reference_date: date) -> list[SourceHolding] | None:
-        return self._fund_nport_rows(
+        rows = self._fund_nport_rows(
             reference_date, cik_or_series=QQQ_TRUST_CIK, cik=QQQ_TRUST_CIK,
             series_pattern=r"Invesco\s+QQQ\s+Trust", operation="QQQ",
         )
+        if rows is not None:
+            return rows
+        feed_url = "https://www.sec.gov/cgi-bin/browse-edgar?" + urlencode({
+            "action": "getcompany", "CIK": QQQ_TRUST_CIK, "type": "NPORT",
+            "owner": "exclude", "count": "100", "output": "atom",
+        })
+        atom = _decode_filing(self._binary(feed_url, "QQQ NPORT filing feed"))
+        for accession, filing_type in extract_series_filing_entries(atom, reference_date):
+            if filing_type != "NPORT-EX":
+                continue
+            index = self._json(
+                "GET", _filing_url(accession, "index.json", QQQ_TRUST_CIK), "QQQ NPORT-EX index",
+                headers={"User-Agent": self.sec.user_agent, "Accept-Encoding": "gzip, deflate"},
+            )
+            items = index.get("directory", {}).get("item", []) if isinstance(index.get("directory"), dict) else []
+            documents = [
+                str(item.get("name")) for item in items if isinstance(item, dict)
+                and re.search(r"(?i)\.(?:htm|html)$", str(item.get("name") or ""))
+                and "-index" not in str(item.get("name") or "").lower()
+            ]
+            for document_name in documents:
+                document = _decode_filing(self._binary(
+                    _filing_url(accession, document_name, QQQ_TRUST_CIK),
+                    f"QQQ NPORT-EX {reference_date.isoformat()}",
+                ))
+                report_date = fund_report_date(document)
+                if report_date and is_quarter_end_report_date(report_date.isoformat(), reference_date):
+                    return extract_qqq_legacy_holdings(document)
+        return None
+
+    def _oef_legacy_accessions(self) -> set[str]:
+        if self._oef_legacy_accessions_cache is not None:
+            return set(self._oef_legacy_accessions_cache)
+        result: set[str] = set()
+        for form in ("N-Q", "N-CSR"):
+            feed_url = "https://www.sec.gov/cgi-bin/browse-edgar?" + urlencode({
+                "action": "getcompany", "CIK": OEF_SERIES_ID, "type": form,
+                "owner": "exclude", "count": "100", "output": "atom",
+            })
+            atom = _decode_filing(self._binary(feed_url, f"OEF legacy {form} filing feed"))
+            result.update(extract_series_accessions(atom))
+        self._oef_legacy_accessions_cache = result
+        return set(result)
 
     def _cik_for_name(self, name: str, reference_date: date | None = None) -> str | None:
-        search_name = re.sub(r"\s*\(the\)\s*$", "", name, flags=re.IGNORECASE)
+        search_name = re.sub(r"\s*\(the\)\s*$", "", _issuer_name(name), flags=re.IGNORECASE)
         search_name = re.sub(r"\s*[\\/][A-Z]{2,}[\\/]?\s*$", "", search_name, flags=re.IGNORECASE)
         search_name = re.sub(
-            r"(?i)\b(?:SRS?|SERIES|CL(?:ASS)?|ORD(?:INARY)?|SHS?|SHARES?|COMMON|CM)(?:\s+[A-Z])?\b",
+            r"(?i)\b(?:SRS?|SERIES|CL(?:ASS)?|ORD(?:INARY)?|SHS?|SHARES?|COMMON|CM|NVS)(?:\s+[A-Z])?\b",
             " ", search_name,
         )
         search_name = re.sub(r"\s+", " ", search_name).strip()
@@ -574,6 +730,7 @@ class USIndexConstituentClient:
         if nport_rows is not None:
             return self._securities("us_sp100", reference_date, nport_rows, directory)
 
+        legacy_accessions = self._oef_legacy_accessions()
         submissions = self.sec.submissions(OEF_TRUST_CIK)
         filings = submissions.get("filings", {}) if isinstance(submissions, dict) else {}
         all_sets = [filings.get("recent", {})] if isinstance(filings, dict) else []
@@ -582,28 +739,30 @@ class USIndexConstituentClient:
                 continue
             # Archive metadata describes filing dates, not report dates. Select
             # only shards overlapping the fund's normal post-quarter filing window.
-            if not archive_covers_filing_window(entry, reference_date):
+            if not archive_covers_legacy_window(entry, reference_date):
                 continue
             payload = self._json("GET", f"https://data.sec.gov/submissions/{entry['name']}", "OEF archived submissions",
                                  headers={"User-Agent": self.sec.user_agent, "Accept-Encoding": "gzip, deflate"})
             all_sets.append(payload)
         target = reference_date.isoformat()
-        candidates: list[tuple[str, str]] = []
+        candidates: list[tuple[date, str, str]] = []
         for data in all_sets:
             if not isinstance(data, dict):
                 continue
             for form, report_date, accession, document in zip(
                 data.get("form", []), data.get("reportDate", []), data.get("accessionNumber", []), data.get("primaryDocument", []), strict=False
             ):
+                eligible_date = legacy_report_date(str(report_date), reference_date)
                 if (
                     str(form) in {"N-CSR", "N-CSRS", "N-Q"}
-                    and is_quarter_end_report_date(str(report_date), reference_date)
+                    and eligible_date is not None
+                    and str(accession) in legacy_accessions
                     and accession and document
                 ):
-                    candidates.append((str(accession), str(document)))
+                    candidates.append((eligible_date, str(accession), str(document)))
         if not candidates:
             raise ProviderError(f"OEF has no SEC holdings filing for {target}")
-        for accession, document in candidates:
+        for _, accession, document in sorted(candidates, reverse=True):
             html = _decode_filing(self._binary(_filing_url(accession, document), f"OEF holdings {target}"))
             try:
                 rows = (
