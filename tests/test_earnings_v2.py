@@ -1058,6 +1058,37 @@ class ProviderReliabilityTests(unittest.TestCase):
         self.assertEqual(rate, Decimal("9.50"))
         self.assertIn("/0000002", session.calls[0])
 
+    def test_ecos_uses_official_eur_and_cny_items_without_unit_scaling(self):
+        class Response:
+            content = b"{}"
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"StatisticSearch": {"row": [
+                    {"TIME": "20250630", "DATA_VALUE": "190"},
+                ]}}
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **_kwargs):
+                self.calls.append(url)
+                return Response()
+
+        session = Session()
+        client = EcosFxClient("secret", session=session)
+
+        for currency, item_code in (("EUR", "0000003"), ("CNY", "0000053")):
+            with self.subTest(currency=currency):
+                _observed_on, rate = client.latest_krw(currency, date(2025, 6, 30))
+                self.assertEqual(rate, Decimal("190"))
+                self.assertIn(f"/{item_code}", session.calls[-1])
+
 
 class CliContractTests(unittest.TestCase):
     def test_korean_market_targets_are_one_hundred_each(self):
@@ -1848,7 +1879,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.states["2026Q2"]["status"], "failed")
 
-    def test_daily_fx_snapshot_failure_stops_before_financial_collection(self):
+    def test_daily_fx_failure_preserves_stored_financials(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
         receipt = PeriodicFiling(
@@ -1870,7 +1901,55 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(stored["top_line"], Decimal("100"))
         self.assertFalse(stored["is_pending"])
         self.assertEqual(fx.request_count, 1)
-        self.assertEqual(dart.financial_calls, [])
+        self.assertTrue(dart.financial_calls)
+
+    def test_automatic_converts_supported_foreign_currencies_lazily(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        receipt = PeriodicFiling(
+            target_corp, "20260902000009", date(2026, 9, 2), "반기보고서 (2026.06)",
+        )
+        for currency in ("USD", "JPY", "EUR", "CNY"):
+            with self.subTest(currency=currency):
+                repository = self.populated_repository()
+                repository.fx_rates.clear()
+                fx = FixedFx(Decimal("10"))
+                dart = ForeignCurrencyDart(target_corp, currency, [receipt])
+                pipeline = KoreaEarningsV2AutomaticPipeline(
+                    krx=SimulatedKrx(), dart=dart, repository=repository,
+                    kis=SimulatedKis(), fx=fx,
+                )
+
+                pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+                self.assertEqual(fx.request_count, 1)
+                self.assertEqual(
+                    repository.company_rows[(target_company, 2026, 2)]["top_line"],
+                    Decimal("200"),
+                )
+                self.assertIn((2026, 2, currency, "KRW"), repository.fx_rates)
+
+    def test_automatic_krw_only_collection_does_not_query_ecos(self):
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.fx_rates.clear()
+        fx = FixedFx()
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(),
+            dart=SimulatedDart([
+                PeriodicFiling(
+                    target_corp, "20260902000009", date(2026, 9, 2),
+                    "반기보고서 (2026.06)",
+                ),
+            ]),
+            repository=repository,
+            kis=SimulatedKis(),
+            fx=fx,
+        )
+
+        pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(fx.request_count, 0)
 
     def test_pending_kis_failure_is_isolated_from_other_companies(self):
         class MissingSingleDart(SimulatedDart):

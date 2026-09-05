@@ -1,10 +1,17 @@
 import unittest
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from test_earnings_v2 import fact, member
+from test_earnings_v2 import (
+    SimulatedKis,
+    SimulatedRepository,
+    fact,
+    member,
+)
+from earnings_v2.automatic import KoreaEarningsV2AutomaticPipeline
 from earnings_v2.financial_company import FinancialCompanyClient, merge_financial_company
 from earnings_v2.http import ExecutionDeadlineExceeded
 from earnings_v2.pipeline import KoreaEarningsV2Pipeline
@@ -94,3 +101,112 @@ class FscBackfillTests(unittest.TestCase):
         client._sector_quarter_financials = lambda *args: [self.snapshot(crno="9999999999999")]
         with self.assertRaises(ProviderError):
             client.quarter_financials("1234567890123", 2025, 2, "641")
+
+
+class AutomaticFscPendingTests(unittest.TestCase):
+    @staticmethod
+    def pending_repository(*, year=2026, quarter=2):
+        company_id = "kr:00000099"
+        repository = SimulatedRepository()
+        pending_fact = fact(year, quarter, "10", company=company_id).with_changes(
+            top_line=None,
+            is_pending=True,
+        )
+        repository.company_rows[(company_id, year, quarter)] = pending_fact.db_row(
+            calculation_version=6,
+        )
+        repository.stale_pending_rows = [{
+            "market_id": "kr_largecap",
+            "market_year": year,
+            "market_quarter": quarter,
+            "company_id": company_id,
+            "company_name": "금융회사",
+            "stock_code": "000099",
+        }]
+        return company_id, repository
+
+    @staticmethod
+    def snapshot(*, quarter=2):
+        return FinancialCompanySnapshot(
+            crno="1234567890123",
+            report_code=REPORT_CODES[quarter],
+            consolidation_scope="CFS",
+            currency="KRW",
+            top_line_cumulative=Decimal("100"),
+            operating_income_cumulative=Decimal("20"),
+            net_income_cumulative=Decimal("10"),
+            top_line_standalone=Decimal("100"),
+            operating_income_standalone=Decimal("20"),
+            net_income_standalone=Decimal("10"),
+        )
+
+    def test_kis_then_financial_company_fills_only_remaining_financial_company(self):
+        company_id, repository = self.pending_repository()
+
+        class Dart:
+            calls = 0
+
+            def company_details(self, _corp_code):
+                self.calls += 1
+                return {
+                    "industry_code": "64110",
+                    "registration_number": "1234567890123",
+                }
+
+        class FinancialCompany:
+            request_count = 0
+
+            def quarter_financials(self, *_args):
+                self.request_count += 1
+                return [AutomaticFscPendingTests.snapshot()]
+
+        dart = Dart()
+        financial_company = FinancialCompany()
+        kis = SimulatedKis({"000099": {}})
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=object(), dart=dart, repository=repository, kis=kis,
+            financial_company=financial_company,
+        )
+        pipeline.recalculate_quarter = lambda *_args, **_kwargs: {"status": "ready"}
+
+        result = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
+
+        stored = repository.company_rows[(company_id, 2026, 2)]
+        self.assertEqual(kis.history_calls, ["000099"])
+        self.assertEqual(dart.calls, 1)
+        self.assertEqual(financial_company.request_count, 1)
+        self.assertEqual(stored["top_line"], Decimal("100"))
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(result["status"], "ready")
+
+    def test_complete_kis_result_skips_financial_company(self):
+        company_id, repository = self.pending_repository(year=2026, quarter=1)
+        history = {(2026, 1): {
+            "top_line": Decimal("100"),
+            "operating_income": Decimal("20"),
+            "net_income": Decimal("10"),
+        }}
+
+        class Dart:
+            @staticmethod
+            def company_details(_corp_code):
+                raise AssertionError("FSC identity lookup must be skipped after KIS completion")
+
+        class FinancialCompany:
+            request_count = 0
+
+            @staticmethod
+            def quarter_financials(*_args):
+                raise AssertionError("FSC must be skipped after KIS completion")
+
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=object(), dart=Dart(), repository=repository,
+            kis=SimulatedKis({"000099": history}),
+            financial_company=FinancialCompany(),
+        )
+        pipeline.recalculate_quarter = lambda *_args, **_kwargs: {"status": "ready"}
+
+        result = pipeline.run_kis_pending(write=True, today=date(2026, 6, 1))
+
+        self.assertFalse(repository.company_rows[(company_id, 2026, 1)]["is_pending"])
+        self.assertEqual(result["requests"]["financial_services_commission"], 0)

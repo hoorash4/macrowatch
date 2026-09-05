@@ -36,6 +36,8 @@ ECOS_KRW_SPECS = {
     "USD": ("0000001", Decimal("1")),
     # ECOS 731Y001의 엔화 값은 100엔당 원화이므로 1엔당 원화로 정규화한다.
     "JPY": ("0000002", Decimal("0.01")),
+    "EUR": ("0000003", Decimal("1")),
+    "CNY": ("0000053", Decimal("1")),
 }
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
@@ -270,17 +272,24 @@ class OpenDartClient:
         }, retry_total=retry_total)
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
-    def company_profile(self, corp_code: str) -> dict[str, str] | None:
+    def company_details(self, corp_code: str) -> dict[str, str]:
         payload = self._get("company.json", {"corp_code": corp_code})
         industry_code = str(payload.get("induty_code") or "").strip()
-        if not industry_code:
-            return None
-        return {"industry_code": industry_code}
+        registration_number = re.sub(r"\D", "", str(payload.get("jurir_no") or ""))
+        return {
+            "industry_code": industry_code,
+            "registration_number": (
+                registration_number if re.fullmatch(r"\d{13}", registration_number) else ""
+            ),
+        }
+
+    def company_profile(self, corp_code: str) -> dict[str, str] | None:
+        industry_code = self.company_details(corp_code)["industry_code"]
+        return {"industry_code": industry_code} if industry_code else None
 
     def company_registration_number(self, corp_code: str) -> str | None:
-        payload = self._get("company.json", {"corp_code": corp_code})
-        number = re.sub(r"\D", "", str(payload.get("jurir_no") or ""))
-        return number if re.fullmatch(r"\d{13}", number) else None
+        number = self.company_details(corp_code)["registration_number"]
+        return number or None
 
     def single_accounts(
         self,
