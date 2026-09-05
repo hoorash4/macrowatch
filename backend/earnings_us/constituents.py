@@ -47,7 +47,7 @@ def _name_match_score(query: str, candidate: str) -> int:
     four-character word prefix, and legal suffixes do not contribute.
     """
     ignored = {
-        "a", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
+        "a", "and", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
         "inc", "incorporated", "ltd", "limited", "nv", "ord", "ordinary", "plc", "sh",
         "share", "shares", "sr", "srs", "the",
     }

@@ -236,6 +236,7 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(_name_match_score("CTRIP.COM INTL LTD", "CTRIP.COM INTERNATIONAL LTD"), 300)
         self.assertEqual(_name_match_score("VIACOM INC CL B", "VIACOM INC"), 100)
         self.assertEqual(_name_match_score("Lowe's Cos Inc", "LOWES COMPANIES INC"), 100)
+        self.assertEqual(_name_match_score("Eli Lilly and Co", "ELI LILLY & Co"), 200)
         self.assertGreater(
             _name_match_score("WHOLE FOODS MARKET", "WHOLE FOODS MARKET INC"),
             _name_match_score("WHOLE FOODS MARKET", "WHOLE FOODS MARKET CALIFORNIA INC"),
