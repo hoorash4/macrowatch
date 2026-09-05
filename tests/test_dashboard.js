@@ -156,6 +156,14 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.equal(latest.yoyPct, 20);
   assert.equal(latest.qoqPct, 10);
   assert.equal(series.at(-1).metrics.net_income.yoyState, 'black_turn');
+  const companySeries = context.window.MacroWatchKoreaEarnings.seriesFromCompanyRows([{
+    fiscal_year: 2026, fiscal_quarter: 2,
+    operating_income: '80', net_income: '60', operating_margin_pct: '12.5', net_margin_pct: '9.25',
+    operating_income_yoy_pct: '20', operating_income_qoq_sa_pct: '10', is_pending: true,
+  }]);
+  assert.equal(companySeries[0].metrics.operating_income.amount, 80, '개별 기업의 본차트는 원본 이익 금액을 그대로 사용한다');
+  assert.equal(companySeries[0].metrics.operating_income.qoqPct, 10, '개별 기업 QoQ는 저장된 계절조정 수치를 사용한다');
+  assert.equal(companySeries[0].lifecycleStatus, 'provisional', '개별 기업 미완결 분기는 점선 처리용 잠정 상태가 된다');
   const edgeStates = context.window.MacroWatchKoreaEarnings.provisionalEdgeStates([
     { index: 0, value: 10, lifecycleStatus: 'complete' },
     { index: 1, value: 12, lifecycleStatus: 'complete' },
@@ -178,6 +186,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.ok(qoqDomain.ticks.includes(0), '계절조정 QoQ축은 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /id="kosdaq-earnings-dashboard"/);
+  assert.match(html, /id="company-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
   assert.match(html, /id="korea-earnings-margin-chart"/);
   assert.match(html, /id="korea-earnings-growth-chart"/);
@@ -186,14 +195,23 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(html, /id="kosdaq-earnings-margin-chart"/);
   assert.match(html, /id="kosdaq-earnings-growth-chart"/);
   assert.match(html, /id="kosdaq-earnings-qoq-chart"/);
+  assert.match(html, /id="company-earnings-amount-chart"/);
+  assert.match(html, /id="company-earnings-margin-chart"/);
+  assert.match(html, /id="company-earnings-growth-chart"/);
+  assert.match(html, /id="company-earnings-qoq-chart"/);
   assert.doesNotMatch(html, /korea-earnings-subchart/);
   assert.doesNotMatch(html, /data-korea-earnings-metric=/);
   assert.match(html, /KOSPI 시총 상위기업 실적 모멘텀/);
   assert.match(html, /KOSDAQ 시총 상위기업 실적 모멘텀/);
+  assert.match(html, /개별 기업 이익 모멘텀/);
   assert.match(source, /earnings_v2_public_market_series/);
   assert.match(source, /marketId: 'kr_largecap'/);
   assert.match(source, /marketId: 'kr_kosdaq'/);
   assert.match(source, /data-earnings-market-card/);
+  assert.match(source, /earnings_v2_public_latest_company_options/);
+  assert.match(source, /earnings_v2_public_company_series/);
+  assert.match(source, /function renderCompanyCandidates/);
+  assert.match(source, /company\.company_name\.toLocaleLowerCase\('ko-KR'\)\.includes\(query\)/);
   assert.match(source, /kind: 'amount'/);
   assert.match(source, /kind: 'margin'/);
   assert.match(source, /kind: 'growth'/);
@@ -206,7 +224,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
   assert.match(source, /function provisionalEdgeStates/);
-  assert.match(source, /\$\{metric\.label\} 합계/);
+  assert.match(source, /market\.type === 'company' \? '' : ' 합계'/);
   assert.doesNotMatch(source, /\$\{metric\.label\} 계절조정 합계/);
   assert.match(html, /시총 상위 100 합산 실적\(계절조정\)/);
   assert.match(html, /이익률/);
@@ -389,14 +407,14 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 14);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 30);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 15);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 32);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 14);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 14);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 15);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 15);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);

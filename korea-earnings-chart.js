@@ -20,6 +20,10 @@
   const DISPLAY_START_YEAR = 2016;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
   const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: 5 } }));
+  const companyCard = {
+    label: '개별 기업', type: 'company', root: null,
+    state: { series: [], years: 5, candidates: [], selected: null },
+  };
 
   // Number(null)은 0이므로 DB의 계산 불가값을 먼저 걸러야 가짜 0점이 생기지 않습니다.
   function finite(value) {
@@ -63,6 +67,28 @@
         },
         net_income: {
           amount: finite(row.net_income_sa_total), rawAmount: finite(row.net_income_total),
+          marginPct: finite(row.net_margin_pct), yoyPct: finite(row.net_income_yoy_pct),
+          yoyState: row.net_income_yoy_state, qoqPct: finite(row.net_income_qoq_sa_pct),
+          qoqState: row.net_income_qoq_state,
+        },
+      },
+    })).sort((a, b) => (a.fiscalYear * 4 + a.fiscalQuarter) - (b.fiscalYear * 4 + b.fiscalQuarter));
+  }
+
+  // 개별 기업은 원본 이익 금액을 그대로 보여주고, DB에 저장된 계절조정 QoQ만 사용합니다.
+  function seriesFromCompanyRows(rows) {
+    return rows.filter((row) => Number(row.fiscal_year) >= DISPLAY_START_YEAR).map((row) => ({
+      fiscalYear: Number(row.fiscal_year), fiscalQuarter: Number(row.fiscal_quarter),
+      lifecycleStatus: row.is_pending ? 'provisional' : 'complete',
+      metrics: {
+        operating_income: {
+          amount: finite(row.operating_income), rawAmount: null,
+          marginPct: finite(row.operating_margin_pct), yoyPct: finite(row.operating_income_yoy_pct),
+          yoyState: row.operating_income_yoy_state, qoqPct: finite(row.operating_income_qoq_sa_pct),
+          qoqState: row.operating_income_qoq_state,
+        },
+        net_income: {
+          amount: finite(row.net_income), rawAmount: null,
           marginPct: finite(row.net_margin_pct), yoyPct: finite(row.net_income_yoy_pct),
           yoyState: row.net_income_yoy_state, qoqPct: finite(row.net_income_qoq_sa_pct),
           qoqState: row.net_income_qoq_state,
@@ -145,7 +171,11 @@
     const element = market.root?.querySelector('[data-earnings-summary]'), latest = points.at(-1);
     if (!element || !latest) return;
     const status = latest.lifecycleStatus === 'complete' ? '확정' : latest.lifecycleStatus === 'provisional' ? '잠정' : '수집 중';
-    const values = METRICS.map((metric) => `<span>${metric.label} 합계 ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
+    const values = METRICS.map((metric) => `<span>${metric.label}${market.type === 'company' ? '' : ' 합계'} ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
+    if (market.type === 'company') {
+      element.innerHTML = `<strong>${escapeHtml(market.state.selected?.company_name || '개별 기업')} · ${periodLabel(latest)}</strong>${values}<span>${status}</span>`;
+      return;
+    }
     element.innerHTML = `<strong>${periodLabel(latest)}</strong>${values}<span>실적 반영 ${latest.reportedCount}/${latest.universeCount}사</span><span>${status}${latest.pendingCount ? ` · 대기 ${latest.pendingCount}사` : ''}</span>`;
   }
 
@@ -303,33 +333,93 @@
     synchronizeCursors(charts, market.root);
   }
 
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+  }
+
+  function renderCompanyCandidates() {
+    const input = companyCard.root?.querySelector('[data-company-earnings-search]');
+    const list = companyCard.root?.querySelector('[data-company-earnings-suggestions]');
+    if (!input || !list) return;
+    const query = input.value.trim().toLocaleLowerCase('ko-KR');
+    const matches = companyCard.state.candidates
+      .filter((company) => !query || company.company_name.toLocaleLowerCase('ko-KR').includes(query))
+      .slice(0, 20);
+    list.hidden = !matches.length;
+    list.innerHTML = matches.map((company) => (
+      `<button type="button" role="option" data-company-earnings-id="${escapeHtml(company.company_id)}" aria-selected="${company.company_id === companyCard.state.selected?.company_id}"><strong>${escapeHtml(company.company_name)}</strong><span>${company.market_id === 'kr_largecap' ? 'KOSPI' : 'KOSDAQ'} · 시총 ${company.market_cap_rank}위</span></button>`
+    )).join('');
+  }
+
+  async function selectCompany(company, supabaseClient) {
+    if (!company || !supabaseClient) return;
+    companyCard.state.selected = company;
+    const input = companyCard.root?.querySelector('[data-company-earnings-search]');
+    const list = companyCard.root?.querySelector('[data-company-earnings-suggestions]');
+    if (input) input.value = company.company_name;
+    if (list) { list.hidden = true; list.replaceChildren(); }
+    setStatus(companyCard, `${company.company_name} 실적을 불러오는 중입니다.`);
+    const response = await supabaseClient.rpc('earnings_v2_public_company_series', { p_company_id: company.company_id });
+    if (response.error) { setStatus(companyCard, `${company.company_name} 실적을 불러오지 못했습니다.`); return; }
+    companyCard.state.series = seriesFromCompanyRows(response.data || []);
+    render(companyCard);
+  }
+
+  function connectRangeControls(card) {
+    const controls = card.root?.querySelector('[data-earnings-ranges]');
+    controls?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-earnings-range]');
+      if (!button) return;
+      card.state.years = button.dataset.earningsRange === 'max' ? 'max' : Number(button.dataset.earningsRange);
+      controls.querySelectorAll('[data-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
+      render(card);
+    });
+  }
+
+  function connectCompanySearch(supabaseClient) {
+    const input = companyCard.root?.querySelector('[data-company-earnings-search]');
+    const list = companyCard.root?.querySelector('[data-company-earnings-suggestions]');
+    if (!input || !list) return;
+    input.addEventListener('input', renderCompanyCandidates);
+    input.addEventListener('focus', renderCompanyCandidates);
+    list.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-company-earnings-id]');
+      const company = companyCard.state.candidates.find((item) => item.company_id === button?.dataset.companyEarningsId);
+      selectCompany(company, supabaseClient);
+    });
+  }
+
   async function load({ supabaseClient }) {
     const activeMarkets = markets.filter((market) => market.root);
-    if (!activeMarkets.length || !supabaseClient) return;
-    await Promise.all(activeMarkets.map(async (market) => {
+    if ((!activeMarkets.length && !companyCard.root) || !supabaseClient) return;
+    const marketLoads = activeMarkets.map(async (market) => {
       const response = await supabaseClient.rpc('earnings_v2_public_market_series', { p_market_id: market.marketId });
       if (response.error) { setStatus(market, `${market.label} 100 집계 실적을 불러오지 못했습니다.`); return; }
       market.state.series = seriesFromMarketRows(response.data || []);
       render(market);
-    }));
+    });
+    const companyLoad = (async () => {
+      if (!companyCard.root) return;
+      const response = await supabaseClient.rpc('earnings_v2_public_latest_company_options');
+      if (response.error || !response.data?.length) { setStatus(companyCard, '개별 기업 후보를 불러오지 못했습니다.'); return; }
+      companyCard.state.candidates = response.data;
+      connectCompanySearch(supabaseClient);
+      await selectCompany(companyCard.state.candidates[0], supabaseClient);
+    })();
+    await Promise.all([...marketLoads, companyLoad]);
   }
 
   markets.forEach((market) => {
     market.root = document.querySelector(market.cardSelector);
-    const controls = market.root?.querySelector('[data-earnings-ranges]');
-    controls?.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-earnings-range]');
-      if (!button) return;
-      market.state.years = button.dataset.earningsRange === 'max' ? 'max' : Number(button.dataset.earningsRange);
-      controls.querySelectorAll('[data-earnings-range]').forEach((item) => item.classList.toggle('is-active', item === button));
-      render(market);
-    });
+    connectRangeControls(market);
   });
+  companyCard.root = document.querySelector('[data-earnings-company-card]');
+  connectRangeControls(companyCard);
   // 전용 기업 이익 메뉴가 표시된 뒤 숨김 상태에서 계산한 차트 폭을 다시 맞춥니다.
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
-    if (detail?.view === 'earnings') markets.forEach((market) => render(market));
+    if (detail?.view === 'earnings') [...markets, companyCard].forEach((card) => render(card));
   });
-  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, axisDomain, provisionalEdgeStates });
+  window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, seriesFromCompanyRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
 

@@ -412,6 +412,54 @@
       </div>
     </section>
 
+    <section id="company-earnings-dashboard" data-dashboard-panel="earnings" data-earnings-company-card class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="company-earnings-title">
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-building-columns text-sm"></i></span>
+          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOSPI · KOSDAQ TOP 200 · COMPANY EARNINGS</p><h2 id="company-earnings-title" class="analysis-card-title">개별 기업 이익 모멘텀</h2></div>
+        </div>
+        <p class="analysis-card-description">최신 분기 KOSPI·KOSDAQ 시가총액 상위 200사 중 한 기업을 선택해 영업이익과 순이익을 확인합니다. 기본값은 실제 시가총액 1위 기업이며, 미완결 분기는 점선으로 표시합니다.</p>
+        <p class="analysis-card-description">본차트는 기업이 공시한 원본 이익 금액을 그대로 표시합니다. 보조차트는 이익률·원본 전년동기 이익 증가율·계절조정 전분기 이익 증가율입니다.</p>
+      </div>
+      <div class="px-5 pb-5 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="company-earnings-toolbar">
+            <div class="company-earnings-search">
+              <label class="sr-only" for="company-earnings-search">기업명 검색</label>
+              <input id="company-earnings-search" data-company-earnings-search type="search" autocomplete="off" placeholder="기업명 검색" aria-autocomplete="list" aria-controls="company-earnings-suggestions">
+              <div id="company-earnings-suggestions" data-company-earnings-suggestions class="company-earnings-suggestions" role="listbox" hidden></div>
+            </div>
+            <div class="analysis-chart-range-controls" data-earnings-ranges aria-label="개별 기업 이익 그래프 조회 기간">
+              <button type="button" data-earnings-range="5" class="is-active">5년</button><button type="button" data-earnings-range="10">10년</button><button type="button" data-earnings-range="max">MAX</button>
+            </div>
+          </div>
+          <div id="company-earnings-summary" data-earnings-summary class="korea-earnings-summary" aria-live="polite"></div>
+          <div class="korea-earnings-chart-stack">
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--main" aria-labelledby="company-earnings-amount-title">
+              <div class="korea-earnings-chart-heading"><strong id="company-earnings-amount-title">영업이익·순이익</strong><span>원</span></div>
+              <div id="company-earnings-amount-chart" data-earnings-chart="amount" class="korea-earnings-chart"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">개별 기업 실적을 불러오는 중입니다.</div></div>
+            </section>
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="company-earnings-margin-title">
+              <div class="korea-earnings-chart-heading"><strong id="company-earnings-margin-title">이익률</strong><span>%</span></div>
+              <div id="company-earnings-margin-chart" data-earnings-chart="margin" class="korea-earnings-chart"></div>
+            </section>
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="company-earnings-growth-title">
+              <div class="korea-earnings-chart-heading"><strong id="company-earnings-growth-title">YoY 이익 증가율</strong><span>%</span></div>
+              <div id="company-earnings-growth-chart" data-earnings-chart="growth" class="korea-earnings-chart"></div>
+            </section>
+            <section class="korea-earnings-chart-panel korea-earnings-chart-panel--aux" aria-labelledby="company-earnings-qoq-title">
+              <div class="korea-earnings-chart-heading"><strong id="company-earnings-qoq-title">QoQ 이익 증가율(계절조정)</strong><span>%</span></div>
+              <div id="company-earnings-qoq-chart" data-earnings-chart="qoq" class="korea-earnings-chart"></div>
+            </section>
+          </div>
+        </div>
+        <div class="policy-expectation-legend" aria-label="개별 기업 이익 범례">
+          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--operating-income"></i>영업이익</span>
+          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--net-income"></i>순이익</span>
+        </div>
+      </div>
+    </section>
+
     <section id="em-stress-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
@@ -904,7 +952,7 @@
   <script src="policy-expectation-chart.js?v=12"></script>
   <script src="em-capacity-chart.js?v=4"></script>
   <script src="korea-foreign-flow-chart.js?v=10"></script>
-  <script src="korea-earnings-chart.js?v=20"></script>
+  <script src="korea-earnings-chart.js?v=21"></script>
   <script src="policy-briefing.js?v=5"></script>
 </body>
 </html>
