@@ -687,7 +687,7 @@ class KoreaEarningsV2Pipeline:
             ):
                 return chosen
 
-        # 2016~2018 금융위 원본은 연결/별도 범위가 DART와 다르게 표기되는
+        # 2015~2018 금융위 원본은 연결/별도 범위가 DART와 다르게 표기되는
         # 사례가 있다. 이미 확보한 값은 유지하고, 반대 범위에서 빈 지표만
         # 보완한다. 결과 행의 범위는 아래 저장 단계에서 기존 값 기준으로 유지된다.
         missing_fields = [
@@ -904,7 +904,7 @@ class KoreaEarningsV2Pipeline:
                     "entity_kind": entity_kind,
                 }
 
-        # 2016~18년 금융회사 대기는 구조화·원문 DART가 이미 실패한 결과다.
+        # 2015~18년 금융회사 대기는 구조화·원문 DART가 이미 실패한 결과다.
         # 금융위 원자료를 먼저 보완해 완료되면 같은 DART 재호출을 하지 않는다.
         if entity_kind == "financial":
             try:
