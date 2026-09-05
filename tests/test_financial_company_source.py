@@ -63,7 +63,7 @@ class FinancialCompanySupplementTests(unittest.TestCase):
         self.assertEqual(resolved.source, "financial_services_commission")
         self.assertEqual(client.request_count, 1)
 
-    def test_does_not_mix_other_scope_into_partial_fact(self) -> None:
+    def test_other_scope_fills_only_missing_metrics_in_partial_fact(self) -> None:
         client = StubFinancialCompany([FinancialCompanySnapshot(
             crno="1234567890123", report_code="11014", consolidation_scope="OFS",
             currency="KRW", top_line_cumulative=Decimal("300"),
@@ -74,9 +74,11 @@ class FinancialCompanySupplementTests(unittest.TestCase):
             identity(), fact(top_line=Decimal("101"), scope="CFS"), 2018, 3, None, "1234567890123",
         )
         self.assertEqual(resolved.top_line, Decimal("101"))
-        self.assertIsNone(resolved.operating_income)
-        self.assertIsNone(resolved.net_income)
-        self.assertEqual(resolved.source, "open_dart")
+        self.assertEqual(resolved.operating_income, Decimal("30"))
+        self.assertEqual(resolved.net_income, Decimal("20"))
+        self.assertEqual(resolved.consolidation_scope, "CFS")
+        self.assertEqual(resolved.source, "mixed")
+        self.assertFalse(resolved.is_pending)
 
     def test_passes_github_public_data_key_only_to_the_protected_proxy(self) -> None:
         client = FinancialCompanyClient(
