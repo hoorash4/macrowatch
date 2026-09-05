@@ -2673,10 +2673,10 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertEqual(calculated[9].operating_income_qoq_state, "normal")
         self.assertEqual(calculated[-1].operating_income_qoq_state, "normal")
 
-    def test_historical_seasonal_qoq_starts_at_2019(self):
+    def test_historical_seasonal_qoq_starts_at_2016(self):
         rows = [
-            fact(2018, 4, "100"), fact(2019, 1, "110"),
-            fact(2019, 2, "100"), fact(2019, 3, "100"), fact(2019, 4, "100"),
+            fact(2015, 4, "100"), fact(2016, 1, "110"),
+            fact(2016, 2, "100"), fact(2016, 3, "100"), fact(2016, 4, "100"),
         ]
         calculated = calculate_financial_series(rows)
         self.assertEqual(calculated[1].operating_income_qoq_state, "missing_prior")

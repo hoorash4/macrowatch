@@ -11,7 +11,7 @@
     ...METRICS.map((metric) => ({ id: `korea-earnings-qoq-${metric.key.replace('_', '-')}-chart`, metricKey: metric.key, valueKey: 'qoqPct', kind: 'qoq', height: 102, includeZero: true, unit: '%', showPeriodLabels: false })),
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
-  const DISPLAY_START_YEAR = 2019;
+  const DISPLAY_START_YEAR = 2016;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
   const state = { series: [], years: 5 };
 

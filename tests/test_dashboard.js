@@ -121,9 +121,14 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
   const serverRows = [{
-    market_year: 2018, market_quarter: 4,
+    market_year: 2015, market_quarter: 4,
     target_company_count: 100, reported_company_count: 100, pending_company_count: 0,
     lifecycle_status: 'complete', operating_income_total: '999', net_income_total: '999',
+  }, {
+    market_year: 2016, market_quarter: 1,
+    target_company_count: 100, reported_company_count: 100, pending_company_count: 0,
+    lifecycle_status: 'complete', operating_income_total: '80', net_income_total: '60',
+    operating_income_sa_total: '82', net_income_sa_total: '62',
   }, {
     market_year: 2025, market_quarter: 2,
     target_company_count: 100, reported_company_count: 98, pending_company_count: 2,
@@ -135,7 +140,8 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
     net_income_qoq_sa_pct: null, net_income_qoq_state: 'red_turn',
   }];
   const series = context.window.MacroWatchKoreaEarnings.seriesFromMarketRows(serverRows);
-  assert.equal(series.length, 1, '화면에는 2019년 이후 실적만 표시한다');
+  assert.equal(series.length, 2, '화면에는 2016년 이후 실적만 표시한다');
+  assert.equal(series[0].fiscalYear, 2016);
   const latest = series.at(-1).metrics.operating_income;
   assert.equal(series.at(-1).reportedCount, 98);
   assert.equal(latest.amount, 95);

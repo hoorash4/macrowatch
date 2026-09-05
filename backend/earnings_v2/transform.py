@@ -14,7 +14,7 @@ from .models import FinancialFact
 HUNDRED = Decimal("100")
 MAX_SEASONAL_SAMPLES = 10
 MIN_SEASONAL_SAMPLES = 3
-SEASONAL_HISTORY_START_YEAR = 2019
+SEASONAL_HISTORY_START_YEAR = 2016
 OP_IDS = {"dartoperatingincomeloss", "ifrsfulloperatingprofitloss"}
 NET_IDS = {"ifrsfullprofitloss", "dartprofitloss"}
 REVENUE_IDS = {
