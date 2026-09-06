@@ -959,30 +959,26 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(next(item.cik for item in result if item.ticker == "XOM"), historical_cik)
 
-    def test_date_bounded_sec_search_does_not_require_second_company_facts_lookup(self):
-        historical_cik = "0001355096"
+    def test_date_bounded_sec_search_rejects_successor_without_historical_coverage(self):
+        successor_cik = "0001744489"
+        historical_cik = "0001001039"
 
         class FakeSec:
             def company_ticker_rows(self):
                 return []
 
         client = USIndexConstituentClient(FakeSec())
-        client._cik_for_name = lambda name, reference_date=None: historical_cik if name == "Qurate Retail Inc" else None
-        client._cik_for_ticker = lambda *_args, **_kwargs: None
-        def coverage(cik, _reference_date):
-            if cik == historical_cik:
-                self.fail("a period-scoped SEC search result must not trigger a second company-facts lookup")
-            return True
-
-        client._has_company_facts_for_reference = coverage
-        rows = [("QRTEA", "Qurate Retail Inc", Decimal("100"))] + [
+        client._cik_for_name = lambda *_args, **_kwargs: successor_cik
+        client._cik_for_ticker = lambda *_args, **_kwargs: historical_cik
+        client._has_company_facts_for_reference = lambda cik, _reference_date: cik != successor_cik
+        rows = [("DIS", "Walt Disney Co", Decimal("100"))] + [
             (f"T{index:03}", f"Company {index}", Decimal(99 - index)) for index in range(99)
         ]
         directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(99)}
 
         result = client._securities("us_nasdaq100", date(2018, 9, 30), rows, directory)
 
-        self.assertEqual(next(item.cik for item in result if item.ticker == "QRTEA"), historical_cik)
+        self.assertEqual(next(item.cik for item in result if item.ticker == "DIS"), historical_cik)
 
     def test_unambiguous_stored_historical_ticker_resolves_delisted_issuer(self):
         historical_cik = "0001355096"
@@ -994,6 +990,7 @@ class USEarningsTransformTests(unittest.TestCase):
         client = USIndexConstituentClient(FakeSec())
         client._cik_for_name = lambda *_args, **_kwargs: None
         client._cik_for_ticker = lambda *_args, **_kwargs: None
+        client._has_company_facts_for_reference = lambda *_args, **_kwargs: True
         rows = [("QRTEA", "Qurate Retail Inc", Decimal("100"))] + [
             (f"T{index:03}", f"Company {index}", Decimal(99 - index)) for index in range(99)
         ]
