@@ -66,7 +66,7 @@ def _name_match_score(query: str, candidate: str) -> int:
     """
     ignored = {
         "a", "ads", "and", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
-        "inc", "incorporated", "ltd", "limited", "nv", "nvs", "ord", "ordinary", "plc", "sh",
+        "in", "inc", "incorporated", "ltd", "limited", "nv", "nvs", "ord", "ordinary", "plc", "sh",
         "share", "shares", "sr", "srs", "stores", "the",
     }
     aliases = {
