@@ -274,6 +274,29 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual([len(batch) for batch in repository.identifier_batches], [1, 1, 1, 1])
         self.assertTrue(all(not row["is_primary"] for batch in repository.identifier_batches for row in batch))
 
+    def test_cik_shaped_value_is_never_persisted_as_a_ticker(self):
+        class FakeRepository:
+            def __init__(self):
+                self.identifier_batches = []
+
+            def upsert_companies(self, _rows):
+                pass
+
+            def upsert_identifiers(self, rows):
+                self.identifier_batches.append(list(rows))
+
+        repository = FakeRepository()
+        pipeline = USEarningsAutomaticPipeline(repository, None, None)
+        pipeline.persist_universe_securities([
+            MarketSecurity(
+                "0001835632", "Marvell Technology, Inc.", "0001835632", Decimal("1"), 1,
+                date(2026, 6, 30), "us_nasdaq100",
+            )
+        ], historical=True)
+
+        identifiers = [row for batch in repository.identifier_batches for row in batch]
+        self.assertEqual([row["identifier_type"] for row in identifiers], ["cik"])
+
     def test_universe_backfill_periods_run_newest_to_oldest(self):
         periods = period_range(2026, 2, 2016, 1)
         self.assertEqual(periods[:3], [(2026, 2), (2026, 1), (2025, 4)])
