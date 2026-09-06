@@ -522,6 +522,37 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(_select_backfill_fact([partial, complete]), complete)
 
+    def test_backfill_resolves_predecessor_cik_by_strict_name_when_old_ticker_is_missing(self):
+        class Repository:
+            def us_active_companies(self, _since_year):
+                return [
+                    {"company_name": "Walt Disney Co. (The)", "ticker": None, "cik": "0001001039"},
+                    {"company_name": "WALT DISNEY COMPANY (THE)", "ticker": "DIS", "cik": "0001744489"},
+                ]
+
+        class Sec:
+            def company_facts(self, cik):
+                source = payload()
+                if cik.zfill(10) == "0001001039":
+                    for fact in source["facts"]["us-gaap"].values():
+                        fact["units"]["USD"] = [
+                            entry(fy=2018, fp="Q3", accn="old-q3", start="2018-04-01",
+                                  end="2018-06-30", filed="2018-08-01", value="10")
+                        ]
+                return source
+
+        member = USCompany(
+            company_id="us:cik:0001744489", company_name="WALT DISNEY COMPANY (THE)", ticker="DIS",
+            cik="0001744489", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2018, 6, 30),
+        )
+        pipeline = USEarningsBackfillPipeline(Repository(), Sec(), None)
+
+        candidates = pipeline._historical_ticker_candidates(member, 2018, 2)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(candidates[0].fully_complete)
+
     def test_legacy_oef_preserves_values_for_ranked_company_selection(self):
         row = "<TR><TD>Company {index}</TD><TD>1</TD><TD>1000</TD></TR>"
         document = (
@@ -1036,6 +1067,28 @@ class USEarningsTransformTests(unittest.TestCase):
         physical = {(fact.period_end, fact.fiscal_year, fact.fiscal_quarter) for fact in facts}
         self.assertIn((date(2025, 4, 30), 2026, 1), physical)
         self.assertIn((date(2026, 4, 30), 2027, 1), physical)
+
+    def test_later_filing_comparatives_receive_their_physical_fiscal_year_before_selection(self):
+        source = payload()
+        for metric in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][metric]["units"]["USD"] = [
+                entry(fy=2018, fp="FY", accn="fy-2018", start="2018-01-01",
+                      end="2018-12-31", filed="2019-02-01", value="400"),
+                entry(fy=2019, fp="FY", accn="fy-2019", start="2019-01-01",
+                      end="2019-12-31", filed="2020-02-01", value="440"),
+                entry(fy=2020, fp="FY", accn="fy-2020", start="2020-01-01",
+                      end="2020-12-31", filed="2021-02-01", value="480"),
+                entry(fy=2020, fp="Q1", accn="q1-2020", start="2019-01-01",
+                      end="2019-03-31", filed="2020-05-01", value="90"),
+                entry(fy=2020, fp="Q1", accn="q1-2020", start="2020-01-01",
+                      end="2020-03-31", filed="2020-05-01", value="100"),
+            ]
+
+        facts = extract_new_sec_facts("us:cik:late-comparative", source, {"q1-2020"})
+        physical = {(fact.period_end, fact.fiscal_year, fact.fiscal_quarter) for fact in facts}
+
+        self.assertIn((date(2019, 3, 31), 2019, 1), physical)
+        self.assertIn((date(2020, 3, 31), 2020, 1), physical)
 
     def test_latest_quarter_after_last_annual_end_advances_fiscal_year(self):
         source = payload()
