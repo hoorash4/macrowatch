@@ -511,6 +511,17 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(candidates[0].company_id, member.company_id)
         self.assertTrue(candidates[0].fully_complete)
 
+    def test_backfill_complete_predecessor_fact_can_replace_partial_successor_fact(self):
+        complete = USFinancialFact(
+            company_id="us:cik:new", fiscal_year=2018, fiscal_quarter=1,
+            period_start=date(2017, 11, 1), period_end=date(2018, 1, 31),
+            top_line=Decimal("100"), operating_income=Decimal("10"), net_income=Decimal("8"),
+            source_filing_id="old-cik", filing_date=date(2018, 3, 1), is_pending=False,
+        )
+        partial = complete.with_changes(top_line=None, source_filing_id="new-cik", is_pending=True)
+
+        self.assertEqual(_select_backfill_fact([partial, complete]), complete)
+
     def test_legacy_oef_preserves_values_for_ranked_company_selection(self):
         row = "<TR><TD>Company {index}</TD><TD>1</TD><TD>1000</TD></TR>"
         document = (
@@ -1234,6 +1245,36 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(facts[4].net_income, Decimal("32"))
         self.assertTrue(all(fact.fully_complete for fact in facts.values()))
 
+    def test_q1_is_derived_from_q2_ytd_when_direct_q1_metric_is_omitted(self):
+        source = payload()
+        for tag in ("Revenues", "OperatingIncomeLoss"):
+            source["facts"]["us-gaap"][tag]["units"]["USD"] = [
+                entry(fy=2026, fp="Q2", accn="q2", start="2026-01-01",
+                      end="2026-06-30", filed="2026-07-30", value="250"),
+                entry(fy=2026, fp="Q2", accn="q2", start="2026-04-01",
+                      end="2026-06-30", filed="2026-07-30", value="130"),
+            ]
+        source["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"] = [
+            entry(fy=2025, fp="FY", accn="fy-2025", start="2025-01-01",
+                  end="2025-12-31", filed="2026-02-15", value="40"),
+            entry(fy=2026, fp="Q2", accn="q2", start="2026-01-01",
+                  end="2026-03-31", filed="2026-07-30", value="20"),
+            entry(fy=2026, fp="Q2", accn="q2", start="2026-01-01",
+                  end="2026-06-30", filed="2026-07-30", value="35"),
+            entry(fy=2026, fp="Q2", accn="q2", start="2026-04-01",
+                  end="2026-06-30", filed="2026-07-30", value="15"),
+        ]
+
+        q1 = next(
+            fact for fact in extract_new_sec_facts("us:cik:late-q1", source, {"q2"})
+            if fact.period_end == date(2026, 3, 31)
+        )
+
+        self.assertEqual(q1.top_line, Decimal("120"))
+        self.assertEqual(q1.operating_income, Decimal("120"))
+        self.assertEqual(q1.net_income, Decimal("20"))
+        self.assertTrue(q1.fully_complete)
+
     def test_q4_stays_pending_when_any_prior_quarter_is_missing(self):
         source = payload()
         source["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"] = [
@@ -1253,6 +1294,16 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(fact.top_line, Decimal("200"))
         self.assertEqual(fact.net_income, Decimal("16"))
+        self.assertFalse(fact.is_pending)
+
+    def test_diluted_common_stockholder_income_is_valid_net_income_fallback(self):
+        source = payload()
+        net = source["facts"]["us-gaap"].pop("NetIncomeLoss")
+        source["facts"]["us-gaap"]["NetIncomeLossAvailableToCommonStockholdersDiluted"] = net
+
+        fact = extract_new_sec_facts("us:cik:diluted-net", source, {"fy"})[0]
+
+        self.assertEqual(fact.net_income, Decimal("32"))
         self.assertFalse(fact.is_pending)
 
     def test_bank_composites_fill_revenue_and_pretax_income(self):
