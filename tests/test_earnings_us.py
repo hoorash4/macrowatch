@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from earnings_us.models import MarketSecurity, market_period
+from earnings_us.models import MarketSecurity, USFinancialFact, market_period
 from earnings_us.backfill_cli import period_range
 from earnings_us.constituents import (
     USIndexConstituentClient,
@@ -21,7 +21,7 @@ from earnings_us.constituents import (
     extract_nport_equity_holdings,
 )
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
-from earnings_us.providers import ProviderError
+from earnings_us.providers import ProviderError, SecEdgarClient
 from earnings_us.transform import extract_new_sec_facts
 
 
@@ -56,6 +56,182 @@ def payload():
 
 
 class USEarningsTransformTests(unittest.TestCase):
+    @staticmethod
+    def pending_fact(*, quarter: int = 2, top_line=None, operating_income=None, net_income=None):
+        return USFinancialFact(
+            company_id="us:cik:0000000001", fiscal_year=2026, fiscal_quarter=quarter,
+            period_start=date(2026, (quarter - 1) * 3 + 1, 1),
+            period_end=date(2026, quarter * 3, 31 if quarter == 1 else 30),
+            top_line=top_line, operating_income=operating_income, net_income=net_income,
+            source_filing_id=f"q{quarter}", filing_date=date(2026, quarter * 3 + 1, 20),
+            is_pending=True,
+        )
+
+    def test_retry_incomplete_rechecks_only_repository_pending_rows(self):
+        current = self.pending_fact(top_line=Decimal("200"))
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+
+            def us_pending_rows(self, _):
+                return [{"market_id": "us_sp100", "market_year": 2026, "market_quarter": 2,
+                         "company_id": current.company_id}]
+
+            def us_active_companies(self, _):
+                return [{"company_id": current.company_id, "company_name": "Example", "cik": "0000000001"}]
+
+            def company_history(self, _):
+                return [current.db_row()]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, *_args):
+                pass
+
+        class Sec:
+            request_count = 0
+
+            def company_facts(self, _):
+                return payload()
+
+            def delisting_dates(self, _):
+                return []
+
+            def company_ticker_rows(self):
+                return [("EX", "Example", "0000000001")]
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+        pipeline.recalculate_market_period = lambda *_: None
+
+        result = pipeline.retry_incomplete(today=date(2026, 9, 6), write=True)
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["updated_company_quarters"], 1)
+        self.assertEqual(result["remaining_pending_company_quarters"], 0)
+        self.assertEqual(len(repository.saved), 1)
+        self.assertEqual(repository.saved[0]["top_line"], Decimal("200"))
+        self.assertEqual(repository.saved[0]["operating_income"], Decimal("20"))
+        self.assertFalse(repository.saved[0]["is_pending"])
+
+    def test_retry_incomplete_carries_prior_values_only_for_confirmed_disappearance(self):
+        prior = USFinancialFact(
+            company_id="us:cik:0000000001", fiscal_year=2026, fiscal_quarter=1,
+            period_start=date(2026, 1, 1), period_end=date(2026, 3, 31),
+            top_line=Decimal("100"), operating_income=Decimal("10"), net_income=Decimal("8"),
+            source_filing_id="q1", filing_date=date(2026, 5, 1), is_pending=False,
+        )
+        current = self.pending_fact()
+        current_payload = payload()
+        current_payload["facts"]["us-gaap"].pop("OperatingIncomeLoss")
+        current_payload["facts"]["us-gaap"].pop("NetIncomeLoss")
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+
+            def us_pending_rows(self, _):
+                return [{"market_id": "us_sp100", "market_year": 2026, "market_quarter": 2,
+                         "company_id": current.company_id}]
+
+            def us_active_companies(self, _):
+                return [{"company_id": current.company_id, "company_name": "Gone", "cik": "0000000001"}]
+
+            def company_history(self, _):
+                return [prior.db_row(), current.db_row()]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, *_args):
+                pass
+
+        class Sec:
+            request_count = 0
+
+            def company_facts(self, _):
+                return current_payload
+
+            def delisting_dates(self, _):
+                return [date(2026, 7, 15)]
+
+            def company_ticker_rows(self):
+                return []
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+        pipeline.recalculate_market_period = lambda *_: None
+
+        result = pipeline.retry_incomplete(today=date(2026, 9, 6), write=True)
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(len(repository.saved), 1)
+        self.assertEqual(repository.saved[0]["top_line"], Decimal("200"))
+        self.assertEqual(repository.saved[0]["operating_income"], Decimal("10"))
+        self.assertEqual(repository.saved[0]["net_income"], Decimal("8"))
+        self.assertIn("carry-forward-form25-2026-07-15", repository.saved[0]["source_filing_id"])
+        self.assertFalse(repository.saved[0]["is_pending"])
+
+    def test_retry_incomplete_keeps_active_unresolved_company_pending(self):
+        current = self.pending_fact()
+        current_payload = payload()
+        current_payload["facts"]["us-gaap"].pop("OperatingIncomeLoss")
+        current_payload["facts"]["us-gaap"].pop("NetIncomeLoss")
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+
+            def us_pending_rows(self, _):
+                return [{"market_id": "us_sp100", "market_year": 2026, "market_quarter": 2,
+                         "company_id": current.company_id}]
+
+            def us_active_companies(self, _):
+                return [{"company_id": current.company_id, "company_name": "Active", "cik": "0000000001"}]
+
+            def company_history(self, _):
+                return [current.db_row()]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, *_args):
+                pass
+
+        class Sec:
+            request_count = 0
+
+            def company_facts(self, _):
+                return current_payload
+
+            def company_ticker_rows(self):
+                return [("ACT", "Active", "0000000001")]
+
+            def delisting_dates(self, _):
+                raise AssertionError("Active listed company must not trigger a delisting request")
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+        pipeline.recalculate_market_period = lambda *_: None
+
+        result = pipeline.retry_incomplete(today=date(2026, 9, 6), write=True)
+
+        self.assertEqual(result["status"], "incomplete")
+        self.assertEqual(result["remaining_pending_company_quarters"], 1)
+        self.assertEqual(len(repository.saved), 1)
+        self.assertTrue(repository.saved[0]["is_pending"])
+
+    def test_sec_delisting_dates_accepts_only_form_25_families(self):
+        client = object.__new__(SecEdgarClient)
+        client.submissions = lambda _: {"filings": {"recent": {
+            "form": ["10-Q", "25-NSE", "25", "8-K"],
+            "filingDate": ["2026-05-01", "2026-07-15", "2026-07-16", "2026-07-17"],
+        }}}
+
+        self.assertEqual(client.delisting_dates("1"), [date(2026, 7, 15), date(2026, 7, 16)])
+
     def test_archive_selection_uses_post_quarter_filing_dates(self):
         entry = {"filingFrom": "2023-01-01", "filingTo": "2023-03-31"}
 

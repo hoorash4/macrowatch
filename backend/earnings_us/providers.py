@@ -19,6 +19,7 @@ SEC_DATA_BASE = "https://data.sec.gov"
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 KIS_OVERSEAS_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap"
 SEC_FORMS = frozenset({"10-Q", "10-K", "10-Q/A", "10-K/A"})
+SEC_DELISTING_FORMS = frozenset({"25", "25-NSE"})
 
 
 class ProviderError(RuntimeError):
@@ -180,3 +181,18 @@ class SecEdgarClient:
             if str(form).upper() in SEC_FORMS and filed_date > since:
                 result.add(str(accession))
         return result
+
+    def delisting_dates(self, cik: str) -> list[date]:
+        """Return official Form 25/25-NSE filing dates indexed for the issuer."""
+        recent = self.submissions(cik).get("filings", {}).get("recent", {})
+        if not isinstance(recent, dict):
+            return []
+        result: list[date] = []
+        for form, filed_on in zip(recent.get("form", []), recent.get("filingDate", []), strict=False):
+            if str(form).upper() not in SEC_DELISTING_FORMS:
+                continue
+            try:
+                result.append(date.fromisoformat(str(filed_on)))
+            except ValueError:
+                continue
+        return sorted(set(result))

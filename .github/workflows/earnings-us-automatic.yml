@@ -2,10 +2,11 @@ name: Earnings U.S. automatic
 
 on:
   schedule:
-    # KST 07:30 SEC filings, then KST 08:30 quarter-end index snapshot.
+    # KST 11:00 quarter-end snapshot, 11:30 new SEC filings, 12:00 pending-only retry.
     # Run every day because the U.S. Friday close is Saturday morning in Korea.
-    - cron: "30 22 * * *"
-    - cron: "30 23 * * *"
+    - cron: "0 2 * * *"
+    - cron: "30 2 * * *"
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       phase:
@@ -13,7 +14,7 @@ on:
         required: true
         default: all
         type: choice
-        options: [snapshot, edgar, all]
+        options: [snapshot, edgar, incomplete, all]
       write:
         description: Persist U.S. collection results
         required: true
@@ -43,7 +44,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
-          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 22 * * *' && 'edgar' || 'snapshot') || inputs.phase }}
+          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 2 * * *' && 'snapshot' || (github.event.schedule == '30 2 * * *' && 'edgar' || 'incomplete')) || inputs.phase }}
           SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

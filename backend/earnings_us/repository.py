@@ -26,6 +26,13 @@ class USEarningsRepository(EarningsV2Repository):
         rows = self.rpc("earnings_v2_us_active_companies", {"p_since_year": since_year}) or []
         return [row for row in rows if isinstance(row, dict)]
 
+    def us_pending_rows(self, since_year: int) -> list[dict[str, Any]]:
+        return [
+            row for row in self.pending_rows()
+            if str(row.get("market_id") or "").startswith("us_")
+            and int(row.get("market_year") or 0) >= since_year
+        ]
+
     def us_market_facts(self, market_id: str, year: int, quarter: int) -> list[dict[str, Any]]:
         rows = self.rpc("earnings_v2_us_market_facts", {
             "p_market_id": market_id, "p_market_year": year, "p_market_quarter": quarter,

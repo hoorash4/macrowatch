@@ -231,6 +231,17 @@ class CommonClientTests(unittest.TestCase):
 
 
 class SourceContractTests(unittest.TestCase):
+    def test_us_earnings_schedule_runs_snapshot_before_edgar_and_pending_retry(self):
+        workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+        cli = (ROOT / "backend/earnings_us/automatic_cli.py").read_text(encoding="utf-8")
+
+        self.assertIn('cron: "0 2 * * *"', workflow)
+        self.assertIn('cron: "30 2 * * *"', workflow)
+        self.assertIn('cron: "0 3 * * *"', workflow)
+        self.assertNotIn('cron: "30 22 * * *"', workflow)
+        self.assertIn("options: [snapshot, edgar, incomplete, all]", workflow)
+        self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
+
     def test_closed_membership_keeps_passwords_in_supabase_auth(self):
         migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
         auth = (ROOT / "auth.js").read_text(encoding="utf-8")
