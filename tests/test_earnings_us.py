@@ -1140,6 +1140,23 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.operating_income, Decimal("30"))
         self.assertFalse(fact.is_pending)
 
+    def test_income_statement_identity_fills_missing_top_line(self):
+        source = payload()
+        facts = source["facts"]["us-gaap"]
+        revenues = facts.pop("Revenues")
+        operating = facts["OperatingIncomeLoss"]
+        facts["OperatingExpenses"] = {
+            "units": {"USD": [
+                {**row, "val": Decimal(str(row["val"])) - Decimal(str(op["val"]))}
+                for row, op in zip(revenues["units"]["USD"], operating["units"]["USD"])
+            ]}
+        }
+
+        fact = extract_new_sec_facts("us:cik:identity", source, {"q2"})[0]
+
+        self.assertEqual(fact.top_line, Decimal("200"))
+        self.assertFalse(fact.is_pending)
+
     def test_historical_constituent_rejects_successor_cik_without_period_coverage(self):
         successor_cik = "0002115436"
         historical_cik = "0000034088"
