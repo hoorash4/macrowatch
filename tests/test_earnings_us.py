@@ -959,6 +959,31 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(next(item.cik for item in result if item.ticker == "XOM"), historical_cik)
 
+    def test_date_bounded_sec_search_does_not_require_second_company_facts_lookup(self):
+        historical_cik = "0001355096"
+
+        class FakeSec:
+            def company_ticker_rows(self):
+                return []
+
+        client = USIndexConstituentClient(FakeSec())
+        client._cik_for_name = lambda name, reference_date=None: historical_cik if name == "Qurate Retail Inc" else None
+        client._cik_for_ticker = lambda *_args, **_kwargs: None
+        def coverage(cik, _reference_date):
+            if cik == historical_cik:
+                self.fail("a period-scoped SEC search result must not trigger a second company-facts lookup")
+            return True
+
+        client._has_company_facts_for_reference = coverage
+        rows = [("QRTEA", "Qurate Retail Inc", Decimal("100"))] + [
+            (f"T{index:03}", f"Company {index}", Decimal(99 - index)) for index in range(99)
+        ]
+        directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(99)}
+
+        result = client._securities("us_nasdaq100", date(2018, 9, 30), rows, directory)
+
+        self.assertEqual(next(item.cik for item in result if item.ticker == "QRTEA"), historical_cik)
+
 
 if __name__ == "__main__":
     unittest.main()
