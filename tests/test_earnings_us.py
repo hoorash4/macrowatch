@@ -782,6 +782,7 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(_name_match_score("ABC HOLDINGS", "ABC BANK CORPORATION"), 0)
         self.assertEqual(_name_match_score("MARRIOT INT CL A", "Marriott International Inc."), 200)
         self.assertEqual(_name_match_score("VODAFONE GRP PLC ADS", "Vodafone Group plc"), 200)
+        self.assertEqual(_name_match_score("Philip Morris International In", "Philip Morris International Inc."), 300)
         self.assertEqual(_name_match_score("21ST CENTRY FOX A CM", "Twenty-First Century Fox Inc."), 299)
 
     def test_legacy_sec_names_and_encoding_are_normalized(self):
@@ -885,6 +886,21 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(market_period(fact.period_end), (2026, 1))
         row = fact.db_row()
         self.assertEqual((row["market_year"], row["market_quarter"]), (2026, 1))
+
+    def test_comparative_sec_fy_labels_do_not_collide_across_physical_years(self):
+        source = payload()
+        for metric in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][metric]["units"]["USD"].extend([
+                entry(fy=2026, fp="Q1", accn="q1-old", start="2025-02-01", end="2025-04-30", filed="2025-06-01", value="10"),
+                entry(fy=2026, fp="Q1", accn="q1-new", start="2026-02-01", end="2026-04-30", filed="2026-06-01", value="20"),
+                entry(fy=2025, fp="FY", accn="fy-old", start="2024-02-01", end="2025-01-31", filed="2025-03-01", value="40"),
+                entry(fy=2026, fp="FY", accn="fy-new", start="2025-02-01", end="2026-01-31", filed="2026-03-01", value="80"),
+                entry(fy=2027, fp="FY", accn="fy-next", start="2026-02-01", end="2027-01-31", filed="2027-03-01", value="120"),
+            ])
+        facts = extract_new_sec_facts("us:cik:comparative", source, {"q1-old", "q1-new"})
+        physical = {(fact.period_end, fact.fiscal_year, fact.fiscal_quarter) for fact in facts}
+        self.assertIn((date(2025, 4, 30), 2026, 1), physical)
+        self.assertIn((date(2026, 4, 30), 2027, 1), physical)
 
     def test_week_calendar_close_just_after_boundary_stays_in_prior_market_quarter(self):
         self.assertEqual(market_period(date(2017, 4, 1)), (2017, 1))
