@@ -186,8 +186,8 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.ok(qoqDomain.ticks.includes(0), '계절조정 QoQ축은 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /data-market-earnings-select/);
-  assert.match(html, /<option value="kr_largecap">KOSPI<\/option>/);
-  assert.match(html, /<option value="kr_kosdaq">KOSDAQ<\/option>/);
+  assert.match(html, /<option value="kr_largecap">KOSPI 100<\/option>/);
+  assert.match(html, /<option value="kr_kosdaq">KOSDAQ 100<\/option>/);
   assert.match(html, /<option value="us_sp100">S&amp;P 100<\/option>/);
   assert.match(html, /<option value="us_nasdaq100">NASDAQ 100<\/option>/);
   assert.match(html, /data-company-earnings-market-select/);
