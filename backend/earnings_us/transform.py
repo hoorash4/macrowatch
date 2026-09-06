@@ -138,6 +138,33 @@ def _metric_value(
     return None, None, None, None
 
 
+def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) -> list[date]:
+    """Return physical fiscal year ends without trusting SEC's comparative ``fy`` label."""
+    result: set[date] = set()
+    for groups in entries.values():
+        for components in groups:
+            for rows in components:
+                for row in rows:
+                    if str(row.get("fp") or "") != "FY" or str(row.get("form") or "").upper() not in {"10-K", "10-K/A"}:
+                        continue
+                    try:
+                        start = date.fromisoformat(str(row["start"]))
+                        end = date.fromisoformat(str(row["end"]))
+                    except (KeyError, ValueError):
+                        continue
+                    if (end - start).days + 1 >= 300:
+                        result.add(end)
+    return sorted(result)
+
+
+def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date], fallback: int) -> int:
+    """Build a stable fiscal key from the represented period, not mutable SEC ``fy`` metadata."""
+    if quarter == 4:
+        return period_end.year
+    following = [end for end in annual_ends if period_end <= end <= period_end.fromordinal(period_end.toordinal() + 370)]
+    return min(following).year if following else fallback
+
+
 def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
     """Q1–Q3 use SEC's three-month facts; FY produces Q4 only after Q1–Q3 exist."""
     entries = {metric: _entry_groups(payload, metric) for metric in METRIC_BASES}
@@ -150,7 +177,8 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
                     fy = int(row.get("fy") or 0)
                     if accession in accessions and fp in {"Q1", "Q2", "Q3", "FY"} and fy:
                         contexts.add((fy, fp, accession))
-    result: list[USFinancialFact] = []
+    annual_ends = _annual_period_ends(entries)
+    result: dict[tuple[date, int], USFinancialFact] = {}
     for fy, fp, accession in sorted(contexts):
         quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}[fp]
         annual = fp == "FY"
@@ -165,12 +193,18 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
         if not ends:
             continue
         period_end, filing_date = max(ends), max(filed_dates)
-        result.append(USFinancialFact(
-            company_id=company_id, fiscal_year=fy, fiscal_quarter=quarter,
+        fact = USFinancialFact(
+            company_id=company_id,
+            fiscal_year=_physical_fiscal_year(period_end, quarter, annual_ends, fy),
+            fiscal_quarter=quarter,
             period_start=min(starts) if starts else None, period_end=period_end,
             top_line=values["top_line"], operating_income=values["operating_income"], net_income=values["net_income"],
             source_filing_id=accession, filing_date=filing_date,
             is_pending=any(value is None for value in values.values()),
-        ))
-    return result
+        )
+        physical_key = (period_end, quarter)
+        current = result.get(physical_key)
+        if current is None or (fact.fully_complete, fact.filing_date) > (current.fully_complete, current.filing_date):
+            result[physical_key] = fact
+    return sorted(result.values(), key=lambda fact: (fact.period_end, fact.fiscal_quarter, fact.filing_date))
 
