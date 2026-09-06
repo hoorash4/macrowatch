@@ -487,6 +487,11 @@ class USIndexConstituentClient:
             if any(normalized == normalized_name and cik for _, normalized, cik in candidates):
                 break
         exact_ciks = {cik for _, normalized, cik in candidates if normalized == normalized_name and cik}
+        if reference_date:
+            exact_ciks = {
+                cik for cik in exact_ciks
+                if self._has_company_facts_for_reference(cik, reference_date)
+            }
         exact = next(iter(exact_ciks)) if len(exact_ciks) == 1 else None
         if exact:
             value = exact
@@ -496,6 +501,11 @@ class USIndexConstituentClient:
                 for raw_name, _, cik in candidates if cik
                 for score in [max(_name_match_score(query, raw_name) for query in queries)] if score
             ]
+            if reference_date:
+                scored = [
+                    (score, cik) for score, cik in scored
+                    if self._has_company_facts_for_reference(cik, reference_date)
+                ]
             best = max((score for score, _ in scored), default=0)
             best_ciks = {cik for score, cik in scored if score == best}
             value = next(iter(best_ciks)) if len(best_ciks) == 1 else None
@@ -539,8 +549,12 @@ class USIndexConstituentClient:
                 continue
             for display in source.get("display_names", []) if isinstance(source.get("display_names"), list) else ():
                 match = re.search(r"CIK\s+(\d+)", str(display))
-                if match and pattern.search(str(display)):
-                    return normalize_cik(match.group(1))
+                candidate = normalize_cik(match.group(1)) if match and pattern.search(str(display)) else None
+                if candidate and (
+                    reference_date is None
+                    or self._has_company_facts_for_reference(candidate, reference_date)
+                ):
+                    return candidate
         # A delisted historical ticker is often absent from the issuer's modern
         # display name.  With a tight filing-date window and annual-report form
         # filter, the first exact-ticker search hit is the filing issuer.
@@ -550,7 +564,9 @@ class USIndexConstituentClient:
                 source_ciks = source.get("ciks", []) if isinstance(source, dict) else []
                 unique = {normalize_cik(item) for item in source_ciks if normalize_cik(item)}
                 if len(unique) == 1:
-                    return next(iter(unique))
+                    candidate = next(iter(unique))
+                    if self._has_company_facts_for_reference(candidate, reference_date):
+                        return candidate
         return None
 
     def _has_company_facts(self, cik: str) -> bool:
