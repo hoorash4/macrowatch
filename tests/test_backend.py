@@ -536,6 +536,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("create or replace function public.earnings_v2_public_market_series", migration)
         self.assertIn("select earnings_v2.refresh_market_seasonal_adjustment();", migration)
 
+    def test_backfill_replacement_uses_physical_market_period(self):
+        migration = (ROOT / "supabase/migrations/20260906204500_replace_backfill_rows_by_market_period.sql").read_text(encoding="utf-8")
+
+        self.assertIn("as incoming(company_id text, market_year integer, market_quarter smallint)", migration)
+        self.assertIn("q.market_year = incoming.market_year", migration)
+        self.assertIn("q.market_quarter = incoming.market_quarter", migration)
+        self.assertNotIn("q.fiscal_year = incoming.fiscal_year", migration)
+
     def test_target_alerts_use_db_tokens_retry_queue_and_visible_failures(self):
         checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")
@@ -787,3 +795,4 @@ class KoreaForeignFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
