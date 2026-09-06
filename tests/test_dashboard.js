@@ -188,6 +188,9 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(html, /data-market-earnings-select/);
   assert.match(html, /<option value="kr_largecap">KOSPI<\/option>/);
   assert.match(html, /<option value="kr_kosdaq">KOSDAQ<\/option>/);
+  assert.match(html, /<option value="us_sp100">S&amp;P 100<\/option>/);
+  assert.match(html, /<option value="us_nasdaq100">NASDAQ 100<\/option>/);
+  assert.match(html, /data-company-earnings-market-select/);
   assert.match(html, /id="company-earnings-dashboard"/);
   assert.match(html, /id="korea-earnings-amount-chart"/);
   assert.match(html, /id="korea-earnings-margin-chart"/);
@@ -205,12 +208,18 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /earnings_v2_public_market_series/);
   assert.match(source, /marketId: 'kr_largecap'/);
   assert.match(source, /marketId: 'kr_kosdaq'/);
+  assert.match(source, /marketId: 'us_sp100'/);
+  assert.match(source, /marketId: 'us_nasdaq100'/);
+  assert.match(source, /currency: 'USD'/);
   assert.match(source, /data-market-earnings-card/);
   assert.match(source, /function selectedMarket/);
   assert.match(source, /marketCard\.selectedMarketId = select\.value/);
   assert.match(source, /earnings_v2_public_latest_company_options/);
   assert.match(source, /earnings_v2_public_company_series/);
   assert.match(source, /function renderCompanyCandidates/);
+  assert.match(source, /company\.market_id === companyCard\.state\.selectedMarketId/);
+  assert.match(source, /function connectCompanyMarketControl/);
+  assert.match(source, /item\.market_id === companyCard\.state\.selectedMarketId/);
   assert.match(source, /company\.company_name\.toLocaleLowerCase\('ko-KR'\)\.includes\(query\)/);
   assert.match(source, /kind: 'amount'/);
   assert.match(source, /kind: 'margin'/);
@@ -652,4 +661,5 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.66rem;[\s\S]*font-weight:500;/);
   assert.doesNotMatch(styles, /margin-left:\.28rem/);
 });
+
 

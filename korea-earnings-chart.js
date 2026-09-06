@@ -6,15 +6,17 @@
     { key: 'net_income', label: '순이익', className: 'net-income' },
   ];
   const CHARTS = [
-    { key: 'amount', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, unit: '원', showPeriodLabels: true },
+    { key: 'amount', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, showPeriodLabels: true },
     { key: 'margin', valueKey: 'marginPct', kind: 'margin', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
     { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
     { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
   ];
   // 시장별 데이터와 기간 상태는 분리하되, 하나의 카드에서 선택한 시장만 렌더링합니다.
   const MARKET_CONFIGS = [
-    { marketId: 'kr_largecap', label: 'KOSPI' },
-    { marketId: 'kr_kosdaq', label: 'KOSDAQ' },
+    { marketId: 'kr_largecap', label: 'KOSPI', currency: 'KRW' },
+    { marketId: 'kr_kosdaq', label: 'KOSDAQ', currency: 'KRW' },
+    { marketId: 'us_sp100', label: 'S&P 100', currency: 'USD' },
+    { marketId: 'us_nasdaq100', label: 'NASDAQ 100', currency: 'USD' },
   ];
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const DISPLAY_START_YEAR = 2016;
@@ -23,7 +25,8 @@
   const marketCard = { root: null, selectedMarketId: 'kr_largecap' };
   const companyCard = {
     label: '개별 기업', type: 'company', root: null,
-    state: { series: [], years: 5, candidates: [], selected: null },
+    currency: 'KRW',
+    state: { series: [], years: 5, candidates: [], selected: null, selectedMarketId: 'kr_largecap' },
   };
 
   // Number(null)은 0이므로 DB의 계산 불가값을 먼저 걸러야 가짜 0점이 생기지 않습니다.
@@ -38,16 +41,22 @@
     const rounded = Math.abs(value) < .05 ? 0 : value;
     return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}${unit}`;
   }
-  function formatAmount(value) {
+  function formatAmount(value, currency = 'KRW') {
     if (!Number.isFinite(value)) return '—';
     const absolute = Math.abs(value);
+    if (currency === 'USD') {
+      if (absolute >= 1e12) return `$${(value / 1e12).toFixed(absolute >= 1e13 ? 0 : 1)}T`;
+      if (absolute >= 1e9) return `$${(value / 1e9).toFixed(absolute >= 1e10 ? 0 : 1)}B`;
+      if (absolute >= 1e6) return `$${(value / 1e6).toFixed(absolute >= 1e8 ? 0 : 1)}M`;
+      return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    }
     if (absolute >= 1e12) return `${(value / 1e12).toFixed(absolute >= 1e13 ? 0 : 1)}조`;
     if (absolute >= 1e8) return `${(value / 1e8).toFixed(absolute >= 1e10 ? 0 : 1)}억`;
     if (absolute >= 1e4) return `${(value / 1e4).toFixed(absolute >= 1e6 ? 0 : 1)}만`;
     return value.toLocaleString('ko-KR', { maximumFractionDigits: 0 });
   }
-  function formatAxis(value, kind) {
-    if (kind === 'amount') return formatAmount(value);
+  function formatAxis(value, kind, currency) {
+    if (kind === 'amount') return formatAmount(value, currency);
     return `${Math.abs(value) < Number.EPSILON ? 0 : Number(value.toFixed(2))}`;
   }
 
@@ -153,12 +162,12 @@
     if (Number.isFinite(value)) return value;
     return spec.kind !== 'amount' && STATE_LABELS[metricState(point, metricKey, spec.kind)] ? 0 : null;
   }
-  function formatChartValue(point, metric, spec) {
+  function formatChartValue(point, metric, spec, market) {
     const raw = metricValue(point, metric.key, spec.valueKey);
     if (Number.isFinite(raw)) {
       if (spec.kind !== 'amount') return formatSigned(raw, spec.unit);
       const actual = metricValue(point, metric.key, 'rawAmount');
-      return `${formatAmount(raw)}원${Number.isFinite(actual) ? ` (원본 ${formatAmount(actual)}원)` : ''}`;
+      return `${formatAmount(raw, market.currency)}${Number.isFinite(actual) ? ` (원본 ${formatAmount(actual, market.currency)})` : ''}`;
     }
     return STATE_LABELS[metricState(point, metric.key, spec.kind)] || '—';
   }
@@ -172,7 +181,7 @@
     const element = market.root?.querySelector('[data-earnings-summary]'), latest = points.at(-1);
     if (!element || !latest) return;
     const status = latest.lifecycleStatus === 'complete' ? '확정' : latest.lifecycleStatus === 'provisional' ? '잠정' : '수집 중';
-    const values = METRICS.map((metric) => `<span>${metric.label}${market.type === 'company' ? '' : ' 합계'} ${formatAmount(metricValue(latest, metric.key, 'amount'))}원</span>`).join('');
+    const values = METRICS.map((metric) => `<span>${metric.label}${market.type === 'company' ? '' : ' 합계'} ${formatAmount(metricValue(latest, metric.key, 'amount'), market.currency)}</span>`).join('');
     if (market.type === 'company') {
       element.innerHTML = `<strong>${escapeHtml(market.state.selected?.company_name || '개별 기업')} · ${periodLabel(latest)}</strong>${values}<span>${status}</span>`;
       return;
@@ -200,7 +209,7 @@
     const chartWidth = Math.max(frameWidth, points.length * 48);
     const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), padding.left, chartWidth - padding.right);
     const y = (value, sourceDomain = domain) => scale(value, sourceDomain.min, sourceDomain.max, spec.height - padding.bottom, padding.top);
-    const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind)}</text>`).join('');
+    const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind, market.currency)}</text>`).join('');
     const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
     const labels = spec.showPeriodLabels
       ? points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
@@ -236,7 +245,7 @@
     const showCursor = (index) => {
       const point = points[index], cursorX = x(index);
       const details = chartMetrics.map((metric) => {
-        return `${metric.label} ${formatChartValue(point, metric, spec)}`;
+        return `${metric.label} ${formatChartValue(point, metric, spec, market)}`;
       }).join(' · ');
       const labelX = Math.max(170, Math.min(chartWidth - 170, cursorX));
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursorLabel.setAttribute('x', labelX);
@@ -267,7 +276,7 @@
       yLabels.forEach((label, index) => {
         const value = visibleDomain.ticks[index];
         label.setAttribute('y', y(value, visibleDomain) + 3);
-        label.textContent = formatAxis(value, spec.kind);
+        label.textContent = formatAxis(value, spec.kind, market.currency);
       });
       yGrids.forEach((grid, index) => {
         const value = visibleDomain.ticks[index], gridY = y(value, visibleDomain);
@@ -326,6 +335,8 @@
 
   function render(market) {
     if (!market.root) return;
+    const unit = market.root.querySelector('[data-earnings-amount-unit]');
+    if (unit) unit.textContent = market.currency === 'USD' ? '달러' : '원';
     const points = visiblePoints(market);
     if (!points.length) { setStatus(market, `비교 가능한 ${market.label} 시총 상위기업 실적이 아직 없습니다.`); return; }
     updateSummary(market, points);
@@ -344,17 +355,19 @@
     if (!input || !list) return;
     const query = input.value.trim().toLocaleLowerCase('ko-KR');
     const matches = companyCard.state.candidates
+      .filter((company) => company.market_id === companyCard.state.selectedMarketId)
       .filter((company) => !query || company.company_name.toLocaleLowerCase('ko-KR').includes(query))
       .slice(0, 20);
     list.hidden = !matches.length;
     list.innerHTML = matches.map((company) => (
-      `<button type="button" role="option" data-company-earnings-id="${escapeHtml(company.company_id)}" aria-selected="${company.company_id === companyCard.state.selected?.company_id}"><strong>${escapeHtml(company.company_name)}</strong><span>${company.market_id === 'kr_largecap' ? 'KOSPI' : 'KOSDAQ'} · 시총 ${company.market_cap_rank}위</span></button>`
+      `<button type="button" role="option" data-company-earnings-id="${escapeHtml(company.company_id)}" aria-selected="${company.company_id === companyCard.state.selected?.company_id}"><strong>${escapeHtml(company.company_name)}</strong><span>${escapeHtml(MARKET_CONFIGS.find((market) => market.marketId === company.market_id)?.label || company.market_id)} · 시총 ${company.market_cap_rank}위</span></button>`
     )).join('');
   }
 
   async function selectCompany(company, supabaseClient) {
     if (!company || !supabaseClient) return;
     companyCard.state.selected = company;
+    companyCard.currency = MARKET_CONFIGS.find((market) => market.marketId === company.market_id)?.currency || 'KRW';
     const input = companyCard.root?.querySelector('[data-company-earnings-search]');
     const list = companyCard.root?.querySelector('[data-company-earnings-suggestions]');
     if (input) input.value = company.company_name;
@@ -419,8 +432,21 @@
     input.addEventListener('focus', renderCompanyCandidates);
     list.addEventListener('click', (event) => {
       const button = event.target.closest('[data-company-earnings-id]');
-      const company = companyCard.state.candidates.find((item) => item.company_id === button?.dataset.companyEarningsId);
+      const company = companyCard.state.candidates.find((item) => (
+        item.company_id === button?.dataset.companyEarningsId
+        && item.market_id === companyCard.state.selectedMarketId
+      ));
       selectCompany(company, supabaseClient);
+    });
+  }
+
+  function connectCompanyMarketControl(supabaseClient) {
+    const select = companyCard.root?.querySelector('[data-company-earnings-market-select]');
+    if (!select) return;
+    select.addEventListener('change', async () => {
+      companyCard.state.selectedMarketId = select.value;
+      const first = companyCard.state.candidates.find((company) => company.market_id === select.value);
+      await selectCompany(first, supabaseClient);
     });
   }
 
@@ -437,7 +463,8 @@
       if (response.error || !response.data?.length) { setStatus(companyCard, '개별 기업 후보를 불러오지 못했습니다.'); return; }
       companyCard.state.candidates = response.data;
       connectCompanySearch(supabaseClient);
-      await selectCompany(companyCard.state.candidates[0], supabaseClient);
+      connectCompanyMarketControl(supabaseClient);
+      await selectCompany(companyCard.state.candidates.find((company) => company.market_id === companyCard.state.selectedMarketId), supabaseClient);
     })();
     await Promise.all([...marketLoads, companyLoad]);
     renderSelectedMarket();
@@ -454,4 +481,5 @@
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, seriesFromCompanyRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
+
 
