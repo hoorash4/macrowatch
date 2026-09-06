@@ -82,7 +82,7 @@ jobs:
           )
           message.set_content(
               ("MacroWatch 예약 실행 실패 메일의 테스트입니다.\n\n" if is_test else
-               "MacroWatch 예약 자동 실행이 실패했습니다.\n\n")
+               "MacroWatch 예약 자동 실행이 실패했습니다.\n\n") +
               f"워크플로: {workflow}\n"
               f"결과: {conclusion}\n"
               f"완료 시각: {os.environ['SOURCE_FINISHED_AT']}\n"
