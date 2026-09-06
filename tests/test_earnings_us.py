@@ -281,6 +281,21 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.operating_income, Decimal("668500000.0"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_rejects_cross_statement_scale_mismatch(self):
+        html = """
+        <div>Second quarter 2023 financial results</div>
+        <table><tr><th>Three months ended</th><th>June 30, 2023</th></tr>
+        <tr><th>(USD in millions)</th></tr>
+        <tr><td>Revenue</td><td>1</td></tr>
+        <tr><td>Operating income</td><td>2,456</td></tr>
+        <tr><td>Net income</td><td>1,820</td></tr></table>
+        """
+        filing = SixKFiling("mismatch", date(2023, 7, 28), date(2023, 6, 30), "q2-results.htm")
+
+        self.assertIsNone(
+            extract_six_k_fact("company", filing, [SixKDocument("results.htm", html)], 2023, 2),
+        )
+
     def test_six_k_flat_q4_statement_does_not_use_full_year_column(self):
         html = """
         <div>Financial results. Three months ended Year ended Dec 31, Dec 31, Dec 31, Dec 31,

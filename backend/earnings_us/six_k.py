@@ -485,6 +485,18 @@ def extract_six_k_fact(
                 continue
             value *= fx_to_usd(currency, represented_end)
         converted[metric] = value
+    top_line = converted["top_line"]
+    if top_line not in {None, Decimal(0)}:
+        # A tiny segment/footnote value can otherwise win the label match while
+        # operating or net income comes from the consolidated statement.
+        # Reject only extreme cross-statement mismatches; unusual but valid
+        # loss-making quarters remain accepted.
+        limit = abs(top_line) * Decimal(20)
+        if any(
+            value is not None and abs(value) > limit
+            for value in (converted["operating_income"], converted["net_income"])
+        ):
+            return None
     return USFinancialFact(
         company_id=company_id, fiscal_year=year, fiscal_quarter=quarter,
         period_start=None, period_end=represented_end,
