@@ -615,14 +615,18 @@ class USIndexConstituentClient:
             if periods else self._has_company_facts(cik)
         )
 
-    def _securities(self, market_id: str, reference_date: date, rows: Iterable[SourceHolding], directory: dict[str, str]) -> list[MarketSecurity]:
+    def _securities(
+        self, market_id: str, reference_date: date, rows: Iterable[SourceHolding],
+        directory: dict[str, str], historical_directory: dict[str, str] | None = None,
+    ) -> list[MarketSecurity]:
+        historical_directory = historical_directory or {}
         by_company: dict[str, tuple[MarketSecurity, Decimal, bool]] = {}
         ticker_by_cik: dict[str, str] = {}
         for ticker, cik in directory.items():
             if ticker and (cik not in ticker_by_cik or ticker < ticker_by_cik[cik]):
                 ticker_by_cik[cik] = ticker
         unresolved: list[str] = []
-        pending: list[tuple[SourceHolding, str | None]] = []
+        pending: list[tuple[SourceHolding, str | None, str | None]] = []
         issuer_directory: dict[str, set[str]] = {}
         issuer_rows = [(title, cik) for _, title, cik in self.sec.company_ticker_rows()]
         issuer_titles_by_cik: dict[str, list[str]] = {}
@@ -673,6 +677,10 @@ class USIndexConstituentClient:
 
         for ticker, name, selection_value in rows:
             cik = next((directory[item] for item in ticker_candidates(ticker) if item in directory), None) if ticker else None
+            historical_cik = next(
+                (historical_directory[item] for item in ticker_candidates(ticker) if item in historical_directory),
+                None,
+            ) if ticker else None
             # A ticker can be reused by a different issuer after a spin-off or
             # reorganization.  Trust today's ticker directory for a historical
             # row only when its issuer name still describes the source company.
@@ -681,20 +689,22 @@ class USIndexConstituentClient:
                 not self._has_company_facts_for_reference(cik, reference_date)
                 or (name and current_titles and not any(_name_match_score(name, title) >= 100 for title in current_titles))
             ):
-                pending.append(((ticker, name, selection_value), cik))
+                pending.append(((ticker, name, selection_value), cik, historical_cik))
                 continue
             if cik is None:
                 cik = current_directory_cik(name)
+            if cik is None and historical_cik is not None:
+                cik = historical_cik
             if cik is None:
-                pending.append(((ticker, name, selection_value), None))
+                pending.append(((ticker, name, selection_value), None, historical_cik))
                 continue
             store(ticker, name, cik, selection_value)
 
         # Current SEC's ticker directory intentionally omits delisted historic
         # symbols. Resolve only that small remainder concurrently, staying well
         # below the SEC's public request-rate limit.
-        def resolve(item: tuple[SourceHolding, str | None]) -> tuple[str, str, Decimal | None, str | None]:
-            (ticker, name, selection_value), fallback_cik = item
+        def resolve(item: tuple[SourceHolding, str | None, str | None]) -> tuple[str, str, Decimal | None, str | None]:
+            (ticker, name, selection_value), fallback_cik, historical_cik = item
             # A date-bounded SEC filing search already proves that the issuer
             # used this name/ticker in the historical period. Requiring a
             # second, much larger company-facts download can turn a transient
@@ -704,6 +714,8 @@ class USIndexConstituentClient:
             cik = self._cik_for_name(name, reference_date)
             if cik is None:
                 cik = self._cik_for_ticker(ticker, reference_date)
+            if cik is None:
+                cik = historical_cik
             if cik is None and fallback_cik and self._has_company_facts_for_reference(fallback_cik, reference_date):
                 cik = fallback_cik
             return ticker, name, selection_value, cik
@@ -734,7 +746,10 @@ class USIndexConstituentClient:
         )[:100]
         return [MarketSecurity(**{**item[0].__dict__, "rank": index}) for index, item in enumerate(ranked, start=1)]
 
-    def nasdaq100(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
+    def nasdaq100(
+        self, reference_date: date, directory: dict[str, str],
+        historical_directory: dict[str, str] | None = None,
+    ) -> list[MarketSecurity]:
         def weighting_rows(trading_date: date) -> list[SourceHolding]:
             payload = self._json(
                 "POST", NASDAQ_WEIGHTING_URL, f"Nasdaq-100 constituents {trading_date.isoformat()}",
@@ -761,10 +776,10 @@ class USIndexConstituentClient:
             qqq_rows = self._qqq_nport_rows(reference_date)
             if qqq_rows is None:
                 raise ProviderError(f"Nasdaq-100 source returned {len(rows)}/100 securities and QQQ had no weights")
-            return self._securities("us_nasdaq100", reference_date, qqq_rows, directory)
+            return self._securities("us_nasdaq100", reference_date, qqq_rows, directory, historical_directory)
         selection_error: ProviderError | None = None
         try:
-            return self._securities("us_nasdaq100", reference_date, rows, directory)
+            return self._securities("us_nasdaq100", reference_date, rows, directory, historical_directory)
         except ProviderError as exc:
             if "without source weights for selection" not in str(exc):
                 raise
@@ -782,7 +797,9 @@ class USIndexConstituentClient:
                 if len(later_rows) < 100 or not later_tickers.issubset(prior_tickers):
                     continue
                 try:
-                    later_companies = self._securities("us_nasdaq100", reference_date, later_rows, directory)
+                    later_companies = self._securities(
+                        "us_nasdaq100", reference_date, later_rows, directory, historical_directory,
+                    )
                 except ProviderError:
                     continue
                 if len(later_companies) == 100:
@@ -790,7 +807,7 @@ class USIndexConstituentClient:
             raise ProviderError(
                 f"Nasdaq-100 could not select 100 companies for {reference_date}; {selection_error}"
             )
-        return self._securities("us_nasdaq100", reference_date, qqq_rows, directory)
+        return self._securities("us_nasdaq100", reference_date, qqq_rows, directory, historical_directory)
 
     def sp100_current(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
         content = self._binary(ISHARES_OEF_HOLDINGS_URL, "OEF current holdings")
@@ -812,10 +829,13 @@ class USIndexConstituentClient:
                 rows.append((ticker, name, selection_value))
         return self._securities("us_sp100", reference_date, rows, directory)
 
-    def sp100_historical(self, reference_date: date, directory: dict[str, str]) -> list[MarketSecurity]:
+    def sp100_historical(
+        self, reference_date: date, directory: dict[str, str],
+        historical_directory: dict[str, str] | None = None,
+    ) -> list[MarketSecurity]:
         nport_rows = self._oef_nport_rows(reference_date)
         if nport_rows is not None:
-            return self._securities("us_sp100", reference_date, nport_rows, directory)
+            return self._securities("us_sp100", reference_date, nport_rows, directory, historical_directory)
 
         legacy_accessions = self._oef_legacy_accessions()
         submissions = self.sec.submissions(OEF_TRUST_CIK)
@@ -859,6 +879,6 @@ class USIndexConstituentClient:
                 )
             except ProviderError:
                 continue
-            return self._securities("us_sp100", reference_date, rows, directory)
+            return self._securities("us_sp100", reference_date, rows, directory, historical_directory)
         raise ProviderError(f"OEF filings for {target} did not contain an S&P 100 holdings schedule")
 
