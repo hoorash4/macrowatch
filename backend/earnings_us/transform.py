@@ -20,6 +20,9 @@ METRIC_BASES = {
         ("RevenuesNetOfInterestExpense",),
         ("RevenuesExcludingInterestAndDividends",),
         ("InterestIncomeExpenseNet", "NoninterestIncome"),
+        ("CostsAndExpenses", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"),
+        ("CostsAndExpenses", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"),
+        ("OperatingExpenses", "OperatingIncomeLoss"),
     ),
     "operating_income": (
         ("OperatingIncomeLoss",),
