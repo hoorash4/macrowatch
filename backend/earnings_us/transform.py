@@ -44,7 +44,11 @@ METRIC_BASES = {
 # labelled "Total revenues, net of interest expense".  It is the exact
 # top-line reported in the filing, not a synthetic sum of segment items.
 EXTENSION_METRIC_BASES = {
-    "top_line": (("TotalRevenuesNetOfInterestExpense",),),
+    "top_line": (
+        ("RevenuesNetOfInterestExpense",),
+        ("TotalRevenuesNetOfInterestExpense",),
+        ("TotalRevenueNetOfInterestExpense",),
+    ),
 }
 
 

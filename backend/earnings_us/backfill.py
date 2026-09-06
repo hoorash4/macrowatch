@@ -547,7 +547,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 except ProviderError as exc:
                     if strict_provider_errors:
                         raise ProviderError(f"{member.company_name}: {exc}") from exc
-            if candidates and not any(fact.fully_complete for fact in candidates):
+            if not any(fact.fully_complete for fact in candidates):
                 try:
                     bridge = self._q1_h1_bridge_candidate(member, year, quarter)
                 except ProviderError as exc:
@@ -555,14 +555,17 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                         raise ProviderError(f"{member.company_name}: {exc}") from exc
                     bridge = None
                 if bridge is not None:
-                    direct = _select_backfill_fact(candidates)
-                    candidates.append(direct.with_changes(
-                        top_line=direct.top_line if direct.top_line is not None else bridge.top_line,
-                        operating_income=direct.operating_income if direct.operating_income is not None else bridge.operating_income,
-                        net_income=direct.net_income if direct.net_income is not None else bridge.net_income,
-                        source_filing_id=f"{direct.source_filing_id}+{bridge.source_filing_id}",
-                        filing_date=max(direct.filing_date, bridge.filing_date), is_pending=False,
-                    ))
+                    if not candidates:
+                        candidates.append(bridge)
+                    else:
+                        direct = _select_backfill_fact(candidates)
+                        candidates.append(direct.with_changes(
+                            top_line=direct.top_line if direct.top_line is not None else bridge.top_line,
+                            operating_income=direct.operating_income if direct.operating_income is not None else bridge.operating_income,
+                            net_income=direct.net_income if direct.net_income is not None else bridge.net_income,
+                            source_filing_id=f"{direct.source_filing_id}+{bridge.source_filing_id}",
+                            filing_date=max(direct.filing_date, bridge.filing_date), is_pending=False,
+                        ))
             if not candidates or not any(fact.fully_complete for fact in candidates):
                 try:
                     annual_candidate = self._ifrs_annual_candidate(member, year, quarter)
