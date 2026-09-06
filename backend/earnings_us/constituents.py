@@ -574,7 +574,12 @@ class USIndexConstituentClient:
         return result
 
     def _company_fact_periods(self, cik: str) -> tuple[date, ...]:
-        """Return real financial-statement period ends published by this CIK."""
+        """Return period ends filed contemporaneously by this CIK.
+
+        Successor issuers can repeat a predecessor's historical values in a
+        later comparative filing. Those facts prove data continuity, not that
+        the successor CIK represented the constituent in the earlier period.
+        """
         normalized = normalize_cik(cik) or ""
         cached = self._financial_fact_periods_cache.get(normalized)
         if cached is not None:
@@ -596,9 +601,13 @@ class USIndexConstituentClient:
                             }:
                                 continue
                             try:
-                                periods.add(date.fromisoformat(str(row["end"])))
+                                period_end = date.fromisoformat(str(row["end"]))
+                                filed = date.fromisoformat(str(row["filed"]))
                             except (KeyError, ValueError):
                                 continue
+                            filing_lag = (filed - period_end).days
+                            if 0 <= filing_lag <= 180:
+                                periods.add(period_end)
             result = tuple(sorted(periods))
         self._financial_fact_periods_cache[normalized] = result
         return result
@@ -610,10 +619,7 @@ class USIndexConstituentClient:
         earliest = reference_date - timedelta(days=450)
         latest = reference_date + timedelta(days=120)
         periods = self._company_fact_periods(cik)
-        return (
-            any(earliest <= period <= latest for period in periods)
-            if periods else self._has_company_facts(cik)
-        )
+        return any(earliest <= period <= latest for period in periods)
 
     def _securities(
         self, market_id: str, reference_date: date, rows: Iterable[SourceHolding],
