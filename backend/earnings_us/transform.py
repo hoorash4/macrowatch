@@ -138,9 +138,9 @@ def _metric_value(
     return None, None, None, None
 
 
-def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) -> list[date]:
-    """Return physical fiscal year ends without trusting SEC's comparative ``fy`` label."""
-    result: set[date] = set()
+def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) -> dict[date, int]:
+    """Map each physical year end to its earliest (original) SEC fiscal-year label."""
+    result: dict[date, int] = {}
     for groups in entries.values():
         for components in groups:
             for rows in components:
@@ -153,16 +153,18 @@ def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) ->
                     except (KeyError, ValueError):
                         continue
                     if (end - start).days + 1 >= 300:
-                        result.add(end)
-    return sorted(result)
+                        fiscal_year = int(row.get("fy") or 0)
+                        if fiscal_year:
+                            result[end] = min(fiscal_year, result.get(end, fiscal_year))
+    return result
 
 
-def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date], fallback: int) -> int:
+def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: dict[date, int], fallback: int) -> int:
     """Build a stable fiscal key from the represented period, not mutable SEC ``fy`` metadata."""
     if quarter == 4:
-        return period_end.year
+        return annual_ends.get(period_end, fallback)
     following = [end for end in annual_ends if period_end <= end <= period_end.fromordinal(period_end.toordinal() + 370)]
-    return min(following).year if following else fallback
+    return annual_ends[min(following)] if following else fallback
 
 
 def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
