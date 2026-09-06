@@ -12,10 +12,12 @@ import requests
 from earnings_v2.http import bounded_request, provider_session, safe_request_failure
 
 from .models import MarketSecurity
+from .six_k import SixKDocument, SixKFiling, linked_financial_documents
 
 
 KIS_BASE = "https://openapi.koreainvestment.com:9443"
 SEC_DATA_BASE = "https://data.sec.gov"
+SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 KIS_OVERSEAS_CAP_PATH = "/uapi/overseas-stock/v1/ranking/market-cap"
 SEC_FORMS = frozenset({"10-Q", "10-K", "10-Q/A", "10-K/A"})
@@ -119,6 +121,8 @@ class SecEdgarClient:
         self.session = session or provider_session()
         self.interval, self._last_request, self.request_count = interval, 0.0, 0
         self._company_ticker_rows_cache: list[tuple[str, str, str]] | None = None
+        self._submissions_cache: dict[str, dict[str, Any]] = {}
+        self._six_k_documents_cache: dict[tuple[str, str], list[SixKDocument]] = {}
 
     @classmethod
     def from_env(cls) -> "SecEdgarClient":
@@ -142,6 +146,25 @@ class SecEdgarClient:
             raise ProviderError(f"SEC EDGAR {operation} returned invalid JSON")
         return payload
 
+    def _get_text(self, url: str, operation: str) -> str:
+        remaining = self.interval - (time.monotonic() - self._last_request)
+        if self._last_request and remaining > 0:
+            time.sleep(remaining)
+        self._last_request = time.monotonic()
+        try:
+            payload = bounded_request(
+                self.session, "GET", url, provider="SEC EDGAR", operation=operation,
+                headers={"User-Agent": self.user_agent, "Accept-Encoding": "gzip, deflate"},
+                total_timeout=45, attempt_timeout=15, connect_timeout=5, read_timeout=25,
+                binary=True,
+            )
+        except Exception as exc:
+            raise ProviderError(safe_request_failure("SEC EDGAR", operation, exc)) from None
+        self.request_count += 1
+        if not isinstance(payload, bytes):
+            raise ProviderError(f"SEC EDGAR {operation} returned invalid content")
+        return payload.decode("utf-8", errors="replace")
+
     def company_ticker_rows(self) -> list[tuple[str, str, str]]:
         if self._company_ticker_rows_cache is not None:
             return list(self._company_ticker_rows_cache)
@@ -162,7 +185,12 @@ class SecEdgarClient:
         return {ticker: cik for ticker, _, cik in self.company_ticker_rows()}
 
     def submissions(self, cik: str) -> dict[str, Any]:
-        return self._get(f"{SEC_DATA_BASE}/submissions/CIK{normalize_cik(cik)}.json", f"submissions {cik}")
+        normalized = normalize_cik(cik)
+        if normalized not in self._submissions_cache:
+            self._submissions_cache[normalized] = self._get(
+                f"{SEC_DATA_BASE}/submissions/CIK{normalized}.json", f"submissions {cik}",
+            )
+        return self._submissions_cache[normalized]
 
     def company_facts(self, cik: str) -> dict[str, Any]:
         return self._get(f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{normalize_cik(cik)}.json", f"company facts {cik}")
@@ -181,6 +209,101 @@ class SecEdgarClient:
             if str(form).upper() in SEC_FORMS and filed_date > since:
                 result.add(str(accession))
         return result
+
+    @staticmethod
+    def _six_k_rows(payload: dict[str, Any]) -> list[SixKFiling]:
+        recent = payload.get("filings", {}).get("recent", {})
+        if not isinstance(recent, dict):
+            return []
+        result: list[SixKFiling] = []
+        columns = zip(
+            recent.get("form", []), recent.get("filingDate", []), recent.get("reportDate", []),
+            recent.get("accessionNumber", []), recent.get("primaryDocument", []), strict=False,
+        )
+        for form, filed_on, reported_on, accession, primary_document in columns:
+            if str(form).upper() not in {"6-K", "6-K/A"}:
+                continue
+            try:
+                filing_date = date.fromisoformat(str(filed_on))
+            except ValueError:
+                continue
+            try:
+                report_date = date.fromisoformat(str(reported_on))
+            except ValueError:
+                report_date = None
+            document = str(primary_document or "").strip()
+            if accession and document:
+                result.append(SixKFiling(str(accession), filing_date, report_date, document))
+        return result
+
+    def six_k_filings(self, cik: str, *, filed_from: date, filed_to: date) -> list[SixKFiling]:
+        payload = self.submissions(cik)
+        result = self._six_k_rows(payload)
+        recent_dates = [item.filing_date for item in result]
+        files = payload.get("filings", {}).get("files", [])
+        if (not recent_dates or filed_from < min(recent_dates)) and isinstance(files, list):
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    shard_from = date.fromisoformat(str(item.get("filingFrom") or ""))
+                    shard_to = date.fromisoformat(str(item.get("filingTo") or ""))
+                except ValueError:
+                    continue
+                if shard_to < filed_from or shard_from > filed_to:
+                    continue
+                name = str(item.get("name") or "").strip()
+                if name:
+                    result.extend(self._six_k_rows({"filings": {"recent": self._get(
+                        f"{SEC_DATA_BASE}/submissions/{name}", f"submissions archive {cik} {name}",
+                    )}}))
+        return sorted(
+            {item.accession: item for item in result if filed_from <= item.filing_date <= filed_to}.values(),
+            key=lambda item: (item.filing_date, item.accession),
+        )
+
+    def six_k_documents(self, cik: str, filing: SixKFiling) -> list[SixKDocument]:
+        normalized = normalize_cik(cik)
+        if normalized is None:
+            return []
+        cache_key = (normalized, filing.accession)
+        if cache_key in self._six_k_documents_cache:
+            return list(self._six_k_documents_cache[cache_key])
+        accession = re.sub(r"\D", "", filing.accession)
+        base = f"{SEC_ARCHIVES_BASE}/{int(normalized)}/{accession}"
+        primary = self._get_text(f"{base}/{filing.primary_document}", f"6-K {filing.accession}")
+        documents = [SixKDocument(filing.primary_document, primary)]
+        names = linked_financial_documents(primary)
+        earnings_cover = bool(re.search(
+            r"(?:reports?|announces?).{0,100}(?:quarter|annual).{0,100}results", primary, re.I | re.S,
+        ))
+        try:
+            directory = self._get(f"{base}/index.json", f"6-K index {filing.accession}")
+            items = directory.get("directory", {}).get("item", [])
+            for item in items if isinstance(items, list) else []:
+                name = str(item.get("name") or "") if isinstance(item, dict) else ""
+                compact = re.sub(r"[^a-z0-9]", "", name.lower())
+                is_html = name.lower().endswith((".htm", ".html"))
+                is_attachment = name != filing.primary_document and "index" not in compact
+                if is_html and (
+                    any(term in compact for term in (
+                        "financialstatement", "financialresult", "pressrelease", "quarterlyresult", "interimresult",
+                        "ex99", "exhibit99",
+                    )) or (earnings_cover and is_attachment)
+                ):
+                    names.append(name)
+        except ProviderError:
+            # The filing's own exhibit index remains the authoritative fallback.
+            pass
+        for name in list(dict.fromkeys(names))[:4]:
+            safe_name = name.rsplit("/", 1)[-1]
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+\.html?", safe_name, re.I):
+                continue
+            documents.append(SixKDocument(
+                safe_name, self._get_text(f"{base}/{safe_name}", f"6-K exhibit {filing.accession} {safe_name}"),
+            ))
+        self._six_k_documents_cache[cache_key] = documents
+        return list(documents)
 
     def delisting_dates(self, cik: str) -> list[date]:
         """Return official Form 25/25-NSE filing dates indexed for the issuer."""

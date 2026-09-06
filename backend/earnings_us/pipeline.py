@@ -13,6 +13,8 @@ from .constituents import USIndexConstituentClient
 from .providers import ProviderError, SecEdgarClient
 from .repository import USEarningsRepository
 from .transform import extract_new_sec_facts
+from .six_k import extract_six_k_fact
+from earnings_v2.providers import EcosFxClient
 
 
 MARKETS = ("us_sp100", "us_nasdaq100")
@@ -53,14 +55,54 @@ def fact_from_row(row: dict[str, Any]) -> USFinancialFact:
 
 
 class USEarningsAutomaticPipeline:
-    def __init__(self, repository: USEarningsRepository, sec: SecEdgarClient, constituents: USIndexConstituentClient) -> None:
-        self.repository, self.sec, self.constituents = repository, sec, constituents
+    def __init__(
+        self, repository: USEarningsRepository, sec: SecEdgarClient,
+        constituents: USIndexConstituentClient, fx: EcosFxClient | None = None,
+    ) -> None:
+        self.repository, self.sec, self.constituents, self.fx = repository, sec, constituents, fx
         self._historical_company_ids: set[str] = set()
 
     @classmethod
     def from_env(cls) -> "USEarningsAutomaticPipeline":
         sec = SecEdgarClient.from_env()
-        return cls(USEarningsRepository.from_env(), sec, USIndexConstituentClient(sec))
+        fx = EcosFxClient(os.environ["ECOS_API_KEY"]) if os.getenv("ECOS_API_KEY", "").strip() else None
+        return cls(USEarningsRepository.from_env(), sec, USIndexConstituentClient(sec), fx)
+
+    def _fx_to_usd(self, currency: str, reference_date: date) -> Decimal:
+        if currency == "USD":
+            return Decimal(1)
+        if self.fx is None:
+            raise ProviderError(f"{currency}/USD conversion requires ECOS_API_KEY")
+        _, source_krw = self.fx.latest_krw(currency, reference_date)
+        _, usd_krw = self.fx.latest_usd_krw(reference_date)
+        return source_krw / usd_krw
+
+    def _six_k_candidates(self, company_id: str, cik: str, year: int, quarter: int) -> list[USFinancialFact]:
+        if not hasattr(self.sec, "six_k_filings") or not hasattr(self.sec, "six_k_documents"):
+            return []
+        target_end = period_end(year, quarter)
+        filings = self.sec.six_k_filings(
+            cik, filed_from=target_end - timedelta(days=10), filed_to=target_end + timedelta(days=100),
+        )
+        result: list[USFinancialFact] = []
+        for filing in filings:
+            fact = extract_six_k_fact(
+                company_id, filing, self.sec.six_k_documents(cik, filing), year, quarter,
+                self._fx_to_usd,
+            )
+            if fact is not None:
+                result.append(fact)
+        if not result:
+            return []
+        complete = [fact for fact in result if fact.fully_complete]
+        pool = complete or result
+        earliest = min(fact.filing_date for fact in pool)
+        same_release = [fact for fact in pool if fact.filing_date == earliest]
+        selected = max(same_release, key=lambda fact: (
+            sum(value is not None for value in (fact.top_line, fact.operating_income, fact.net_income)),
+            abs(fact.top_line or Decimal(0)),
+        ))
+        return [selected]
 
     def snapshot(self, *, today: date | None = None, write: bool = True) -> dict[str, Any]:
         current_day = today or date.today()
@@ -151,10 +193,21 @@ class USEarningsAutomaticPipeline:
             checked += 1
             try:
                 accessions = self.sec.new_financial_accessions(cik, since)
-                if not accessions:
-                    continue
-                for fact in extract_new_sec_facts(str(company["company_id"]), self.sec.company_facts(cik), accessions):
+                company_id = str(company["company_id"])
+                for fact in extract_new_sec_facts(company_id, self.sec.company_facts(cik), accessions) if accessions else ():
                     changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
+                six_k_from = min(since, current_day) - timedelta(days=2)
+                for filing in self.sec.six_k_filings(cik, filed_from=six_k_from, filed_to=current_day):
+                    targets = {latest_completed_period(filing.filing_date)}
+                    if filing.report_date is not None:
+                        targets.add(market_period(filing.report_date))
+                    for year, quarter in targets:
+                        fact = extract_six_k_fact(
+                            company_id, filing, self.sec.six_k_documents(cik, filing), year, quarter,
+                            self._fx_to_usd,
+                        )
+                        if fact is not None:
+                            changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
             except ProviderError as exc:
                 issues.append({"company": str(company.get("company_name") or company["company_id"]), "reason": str(exc)})
         if write and changed:
@@ -232,6 +285,9 @@ class USEarningsAutomaticPipeline:
                     (fact.fiscal_year, fact.fiscal_quarter): fact
                     for fact in extract_new_sec_facts(company_id, facts_payload, accessions)
                 }
+                for key in company_pending:
+                    for fact in self._six_k_candidates(company_id, cik, key[1], key[2]):
+                        refreshed[(fact.fiscal_year, fact.fiscal_quarter)] = fact
                 disappeared = current_ciks is not None and cik.zfill(10) not in current_ciks
                 delisting_dates = self.sec.delisting_dates(cik) if disappeared else []
             except ProviderError as exc:

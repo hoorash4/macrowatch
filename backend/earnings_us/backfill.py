@@ -178,6 +178,12 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 except ProviderError as exc:
                     if strict_provider_errors:
                         raise ProviderError(f"{member.company_name}: {exc}") from exc
+            if not candidates or not any(fact.fully_complete for fact in candidates):
+                try:
+                    candidates.extend(self._six_k_candidates(member.company_id, member.cik, year, quarter))
+                except ProviderError as exc:
+                    if strict_provider_errors:
+                        raise ProviderError(f"{member.company_name}: {exc}") from exc
             if not candidates:
                 try:
                     carry_forward = self._delisted_carry_forward(member, year, quarter)

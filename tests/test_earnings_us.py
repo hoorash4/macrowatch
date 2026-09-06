@@ -24,6 +24,7 @@ from earnings_us.constituents import (
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
 from earnings_us.providers import ProviderError, SecEdgarClient
 from earnings_us.transform import extract_new_sec_facts
+from earnings_us.six_k import SixKDocument, SixKFiling, extract_six_k_fact, linked_financial_documents
 
 
 def entry(*, fy: int, fp: str, accn: str, start: str, end: str, filed: str, value: str):
@@ -232,6 +233,102 @@ class USEarningsTransformTests(unittest.TestCase):
         }}}
 
         self.assertEqual(client.delisting_dates("1"), [date(2026, 7, 15), date(2026, 7, 16)])
+
+    def test_six_k_mixed_currency_table_selects_current_usd_quarter(self):
+        html = """
+        <table>
+          <tr><th>For the three months ended</th><th>For the six months ended</th></tr>
+          <tr><th>June 30, 2024</th><th>June 30, 2025</th><th>June 30, 2025</th>
+              <th>June 30, 2024</th><th>June 30, 2025</th><th>June 30, 2025</th></tr>
+          <tr><th>RMB</th><th>RMB</th><th>US$</th><th>RMB</th><th>RMB</th><th>US$</th></tr>
+          <tr><th>(In millions)</th></tr>
+          <tr><td>Total net revenues</td><td>291,397</td><td>356,660</td><td>49,788</td><td>551,446</td><td>657,742</td><td>91,817</td></tr>
+          <tr><td>Income/(Loss) from operations</td><td>10,501</td><td>(859</td><td>)</td><td>(120</td><td>)</td><td>18,201</td><td>9,674</td><td>1,350</td></tr>
+          <tr><td>Net income</td><td>13,594</td><td>6,709</td><td>937</td><td>20,959</td><td>17,988</td><td>2,511</td></tr>
+        </table>
+        """
+        filing = SixKFiling("mixed", date(2025, 8, 14), date(2025, 8, 14), "form.htm")
+
+        fact = extract_six_k_fact("company", filing, [SixKDocument("ex99.htm", html)], 2025, 2)
+
+        self.assertIsNotNone(fact)
+        self.assertEqual(fact.top_line, Decimal("49788000000"))
+        self.assertEqual(fact.operating_income, Decimal("-120000000"))
+        self.assertEqual(fact.net_income, Decimal("937000000"))
+        self.assertFalse(fact.is_pending)
+
+    def test_six_k_flat_q4_statement_does_not_use_full_year_column(self):
+        html = """
+        <div>Financial results. Three months ended Year ended Dec 31, Dec 31, Dec 31, Dec 31,
+        (Unaudited, EUR, in millions) 2016 2017 2016 2017
+        Total net sales 2,000 2,560 6,700 9,052
+        Income from operations 500 766 1,800 2,496
+        Net income 450 714 1,600 2,119</div>
+        """
+        filing = SixKFiling("q4", date(2018, 1, 17), date(2018, 1, 17), "form.htm")
+
+        fact = extract_six_k_fact(
+            "company", filing, [SixKDocument("financialstatements.htm", html)], 2017, 4,
+            lambda currency, _date: Decimal("1.1") if currency == "EUR" else Decimal(1),
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual(fact.top_line, Decimal("2816000000.0"))
+        self.assertEqual(fact.operating_income, Decimal("842600000.0"))
+        self.assertEqual(fact.net_income, Decimal("785400000.0"))
+
+    def test_six_k_financial_exhibit_links_support_current_and_legacy_names(self):
+        html = """
+        <a href="release-ex99.1.htm">Press Release - Quarterly Financial Results</a>
+        <a href="https://example.com/external.htm">External</a>
+        """
+        self.assertEqual(linked_financial_documents(html), ["release-ex99.1.htm"])
+
+    def test_daily_edgar_creates_row_from_new_six_k(self):
+        table = """
+        <table><tr><th>Three Months Ended</th></tr><tr><th>June 30, 2026</th></tr>
+        <tr><th>($ in millions)</th></tr><tr><td>Revenue</td><td>200</td></tr>
+        <tr><td>Operating income</td><td>20</td></tr><tr><td>Net income</td><td>16</td></tr></table>
+        """
+        filing = SixKFiling("six-k", date(2026, 8, 1), date(2026, 8, 1), "form.htm")
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+
+            def us_state(self, _operation):
+                return None
+
+            def us_active_companies(self, _year):
+                return [{"company_id": "foreign", "company_name": "Foreign", "cik": "1"}]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, *_args):
+                pass
+
+        class Sec:
+            request_count = 0
+
+            def new_financial_accessions(self, *_args):
+                return set()
+
+            def six_k_filings(self, *_args, **_kwargs):
+                return [filing]
+
+            def six_k_documents(self, *_args):
+                return [SixKDocument("ex99.htm", table)]
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+        pipeline.recalculate_market_period = lambda *_args: None
+
+        result = pipeline.daily_edgar(today=date(2026, 8, 2), write=True)
+
+        self.assertEqual(result["updated_company_quarters"], 1)
+        self.assertEqual(repository.saved[0]["top_line"], Decimal("200000000"))
+        self.assertFalse(repository.saved[0]["is_pending"])
 
     def test_archive_selection_uses_post_quarter_filing_dates(self):
         entry = {"filingFrom": "2023-01-01", "filingTo": "2023-03-31"}

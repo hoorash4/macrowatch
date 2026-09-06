@@ -53,6 +53,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash

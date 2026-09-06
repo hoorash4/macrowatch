@@ -46,6 +46,7 @@ jobs:
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
           PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 2 * * *' && 'snapshot' || (github.event.schedule == '30 2 * * *' && 'edgar' || 'incomplete')) || inputs.phase }}
           SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash
