@@ -1163,6 +1163,33 @@ class USEarningsTransformTests(unittest.TestCase):
             for fact in facts
         ))
 
+    def test_year_end_comparison_cannot_replace_real_prior_quarter_value(self):
+        source = payload()
+        for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][tag]["units"]["USD"] = [
+                entry(fy=2017, fp="FY", accn="fy-2017", start="2016-09-26",
+                      end="2017-09-24", filed="2017-11-01", value="300"),
+                entry(fy=2018, fp="FY", accn="fy-2018", start="2017-09-25",
+                      end="2018-09-30", filed="2018-11-01", value="400"),
+                entry(fy=2019, fp="Q1", accn="next-q1", start="2018-10-01",
+                      end="2018-12-30", filed="2019-01-30", value="110"),
+                entry(fy=2019, fp="Q1", accn="next-q1", start="2018-03-26",
+                      end="2018-06-24", filed="2019-01-30", value="90"),
+                entry(fy=2019, fp="Q1", accn="next-q1", start="2018-06-25",
+                      end="2018-09-30", filed="2019-01-30", value="95"),
+            ]
+
+        facts = extract_new_sec_facts("us:cik:year-end-collision", source, {"next-q1"})
+
+        self.assertTrue(any(
+            fact.period_end == date(2018, 6, 24) and fact.fiscal_quarter == 3
+            for fact in facts
+        ))
+        self.assertFalse(any(
+            fact.period_end == date(2018, 9, 30) and fact.fiscal_quarter == 3
+            for fact in facts
+        ))
+
     def test_q4_can_subtract_compatible_metric_aliases_across_filings(self):
         source = payload()
         net_rows = source["facts"]["us-gaap"].pop("NetIncomeLoss")["units"]["USD"]
