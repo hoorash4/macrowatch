@@ -131,6 +131,16 @@ def _date_tokens(text: str) -> list[date]:
     return result
 
 
+def _matches_target_period(value: date, target: tuple[int, int]) -> bool:
+    """Map week-based quarter ends just after month-end to the intended quarter."""
+    if market_period(value) == target:
+        return True
+    if value.month in {1, 4, 7, 10} and value.day <= 7:
+        previous_day = date.fromordinal(value.replace(day=1).toordinal() - 1)
+        return market_period(previous_day) == target
+    return False
+
+
 def _number(value: str) -> Decimal | None:
     value = _clean(value).replace("−", "-").replace("—", "").replace("–", "-")
     value = re.sub(r"(?:US\$|RMB|EUR|USD|CNY|€|\$)", "", value, flags=re.I).strip()
@@ -214,7 +224,7 @@ def _target_column(header: str, value_count: int, target: tuple[int, int]) -> in
     dates = _loose_period_dates(header)
     if len(dates) > value_count:
         dates = dates[:value_count]
-    matching = [index for index, item in enumerate(dates) if market_period(item) == target]
+    matching = [index for index, item in enumerate(dates) if _matches_target_period(item, target)]
     if matching and len(dates) <= value_count:
         return matching[-1]
     years = [int(value) for value in re.findall(r"\b20\d{2}\b", header)]
@@ -316,7 +326,7 @@ def _table_values(
                 currencies["operating_income"] = currencies["gross_profit"]
         score = len(values)
         if score > best[0]:
-            dates = [item for item in _loose_period_dates(" ".join(header_rows)) if market_period(item) == target]
+            dates = [item for item in _loose_period_dates(" ".join(header_rows)) if _matches_target_period(item, target)]
             best = (score, values, currencies, dates[-1] if dates else None)
     return best[1], best[2], best[3]
 
@@ -355,7 +365,7 @@ def _flat_values(text: str, target: tuple[int, int]) -> tuple[dict[str, Decimal]
         dates = _loose_period_dates(header)
         direct_count = _three_month_columns(header, len(dates))
         direct_dates = dates[:direct_count]
-        matching = [index for index, item in enumerate(direct_dates) if market_period(item) == target]
+        matching = [index for index, item in enumerate(direct_dates) if _matches_target_period(item, target)]
         if not matching:
             continue
         column = matching[-1]
@@ -434,17 +444,23 @@ def extract_six_k_fact(
             r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700],
         ):
             continue
+        table_values, table_currencies, table_end = _table_values(tables, target, text)
         document_dates = _loose_period_dates(text)
-        dates = [item for item in document_dates if market_period(item) == target]
+        dates = [item for item in document_dates if _matches_target_period(item, target)]
         target_label = f"q{quarter} {year}"
         written_target = f"{('first', 'second', 'third', 'fourth')[quarter - 1]} quarter {year}"
-        if not dates and (target_label in lowered[:700] or written_target in lowered[:700]):
+        filing_name_has_quarter = re.search(
+            rf"q{quarter}(?:results?|financial|[^a-z0-9]|$)", filing.primary_document.lower(),
+        ) is not None
+        if not dates and (
+            target_label in lowered[:700] or written_target in lowered[:700]
+            or (table_values and filing_name_has_quarter)
+        ):
             dates = [date(year, quarter * 3, 31 if quarter in {1, 4} else 30)]
         elif not document_dates and filing.report_date and market_period(filing.report_date) == target:
             dates = [filing.report_date]
         if not dates:
             continue
-        table_values, table_currencies, table_end = _table_values(tables, target, text)
         if not table_values:
             table_values, table_currencies, table_end = _flat_values(text, target)
         for metric, value in table_values.items():

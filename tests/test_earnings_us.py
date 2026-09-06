@@ -257,6 +257,30 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.net_income, Decimal("937000000"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_week_based_period_end_maps_to_prior_calendar_quarter(self):
+        html = """
+        <table>
+          <tr><th>Three months ended</th><th>Apr 2, 2017</th><th>Apr 1, 2018</th></tr>
+          <tr><th>(in millions EUR)</th></tr>
+          <tr><td>Total net sales</td><td>1,943.6</td><td>2,285.0</td></tr>
+          <tr><td>Operating income</td><td>541.8</td><td>668.5</td></tr>
+          <tr><td>Net income</td><td>460.9</td><td>580.5</td></tr>
+        </table>
+        """
+        filing = SixKFiling(
+            "week-end", date(2018, 4, 18), date(2018, 4, 18), "form6kq1resultsapril182018.htm",
+        )
+
+        fact = extract_six_k_fact(
+            "company", filing, [SixKDocument("financialstatements.htm", html)], 2018, 1,
+            lambda _currency, _date: Decimal(1),
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual(fact.period_end, date(2018, 4, 1))
+        self.assertEqual(fact.operating_income, Decimal("668500000.0"))
+        self.assertFalse(fact.is_pending)
+
     def test_six_k_flat_q4_statement_does_not_use_full_year_column(self):
         html = """
         <div>Financial results. Three months ended Year ended Dec 31, Dec 31, Dec 31, Dec 31,
