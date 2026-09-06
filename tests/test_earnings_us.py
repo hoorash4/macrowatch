@@ -331,6 +331,35 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(pipeline.called, [(2016, 2)])
         self.assertEqual(result["processed_periods"], 1)
 
+    def test_force_rerun_ignores_completed_range_checkpoint(self):
+        class Repository:
+            def __init__(self):
+                self.states = []
+
+            def us_state(self, _):
+                raise AssertionError("force rerun must not read the completed checkpoint")
+
+            def save_us_state(self, *args):
+                self.states.append(args)
+
+        class Pipeline:
+            def __init__(self):
+                self.repository = Repository()
+                self.called = []
+
+            def backfill_period(self, year, quarter, **_kwargs):
+                self.called.append((year, quarter))
+                return {"period": f"{year}Q{quarter}", "status": "ready"}
+
+        pipeline = Pipeline()
+        result = run_earnings_range(
+            pipeline, [(2016, 1), (2016, 2)], write=True, force_rerun=True,
+        )
+
+        self.assertEqual(pipeline.called, [(2016, 1), (2016, 2)])
+        self.assertEqual(result["processed_periods"], 2)
+        self.assertFalse(result["already_complete"])
+
     def test_range_failure_cleans_only_current_period_and_stops(self):
         class Repository:
             def __init__(self):
