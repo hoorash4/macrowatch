@@ -964,6 +964,22 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(fact.top_line, Decimal("410"))
 
+    def test_fy_label_inside_quarterly_filing_is_inferred_from_physical_period(self):
+        source = payload()
+        for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            row = entry(
+                fy=2026, fp="FY", accn="q1-comparative", start="2026-02-01",
+                end="2026-04-30", filed="2026-05-20", value="100",
+            )
+            row["form"] = "10-Q"
+            source["facts"]["us-gaap"][tag]["units"]["USD"].append(row)
+
+        facts = extract_new_sec_facts("us:cik:comparative-fy", source, {"q1-comparative"})
+
+        self.assertEqual(len(facts), 1)
+        self.assertEqual(facts[0].fiscal_quarter, 1)
+        self.assertEqual(facts[0].period_end, date(2026, 4, 30))
+
     def test_q4_can_subtract_compatible_metric_aliases_across_filings(self):
         source = payload()
         net_rows = source["facts"]["us-gaap"].pop("NetIncomeLoss")["units"]["USD"]
