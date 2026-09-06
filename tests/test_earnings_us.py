@@ -889,6 +889,77 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertIsNone(fact.net_income)
         self.assertTrue(fact.is_pending)
 
+    def test_alternate_standard_tags_fill_revenue_and_common_stockholder_income(self):
+        source = payload()
+        facts = source["facts"]["us-gaap"]
+        facts["RevenueFromContractWithCustomerIncludingAssessedTax"] = facts.pop("Revenues")
+        facts["NetIncomeLossAvailableToCommonStockholdersBasic"] = facts.pop("NetIncomeLoss")
+
+        fact = extract_new_sec_facts("us:cik:alternate", source, {"q2"})[0]
+
+        self.assertEqual(fact.top_line, Decimal("200"))
+        self.assertEqual(fact.net_income, Decimal("16"))
+        self.assertFalse(fact.is_pending)
+
+    def test_bank_composites_fill_revenue_and_pretax_income(self):
+        source = payload()
+        facts = source["facts"]["us-gaap"]
+        revenues = facts.pop("Revenues")
+        operating = facts.pop("OperatingIncomeLoss")
+        facts["InterestIncomeExpenseNet"] = {
+            "units": {"USD": [{**row, "val": Decimal(str(row["val"])) * Decimal("0.4")} for row in revenues["units"]["USD"]]}
+        }
+        facts["NoninterestIncome"] = {
+            "units": {"USD": [{**row, "val": Decimal(str(row["val"])) * Decimal("0.6")} for row in revenues["units"]["USD"]]}
+        }
+        facts["IncomeTaxExpenseBenefit"] = {
+            "units": {"USD": [{**row, "val": Decimal(str(row["val"])) * Decimal("0.25")} for row in operating["units"]["USD"]]}
+        }
+        facts["ProfitLoss"] = {
+            "units": {"USD": [{**row, "val": Decimal(str(row["val"])) * Decimal("0.75")} for row in operating["units"]["USD"]]}
+        }
+
+        fact = extract_new_sec_facts("us:cik:bank", source, {"q3"})[0]
+
+        self.assertEqual(fact.top_line, Decimal("300"))
+        self.assertEqual(fact.operating_income, Decimal("30"))
+        self.assertFalse(fact.is_pending)
+
+    def test_historical_constituent_rejects_successor_cik_without_period_coverage(self):
+        successor_cik = "0002115436"
+        historical_cik = "0000034088"
+
+        class FakeSec:
+            user_agent = "test"
+
+            def company_ticker_rows(self):
+                return [("XOM", "ExxonMobil Holdings Corp", successor_cik)]
+
+            def company_facts(self, cik):
+                end = "2026-06-30" if cik == successor_cik else "2016-03-31"
+                return {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+                    entry(fy=int(end[:4]), fp="Q1", accn="q1", start=end[:4] + "-01-01", end=end, filed=end, value="1")
+                ]}}}}}
+
+        client = USIndexConstituentClient(FakeSec())
+        client._cik_for_name = lambda *_args, **_kwargs: historical_cik
+        client._cik_for_ticker = lambda *_args, **_kwargs: successor_cik
+        rows = [("XOM", "Exxon Mobil Corp", Decimal("100"))] + [
+            (f"T{index:03}", f"Company {index}", Decimal(99 - index)) for index in range(99)
+        ]
+        directory = {"XOM": successor_cik, **{
+            f"T{index:03}": str(index + 1).zfill(10) for index in range(99)
+        }}
+        original_coverage = client._has_company_facts_for_reference
+        client._has_company_facts_for_reference = lambda cik, reference: (
+            original_coverage(cik, reference) if cik in {successor_cik, historical_cik} else True
+        )
+
+        result = client._securities("us_sp100", date(2016, 3, 31), rows, directory)
+
+        self.assertEqual(next(item.cik for item in result if item.ticker == "XOM"), historical_cik)
+
 
 if __name__ == "__main__":
     unittest.main()
+
