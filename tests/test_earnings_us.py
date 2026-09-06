@@ -391,6 +391,26 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.net_income, Decimal("116000000"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_backfill_q1_bridge_can_allocate_a_reported_half_year(self):
+        html = """
+        <table><tr><th>Six months ended June 30, 2026</th><th>June 30, 2025</th></tr>
+        <tr><th>(EUR in millions)</th></tr>
+        <tr><td>Revenue (€M)</td><td>100</td><td>90</td></tr>
+        <tr><td>Operating profit (€M)</td><td>20</td><td>18</td></tr>
+        <tr><td>Profit after taxes (€M)</td><td>16</td><td>14</td></tr></table>
+        """
+        filing = SixKFiling("half-year", date(2026, 8, 1), date(2026, 6, 30), "results.htm")
+        half = extract_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2026, 2,
+            lambda _currency, _date: Decimal(1), backfill_mode=True,
+        )
+
+        self.assertIsNotNone(half)
+        q1 = half.with_changes(fiscal_quarter=1, period_start=date(2026, 1, 1), period_end=date(2026, 3, 31))
+        self.assertEqual(q1.top_line, Decimal("50000000"))
+        self.assertEqual(q1.operating_income, Decimal("10000000"))
+        self.assertEqual(q1.net_income, Decimal("8000000"))
+
     def test_six_k_rejects_cross_statement_scale_mismatch(self):
         html = """
         <div>Second quarter 2023 financial results</div>
@@ -1499,6 +1519,23 @@ class USEarningsTransformTests(unittest.TestCase):
         result = extract_new_sec_facts("us:cik:financial", source, {"q2"})[0]
 
         self.assertEqual(result.operating_income, Decimal("20"))
+        self.assertFalse(result.is_pending)
+
+    def test_financial_company_accepts_reported_extension_net_revenue(self):
+        source = payload()
+        source["facts"]["us-gaap"].pop("Revenues")
+        source["facts"]["bank"] = {
+            "TotalRevenuesNetOfInterestExpense": {
+                "units": {"USD": [entry(
+                    fy=2026, fp="Q2", accn="q2", start="2025-05-01", end="2025-07-31",
+                    filed="2025-08-20", value="200",
+                )]}
+            }
+        }
+
+        result = extract_new_sec_facts("us:cik:bank", source, {"q2"})[0]
+
+        self.assertEqual(result.top_line, Decimal("200"))
         self.assertFalse(result.is_pending)
 
     def test_reported_operating_income_has_priority_over_pretax_income(self):

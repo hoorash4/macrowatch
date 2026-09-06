@@ -12,7 +12,7 @@ from .pipeline import (
 )
 from .providers import ProviderError, normalize_cik
 from .transform import extract_new_sec_facts
-from .six_k import extract_q1_from_h1_six_k_fact
+from .six_k import extract_q1_from_h1_six_k_fact, extract_six_k_fact
 
 
 def _all_financial_accessions(payload: dict) -> set[str]:
@@ -259,9 +259,21 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         )
         candidates = []
         for filing in filings:
-            fact = extract_q1_from_h1_six_k_fact(
-                member.company_id, filing, self.sec.six_k_documents(member.cik, filing), year, self._fx_to_usd,
-            )
+            documents = self.sec.six_k_documents(member.cik, filing)
+            fact = extract_q1_from_h1_six_k_fact(member.company_id, filing, documents, year, self._fx_to_usd)
+            if fact is None:
+                # When the H1 statement itself is the only reported income
+                # statement, retain the established backfill approximation:
+                # allocate its reported total evenly across Q1 and Q2.
+                half = extract_six_k_fact(
+                    member.company_id, filing, documents, year, 2,
+                    self._fx_to_usd, backfill_mode=True,
+                )
+                if half is not None and half.fully_complete:
+                    fact = half.with_changes(
+                        fiscal_quarter=1, period_start=date(year, 1, 1), period_end=date(year, 3, 31),
+                        source_filing_id=f"{half.source_filing_id}:allocated-h1-q1",
+                    )
             if fact is not None:
                 candidates.append(fact)
         return min(candidates, key=lambda fact: fact.filing_date) if candidates else None

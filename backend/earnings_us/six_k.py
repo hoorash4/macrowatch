@@ -559,7 +559,7 @@ def extract_six_k_fact(
             term in lowered for term in ("financial results", "quarterly results", "three months ended")
         ) or re.search(r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700])
         if backfill_mode:
-            has_results_context = has_results_context or "quarter ended" in lowered
+            has_results_context = has_results_context or "quarter ended" in lowered or "six months ended" in lowered
         if not has_results_context:
             continue
         table_values, table_currencies, table_end = _table_values(
