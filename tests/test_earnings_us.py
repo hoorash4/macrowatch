@@ -886,6 +886,35 @@ class USEarningsTransformTests(unittest.TestCase):
         row = fact.db_row()
         self.assertEqual((row["market_year"], row["market_quarter"]), (2026, 1))
 
+    def test_week_calendar_close_just_after_boundary_stays_in_prior_market_quarter(self):
+        self.assertEqual(market_period(date(2017, 4, 1)), (2017, 1))
+        self.assertEqual(market_period(date(2021, 1, 3)), (2020, 4))
+        self.assertEqual(market_period(date(2017, 4, 8)), (2017, 2))
+
+    def test_q4_prefers_direct_three_month_fact_inside_annual_filing(self):
+        source = payload()
+        source["facts"]["us-gaap"]["Revenues"]["units"]["USD"].append(
+            entry(fy=2026, fp="FY", accn="fy", start="2025-11-01", end="2026-01-31", filed="2026-03-20", value="410")
+        )
+
+        fact = extract_new_sec_facts("us:cik:direct-q4", source, {"fy"})[0]
+
+        self.assertEqual(fact.top_line, Decimal("410"))
+
+    def test_q4_can_subtract_compatible_metric_aliases_across_filings(self):
+        source = payload()
+        net_rows = source["facts"]["us-gaap"].pop("NetIncomeLoss")["units"]["USD"]
+        source["facts"]["us-gaap"]["NetIncomeLoss"] = {
+            "units": {"USD": [row for row in net_rows if row["fp"] != "FY"]}
+        }
+        source["facts"]["us-gaap"]["ProfitLoss"] = {
+            "units": {"USD": [row for row in net_rows if row["fp"] == "FY"]}
+        }
+
+        fact = extract_new_sec_facts("us:cik:cross-basis-q4", source, {"fy"})[0]
+
+        self.assertEqual(fact.net_income, Decimal("32"))
+
     def test_q4_stays_pending_when_any_prior_quarter_is_missing(self):
         source = payload()
         source["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"] = [
