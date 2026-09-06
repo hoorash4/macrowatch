@@ -427,9 +427,15 @@
   function connectCompanySearch(supabaseClient) {
     const input = companyCard.root?.querySelector('[data-company-earnings-search]');
     const list = companyCard.root?.querySelector('[data-company-earnings-suggestions]');
-    if (!input || !list) return;
+    const search = companyCard.root?.querySelector('.company-earnings-search');
+    if (!input || !list || !search) return;
     input.addEventListener('input', renderCompanyCandidates);
     input.addEventListener('focus', renderCompanyCandidates);
+    document.addEventListener('pointerdown', (event) => {
+      if (search.contains(event.target)) return;
+      list.hidden = true;
+      list.replaceChildren();
+    });
     list.addEventListener('click', (event) => {
       const button = event.target.closest('[data-company-earnings-id]');
       const company = companyCard.state.candidates.find((item) => (
@@ -481,5 +487,4 @@
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, seriesFromCompanyRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
-
 

@@ -220,6 +220,8 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /company\.market_id === companyCard\.state\.selectedMarketId/);
   assert.match(source, /function connectCompanyMarketControl/);
   assert.match(source, /item\.market_id === companyCard\.state\.selectedMarketId/);
+  assert.match(source, /document\.addEventListener\('pointerdown'/);
+  assert.match(source, /search\.contains\(event\.target\)/);
   assert.match(source, /company\.company_name\.toLocaleLowerCase\('ko-KR'\)\.includes\(query\)/);
   assert.match(source, /kind: 'amount'/);
   assert.match(source, /kind: 'margin'/);
@@ -255,6 +257,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /data-korea-earnings-cursor-period/);
   assert.doesNotMatch(styles, /\.korea-earnings-line--revenue/);
 });
+
 
 test('미국 신용위험 그래프는 파산보호 신청값이 없는 최신 행을 0으로 그리지 않는다', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
