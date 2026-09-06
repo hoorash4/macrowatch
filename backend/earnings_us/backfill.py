@@ -26,6 +26,11 @@ def _all_financial_accessions(payload: dict) -> set[str]:
     return result
 
 
+def _select_backfill_fact(candidates: list):
+    """Prefer a complete physical-period fact over a later malformed comparative."""
+    return max(candidates, key=lambda fact: (fact.fully_complete, fact.period_end, fact.filing_date))
+
+
 class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     """Automatic collector's SEC interpretation, with authoritative period replacement."""
 
@@ -100,7 +105,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
             if not candidates:
                 issues.append({"company": member.company_name, "reason": "No SEC financial fact mapped to market period"})
                 continue
-            selected = max(candidates, key=lambda fact: (fact.period_end, fact.filing_date))
+            selected = _select_backfill_fact(candidates)
             changed.append(selected)
             if selected.is_pending:
                 issues.append({"company": member.company_name, "reason": "SEC financial fact is incomplete"})
