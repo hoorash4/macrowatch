@@ -990,8 +990,10 @@ class USEarningsTransformTests(unittest.TestCase):
             source["facts"]["us-gaap"][tag]["units"]["USD"] = [
                 row for row in rows if row["fp"] not in {"Q2", "Q3"}
             ] + [
-                entry(fy=2026, fp="Q2", accn="q2", start="2025-02-01", end="2025-07-31", filed="2025-08-20", value=q2_ytd),
-                entry(fy=2026, fp="Q3", accn="q3", start="2025-02-01", end="2025-10-31", filed="2025-11-20", value=q3_ytd),
+                # Comparative SEC facts can carry a different ``fy`` label
+                # from the annual filing despite representing the same year.
+                entry(fy=2025, fp="Q2", accn="q2", start="2025-02-01", end="2025-07-31", filed="2025-08-20", value=q2_ytd),
+                entry(fy=2025, fp="Q3", accn="q3", start="2025-02-01", end="2025-10-31", filed="2025-11-20", value=q3_ytd),
             ]
 
         facts = {
