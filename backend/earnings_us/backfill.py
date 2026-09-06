@@ -200,8 +200,13 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
             changed.append(selected)
             if selected.is_pending:
                 issues.append({"company": member.company_name, "reason": "SEC financial fact is incomplete"})
-        if write and changed:
-            self.repository.replace_company_quarters_for_backfill(fact.db_row() for fact in changed)
+        if write:
+            # A forced backfill treats the whole requested U.S. market period as
+            # untrusted. Clear every frozen-universe row first so a newly rejected
+            # source cannot leave a stale value from an earlier parser run behind.
+            self.repository.clear_us_backfill_period(year, quarter)
+            if changed:
+                self.repository.upsert_company_quarters(fact.db_row() for fact in changed)
             self.recalculate_market_period(year, quarter)
         status = "incomplete" if issues else "ready"
         result = {"period": f"{year}Q{quarter}", "write": write, "status": status,

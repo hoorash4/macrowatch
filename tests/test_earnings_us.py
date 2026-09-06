@@ -519,6 +519,56 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(result["processed_periods"], 2)
         self.assertFalse(result["already_complete"])
 
+    def test_backfill_clears_stale_period_rows_even_when_source_is_now_missing(self):
+        member = USCompany(
+            company_id="us:cik:0000000001", company_name="Example", ticker="EX",
+            cik="0000000001", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2023, 6, 30),
+        )
+
+        class Repository:
+            def __init__(self):
+                self.cleared = []
+                self.saved = []
+
+            def us_universe(self, market, _year, _quarter):
+                return [member] if market == "us_sp100" else []
+
+            def clear_us_backfill_period(self, year, quarter):
+                self.cleared.append((year, quarter))
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, *_args):
+                pass
+
+        class Pipeline(USEarningsBackfillPipeline):
+            def _company_facts(self, _member):
+                return []
+
+            def _historical_ticker_candidates(self, _member, _year, _quarter):
+                return []
+
+            def _six_k_candidates(self, _company_id, _cik, _year, _quarter):
+                return []
+
+            def _delisted_carry_forward(self, _member, _year, _quarter):
+                return None
+
+            def recalculate_market_period(self, year, quarter):
+                self.recalculated = (year, quarter)
+
+        repository = Repository()
+        pipeline = Pipeline(repository, type("Sec", (), {"request_count": 0})(), None)
+
+        result = pipeline.backfill_period(2023, 2, write=True)
+
+        self.assertEqual(result["status"], "incomplete")
+        self.assertEqual(repository.cleared, [(2023, 2)])
+        self.assertEqual(repository.saved, [])
+        self.assertEqual(pipeline.recalculated, (2023, 2))
+
     def test_range_failure_cleans_only_current_period_and_stops(self):
         class Repository:
             def __init__(self):
