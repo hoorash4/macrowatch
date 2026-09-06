@@ -5,7 +5,11 @@ from datetime import date
 from decimal import Decimal
 
 from earnings_us.models import MarketSecurity, USCompany, USFinancialFact, market_period
-from earnings_us.backfill import USEarningsBackfillPipeline, _select_backfill_fact
+from earnings_us.backfill import (
+    USEarningsBackfillPipeline,
+    _historical_ticker_directory,
+    _select_backfill_fact,
+)
 from earnings_us.backfill_cli import chronological_period_range, period_range, resumable_periods, run_earnings_range
 from earnings_us.constituents import (
     USIndexConstituentClient,
@@ -823,6 +827,42 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0].company_id, member.company_id)
         self.assertTrue(candidates[0].fully_complete)
+
+    def test_backfill_rejects_same_ticker_fact_from_different_named_issuer(self):
+        class Repository:
+            def us_active_companies(self, _since_year):
+                return [{"company_name": "ATLASSIAN CLS A CS", "ticker": "TEAM", "cik": "0000027419"}]
+
+        class Sec:
+            def company_facts(self, _cik):
+                source = payload()
+                source["entityName"] = "TARGET CORP"
+                return source
+
+        member = USCompany(
+            company_id="us:cik:0001650372", company_name="Atlassian Corp.", ticker="TEAM",
+            cik="0001650372", market_id="us_nasdaq100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2022, 6, 30),
+        )
+
+        candidates = USEarningsBackfillPipeline(Repository(), Sec(), None)._historical_ticker_candidates(
+            member, 2022, 2,
+        )
+
+        self.assertEqual(candidates, [])
+
+    def test_historical_directory_rejects_current_issuer_name_on_wrong_cik(self):
+        rows = [
+            {"company_name": "ATLASSIAN CLS A CS", "ticker": "TEAM", "cik": "0000027419"},
+            {"company_name": "Target Corp", "ticker": "TGT", "cik": "0000027419"},
+        ]
+        directory = {"TEAM": "0001650372", "TGT": "0000027419"}
+        issuer_rows = [("TEAM", "Atlassian Corp", "0001650372"), ("TGT", "Target Corp", "0000027419")]
+
+        result = _historical_ticker_directory(rows, directory, issuer_rows)
+
+        self.assertNotIn("TEAM", result)
+        self.assertEqual(result["TGT"], "0000027419")
 
     def test_backfill_complete_predecessor_fact_can_replace_partial_successor_fact(self):
         complete = USFinancialFact(

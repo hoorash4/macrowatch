@@ -9,7 +9,7 @@ from .pipeline import (
     MARKETS, USEarningsAutomaticPipeline, fact_from_row, market_period,
     previous_market_period,
 )
-from .providers import ProviderError
+from .providers import ProviderError, normalize_cik
 from .transform import extract_new_sec_facts
 
 
@@ -37,6 +37,42 @@ def _select_backfill_fact(candidates: list):
     return max(candidates, key=lambda fact: (fact.fully_complete, fact.period_end, fact.filing_date))
 
 
+def _backfill_name_matches(left: str, right: str) -> bool:
+    """Match legal issuer names after stripping historical feed share-class markers."""
+    def clean(value: str) -> str:
+        return " ".join(
+            word for word in value.split()
+            if word.lower().strip(".,()") not in {"cls", "cs"}
+        )
+
+    return _name_match_score(clean(left), clean(right)) >= 100
+
+
+def _historical_ticker_directory(rows: list[dict], directory: dict[str, str], issuer_rows: list[tuple[str, str, str]]) -> dict[str, str]:
+    """Keep historical ticker mappings unless a row carries today's issuer name on another CIK."""
+    titles_by_cik: dict[str, list[str]] = {}
+    for _, title, cik in issuer_rows:
+        normalized = normalize_cik(cik)
+        if normalized and title:
+            titles_by_cik.setdefault(normalized, []).append(title)
+    historical_ciks: dict[str, set[str]] = {}
+    for row in rows:
+        ticker = str(row.get("ticker") or "").strip().upper()
+        cik = normalize_cik(row.get("cik"))
+        name = str(row.get("company_name") or "").strip()
+        if not ticker or not cik:
+            continue
+        current_cik = normalize_cik(directory.get(ticker))
+        if current_cik and current_cik != cik and any(
+            _backfill_name_matches(name, title) for title in titles_by_cik.get(current_cik, ())
+        ):
+            continue
+        historical_ciks.setdefault(ticker, set()).add(cik)
+    return {
+        ticker: next(iter(ciks)) for ticker, ciks in historical_ciks.items() if len(ciks) == 1
+    }
+
+
 class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     """Automatic collector's SEC interpretation, with authoritative period replacement."""
 
@@ -53,18 +89,14 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         """Persist one exact historical index membership only after both 100-company sets validate."""
         reference_date = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
         directory = self.sec.ticker_directory()
-        historical_ciks: dict[str, set[str]] = {}
-        for row in self.repository.us_active_companies(year):
-            ticker = str(row.get("ticker") or "").strip().upper()
-            cik = str(row.get("cik") or "").strip()
-            if ticker and cik:
-                historical_ciks.setdefault(ticker, set()).add(cik)
         # Reuse only unambiguous mappings already validated and persisted by a
         # neighbouring historical period. Reused tickers with multiple CIKs
         # remain unresolved and must go through the period-scoped SEC search.
-        historical_directory = {
-            ticker: next(iter(ciks)) for ticker, ciks in historical_ciks.items() if len(ciks) == 1
-        }
+        # Also reject a polluted row that pairs today's issuer name and ticker
+        # with a different CIK (for example TEAM/Atlassian on Target's CIK).
+        historical_directory = _historical_ticker_directory(
+            self.repository.us_active_companies(year), directory, self.sec.company_ticker_rows(),
+        )
         sp100 = self.constituents.sp100_historical(reference_date, directory, historical_directory)
         nasdaq100 = self.constituents.nasdaq100(reference_date, directory, historical_directory)
         by_market = {"us_sp100": sp100, "us_nasdaq100": nasdaq100}
@@ -115,6 +147,13 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 alternative_ciks.add(cik)
         result = []
         for cik in sorted(alternative_ciks):
+            payload = self._backfill_payloads.get(cik)
+            if payload is None:
+                payload = self.sec.company_facts(cik)
+                self._backfill_payloads[cik] = payload
+            issuer_name = str(payload.get("entityName") or "").strip() if isinstance(payload, dict) else ""
+            if issuer_name and not _backfill_name_matches(member.company_name, issuer_name):
+                continue
             result.extend(
                 fact for fact in self._company_facts_for_cik(member.company_id, cik)
                 if market_period(fact.period_end) == (year, quarter)
