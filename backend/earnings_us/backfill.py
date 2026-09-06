@@ -29,6 +29,10 @@ def _all_financial_accessions(payload: dict) -> set[str]:
 class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     """Automatic collector's SEC interpretation, with authoritative period replacement."""
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._backfill_facts: dict[str, list] = {}
+
     def freeze_universe_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
         """Persist one exact historical index membership only after both 100-company sets validate."""
         reference_date = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
@@ -48,7 +52,19 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
             "requests": {"index_sources": self.constituents.request_count, "sec": self.sec.request_count},
         }
 
-    def backfill_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
+    def _company_facts(self, member) -> list:
+        cached = self._backfill_facts.get(member.company_id)
+        if cached is not None:
+            return cached
+        payload = self.sec.company_facts(member.cik)
+        facts = extract_new_sec_facts(member.company_id, payload, _all_financial_accessions(payload))
+        self._backfill_facts[member.company_id] = facts
+        return facts
+
+    def backfill_period(
+        self, year: int, quarter: int, *, write: bool = True,
+        strict_provider_errors: bool = False,
+    ) -> dict:
         rows = [member for market in MARKETS for member in self.repository.us_universe(market, year, quarter)]
         unique = {member.company_id: member for member in rows}
         if not unique:
@@ -60,20 +76,29 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 issues.append({"company": member.company_name, "reason": "SEC CIK missing"})
                 continue
             try:
-                payload = self.sec.company_facts(member.cik)
-                accessions = _all_financial_accessions(payload)
-                changed.extend(
-                    fact for fact in extract_new_sec_facts(member.company_id, payload, accessions)
+                candidates = [
+                    fact for fact in self._company_facts(member)
                     if market_period(fact.period_end) == (year, quarter)
-                )
+                ]
             except ProviderError as exc:
+                if strict_provider_errors:
+                    raise ProviderError(f"{member.company_name}: {exc}") from exc
                 issues.append({"company": member.company_name, "reason": str(exc)})
+                continue
+            if not candidates:
+                issues.append({"company": member.company_name, "reason": "No SEC financial fact mapped to market period"})
+                continue
+            selected = max(candidates, key=lambda fact: (fact.period_end, fact.filing_date))
+            changed.append(selected)
+            if selected.is_pending:
+                issues.append({"company": member.company_name, "reason": "SEC financial fact is incomplete"})
         if write and changed:
             self.repository.replace_company_quarters_for_backfill(fact.db_row() for fact in changed)
             self.recalculate_market_period(year, quarter)
         status = "incomplete" if issues else "ready"
         result = {"period": f"{year}Q{quarter}", "write": write, "status": status,
                   "universe_companies": len(unique), "replaced_company_quarters": len(changed),
+                  "missing_or_pending_companies": len(issues),
                   "issues": issues, "requests": {"sec": self.sec.request_count}}
         if write:
             self.repository.save_us_state("backfill", status, {"period": result["period"]})

@@ -233,6 +233,7 @@ class CommonClientTests(unittest.TestCase):
 class SourceContractTests(unittest.TestCase):
     def test_us_earnings_schedule_runs_snapshot_before_edgar_and_pending_retry(self):
         workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+        backfill_workflow = (ROOT / ".github/workflows/earnings-us-backfill.yml").read_text(encoding="utf-8")
         cli = (ROOT / "backend/earnings_us/automatic_cli.py").read_text(encoding="utf-8")
 
         self.assertIn('cron: "0 2 * * *"', workflow)
@@ -241,6 +242,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn('cron: "30 22 * * *"', workflow)
         self.assertIn("options: [snapshot, edgar, incomplete, all]", workflow)
         self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
+        self.assertIn("group: earnings-us-pipeline", workflow)
+        self.assertIn("group: earnings-us-pipeline", backfill_workflow)
 
     def test_scheduled_workflow_failure_email_is_centralized_and_complete(self):
         notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")

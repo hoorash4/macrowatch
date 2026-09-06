@@ -49,7 +49,9 @@ class USEarningsRepository(EarningsV2Repository):
 
     def us_state(self, operation: str) -> dict[str, Any] | None:
         result = self.rpc("earnings_v2_get_pipeline_state", {"p_source": self.SOURCE, "p_operation": operation})
-        return result[0] if isinstance(result, list) and result and isinstance(result[0], dict) else None
+        if isinstance(result, list):
+            return result[0] if result and isinstance(result[0], dict) else None
+        return result if isinstance(result, dict) else None
 
     def save_us_universe(self, market_id: str, year: int, quarter: int, rows: Iterable[USCompany]) -> int:
         records = [{
@@ -59,3 +61,9 @@ class USEarningsRepository(EarningsV2Repository):
             "currency": "USD", "selection_method": "index_constituent",
         } for item in rows]
         return self.replace_universe(market_id, year, quarter, records)
+
+    def clear_us_backfill_period(self, year: int, quarter: int) -> dict[str, Any]:
+        result = self.rpc("earnings_v2_us_clear_backfill_period", {
+            "p_market_year": year, "p_market_quarter": quarter,
+        })
+        return result if isinstance(result, dict) else {}

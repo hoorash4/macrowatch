@@ -4,8 +4,9 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from earnings_us.models import MarketSecurity, USFinancialFact, market_period
-from earnings_us.backfill_cli import period_range
+from earnings_us.models import MarketSecurity, USCompany, USFinancialFact, market_period
+from earnings_us.backfill import USEarningsBackfillPipeline
+from earnings_us.backfill_cli import chronological_period_range, period_range, resumable_periods, run_earnings_range
 from earnings_us.constituents import (
     USIndexConstituentClient,
     archive_covers_filing_window,
@@ -278,6 +279,113 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(periods[:3], [(2026, 2), (2026, 1), (2025, 4)])
         self.assertEqual(periods[-1], (2016, 1))
         self.assertEqual(len(periods), 42)
+
+    def test_earnings_backfill_periods_run_oldest_to_newest(self):
+        periods = chronological_period_range(2016, 1, 2026, 2)
+        self.assertEqual(periods[:3], [(2016, 1), (2016, 2), (2016, 3)])
+        self.assertEqual(periods[-1], (2026, 2))
+        self.assertEqual(len(periods), 42)
+
+    def test_failed_range_resumes_at_failed_period_without_prior_cleanup(self):
+        periods = chronological_period_range(2016, 1, 2016, 4)
+        state = {"status": "failed", "cursor": {
+            "range_start": "2016Q1", "range_end": "2016Q4", "failed_period": "2016Q3",
+        }}
+
+        pending, interrupted = resumable_periods(periods, state, "2016Q1", "2016Q4")
+
+        self.assertEqual(pending, [(2016, 3), (2016, 4)])
+        self.assertIsNone(interrupted)
+
+    def test_interrupted_running_period_is_cleaned_then_retried(self):
+        class Repository:
+            def __init__(self):
+                self.cleaned = []
+                self.states = []
+
+            def us_state(self, _):
+                return {"status": "running", "cursor": {
+                    "range_start": "2016Q1", "range_end": "2016Q2", "current_period": "2016Q2",
+                }}
+
+            def clear_us_backfill_period(self, year, quarter):
+                self.cleaned.append((year, quarter))
+                return {"company_rows_deleted": 1}
+
+            def save_us_state(self, *args):
+                self.states.append(args)
+
+        class Pipeline:
+            def __init__(self):
+                self.repository = Repository()
+                self.called = []
+
+            def backfill_period(self, year, quarter, **_kwargs):
+                self.called.append((year, quarter))
+                return {"period": f"{year}Q{quarter}", "status": "ready"}
+
+        pipeline = Pipeline()
+        result = run_earnings_range(pipeline, [(2016, 1), (2016, 2)], write=True)
+
+        self.assertEqual(pipeline.repository.cleaned, [(2016, 2)])
+        self.assertEqual(pipeline.called, [(2016, 2)])
+        self.assertEqual(result["processed_periods"], 1)
+
+    def test_range_failure_cleans_only_current_period_and_stops(self):
+        class Repository:
+            def __init__(self):
+                self.cleaned = []
+                self.states = []
+
+            def us_state(self, _):
+                return None
+
+            def clear_us_backfill_period(self, year, quarter):
+                self.cleaned.append((year, quarter))
+                return {"company_rows_deleted": 2}
+
+            def save_us_state(self, *args):
+                self.states.append(args)
+
+        class Pipeline:
+            def __init__(self):
+                self.repository = Repository()
+                self.called = []
+
+            def backfill_period(self, year, quarter, **_kwargs):
+                self.called.append((year, quarter))
+                if quarter == 2:
+                    raise ProviderError("SEC unavailable")
+                return {"period": f"{year}Q{quarter}", "status": "ready"}
+
+        pipeline = Pipeline()
+        with self.assertRaisesRegex(RuntimeError, "stopped at 2016Q2"):
+            run_earnings_range(pipeline, [(2016, 1), (2016, 2), (2016, 3)], write=True)
+
+        self.assertEqual(pipeline.called, [(2016, 1), (2016, 2)])
+        self.assertEqual(pipeline.repository.cleaned, [(2016, 2)])
+        self.assertTrue(any(args[1] == "failed" for args in pipeline.repository.states))
+
+    def test_backfill_reuses_one_companyfacts_payload_across_periods(self):
+        class Sec:
+            request_count = 0
+
+            def company_facts(self, _):
+                self.request_count += 1
+                return payload()
+
+        member = USCompany(
+            company_id="us:cik:0000000001", company_name="Example", ticker="EX",
+            cik="0000000001", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2026, 3, 31),
+        )
+        pipeline = USEarningsBackfillPipeline(object(), Sec(), None)
+
+        first = pipeline._company_facts(member)
+        second = pipeline._company_facts(member)
+
+        self.assertIs(first, second)
+        self.assertEqual(pipeline.sec.request_count, 1)
 
     def test_legacy_oef_preserves_values_for_ranked_company_selection(self):
         row = "<TR><TD>Company {index}</TD><TD>1</TD><TD>1000</TD></TR>"
