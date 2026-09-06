@@ -1026,6 +1026,23 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertIn((date(2025, 4, 30), 2026, 1), physical)
         self.assertIn((date(2026, 4, 30), 2027, 1), physical)
 
+    def test_latest_quarter_after_last_annual_end_advances_fiscal_year(self):
+        source = payload()
+        for metric in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][metric]["units"]["USD"] = [
+                entry(fy=2026, fp="FY", accn="fy-2026", start="2025-02-01",
+                      end="2026-01-31", filed="2026-03-01", value="80"),
+                entry(fy=2026, fp="Q1", accn="latest-q1", start="2026-02-01",
+                      end="2026-04-30", filed="2026-06-01", value="20"),
+            ]
+
+        fact = next(
+            fact for fact in extract_new_sec_facts("us:cik:latest", source, {"latest-q1"})
+            if fact.period_end == date(2026, 4, 30)
+        )
+
+        self.assertEqual((fact.fiscal_year, fact.fiscal_quarter), (2027, 1))
+
     def test_two_physical_year_ends_in_one_calendar_year_keep_distinct_fiscal_keys(self):
         source = payload()
         for metric in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
