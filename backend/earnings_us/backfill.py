@@ -172,9 +172,9 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                     raise ProviderError(f"{member.company_name}: {exc}") from exc
                 issues.append({"company": member.company_name, "reason": str(exc)})
                 continue
-            if not candidates:
+            if not candidates or not any(fact.fully_complete for fact in candidates):
                 try:
-                    candidates = self._historical_ticker_candidates(member, year, quarter)
+                    candidates.extend(self._historical_ticker_candidates(member, year, quarter))
                 except ProviderError as exc:
                     if strict_provider_errors:
                         raise ProviderError(f"{member.company_name}: {exc}") from exc
