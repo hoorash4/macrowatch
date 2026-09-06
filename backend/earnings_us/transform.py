@@ -18,6 +18,7 @@ METRIC_BASES = {
         ("OperatingRevenues",),
         ("RegulatedAndUnregulatedOperatingRevenue",),
         ("RevenuesNetOfInterestExpense",),
+        ("RevenuesExcludingInterestAndDividends",),
         ("InterestIncomeExpenseNet", "NoninterestIncome"),
     ),
     "operating_income": (
@@ -25,6 +26,7 @@ METRIC_BASES = {
         ("IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",),
         ("IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",),
         ("ProfitLoss", "IncomeTaxExpenseBenefit"),
+        ("NetIncomeLoss", "IncomeTaxExpenseBenefit"),
     ),
     "net_income": (
         ("NetIncomeLoss",),
@@ -90,6 +92,17 @@ def _basis_value(
     )
 
 
+def _first_basis_value(
+    groups: list[list[list[dict[str, Any]]]], fy: int, fp: str,
+    accession: str | None, *, annual: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    for components in groups:
+        result = _basis_value(components, fy, fp, accession, annual=annual)
+        if result[0] is not None:
+            return result
+    return None, None, None, None
+
+
 def _metric_value(
     groups: list[list[list[dict[str, Any]]]],
     fy: int,
@@ -98,7 +111,13 @@ def _metric_value(
     *,
     annual: bool,
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
-    """Use the first available metric basis and never mix bases inside Q4."""
+    """Prefer direct facts, then same-basis and compatible-basis Q4 derivation."""
+    if annual:
+        # Some 10-K XBRL includes the standalone fourth quarter under the FY
+        # context. It is more direct than subtracting three earlier quarters.
+        direct = _first_basis_value(groups, fy, fp, accession, annual=False)
+        if direct[0] is not None:
+            return direct
     for components in groups:
         value, start, end, filed = _basis_value(components, fy, fp, accession, annual=annual)
         if value is None:
@@ -108,6 +127,14 @@ def _metric_value(
         prior = [_basis_value(components, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
         if all(item is not None for item in prior):
             return value - sum(prior, Decimal(0)), start, end, filed
+    if annual:
+        annual_value = _first_basis_value(groups, fy, fp, accession, annual=True)
+        prior = [
+            _first_basis_value(groups, fy, label, None, annual=False)[0]
+            for label in ("Q1", "Q2", "Q3")
+        ]
+        if annual_value[0] is not None and all(item is not None for item in prior):
+            return annual_value[0] - sum(prior, Decimal(0)), annual_value[1], annual_value[2], annual_value[3]
     return None, None, None, None
 
 
