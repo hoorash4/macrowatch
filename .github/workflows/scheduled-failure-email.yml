@@ -1,0 +1,84 @@
+name: Notify scheduled workflow failures
+
+on:
+  workflow_run:
+    workflows:
+      - "Analyze daily news"
+      - "Backup database to Google Drive"
+      - "Check macro targets"
+      - "Earnings U.S. automatic"
+      - "Earnings V2 Korea automatic"
+      - "Refresh central-bank policy signals"
+      - "Refresh EM capital capacity"
+      - "Refresh Emerging Market Stress"
+      - "Refresh equity-bond relative value"
+      - "Refresh Korea foreign flow"
+      - "Refresh Korean market stress"
+      - "Refresh KOSPI market context"
+      - "Refresh market-implied policy expectations"
+      - "Refresh sector flow"
+      - "Refresh U.S. credit stress"
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: >-
+      ${{
+        github.event.workflow_run.event == 'schedule' &&
+        (github.event.workflow_run.conclusion == 'failure' ||
+         github.event.workflow_run.conclusion == 'timed_out')
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Email administrator
+        env:
+          EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
+          EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}
+          SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_FINISHED_AT: ${{ github.event.workflow_run.updated_at }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import smtplib
+          import ssl
+          from email.message import EmailMessage
+
+          account = os.environ.get("EMAIL_ADMIN", "").strip()
+          password = os.environ.get("EMAIL_APP_KEY", "").strip()
+          if not account:
+              raise RuntimeError("EMAIL_ADMIN GitHub Actions secret is missing")
+          if not password:
+              raise RuntimeError("EMAIL_APP_KEY GitHub Actions secret is missing")
+
+          workflow = os.environ["SOURCE_WORKFLOW"]
+          conclusion = os.environ["SOURCE_CONCLUSION"]
+          message = EmailMessage()
+          message["From"] = account
+          message["To"] = account
+          message["Subject"] = f"[MacroWatch] 예약 실행 실패: {workflow}"
+          message.set_content(
+              "MacroWatch 예약 자동 실행이 실패했습니다.\n\n"
+              f"워크플로: {workflow}\n"
+              f"결과: {conclusion}\n"
+              f"완료 시각: {os.environ['SOURCE_FINISHED_AT']}\n"
+              f"실행 시도: {os.environ['SOURCE_RUN_ATTEMPT']}\n"
+              f"커밋: {os.environ['SOURCE_COMMIT_SHA']}\n"
+              f"로그: {os.environ['SOURCE_RUN_URL']}\n"
+          )
+
+          with smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30) as smtp:
+              smtp.ehlo()
+              smtp.starttls(context=ssl.create_default_context())
+              smtp.ehlo()
+              smtp.login(account, password)
+              smtp.send_message(message)
+          PY

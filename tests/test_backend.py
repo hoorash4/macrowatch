@@ -242,18 +242,28 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("options: [snapshot, edgar, incomplete, all]", workflow)
         self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
 
-    def test_us_earnings_failure_email_runs_only_after_collection_failure(self):
-        workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+    def test_scheduled_workflow_failure_email_is_centralized_and_complete(self):
+        notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")
+        us_workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+        scheduled_names = set()
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            workflow = path.read_text(encoding="utf-8")
+            if re.search(r"(?m)^  schedule:", workflow):
+                scheduled_names.add(re.search(r"(?m)^name:\s*(.+)$", workflow).group(1).strip())
 
-        self.assertIn("notify_failure:", workflow)
-        self.assertIn("needs: collect", workflow)
-        self.assertIn("always() && needs.collect.result == 'failure'", workflow)
-        self.assertIn("ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}", workflow)
-        self.assertIn("OUTLOOK_APP_PASSWORD: ${{ secrets.OUTLOOK_APP_PASSWORD }}", workflow)
-        self.assertIn('account = os.environ.get("ADMIN_EMAIL", "").strip()', workflow)
-        self.assertIn('smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30)', workflow)
-        self.assertIn('message["To"] = account', workflow)
-        self.assertIn('f"로그: {run_url}\\n"', workflow)
+        monitored_block = re.search(r"workflows:\n(?P<body>(?:\s+- .+\n)+)", notifier).group("body")
+        monitored_names = set(re.findall(r'^\s+- "(.+)"$', monitored_block, flags=re.MULTILINE))
+
+        self.assertEqual(monitored_names, scheduled_names)
+        self.assertIn("github.event.workflow_run.event == 'schedule'", notifier)
+        self.assertIn("github.event.workflow_run.conclusion == 'failure'", notifier)
+        self.assertIn("github.event.workflow_run.conclusion == 'timed_out'", notifier)
+        self.assertIn("EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}", notifier)
+        self.assertIn("EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}", notifier)
+        self.assertIn('smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30)', notifier)
+        self.assertIn('message["To"] = account', notifier)
+        self.assertNotIn("notify_failure:", us_workflow)
+        self.assertNotIn("OUTLOOK_APP_PASSWORD", notifier)
 
     def test_closed_membership_keeps_passwords_in_supabase_auth(self):
         migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
