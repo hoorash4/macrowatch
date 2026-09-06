@@ -706,7 +706,10 @@ class USEarningsTransformTests(unittest.TestCase):
                 return [("BLK", "Blackrock Inc", "0002012383")]
 
             def company_facts(self, _):
-                return {"facts": {"us-gaap": {"Revenues": {}}}}
+                return {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+                    entry(fy=2025, fp="Q1", accn="q1", start="2025-01-01", end="2025-03-31",
+                          filed="2025-05-01", value="1")
+                ]}}}}}
 
         rows = [("", "Blackrock Inc", Decimal("1"))] + [
             (f"T{index:03}", f"Company {index}", Decimal("1")) for index in range(99)
@@ -739,7 +742,10 @@ class USEarningsTransformTests(unittest.TestCase):
             def company_facts(self, cik):
                 if cik == wrong_cik:
                     raise ProviderError("HTTP 404")
-                return {"facts": {"us-gaap": {"Revenues": {}}}}
+                return {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+                    entry(fy=2016, fp="Q1", accn="q1", start="2016-01-01", end="2016-03-31",
+                          filed="2016-05-01", value="1")
+                ]}}}}}
 
         rows = [(ticker, name, Decimal("1")) for ticker, name, _ in regular]
         rows.append(("", "Wal-Mart Stores Inc.", Decimal("1")))
@@ -958,6 +964,21 @@ class USEarningsTransformTests(unittest.TestCase):
         result = client._securities("us_sp100", date(2016, 3, 31), rows, directory)
 
         self.assertEqual(next(item.cik for item in result if item.ticker == "XOM"), historical_cik)
+
+    def test_successor_comparatives_do_not_count_as_contemporaneous_cik_coverage(self):
+        class FakeSec:
+            def company_ticker_rows(self):
+                return []
+
+            def company_facts(self, _cik):
+                return {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+                    entry(fy=2016, fp="FY", accn="late", start="2016-01-01", end="2016-12-31",
+                          filed="2020-02-01", value="1")
+                ]}}}}}
+
+        client = USIndexConstituentClient(FakeSec())
+
+        self.assertFalse(client._has_company_facts_for_reference("0001744489", date(2016, 6, 30)))
 
     def test_date_bounded_sec_search_rejects_successor_without_historical_coverage(self):
         successor_cik = "0001744489"
