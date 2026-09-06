@@ -38,6 +38,57 @@ def _select_backfill_fact(candidates: list):
     return max(candidates, key=lambda fact: (fact.fully_complete, fact.period_end, fact.filing_date))
 
 
+def _shift_fiscal_key(year: int, quarter: int, steps: int) -> tuple[int, int]:
+    index = year * 4 + quarter - 1 + steps
+    return index // 4, index % 4 + 1
+
+
+def _noncolliding_backfill_fiscal_key(repository, fact: USFinancialFact, year: int, quarter: int) -> USFinancialFact:
+    """Keep a 6-K calendar label from overwriting another physical fiscal quarter."""
+    history_loader = getattr(repository, "company_history", None)
+    if not callable(history_loader):
+        return fact
+    rows = history_loader([fact.company_id])
+    target_index = year * 4 + quarter - 1
+    parsed: list[tuple[int, int, int, int]] = []
+    for row in rows:
+        try:
+            parsed.append((
+                int(row["market_year"]), int(row["market_quarter"]),
+                int(row["fiscal_year"]), int(row["fiscal_quarter"]),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    collision = any(
+        (fiscal_year, fiscal_quarter) == fact.key
+        and (market_year, market_quarter) != (year, quarter)
+        for market_year, market_quarter, fiscal_year, fiscal_quarter in parsed
+    )
+    if not collision:
+        return fact
+
+    neighbours = sorted(
+        parsed,
+        key=lambda row: abs((row[0] * 4 + row[1] - 1) - target_index),
+    )
+    for market_year, market_quarter, fiscal_year, fiscal_quarter in neighbours:
+        neighbour_index = market_year * 4 + market_quarter - 1
+        if neighbour_index == target_index:
+            continue
+        candidate = _shift_fiscal_key(
+            fiscal_year, fiscal_quarter, target_index - neighbour_index,
+        )
+        if not any(
+            (existing_fy, existing_fq) == candidate
+            and (existing_year, existing_quarter) != (year, quarter)
+            for existing_year, existing_quarter, existing_fy, existing_fq in parsed
+        ):
+            return fact.with_changes(fiscal_year=candidate[0], fiscal_quarter=candidate[1])
+    raise ValueError(
+        f"No non-colliding fiscal key for {fact.company_id} {year}Q{quarter}"
+    )
+
+
 def _backfill_name_matches(left: str, right: str) -> bool:
     """Match legal issuer names after stripping historical feed share-class markers."""
     def clean(value: str) -> str:
@@ -210,7 +261,10 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
             return None
         tags = {
             "top_line": ("Revenue", "RevenueFromContractsWithCustomers"),
-            "operating_income": ("ProfitLossFromOperatingActivities",),
+            "operating_income": (
+                "ProfitLossFromOperatingActivities", "OperatingProfitLossOperating",
+                "ProfitLossBeforeFinancingAndIncomeTaxes",
+            ),
             "net_income": ("ProfitLossAttributableToOwnersOfParent", "ProfitLoss"),
         }
         by_metric: dict[str, dict[str, tuple[Decimal, str, date, date, date]]] = {}
@@ -236,8 +290,6 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                             and (end - start).days + 1 >= 300
                         ):
                             rows_by_accession.setdefault(accession, (value, currency, start, end, filed))
-                if rows_by_accession:
-                    break
             by_metric[metric] = rows_by_accession
         common = set.intersection(*(set(rows) for rows in by_metric.values())) if by_metric else set()
         if not common:
@@ -279,6 +331,116 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
             source_filing_id=accession,
             filing_date=max(filed_dates),
             is_pending=False,
+        )
+
+    def _ifrs_allocated_candidate(self, member, year: int, quarter: int):
+        """Allocate IFRS half-year/year totals only when exact quarters do not exist.
+
+        Foreign private issuers commonly publish H1 and FY statements instead of
+        four standalone quarters. Splitting each disclosed half equally preserves
+        the issuer's reported annual total while keeping this approximation inside
+        the historical backfill path.
+        """
+        if not hasattr(self.sec, "company_facts"):
+            return None
+        payload = self._backfill_payloads.get(member.cik.zfill(10))
+        if payload is None:
+            payload = self.sec.company_facts(member.cik)
+            self._backfill_payloads[member.cik.zfill(10)] = payload
+        facts = payload.get("facts", {}).get("ifrs-full", {})
+        if not isinstance(facts, dict):
+            return None
+        tags = {
+            "top_line": ("Revenue", "RevenueFromContractsWithCustomers"),
+            "operating_income": (
+                "ProfitLossFromOperatingActivities", "OperatingProfitLossOperating",
+                "ProfitLossBeforeFinancingAndIncomeTaxes",
+            ),
+            "net_income": ("ProfitLossAttributableToOwnersOfParent", "ProfitLoss"),
+        }
+        observations: dict[tuple[date, date, str, str], dict[str, tuple[Decimal, date]]] = {}
+        for metric, metric_tags in tags.items():
+            for tag in metric_tags:
+                item = facts.get(tag, {})
+                units = item.get("units", {}) if isinstance(item, dict) else {}
+                for currency, rows in units.items() if isinstance(units, dict) else ():
+                    if currency not in {"USD", "EUR", "GBP", "CNY", "JPY"} or not isinstance(rows, list):
+                        continue
+                    for row in rows:
+                        if not isinstance(row, dict) or str(row.get("form") or "").upper() not in {"6-K", "20-F", "40-F"}:
+                            continue
+                        try:
+                            start = date.fromisoformat(str(row["start"])); end = date.fromisoformat(str(row["end"]))
+                            filed = date.fromisoformat(str(row["filed"])); value = Decimal(str(row["val"]))
+                        except (KeyError, ValueError, InvalidOperation):
+                            continue
+                        duration = (end - start).days + 1
+                        accession = str(row.get("accn") or "")
+                        if accession and 150 <= duration <= 400:
+                            observations.setdefault((start, end, accession, currency), {}).setdefault(
+                                metric, (value, filed),
+                            )
+        complete = [
+            (key, values) for key, values in observations.items()
+            if set(values) == set(tags)
+        ]
+        target_index = year * 4 + quarter - 1
+
+        def covered(start: date, end: date) -> bool:
+            return start.year * 4 + (start.month - 1) // 3 <= target_index <= end.year * 4 + (end.month - 1) // 3
+
+        halves = [(key, values) for key, values in complete if 150 <= (key[1] - key[0]).days + 1 <= 220]
+        annuals = [(key, values) for key, values in complete if 300 <= (key[1] - key[0]).days + 1 <= 400]
+        selected_values: dict[str, Decimal] | None = None
+        source_ids: list[str] = []
+        filing_dates: list[date] = []
+        source_currency = "USD"
+        relevant_half = max(
+            ((key, values) for key, values in halves if covered(key[0], key[1])),
+            key=lambda item: max(value[1] for value in item[1].values()), default=None,
+        )
+        if relevant_half is not None:
+            key, values = relevant_half
+            selected_values = {metric: value[0] / 2 for metric, value in values.items()}
+            source_ids = [key[2]]; filing_dates = [value[1] for value in values.values()]
+            source_currency = key[3]
+        else:
+            relevant_annual = max(
+                ((key, values) for key, values in annuals if covered(key[0], key[1])),
+                key=lambda item: max(value[1] for value in item[1].values()), default=None,
+            )
+            if relevant_annual is None:
+                return None
+            annual_key, annual_values = relevant_annual
+            first_half = max(
+                ((key, values) for key, values in halves
+                 if key[0] == annual_key[0] and key[1] < annual_key[1] and key[3] == annual_key[3]),
+                key=lambda item: item[0][1], default=None,
+            )
+            if first_half is not None and target_index > first_half[0][1].year * 4 + (first_half[0][1].month - 1) // 3:
+                selected_values = {
+                    metric: (annual_values[metric][0] - first_half[1][metric][0]) / 2
+                    for metric in tags
+                }
+                source_ids = [annual_key[2], first_half[0][2]]
+                filing_dates = [value[1] for value in annual_values.values()] + [
+                    value[1] for value in first_half[1].values()
+                ]
+            else:
+                selected_values = {metric: value[0] / 4 for metric, value in annual_values.items()}
+                source_ids = [annual_key[2]]; filing_dates = [value[1] for value in annual_values.values()]
+            source_currency = annual_key[3]
+        end = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
+        start = date(year, (quarter - 1) * 3 + 1, 1)
+        rate = self._fx_to_usd(source_currency, end)
+        return USFinancialFact(
+            company_id=member.company_id, fiscal_year=year, fiscal_quarter=quarter,
+            period_start=start, period_end=end,
+            top_line=selected_values["top_line"] * rate,
+            operating_income=selected_values["operating_income"] * rate,
+            net_income=selected_values["net_income"] * rate,
+            source_filing_id="allocated-ifrs:" + "+".join(dict.fromkeys(source_ids)),
+            filing_date=max(filing_dates), is_pending=False,
         )
 
     def _delisted_carry_forward(self, member, year: int, quarter: int):
@@ -364,6 +526,15 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                     annual_candidate = None
                 if annual_candidate is not None:
                     candidates.append(annual_candidate)
+            if not candidates or not any(fact.fully_complete for fact in candidates):
+                try:
+                    allocated_candidate = self._ifrs_allocated_candidate(member, year, quarter)
+                except ProviderError as exc:
+                    if strict_provider_errors:
+                        raise ProviderError(f"{member.company_name}: {exc}") from exc
+                    allocated_candidate = None
+                if allocated_candidate is not None:
+                    candidates.append(allocated_candidate)
             if not candidates:
                 try:
                     carry_forward = self._delisted_carry_forward(member, year, quarter)
@@ -377,6 +548,9 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 changed.append(carry_forward)
                 continue
             selected = _select_backfill_fact(candidates)
+            selected = _noncolliding_backfill_fiscal_key(
+                self.repository, selected, year, quarter,
+            )
             changed.append(selected)
             if selected.is_pending:
                 issues.append({"company": member.company_name, "reason": "SEC financial fact is incomplete"})
