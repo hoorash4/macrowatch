@@ -38,8 +38,8 @@ METRIC_BASES = {
 
 
 def _normalized_sec_row(row: dict[str, Any], annual_ends: list[date]) -> dict[str, Any]:
-    """Repair issuer-supplied ``fp=FY`` labels on genuine quarterly 10-Q facts."""
-    if str(row.get("fp") or "") != "FY" or str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+    """Derive 10-Q quarter labels from physical periods, not unstable SEC metadata."""
+    if str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
         return row
     try:
         start = date.fromisoformat(str(row["start"]))
