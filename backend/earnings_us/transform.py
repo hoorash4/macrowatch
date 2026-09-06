@@ -77,11 +77,56 @@ def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str
     return value, start, end, filed
 
 
+def _cumulative_entry_value(
+    entries: list[dict[str, Any]], fy: int, fp: str, accession: str | None,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    """Return a fiscal YTD fact for Q2 or Q3 when no standalone fact exists."""
+    bounds = {"Q2": (131, 220), "Q3": (221, 299)}
+    if fp not in bounds:
+        return None, None, None, None
+    minimum, maximum = bounds[fp]
+    candidates: list[tuple[date, date, date, Decimal]] = []
+    for row in entries:
+        if int(row.get("fy") or 0) != fy or str(row.get("fp") or "") != fp:
+            continue
+        if accession is not None and str(row.get("accn") or "") != accession:
+            continue
+        if str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+            continue
+        try:
+            start = date.fromisoformat(str(row["start"]))
+            end = date.fromisoformat(str(row["end"]))
+            filed = date.fromisoformat(str(row["filed"]))
+            value = Decimal(str(row["val"]))
+        except (KeyError, ValueError, ArithmeticError):
+            continue
+        if minimum <= (end - start).days + 1 <= maximum:
+            candidates.append((filed, start, end, value))
+    if not candidates:
+        return None, None, None, None
+    filed, start, end, value = max(candidates)
+    return value, start, end, filed
+
+
 def _basis_value(
     components: list[list[dict[str, Any]]], fy: int, fp: str,
     accession: str | None, *, annual: bool,
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
     values = [_entry_value(rows, fy, fp, accession, annual=annual) for rows in components]
+    if not values or any(item[0] is None for item in values):
+        return None, None, None, None
+    return (
+        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
+        min(item[1] for item in values if item[1] is not None),
+        max(item[2] for item in values if item[2] is not None),
+        max(item[3] for item in values if item[3] is not None),
+    )
+
+
+def _cumulative_basis_value(
+    components: list[list[dict[str, Any]]], fy: int, fp: str, accession: str | None,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    values = [_cumulative_entry_value(rows, fy, fp, accession) for rows in components]
     if not values or any(item[0] is None for item in values):
         return None, None, None, None
     return (
@@ -103,6 +148,16 @@ def _first_basis_value(
     return None, None, None, None
 
 
+def _first_cumulative_basis_value(
+    groups: list[list[list[dict[str, Any]]]], fy: int, fp: str, accession: str | None,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    for components in groups:
+        result = _cumulative_basis_value(components, fy, fp, accession)
+        if result[0] is not None:
+            return result
+    return None, None, None, None
+
+
 def _metric_value(
     groups: list[list[list[dict[str, Any]]]],
     fy: int,
@@ -111,10 +166,10 @@ def _metric_value(
     *,
     annual: bool,
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
-    """Prefer direct facts, then same-basis and compatible-basis Q4 derivation."""
+    """Prefer direct facts, then derive quarters from SEC fiscal YTD facts."""
     if annual:
         # Some 10-K XBRL includes the standalone fourth quarter under the FY
-        # context. It is more direct than subtracting three earlier quarters.
+        # context. It is more direct than subtracting earlier cumulative facts.
         direct = _first_basis_value(groups, fy, fp, accession, annual=False)
         if direct[0] is not None:
             return direct
@@ -124,11 +179,36 @@ def _metric_value(
             continue
         if not annual:
             return value, start, end, filed
+        q3_ytd = _cumulative_basis_value(components, fy, "Q3", None)
+        if q3_ytd[0] is not None:
+            return value - q3_ytd[0], start, end, filed
         prior = [_basis_value(components, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
         if all(item is not None for item in prior):
             return value - sum(prior, Decimal(0)), start, end, filed
+    if not annual and fp in {"Q2", "Q3"}:
+        previous_fp = "Q1" if fp == "Q2" else "Q2"
+        for components in groups:
+            current_ytd = _cumulative_basis_value(components, fy, fp, accession)
+            previous = (
+                _basis_value(components, fy, "Q1", None, annual=False)
+                if fp == "Q2"
+                else _cumulative_basis_value(components, fy, previous_fp, None)
+            )
+            if current_ytd[0] is not None and previous[0] is not None:
+                return current_ytd[0] - previous[0], current_ytd[1], current_ytd[2], current_ytd[3]
+        current_ytd = _first_cumulative_basis_value(groups, fy, fp, accession)
+        previous = (
+            _first_basis_value(groups, fy, "Q1", None, annual=False)
+            if fp == "Q2"
+            else _first_cumulative_basis_value(groups, fy, previous_fp, None)
+        )
+        if current_ytd[0] is not None and previous[0] is not None:
+            return current_ytd[0] - previous[0], current_ytd[1], current_ytd[2], current_ytd[3]
     if annual:
         annual_value = _first_basis_value(groups, fy, fp, accession, annual=True)
+        q3_ytd = _first_cumulative_basis_value(groups, fy, "Q3", None)
+        if annual_value[0] is not None and q3_ytd[0] is not None:
+            return annual_value[0] - q3_ytd[0], annual_value[1], annual_value[2], annual_value[3]
         prior = [
             _first_basis_value(groups, fy, label, None, annual=False)[0]
             for label in ("Q1", "Q2", "Q3")
