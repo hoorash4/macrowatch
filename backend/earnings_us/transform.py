@@ -268,13 +268,22 @@ def _metric_value(
     accession: str,
     *,
     annual: bool,
+    strict_annual_direct: bool = False,
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
     """Prefer direct facts, then derive quarters from SEC fiscal YTD facts."""
     if annual:
         # Some 10-K XBRL includes the standalone fourth quarter under the FY
         # context. It is more direct than subtracting three earlier quarters.
         direct = _first_basis_value(groups, fy, fp, accession, annual=False)
-        if direct[0] is not None:
+        annual_context = _first_basis_value(groups, fy, fp, accession, annual=True)
+        direct_is_q4 = (
+            direct[0] is not None
+            and (
+                not strict_annual_direct
+                or (annual_context[2] is not None and direct[2] == annual_context[2])
+            )
+        )
+        if direct_is_q4:
             return direct
     for components in groups:
         value, start, end, filed = _basis_value(components, fy, fp, accession, annual=annual)
@@ -379,7 +388,10 @@ def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date
     return fallback
 
 
-def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
+def extract_new_sec_facts(
+    company_id: str, payload: dict[str, Any], accessions: set[str],
+    *, strict_annual_direct: bool = False,
+) -> list[USFinancialFact]:
     """Q1–Q3 use SEC's three-month facts; FY produces Q4 only after Q1–Q3 exist."""
     raw_entries = {metric: _entry_groups(payload, metric) for metric in METRIC_BASES}
     annual_ends = _annual_period_ends(raw_entries)
@@ -413,7 +425,10 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
         values: dict[str, Decimal | None] = {}
         starts: list[date] = []; ends: list[date] = []; filed_dates: list[date] = []
         for metric, groups in entries.items():
-            value, start, end, filed = _metric_value(groups, fy, fp, accession, annual=annual)
+            value, start, end, filed = _metric_value(
+                groups, fy, fp, accession, annual=annual,
+                strict_annual_direct=strict_annual_direct,
+            )
             values[metric] = value
             if start: starts.append(start)
             if end: ends.append(end)

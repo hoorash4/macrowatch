@@ -281,6 +281,63 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.operating_income, Decimal("668500000.0"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_backfill_recovers_split_date_headers_and_statement_tables(self):
+        html = """
+        <table>
+          <tr><th>For the three months ended</th></tr>
+          <tr><th>March31, 2017</th><th>March31, 2018</th><th>March31, 2018</th></tr>
+          <tr><th>RMB</th><th>RMB</th><th>US$</th></tr><tr><th>(in thousands)</th></tr>
+          <tr><td>Total net revenues</td><td>75,218</td><td>100,127</td><td>15,962</td></tr>
+          <tr><td>Income from operations</td><td>661</td><td>4,431</td><td>706</td></tr>
+        </table>
+        <table>
+          <tr><th>For the three months ended</th></tr>
+          <tr><th>March31, 2017</th><th>March31, 2018</th><th>March31, 2018</th></tr>
+          <tr><th>RMB</th><th>RMB</th><th>US$</th></tr><tr><th>(in thousands)</th></tr>
+          <tr><td>Net income</td><td>355</td><td>1,477</td><td>235</td></tr>
+          <tr><td>Net income attributable to ordinary shareholders</td><td>239</td><td>1,524</td><td>243</td></tr>
+        </table>
+        """
+        filing = SixKFiling("split", date(2018, 5, 9), date(2018, 5, 9), "form.htm")
+
+        automatic = extract_six_k_fact("company", filing, [SixKDocument("results.htm", html)], 2018, 1)
+        backfill = extract_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2018, 1,
+            backfill_mode=True,
+        )
+
+        self.assertIsNone(automatic)
+        self.assertEqual(backfill.top_line, Decimal("15962000"))
+        self.assertEqual(backfill.operating_income, Decimal("706000"))
+        self.assertEqual(backfill.net_income, Decimal("243000"))
+        self.assertFalse(backfill.is_pending)
+
+    def test_six_k_backfill_prefers_direct_quarter_statement_over_ytd_summary(self):
+        html = """
+        <table><tr><th>YTD 2022</th><th>Q3 2022</th></tr>
+          <tr><td>Total Revenue</td><td>33,144</td><td>25,406</td><td>30</td><td>37</td><td>10,982</td><td>9,866</td></tr>
+          <tr><td>Operating profit/(loss)</td><td>2,663</td><td>1,348</td><td>98</td><td>100</td><td>1,245</td><td>(1,674)</td></tr>
+          <tr><td>Profit/(Loss) for the period</td><td>2,391</td><td>461</td><td>500</td><td>500</td><td>1,642</td><td>(1,651)</td></tr>
+        </table>
+        <table><tr><th>For the quarter ended September 30, 2022</th><th>September 30, 2021</th></tr>
+          <tr><th>(in USD millions)</th><th>$m</th><th>$m</th></tr>
+          <tr><td>Total Revenue</td><td>10,982</td><td>9,866</td></tr>
+          <tr><td>Operating profit/(loss)</td><td>1,245</td><td>(1,674)</td></tr>
+          <tr><td>Profit/(Loss) for the period</td><td>1,642</td><td>(1,651)</td></tr>
+        </table>
+        """
+        filing = SixKFiling("direct-quarter", date(2022, 11, 10), date(2022, 11, 10), "form.htm")
+
+        fact = extract_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2022, 3,
+            backfill_mode=True,
+        )
+
+        self.assertEqual(fact.top_line, Decimal("10982000000"))
+        self.assertEqual(fact.operating_income, Decimal("1245000000"))
+        self.assertEqual(fact.net_income, Decimal("1642000000"))
+        self.assertFalse(fact.is_pending)
+
     def test_six_k_rejects_cross_statement_scale_mismatch(self):
         html = """
         <div>Second quarter 2023 financial results</div>
@@ -568,6 +625,53 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(repository.cleared, [(2023, 2)])
         self.assertEqual(repository.saved, [])
         self.assertEqual(pipeline.recalculated, (2023, 2))
+
+    def test_backfill_derives_ifrs_annual_quarter_from_three_stored_quarters(self):
+        member = USCompany(
+            company_id="us:cik:0000000001", company_name="Foreign", ticker="FOR",
+            cik="0000000001", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2022, 6, 30),
+        )
+        prior = []
+        for year, quarter, end, values in (
+            (2021, 3, date(2021, 9, 30), (Decimal("100"), Decimal("10"), Decimal("8"))),
+            (2021, 4, date(2021, 12, 31), (Decimal("110"), Decimal("11"), Decimal("9"))),
+            (2022, 1, date(2022, 3, 31), (Decimal("120"), Decimal("12"), Decimal("10"))),
+        ):
+            prior.append(USFinancialFact(
+                company_id=member.company_id, fiscal_year=year, fiscal_quarter=quarter,
+                period_start=None, period_end=end, top_line=values[0], operating_income=values[1],
+                net_income=values[2], source_filing_id="prior", filing_date=end,
+                is_pending=False,
+            ).db_row())
+        annual = {
+            "RevenueFromContractsWithCustomers": "500",
+            "ProfitLossFromOperatingActivities": "50",
+            "ProfitLossAttributableToOwnersOfParent": "40",
+        }
+        facts = {tag: {"units": {"USD": [{
+            "start": "2021-07-01", "end": "2022-06-30", "val": value,
+            "accn": "annual", "fy": 2021, "fp": "FY", "form": "20-F",
+            "filed": "2022-08-19",
+        }]}} for tag, value in annual.items()}
+
+        class Repository:
+            def company_history(self, _company_ids):
+                return prior
+
+        class Sec:
+            def company_facts(self, _cik):
+                return {"facts": {"ifrs-full": facts}}
+
+        pipeline = USEarningsBackfillPipeline(Repository(), Sec(), None)
+        pipeline._fx_to_usd = lambda *_args: Decimal(1)
+
+        fact = pipeline._ifrs_annual_candidate(member, 2022, 2)
+
+        self.assertEqual(fact.top_line, Decimal("170"))
+        self.assertEqual(fact.operating_income, Decimal("17"))
+        self.assertEqual(fact.net_income, Decimal("13"))
+        self.assertFalse(fact.is_pending)
 
     def test_range_failure_cleans_only_current_period_and_stops(self):
         class Repository:
@@ -1348,6 +1452,27 @@ class USEarningsTransformTests(unittest.TestCase):
         fact = extract_new_sec_facts("us:cik:direct-q4", source, {"fy"})[0]
 
         self.assertEqual(fact.top_line, Decimal("410"))
+
+    def test_backfill_q4_rejects_comparative_short_period_inside_annual_filing(self):
+        source = payload()
+        for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][tag]["units"]["USD"].append(
+                entry(
+                    fy=2026, fp="FY", accn="fy", start="2025-05-01",
+                    end="2025-07-31", filed="2026-03-20", value="999",
+                )
+            )
+
+        fact = next(
+            item for item in extract_new_sec_facts(
+                "us:cik:strict-q4", source, {"fy"}, strict_annual_direct=True,
+            )
+            if item.period_end == date(2026, 1, 31)
+        )
+
+        self.assertEqual(fact.top_line, Decimal("400"))
+        self.assertEqual(fact.operating_income, Decimal("40"))
+        self.assertEqual(fact.net_income, Decimal("32"))
 
     def test_historical_ten_k_q4_label_is_treated_as_an_annual_context(self):
         source = payload()

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 from .constituents import _name_match_score
+from .models import USFinancialFact
 from .pipeline import (
     MARKETS, USEarningsAutomaticPipeline, fact_from_row, market_period,
     previous_market_period,
@@ -38,9 +40,12 @@ def _select_backfill_fact(candidates: list):
 class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     """Automatic collector's SEC interpretation, with authoritative period replacement."""
 
+    six_k_backfill_mode = True
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._backfill_facts: dict[tuple[str, str], list] = {}
+        self._backfill_payloads: dict[str, dict] = {}
         self._historical_companies: list[dict] | None = None
         self._current_sec_ciks: set[str] | None = None
 
@@ -83,8 +88,14 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         cached = self._backfill_facts.get(key)
         if cached is not None:
             return cached
-        payload = self.sec.company_facts(cik)
-        facts = extract_new_sec_facts(company_id, payload, _all_financial_accessions(payload))
+        normalized_cik = cik.zfill(10)
+        payload = self._backfill_payloads.get(normalized_cik)
+        if payload is None:
+            payload = self.sec.company_facts(cik)
+            self._backfill_payloads[normalized_cik] = payload
+        facts = extract_new_sec_facts(
+            company_id, payload, _all_financial_accessions(payload), strict_annual_direct=True,
+        )
         self._backfill_facts[key] = facts
         return facts
 
@@ -109,6 +120,90 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 if market_period(fact.period_end) == (year, quarter)
             )
         return result
+
+    def _ifrs_annual_candidate(self, member, year: int, quarter: int):
+        """Derive one fiscal Q4 from an IFRS 20-F/40-F and three stored exact quarters."""
+        if not hasattr(self.sec, "company_facts"):
+            return None
+        payload = self._backfill_payloads.get(member.cik.zfill(10))
+        if payload is None:
+            payload = self.sec.company_facts(member.cik)
+            self._backfill_payloads[member.cik.zfill(10)] = payload
+        facts = payload.get("facts", {}).get("ifrs-full", {})
+        if not isinstance(facts, dict):
+            return None
+        tags = {
+            "top_line": ("Revenue", "RevenueFromContractsWithCustomers"),
+            "operating_income": ("ProfitLossFromOperatingActivities",),
+            "net_income": ("ProfitLossAttributableToOwnersOfParent", "ProfitLoss"),
+        }
+        by_metric: dict[str, dict[str, tuple[Decimal, str, date, date, date]]] = {}
+        for metric, metric_tags in tags.items():
+            rows_by_accession: dict[str, tuple[Decimal, str, date, date, date]] = {}
+            for tag in metric_tags:
+                fact = facts.get(tag, {})
+                units = fact.get("units", {}) if isinstance(fact, dict) else {}
+                for currency, rows in units.items() if isinstance(units, dict) else ():
+                    if currency not in {"USD", "EUR", "GBP", "CNY", "JPY"} or not isinstance(rows, list):
+                        continue
+                    for row in rows:
+                        if not isinstance(row, dict) or str(row.get("form") or "").upper() not in {"20-F", "40-F"}:
+                            continue
+                        try:
+                            start = date.fromisoformat(str(row["start"])); end = date.fromisoformat(str(row["end"]))
+                            filed = date.fromisoformat(str(row["filed"])); value = Decimal(str(row["val"]))
+                        except (KeyError, ValueError, InvalidOperation):
+                            continue
+                        accession = str(row.get("accn") or "")
+                        if (
+                            accession and market_period(end) == (year, quarter)
+                            and (end - start).days + 1 >= 300
+                        ):
+                            rows_by_accession.setdefault(accession, (value, currency, start, end, filed))
+                if rows_by_accession:
+                    break
+            by_metric[metric] = rows_by_accession
+        common = set.intersection(*(set(rows) for rows in by_metric.values())) if by_metric else set()
+        if not common:
+            return None
+        accession = max(common, key=lambda item: max(by_metric[metric][item][4] for metric in tags))
+        annual: dict[str, Decimal] = {}
+        starts: list[date] = []; ends: list[date] = []; filed_dates: list[date] = []
+        for metric in tags:
+            value, currency, start, end, filed = by_metric[metric][accession]
+            annual[metric] = value * self._fx_to_usd(currency, end)
+            starts.append(start); ends.append(end); filed_dates.append(filed)
+        history: dict[tuple[int, int], object] = {}
+        for row in self.repository.company_history([member.company_id]):
+            try:
+                fact = fact_from_row(row)
+            except (KeyError, TypeError, ValueError, ArithmeticError):
+                continue
+            if fact.fully_complete:
+                key = market_period(fact.period_end)
+                current = history.get(key)
+                if current is None or fact.filing_date > current.filing_date:
+                    history[key] = fact
+        prior_keys = []
+        cursor = (year, quarter)
+        for _ in range(3):
+            cursor = previous_market_period(*cursor)
+            prior_keys.append(cursor)
+        if any(key not in history for key in prior_keys):
+            return None
+        return USFinancialFact(
+            company_id=member.company_id,
+            fiscal_year=max(ends).year,
+            fiscal_quarter=4,
+            period_start=min(starts),
+            period_end=max(ends),
+            top_line=annual["top_line"] - sum((history[key].top_line for key in prior_keys), Decimal(0)),
+            operating_income=annual["operating_income"] - sum((history[key].operating_income for key in prior_keys), Decimal(0)),
+            net_income=annual["net_income"] - sum((history[key].net_income for key in prior_keys), Decimal(0)),
+            source_filing_id=accession,
+            filing_date=max(filed_dates),
+            is_pending=False,
+        )
 
     def _delisted_carry_forward(self, member, year: int, quarter: int):
         """Use the agreed prior-quarter proxy only for a confirmed Form 25 exit."""
@@ -184,6 +279,15 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 except ProviderError as exc:
                     if strict_provider_errors:
                         raise ProviderError(f"{member.company_name}: {exc}") from exc
+            if not candidates or not any(fact.fully_complete for fact in candidates):
+                try:
+                    annual_candidate = self._ifrs_annual_candidate(member, year, quarter)
+                except ProviderError as exc:
+                    if strict_provider_errors:
+                        raise ProviderError(f"{member.company_name}: {exc}") from exc
+                    annual_candidate = None
+                if annual_candidate is not None:
+                    candidates.append(annual_candidate)
             if not candidates:
                 try:
                     carry_forward = self._delisted_carry_forward(member, year, quarter)
