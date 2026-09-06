@@ -479,6 +479,38 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual((result.fiscal_year, result.fiscal_quarter), (2026, 3))
 
+    def test_backfill_uses_same_ticker_predecessor_cik_for_exact_market_period(self):
+        class Repository:
+            def us_active_companies(self, _since_year):
+                return [
+                    {"ticker": "BLK", "cik": "0001364742"},
+                    {"ticker": "BLK", "cik": "0002012383"},
+                ]
+
+        class Sec:
+            def company_facts(self, cik):
+                source = payload()
+                if cik.zfill(10) == "0001364742":
+                    for fact in source["facts"]["us-gaap"].values():
+                        fact["units"]["USD"] = [
+                            entry(fy=2024, fp="Q1", accn="old-q1", start="2024-01-01",
+                                  end="2024-03-31", filed="2024-05-01", value="10")
+                        ]
+                return source
+
+        member = USCompany(
+            company_id="us:cik:0002012383", company_name="BlackRock", ticker="BLK",
+            cik="0002012383", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2024, 3, 31),
+        )
+        pipeline = USEarningsBackfillPipeline(Repository(), Sec(), None)
+
+        candidates = pipeline._historical_ticker_candidates(member, 2024, 1)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].company_id, member.company_id)
+        self.assertTrue(candidates[0].fully_complete)
+
     def test_legacy_oef_preserves_values_for_ranked_company_selection(self):
         row = "<TR><TD>Company {index}</TD><TD>1</TD><TD>1000</TD></TR>"
         document = (
