@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from .constituents import _name_match_score
 from .pipeline import (
     MARKETS, USEarningsAutomaticPipeline, fact_from_row, market_period,
     previous_market_period,
@@ -40,7 +41,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._backfill_facts: dict[tuple[str, str], list] = {}
-        self._historical_ciks_by_ticker: dict[str, set[str]] | None = None
+        self._historical_companies: list[dict] | None = None
         self._current_sec_ciks: set[str] | None = None
 
     def freeze_universe_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
@@ -88,22 +89,21 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         return facts
 
     def _historical_ticker_candidates(self, member, year: int, quarter: int) -> list:
-        """Read an exact-period fact from a predecessor CIK that used the same ticker."""
-        if not member.ticker:
-            return []
-        if self._historical_ciks_by_ticker is None:
-            by_ticker: dict[str, set[str]] = {}
-            for row in self.repository.us_active_companies(2016):
-                ticker = str(row.get("ticker") or "").strip().upper()
-                cik = str(row.get("cik") or "").strip()
-                if ticker and cik:
-                    by_ticker.setdefault(ticker, set()).add(cik.zfill(10))
-            self._historical_ciks_by_ticker = by_ticker
+        """Read exact-period facts from the same issuer's predecessor or successor CIK."""
+        if self._historical_companies is None:
+            self._historical_companies = self.repository.us_active_companies(2016)
         current_cik = member.cik.zfill(10)
+        alternative_ciks: set[str] = set()
+        for row in self._historical_companies:
+            cik = str(row.get("cik") or "").strip().zfill(10)
+            ticker = str(row.get("ticker") or "").strip().upper()
+            name = str(row.get("company_name") or "").strip()
+            same_ticker = bool(member.ticker and ticker and member.ticker.upper() == ticker)
+            same_name = bool(name and _name_match_score(member.company_name, name) >= 100)
+            if cik and cik != current_cik and (same_ticker or same_name):
+                alternative_ciks.add(cik)
         result = []
-        for cik in sorted(self._historical_ciks_by_ticker.get(member.ticker.upper(), set())):
-            if cik == current_cik:
-                continue
+        for cik in sorted(alternative_ciks):
             result.extend(
                 fact for fact in self._company_facts_for_cik(member.company_id, cik)
                 if market_period(fact.period_end) == (year, quarter)
