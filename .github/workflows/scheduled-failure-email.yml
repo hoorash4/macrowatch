@@ -47,6 +47,7 @@ jobs:
         env:
           EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
           EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}
+          EMAIL_RCV_ADDRESS: ${{ secrets.EMAIL_RCV_ADDRESS }}
           IS_TEST: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
           SOURCE_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && '공통 실패 알림' || github.event.workflow_run.name }}
           SOURCE_CONCLUSION: ${{ github.event_name == 'workflow_dispatch' && 'test' || github.event.workflow_run.conclusion }}
@@ -64,17 +65,20 @@ jobs:
 
           account = os.environ.get("EMAIL_ADMIN", "").strip()
           password = os.environ.get("EMAIL_APP_KEY", "").strip()
+          recipient = os.environ.get("EMAIL_RCV_ADDRESS", "").strip()
           if not account:
               raise RuntimeError("EMAIL_ADMIN GitHub Actions secret is missing")
           if not password:
               raise RuntimeError("EMAIL_APP_KEY GitHub Actions secret is missing")
+          if not recipient:
+              raise RuntimeError("EMAIL_RCV_ADDRESS GitHub Actions secret is missing")
 
           workflow = os.environ["SOURCE_WORKFLOW"]
           conclusion = os.environ["SOURCE_CONCLUSION"]
           is_test = os.environ.get("IS_TEST") == "true"
           message = EmailMessage()
           message["From"] = account
-          message["To"] = account
+          message["To"] = recipient
           message["Subject"] = (
               "[MacroWatch][테스트] 예약 실행 실패 알림"
               if is_test
@@ -91,7 +95,7 @@ jobs:
               f"로그: {os.environ['SOURCE_RUN_URL']}\n"
           )
 
-          with smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30) as smtp:
+          with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
               smtp.ehlo()
               smtp.starttls(context=ssl.create_default_context())
               smtp.ehlo()
