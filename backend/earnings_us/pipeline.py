@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -113,7 +114,7 @@ class USEarningsAutomaticPipeline:
         ticker_rows = {}
         cik_rows = {}
         for item in securities:
-            if item.ticker:
+            if item.ticker and re.fullmatch(r"[A-Z][A-Z0-9./-]{0,9}", item.ticker) and item.ticker != item.cik:
                 ticker_key = (item.company_id, item.ticker, item.reference_date)
                 ticker_rows.setdefault(ticker_key, {
                     "company_id": item.company_id, "identifier_type": "ticker", "identifier_value": item.ticker,
@@ -323,3 +324,4 @@ class USEarningsAutomaticPipeline:
             except (KeyError, TypeError, ValueError, ArithmeticError):
                 continue
         return result
+
