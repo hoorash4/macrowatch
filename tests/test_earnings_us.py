@@ -931,6 +931,24 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertIn((date(2025, 4, 30), 2026, 1), physical)
         self.assertIn((date(2026, 4, 30), 2027, 1), physical)
 
+    def test_two_physical_year_ends_in_one_calendar_year_keep_distinct_fiscal_keys(self):
+        source = payload()
+        for metric in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][metric]["units"]["USD"].extend([
+                entry(fy=2023, fp="Q1", accn="q1-old", start="2022-01-03", end="2022-04-03", filed="2022-05-01", value="10"),
+                entry(fy=2023, fp="Q1", accn="q1-new", start="2023-01-02", end="2023-04-02", filed="2023-05-01", value="20"),
+                entry(fy=2021, fp="FY", accn="fy-2021", start="2021-01-04", end="2022-01-02", filed="2022-02-01", value="40"),
+                entry(fy=2022, fp="FY", accn="fy-2022", start="2022-01-03", end="2023-01-01", filed="2023-02-01", value="80"),
+                entry(fy=2023, fp="FY", accn="fy-2023", start="2023-01-02", end="2023-12-31", filed="2024-02-01", value="120"),
+            ])
+        facts = extract_new_sec_facts("us:cik:week-transition", source, {
+            "q1-old", "q1-new", "fy-2021", "fy-2022", "fy-2023",
+        })
+        physical = {(fact.period_end, fact.fiscal_year, fact.fiscal_quarter) for fact in facts}
+
+        self.assertIn((date(2022, 4, 3), 2022, 1), physical)
+        self.assertIn((date(2023, 4, 2), 2023, 1), physical)
+
     def test_week_calendar_close_just_after_boundary_stays_in_prior_market_quarter(self):
         self.assertEqual(market_period(date(2017, 4, 1)), (2017, 1))
         self.assertEqual(market_period(date(2021, 1, 3)), (2020, 4))
