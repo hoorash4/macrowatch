@@ -258,7 +258,7 @@ def _metric_value(
     """Prefer direct facts, then derive quarters from SEC fiscal YTD facts."""
     if annual:
         # Some 10-K XBRL includes the standalone fourth quarter under the FY
-        # context. It is more direct than subtracting earlier cumulative facts.
+        # context. It is more direct than subtracting three earlier quarters.
         direct = _first_basis_value(groups, fy, fp, accession, annual=False)
         if direct[0] is not None:
             return direct
@@ -361,6 +361,19 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
                 for row in rows:
                     accession, fp = str(row.get("accn") or ""), str(row.get("fp") or "")
                     fy = int(row.get("fy") or 0)
+                    try:
+                        row_end = date.fromisoformat(str(row.get("end") or ""))
+                    except ValueError:
+                        row_end = None
+                    # A later 10-Q often repeats the previous fiscal year-end's
+                    # standalone three-month comparison.  It is useful when
+                    # deriving another fact, but it is not a new Q1-Q3 filing
+                    # context and must not overwrite the real prior quarter.
+                    if (
+                        str(row.get("form") or "").upper() in {"10-Q", "10-Q/A"}
+                        and row_end in annual_ends
+                    ):
+                        continue
                     if accession in accessions and fp in {"Q1", "Q2", "Q3", "FY"} and fy:
                         contexts.add((fy, fp, accession))
     result: dict[tuple[date, int], USFinancialFact] = {}
