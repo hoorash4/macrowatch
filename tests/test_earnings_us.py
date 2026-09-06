@@ -964,6 +964,24 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(fact.top_line, Decimal("410"))
 
+    def test_historical_ten_k_q4_label_is_treated_as_an_annual_context(self):
+        source = payload()
+        for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            rows = source["facts"]["us-gaap"][tag]["units"]["USD"]
+            annual = next(row for row in rows if row["fp"] == "FY")
+            annual["fp"] = "Q4"
+            rows.append({
+                **annual, "start": "2025-11-01", "val": "410",
+            })
+
+        fact = next(
+            fact for fact in extract_new_sec_facts("us:cik:q4-label", source, {"fy"})
+            if fact.fiscal_quarter == 4
+        )
+
+        self.assertEqual(fact.period_end, date(2026, 1, 31))
+        self.assertEqual(fact.top_line, Decimal("410"))
+
     def test_fy_label_inside_quarterly_filing_is_inferred_from_physical_period(self):
         source = payload()
         for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
