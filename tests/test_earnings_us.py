@@ -980,6 +980,22 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertFalse(client._has_company_facts_for_reference("0001744489", date(2016, 6, 30)))
 
+    def test_name_search_uses_period_coverage_to_choose_historical_cik(self):
+        successor_cik = "0001744489"
+        historical_cik = "0001001039"
+
+        class FakeSec:
+            user_agent = "test"
+
+        client = USIndexConstituentClient(FakeSec())
+        client._json = lambda *_args, **_kwargs: {"hits": {"hits": [{"_source": {"display_names": [
+            f"Walt Disney Co (DIS) (CIK {successor_cik})",
+            f"WALT DISNEY CO/ (CIK {historical_cik})",
+        ]}}]}}
+        client._has_company_facts_for_reference = lambda cik, _reference_date: cik == historical_cik
+
+        self.assertEqual(client._cik_for_name("Walt Disney Co. (The)", date(2018, 6, 30)), historical_cik)
+
     def test_date_bounded_sec_search_rejects_successor_without_historical_coverage(self):
         successor_cik = "0001744489"
         historical_cik = "0001001039"
