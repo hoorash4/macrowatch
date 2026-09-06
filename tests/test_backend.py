@@ -255,6 +255,9 @@ class SourceContractTests(unittest.TestCase):
         monitored_names = set(re.findall(r'^\s+- "(.+)"$', monitored_block, flags=re.MULTILINE))
 
         self.assertEqual(monitored_names, scheduled_names)
+        self.assertIn("workflow_dispatch:", notifier)
+        self.assertIn("github.event_name == 'workflow_dispatch'", notifier)
+        self.assertIn("[MacroWatch][테스트] 예약 실행 실패 알림", notifier)
         self.assertIn("github.event.workflow_run.event == 'schedule'", notifier)
         self.assertIn("github.event.workflow_run.conclusion == 'failure'", notifier)
         self.assertIn("github.event.workflow_run.conclusion == 'timed_out'", notifier)
@@ -262,6 +265,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}", notifier)
         self.assertIn('smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30)', notifier)
         self.assertIn('message["To"] = account', notifier)
+        self.assertIn("Failure notification email sent successfully.", notifier)
         self.assertNotIn("notify_failure:", us_workflow)
         self.assertNotIn("OUTLOOK_APP_PASSWORD", notifier)
 
