@@ -24,6 +24,11 @@ on:
         required: true
         default: false
         type: boolean
+      force_rerun:
+        description: Reprocess the requested range even when its checkpoint is complete
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -61,4 +66,6 @@ jobs:
             --end-quarter "${{ inputs.end_quarter }}"
           )
           [[ "${{ inputs.write }}" == "true" ]] && args+=(--write)
+          [[ "${{ inputs.force_rerun }}" == "true" ]] && args+=(--force-rerun)
           python -m earnings_us.backfill_cli "${args[@]}"
+
