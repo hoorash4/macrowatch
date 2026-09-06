@@ -705,19 +705,21 @@ class USIndexConstituentClient:
         # below the SEC's public request-rate limit.
         def resolve(item: tuple[SourceHolding, str | None, str | None]) -> tuple[str, str, Decimal | None, str | None]:
             (ticker, name, selection_value), fallback_cik, historical_cik = item
-            # A date-bounded SEC filing search already proves that the issuer
-            # used this name/ticker in the historical period. Requiring a
-            # second, much larger company-facts download can turn a transient
-            # transport failure into a false "unmapped issuer" result. Only a
-            # CIK taken from today's ticker directory needs the extra period
-            # coverage guard against ticker reuse and successor entities.
-            cik = self._cik_for_name(name, reference_date)
-            if cik is None:
-                cik = self._cik_for_ticker(ticker, reference_date)
-            if cik is None:
-                cik = historical_cik
-            if cik is None and fallback_cik and self._has_company_facts_for_reference(fallback_cik, reference_date):
-                cik = fallback_cik
+            # SEC search display names can still point at a present-day
+            # successor CIK inside a historical date query. Validate every
+            # candidate against the constituent period before accepting it.
+            # The stored historical ticker map remains the transport-independent
+            # fallback for delisted issuers such as Qurate.
+            candidates = (
+                self._cik_for_name(name, reference_date),
+                self._cik_for_ticker(ticker, reference_date),
+                historical_cik,
+                fallback_cik,
+            )
+            cik = next((
+                candidate for candidate in dict.fromkeys(candidates)
+                if candidate and self._has_company_facts_for_reference(candidate, reference_date)
+            ), None)
             return ticker, name, selection_value, cik
 
         with ThreadPoolExecutor(max_workers=4) as executor:
