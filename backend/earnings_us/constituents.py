@@ -695,12 +695,17 @@ class USIndexConstituentClient:
         # below the SEC's public request-rate limit.
         def resolve(item: tuple[SourceHolding, str | None]) -> tuple[str, str, Decimal | None, str | None]:
             (ticker, name, selection_value), fallback_cik = item
-            candidates = (
-                self._cik_for_name(name, reference_date),
-                self._cik_for_ticker(ticker, reference_date),
-                fallback_cik,
-            )
-            cik = next((item for item in candidates if item and self._has_company_facts_for_reference(item, reference_date)), None)
+            # A date-bounded SEC filing search already proves that the issuer
+            # used this name/ticker in the historical period. Requiring a
+            # second, much larger company-facts download can turn a transient
+            # transport failure into a false "unmapped issuer" result. Only a
+            # CIK taken from today's ticker directory needs the extra period
+            # coverage guard against ticker reuse and successor entities.
+            cik = self._cik_for_name(name, reference_date)
+            if cik is None:
+                cik = self._cik_for_ticker(ticker, reference_date)
+            if cik is None and fallback_cik and self._has_company_facts_for_reference(fallback_cik, reference_date):
+                cik = fallback_cik
             return ticker, name, selection_value, cik
 
         with ThreadPoolExecutor(max_workers=4) as executor:
