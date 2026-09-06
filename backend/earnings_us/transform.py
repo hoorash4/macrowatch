@@ -37,7 +37,32 @@ METRIC_BASES = {
 }
 
 
-def _entry_groups(payload: dict[str, Any], metric: str) -> list[list[list[dict[str, Any]]]]:
+def _normalized_sec_row(row: dict[str, Any], annual_ends: list[date]) -> dict[str, Any]:
+    """Repair issuer-supplied ``fp=FY`` labels on genuine quarterly 10-Q facts."""
+    if str(row.get("fp") or "") != "FY" or str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+        return row
+    try:
+        start = date.fromisoformat(str(row["start"]))
+        end = date.fromisoformat(str(row["end"]))
+    except (KeyError, ValueError):
+        return row
+    days = (end - start).days + 1
+    previous_ends = [annual_end for annual_end in annual_ends if annual_end < end]
+    if 221 <= days <= 299:
+        fp = "Q3"
+    elif 131 <= days <= 220:
+        fp = "Q2"
+    elif 60 <= days <= 130 and previous_ends:
+        elapsed = (end - max(previous_ends)).days
+        fp = "Q1" if elapsed <= 120 else "Q2" if elapsed <= 220 else "Q3"
+    else:
+        return row
+    return {**row, "fp": fp}
+
+
+def _entry_groups(
+    payload: dict[str, Any], metric: str, annual_ends: list[date] | None = None,
+) -> list[list[list[dict[str, Any]]]]:
     """Return single-tag or composite SEC fact bases in preference order."""
     facts = payload.get("facts", {}).get("us-gaap", {})
     result: list[list[list[dict[str, Any]]]] = []
@@ -46,7 +71,10 @@ def _entry_groups(payload: dict[str, Any], metric: str) -> list[list[list[dict[s
         for tag in basis:
             fact = facts.get(tag, {}) if isinstance(facts, dict) else {}
             units = fact.get("units", {}).get("USD", {}) if isinstance(fact, dict) else {}
-            components.append([item for item in units if isinstance(item, dict)] if isinstance(units, list) else [])
+            components.append([
+                _normalized_sec_row(item, annual_ends or [])
+                for item in units if isinstance(item, dict)
+            ] if isinstance(units, list) else [])
         result.append(components)
     return result
 
@@ -58,7 +86,9 @@ def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str
             continue
         if accession is not None and str(row.get("accn") or "") != accession:
             continue
-        if str(row.get("form") or "").upper() not in {"10-Q", "10-K", "10-Q/A", "10-K/A"}:
+        form = str(row.get("form") or "").upper()
+        allowed_forms = {"10-K", "10-K/A"} if annual or fp == "FY" else {"10-Q", "10-Q/A"}
+        if form not in allowed_forms:
             continue
         try:
             start, end, filed = date.fromisoformat(str(row["start"])), date.fromisoformat(str(row["end"])), date.fromisoformat(str(row["filed"]))
@@ -299,7 +329,9 @@ def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date
 
 def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
     """Q1–Q3 use SEC's three-month facts; FY produces Q4 only after Q1–Q3 exist."""
-    entries = {metric: _entry_groups(payload, metric) for metric in METRIC_BASES}
+    raw_entries = {metric: _entry_groups(payload, metric) for metric in METRIC_BASES}
+    annual_ends = _annual_period_ends(raw_entries)
+    entries = {metric: _entry_groups(payload, metric, annual_ends) for metric in METRIC_BASES}
     contexts: set[tuple[int, str, str]] = set()
     for groups in entries.values():
         for components in groups:
@@ -309,7 +341,6 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
                     fy = int(row.get("fy") or 0)
                     if accession in accessions and fp in {"Q1", "Q2", "Q3", "FY"} and fy:
                         contexts.add((fy, fp, accession))
-    annual_ends = _annual_period_ends(entries)
     result: dict[tuple[date, int], USFinancialFact] = {}
     for fy, fp, accession in sorted(contexts):
         quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}[fp]
