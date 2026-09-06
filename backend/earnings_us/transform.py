@@ -35,6 +35,7 @@ METRIC_BASES = {
         ("NetIncomeLoss",),
         ("ProfitLoss",),
         ("NetIncomeLossAvailableToCommonStockholdersBasic",),
+        ("NetIncomeLossAvailableToCommonStockholdersDiluted",),
         ("NetIncomeLossIncludingPortionAttributableToNonredeemableNoncontrollingInterest",),
     ),
 }
@@ -289,6 +290,17 @@ def _metric_value(
         prior = [_basis_value(components, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
         if all(item is not None for item in prior):
             return value - sum(prior, Decimal(0)), start, end, filed
+    if not annual and fp == "Q1":
+        # A late filer can omit Q1's direct top-line or operating fact but
+        # disclose both six-month YTD and standalone Q2 in the same 10-Q.
+        # Their exact difference is the missing first quarter.
+        for components in groups:
+            q2_ytd = _cumulative_basis_value(components, fy, "Q2", accession)
+            q2_direct = _basis_value(components, fy, "Q2", accession, annual=False)
+            if q2_ytd[0] is None or q2_direct[0] is None or q2_direct[1] is None:
+                continue
+            q1_end = q2_direct[1].fromordinal(q2_direct[1].toordinal() - 1)
+            return q2_ytd[0] - q2_direct[0], q2_ytd[1], q1_end, q2_ytd[3]
     if not annual and fp in {"Q2", "Q3"}:
         previous_fp = "Q1" if fp == "Q2" else "Q2"
         for components in groups:
