@@ -416,6 +416,39 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertIs(first, second)
         self.assertEqual(pipeline.sec.request_count, 1)
 
+    def test_backfill_carries_prior_complete_values_for_confirmed_form25_exit(self):
+        prior = USFinancialFact(
+            company_id="us:cik:0000000001", fiscal_year=2026, fiscal_quarter=1,
+            period_start=date(2026, 1, 1), period_end=date(2026, 3, 31),
+            top_line=Decimal("100"), operating_income=Decimal("10"), net_income=Decimal("8"),
+            source_filing_id="q1", filing_date=date(2026, 5, 1), is_pending=False,
+        )
+
+        class Repository:
+            def company_history(self, _company_ids):
+                return [prior.db_row()]
+
+        class Sec:
+            def company_ticker_rows(self):
+                return []
+
+            def delisting_dates(self, _cik):
+                return [date(2026, 7, 15)]
+
+        member = USCompany(
+            company_id=prior.company_id, company_name="Gone", ticker="GONE",
+            cik="0000000001", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2026, 6, 30),
+        )
+        pipeline = USEarningsBackfillPipeline(Repository(), Sec(), None)
+
+        result = pipeline._delisted_carry_forward(member, 2026, 2)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.top_line, Decimal("100"))
+        self.assertEqual(result.period_end, date(2026, 6, 30))
+        self.assertEqual(result.source_filing_id, "carry-forward-form25-2026-07-15")
+
     def test_legacy_oef_preserves_values_for_ranked_company_selection(self):
         row = "<TR><TD>Company {index}</TD><TD>1</TD><TD>1000</TD></TR>"
         document = (
