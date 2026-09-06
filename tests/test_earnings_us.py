@@ -978,6 +978,34 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(fact.net_income, Decimal("32"))
 
+    def test_quarters_are_derived_from_fiscal_ytd_when_standalone_facts_are_absent(self):
+        source = payload()
+        cumulative_values = {
+            "Revenues": ("300", "600"),
+            "OperatingIncomeLoss": ("30", "60"),
+            "NetIncomeLoss": ("24", "48"),
+        }
+        for tag, (q2_ytd, q3_ytd) in cumulative_values.items():
+            rows = source["facts"]["us-gaap"][tag]["units"]["USD"]
+            source["facts"]["us-gaap"][tag]["units"]["USD"] = [
+                row for row in rows if row["fp"] not in {"Q2", "Q3"}
+            ] + [
+                entry(fy=2026, fp="Q2", accn="q2", start="2025-02-01", end="2025-07-31", filed="2025-08-20", value=q2_ytd),
+                entry(fy=2026, fp="Q3", accn="q3", start="2025-02-01", end="2025-10-31", filed="2025-11-20", value=q3_ytd),
+            ]
+
+        facts = {
+            fact.fiscal_quarter: fact
+            for fact in extract_new_sec_facts("us:cik:ytd", source, {"q2", "q3", "fy"})
+        }
+
+        self.assertEqual(facts[2].top_line, Decimal("200"))
+        self.assertEqual(facts[3].top_line, Decimal("300"))
+        self.assertEqual(facts[4].top_line, Decimal("400"))
+        self.assertEqual(facts[4].operating_income, Decimal("40"))
+        self.assertEqual(facts[4].net_income, Decimal("32"))
+        self.assertTrue(all(fact.fully_complete for fact in facts.values()))
+
     def test_q4_stays_pending_when_any_prior_quarter_is_missing(self):
         source = payload()
         source["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"] = [
