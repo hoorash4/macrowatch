@@ -1009,6 +1009,30 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(_select_backfill_fact([complete, later_incomplete]), complete)
 
+    def test_ten_q_comparison_ending_on_fiscal_year_end_does_not_create_a_quarter(self):
+        source = payload()
+        for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
+            source["facts"]["us-gaap"][tag]["units"]["USD"] = [
+                entry(fy=2025, fp="Q3", accn="actual-q3", start="2025-07-01", end="2025-09-30", filed="2025-11-01", value="90"),
+                entry(fy=2025, fp="FY", accn="annual", start="2025-01-01", end="2025-12-31", filed="2026-02-01", value="400"),
+                entry(fy=2026, fp="Q1", accn="q1-with-comparison", start="2025-10-01", end="2025-12-31", filed="2026-05-01", value="100"),
+                entry(fy=2026, fp="Q1", accn="q1-with-comparison", start="2026-01-01", end="2026-03-31", filed="2026-05-01", value="110"),
+            ]
+
+        facts = extract_new_sec_facts(
+            "us:cik:year-end-comparison", source,
+            {"actual-q3", "annual", "q1-with-comparison"},
+        )
+
+        self.assertFalse(any(
+            fact.period_end == date(2025, 12, 31) and fact.fiscal_quarter in {1, 2, 3}
+            for fact in facts
+        ))
+        self.assertTrue(any(
+            fact.period_end == date(2026, 3, 31) and fact.fiscal_quarter == 1
+            for fact in facts
+        ))
+
     def test_q4_can_subtract_compatible_metric_aliases_across_filings(self):
         source = payload()
         net_rows = source["facts"]["us-gaap"].pop("NetIncomeLoss")["units"]["USD"]
