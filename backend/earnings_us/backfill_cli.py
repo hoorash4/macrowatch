@@ -59,12 +59,14 @@ def resumable_periods(
     return periods, None
 
 
-def run_earnings_range(pipeline, periods: list[tuple[int, int]], *, write: bool) -> dict:
+def run_earnings_range(
+    pipeline, periods: list[tuple[int, int]], *, write: bool, force_rerun: bool = False,
+) -> dict:
     if not periods:
         return {"status": "ready", "processed_periods": 0, "already_complete": True}
     range_start = _period_label(periods[0])
     range_end = _period_label(periods[-1])
-    state = pipeline.repository.us_state("backfill_range") if write else None
+    state = pipeline.repository.us_state("backfill_range") if write and not force_rerun else None
     pending, interrupted = resumable_periods(periods, state, range_start, range_end)
     if not pending:
         return {"status": "ready", "processed_periods": 0, "already_complete": True}
@@ -130,6 +132,7 @@ def main() -> None:
     parser.add_argument("--end-quarter", type=int, choices=(1, 2, 3, 4))
     parser.add_argument("--phase", choices=("universe", "earnings", "all"), default="all")
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--force-rerun", action="store_true")
     args = parser.parse_args()
     pipeline = USEarningsBackfillPipeline.from_env()
     range_values = (args.start_year, args.start_quarter, args.end_year, args.end_quarter)
@@ -144,7 +147,9 @@ def main() -> None:
             else parser.error("range execution requires either universe or earnings phase")
         )
         if args.phase == "earnings":
-            print(json.dumps(run_earnings_range(pipeline, periods, write=args.write), ensure_ascii=False), flush=True)
+            print(json.dumps(run_earnings_range(
+                pipeline, periods, write=args.write, force_rerun=args.force_rerun,
+            ), ensure_ascii=False), flush=True)
             return
         for year, quarter in periods:
             result = pipeline.freeze_universe_period(year, quarter, write=args.write)
@@ -165,3 +170,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
