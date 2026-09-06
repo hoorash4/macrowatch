@@ -344,6 +344,29 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.net_income, Decimal("1642000000"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_backfill_uses_half_year_statement_for_missing_q2_metrics(self):
+        html = """
+        <table><tr><th>For the quarter ended June 30, 2026</th></tr>
+          <tr><th>(EUR in millions)</th></tr>
+          <tr><td>Operating profit</td><td>12</td></tr></table>
+        <table><tr><th>Six months ended June 30, 2026</th><th>June 30, 2025</th></tr>
+          <tr><th>(EUR in millions)</th></tr>
+          <tr><td>Revenue (€M)</td><td>100</td><td>90</td></tr>
+          <tr><td>Operating profit (€M)</td><td>20</td><td>18</td></tr>
+          <tr><td>Profit after taxes (€M)</td><td>16</td><td>14</td></tr></table>
+        """
+        filing = SixKFiling("half-year", date(2026, 8, 1), date(2026, 8, 1), "results.htm")
+
+        fact = extract_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2026, 2,
+            lambda _currency, _date: Decimal(1), backfill_mode=True,
+        )
+
+        self.assertEqual(fact.top_line, Decimal("50000000"))
+        self.assertEqual(fact.operating_income, Decimal("12000000"))
+        self.assertEqual(fact.net_income, Decimal("8000000"))
+        self.assertFalse(fact.is_pending)
+
     def test_six_k_rejects_cross_statement_scale_mismatch(self):
         html = """
         <div>Second quarter 2023 financial results</div>
