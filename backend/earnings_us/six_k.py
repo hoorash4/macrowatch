@@ -207,6 +207,14 @@ def _metric_for_label(label: str, *, relaxed: bool = False) -> str | None:
         normalized = re.sub(r"\bnet earnings\b", "net income", normalized)
         normalized = re.sub(r"\bprofit after taxes\b", "profit after tax", normalized)
         normalized = re.sub(r"\s*(?:\[\d+\]|\d+)$", "", normalized)
+    # Issuers often append the statement unit to the row label (for example,
+    # ``Revenue (€M)``).  It is presentation metadata, not a different metric.
+    normalized = re.sub(
+        r"\s*\((?:[^)]*(?:us\$|rmb|usd|cny|eur|gbp|jpy|€|\$)[^)]*)\)\s*$",
+        "",
+        normalized,
+        flags=re.I,
+    )
     normalized = re.sub(r"\s*/\s*\(?loss\)?", "", normalized)
     normalized = normalized.replace("(loss)", "")
     normalized = re.sub(r"(?:\s*\(\d+\))+$", "", normalized).rstrip(" :")
@@ -375,6 +383,56 @@ def _table_values(
     return values, currencies, best[3]
 
 
+def _half_year_values(
+    tables: Iterable[list[list[str]]], target: tuple[int, int], default_text: str = "",
+) -> tuple[dict[str, Decimal], dict[str, str], date | None]:
+    """Read an IFRS half-year statement for backfill-only Q2 completion.
+
+    Some foreign private issuers furnish an exact Q2 release for selected
+    metrics but disclose the remaining GAAP metrics only for the first half.
+    The historical backfill intentionally allocates that reported H1 total
+    equally between Q1 and Q2 when no exact Q2 metric is available.
+    """
+    candidates: list[tuple[int, dict[str, Decimal], dict[str, str], date | None]] = []
+    for table in tables:
+        joined = _clean(" ".join(cell for row in table for cell in row))
+        if "six months ended" not in joined.lower():
+            continue
+        header_rows: list[str] = []
+        values: dict[str, Decimal] = {}
+        currencies: dict[str, str] = {}
+        priorities: dict[str, int] = {}
+        for row in table:
+            label_index = next((
+                i for i, cell in enumerate(row)
+                if _metric_for_label(cell, relaxed=True) is not None
+            ), None)
+            if label_index is None:
+                if not values:
+                    header_rows.append(" ".join(row))
+                continue
+            metric = _metric_for_label(row[label_index], relaxed=True)
+            if metric is None:
+                continue
+            header = " ".join(header_rows)
+            numbers = _row_numbers(row[label_index + 1:])
+            index = _target_column(header, len(numbers), target, prefer_split_dates=True)
+            priority = _metric_label_priority(metric, row[label_index])
+            if index is None or index >= len(numbers) or priority < priorities.get(metric, 0):
+                continue
+            local_scale = _scale(joined)
+            values[metric] = numbers[index] * (local_scale if local_scale != 1 else _scale(default_text))
+            currencies[metric] = _column_currency(header, index, len(numbers), _currency(joined))
+            priorities[metric] = priority
+        header = " ".join(header_rows)
+        dates = [item for item in _loose_period_dates(header, prefer_split=True) if _matches_target_period(item, target)]
+        candidates.append((len(values), values, currencies, dates[-1] if dates else None))
+    if not candidates:
+        return {}, {}, None
+    _, values, currencies, period_end = max(candidates, key=lambda item: item[0])
+    return values, currencies, period_end
+
+
 def _loose_period_dates(header: str, *, prefer_split: bool = False) -> list[date]:
     exact = _date_tokens(header)
     if exact and not prefer_split:
@@ -497,6 +555,13 @@ def extract_six_k_fact(
         table_values, table_currencies, table_end = _table_values(
             tables, target, text, backfill_mode=backfill_mode,
         )
+        if backfill_mode and set(table_values) != set(_METRIC_LABELS):
+            half_values, half_currencies, half_end = _half_year_values(tables, target, text)
+            for metric, value in half_values.items():
+                if metric not in table_values:
+                    table_values[metric] = value / 2
+                    table_currencies[metric] = half_currencies.get(metric, "USD")
+            table_end = table_end or half_end
         document_dates = _loose_period_dates(text)
         dates = [item for item in document_dates if _matches_target_period(item, target)]
         target_label = f"q{quarter} {year}"
