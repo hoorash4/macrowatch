@@ -12,6 +12,7 @@ from .pipeline import (
 )
 from .providers import ProviderError, normalize_cik
 from .transform import extract_new_sec_facts
+from .six_k import extract_q1_from_h1_six_k_fact
 
 
 def _all_financial_accessions(payload: dict) -> set[str]:
@@ -247,6 +248,23 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 if market_period(fact.period_end) == (year, quarter)
             )
         return result
+
+    def _q1_h1_bridge_candidate(self, member, year: int, quarter: int):
+        """Use a later Q2/H1 6-K only to complete an incomplete calendar Q1."""
+        if quarter != 1 or not hasattr(self.sec, "six_k_filings") or not hasattr(self.sec, "six_k_documents"):
+            return None
+        q2_end = date(year, 6, 30)
+        filings = self.sec.six_k_filings(
+            member.cik, filed_from=q2_end - timedelta(days=10), filed_to=q2_end + timedelta(days=120),
+        )
+        candidates = []
+        for filing in filings:
+            fact = extract_q1_from_h1_six_k_fact(
+                member.company_id, filing, self.sec.six_k_documents(member.cik, filing), year, self._fx_to_usd,
+            )
+            if fact is not None:
+                candidates.append(fact)
+        return min(candidates, key=lambda fact: fact.filing_date) if candidates else None
 
     def _ifrs_annual_candidate(self, member, year: int, quarter: int):
         """Derive one fiscal Q4 from an IFRS 20-F/40-F and three stored exact quarters."""
@@ -517,6 +535,22 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 except ProviderError as exc:
                     if strict_provider_errors:
                         raise ProviderError(f"{member.company_name}: {exc}") from exc
+            if candidates and not any(fact.fully_complete for fact in candidates):
+                try:
+                    bridge = self._q1_h1_bridge_candidate(member, year, quarter)
+                except ProviderError as exc:
+                    if strict_provider_errors:
+                        raise ProviderError(f"{member.company_name}: {exc}") from exc
+                    bridge = None
+                if bridge is not None:
+                    direct = _select_backfill_fact(candidates)
+                    candidates.append(direct.with_changes(
+                        top_line=direct.top_line if direct.top_line is not None else bridge.top_line,
+                        operating_income=direct.operating_income if direct.operating_income is not None else bridge.operating_income,
+                        net_income=direct.net_income if direct.net_income is not None else bridge.net_income,
+                        source_filing_id=f"{direct.source_filing_id}+{bridge.source_filing_id}",
+                        filing_date=max(direct.filing_date, bridge.filing_date), is_pending=False,
+                    ))
             if not candidates or not any(fact.fully_complete for fact in candidates):
                 try:
                     annual_candidate = self._ifrs_annual_candidate(member, year, quarter)
