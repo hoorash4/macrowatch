@@ -7,25 +7,45 @@ from typing import Any
 from .models import USFinancialFact
 
 
-METRIC_TAGS = {
-    "top_line": ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"),
-    "operating_income": (
-        "OperatingIncomeLoss",
-        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
-        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+METRIC_BASES = {
+    "top_line": (
+        ("Revenues",),
+        ("RevenueFromContractWithCustomerExcludingAssessedTax",),
+        ("RevenueFromContractWithCustomerIncludingAssessedTax",),
+        ("SalesRevenueNet",),
+        ("SalesRevenueGoodsNet",),
+        ("SalesRevenueServicesNet",),
+        ("OperatingRevenues",),
+        ("RegulatedAndUnregulatedOperatingRevenue",),
+        ("RevenuesNetOfInterestExpense",),
+        ("InterestIncomeExpenseNet", "NoninterestIncome"),
     ),
-    "net_income": ("NetIncomeLoss", "ProfitLoss"),
+    "operating_income": (
+        ("OperatingIncomeLoss",),
+        ("IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",),
+        ("IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",),
+        ("ProfitLoss", "IncomeTaxExpenseBenefit"),
+    ),
+    "net_income": (
+        ("NetIncomeLoss",),
+        ("ProfitLoss",),
+        ("NetIncomeLossAvailableToCommonStockholdersBasic",),
+        ("NetIncomeLossIncludingPortionAttributableToNonredeemableNoncontrollingInterest",),
+    ),
 }
 
 
-def _entry_groups(payload: dict[str, Any], metric: str) -> list[list[dict[str, Any]]]:
-    """Return SEC facts grouped in declared preference order."""
+def _entry_groups(payload: dict[str, Any], metric: str) -> list[list[list[dict[str, Any]]]]:
+    """Return single-tag or composite SEC fact bases in preference order."""
     facts = payload.get("facts", {}).get("us-gaap", {})
-    result: list[list[dict[str, Any]]] = []
-    for tag in METRIC_TAGS[metric]:
-        fact = facts.get(tag, {}) if isinstance(facts, dict) else {}
-        units = fact.get("units", {}).get("USD", {}) if isinstance(fact, dict) else {}
-        result.append([item for item in units if isinstance(item, dict)] if isinstance(units, list) else [])
+    result: list[list[list[dict[str, Any]]]] = []
+    for basis in METRIC_BASES[metric]:
+        components: list[list[dict[str, Any]]] = []
+        for tag in basis:
+            fact = facts.get(tag, {}) if isinstance(facts, dict) else {}
+            units = fact.get("units", {}).get("USD", {}) if isinstance(fact, dict) else {}
+            components.append([item for item in units if isinstance(item, dict)] if isinstance(units, list) else [])
+        result.append(components)
     return result
 
 
@@ -44,7 +64,9 @@ def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str
         except (KeyError, ValueError, ArithmeticError):
             continue
         days = (end - start).days + 1
-        if annual != (days >= 300):
+        if annual and days < 300:
+            continue
+        if not annual and not 60 <= days <= 130:
             continue
         candidates.append((filed, start, end, value))
     if not candidates:
@@ -53,8 +75,23 @@ def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str
     return value, start, end, filed
 
 
+def _basis_value(
+    components: list[list[dict[str, Any]]], fy: int, fp: str,
+    accession: str | None, *, annual: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    values = [_entry_value(rows, fy, fp, accession, annual=annual) for rows in components]
+    if not values or any(item[0] is None for item in values):
+        return None, None, None, None
+    return (
+        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
+        min(item[1] for item in values if item[1] is not None),
+        max(item[2] for item in values if item[2] is not None),
+        max(item[3] for item in values if item[3] is not None),
+    )
+
+
 def _metric_value(
-    groups: list[list[dict[str, Any]]],
+    groups: list[list[list[dict[str, Any]]]],
     fy: int,
     fp: str,
     accession: str,
@@ -62,13 +99,13 @@ def _metric_value(
     annual: bool,
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
     """Use the first available metric basis and never mix bases inside Q4."""
-    for rows in groups:
-        value, start, end, filed = _entry_value(rows, fy, fp, accession, annual=annual)
+    for components in groups:
+        value, start, end, filed = _basis_value(components, fy, fp, accession, annual=annual)
         if value is None:
             continue
         if not annual:
             return value, start, end, filed
-        prior = [_entry_value(rows, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
+        prior = [_basis_value(components, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
         if all(item is not None for item in prior):
             return value - sum(prior, Decimal(0)), start, end, filed
     return None, None, None, None
@@ -76,15 +113,16 @@ def _metric_value(
 
 def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
     """Q1–Q3 use SEC's three-month facts; FY produces Q4 only after Q1–Q3 exist."""
-    entries = {metric: _entry_groups(payload, metric) for metric in METRIC_TAGS}
+    entries = {metric: _entry_groups(payload, metric) for metric in METRIC_BASES}
     contexts: set[tuple[int, str, str]] = set()
     for groups in entries.values():
-        for rows in groups:
-            for row in rows:
-                accession, fp = str(row.get("accn") or ""), str(row.get("fp") or "")
-                fy = int(row.get("fy") or 0)
-                if accession in accessions and fp in {"Q1", "Q2", "Q3", "FY"} and fy:
-                    contexts.add((fy, fp, accession))
+        for components in groups:
+            for rows in components:
+                for row in rows:
+                    accession, fp = str(row.get("accn") or ""), str(row.get("fp") or "")
+                    fy = int(row.get("fy") or 0)
+                    if accession in accessions and fp in {"Q1", "Q2", "Q3", "FY"} and fy:
+                        contexts.add((fy, fp, accession))
     result: list[USFinancialFact] = []
     for fy, fp, accession in sorted(contexts):
         quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}[fp]
@@ -108,3 +146,4 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
             is_pending=any(value is None for value in values.values()),
         ))
     return result
+
