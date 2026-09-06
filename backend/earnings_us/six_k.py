@@ -196,8 +196,15 @@ _METRIC_LABELS = {
 }
 
 
-def _metric_for_label(label: str) -> str | None:
+def _metric_for_label(label: str, *, relaxed: bool = False) -> str | None:
     normalized = _clean(label).lower()
+    if relaxed:
+        normalized = re.sub(r"\boperating\s*\(loss\)\s*/\s*profit\b", "operating profit", normalized)
+        normalized = re.sub(r"\boperating\s+profit\s*/\s*\(loss\)\b", "operating profit", normalized)
+        normalized = re.sub(r"\bnet\s*\(loss\)\s*/\s*income\b", "net income", normalized)
+        normalized = re.sub(r"\bnet\s+income\s*/\s*\(loss\)\b", "net income", normalized)
+        normalized = re.sub(r"\bprofit\s*/\s*\(loss\)\s+for the period\b", "profit for the period", normalized)
+        normalized = re.sub(r"\s*(?:\[\d+\]|\d+)$", "", normalized)
     normalized = re.sub(r"\s*/\s*\(?loss\)?", "", normalized)
     normalized = normalized.replace("(loss)", "")
     normalized = re.sub(r"(?:\s*\(\d+\))+$", "", normalized).rstrip(" :")
@@ -220,8 +227,17 @@ def _auxiliary_metric(label: str) -> str | None:
     return None
 
 
-def _target_column(header: str, value_count: int, target: tuple[int, int]) -> int | None:
-    dates = _loose_period_dates(header)
+def _metric_label_priority(metric: str, label: str) -> int:
+    normalized = _clean(label).lower()
+    if metric == "net_income" and "attributable to" in normalized:
+        return 2
+    return 1
+
+
+def _target_column(
+    header: str, value_count: int, target: tuple[int, int], *, prefer_split_dates: bool = False,
+) -> int | None:
+    dates = _loose_period_dates(header, prefer_split=prefer_split_dates)
     if len(dates) > value_count:
         dates = dates[:value_count]
     matching = [index for index, item in enumerate(dates) if _matches_target_period(item, target)]
@@ -280,8 +296,9 @@ def _prefer_usd_column(header: str, index: int, count: int) -> int:
 
 def _table_values(
     tables: Iterable[list[list[str]]], target: tuple[int, int], default_text: str = "",
+    *, backfill_mode: bool = False,
 ) -> tuple[dict[str, Decimal], dict[str, str], date | None]:
-    best: tuple[int, dict[str, Decimal], dict[str, str], date | None] = (0, {}, {}, None)
+    candidates: list[tuple[tuple[int, int], dict[str, Decimal], dict[str, str], date | None]] = []
     for table in tables:
         joined = _clean(" ".join(cell for row in table for cell in row))
         lowered = joined.lower()
@@ -292,31 +309,39 @@ def _table_values(
         header_rows: list[str] = []
         values: dict[str, Decimal] = {}
         currencies: dict[str, str] = {}
+        priorities: dict[str, int] = {}
         auxiliary: dict[str, Decimal] = {}
         for row in table:
             label_index = next((
-                i for i, cell in enumerate(row) if _metric_for_label(cell) or _auxiliary_metric(cell)
+                i for i, cell in enumerate(row)
+                if _metric_for_label(cell, relaxed=backfill_mode) or _auxiliary_metric(cell)
             ), None)
             if label_index is None:
                 if not values:
                     header_rows.append(" ".join(row))
                 continue
-            metric = _metric_for_label(row[label_index])
+            metric = _metric_for_label(row[label_index], relaxed=backfill_mode)
             auxiliary_metric = _auxiliary_metric(row[label_index])
             header = " ".join(header_rows)
             numbers = _row_numbers(row[label_index + 1:])
             direct_count = _three_month_columns(header, len(numbers))
             direct_numbers = numbers[:direct_count]
-            index = _target_column(header, len(direct_numbers), target)
+            index = _target_column(
+                header, len(direct_numbers), target, prefer_split_dates=backfill_mode,
+            )
             if index is not None:
                 index = _prefer_usd_column(header, index, direct_count)
-            if index is not None and index < len(numbers) and metric not in values:
+            priority = _metric_label_priority(metric, row[label_index]) if metric is not None else 0
+            if index is not None and index < len(numbers) and (
+                metric not in values or (backfill_mode and priority > priorities.get(metric, 0))
+            ):
                 local_scale = _scale(joined)
                 value = direct_numbers[index] * (local_scale if local_scale != 1 else _scale(default_text))
                 currency = _column_currency(header, index, direct_count, _currency(joined))
                 if metric is not None:
                     values[metric] = value
                     currencies[metric] = currency
+                    priorities[metric] = priority
                 elif auxiliary_metric is not None:
                     auxiliary[auxiliary_metric] = value
                     currencies[auxiliary_metric] = currency
@@ -324,30 +349,48 @@ def _table_values(
             if currencies.get("gross_profit") == currencies.get("operating_expenses"):
                 values["operating_income"] = auxiliary["gross_profit"] - abs(auxiliary["operating_expenses"])
                 currencies["operating_income"] = currencies["gross_profit"]
-        score = len(values)
-        if score > best[0]:
-            dates = [item for item in _loose_period_dates(" ".join(header_rows)) if _matches_target_period(item, target)]
-            best = (score, values, currencies, dates[-1] if dates else None)
-    return best[1], best[2], best[3]
+        header = " ".join(header_rows)
+        dates = [
+            item for item in _loose_period_dates(header, prefer_split=backfill_mode)
+            if _matches_target_period(item, target)
+        ]
+        represented_end = dates[-1] if dates else None
+        direct_period = int(bool(re.search(r"\b(?:for the )?(?:three months|quarter) ended\b", header, re.I)))
+        candidates.append(((len(values), direct_period), values, currencies, represented_end))
+    if not candidates:
+        return {}, {}, None
+    best = max(candidates, key=lambda item: item[0])
+    if not backfill_mode or best[3] is None:
+        return best[1], best[2], best[3]
+    values, currencies = dict(best[1]), dict(best[2])
+    for _, extra_values, extra_currencies, extra_end in candidates:
+        if extra_end != best[3]:
+            continue
+        for metric, value in extra_values.items():
+            if metric not in values:
+                values[metric] = value
+                currencies[metric] = extra_currencies.get(metric, "USD")
+    return values, currencies, best[3]
 
 
-def _loose_period_dates(header: str) -> list[date]:
+def _loose_period_dates(header: str, *, prefer_split: bool = False) -> list[date]:
     exact = _date_tokens(header)
-    if exact:
+    if exact and not prefer_split:
         return exact
+    separator = r"\s*" if prefer_split else r"\s+"
     month_days = re.findall(
-        r"\b(" + "|".join(_MONTHS) + r")\.?\s+(\d{1,2})\b", header, re.I,
+        r"\b(" + "|".join(_MONTHS) + rf")\.?{separator}(\d{{1,2}})\b", header, re.I,
     )
     years = [int(value) for value in re.findall(r"\b20\d{2}\b", header)]
     if len(month_days) != len(years):
-        return []
+        return exact
     result: list[date] = []
     for (month, day), year in zip(month_days, years, strict=False):
         try:
             result.append(date(year, _MONTHS[month.lower().rstrip(".")], int(day)))
         except ValueError:
             continue
-    return result
+    return result if len(result) > len(exact) else exact
 
 
 def _flat_values(text: str, target: tuple[int, int]) -> tuple[dict[str, Decimal], dict[str, str], date | None]:
@@ -431,6 +474,8 @@ def extract_six_k_fact(
     year: int,
     quarter: int,
     fx_to_usd: Callable[[str, date], Decimal] | None = None,
+    *,
+    backfill_mode: bool = False,
 ) -> USFinancialFact | None:
     """Extract one exact quarter from a furnished 6-K earnings release."""
     target = (year, quarter)
@@ -440,11 +485,16 @@ def extract_six_k_fact(
     for document in documents:
         text, tables, _ = parse_filing_html(document.text)
         lowered = text.lower()
-        if not any(term in lowered for term in ("financial results", "quarterly results", "three months ended")) and not re.search(
-            r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700],
-        ):
+        has_results_context = any(
+            term in lowered for term in ("financial results", "quarterly results", "three months ended")
+        ) or re.search(r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700])
+        if backfill_mode:
+            has_results_context = has_results_context or "quarter ended" in lowered
+        if not has_results_context:
             continue
-        table_values, table_currencies, table_end = _table_values(tables, target, text)
+        table_values, table_currencies, table_end = _table_values(
+            tables, target, text, backfill_mode=backfill_mode,
+        )
         document_dates = _loose_period_dates(text)
         dates = [item for item in document_dates if _matches_target_period(item, target)]
         target_label = f"q{quarter} {year}"
@@ -452,10 +502,17 @@ def extract_six_k_fact(
         filing_name_has_quarter = re.search(
             rf"q{quarter}(?:results?|financial|[^a-z0-9]|$)", filing.primary_document.lower(),
         ) is not None
-        if not dates and (
+        if backfill_mode and table_end is not None and _matches_target_period(table_end, target):
+            dates = [table_end]
+        elif not dates and (
             target_label in lowered[:700] or written_target in lowered[:700]
             or (table_values and filing_name_has_quarter)
         ):
+            dates = [date(year, quarter * 3, 31 if quarter in {1, 4} else 30)]
+        elif backfill_mode and len(table_values) == 3:
+            # Foreign issuers often split a day-month heading from its years,
+            # leaving no globally parseable date even though the document has
+            # one complete, target-selected quarterly income statement.
             dates = [date(year, quarter * 3, 31 if quarter in {1, 4} else 30)]
         elif not document_dates and filing.report_date and market_period(filing.report_date) == target:
             dates = [filing.report_date]
