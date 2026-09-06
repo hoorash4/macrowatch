@@ -984,6 +984,28 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(next(item.cik for item in result if item.ticker == "QRTEA"), historical_cik)
 
+    def test_unambiguous_stored_historical_ticker_resolves_delisted_issuer(self):
+        historical_cik = "0001355096"
+
+        class FakeSec:
+            def company_ticker_rows(self):
+                return []
+
+        client = USIndexConstituentClient(FakeSec())
+        client._cik_for_name = lambda *_args, **_kwargs: None
+        client._cik_for_ticker = lambda *_args, **_kwargs: None
+        rows = [("QRTEA", "Qurate Retail Inc", Decimal("100"))] + [
+            (f"T{index:03}", f"Company {index}", Decimal(99 - index)) for index in range(99)
+        ]
+        directory = {f"T{index:03}": str(index + 1).zfill(10) for index in range(99)}
+
+        result = client._securities(
+            "us_nasdaq100", date(2018, 9, 30), rows, directory,
+            historical_directory={"QRTEA": historical_cik},
+        )
+
+        self.assertEqual(next(item.cik for item in result if item.ticker == "QRTEA"), historical_cik)
+
 
 if __name__ == "__main__":
     unittest.main()
