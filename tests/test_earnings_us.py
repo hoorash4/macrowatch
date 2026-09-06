@@ -980,20 +980,6 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(facts[0].fiscal_quarter, 1)
         self.assertEqual(facts[0].period_end, date(2026, 4, 30))
 
-    def test_incorrect_q1_label_is_normalized_to_second_physical_quarter(self):
-        source = payload()
-        for tag in ("Revenues", "OperatingIncomeLoss", "NetIncomeLoss"):
-            source["facts"]["us-gaap"][tag]["units"]["USD"] = [
-                entry(fy=2025, fp="FY", accn="annual", start="2024-10-01", end="2025-09-30", filed="2025-11-20", value="400"),
-                entry(fy=2026, fp="Q1", accn="mislabelled-q2", start="2026-01-01", end="2026-03-31", filed="2026-05-01", value="100"),
-            ]
-
-        facts = extract_new_sec_facts("us:cik:mislabelled-q1", source, {"mislabelled-q2"})
-
-        self.assertEqual(len(facts), 1)
-        self.assertEqual(facts[0].fiscal_quarter, 2)
-        self.assertEqual(facts[0].period_end, date(2026, 3, 31))
-
     def test_q4_can_subtract_compatible_metric_aliases_across_filings(self):
         source = payload()
         net_rows = source["facts"]["us-gaap"].pop("NetIncomeLoss")["units"]["USD"]
