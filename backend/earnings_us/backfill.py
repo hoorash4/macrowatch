@@ -39,7 +39,8 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._backfill_facts: dict[str, list] = {}
+        self._backfill_facts: dict[tuple[str, str], list] = {}
+        self._historical_ciks_by_ticker: dict[str, set[str]] | None = None
         self._current_sec_ciks: set[str] | None = None
 
     def freeze_universe_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
@@ -74,13 +75,40 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         }
 
     def _company_facts(self, member) -> list:
-        cached = self._backfill_facts.get(member.company_id)
+        return self._company_facts_for_cik(member.company_id, member.cik)
+
+    def _company_facts_for_cik(self, company_id: str, cik: str) -> list:
+        key = (company_id, cik.zfill(10))
+        cached = self._backfill_facts.get(key)
         if cached is not None:
             return cached
-        payload = self.sec.company_facts(member.cik)
-        facts = extract_new_sec_facts(member.company_id, payload, _all_financial_accessions(payload))
-        self._backfill_facts[member.company_id] = facts
+        payload = self.sec.company_facts(cik)
+        facts = extract_new_sec_facts(company_id, payload, _all_financial_accessions(payload))
+        self._backfill_facts[key] = facts
         return facts
+
+    def _historical_ticker_candidates(self, member, year: int, quarter: int) -> list:
+        """Read an exact-period fact from a predecessor CIK that used the same ticker."""
+        if not member.ticker:
+            return []
+        if self._historical_ciks_by_ticker is None:
+            by_ticker: dict[str, set[str]] = {}
+            for row in self.repository.us_active_companies(2016):
+                ticker = str(row.get("ticker") or "").strip().upper()
+                cik = str(row.get("cik") or "").strip()
+                if ticker and cik:
+                    by_ticker.setdefault(ticker, set()).add(cik.zfill(10))
+            self._historical_ciks_by_ticker = by_ticker
+        current_cik = member.cik.zfill(10)
+        result = []
+        for cik in sorted(self._historical_ciks_by_ticker.get(member.ticker.upper(), set())):
+            if cik == current_cik:
+                continue
+            result.extend(
+                fact for fact in self._company_facts_for_cik(member.company_id, cik)
+                if market_period(fact.period_end) == (year, quarter)
+            )
+        return result
 
     def _delisted_carry_forward(self, member, year: int, quarter: int):
         """Use the agreed prior-quarter proxy only for a confirmed Form 25 exit."""
@@ -144,6 +172,12 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                     raise ProviderError(f"{member.company_name}: {exc}") from exc
                 issues.append({"company": member.company_name, "reason": str(exc)})
                 continue
+            if not candidates:
+                try:
+                    candidates = self._historical_ticker_candidates(member, year, quarter)
+                except ProviderError as exc:
+                    if strict_provider_errors:
+                        raise ProviderError(f"{member.company_name}: {exc}") from exc
             if not candidates:
                 try:
                     carry_forward = self._delisted_carry_forward(member, year, quarter)
