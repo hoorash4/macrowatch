@@ -288,7 +288,7 @@ class SecEdgarClient:
                 if is_html and (
                     any(term in compact for term in (
                         "financialstatement", "financialresult", "pressrelease", "quarterlyresult", "interimresult",
-                        "ex99", "exhibit99",
+                        "result", "ex99", "exhibit99",
                     )) or (earnings_cover and is_attachment)
                 ):
                     names.append(name)

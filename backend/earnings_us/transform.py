@@ -40,6 +40,13 @@ METRIC_BASES = {
     ),
 }
 
+# Bank filers sometimes use an issuer extension for the consolidated line
+# labelled "Total revenues, net of interest expense".  It is the exact
+# top-line reported in the filing, not a synthetic sum of segment items.
+EXTENSION_METRIC_BASES = {
+    "top_line": (("TotalRevenuesNetOfInterestExpense",),),
+}
+
 
 def _normalized_sec_row(
     row: dict[str, Any], annual_ends: list[date], relabel_keys: set[tuple[int, str]],
@@ -78,7 +85,8 @@ def _entry_groups(
     payload: dict[str, Any], metric: str, annual_ends: list[date] | None = None,
 ) -> list[list[list[dict[str, Any]]]]:
     """Return single-tag or composite SEC fact bases in preference order."""
-    facts = payload.get("facts", {}).get("us-gaap", {})
+    taxonomies = payload.get("facts", {})
+    facts = taxonomies.get("us-gaap", {}) if isinstance(taxonomies, dict) else {}
     result: list[list[list[dict[str, Any]]]] = []
     for basis in METRIC_BASES[metric]:
         components: list[list[dict[str, Any]]] = []
@@ -105,6 +113,19 @@ def _entry_groups(
             components.append([
                 _normalized_sec_row(item, annual_ends or [], relabel_keys) for item in rows
             ])
+        result.append(components)
+    for basis in EXTENSION_METRIC_BASES.get(metric, ()):
+        components = []
+        for tag in basis:
+            extension_fact = next((
+                fact for namespace, taxonomy in taxonomies.items()
+                if namespace not in {"us-gaap", "dei"} and isinstance(taxonomy, dict)
+                for name, fact in taxonomy.items()
+                if name == tag and isinstance(fact, dict)
+            ), {})
+            units = extension_fact.get("units", {}).get("USD", {}) if isinstance(extension_fact, dict) else {}
+            rows = [item for item in units if isinstance(item, dict)] if isinstance(units, list) else []
+            components.append([_normalized_sec_row(item, annual_ends or [], set()) for item in rows])
         result.append(components)
     return result
 
