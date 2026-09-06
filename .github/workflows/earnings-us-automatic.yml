@@ -54,3 +54,54 @@ jobs:
           args=(--phase "$PHASE")
           [[ "$WRITE" == "true" ]] && args+=(--write)
           timeout --signal=TERM --kill-after=10s 660s python -m earnings_us.automatic_cli "${args[@]}"
+
+  notify_failure:
+    needs: collect
+    if: ${{ always() && needs.collect.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send failure email
+        env:
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          OUTLOOK_APP_PASSWORD: ${{ secrets.OUTLOOK_APP_PASSWORD }}
+          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 2 * * *' && 'snapshot' || (github.event.schedule == '30 2 * * *' && 'edgar' || 'incomplete')) || inputs.phase }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import smtplib
+          import ssl
+          from email.message import EmailMessage
+
+          account = os.environ.get("ADMIN_EMAIL", "").strip()
+          password = os.environ.get("OUTLOOK_APP_PASSWORD", "").strip()
+          if not account:
+              raise RuntimeError("ADMIN_EMAIL GitHub Actions secret is missing")
+          if not password:
+              raise RuntimeError("OUTLOOK_APP_PASSWORD GitHub Actions secret is missing")
+
+          phase = os.environ.get("PHASE") or "unknown"
+          run_url = os.environ["RUN_URL"]
+          message = EmailMessage()
+          message["From"] = account
+          message["To"] = account
+          message["Subject"] = f"[MacroWatch] 미국 실적 자동 실행 실패 ({phase})"
+          message.set_content(
+              "MacroWatch 미국 실적 자동 실행이 실패했습니다.\n\n"
+              f"단계: {phase}\n"
+              f"실행 시도: {os.environ['RUN_ATTEMPT']}\n"
+              f"커밋: {os.environ['COMMIT_SHA']}\n"
+              f"로그: {run_url}\n"
+          )
+
+          with smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30) as smtp:
+              smtp.ehlo()
+              smtp.starttls(context=ssl.create_default_context())
+              smtp.ehlo()
+              smtp.login(account, password)
+              smtp.send_message(message)
+          PY

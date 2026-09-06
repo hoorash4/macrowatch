@@ -242,6 +242,19 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("options: [snapshot, edgar, incomplete, all]", workflow)
         self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
 
+    def test_us_earnings_failure_email_runs_only_after_collection_failure(self):
+        workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+
+        self.assertIn("notify_failure:", workflow)
+        self.assertIn("needs: collect", workflow)
+        self.assertIn("always() && needs.collect.result == 'failure'", workflow)
+        self.assertIn("ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}", workflow)
+        self.assertIn("OUTLOOK_APP_PASSWORD: ${{ secrets.OUTLOOK_APP_PASSWORD }}", workflow)
+        self.assertIn('account = os.environ.get("ADMIN_EMAIL", "").strip()', workflow)
+        self.assertIn('smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30)', workflow)
+        self.assertIn('message["To"] = account', workflow)
+        self.assertIn('f"로그: {run_url}\\n"', workflow)
+
     def test_closed_membership_keeps_passwords_in_supabase_auth(self):
         migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
         auth = (ROOT / "auth.js").read_text(encoding="utf-8")
