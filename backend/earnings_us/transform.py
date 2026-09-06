@@ -349,7 +349,12 @@ def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date
     if quarter == 4:
         return market_period(period_end)[0]
     following = [end for end in annual_ends if period_end <= end <= period_end.fromordinal(period_end.toordinal() + 370)]
-    return market_period(min(following))[0] if following else fallback
+    if following:
+        return market_period(min(following))[0]
+    preceding = [end for end in annual_ends if end < period_end and (period_end - end).days <= 370]
+    if preceding:
+        return market_period(max(preceding))[0] + 1
+    return fallback
 
 
 def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
