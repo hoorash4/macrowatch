@@ -244,6 +244,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
         self.assertIn("group: earnings-us-pipeline", workflow)
         self.assertIn("group: earnings-us-pipeline", backfill_workflow)
+        universe_workflow = (ROOT / ".github/workflows/earnings-us-universe-backfill.yml").read_text(encoding="utf-8")
+        self.assertIn("group: earnings-us-pipeline", universe_workflow)
 
     def test_scheduled_workflow_failure_email_is_centralized_and_complete(self):
         notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")

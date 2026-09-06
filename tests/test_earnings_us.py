@@ -705,6 +705,9 @@ class USEarningsTransformTests(unittest.TestCase):
             def company_ticker_rows(self):
                 return [("BLK", "Blackrock Inc", "0002012383")]
 
+            def company_facts(self, _):
+                return {"facts": {"us-gaap": {"Revenues": {}}}}
+
         rows = [("", "Blackrock Inc", Decimal("1"))] + [
             (f"T{index:03}", f"Company {index}", Decimal("1")) for index in range(99)
         ]
@@ -717,6 +720,40 @@ class USEarningsTransformTests(unittest.TestCase):
         )
 
         self.assertIn("BLK", {item.ticker for item in result})
+
+    def test_same_name_note_without_companyfacts_does_not_replace_operating_issuer(self):
+        wrong_cik = "0001340909"
+        walmart_cik = "0000104169"
+        regular = [
+            (f"T{index:03}", f"Company {index}", str(index + 1).zfill(10))
+            for index in range(99)
+        ]
+
+        class FakeSec:
+            def company_ticker_rows(self):
+                return regular + [
+                    ("GJO", "Wal-Mart Stores Inc.", wrong_cik),
+                    ("WMT", "Walmart Inc.", walmart_cik),
+                ]
+
+            def company_facts(self, cik):
+                if cik == wrong_cik:
+                    raise ProviderError("HTTP 404")
+                return {"facts": {"us-gaap": {"Revenues": {}}}}
+
+        rows = [(ticker, name, Decimal("1")) for ticker, name, _ in regular]
+        rows.append(("", "Wal-Mart Stores Inc.", Decimal("1")))
+        directory = {ticker: cik for ticker, _, cik in regular}
+        directory["GJO"] = wrong_cik
+        directory["WMT"] = walmart_cik
+
+        result = USIndexConstituentClient(FakeSec())._securities(
+            "us_sp100", date(2016, 3, 31), rows, directory,
+        )
+
+        walmart = next(item for item in result if item.name == "Wal-Mart Stores Inc.")
+        self.assertEqual(walmart.cik, walmart_cik)
+        self.assertEqual(walmart.ticker, "WMT")
 
     def test_historical_issuer_name_allows_unambiguous_word_expansion(self):
         self.assertEqual(_name_match_score("ALEXION PHARM INC", "ALEXION PHARMACEUTICALS INC"), 200)

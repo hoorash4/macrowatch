@@ -67,7 +67,7 @@ def _name_match_score(query: str, candidate: str) -> int:
     ignored = {
         "a", "ads", "and", "b", "c", "cl", "class", "cm", "co", "company", "companies", "cos", "corp", "corporation",
         "inc", "incorporated", "ltd", "limited", "nv", "nvs", "ord", "ordinary", "plc", "sh",
-        "share", "shares", "sr", "srs", "the",
+        "share", "shares", "sr", "srs", "stores", "the",
     }
     aliases = {
         "21st": "twentyfirst", "comm": "communications", "gp": "group", "grp": "group", "int": "international",
@@ -331,6 +331,7 @@ class USIndexConstituentClient:
         self.session = session or provider_session()
         self.request_count = 0
         self._name_cik_cache: dict[tuple[str, int | None], str | None] = {}
+        self._financial_filer_cache: dict[str, bool] = {}
         self._historical_ticker_by_cik: dict[str, str] = {}
         self._oef_legacy_accessions_cache: set[str] | None = None
 
@@ -551,6 +552,26 @@ class USIndexConstituentClient:
                     return next(iter(unique))
         return None
 
+    def _has_company_facts(self, cik: str) -> bool:
+        """Distinguish operating issuers from same-name notes and trusts."""
+        normalized = normalize_cik(cik) or ""
+        if not normalized:
+            return False
+        cached = self._financial_filer_cache.get(normalized)
+        if cached is not None:
+            return cached
+        try:
+            payload = self.sec.company_facts(normalized)
+        except ProviderError:
+            result = False
+        else:
+            taxonomies = payload.get("facts") if isinstance(payload, dict) else None
+            result = isinstance(taxonomies, dict) and any(
+                isinstance(facts, dict) and bool(facts) for facts in taxonomies.values()
+            )
+        self._financial_filer_cache[normalized] = result
+        return result
+
     def _securities(self, market_id: str, reference_date: date, rows: Iterable[SourceHolding], directory: dict[str, str]) -> list[MarketSecurity]:
         by_company: dict[str, tuple[MarketSecurity, Decimal, bool]] = {}
         ticker_by_cik: dict[str, str] = {}
@@ -568,12 +589,23 @@ class USIndexConstituentClient:
 
         def current_directory_cik(name: str) -> str | None:
             exact = issuer_directory.get(_normal_name(name), set())
-            if len(exact) == 1:
-                return next(iter(exact))
+            financial_exact = {cik for cik in exact if self._has_company_facts(cik)}
+            if len(financial_exact) == 1:
+                return next(iter(financial_exact))
             scored = [(score, cik) for title, cik in issuer_rows for score in [_name_match_score(name, title)] if score]
             best = max((score for score, _ in scored), default=0)
-            matches = {cik for score, cik in scored if score == best}
-            return next(iter(matches)) if best >= 100 and len(matches) == 1 else None
+            matches = {
+                cik for score, cik in scored
+                if score == best and self._has_company_facts(cik)
+            }
+            if best >= 100 and len(matches) == 1:
+                return next(iter(matches))
+            # A same-name security can outrank the renamed operating issuer.
+            # Re-rank only candidates that actually publish company facts.
+            financial_scored = [(score, cik) for score, cik in scored if self._has_company_facts(cik)]
+            financial_best = max((score for score, _ in financial_scored), default=0)
+            financial_matches = {cik for score, cik in financial_scored if score == financial_best}
+            return next(iter(financial_matches)) if financial_best >= 100 and len(financial_matches) == 1 else None
 
         def store(ticker: str, name: str, cik: str, selection_value: Decimal | None) -> None:
             resolved_ticker = ticker or ticker_by_cik.get(cik, "") or self._historical_ticker_by_cik.get(cik, "")
