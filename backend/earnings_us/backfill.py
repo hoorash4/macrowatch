@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
-from .pipeline import MARKETS, USEarningsAutomaticPipeline, market_period
+from .pipeline import (
+    MARKETS, USEarningsAutomaticPipeline, fact_from_row, market_period,
+    previous_market_period,
+)
 from .providers import ProviderError
 from .transform import extract_new_sec_facts
 
@@ -37,6 +40,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._backfill_facts: dict[str, list] = {}
+        self._current_sec_ciks: set[str] | None = None
 
     def freeze_universe_period(self, year: int, quarter: int, *, write: bool = True) -> dict:
         """Persist one exact historical index membership only after both 100-company sets validate."""
@@ -78,6 +82,42 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         self._backfill_facts[member.company_id] = facts
         return facts
 
+    def _delisted_carry_forward(self, member, year: int, quarter: int):
+        """Use the agreed prior-quarter proxy only for a confirmed Form 25 exit."""
+        if self._current_sec_ciks is None:
+            self._current_sec_ciks = {
+                cik.zfill(10) for _, _, cik in self.sec.company_ticker_rows()
+            }
+        if member.cik.zfill(10) in self._current_sec_ciks:
+            return None
+        start = date(year, (quarter - 1) * 3 + 1, 1)
+        end = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
+        applicable = next((
+            filed for filed in self.sec.delisting_dates(member.cik)
+            if start <= filed <= end + timedelta(days=120)
+        ), None)
+        if applicable is None:
+            return None
+        prior_market = previous_market_period(year, quarter)
+        prior = []
+        for row in self.repository.company_history([member.company_id]):
+            try:
+                if (int(row["market_year"]), int(row["market_quarter"])) == prior_market:
+                    fact = fact_from_row(row)
+                    if fact.fully_complete:
+                        prior.append(fact)
+            except (KeyError, TypeError, ValueError, ArithmeticError):
+                continue
+        if not prior:
+            return None
+        source = max(prior, key=lambda fact: fact.period_end)
+        return source.with_changes(
+            fiscal_year=year, fiscal_quarter=quarter,
+            period_start=start, period_end=end,
+            source_filing_id=f"carry-forward-form25-{applicable.isoformat()}",
+            filing_date=applicable, is_pending=False,
+        )
+
     def backfill_period(
         self, year: int, quarter: int, *, write: bool = True,
         strict_provider_errors: bool = False,
@@ -103,7 +143,16 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
                 issues.append({"company": member.company_name, "reason": str(exc)})
                 continue
             if not candidates:
-                issues.append({"company": member.company_name, "reason": "No SEC financial fact mapped to market period"})
+                try:
+                    carry_forward = self._delisted_carry_forward(member, year, quarter)
+                except ProviderError as exc:
+                    if strict_provider_errors:
+                        raise ProviderError(f"{member.company_name}: {exc}") from exc
+                    carry_forward = None
+                if carry_forward is None:
+                    issues.append({"company": member.company_name, "reason": "No SEC financial fact mapped to market period"})
+                    continue
+                changed.append(carry_forward)
                 continue
             selected = _select_backfill_fact(candidates)
             changed.append(selected)
