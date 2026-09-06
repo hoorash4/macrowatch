@@ -47,12 +47,16 @@ def _normalized_sec_row(
     form = str(row.get("form") or "").upper()
     fp = str(row.get("fp") or "")
     fy = int(row.get("fy") or 0)
-    if form not in {"10-Q", "10-Q/A"} or (fp != "FY" and (fy, fp) not in relabel_keys):
+    if form not in {"10-Q", "10-Q/A"}:
         return row
     try:
         start = date.fromisoformat(str(row["start"]))
         end = date.fromisoformat(str(row["end"]))
     except (KeyError, ValueError):
+        return row
+    if end in annual_ends:
+        return {**row, "_year_end_comparison": True}
+    if fp != "FY" and (fy, fp) not in relabel_keys:
         return row
     days = (end - start).days + 1
     previous_ends = [annual_end for annual_end in annual_ends if annual_end < end]
@@ -107,6 +111,8 @@ def _entry_groups(
 def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str | None, *, annual: bool) -> tuple[Decimal | None, date | None, date | None, date | None]:
     candidates: list[tuple[date, date, date, Decimal]] = []
     for row in entries:
+        if row.get("_year_end_comparison"):
+            continue
         if int(row.get("fy") or 0) != fy or str(row.get("fp") or "") != fp:
             continue
         if accession is not None and str(row.get("accn") or "") != accession:
@@ -142,6 +148,8 @@ def _cumulative_entry_value(
     minimum, maximum = bounds[fp]
     candidates: list[tuple[date, date, date, Decimal]] = []
     for row in entries:
+        if row.get("_year_end_comparison"):
+            continue
         if int(row.get("fy") or 0) != fy or str(row.get("fp") or "") != fp:
             continue
         if accession is not None and str(row.get("accn") or "") != accession:
@@ -201,6 +209,8 @@ def _physical_prior_basis_value(
     for rows in components:
         candidates: list[tuple[date, date, date, Decimal]] = []
         for row in rows:
+            if row.get("_year_end_comparison"):
+                continue
             if str(row.get("fp") or "") != fp or str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
                 continue
             try:
