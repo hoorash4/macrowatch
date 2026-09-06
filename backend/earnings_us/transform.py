@@ -37,9 +37,14 @@ METRIC_BASES = {
 }
 
 
-def _normalized_sec_row(row: dict[str, Any], annual_ends: list[date]) -> dict[str, Any]:
-    """Repair issuer-supplied ``fp=FY`` labels on genuine quarterly 10-Q facts."""
-    if str(row.get("fp") or "") != "FY" or str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+def _normalized_sec_row(
+    row: dict[str, Any], annual_ends: list[date], relabel_keys: set[tuple[int, str]],
+) -> dict[str, Any]:
+    """Repair demonstrably conflicting 10-Q labels from their physical periods."""
+    form = str(row.get("form") or "").upper()
+    fp = str(row.get("fp") or "")
+    fy = int(row.get("fy") or 0)
+    if form not in {"10-Q", "10-Q/A"} or (fp != "FY" and (fy, fp) not in relabel_keys):
         return row
     try:
         start = date.fromisoformat(str(row["start"]))
@@ -71,10 +76,27 @@ def _entry_groups(
         for tag in basis:
             fact = facts.get(tag, {}) if isinstance(facts, dict) else {}
             units = fact.get("units", {}).get("USD", {}) if isinstance(fact, dict) else {}
+            rows = [item for item in units if isinstance(item, dict)] if isinstance(units, list) else []
+            physical_ends: dict[tuple[int, str], set[date]] = {}
+            for item in rows:
+                try:
+                    start = date.fromisoformat(str(item["start"]))
+                    end = date.fromisoformat(str(item["end"]))
+                    filed = date.fromisoformat(str(item["filed"]))
+                    key = (int(item.get("fy") or 0), str(item.get("fp") or ""))
+                except (KeyError, ValueError):
+                    continue
+                if (
+                    str(item.get("form") or "").upper() in {"10-Q", "10-Q/A"}
+                    and key[0] and key[1] in {"Q1", "Q2", "Q3"}
+                    and 60 <= (end - start).days + 1 <= 130
+                    and 0 <= (filed - end).days <= 180
+                ):
+                    physical_ends.setdefault(key, set()).add(end)
+            relabel_keys = {key for key, ends in physical_ends.items() if len(ends) > 1}
             components.append([
-                _normalized_sec_row(item, annual_ends or [])
-                for item in units if isinstance(item, dict)
-            ] if isinstance(units, list) else [])
+                _normalized_sec_row(item, annual_ends or [], relabel_keys) for item in rows
+            ])
         result.append(components)
     return result
 
