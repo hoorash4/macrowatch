@@ -137,6 +137,43 @@ def _cumulative_basis_value(
     )
 
 
+def _physical_prior_basis_value(
+    components: list[list[dict[str, Any]]], fp: str, fiscal_start: date, before_end: date,
+    *, cumulative: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    """Find a prior fiscal-period fact by physical dates, ignoring unstable SEC ``fy`` labels."""
+    values: list[tuple[Decimal | None, date | None, date | None, date | None]] = []
+    for rows in components:
+        candidates: list[tuple[date, date, date, Decimal]] = []
+        for row in rows:
+            if str(row.get("fp") or "") != fp or str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+                continue
+            try:
+                start = date.fromisoformat(str(row["start"]))
+                end = date.fromisoformat(str(row["end"]))
+                filed = date.fromisoformat(str(row["filed"]))
+                value = Decimal(str(row["val"]))
+            except (KeyError, ValueError, ArithmeticError):
+                continue
+            days = (end - start).days + 1
+            valid_duration = 131 <= days <= 299 if cumulative else 60 <= days <= 130
+            if start == fiscal_start and end < before_end and valid_duration:
+                candidates.append((end, filed, start, value))
+        if not candidates:
+            values.append((None, None, None, None))
+            continue
+        end, filed, start, value = max(candidates)
+        values.append((value, start, end, filed))
+    if not values or any(item[0] is None for item in values):
+        return None, None, None, None
+    return (
+        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
+        min(item[1] for item in values if item[1] is not None),
+        max(item[2] for item in values if item[2] is not None),
+        max(item[3] for item in values if item[3] is not None),
+    )
+
+
 def _first_basis_value(
     groups: list[list[list[dict[str, Any]]]], fy: int, fp: str,
     accession: str | None, *, annual: bool,
@@ -179,7 +216,9 @@ def _metric_value(
             continue
         if not annual:
             return value, start, end, filed
-        q3_ytd = _cumulative_basis_value(components, fy, "Q3", None)
+        q3_ytd = _physical_prior_basis_value(components, "Q3", start, end, cumulative=True)
+        if q3_ytd[0] is None:
+            q3_ytd = _cumulative_basis_value(components, fy, "Q3", None)
         if q3_ytd[0] is not None:
             return value - q3_ytd[0], start, end, filed
         prior = [_basis_value(components, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
@@ -189,11 +228,15 @@ def _metric_value(
         previous_fp = "Q1" if fp == "Q2" else "Q2"
         for components in groups:
             current_ytd = _cumulative_basis_value(components, fy, fp, accession)
-            previous = (
-                _basis_value(components, fy, "Q1", None, annual=False)
-                if fp == "Q2"
-                else _cumulative_basis_value(components, fy, previous_fp, None)
-            )
+            previous = _physical_prior_basis_value(
+                components, previous_fp, current_ytd[1], current_ytd[2], cumulative=fp == "Q3",
+            ) if current_ytd[1] is not None and current_ytd[2] is not None else (None, None, None, None)
+            if previous[0] is None:
+                previous = (
+                    _basis_value(components, fy, "Q1", None, annual=False)
+                    if fp == "Q2"
+                    else _cumulative_basis_value(components, fy, previous_fp, None)
+                )
             if current_ytd[0] is not None and previous[0] is not None:
                 return current_ytd[0] - previous[0], current_ytd[1], current_ytd[2], current_ytd[3]
         current_ytd = _first_cumulative_basis_value(groups, fy, fp, accession)
@@ -206,7 +249,16 @@ def _metric_value(
             return current_ytd[0] - previous[0], current_ytd[1], current_ytd[2], current_ytd[3]
     if annual:
         annual_value = _first_basis_value(groups, fy, fp, accession, annual=True)
-        q3_ytd = _first_cumulative_basis_value(groups, fy, "Q3", None)
+        q3_ytd = (None, None, None, None)
+        if annual_value[1] is not None and annual_value[2] is not None:
+            for components in groups:
+                q3_ytd = _physical_prior_basis_value(
+                    components, "Q3", annual_value[1], annual_value[2], cumulative=True,
+                )
+                if q3_ytd[0] is not None:
+                    break
+        if q3_ytd[0] is None:
+            q3_ytd = _first_cumulative_basis_value(groups, fy, "Q3", None)
         if annual_value[0] is not None and q3_ytd[0] is not None:
             return annual_value[0] - q3_ytd[0], annual_value[1], annual_value[2], annual_value[3]
         prior = [
