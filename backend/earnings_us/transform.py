@@ -70,7 +70,8 @@ def _normalized_sec_row(
         fp = "Q1" if elapsed <= 120 else "Q2" if elapsed <= 220 else "Q3"
     else:
         return row
-    return {**row, "fp": fp}
+    quarter = {"Q1": 1, "Q2": 2, "Q3": 3}[fp]
+    return {**row, "fy": _physical_fiscal_year(end, quarter, annual_ends, fy), "fp": fp}
 
 
 def _entry_groups(
@@ -98,7 +99,6 @@ def _entry_groups(
                     str(item.get("form") or "").upper() in {"10-Q", "10-Q/A"}
                     and key[0] and key[1] in {"Q1", "Q2", "Q3"}
                     and 60 <= (end - start).days + 1 <= 130
-                    and 0 <= (filed - end).days <= 180
                 ):
                     physical_ends.setdefault(key, set()).add(end)
             relabel_keys = {key for key, ends in physical_ends.items() if len(ends) > 1}
