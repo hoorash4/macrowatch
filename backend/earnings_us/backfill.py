@@ -111,8 +111,10 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         if not prior:
             return None
         source = max(prior, key=lambda fact: fact.period_end)
+        next_fiscal_year = source.fiscal_year + (1 if source.fiscal_quarter == 4 else 0)
+        next_fiscal_quarter = 1 if source.fiscal_quarter == 4 else source.fiscal_quarter + 1
         return source.with_changes(
-            fiscal_year=year, fiscal_quarter=quarter,
+            fiscal_year=next_fiscal_year, fiscal_quarter=next_fiscal_quarter,
             period_start=start, period_end=end,
             source_filing_id=f"carry-forward-form25-{applicable.isoformat()}",
             filing_date=applicable, is_pending=False,
