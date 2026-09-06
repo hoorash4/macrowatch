@@ -109,7 +109,7 @@ def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str
         if accession is not None and str(row.get("accn") or "") != accession:
             continue
         form = str(row.get("form") or "").upper()
-        allowed_forms = {"10-K", "10-K/A"} if annual or fp == "FY" else {"10-Q", "10-Q/A"}
+        allowed_forms = {"10-K", "10-K/A"} if annual or fp in {"FY", "Q4"} else {"10-Q", "10-Q/A"}
         if form not in allowed_forms:
             continue
         try:
@@ -329,7 +329,7 @@ def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) ->
         for components in groups:
             for rows in components:
                 for row in rows:
-                    if str(row.get("fp") or "") != "FY" or str(row.get("form") or "").upper() not in {"10-K", "10-K/A"}:
+                    if str(row.get("fp") or "") not in {"FY", "Q4"} or str(row.get("form") or "").upper() not in {"10-K", "10-K/A"}:
                         continue
                     try:
                         start = date.fromisoformat(str(row["start"]))
@@ -374,12 +374,12 @@ def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: 
                         and row_end in annual_ends
                     ):
                         continue
-                    if accession in accessions and fp in {"Q1", "Q2", "Q3", "FY"} and fy:
+                    if accession in accessions and fp in {"Q1", "Q2", "Q3", "Q4", "FY"} and fy:
                         contexts.add((fy, fp, accession))
     result: dict[tuple[date, int], USFinancialFact] = {}
     for fy, fp, accession in sorted(contexts):
-        quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}[fp]
-        annual = fp == "FY"
+        quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4, "FY": 4}[fp]
+        annual = fp in {"Q4", "FY"}
         values: dict[str, Decimal | None] = {}
         starts: list[date] = []; ends: list[date] = []; filed_dates: list[date] = []
         for metric, groups in entries.items():
