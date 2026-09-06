@@ -7,7 +7,12 @@ from typing import Any
 
 
 def market_period(period_end: date) -> tuple[int, int]:
-    return period_end.year, (period_end.month - 1) // 3 + 1
+    index = period_end.year * 4 + (period_end.month - 1) // 3
+    # 52/53-week reporters commonly close on the first weekend after a
+    # calendar quarter end. Keep those facts with the quarter they represent.
+    if period_end.month in {1, 4, 7, 10} and period_end.day <= 7:
+        index -= 1
+    return index // 4, index % 4 + 1
 
 
 @dataclass(frozen=True)
