@@ -55,6 +55,12 @@ class _FilingHtmlParser(HTMLParser):
         values = dict(attrs)
         if tag == "table":
             self._table = []
+        elif tag == "img" and values.get("alt"):
+            # A number of foreign-issuer 6-K presentations place their income
+            # statement in a slide image but expose its table as alt text.
+            value = _clean(str(values["alt"]))
+            if value:
+                self.text.append(value)
         elif tag == "tr" and self._table is not None:
             self._row = []
         elif tag in {"td", "th"} and self._row is not None:
@@ -174,7 +180,11 @@ def _scale(text: str) -> Decimal:
             rf"\bin(?:\s+(?:rmb|cny|usd|eur|us\$|\$|€))?\s+{label}s?\b", lowered,
         )) is not None
     ]
-    return min(matches, default=(0, Decimal(1)))[1]
+    if matches:
+        return min(matches)[1]
+    if re.search(r"\b(?:us\$|rmb|cny|usd|eur|gbp|jpy|€|\$)\s*(?:mn|m)\b", text, re.I):
+        return Decimal("1000000")
+    return Decimal(1)
 
 
 _METRIC_LABELS = {
@@ -627,4 +637,78 @@ def extract_six_k_fact(
         top_line=converted["top_line"], operating_income=converted["operating_income"],
         net_income=converted["net_income"], source_filing_id=filing.accession,
         filing_date=filing.filing_date, is_pending=any(value is None for value in converted.values()),
+    )
+
+
+def extract_q1_from_h1_six_k_fact(
+    company_id: str,
+    filing: SixKFiling,
+    documents: Iterable[SixKDocument],
+    year: int,
+    fx_to_usd: Callable[[str, date], Decimal] | None = None,
+) -> USFinancialFact | None:
+    """Derive calendar Q1 from a 6-K that reports both Q2 and H1.
+
+    This is deliberately a historical-backfill-only fallback.  Some foreign
+    issuers furnish Q1 releases without a net-income line, then disclose a
+    consolidated P&L with Q2 and H1 side by side.  The two reported columns
+    use the same accounting basis, so H1 minus Q2 is the issuer's Q1 result.
+    """
+    values: dict[str, Decimal] = {}
+    currencies: dict[str, str] = {}
+    number = r"\(?[-+]?\s*\d[\d,]*(?:\.\d+)?\)?"
+    labels = {
+        "top_line": r"(?:total\s+)?revenues?",
+        "operating_income": r"operating\s+profit(?:\s*/\s*\(?loss\)?)?",
+        "net_income": r"net\s+profit(?:\s*/\s*\(?loss\)?)?",
+    }
+    for document in documents:
+        text, _, _ = parse_filing_html(document.text)
+        match = re.search(r"\b(?:p\s*&\s*l\s+)?q2\s*&\s*h1\s+" + str(year) + r"\b", text, re.I)
+        if match is None:
+            continue
+        block = text[match.start():match.start() + 7000]
+        header = block[: min(len(block), 500)]
+        if not re.search(r"\bq2\s+" + str(year) + r"\b.*\bh1\s+" + str(year) + r"\b", header, re.I):
+            continue
+        scale = _scale(header)
+        currency = _currency(header)
+        for metric, label in labels.items():
+            row = re.search(
+                rf"\b{label}\s+(({number}\s+){{3}}{number})",
+                block,
+                re.I,
+            )
+            if row is None:
+                continue
+            # Attribute-to-parent and non-controlling-interest rows are
+            # different measures; the consolidated total row is the target.
+            label_text = row.group(0).split(row.group(1), 1)[0].lower()
+            if metric == "net_income" and ("attributed" in label_text or "non-controlling" in label_text):
+                continue
+            numbers = [
+                value for value in (_number(token) for token in re.findall(number, row.group(1)))
+                if value is not None
+            ]
+            if len(numbers) != 4:
+                continue
+            values[metric] = (numbers[2] - numbers[0]) * scale
+            currencies[metric] = currency
+    if set(values) != set(labels):
+        return None
+    end = date(year, 3, 31)
+    converted: dict[str, Decimal] = {}
+    for metric, value in values.items():
+        currency = currencies[metric]
+        if currency != "USD":
+            if fx_to_usd is None:
+                return None
+            value *= fx_to_usd(currency, end)
+        converted[metric] = value
+    return USFinancialFact(
+        company_id=company_id, fiscal_year=year, fiscal_quarter=1,
+        period_start=date(year, 1, 1), period_end=end,
+        top_line=converted["top_line"], operating_income=converted["operating_income"],
+        net_income=converted["net_income"], source_filing_id=f"{filing.accession}:h1-minus-q2",
+        filing_date=filing.filing_date, is_pending=False,
     )

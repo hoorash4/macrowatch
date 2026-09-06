@@ -30,7 +30,10 @@ from earnings_us.constituents import (
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
 from earnings_us.providers import ProviderError, SecEdgarClient
 from earnings_us.transform import extract_new_sec_facts
-from earnings_us.six_k import SixKDocument, SixKFiling, extract_six_k_fact, linked_financial_documents
+from earnings_us.six_k import (
+    SixKDocument, SixKFiling, extract_q1_from_h1_six_k_fact, extract_six_k_fact,
+    linked_financial_documents,
+)
 
 
 def entry(*, fy: int, fp: str, accn: str, start: str, end: str, filed: str, value: str):
@@ -365,6 +368,27 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.top_line, Decimal("50000000"))
         self.assertEqual(fact.operating_income, Decimal("12000000"))
         self.assertEqual(fact.net_income, Decimal("8000000"))
+        self.assertFalse(fact.is_pending)
+
+    def test_six_k_backfill_derives_q1_from_q2_and_half_year_presentation(self):
+        html = """
+        <img alt="P&amp;L Q2 &amp; H1 2026 EUR mn Q2 2026 Q2 2025 H1 2026 H1 2025
+        Revenue 2,603 2,410 4,701 4,469
+        Operating profit/(loss) 322 211 519 706
+        Net profit/(loss) 284 247 400 662
+        Net profit/(loss) attributed to the parent company 189 174 258 540">
+        """
+        filing = SixKFiling("h1-results", date(2026, 7, 28), date(2026, 6, 30), "q22026-results.htm")
+
+        fact = extract_q1_from_h1_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2026,
+            lambda _currency, _date: Decimal(1),
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual(fact.top_line, Decimal("2098000000"))
+        self.assertEqual(fact.operating_income, Decimal("197000000"))
+        self.assertEqual(fact.net_income, Decimal("116000000"))
         self.assertFalse(fact.is_pending)
 
     def test_six_k_rejects_cross_statement_scale_mismatch(self):
