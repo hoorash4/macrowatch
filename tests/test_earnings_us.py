@@ -679,6 +679,43 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.net_income, Decimal("13"))
         self.assertFalse(fact.is_pending)
 
+    def test_backfill_allocates_ifrs_half_year_and_second_half_without_changing_automatic(self):
+        member = USCompany(
+            company_id="us:cik:0000000001", company_name="Foreign", ticker="FOR",
+            cik="0000000001", market_id="us_sp100", rank=1,
+            market_cap=Decimal("1"), reference_date=date(2024, 12, 31),
+        )
+        facts = {}
+        values = {
+            "Revenue": ("100", "240"),
+            "ProfitLossFromOperatingActivities": ("20", "60"),
+            "ProfitLossAttributableToOwnersOfParent": ("10", "36"),
+        }
+        for tag, (half, annual) in values.items():
+            facts[tag] = {"units": {"EUR": [{
+                "start": "2024-01-01", "end": "2024-06-30", "val": half,
+                "accn": "half", "form": "6-K", "filed": "2024-08-01",
+            }, {
+                "start": "2024-01-01", "end": "2024-12-31", "val": annual,
+                "accn": "annual", "form": "20-F", "filed": "2025-03-01",
+            }]}}
+
+        class Sec:
+            def company_facts(self, _cik):
+                return {"facts": {"ifrs-full": facts}}
+
+        pipeline = USEarningsBackfillPipeline(object(), Sec(), None)
+        pipeline._fx_to_usd = lambda *_args: Decimal(1)
+
+        first_half = pipeline._ifrs_allocated_candidate(member, 2024, 1)
+        second_half = pipeline._ifrs_allocated_candidate(member, 2024, 4)
+
+        self.assertEqual((first_half.top_line, first_half.operating_income, first_half.net_income),
+                         (Decimal("50"), Decimal("10"), Decimal("5")))
+        self.assertEqual((second_half.top_line, second_half.operating_income, second_half.net_income),
+                         (Decimal("70"), Decimal("20"), Decimal("13")))
+        self.assertTrue(first_half.source_filing_id.startswith("allocated-ifrs:"))
+
     def test_range_failure_cleans_only_current_period_and_stops(self):
         class Repository:
             def __init__(self):
@@ -905,6 +942,30 @@ class USEarningsTransformTests(unittest.TestCase):
         partial = complete.with_changes(top_line=None, source_filing_id="new-cik", is_pending=True)
 
         self.assertEqual(_select_backfill_fact([partial, complete]), complete)
+
+    def test_backfill_six_k_calendar_key_does_not_overwrite_off_calendar_fiscal_quarter(self):
+        from earnings_us.backfill import _noncolliding_backfill_fiscal_key
+
+        fact = USFinancialFact(
+            company_id="us:cik:0001650372", fiscal_year=2022, fiscal_quarter=2,
+            period_start=None, period_end=date(2022, 6, 30),
+            top_line=Decimal("100"), operating_income=Decimal("10"), net_income=Decimal("8"),
+            source_filing_id="six-k", filing_date=date(2022, 8, 1), is_pending=False,
+        )
+
+        class Repository:
+            def company_history(self, _company_ids):
+                return [{
+                    "market_year": 2022, "market_quarter": 1,
+                    "fiscal_year": 2022, "fiscal_quarter": 3,
+                }, {
+                    "market_year": 2021, "market_quarter": 4,
+                    "fiscal_year": 2022, "fiscal_quarter": 2,
+                }]
+
+        result = _noncolliding_backfill_fiscal_key(Repository(), fact, 2022, 2)
+
+        self.assertEqual((result.fiscal_year, result.fiscal_quarter), (2022, 4))
 
     def test_backfill_resolves_predecessor_cik_by_strict_name_when_old_ticker_is_missing(self):
         class Repository:
