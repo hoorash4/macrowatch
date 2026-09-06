@@ -43,7 +43,7 @@ def _backfill_name_matches(left: str, right: str) -> bool:
     def clean(value: str) -> str:
         return " ".join(
             word for word in value.split()
-            if word.lower().strip(".,()") not in {"cls", "cs"}
+            if word.lower().strip(".,()") not in {"cls", "cmn", "cs"}
         )
 
     return _name_match_score(clean(left), clean(right)) >= 100
@@ -179,7 +179,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
             ticker = str(row.get("ticker") or "").strip().upper()
             name = str(row.get("company_name") or "").strip()
             same_ticker = bool(member.ticker and ticker and member.ticker.upper() == ticker)
-            same_name = bool(name and _name_match_score(member.company_name, name) >= 100)
+            same_name = bool(name and _backfill_name_matches(member.company_name, name))
             if cik and cik != current_cik and (same_ticker or same_name):
                 alternative_ciks.add(cik)
         result = []

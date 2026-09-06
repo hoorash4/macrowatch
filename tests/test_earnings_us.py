@@ -8,6 +8,7 @@ from earnings_us.models import MarketSecurity, USCompany, USFinancialFact, marke
 from earnings_us.backfill import (
     USEarningsBackfillPipeline,
     _historical_ticker_directory,
+    _backfill_name_matches,
     _select_backfill_fact,
     _verified_backfill_security,
 )
@@ -877,6 +878,9 @@ class USEarningsTransformTests(unittest.TestCase):
         )
 
         self.assertEqual(result.cik, "0001650372")
+
+    def test_backfill_name_match_ignores_historical_common_stock_marker(self):
+        self.assertTrue(_backfill_name_matches("MARVELL TECH INC CMN", "Marvell Technology, Inc."))
 
     def test_backfill_security_preserves_historical_ticker_owner_with_different_name(self):
         security = MarketSecurity(
