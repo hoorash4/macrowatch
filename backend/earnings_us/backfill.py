@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from .constituents import _name_match_score
-from .models import USFinancialFact
+from .models import MarketSecurity, USFinancialFact
 from .pipeline import (
     MARKETS, USEarningsAutomaticPipeline, fact_from_row, market_period,
     previous_market_period,
@@ -73,6 +74,24 @@ def _historical_ticker_directory(rows: list[dict], directory: dict[str, str], is
     }
 
 
+def _verified_backfill_security(
+    security: MarketSecurity,
+    reference_date: date,
+    directory: dict[str, str],
+    issuer_titles: dict[str, list[str]],
+    has_reference_facts,
+) -> MarketSecurity:
+    """Repair a resolver result only when the current named issuer has period coverage."""
+    current_cik = normalize_cik(directory.get(security.ticker))
+    if (
+        current_cik and current_cik != normalize_cik(security.cik)
+        and any(_backfill_name_matches(security.name, title) for title in issuer_titles.get(current_cik, ()))
+        and has_reference_facts(current_cik, reference_date)
+    ):
+        return replace(security, cik=current_cik)
+    return security
+
+
 class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
     """Automatic collector's SEC interpretation, with authoritative period replacement."""
 
@@ -97,8 +116,26 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         historical_directory = _historical_ticker_directory(
             self.repository.us_active_companies(year), directory, self.sec.company_ticker_rows(),
         )
-        sp100 = self.constituents.sp100_historical(reference_date, directory, historical_directory)
-        nasdaq100 = self.constituents.nasdaq100(reference_date, directory, historical_directory)
+        issuer_titles: dict[str, list[str]] = {}
+        for _, title, cik in self.sec.company_ticker_rows():
+            normalized = normalize_cik(cik)
+            if normalized and title:
+                issuer_titles.setdefault(normalized, []).append(title)
+
+        def verify(rows: list[MarketSecurity]) -> list[MarketSecurity]:
+            verified = [
+                _verified_backfill_security(
+                    security, reference_date, directory, issuer_titles,
+                    self.constituents._has_company_facts_for_reference,
+                )
+                for security in rows
+            ]
+            if len({security.company_id for security in verified}) != 100:
+                raise ProviderError(f"{rows[0].market_id} identity verification did not preserve 100 companies")
+            return verified
+
+        sp100 = verify(self.constituents.sp100_historical(reference_date, directory, historical_directory))
+        nasdaq100 = verify(self.constituents.nasdaq100(reference_date, directory, historical_directory))
         by_market = {"us_sp100": sp100, "us_nasdaq100": nasdaq100}
         if write:
             securities = [*sp100, *nasdaq100]

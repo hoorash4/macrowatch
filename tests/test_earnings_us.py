@@ -9,6 +9,7 @@ from earnings_us.backfill import (
     USEarningsBackfillPipeline,
     _historical_ticker_directory,
     _select_backfill_fact,
+    _verified_backfill_security,
 )
 from earnings_us.backfill_cli import chronological_period_range, period_range, resumable_periods, run_earnings_range
 from earnings_us.constituents import (
@@ -863,6 +864,32 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertNotIn("TEAM", result)
         self.assertEqual(result["TGT"], "0000027419")
+
+    def test_backfill_security_repairs_current_named_issuer_on_wrong_cik(self):
+        security = MarketSecurity(
+            "TEAM", "ATLASSIAN CLS A CS", "0000027419", Decimal("1"), 1,
+            date(2022, 6, 30), "us_nasdaq100",
+        )
+
+        result = _verified_backfill_security(
+            security, date(2022, 6, 30), {"TEAM": "0001650372"},
+            {"0001650372": ["Atlassian Corp"]}, lambda cik, reference: True,
+        )
+
+        self.assertEqual(result.cik, "0001650372")
+
+    def test_backfill_security_preserves_historical_ticker_owner_with_different_name(self):
+        security = MarketSecurity(
+            "OLD", "Historical Holdings", "0000000001", Decimal("1"), 1,
+            date(2018, 6, 30), "us_nasdaq100",
+        )
+
+        result = _verified_backfill_security(
+            security, date(2018, 6, 30), {"OLD": "0000000002"},
+            {"0000000002": ["Modern Software"]}, lambda cik, reference: True,
+        )
+
+        self.assertEqual(result.cik, "0000000001")
 
     def test_backfill_complete_predecessor_fact_can_replace_partial_successor_fact(self):
         complete = USFinancialFact(
