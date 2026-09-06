@@ -332,6 +332,7 @@ class USIndexConstituentClient:
         self.request_count = 0
         self._name_cik_cache: dict[tuple[str, int | None], str | None] = {}
         self._financial_filer_cache: dict[str, bool] = {}
+        self._financial_fact_periods_cache: dict[str, tuple[date, ...]] = {}
         self._historical_ticker_by_cik: dict[str, str] = {}
         self._oef_legacy_accessions_cache: set[str] | None = None
 
@@ -572,6 +573,48 @@ class USIndexConstituentClient:
         self._financial_filer_cache[normalized] = result
         return result
 
+    def _company_fact_periods(self, cik: str) -> tuple[date, ...]:
+        """Return real financial-statement period ends published by this CIK."""
+        normalized = normalize_cik(cik) or ""
+        cached = self._financial_fact_periods_cache.get(normalized)
+        if cached is not None:
+            return cached
+        try:
+            payload = self.sec.company_facts(normalized)
+        except ProviderError:
+            result: tuple[date, ...] = ()
+        else:
+            periods: set[date] = set()
+            facts = payload.get("facts") if isinstance(payload, dict) else None
+            for taxonomy in facts.values() if isinstance(facts, dict) else ():
+                for fact in taxonomy.values() if isinstance(taxonomy, dict) else ():
+                    units = fact.get("units") if isinstance(fact, dict) else None
+                    for rows in units.values() if isinstance(units, dict) else ():
+                        for row in rows if isinstance(rows, list) else ():
+                            if not isinstance(row, dict) or str(row.get("form") or "").upper() not in {
+                                "10-Q", "10-K", "10-Q/A", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A",
+                            }:
+                                continue
+                            try:
+                                periods.add(date.fromisoformat(str(row["end"])))
+                            except (KeyError, ValueError):
+                                continue
+            result = tuple(sorted(periods))
+        self._financial_fact_periods_cache[normalized] = result
+        return result
+
+    def _has_company_facts_for_reference(self, cik: str, reference_date: date) -> bool:
+        """Reject a successor CIK whose reporting history does not cover the historical constituent date."""
+        if not hasattr(self.sec, "company_facts"):
+            return True
+        earliest = reference_date - timedelta(days=450)
+        latest = reference_date + timedelta(days=120)
+        periods = self._company_fact_periods(cik)
+        return (
+            any(earliest <= period <= latest for period in periods)
+            if periods else self._has_company_facts(cik)
+        )
+
     def _securities(self, market_id: str, reference_date: date, rows: Iterable[SourceHolding], directory: dict[str, str]) -> list[MarketSecurity]:
         by_company: dict[str, tuple[MarketSecurity, Decimal, bool]] = {}
         ticker_by_cik: dict[str, str] = {}
@@ -589,20 +632,23 @@ class USIndexConstituentClient:
 
         def current_directory_cik(name: str) -> str | None:
             exact = issuer_directory.get(_normal_name(name), set())
-            financial_exact = {cik for cik in exact if self._has_company_facts(cik)}
+            financial_exact = {cik for cik in exact if self._has_company_facts_for_reference(cik, reference_date)}
             if len(financial_exact) == 1:
                 return next(iter(financial_exact))
             scored = [(score, cik) for title, cik in issuer_rows for score in [_name_match_score(name, title)] if score]
             best = max((score for score, _ in scored), default=0)
             matches = {
                 cik for score, cik in scored
-                if score == best and self._has_company_facts(cik)
+                if score == best and self._has_company_facts_for_reference(cik, reference_date)
             }
             if best >= 100 and len(matches) == 1:
                 return next(iter(matches))
             # A same-name security can outrank the renamed operating issuer.
             # Re-rank only candidates that actually publish company facts.
-            financial_scored = [(score, cik) for score, cik in scored if self._has_company_facts(cik)]
+            financial_scored = [
+                (score, cik) for score, cik in scored
+                if self._has_company_facts_for_reference(cik, reference_date)
+            ]
             financial_best = max((score for score, _ in financial_scored), default=0)
             financial_matches = {cik for score, cik in financial_scored if score == financial_best}
             return next(iter(financial_matches)) if financial_best >= 100 and len(financial_matches) == 1 else None
@@ -631,8 +677,9 @@ class USIndexConstituentClient:
             # reorganization.  Trust today's ticker directory for a historical
             # row only when its issuer name still describes the source company.
             current_titles = issuer_titles_by_cik.get(cik, ()) if cik is not None else ()
-            if cik is not None and name and current_titles and not any(
-                _name_match_score(name, title) >= 100 for title in current_titles
+            if cik is not None and (
+                not self._has_company_facts_for_reference(cik, reference_date)
+                or (name and current_titles and not any(_name_match_score(name, title) >= 100 for title in current_titles))
             ):
                 pending.append(((ticker, name, selection_value), cik))
                 continue
@@ -648,7 +695,12 @@ class USIndexConstituentClient:
         # below the SEC's public request-rate limit.
         def resolve(item: tuple[SourceHolding, str | None]) -> tuple[str, str, Decimal | None, str | None]:
             (ticker, name, selection_value), fallback_cik = item
-            cik = self._cik_for_name(name, reference_date) or self._cik_for_ticker(ticker, reference_date) or fallback_cik
+            candidates = (
+                self._cik_for_name(name, reference_date),
+                self._cik_for_ticker(ticker, reference_date),
+                fallback_cik,
+            )
+            cik = next((item for item in candidates if item and self._has_company_facts_for_reference(item, reference_date)), None)
             return ticker, name, selection_value, cik
 
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -804,3 +856,4 @@ class USIndexConstituentClient:
                 continue
             return self._securities("us_sp100", reference_date, rows, directory)
         raise ProviderError(f"OEF filings for {target} did not contain an S&P 100 holdings schedule")
+
