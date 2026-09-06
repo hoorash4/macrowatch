@@ -37,8 +37,20 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         """Persist one exact historical index membership only after both 100-company sets validate."""
         reference_date = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
         directory = self.sec.ticker_directory()
-        sp100 = self.constituents.sp100_historical(reference_date, directory)
-        nasdaq100 = self.constituents.nasdaq100(reference_date, directory)
+        historical_ciks: dict[str, set[str]] = {}
+        for row in self.repository.us_active_companies(year):
+            ticker = str(row.get("ticker") or "").strip().upper()
+            cik = str(row.get("cik") or "").strip()
+            if ticker and cik:
+                historical_ciks.setdefault(ticker, set()).add(cik)
+        # Reuse only unambiguous mappings already validated and persisted by a
+        # neighbouring historical period. Reused tickers with multiple CIKs
+        # remain unresolved and must go through the period-scoped SEC search.
+        historical_directory = {
+            ticker: next(iter(ciks)) for ticker, ciks in historical_ciks.items() if len(ciks) == 1
+        }
+        sp100 = self.constituents.sp100_historical(reference_date, directory, historical_directory)
+        nasdaq100 = self.constituents.nasdaq100(reference_date, directory, historical_directory)
         by_market = {"us_sp100": sp100, "us_nasdaq100": nasdaq100}
         if write:
             securities = [*sp100, *nasdaq100]
@@ -103,3 +115,4 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
         if write:
             self.repository.save_us_state("backfill", status, {"period": result["period"]})
         return result
+
