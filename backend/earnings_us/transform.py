@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from .models import USFinancialFact
+from .models import USFinancialFact, market_period
 
 
 METRIC_BASES = {
@@ -138,9 +138,9 @@ def _metric_value(
     return None, None, None, None
 
 
-def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) -> dict[date, int]:
-    """Map each physical year end to its earliest (original) SEC fiscal-year label."""
-    result: dict[date, int] = {}
+def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) -> list[date]:
+    """Return physical year ends independently of mutable SEC fiscal-year labels."""
+    result: set[date] = set()
     for groups in entries.values():
         for components in groups:
             for rows in components:
@@ -153,18 +153,16 @@ def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) ->
                     except (KeyError, ValueError):
                         continue
                     if (end - start).days + 1 >= 300:
-                        fiscal_year = int(row.get("fy") or 0)
-                        if fiscal_year:
-                            result[end] = min(fiscal_year, result.get(end, fiscal_year))
-    return result
+                        result.add(end)
+    return sorted(result)
 
 
-def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: dict[date, int], fallback: int) -> int:
+def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date], fallback: int) -> int:
     """Build a stable fiscal key from the represented period, not mutable SEC ``fy`` metadata."""
     if quarter == 4:
-        return annual_ends.get(period_end, fallback)
+        return market_period(period_end)[0]
     following = [end for end in annual_ends if period_end <= end <= period_end.fromordinal(period_end.toordinal() + 370)]
-    return annual_ends[min(following)] if following else fallback
+    return market_period(min(following))[0] if following else fallback
 
 
 def extract_new_sec_facts(company_id: str, payload: dict[str, Any], accessions: set[str]) -> list[USFinancialFact]:
