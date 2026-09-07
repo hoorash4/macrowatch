@@ -1538,6 +1538,23 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(result.top_line, Decimal("200"))
         self.assertFalse(result.is_pending)
 
+    def test_financial_company_accepts_extension_with_reported_revenue_label(self):
+        source = payload()
+        source["facts"]["us-gaap"].pop("Revenues")
+        source["facts"]["bank"] = {
+            "IssuerSpecificRevenue": {
+                "label": "Total revenues, net of interest expense",
+                "units": {"USD": [entry(
+                    fy=2026, fp="Q2", accn="q2", start="2025-05-01", end="2025-07-31",
+                    filed="2025-08-20", value="200",
+                )]},
+            },
+        }
+
+        result = extract_new_sec_facts("us:cik:bank-label", source, {"q2"})[0]
+
+        self.assertEqual(result.top_line, Decimal("200"))
+
     def test_reported_operating_income_has_priority_over_pretax_income(self):
         source = payload()
         source["facts"]["us-gaap"]["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"] = {

@@ -51,6 +51,19 @@ EXTENSION_METRIC_BASES = {
     ),
 }
 
+# The SEC company-facts feed retains the issuer's display label for extensions.
+# Resolve the exact reported bank top line by that label when the issuer's
+# extension tag name differs from the common aliases above.
+EXTENSION_METRIC_LABELS = {
+    "top_line": {"total revenues net of interest expense"},
+}
+
+
+def _normalized_extension_label(value: object) -> str:
+    return " ".join(
+        "".join(character if character.isalnum() else " " for character in str(value or "").lower()).split()
+    )
+
 
 def _normalized_sec_row(
     row: dict[str, Any], annual_ends: list[date], relabel_keys: set[tuple[int, str]],
@@ -118,19 +131,21 @@ def _entry_groups(
                 _normalized_sec_row(item, annual_ends or [], relabel_keys) for item in rows
             ])
         result.append(components)
-    for basis in EXTENSION_METRIC_BASES.get(metric, ()):
-        components = []
-        for tag in basis:
-            extension_fact = next((
-                fact for namespace, taxonomy in taxonomies.items()
-                if namespace not in {"us-gaap", "dei"} and isinstance(taxonomy, dict)
-                for name, fact in taxonomy.items()
-                if name == tag and isinstance(fact, dict)
-            ), {})
+    extension_labels = EXTENSION_METRIC_LABELS.get(metric, set())
+    extension_tags = {tag for basis in EXTENSION_METRIC_BASES.get(metric, ()) for tag in basis}
+    if extension_tags or extension_labels:
+        extension_facts = [
+            fact for namespace, taxonomy in taxonomies.items()
+            if namespace not in {"us-gaap", "dei"} and isinstance(taxonomy, dict)
+            for name, fact in taxonomy.items()
+            if isinstance(fact, dict) and (
+                name in extension_tags or _normalized_extension_label(fact.get("label")) in extension_labels
+            )
+        ]
+        for extension_fact in extension_facts:
             units = extension_fact.get("units", {}).get("USD", {}) if isinstance(extension_fact, dict) else {}
             rows = [item for item in units if isinstance(item, dict)] if isinstance(units, list) else []
-            components.append([_normalized_sec_row(item, annual_ends or [], set()) for item in rows])
-        result.append(components)
+            result.append([[_normalized_sec_row(item, annual_ends or [], set()) for item in rows]])
     return result
 
 
