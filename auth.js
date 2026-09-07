@@ -48,6 +48,22 @@
     return data;
   }
 
+  async function invokeEmailSettings(action, payload = {}, retried = false) {
+    const token = await getAccessToken();
+    const response = await fetch(`${AUTH_SUPABASE_URL}/functions/v1/notification-settings`, {
+      method: 'POST',
+      headers: { apikey: AUTH_SUPABASE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && !retried) {
+      const refreshed = await authClient.auth.refreshSession();
+      if (!refreshed.error && refreshed.data.session) return invokeEmailSettings(action, payload, true);
+    }
+    if (!response.ok || data?.error) throw new Error(data?.error || `이메일 설정 요청에 실패했습니다. (${response.status})`);
+    return data;
+  }
+
   async function beginKakaoLogin() {
     setBusy(true);
     setMessage();
@@ -152,6 +168,26 @@
     }
   }
 
+  function setEmailStatus(address, active, message) {
+    elements.emailStatus.textContent = message || (active ? `${address}로 지표 변동 알림을 받습니다.` : '이메일 알림을 설정하지 않았습니다.');
+    elements.emailBadge.textContent = active ? '사용 중' : '미설정';
+    elements.emailBadge.className = active
+      ? 'shrink-0 rounded-full border border-emerald-700/50 bg-emerald-950/60 px-2.5 py-1 text-[11px] font-semibold text-emerald-400'
+      : 'shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400';
+    elements.emailAddress.value = address || '';
+    elements.emailRemoveButton.classList.toggle('hidden', !active);
+  }
+
+  async function loadEmailStatus() {
+    setEmailStatus('', false, '설정 상태 확인 중');
+    try {
+      const data = await invokeEmailSettings('status');
+      setEmailStatus(data?.address || '', Boolean(data?.is_active));
+    } catch (error) {
+      setEmailStatus('', false, error.message || '이메일 설정을 확인하지 못했습니다.');
+    }
+  }
+
   async function loadProfileIdentity() {
     elements.profileUsername.textContent = '확인 중';
     try {
@@ -181,6 +217,11 @@
     elements.kakaoBadge = document.getElementById('kakao-status-badge');
     elements.kakaoConnectButton = document.getElementById('kakao-connect-button');
     elements.kakaoUnlinkButton = document.getElementById('kakao-unlink-button');
+    elements.emailStatus = document.getElementById('email-alert-status');
+    elements.emailBadge = document.getElementById('email-alert-badge');
+    elements.emailAddress = document.getElementById('email-alert-address');
+    elements.emailSaveButton = document.getElementById('email-alert-save-button');
+    elements.emailRemoveButton = document.getElementById('email-alert-remove-button');
 
     elements.form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -225,7 +266,7 @@
     });
     document.getElementById('profile-button')?.addEventListener('click', async () => {
       elements.profileModal.classList.remove('hidden');
-      await Promise.all([loadProfileIdentity(), loadKakaoStatus()]);
+      await Promise.all([loadProfileIdentity(), loadKakaoStatus(), loadEmailStatus()]);
     });
     document.getElementById('profile-close-button')?.addEventListener('click', () => {
       elements.profileModal.classList.add('hidden');
@@ -237,6 +278,20 @@
       try { await invokeKakao('unlink'); await loadKakaoStatus(); }
       catch (error) { window.alert(error.message || '카카오 연결을 해제하지 못했습니다.'); }
       finally { elements.kakaoUnlinkButton.disabled = false; }
+    });
+    elements.emailSaveButton.addEventListener('click', async () => {
+      const address = elements.emailAddress.value.trim();
+      elements.emailSaveButton.disabled = true;
+      try { await invokeEmailSettings('save', { address }); await loadEmailStatus(); }
+      catch (error) { window.alert(error.message || '이메일 알림을 저장하지 못했습니다.'); }
+      finally { elements.emailSaveButton.disabled = false; }
+    });
+    elements.emailRemoveButton.addEventListener('click', async () => {
+      if (!window.confirm('이메일 알림을 해제할까요?')) return;
+      elements.emailRemoveButton.disabled = true;
+      try { await invokeEmailSettings('remove'); await loadEmailStatus(); }
+      catch (error) { window.alert(error.message || '이메일 알림을 해제하지 못했습니다.'); }
+      finally { elements.emailRemoveButton.disabled = false; }
     });
     document.getElementById('password-change-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();

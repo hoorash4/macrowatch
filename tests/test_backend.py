@@ -7,6 +7,7 @@ import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +88,63 @@ class TargetConditionTests(unittest.TestCase):
         self.assertIn("4.6 → 4.7", db.assertion[1]["text"])
         self.assertEqual(db.patches[0]["body"]["status"], "sent")
         self.assertEqual(db.patches[0]["body"]["attempt_count"], 2)
+
+    def test_target_alert_is_enqueued_once_per_active_channel(self) -> None:
+        result = check_targets.CheckResult(
+            target={"id": 3, "user_id": "11111111-1111-4111-8111-111111111111", "condition_type": "changed"},
+            previous_value=Decimal("4.6"), current_value=Decimal("4.7"), should_alert=True,
+        )
+
+        class Database:
+            def __init__(self) -> None:
+                self.rows = []
+
+            def request(self, method, table, **kwargs):
+                if method == "GET" and table == "notification_channels":
+                    return [
+                        {"user_id": result.target["user_id"], "channel": "kakao_self", "config": {}, "is_active": True},
+                        {"user_id": result.target["user_id"], "channel": "email", "config": {"address": "user@example.com"}, "is_active": True},
+                    ]
+                if method == "POST" and table == "alert_events":
+                    self.rows = kwargs["body"]
+                    return self.rows
+                raise AssertionError((method, table, kwargs))
+
+        db = Database()
+        check_targets.enqueue_alerts(db, [result])
+        self.assertEqual({row["channel"] for row in db.rows}, {"kakao_self", "email"})
+        self.assertTrue(all(row["status"] == "pending" for row in db.rows))
+
+    def test_email_target_alert_is_sent_and_marked_independently(self) -> None:
+        event = {
+            "id": 43, "target_id": 3, "user_id": "11111111-1111-4111-8111-111111111111",
+            "previous_value": "4.6", "current_value": "4.7", "condition_type": "changed",
+            "target_value": None, "channel": "email", "status": "pending", "attempt_count": 0,
+            "created_at": "2026-08-29T00:00:00+00:00",
+        }
+
+        class Database:
+            def __init__(self) -> None:
+                self.patches = []
+
+            def request(self, method, table, **kwargs):
+                if method == "GET" and table == "alert_events":
+                    return [event]
+                if method == "GET" and table == "notification_channels":
+                    return [{"user_id": event["user_id"], "config": {"address": "user@example.com"}}]
+                if method == "PATCH" and table == "alert_events":
+                    self.patches.append(kwargs)
+                    return None
+                raise AssertionError((method, table, kwargs))
+
+        db = Database()
+        with patch.object(check_targets, "send_email_alert") as send_email:
+            delivered, failures = check_targets.deliver_queued_alerts(db, [{"id": 3, "title": "미국 10년물 국채 금리"}])
+        self.assertEqual((delivered, failures), (1, 0))
+        send_email.assert_called_once()
+        self.assertEqual(send_email.call_args.args[0], "user@example.com")
+        self.assertIn("4.6 → 4.7", send_email.call_args.args[1])
+        self.assertEqual(db.patches[0]["body"]["status"], "sent")
 
 
 class SharedCalculationTests(unittest.TestCase):
@@ -563,6 +621,17 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("await persistRefresh(refreshed)", kakao_auth)
         self.assertIn("connected: false, last_error: message", kakao_auth)
         self.assertIn("'pending', 'sent', 'failed', 'skipped'", migration)
+
+    def test_target_alerts_support_email_channel_with_user_scoped_settings(self):
+        checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")
+        settings = (ROOT / "supabase/functions/notification-settings/index.ts").read_text(encoding="utf-8")
+        self.assertIn('channel == "email"', checker)
+        self.assertIn("send_email_alert(recipient, message)", checker)
+        self.assertIn("EMAIL_ADMIN", workflow)
+        self.assertIn("EMAIL_APP_KEY", workflow)
+        self.assertIn("auth.auth.getUser(jwt)", settings)
+        self.assertIn('.eq("user_id", user.id).eq("channel", "email")', settings)
 
     def test_news_prompt_remains_secret_driven(self) -> None:
         adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")

@@ -833,6 +833,23 @@
           <i class="fa-solid fa-link mr-2"></i><span>카카오 계정 다시 연결하기</span>
         </button>
         <button id="kakao-unlink-button" type="button" class="mt-2 hidden w-full rounded-lg border border-amber-800/70 py-2.5 text-sm font-bold text-amber-300 hover:bg-amber-950/40">카카오 연동 해제</button>
+      </div>
+      <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-bold text-slate-200"><i class="fa-solid fa-envelope mr-2 text-sky-400"></i>이메일 알림</p>
+            <p id="email-alert-status" class="mt-1 text-xs text-slate-500">설정 상태 확인 중</p>
+          </div>
+          <span id="email-alert-badge" class="shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400">확인 중</span>
+        </div>
+        <label for="email-alert-address" class="sr-only">이메일 수신 주소</label>
+        <div class="mt-4 flex gap-2">
+          <input id="email-alert-address" type="email" autocomplete="email" placeholder="name@example.com" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none">
+          <button id="email-alert-save-button" type="button" class="shrink-0 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-sky-400 disabled:cursor-wait disabled:opacity-60">저장</button>
+        </div>
+        <button id="email-alert-remove-button" type="button" class="mt-2 hidden w-full rounded-lg border border-slate-700 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-800">이메일 알림 해제</button>
+      </div>
+      <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
         <button id="account-delete-button" type="button" class="mt-4 flex w-full items-center justify-center rounded-lg border border-red-800/70 bg-red-950/30 py-2.5 text-sm font-bold text-red-400 transition hover:bg-red-950/60">
           <i class="fa-solid fa-user-slash mr-2"></i>회원 탈퇴
         </button>
@@ -934,7 +951,7 @@
   <script src="autocomplete-off.js?v=1"></script>
   <script src="config.js?v=1"></script>
   <script src="frontend-core.js?v=1"></script>
-  <script src="auth.js?v=17"></script>
+  <script src="auth.js?v=18"></script>
 
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="indicator-terms.js?v=3"></script>

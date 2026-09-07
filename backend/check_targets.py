@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import os
 import re
+import smtplib
+import ssl
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
+from email.message import EmailMessage
 from typing import Any
 from urllib.parse import quote
 
@@ -209,28 +213,62 @@ def kakao_message(results: list[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def configured_channels(db: SupabaseRest, user_ids: set[str]) -> dict[str, set[str]]:
+    if not user_ids:
+        return {}
+    rows = db.request(
+        "GET",
+        "notification_channels",
+        params={
+            "select": "user_id,channel,config,is_active",
+            "user_id": f"in.({','.join(sorted(user_ids))})",
+            "channel": "in.(kakao_self,email)",
+            "is_active": "eq.true",
+        },
+    ) or []
+    configured: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        user_id, channel = str(row.get("user_id") or ""), str(row.get("channel") or "")
+        config = row.get("config") if isinstance(row.get("config"), dict) else {}
+        if channel == "email" and not valid_email_address(config.get("address")):
+            continue
+        if user_id and channel:
+            configured[user_id].add(channel)
+    return configured
+
+
+def valid_email_address(value: Any) -> str | None:
+    address = str(value or "").strip().lower()
+    return address if re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", address) else None
+
+
 def enqueue_alerts(
     db: SupabaseRest,
     results: list[CheckResult],
  ) -> list[dict[str, Any]]:
     if not results:
         return []
+    channels_by_user = configured_channels(
+        db,
+        {str(result.target.get("user_id") or "").strip() for result in results} - {""},
+    )
     rows = []
     for result in results:
         target = result.target
-        rows.append(
-            {
-                "target_id": target["id"],
-                "user_id": target.get("user_id"),
-                "previous_value": json_number(result.previous_value),
-                "current_value": json_number(result.current_value),
-                "condition_type": target.get("condition_type") or "changed",
-                "target_value": target.get("target_value"),
-                "channel": "kakao_self",
-                "status": "pending",
-                "error_message": None,
-            }
-        )
+        user_id = str(target.get("user_id") or "").strip()
+        for channel in channels_by_user.get(user_id, set()):
+            rows.append(
+                {
+                    "target_id": target["id"], "user_id": user_id,
+                    "previous_value": json_number(result.previous_value),
+                    "current_value": json_number(result.current_value),
+                    "condition_type": target.get("condition_type") or "changed",
+                    "target_value": target.get("target_value"), "channel": channel,
+                    "status": "pending", "error_message": None,
+                }
+            )
+    if not rows:
+        return []
     return db.request("POST", "alert_events", body=rows, prefer="return=representation") or []
 
 
@@ -240,7 +278,7 @@ def queued_alerts(db: SupabaseRest) -> list[dict[str, Any]]:
         "GET",
         "alert_events",
         params={
-            "select": "id,target_id,user_id,previous_value,current_value,condition_type,target_value,status,attempt_count,created_at",
+            "select": "id,target_id,user_id,previous_value,current_value,condition_type,target_value,channel,status,attempt_count,created_at",
             "status": "in.(pending,failed)",
             "attempt_count": "lt.5",
             "created_at": f"gte.{cutoff}",
@@ -279,6 +317,38 @@ def alert_chunks(events: list[dict[str, Any]], target_titles: dict[Any, str], ma
     return chunks
 
 
+def email_recipients(db: SupabaseRest, user_ids: set[str]) -> dict[str, str]:
+    if not user_ids:
+        return {}
+    rows = db.request(
+        "GET", "notification_channels",
+        params={"select": "user_id,config", "user_id": f"in.({','.join(sorted(user_ids))})", "channel": "eq.email", "is_active": "eq.true"},
+    ) or []
+    return {
+        str(row.get("user_id")): address
+        for row in rows
+        if isinstance(row.get("config"), dict)
+        if (address := valid_email_address(row["config"].get("address")))
+    }
+
+
+def send_email_alert(recipient: str, message: str) -> None:
+    account = os.getenv("EMAIL_ADMIN", "").strip()
+    password = os.getenv("EMAIL_APP_KEY", "").strip()
+    if not account or not password:
+        raise RuntimeError("이메일 발송 계정 설정이 없습니다.")
+    email = EmailMessage()
+    email["From"], email["To"] = account, recipient
+    email["Subject"] = "[MacroWatch] 지표 추적 알림"
+    email.set_content(f"{message}\n\nhttps://hoorash4.github.io/macrowatch/")
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
+        smtp.ehlo()
+        smtp.starttls(context=ssl.create_default_context())
+        smtp.ehlo()
+        smtp.login(account, password)
+        smtp.send_message(email)
+
+
 def update_delivery_events(
     db: SupabaseRest,
     events: list[dict[str, Any]],
@@ -311,12 +381,12 @@ def deliver_queued_alerts(db: SupabaseRest, targets: list[dict[str, Any]]) -> tu
         return 0, 0
 
     target_titles = {target["id"]: str(target.get("title") or f"지표 {target['id']}") for target in targets}
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     undeliverable: list[dict[str, Any]] = []
     for event in events:
         user_id = str(event.get("user_id") or "").strip()
         if user_id:
-            grouped[user_id].append(event)
+            grouped[(user_id, str(event.get("channel") or "kakao_self"))].append(event)
         else:
             undeliverable.append(event)
 
@@ -331,23 +401,31 @@ def deliver_queued_alerts(db: SupabaseRest, targets: list[dict[str, Any]]) -> tu
         )
         failures += 1
 
-    for user_id, user_events in grouped.items():
+    recipients = email_recipients(db, {user_id for user_id, channel in grouped if channel == "email"})
+    for (user_id, channel), user_events in grouped.items():
         for chunk, message in alert_chunks(user_events, target_titles):
             try:
-                response = db.invoke_function(
-                    "kakao-auth",
-                    {"action": "send_internal", "user_id": user_id, "text": message},
-                )
-                if not isinstance(response, dict) or response.get("sent") is not True:
-                    raise RuntimeError("카카오 전송 함수가 성공을 확인하지 않았습니다.")
+                if channel == "kakao_self":
+                    response = db.invoke_function("kakao-auth", {"action": "send_internal", "user_id": user_id, "text": message})
+                    if not isinstance(response, dict) or response.get("sent") is not True:
+                        raise RuntimeError("카카오 전송 함수가 성공을 확인하지 않았습니다.")
+                elif channel == "email":
+                    recipient = recipients.get(user_id)
+                    if not recipient:
+                        update_delivery_events(db, chunk, status="skipped", error_message="이메일 수신 주소가 없습니다.")
+                        continue
+                    send_email_alert(recipient, message)
+                else:
+                    update_delivery_events(db, chunk, status="skipped", error_message="지원하지 않는 알림 채널입니다.")
+                    continue
                 update_delivery_events(db, chunk, status="sent", error_message=None)
                 delivered += len(chunk)
-                print(f"Kakao notification sent for {len(chunk)} target(s).")
+                print(f"{channel} notification sent for {len(chunk)} target(s).")
             except Exception as exc:
                 failures += 1
                 message_text = str(exc)[:1000]
                 update_delivery_events(db, chunk, status="failed", error_message=message_text)
-                print(f"Kakao notification failed: {message_text}", file=sys.stderr)
+                print(f"{channel} notification failed: {message_text}", file=sys.stderr)
     return delivered, failures
 
 
