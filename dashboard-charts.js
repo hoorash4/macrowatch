@@ -269,113 +269,6 @@ function calculateCorrelation(pairs) {
   return denominator ? numerator / denominator : null;
 }
 
-// 스트레스 지수 공통 차트입니다. 기존 SVG 전체를 가로로 밀던 방식과 달리,
-// 축은 고정하고 현재 보이는 구간만 다시 축척합니다. 따라서 과거·최근 구간을
-// 이동해도 각 구간의 변화폭을 같은 화면 밀도로 읽을 수 있습니다.
-function renderViewportStressChart({ chart, rows, dateKey, primaryKey, secondaryKey, rangeYears, ariaLabel, primaryLabel, secondaryLabel, primaryColor = '#00838c', provisionalColor = '#d97706', secondaryColor = '#6b7280' }) {
-  const data = [...rows]
-    .filter((row) => Number.isFinite(Number(row[primaryKey])))
-    .sort((a, b) => String(a[dateKey]).localeCompare(String(b[dateKey])));
-  if (!chart || !data.length) return false;
-
-  const height = CREDIT_STRESS_CHART_HEIGHT;
-  const axisWidth = 52;
-  const rightAxisWidth = 58;
-  const padding = { top: 20, right: 14, bottom: 32, left: 14 };
-  const width = window.MacroWatchAnalysisChart.historyWidth(data, dateKey === 'month' ? 'month' : 'week', rangeYears);
-  const plotWidth = width - padding.left - padding.right;
-  const x = (index) => padding.left + (plotWidth * index) / Math.max(1, data.length - 1);
-  const primaryValues = data.map((row) => Number(row[primaryKey])).filter(Number.isFinite);
-  const secondaryValues = secondaryKey ? data.map((row) => Number(row[secondaryKey])).filter(Number.isFinite) : [];
-  const hasSecondary = secondaryValues.length > 1;
-  const domainFor = (values, { floor = null } = {}) => {
-    values = values.filter(Number.isFinite);
-    if (!values.length) return { min: floor ?? 0, max: (floor ?? 0) + 1, step: .25 };
-    let min = Math.min(...values);
-    let max = Math.max(...values);
-    const spread = Math.max(max - min, Math.max(Math.abs(max) * .1, 1));
-    min -= spread * .12;
-    max += spread * .12;
-    if (floor != null) min = Math.max(floor, min);
-    const step = window.MacroWatchAnalysisChart.niceStep((max - min) / 4);
-    return {
-      min: Math.floor(min / step) * step,
-      max: Math.ceil(max / step) * step,
-      step,
-    };
-  };
-  const create = (name, attributes = {}) => {
-    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
-    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
-    return element;
-  };
-  const leftAxis = `<svg class="policy-expectation-y-axis" viewBox="0 0 ${axisWidth} ${height}" aria-hidden="true"></svg>`;
-  const rightAxis = hasSecondary ? `<svg class="policy-expectation-y-axis" viewBox="0 0 ${rightAxisWidth} ${height}" aria-hidden="true"></svg>` : '';
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="policy-expectation-chart-layout" style="grid-template-columns:${axisWidth}px minmax(0,1fr)${hasSecondary ? ` ${rightAxisWidth}px` : ''};">${leftAxis}<div class="policy-expectation-chart-frame" data-stress-viewport><svg class="policy-expectation-chart-svg" style="width:${width}px;height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"></svg></div>${rightAxis}</div></div>`;
-  const frame = chart.querySelector('[data-stress-viewport]');
-  const svg = frame?.querySelector('svg');
-  const leftSvg = chart.querySelector('.policy-expectation-y-axis');
-  const rightSvg = hasSecondary ? chart.querySelectorAll('.policy-expectation-y-axis')[1] : null;
-  if (!frame || !svg || !leftSvg) return false;
-
-  const guide = create('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', visibility: 'hidden', 'pointer-events': 'none' });
-  const hoverValue = create('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#fff', 'stroke-width': 4, 'paint-order': 'stroke', visibility: 'hidden', 'pointer-events': 'none' });
-  const hoverPeriod = create('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, visibility: 'hidden', 'pointer-events': 'none' });
-  let currentPrimary = domainFor(primaryValues, { floor: 0 });
-  let currentSecondary = hasSecondary ? domainFor(secondaryValues, { floor: 0 }) : null;
-  const yFor = (domain, value) => padding.top + ((height - padding.top - padding.bottom) * (domain.max - value)) / Math.max(domain.max - domain.min, domain.step);
-  const format = (value) => Math.abs(value) >= 100 ? Math.round(value).toLocaleString('en-US') : Number(value).toFixed(Math.abs(value) < 10 ? 1 : 0);
-  const visibleRows = () => {
-    const start = frame.scrollLeft - 4;
-    const end = frame.scrollLeft + frame.clientWidth + 4;
-    const nearest = data.filter((_, index) => x(index) >= start && x(index) <= end);
-    return nearest.length >= 2 ? nearest : data;
-  };
-  const render = () => {
-    const visible = visibleRows();
-    currentPrimary = domainFor(visible.map((row) => Number(row[primaryKey])).filter(Number.isFinite), { floor: 0 });
-    currentSecondary = hasSecondary ? domainFor(visible.map((row) => Number(row[secondaryKey])).filter(Number.isFinite), { floor: 0 }) : null;
-    const primaryY = (value) => yFor(currentPrimary, value);
-    const secondaryY = (value) => yFor(currentSecondary, value);
-    const primaryPath = monotoneSeriesPath(data, (_, index) => x(index), (row) => primaryY(Number(row[primaryKey])));
-    const secondaryPath = hasSecondary ? monotoneSeriesPath(data, (_, index) => x(index), (row) => secondaryY(Number(row[secondaryKey]))) : '';
-    const ticks = Array.from({ length: 5 }, (_, index) => currentPrimary.max - ((currentPrimary.max - currentPrimary.min) * index / 4));
-    const grid = ticks.map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${primaryY(value)}" y2="${primaryY(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/>`).join('');
-    const yearLabels = data.map((row, index) => {
-      const date = String(row[dateKey]);
-      const previous = data[index - 1];
-      return index && date.slice(0, 4) !== String(previous?.[dateKey] || '').slice(0, 4)
-        ? `<line x1="${x(index)}" x2="${x(index)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${date.slice(0, 4)}</text>` : '';
-    }).join('');
-    const dots = data.map((row, index) => `<circle cx="${x(index)}" cy="${primaryY(Number(row[primaryKey]))}" r="3.25" fill="${row.is_provisional ? provisionalColor : primaryColor}"${row.is_provisional ? ' fill-opacity=".35" stroke-width="1.5"' : ''}/>`).join('');
-    svg.innerHTML = `${grid}${yearLabels}<path d="${primaryPath}" fill="none" stroke="${primaryColor}" stroke-width="3" stroke-linecap="round"/><path d="${secondaryPath}" fill="none" stroke="${secondaryColor}" stroke-width="2" stroke-linecap="round"/>${dots}`;
-    svg.append(guide, hoverValue, hoverPeriod);
-    leftSvg.innerHTML = ticks.map((value) => `<text x="${axisWidth - 6}" y="${primaryY(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${format(value)}</text>`).join('');
-    if (rightSvg && currentSecondary) {
-      const rightTicks = Array.from({ length: 5 }, (_, index) => currentSecondary.max - ((currentSecondary.max - currentSecondary.min) * index / 4));
-      rightSvg.innerHTML = rightTicks.map((value) => `<text x="6" y="${secondaryY(value) + 3}" fill="#64748b" font-size="10">${format(value)}</text>`).join('');
-    }
-  };
-  const showHover = (event) => {
-    const rect = svg.getBoundingClientRect();
-    const point = frame.scrollLeft + ((event.clientX - rect.left) / Math.max(1, rect.width)) * width;
-    const index = data.reduce((nearest, _, candidate) => Math.abs(x(candidate) - point) < Math.abs(x(nearest) - point) ? candidate : nearest, 0);
-    const row = data[index];
-    guide.setAttribute('x1', x(index)); guide.setAttribute('x2', x(index)); guide.setAttribute('visibility', 'visible');
-    hoverValue.setAttribute('x', x(index)); hoverValue.setAttribute('y', padding.top + 12); hoverValue.textContent = `${primaryLabel} ${format(Number(row[primaryKey]))}`; hoverValue.setAttribute('visibility', 'visible');
-    hoverPeriod.setAttribute('x', x(index)); hoverPeriod.setAttribute('y', height - 8); hoverPeriod.textContent = String(row[dateKey]); hoverPeriod.setAttribute('visibility', 'visible');
-  };
-  frame.addEventListener('scroll', () => window.requestAnimationFrame(render), { passive: true });
-  svg.addEventListener('pointermove', showHover);
-  svg.addEventListener('pointerleave', () => [guide, hoverValue, hoverPeriod].forEach((item) => item.setAttribute('visibility', 'hidden')));
-  render();
-  window.MacroWatchAnalysisChart.scrollToLatest(frame);
-  window.requestAnimationFrame(render);
-  const legend = `<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5" style="background:${primaryColor}"></i>${primaryLabel}</span>${hasSecondary ? `<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5" style="background:${secondaryColor}"></i>${secondaryLabel}</span>` : ''}</div>`;
-  chart.insertAdjacentHTML('beforeend', legend);
-  return true;
-}
-
 function renderMarketStressDashboard(rows, weeklyRows = []) {
   if (weeklyRows.length) return renderMarketStressAndTensionChart(weeklyRows);
   const chart = document.getElementById('credit-stress-chart');
@@ -392,11 +285,6 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">표시할 지수 데이터가 없습니다.</div>';
     return;
   }
-  return renderViewportStressChart({
-    chart, rows: data, dateKey: 'month', primaryKey: 'stress_index', secondaryKey: 'sp500_month_end_close',
-    rangeYears: usStressRangeYears, ariaLabel: '미국 시장 스트레스 지수와 S&P 500 월말 종가 추이',
-    primaryLabel: 'US-MSI', secondaryLabel: 'S&P 500 월말 종가', primaryColor: '#b7791f', provisionalColor: '#d97706',
-  });
   const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', usStressRangeYears);
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 52, bottom: 32, left: 52 };
@@ -458,11 +346,6 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
   const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  return renderViewportStressChart({
-    chart, rows: weekly, dateKey: 'week', primaryKey: 'tension_index', secondaryKey: 'sp500_friday_close',
-    rangeYears: usStressRangeYears, ariaLabel: '미국 주간 시장 스트레스 지수와 S&P 500 주간 종가 추이',
-    primaryLabel: 'US-MSI', secondaryLabel: 'S&P 500 주간 종가', primaryColor: '#00838c', provisionalColor: '#d97706',
-  });
   const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -624,13 +507,6 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     chart.innerHTML = `<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">${emptyMessage}</div>`;
     return;
   }
-  if (chartId === 'credit-stress-momentum-chart') {
-    return renderViewportStressChart({
-      chart, rows: data, dateKey: 'month', primaryKey: 'value', secondaryKey: 'average',
-      rangeYears: usStressRangeYears, ariaLabel, primaryLabel: '월간 변화', secondaryLabel: '4개월 평균',
-      primaryColor: lineColor, secondaryColor: averageColor, provisionalColor: lineColor,
-    });
-  }
   const width = chartId === 'credit-stress-momentum-chart' ? window.MacroWatchAnalysisChart.historyWidth(rows, 'month', usStressRangeYears) : 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
@@ -765,11 +641,6 @@ function renderEmStressDashboard(rows) {
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  return renderViewportStressChart({
-    chart, rows: weekly, dateKey: 'week', primaryKey: 'stress_index', secondaryKey: 'eem_weekly_close',
-    rangeYears: emStressRangeYears, ariaLabel: '이머징 시장 스트레스 지수와 EEM 주간 종가 추이',
-    primaryLabel: 'EM-MSI', secondaryLabel: 'EEM 주간 종가', primaryColor: '#00838c', provisionalColor: '#d97706',
-  });
   const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
@@ -884,24 +755,6 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     if (fsiChart) fsiChart.innerHTML = '';
     return;
   }
-  const rendered = renderViewportStressChart({
-    chart, rows: data, dateKey: 'month', primaryKey: 'stress_index', secondaryKey: 'kospi_close',
-    rangeYears: koreaStressRangeYears, ariaLabel: '한국 시장 스트레스 지수와 코스피 월말 종가 추이',
-    primaryLabel: 'K-MSI', secondaryLabel: '코스피 월말 종가', primaryColor: '#00838c', provisionalColor: '#d97706',
-  });
-  if (rendered && fsiChart) {
-    const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)) && Number(row.bok_fsi) !== 0);
-    if (fsiRows.length) {
-      renderViewportStressChart({
-        chart: fsiChart, rows: fsiRows, dateKey: 'month', primaryKey: 'bok_fsi', secondaryKey: null,
-        rangeYears: koreaStressRangeYears, ariaLabel: '한국은행 금융불안지수 보조지표',
-        primaryLabel: '한국은행 FSI', secondaryLabel: '', primaryColor: '#6d4b91', provisionalColor: '#6d4b91',
-      });
-    } else {
-      fsiChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">한국은행 FSI 비교 자료가 연결되면 보조지표로 표시됩니다.</div>';
-    }
-  }
-  return rendered;
   const weeklyKospi = weeklyKospiSource;
   const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', koreaStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
