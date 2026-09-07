@@ -5,72 +5,54 @@
   const names = { pressure: '유동성 압력', capacity: '유동성 여력' };
   const colors = { pressure: '#b4535d', capacity: '#2563a8' };
   const DAY = 86400000;
-  function withTrend(rows) {
-    return rows.map((row, i) => {
-      const window = rows.slice(Math.max(0, i - 2), i + 1);
-      const consecutive = window.length === 3 && window.every((r, j) => {
-        const d = new Date(row.observation_date);
-        d.setUTCMonth(d.getUTCMonth() - 2 + j);
-        return r.observation_date.slice(0, 7) === d.toISOString().slice(0, 7);
-      });
-      return {...row, trend: consecutive ? window.reduce((sum,r)=>sum+Number(r.score),0)/3 : null};
-    });
-  }
   function render(card, state) {
     const host = card.querySelector('[data-liquidity-charts]');
     if (!state.rows.length) { host.textContent = '아직 저장된 유동성 자료가 없습니다.'; return; }
-    const end = Math.max(...state.rows.map(r => Date.parse(r.observation_date)));
-    const all = state.rows;
-    const start = Math.min(...all.map(r => Date.parse(r.observation_date)));
-    const width = utils.timelineWidth(900, start, end, state.years), height = 240, left = 38, right = 15, top = 15, bottom = 30;
-    const x = d => left + (Date.parse(d) - start) / Math.max(DAY, end - start) * (width - left - right);
-    const y = value => top + (100 - value) / 100 * (height - top - bottom);
-    host.innerHTML = ['pressure', 'capacity'].map(metric => {
-      const rows = all.filter(r => r.metric === metric);
-      const last = state.rows.filter(r => r.metric === metric).at(-1);
-      if (!last) return `<p>${names[metric]} 자료가 없습니다.</p>`;
-      const frequency = { D: '일별', W: '주간', M: '월별' }[last.frequency];
-      const labelDate = last.frequency === 'M' ? last.observation_date.slice(0, 7) : last.observation_date;
-      const grids = [0,25,50,75,100].map(v => `<line x1="${left}" x2="${width-right}" y1="${y(v)}" y2="${y(v)}" stroke="#dce5ef"/><text x="${left-8}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-size="11">${v}</text>`).join('');
-      const tickCount = Math.max(5,Math.ceil(width/180));
-      const ticks = Array.from({length:tickCount}, (_,i) => {
-        const d = new Date(start+(end-start)*i/(tickCount-1)).toISOString().slice(0,10);
-        return `<text x="${x(d)}" y="${height-7}" text-anchor="${i===0?'start':i===tickCount-1?'end':'middle'}" fill="#64748b" font-size="11">${d.slice(0,7)}</text>`;
-      }).join('');
-      // Break genuinely missing periods instead of drawing across source outages.
-      const points = [], trendPoints = []; let previous = null;
-      rows.forEach(r => {
-        const time = Date.parse(r.observation_date), maxGap = r.frequency === 'M' ? 45 : r.frequency === 'W' ? 15 : 10;
-        if (previous !== null && time - previous > maxGap * DAY) {
-          points.push({x:NaN,y:NaN}); trendPoints.push({x:NaN,y:NaN});
-        }
-        trendPoints.push({x:x(r.observation_date), y:r.trend === null ? NaN : y(r.trend)});
-        points.push({x:x(r.observation_date),y:y(Number(r.score))}); previous = time;
-      });
-      const stale = end - Date.parse(last.observation_date) > ({D:10,W:21,M:120}[last.frequency])*DAY;
-      return `<div class="mt-4"><div class="flex flex-wrap justify-between gap-2 text-sm"><h3 style="color:${colors[metric]}">${names[metric]}</h3><span class="text-slate-500">${labelDate} · ${last.trend === null ? "3개월 표본 대기" : last.trend.toFixed(1)+" / 100 · 3개월 평균"}${stale?' · 갱신 지연':''}</span></div><svg data-metric="${metric}" viewBox="0 0 ${width} ${height}" style="width:100%;min-height:150px" role="img" aria-label="${names[metric]} ${frequency} 추이"><title>${names[metric]}: ${labelDate}, ${Number(last.score).toFixed(1)}점</title>${grids}${ticks}<path d="${utils.monotonePath(points)}" fill="none" stroke="${colors[metric]}" stroke-width="1.3" opacity="0.3"/><path d="${utils.monotonePath(trendPoints)}" fill="none" stroke="${colors[metric]}" stroke-width="3"/><line data-cursor x1="0" x2="0" y1="${top}" y2="${height-bottom}" stroke="#64748b" visibility="hidden"/><text data-cursor-value y="12" font-size="12" fill="${colors[metric]}" visibility="hidden"></text><text data-cursor-date y="${height-4}" font-size="12" fill="#334155" visibility="hidden"></text></svg><p class="text-xs text-slate-500">옅은 선: 월별 점수 · 굵은 선: 최근 3개월 평균</p><p data-detail="${metric}" class="text-xs text-slate-500" style="min-height:1.3em">${rows.some(r=>r.is_warmup)?'초기 표본이 적은 구간 포함 · 날짜를 가리키면 표본 수 표시':'날짜를 가리키면 점수와 표본 수 표시'}</p></div>`;
+    const rows = state.rows;
+    const end = Math.max(...rows.map(r=>Date.parse(r.observation_date)));
+    const start = Math.min(...rows.map(r=>Date.parse(r.observation_date)));
+    const width = utils.timelineWidth(900,start,end,state.years), height = 280;
+    const left=38,right=15,top=32,bottom=32;
+    const x = d=>left+(Date.parse(d)-start)/Math.max(DAY,end-start)*(width-left-right);
+    const y = value=>top+(100-value)/100*(height-top-bottom);
+    const grid = [0,25,50,75,100].map(v=>`<line x1="${left}" x2="${width-right}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0"/><text x="${left-8}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-size="11">${v}</text>`).join('');
+    const tickCount=Math.max(5,Math.ceil(width/180));
+    const ticks=Array.from({length:tickCount},(_,i)=>{
+      const d=new Date(start+(end-start)*i/(tickCount-1)).toISOString().slice(0,10);
+      return `<text x="${x(d)}" y="${height-7}" text-anchor="${i===0?'start':i===tickCount-1?'end':'middle'}" fill="#64748b" font-size="11">${d.slice(0,7)}</text>`;
     }).join('');
-    host.querySelectorAll('svg[data-metric]').forEach(svg => {
-      svg.style.height = '240px';
-      utils.scrollableSvg(svg, width, 900);
-      const rows = all.filter(r => r.metric === svg.dataset.metric);
-      svg.addEventListener('pointermove', event => {
-        if (!rows.length) return;
-        const rect = svg.getBoundingClientRect(), px = (event.clientX-rect.left)/rect.width*width;
-        const nearest = rows.reduce((a,b)=>Math.abs(x(a.observation_date)-px)<Math.abs(x(b.observation_date)-px)?a:b);
-        const line = svg.querySelector('[data-cursor]');
-        line.setAttribute('x1',x(nearest.observation_date)); line.setAttribute('x2',x(nearest.observation_date)); line.setAttribute('visibility','visible');
-        const cursorX = x(nearest.observation_date);
-        const anchor = cursorX < left + 65 ? 'start' : cursorX > width - right - 65 ? 'end' : 'middle';
-        const valueText = svg.querySelector('[data-cursor-value]');
-        const dateText = svg.querySelector('[data-cursor-date]');
-        [valueText,dateText].forEach(label => { label.setAttribute('x',cursorX); label.setAttribute('text-anchor',anchor); label.setAttribute('visibility','visible'); });
-        valueText.textContent = nearest.trend === null ? Number(nearest.score).toFixed(1) : nearest.trend.toFixed(1);
-        dateText.textContent = nearest.observation_date.slice(0,7);
-        host.querySelector(`[data-detail="${svg.dataset.metric}"]`).textContent = `${nearest.frequency==='M'?nearest.observation_date.slice(0,7):nearest.observation_date} · 월별 ${Number(nearest.score).toFixed(1)}점 · 3개월 평균 ${nearest.trend === null ? "대기" : nearest.trend.toFixed(1)+"점"} · 표본 ${nearest.sample_count}개${nearest.is_warmup?' · 초기 표본 부족':''}`;
+    const paths=['pressure','capacity'].map(metric=>{
+      const points=[]; let previous=null;
+      rows.filter(r=>r.metric===metric).forEach(r=>{
+        const time=Date.parse(r.observation_date);
+        if(previous!==null && time-previous>45*DAY) points.push({x:NaN,y:NaN});
+        points.push({x:x(r.observation_date),y:y(Number(r.score))}); previous=time;
       });
-      svg.addEventListener('pointerleave',()=>svg.querySelectorAll('[data-cursor],[data-cursor-value],[data-cursor-date]').forEach(label=>label.setAttribute('visibility','hidden')));
+      return `<path d="${utils.monotonePath(points)}" fill="none" stroke="${colors[metric]}" stroke-width="2.5"/>`;
+    }).join('');
+    const latest=['pressure','capacity'].map(metric=>{
+      const r=rows.filter(row=>row.metric===metric).at(-1);
+      return r ? `<span style="color:${colors[metric]}">${names[metric]} ${Number(r.score).toFixed(1)} · ${r.observation_date.slice(0,7)}</span>` : '';
+    }).join(' ');
+    host.innerHTML=`<div class="flex flex-wrap gap-x-5 gap-y-1 text-sm mb-2">${latest}</div><svg viewBox="0 0 ${width} ${height}" style="height:${height}px;display:block;background:#fff" role="img" aria-label="유동성 압력과 여력 월별 추이">${grid}${ticks}${paths}<line data-cursor y1="${top}" y2="${height-bottom}" stroke="#64748b" visibility="hidden"/><text data-cursor-value y="17" font-size="12" fill="#334155" visibility="hidden"></text><text data-cursor-date y="${height-3}" font-size="12" fill="#334155" visibility="hidden"></text></svg><p class="text-xs text-slate-500 mt-2">월별 점수 · 압력이 높을수록 자금조달 긴장, 여력이 높을수록 자금 기반이 풍부합니다.</p>`;
+    const svg=host.querySelector('svg');
+    utils.scrollableSvg(svg,width,900);
+    const dates=[...new Set(rows.map(r=>r.observation_date))].sort();
+    svg.addEventListener('pointermove',event=>{
+      const rect=svg.getBoundingClientRect(), px=(event.clientX-rect.left)/rect.width*width;
+      const nearest=dates.reduce((a,b)=>Math.abs(x(a)-px)<Math.abs(x(b)-px)?a:b);
+      const cursorX=x(nearest), anchor=cursorX<left+140?'start':cursorX>width-right-140?'end':'middle';
+      const line=svg.querySelector('[data-cursor]');
+      line.setAttribute('x1',cursorX); line.setAttribute('x2',cursorX); line.setAttribute('visibility','visible');
+      const value=svg.querySelector('[data-cursor-value]'),dateLabel=svg.querySelector('[data-cursor-date]');
+      [value,dateLabel].forEach(label=>{label.setAttribute('x',cursorX);label.setAttribute('text-anchor',anchor);label.setAttribute('visibility','visible');});
+      value.textContent=['pressure','capacity'].map(metric=>{
+        const row=rows.find(r=>r.metric===metric && r.observation_date===nearest);
+        return `${metric==='pressure'?'압력':'여력'} ${row?Number(row.score).toFixed(1):'미발표'}`;
+      }).join(' · ');
+      dateLabel.textContent=nearest.slice(0,7);
     });
+    svg.addEventListener('pointerleave',()=>svg.querySelectorAll('[data-cursor],[data-cursor-value],[data-cursor-date]').forEach(el=>el.setAttribute('visibility','hidden')));
   }
   async function load({supabaseClient}) {
     if (!supabaseClient) return;
@@ -82,7 +64,7 @@
         .order('observation_date').order('metric').range(from,to));
       if (error) { card.querySelector('[data-liquidity-charts]').textContent='유동성 자료를 불러오지 못했습니다. 다시 로그인하거나 잠시 후 새로고침해 주세요.'; return; }
       state.rows=(data||[]).filter(r=>r.score!==null && Number.isFinite(Number(r.score)) && Number.isFinite(Date.parse(r.observation_date)));
-      state.rows=['pressure','capacity'].flatMap(metric=>withTrend(state.rows.filter(r=>r.metric===metric)));
+      
       render(card,state);
       const controls=card.querySelector('[data-liquidity-ranges]');
       if (!controls.dataset.bound) {
