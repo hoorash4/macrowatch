@@ -100,5 +100,45 @@
     return monotonePathSegments(points).map((segment) => segment.path).join(' ');
   }
 
-  window.MacroWatchAnalysisChart = { niceStep, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+
+  function historyWidth(rows, dateKey, years, baseWidth = 920) {
+    const dates = rows.map(row => Date.parse(row[dateKey])).filter(Number.isFinite);
+    return dates.length ? timelineWidth(baseWidth, Math.min(...dates), Math.max(...dates), years) : baseWidth;
+  }
+
+  function scrollableSvg(svg, width, baseWidth = 920) {
+    if (!svg) return;
+    const frame = document.createElement('div');
+    frame.dataset.historyScroll = 'true';
+    frame.style.cssText = 'overflow-x:auto;overflow-y:hidden;width:100%;min-width:0;background:#fff;';
+    frame.tabIndex = 0;
+    frame.setAttribute('aria-label', '전체 이력 가로 스크롤');
+    svg.before(frame);
+    frame.append(svg);
+    svg.style.width = `${width / baseWidth * 100}%`;
+    svg.style.maxWidth = 'none';
+    svg.style.display = 'block';
+    // Relative width works even when a dashboard panel starts hidden.
+    const observer = new ResizeObserver(() => {
+      if (frame.clientWidth > 0) {
+        scrollToLatest(frame);
+        observer.disconnect();
+      }
+    });
+    observer.observe(frame);
+    frame.addEventListener('scroll', () => {
+      const card = frame.closest('[data-dashboard-panel]');
+      if (!card) return;
+      const ratio = frame.scrollLeft / Math.max(1, frame.scrollWidth - frame.clientWidth);
+      card.querySelectorAll('[data-history-scroll]').forEach(peer => {
+        if (peer !== frame) {
+          const target = ratio * Math.max(0, peer.scrollWidth - peer.clientWidth);
+          if (Math.abs(peer.scrollLeft - target) > 1) peer.scrollLeft = target;
+        }
+      });
+    });
+  }
+
+  window.MacroWatchAnalysisChart = { niceStep, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
+

@@ -59,16 +59,9 @@ let usStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
 let koreaStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
 let emStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
 
-function filterStressHistory(rows, dateKey, rangeYears) {
-  if (rangeYears === 'max') return rows;
-  const latest = rows.reduce((value, row) => {
-    const timestamp = Date.parse(`${String(row[dateKey] || '')}T00:00:00Z`);
-    return Number.isFinite(timestamp) ? Math.max(value, timestamp) : value;
-  }, Number.NEGATIVE_INFINITY);
-  if (!Number.isFinite(latest)) return [];
-  const cutoff = new Date(latest);
-  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - Number(rangeYears));
-  return rows.filter((row) => Date.parse(`${String(row[dateKey] || '')}T00:00:00Z`) >= cutoff.getTime());
+function filterStressHistory(rows) {
+  // Range is a viewport scale; retain every stored period for scrolling.
+  return rows;
 }
 
 function bindStressRangeControls(selector, attribute, getRange, setRange, reload) {
@@ -292,7 +285,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">표시할 지수 데이터가 없습니다.</div>';
     return;
   }
-  const width = 920;
+  const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', usStressRangeYears);
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const scores = data.map((row) => Number(row.stress_index));
@@ -346,13 +339,14 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
+  window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
 }
 
 function renderMarketStressAndTensionChart(weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
   const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
+  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
@@ -387,6 +381,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     },
   );
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths}${years}</svg>`;
+  window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const createSvgElement = (name, attributes) => {
@@ -512,7 +507,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     chart.innerHTML = `<div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">${emptyMessage}</div>`;
     return;
   }
-  const width = 920;
+  const width = chartId === 'credit-stress-momentum-chart' ? window.MacroWatchAnalysisChart.historyWidth(rows, 'month', usStressRangeYears) : 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
   const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0), Math.abs(row.secondaryAverage || 0)]), 0.005);
@@ -533,6 +528,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const secondaryAverageLines = secondaryAverageColor ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.secondaryAverage))}" fill="none" stroke="${secondaryAverageColor}" stroke-width="2.5" stroke-opacity="0.48" stroke-linecap="round"/>` : '';
   const yearGuides = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4)).map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${lines}${secondaryAverageLines}${averageLines}</svg>`;
+  if (chartId === 'credit-stress-momentum-chart') window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
   const svg = chart.querySelector('svg');
   if (!svg) return;
   const hoverGuide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -645,7 +641,7 @@ function renderEmStressDashboard(rows) {
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
+  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -678,6 +674,7 @@ function renderEmStressDashboard(rows) {
     },
   );
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths}${eemLabels}${years}</svg>`;
+  window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
 
   const createElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -759,7 +756,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     return;
   }
   const weeklyKospi = weeklyKospiSource;
-  const width = 920, height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
+  const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', koreaStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -788,6 +785,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const kospi = hasKospi ? `<path d="${monotoneSeriesPath(weeklyKospi, (row) => x(row.week), (row) => kospiY(Number(row.kospi_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>` : '';
   const kospiLabels = hasKospi ? [kospiLower, (kospiLower + kospiUpper) / 2, kospiUpper].map((value) => `<text x="${width - padding.right + 8}" y="${kospiY(value) + 3}" fill="#6b7280" font-size="10">${Math.round(value).toLocaleString('en-US')}</text>`).join('') : '';
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="한국 시장 스트레스 지수와 코스피 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${kospi}${stress}${kospiLabels}</svg>`;
+  window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
 
   const createSvgElement = (name, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -856,6 +854,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     .join('');
   const fsiLine = `<path d="${monotoneSeriesPath(fsiRows, (row) => x(row.month), (row) => fsiY(Number(row.bok_fsi)))}" fill="none" stroke="#6d4b91" stroke-width="2.25" stroke-linecap="round"/>`;
   fsiChart.innerHTML = `<svg class="w-full" style="height:${fsiHeight}px" viewBox="0 0 ${width} ${fsiHeight}" role="img" aria-label="한국은행 금융불안지수 보조지표"><line x1="${fsiPadding.left}" x2="${fsiPadding.left}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/><line x1="${width - fsiPadding.right}" x2="${width - fsiPadding.right}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/>${fsiGrid}${fsiYearGuides}${fsiLine}</svg>`;
+  window.MacroWatchAnalysisChart.scrollableSvg(fsiChart.querySelector('svg'), width);
   attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', mapY: fsiY, chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI', showLabels: false });
 }
 
@@ -1175,3 +1174,4 @@ window.MacroWatchDashboard?.registerLoader(async () => {
   ]);
 });
 })();
+

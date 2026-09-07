@@ -16,20 +16,13 @@
       return {...row, trend: consecutive ? window.reduce((sum,r)=>sum+Number(r.score),0)/3 : null};
     });
   }
-  function visible(rows, years, end) {
-    if (years === 'max') return rows;
-    const start = new Date(end); start.setUTCFullYear(start.getUTCFullYear() - Number(years));
-    return rows.filter(r => Date.parse(r.observation_date) >= start.getTime());
-  }
   function render(card, state) {
     const host = card.querySelector('[data-liquidity-charts]');
     if (!state.rows.length) { host.textContent = '아직 저장된 유동성 자료가 없습니다.'; return; }
     const end = Math.max(...state.rows.map(r => Date.parse(r.observation_date)));
-    const all = visible(state.rows, state.years, end);
-    const start = state.years === 'max' ? Math.min(...all.map(r => Date.parse(r.observation_date))) : (() => {
-      const d = new Date(end); d.setUTCFullYear(d.getUTCFullYear() - Number(state.years)); return d.getTime();
-    })();
-    const width = 900, height = 240, left = 38, right = 15, top = 15, bottom = 30;
+    const all = state.rows;
+    const start = Math.min(...all.map(r => Date.parse(r.observation_date)));
+    const width = utils.timelineWidth(900, start, end, state.years), height = 240, left = 38, right = 15, top = 15, bottom = 30;
     const x = d => left + (Date.parse(d) - start) / Math.max(DAY, end - start) * (width - left - right);
     const y = value => top + (100 - value) / 100 * (height - top - bottom);
     host.innerHTML = ['pressure', 'capacity'].map(metric => {
@@ -39,9 +32,10 @@
       const frequency = { D: '일별', W: '주간', M: '월별' }[last.frequency];
       const labelDate = last.frequency === 'M' ? last.observation_date.slice(0, 7) : last.observation_date;
       const grids = [0,25,50,75,100].map(v => `<line x1="${left}" x2="${width-right}" y1="${y(v)}" y2="${y(v)}" stroke="#dce5ef"/><text x="${left-8}" y="${y(v)+4}" text-anchor="end" fill="#64748b" font-size="11">${v}</text>`).join('');
-      const ticks = Array.from({length:5}, (_,i) => {
-        const d = new Date(start+(end-start)*i/4).toISOString().slice(0,10);
-        return `<text x="${x(d)}" y="${height-7}" text-anchor="${i===0?'start':i===4?'end':'middle'}" fill="#64748b" font-size="11">${d.slice(0,7)}</text>`;
+      const tickCount = Math.max(5,Math.ceil(width/180));
+      const ticks = Array.from({length:tickCount}, (_,i) => {
+        const d = new Date(start+(end-start)*i/(tickCount-1)).toISOString().slice(0,10);
+        return `<text x="${x(d)}" y="${height-7}" text-anchor="${i===0?'start':i===tickCount-1?'end':'middle'}" fill="#64748b" font-size="11">${d.slice(0,7)}</text>`;
       }).join('');
       // Break genuinely missing periods instead of drawing across source outages.
       const points = [], trendPoints = []; let previous = null;
@@ -54,9 +48,11 @@
         points.push({x:x(r.observation_date),y:y(Number(r.score))}); previous = time;
       });
       const stale = end - Date.parse(last.observation_date) > ({D:10,W:21,M:120}[last.frequency])*DAY;
-      return `<div class="mt-4"><div class="flex flex-wrap justify-between gap-2 text-sm"><h3 style="color:${colors[metric]}">${names[metric]}</h3><span class="text-slate-500">${labelDate} · ${last.trend === null ? "3개월 표본 대기" : last.trend.toFixed(1)+" / 100 · 3개월 평균"}${stale?' · 갱신 지연':''}</span></div><svg data-metric="${metric}" viewBox="0 0 ${width} ${height}" style="width:100%;min-height:150px" role="img" aria-label="${names[metric]} ${frequency} 추이"><title>${names[metric]}: ${labelDate}, ${Number(last.score).toFixed(1)}점</title>${grids}${ticks}<path d="${utils.monotonePath(points)}" fill="none" stroke="${colors[metric]}" stroke-width="1.3" opacity="0.3"/><path d="${utils.monotonePath(trendPoints)}" fill="none" stroke="${colors[metric]}" stroke-width="3"/><line data-cursor x1="0" x2="0" y1="${top}" y2="${height-bottom}" stroke="#64748b" visibility="hidden"/></svg><p class="text-xs text-slate-500">옅은 선: 월별 점수 · 굵은 선: 최근 3개월 평균</p><p data-detail="${metric}" class="text-xs text-slate-500" style="min-height:1.3em">${rows.some(r=>r.is_warmup)?'초기 표본이 적은 구간 포함 · 날짜를 가리키면 표본 수 표시':'날짜를 가리키면 점수와 표본 수 표시'}</p></div>`;
+      return `<div class="mt-4"><div class="flex flex-wrap justify-between gap-2 text-sm"><h3 style="color:${colors[metric]}">${names[metric]}</h3><span class="text-slate-500">${labelDate} · ${last.trend === null ? "3개월 표본 대기" : last.trend.toFixed(1)+" / 100 · 3개월 평균"}${stale?' · 갱신 지연':''}</span></div><svg data-metric="${metric}" viewBox="0 0 ${width} ${height}" style="width:100%;min-height:150px" role="img" aria-label="${names[metric]} ${frequency} 추이"><title>${names[metric]}: ${labelDate}, ${Number(last.score).toFixed(1)}점</title>${grids}${ticks}<path d="${utils.monotonePath(points)}" fill="none" stroke="${colors[metric]}" stroke-width="1.3" opacity="0.3"/><path d="${utils.monotonePath(trendPoints)}" fill="none" stroke="${colors[metric]}" stroke-width="3"/><line data-cursor x1="0" x2="0" y1="${top}" y2="${height-bottom}" stroke="#64748b" visibility="hidden"/><text data-cursor-value y="12" font-size="12" fill="${colors[metric]}" visibility="hidden"></text><text data-cursor-date y="${height-4}" font-size="12" fill="#334155" visibility="hidden"></text></svg><p class="text-xs text-slate-500">옅은 선: 월별 점수 · 굵은 선: 최근 3개월 평균</p><p data-detail="${metric}" class="text-xs text-slate-500" style="min-height:1.3em">${rows.some(r=>r.is_warmup)?'초기 표본이 적은 구간 포함 · 날짜를 가리키면 표본 수 표시':'날짜를 가리키면 점수와 표본 수 표시'}</p></div>`;
     }).join('');
     host.querySelectorAll('svg[data-metric]').forEach(svg => {
+      svg.style.height = '240px';
+      utils.scrollableSvg(svg, width, 900);
       const rows = all.filter(r => r.metric === svg.dataset.metric);
       svg.addEventListener('pointermove', event => {
         if (!rows.length) return;
@@ -64,9 +60,16 @@
         const nearest = rows.reduce((a,b)=>Math.abs(x(a.observation_date)-px)<Math.abs(x(b.observation_date)-px)?a:b);
         const line = svg.querySelector('[data-cursor]');
         line.setAttribute('x1',x(nearest.observation_date)); line.setAttribute('x2',x(nearest.observation_date)); line.setAttribute('visibility','visible');
+        const cursorX = x(nearest.observation_date);
+        const anchor = cursorX < left + 65 ? 'start' : cursorX > width - right - 65 ? 'end' : 'middle';
+        const valueText = svg.querySelector('[data-cursor-value]');
+        const dateText = svg.querySelector('[data-cursor-date]');
+        [valueText,dateText].forEach(label => { label.setAttribute('x',cursorX); label.setAttribute('text-anchor',anchor); label.setAttribute('visibility','visible'); });
+        valueText.textContent = nearest.trend === null ? Number(nearest.score).toFixed(1) : nearest.trend.toFixed(1);
+        dateText.textContent = nearest.observation_date.slice(0,7);
         host.querySelector(`[data-detail="${svg.dataset.metric}"]`).textContent = `${nearest.frequency==='M'?nearest.observation_date.slice(0,7):nearest.observation_date} · 월별 ${Number(nearest.score).toFixed(1)}점 · 3개월 평균 ${nearest.trend === null ? "대기" : nearest.trend.toFixed(1)+"점"} · 표본 ${nearest.sample_count}개${nearest.is_warmup?' · 초기 표본 부족':''}`;
       });
-      svg.addEventListener('pointerleave',()=>svg.querySelector('[data-cursor]').setAttribute('visibility','hidden'));
+      svg.addEventListener('pointerleave',()=>svg.querySelectorAll('[data-cursor],[data-cursor-value],[data-cursor-date]').forEach(label=>label.setAttribute('visibility','hidden')));
     });
   }
   async function load({supabaseClient}) {
