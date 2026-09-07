@@ -648,7 +648,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-week li \{[\s\S]*border-bottom:1px dashed rgba\(47,105,154,\.16\)/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*background:rgba\(47,105,154,\.07\)/);
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*color:#7890a2;/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{\s*justify-self:center;\s*box-sizing:border-box;/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*justify-self:center;\s*box-sizing:border-box;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(4\)::before \{ display:none; \}/);
   assert.match(styles, /sector-flow-week-current > ol > li::after \{[\s\S]*right:7\.325rem;[\s\S]*border-left:1px dashed rgba\(47,105,154,\.2\)/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span:first-child em \{[\s\S]*border-radius:\.4rem;[\s\S]*text-align:center;/);
@@ -666,6 +666,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /function sectorLeadership\(value\)/);
   assert.match(charts, /leadership_score/);
   assert.match(styles, /\.sector-flow-leadership > span > i/);
+  assert.match(styles, /\.sector-flow-week-current \.sector-flow-streak::before/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);
   assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.66rem;[\s\S]*font-weight:500;/);
   assert.doesNotMatch(styles, /margin-left:\.28rem/);
