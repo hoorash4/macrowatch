@@ -370,6 +370,26 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.net_income, Decimal("8000000"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_backfill_accepts_h1_captioned_financial_summary(self):
+        html = """
+        <table><tr><th>H1 2026 Metric</th><th>As Reported</th></tr>
+          <tr><th>(€M)</th></tr>
+          <tr><td>Revenue (€M)</td><td>100</td></tr>
+          <tr><td>Operating profit (€M)</td><td>20</td></tr>
+          <tr><td>Profit after taxes (€M)</td><td>16</td></tr></table>
+        """
+        filing = SixKFiling("h1-caption", date(2026, 8, 1), date(2026, 7, 3), "half-year.htm")
+
+        fact = extract_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2026, 2,
+            lambda _currency, _date: Decimal(1), backfill_mode=True,
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual((fact.top_line, fact.operating_income, fact.net_income), (
+            Decimal("50000000"), Decimal("10000000"), Decimal("8000000"),
+        ))
+
     def test_six_k_backfill_derives_q1_from_q2_and_half_year_presentation(self):
         html = """
         <img alt="P&amp;L Q2 &amp; H1 2026 EUR mn Q2 2026 Q2 2025 H1 2026 H1 2025
