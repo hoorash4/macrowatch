@@ -665,6 +665,7 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week-current \{ min-width:56rem; \}/);
   assert.match(charts, /function sectorLeadership\(value\)/);
   assert.match(charts, /leadership_score/);
+  assert.match(charts, /sector-flow-leadership sector-flow-leadership-empty"><span><i style="width:0%"><\/i><\/span><em>—<\/em>/);
   assert.match(styles, /\.sector-flow-leadership > span > i/);
   assert.match(styles, /\.sector-flow-week-current \.sector-flow-streak::before \{[\s\S]*left:calc\(50% - 3\.825rem\)/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);
