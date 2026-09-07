@@ -700,6 +700,8 @@ class SourceContractTests(unittest.TestCase):
         for pipeline in (us_pipeline, korea_pipeline, em_pipeline):
             self.assertIn("RETENTION_MONTHS = 37", pipeline)
             self.assertIn("month_start_months_ago(today, RETENTION_MONTHS)", pipeline)
+        self.assertIn("today = date.today()", korea_pipeline)
+        self.assertIn("today_month = today.replace(day=1).isoformat()", korea_pipeline)
         self.assertIn('delete_before("us_market_stress_index_monthly"', us_pipeline)
         self.assertIn('delete_before("us_market_tension_weekly"', us_pipeline)
         self.assertIn('delete_before("korea_market_stress_monthly"', korea_pipeline)
