@@ -1,0 +1,40 @@
+name: Refresh liquidity pressure and capacity
+
+on:
+  push:
+    branches: [main]
+    paths: [backend/liquidity_pipeline.py, .github/workflows/liquidity.yml]
+  schedule:
+    # 18:10 KST, after Korean daily source releases. Monthly data stay monthly.
+    - cron: '10 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-liquidity
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        country: [US, KR]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: pip install --disable-pip-version-check requests==2.32.5
+      - name: Test liquidity contracts
+        run: python -m unittest discover -s tests -p test_liquidity.py -v
+      - name: Collect, calculate, atomically save and verify
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python backend/liquidity_pipeline.py --country '${{ matrix.country }}'

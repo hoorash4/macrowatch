@@ -26,6 +26,7 @@ on:
       - "Refresh market-implied policy expectations"
       - "Refresh sector flow"
       - "Refresh U.S. credit stress"
+      - "Refresh liquidity pressure and capacity"
     types: [completed]
 
 permissions:
