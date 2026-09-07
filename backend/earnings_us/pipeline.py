@@ -10,10 +10,10 @@ from typing import Any
 from .aggregation import aggregate_us_market, with_market_metrics
 from .models import MarketSecurity, USCompany, USFinancialFact, market_period
 from .constituents import USIndexConstituentClient
-from .providers import ProviderError, SecEdgarClient
+from .providers import ProviderError, SecEdgarClient, SecFinancialFiling
 from .repository import USEarningsRepository
-from .transform import extract_new_sec_facts
-from .six_k import extract_six_k_fact
+from .transform import extract_inline_xbrl_fact, extract_new_sec_facts
+from .six_k import SixKFiling, extract_six_k_fact, has_six_k_results_context
 from earnings_v2.providers import EcosFxClient
 
 
@@ -106,6 +106,75 @@ class USEarningsAutomaticPipeline:
         ))
         return [selected]
 
+    def _exact_inline_xbrl_candidate(
+        self, company_id: str, cik: str, year: int, quarter: int,
+        *, filings: list[SecFinancialFiling] | None = None,
+    ) -> USFinancialFact | None:
+        """Read an exact quarter from a domestic filing when companyfacts lags."""
+        if not hasattr(self.sec, "financial_filings") or not hasattr(self.sec, "inline_xbrl_instance"):
+            return None
+        if filings is None:
+            target_end = period_end(year, quarter)
+            filings = self.sec.financial_filings(
+                cik, filed_from=target_end - timedelta(days=10), filed_to=target_end + timedelta(days=180),
+            )
+        candidates: list[USFinancialFact] = []
+        for filing in filings:
+            if filing.report_date is not None and market_period(filing.report_date) != (year, quarter):
+                continue
+            content = self.sec.inline_xbrl_instance(cik, filing)
+            if content is None:
+                continue
+            fact = extract_inline_xbrl_fact(
+                company_id, content, year=year, quarter=quarter,
+                accession=filing.accession, filing_date=filing.filing_date,
+            )
+            if fact is not None:
+                candidates.append(fact)
+        return max(candidates, key=lambda fact: (fact.period_end, fact.filing_date)) if candidates else None
+
+    @staticmethod
+    def _financial_queue_item(company: dict[str, Any], filing: SecFinancialFiling) -> dict[str, Any]:
+        return {
+            "company_id": str(company["company_id"]), "company_name": str(company.get("company_name") or ""),
+            "cik": str(company.get("cik") or ""), "accession": filing.accession,
+            "filing_date": filing.filing_date.isoformat(),
+            "report_date": filing.report_date.isoformat() if filing.report_date else None,
+            "primary_document": filing.primary_document,
+        }
+
+    @staticmethod
+    def _six_k_queue_item(company: dict[str, Any], filing: SixKFiling) -> dict[str, Any]:
+        return {
+            "company_id": str(company["company_id"]), "company_name": str(company.get("company_name") or ""),
+            "cik": str(company.get("cik") or ""), "accession": filing.accession,
+            "filing_date": filing.filing_date.isoformat(),
+            "report_date": filing.report_date.isoformat() if filing.report_date else None,
+            "primary_document": filing.primary_document,
+        }
+
+    @staticmethod
+    def _queued_financial_filing(item: dict[str, Any]) -> SecFinancialFiling | None:
+        try:
+            return SecFinancialFiling(
+                str(item["accession"]), date.fromisoformat(str(item["filing_date"])),
+                date.fromisoformat(str(item["report_date"])) if item.get("report_date") else None,
+                str(item["primary_document"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _queued_six_k_filing(item: dict[str, Any]) -> SixKFiling | None:
+        try:
+            return SixKFiling(
+                str(item["accession"]), date.fromisoformat(str(item["filing_date"])),
+                date.fromisoformat(str(item["report_date"])) if item.get("report_date") else None,
+                str(item["primary_document"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
     def snapshot(self, *, today: date | None = None, write: bool = True) -> dict[str, Any]:
         current_day = today or date.today()
         year, quarter = latest_completed_period(current_day)
@@ -183,33 +252,120 @@ class USEarningsAutomaticPipeline:
             since = date.fromisoformat(str(cursor.get("last_checked_date")))
         except (TypeError, ValueError):
             since = current_day - timedelta(days=1)
-        companies = self.repository.us_active_companies(current_day.year - 2)
+        default_since = min(since, current_day)
+        company_cursors = cursor.get("company_last_checked_dates")
+        if not isinstance(company_cursors, dict):
+            company_cursors = {}
+        queued_financial_items = cursor.get("unresolved_financial_filings")
+        if not isinstance(queued_financial_items, list):
+            queued_financial_items = []
+        queued_six_k_items = cursor.get("unresolved_six_k_filings")
+        if not isinstance(queued_six_k_items, list):
+            queued_six_k_items = []
+        companies_by_id = {
+            str(company["company_id"]): company
+            for company in self.repository.us_active_companies(current_day.year - 2)
+        }
+        for item in [*queued_financial_items, *queued_six_k_items]:
+            if not isinstance(item, dict) or not item.get("company_id"):
+                continue
+            companies_by_id.setdefault(str(item["company_id"]), {
+                "company_id": str(item["company_id"]), "company_name": str(item.get("company_name") or ""),
+                "cik": str(item.get("cik") or ""),
+            })
+        companies = list(companies_by_id.values())
+        queued_financial_by_company: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        queued_six_k_by_company: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        for item in queued_financial_items:
+            if isinstance(item, dict) and item.get("company_id") and item.get("accession"):
+                queued_financial_by_company[str(item["company_id"])][str(item["accession"])] = item
+        for item in queued_six_k_items:
+            if isinstance(item, dict) and item.get("company_id") and item.get("accession"):
+                queued_six_k_by_company[str(item["company_id"])][str(item["accession"])] = item
         changed: dict[tuple[str, int, int], USFinancialFact] = {}
         issues: list[dict[str, str]] = []
         checked = 0
         for company in companies:
+            company_id = str(company["company_id"])
             cik = str(company.get("cik") or "")
             if not cik:
                 issues.append({"company": str(company.get("company_name") or company["company_id"]), "reason": "SEC CIK missing"})
                 continue
             checked += 1
             try:
-                accessions = self.sec.new_financial_accessions(cik, since)
-                company_id = str(company["company_id"])
-                for fact in extract_new_sec_facts(company_id, self.sec.company_facts(cik), accessions) if accessions else ():
-                    changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
-                six_k_from = min(since, current_day) - timedelta(days=2)
-                for filing in self.sec.six_k_filings(cik, filed_from=six_k_from, filed_to=current_day):
+                company_since = date.fromisoformat(str(company_cursors.get(company_id)))
+            except (TypeError, ValueError):
+                company_since = default_since
+            # Preserve this company's own lower bound if any provider call fails.
+            # Advancing only the global cursor would otherwise age out its filing.
+            company_cursors.setdefault(company_id, company_since.isoformat())
+            try:
+                financial_filings: dict[str, SecFinancialFiling] = {}
+                if hasattr(self.sec, "financial_filings"):
+                    financial_filings.update({
+                        filing.accession: filing for filing in self.sec.financial_filings(
+                            cik, filed_from=min(company_since, current_day), filed_to=current_day,
+                        )
+                    })
+                    for item in queued_financial_by_company.get(company_id, {}).values():
+                        filing = self._queued_financial_filing(item)
+                        if filing is not None:
+                            financial_filings[filing.accession] = filing
+                    if financial_filings:
+                        facts = extract_new_sec_facts(
+                            company_id, self.sec.company_facts(cik), set(financial_filings),
+                        )
+                        represented = {fact.source_filing_id for fact in facts}
+                        for fact in facts:
+                            changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
+                        for accession, filing in financial_filings.items():
+                            if accession in represented:
+                                queued_financial_by_company[company_id].pop(accession, None)
+                                continue
+                            target = market_period(filing.report_date) if filing.report_date else latest_completed_period(filing.filing_date)
+                            fact = self._exact_inline_xbrl_candidate(
+                                company_id, cik, target[0], target[1], filings=[filing],
+                            )
+                            if fact is not None:
+                                changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
+                                queued_financial_by_company[company_id].pop(accession, None)
+                            else:
+                                queued_financial_by_company[company_id][accession] = self._financial_queue_item(company, filing)
+                else:
+                    accessions = self.sec.new_financial_accessions(cik, company_since)
+                    for fact in extract_new_sec_facts(
+                        company_id, self.sec.company_facts(cik), accessions,
+                    ) if accessions else ():
+                        changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
+
+                six_k_filings: dict[str, SixKFiling] = {
+                    filing.accession: filing for filing in self.sec.six_k_filings(
+                        cik, filed_from=min(company_since, current_day) - timedelta(days=2), filed_to=current_day,
+                    )
+                }
+                for item in queued_six_k_by_company.get(company_id, {}).values():
+                    filing = self._queued_six_k_filing(item)
+                    if filing is not None:
+                        six_k_filings[filing.accession] = filing
+                for filing in six_k_filings.values():
+                    documents = self.sec.six_k_documents(cik, filing)
                     targets = {latest_completed_period(filing.filing_date)}
                     if filing.report_date is not None:
                         targets.add(market_period(filing.report_date))
+                    produced = False
                     for year, quarter in targets:
                         fact = extract_six_k_fact(
-                            company_id, filing, self.sec.six_k_documents(cik, filing), year, quarter,
+                            company_id, filing, documents, year, quarter,
                             self._fx_to_usd,
                         )
                         if fact is not None:
                             changed[(fact.company_id, fact.fiscal_year, fact.fiscal_quarter)] = fact
+                            produced = True
+                    if produced or not has_six_k_results_context(documents):
+                        queued_six_k_by_company[company_id].pop(filing.accession, None)
+                    else:
+                        queued_six_k_by_company[company_id][filing.accession] = self._six_k_queue_item(company, filing)
+                company_cursors[company_id] = current_day.isoformat()
             except ProviderError as exc:
                 issues.append({"company": str(company.get("company_name") or company["company_id"]), "reason": str(exc)})
         if write and changed:
@@ -217,12 +373,21 @@ class USEarningsAutomaticPipeline:
             affected = {market_period(fact.period_end) for fact in changed.values()}
             for year, quarter in affected:
                 self.recalculate_market_period(year, quarter)
-        status = "incomplete" if issues else "ready"
+        unresolved_financial = [item for group in queued_financial_by_company.values() for item in group.values()]
+        unresolved_six_k = [item for group in queued_six_k_by_company.values() for item in group.values()]
+        status = "incomplete" if issues or unresolved_financial or unresolved_six_k else "ready"
         result = {"date": current_day.isoformat(), "status": status, "write": write, "companies_checked": checked,
                   "updated_company_quarters": len(changed), "issues": issues,
+                  "unresolved_financial_filings": len(unresolved_financial),
+                  "unresolved_six_k_filings": len(unresolved_six_k),
                   "requests": {"sec": self.sec.request_count}}
         if write:
-            self.repository.save_us_state("daily_edgar", status, {"last_checked_date": current_day.isoformat()}, None)
+            self.repository.save_us_state("daily_edgar", status, {
+                "last_checked_date": current_day.isoformat(),
+                "company_last_checked_dates": company_cursors,
+                "unresolved_financial_filings": unresolved_financial,
+                "unresolved_six_k_filings": unresolved_six_k,
+            }, None)
         return result
 
     def retry_incomplete(self, *, today: date | None = None, write: bool = True) -> dict[str, Any]:
@@ -290,6 +455,9 @@ class USEarningsAutomaticPipeline:
                 for key in company_pending:
                     for fact in self._six_k_candidates(company_id, cik, key[1], key[2]):
                         refreshed[(fact.fiscal_year, fact.fiscal_quarter)] = fact
+                    exact = self._exact_inline_xbrl_candidate(company_id, cik, key[1], key[2])
+                    if exact is not None:
+                        refreshed[(exact.fiscal_year, exact.fiscal_quarter)] = exact
                 disappeared = current_ciks is not None and cik.zfill(10) not in current_ciks
                 delisting_dates = self.sec.delisting_dates(cik) if disappeared else []
             except ProviderError as exc:

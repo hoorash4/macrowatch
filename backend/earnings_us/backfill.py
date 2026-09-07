@@ -11,7 +11,7 @@ from .pipeline import (
     previous_market_period,
 )
 from .providers import ProviderError, normalize_cik
-from .transform import extract_inline_xbrl_fact, extract_new_sec_facts
+from .transform import extract_new_sec_facts
 from .six_k import extract_q1_from_h1_six_k_fact, extract_six_k_fact
 
 
@@ -251,26 +251,7 @@ class USEarningsBackfillPipeline(USEarningsAutomaticPipeline):
 
     def _inline_xbrl_candidate(self, member, year: int, quarter: int):
         """Recover a domestic quarter when SEC companyfacts has not caught up."""
-        if not hasattr(self.sec, "financial_filings") or not hasattr(self.sec, "inline_xbrl_instance"):
-            return None
-        target_end = date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
-        filings = self.sec.financial_filings(
-            member.cik, filed_from=target_end, filed_to=target_end + timedelta(days=180),
-        )
-        candidates = []
-        for filing in filings:
-            if filing.report_date is None or market_period(filing.report_date) != (year, quarter):
-                continue
-            content = self.sec.inline_xbrl_instance(member.cik, filing)
-            if content is None:
-                continue
-            fact = extract_inline_xbrl_fact(
-                member.company_id, content, year=year, quarter=quarter,
-                accession=filing.accession, filing_date=filing.filing_date,
-            )
-            if fact is not None:
-                candidates.append(fact)
-        return _select_backfill_fact(candidates) if candidates else None
+        return self._exact_inline_xbrl_candidate(member.company_id, member.cik, year, quarter)
 
     def _q1_h1_bridge_candidate(self, member, year: int, quarter: int):
         """Use a later Q2/H1 6-K only to complete an incomplete calendar Q1."""
