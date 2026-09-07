@@ -15,7 +15,7 @@ import requests
 
 from common import SupabaseRest, fetch_fred_observations, require_env
 
-VERSION = "liquidity-v1"
+VERSION = "liquidity-monthly-v2"
 START = date(2021, 9, 7)  # Initial five-year history; never move this retention boundary.
 KR_PRESSURE_START = date(2021, 11, 25)
 SOURCE_START = date(2016, 8, 1)  # Calibration only; not displayed as backfill.
@@ -210,31 +210,45 @@ def percentile(value, history):
     return 100 * (sum(x < value for x in history) + .5 * sum(x == value for x in history)) / len(history)
 
 
-def calculate(country, data):
+def monthly_features(observations, end):
+    """Average raw features before ranking; publish closed months only."""
+    grouped = {}
+    for day, values in sorted(observations.items()):
+        month = day.replace(day=1)
+        if shift_month(month, 1) > end:
+            continue
+        grouped.setdefault(month, []).append(values)
+    return {month: {key: sum(row[key] for row in rows) / len(rows)
+                    for key in rows[0]} for month, rows in grouped.items()}
+
+
+def calculate(country, data, end=None):
+    end = end or date.today()
     output = []
     for metric, observations in features(country, data).items():
+        observations = monthly_features(observations, end)
         dates = sorted(observations)
         weights = WEIGHTS[country, metric]
         for i, day in enumerate(dates):
             boundary = shift_month(day, -60)
             history = dates[bisect_right(dates, boundary):i+1]
             minimum = KR_PRESSURE_START if (country, metric) == ("KR", "pressure") else START
-            if day < minimum:
+            if day < minimum.replace(day=1):
                 continue
             scores = {name: percentile(observations[day][name], [observations[d][name] for d in history])
                       for name in weights}
             output.append({"country": country, "metric": metric, "observation_date": day.isoformat(),
                            "score": round(sum(scores[k] * w for k, w in weights.items()), 4),
                            "components": observations[day], "component_scores": scores,
-                           "sample_count": len(history), "is_warmup": len(history) < (12 if country == "KR" and metric == "capacity" else 60),
-                           "frequency": "M" if country == "KR" and metric == "capacity" else "W" if metric == "capacity" else "D",
+                           "sample_count": len(history), "is_warmup": len(history) < 12,
+                           "frequency": "M",
                            "method_version": VERSION})
     for metric in ("pressure", "capacity"):
         rows = [r for r in output if r["metric"] == metric]
         if not rows:
             raise RuntimeError(f"No complete {country}/{metric} observations")
         expected = KR_PRESSURE_START if (country, metric) == ("KR", "pressure") else START
-        allowance = 35 if metric == "capacity" and country == "KR" else 10
+        allowance = 35
         if (date.fromisoformat(rows[0]["observation_date"]) - expected).days > allowance:
             raise RuntimeError(f"History coverage missing for {country}/{metric}: {rows[0]['observation_date']}")
     return output
@@ -269,7 +283,7 @@ def main():
         db.request("POST", "rpc/store_liquidity_batch", body={"p_country": args.country, "p_raw": raw, "p_results": results})
         for metric in ("pressure", "capacity"):
             latest = db.request("GET", "liquidity_indices", params={"country": f"eq.{args.country}",
-                                "metric": f"eq.{metric}", "order": "observation_date.desc", "limit": "1"})
+                                "metric": f"eq.{metric}", "method_version": f"eq.{VERSION}", "order": "observation_date.desc", "limit": "1"})
             expected = max(r["observation_date"] for r in results if r["metric"] == metric)
             if not latest or latest[0]["observation_date"] != expected:
                 raise RuntimeError("Post-write verification failed")
@@ -282,3 +296,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

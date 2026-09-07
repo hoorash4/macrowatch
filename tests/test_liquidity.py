@@ -63,10 +63,17 @@ class LiquidityTests(unittest.TestCase):
         with patch.object(lp, 'features', return_value=feature):
             before = lp.calculate('US', {})
             for metric in feature:
-                feature[metric][start+timedelta(days=81)] = {key: 100000 for key in lp.WEIGHTS['US', metric]}
+                feature[metric][start+timedelta(days=120)] = {key: 100000 for key in lp.WEIGHTS['US', metric]}
             after = lp.calculate('US', {})
         self.assertEqual(before, [r for r in after if r['observation_date'] <= (start+timedelta(days=79)).isoformat()])
+
+    def test_monthly_average_before_ranking_and_open_month_excluded(self):
+        values = {date(2026, 7, 1): {'spread': 0}, date(2026, 7, 31): {'spread': 10},
+                  date(2026, 8, 1): {'spread': 100}}
+        self.assertEqual(lp.monthly_features(values, date(2026, 8, 15)),
+                         {date(2026, 7, 1): {'spread': 5}})
 
 
 if __name__ == '__main__':
     unittest.main()
+

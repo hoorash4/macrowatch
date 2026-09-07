@@ -57,10 +57,10 @@ function initializeDashboardNavigation() {
     korea: '#korea-stress',
     em: '#em-msi',
     policy: '#policy-signals',
+    tracker: '#tracker',
   };
   const viewByHash = {
     ...Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view])),
-    '#tracker': 'overview',
   };
 
   const selectView = (view, updateHash = false) => {
@@ -1540,3 +1540,4 @@ Object.assign(window, {
   toggleTargetValueInput,
 });
 })();
+
