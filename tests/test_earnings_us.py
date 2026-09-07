@@ -29,7 +29,7 @@ from earnings_us.constituents import (
 )
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
 from earnings_us.providers import ProviderError, SecEdgarClient
-from earnings_us.transform import extract_new_sec_facts
+from earnings_us.transform import extract_inline_xbrl_fact, extract_new_sec_facts
 from earnings_us.six_k import (
     SixKDocument, SixKFiling, extract_q1_from_h1_six_k_fact, extract_six_k_fact,
     linked_financial_documents,
@@ -1554,6 +1554,31 @@ class USEarningsTransformTests(unittest.TestCase):
         result = extract_new_sec_facts("us:cik:bank-label", source, {"q2"})[0]
 
         self.assertEqual(result.top_line, Decimal("200"))
+
+    def test_inline_xbrl_fallback_reads_unsegmented_target_quarter(self):
+        content = """
+        <xbrl xmlns='http://www.xbrl.org/2003/instance'
+              xmlns:gaap='http://fasb.org/us-gaap/2025'>
+          <context id='consolidated'><entity><identifier scheme='cik'>1</identifier></entity>
+            <period><startDate>2026-01-01</startDate><endDate>2026-03-31</endDate></period></context>
+          <context id='segment'><entity><identifier scheme='cik'>1</identifier><segment><explicitMember>segment</explicitMember></segment></entity>
+            <period><startDate>2026-01-01</startDate><endDate>2026-03-31</endDate></period></context>
+          <gaap:Revenues contextRef='consolidated'>24633</gaap:Revenues>
+          <gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest contextRef='consolidated'>7517</gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest>
+          <gaap:NetIncomeLoss contextRef='consolidated'>5785</gaap:NetIncomeLoss>
+          <gaap:Revenues contextRef='segment'>999999</gaap:Revenues>
+        </xbrl>
+        """
+
+        result = extract_inline_xbrl_fact(
+            "us:cik:1", content, year=2026, quarter=1,
+            accession="0000000001-26-000001", filing_date=date(2026, 5, 7),
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual((result.top_line, result.operating_income, result.net_income), (
+            Decimal("24633"), Decimal("7517"), Decimal("5785"),
+        ))
 
     def test_reported_operating_income_has_priority_over_pretax_income(self):
         source = payload()
