@@ -17,14 +17,22 @@ from common import SupabaseRest, fetch_fred_observations, require_env
 
 VERSION = "liquidity-monthly-v2"
 US_VERSION = "us-equity-environment-weekly-v2"
+KR_VERSION = "kr-equity-environment-weekly-v1"
 US_START = date(2021, 11, 1)
-US_DIRECTIONS = {"real_yield": -1, "credit_conditions": -1, "net_supply_change": 1, "funding_spread": -1}
+KR_START = date(2021, 12, 17)
+ENVIRONMENT_DIRECTIONS = {
+    "US": {"real_yield": -1, "credit_conditions": -1, "net_supply_change": 1, "funding_spread": -1},
+    "KR": {"funding_spread": -1, "liquidity_growth": 1, "equity_flow": 1, "won_strength": 1},
+}
+US_DIRECTIONS = ENVIRONMENT_DIRECTIONS["US"]
 START = date(2021, 9, 7)  # Initial five-year history; never move this retention boundary.
 KR_PRESSURE_START = date(2021, 11, 25)
 SOURCE_START = date(2016, 8, 1)  # Calibration only; not displayed as backfill.
 WEIGHTS = {
     ("US", "environment"): {key: .25 for key in US_DIRECTIONS},
     ("US", "momentum"): {key: .25 for key in US_DIRECTIONS},
+    ("KR", "environment"): {key: .25 for key in ENVIRONMENT_DIRECTIONS["KR"]},
+    ("KR", "momentum"): {key: .25 for key in ENVIRONMENT_DIRECTIONS["KR"]},
     ("KR", "pressure"): {"call_spread": .5, "repo_spread": .5},
     ("KR", "capacity"): {"m2_change": .25, "lf_change": .25, "equity_flow": .25, "bond_flow": .25},
 }
@@ -178,6 +186,8 @@ def features(country, data):
     pressure, capacity = {}, {}
     if country == "US":
         return {"environment": equity_environment_features(data)}
+    if "foreign_flow_ratio" in data:
+        return {"environment": korea_equity_environment_features(data)}
     else:
         for day in sorted(set(data["call"]) & set(data["kofr"])):
             rate = asof(data["base"], day, 7)
@@ -225,19 +235,42 @@ def equity_environment_features(data):
     return output
 
 
-def calculate_equity_environment(data, end):
-    observations = weekly_smoothed_features(features("US", data)["environment"], end)
+def korea_equity_environment_features(data):
+    """Korean equity funding conditions using existing official and daily flow inputs."""
+    money_growth = {}
+    for day in sorted(set(data["m2"]) & set(data["lf"])):
+        previous = shift_month(day, -3)
+        if data["m2"].get(previous) and data["lf"].get(previous):
+            money_growth[day] = ((data["m2"][day] / data["m2"][previous] - 1) * 100
+                                 + (data["lf"][day] / data["lf"][previous] - 1) * 100) / 2
+    output = {}
+    for day, equity_flow in sorted(data["foreign_flow_ratio"].items()):
+        call, repo = asof(data["call"], day, 7), asof(data["kofr"], day, 7)
+        base, liquidity = asof(data["base"], day, 14), asof(money_growth, day, 100)
+        won_return = data["usdkrw_return"].get(day)
+        if all(value is not None for value in (call, repo, base, liquidity, won_return)):
+            output[day] = {"funding_spread": ((call - base) + (repo - base)) / 2,
+                           "liquidity_growth": liquidity, "equity_flow": equity_flow,
+                           "won_strength": -won_return}
+    return output
+
+
+def calculate_equity_environment(country, data, end):
+    observations = weekly_smoothed_features(features(country, data)["environment"], end)
+    directions = ENVIRONMENT_DIRECTIONS[country]
+    start = US_START if country == "US" else KR_START
+    version = US_VERSION if country == "US" else KR_VERSION
     dates = sorted(observations)
     output = []
     for day in dates:
-        if day < US_START:
+        if day < start:
             continue
         previous_day = day - timedelta(weeks=13)
         if previous_day not in observations:
             raise RuntimeError(f"Missing 13-week baseline for US environment: {day}")
         history = [d for d in dates if day - timedelta(weeks=260) < d <= day]
         levels, changes, change_scores = {}, {}, {}
-        for name, direction in US_DIRECTIONS.items():
+        for name, direction in directions.items():
             value = observations[day][name]
             rank = percentile(value, [observations[d][name] for d in history])
             levels[name] = rank if direction > 0 else 100 - rank
@@ -249,21 +282,21 @@ def calculate_equity_environment(data, end):
             change_scores[name] = 50 if not rms else 50 + 50 * math.tanh(changes[name] / (2 * rms))
         for metric, components, scores in (("environment", observations[day], levels),
                                             ("momentum", changes, change_scores)):
-            output.append({"country": "US", "metric": metric, "observation_date": day.isoformat(),
-                           "score": round(sum(scores[k] * w for k, w in WEIGHTS["US", metric].items()), 4),
+            output.append({"country": country, "metric": metric, "observation_date": day.isoformat(),
+                           "score": round(sum(scores[k] * w for k, w in WEIGHTS[country, metric].items()), 4),
                            "components": components, "component_scores": scores,
                            "sample_count": len(history), "is_warmup": len(history) < 52,
-                           "frequency": "W", "method_version": US_VERSION})
+                           "frequency": "W", "method_version": version})
     expected_last = end - timedelta(days=end.weekday() + 3)
     expected_dates = set()
-    cursor = US_START + timedelta(days=(4 - US_START.weekday()) % 7)
+    cursor = start + timedelta(days=(4 - start.weekday()) % 7)
     while cursor <= expected_last:
         expected_dates.add(cursor.isoformat())
         cursor += timedelta(weeks=1)
     for metric in ("environment", "momentum"):
         actual = {row["observation_date"] for row in output if row["metric"] == metric}
         if actual != expected_dates:
-            raise RuntimeError(f"Incomplete US/{metric} weekly coverage: {sorted(expected_dates - actual)}")
+            raise RuntimeError(f"Incomplete {country}/{metric} weekly coverage: {sorted(expected_dates - actual)}")
     return output
 
 
@@ -309,8 +342,8 @@ def weekly_smoothed_features(observations, end):
 
 def calculate(country, data, end=None):
     end = end or date.today()
-    if country == "US":
-        return calculate_equity_environment(data, end)
+    if country == "US" or (country == "KR" and "foreign_flow_ratio" in data):
+        return calculate_equity_environment(country, data, end)
     output = []
     for metric, observations in features(country, data).items():
         observations = monthly_features(observations, end)
@@ -354,27 +387,49 @@ def load_existing(db, country):
         offset += len(page)
 
 
+def load_korea_equity_context(db):
+    data = {"foreign_flow_ratio": {}, "usdkrw_return": {}}
+    offset = 0
+    while True:
+        page = db.request("GET", "korea_foreign_flow_daily", params={
+            "select": "observation_date,foreign_flow_ratio,usdkrw_return",
+            "order": "observation_date", "offset": str(offset), "limit": "1000"})
+        for row in page:
+            day = date.fromisoformat(row["observation_date"])
+            data["foreign_flow_ratio"][day] = float(row["foreign_flow_ratio"])
+            data["usdkrw_return"][day] = float(row["usdkrw_return"])
+        if len(page) < 1000:
+            break
+        offset += len(page)
+    if any(not values for values in data.values()):
+        raise RuntimeError("Korean foreign-flow context has no observations")
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--country", choices=("US", "KR"), required=True)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    db = None if args.dry_run else SupabaseRest(timeout=120)
-    existing = {} if db is None else load_existing(db, args.country)
+    db = SupabaseRest(timeout=120)
+    existing = {} if args.dry_run else load_existing(db, args.country)
     data = collect(args.country, existing, date.today())
+    if args.country == "KR":
+        data.update(load_korea_equity_context(db))
     results = calculate(args.country, data)
     raw = [{"country": args.country, "series": series, "observation_date": day.isoformat(), "value": value}
-           for series, values in data.items() for day, value in values.items() if day not in existing.get(series, {})]
-    if db:
+           for series, values in data.items() if series not in ("foreign_flow_ratio", "usdkrw_return")
+           for day, value in values.items() if day not in existing.get(series, {})]
+    if not args.dry_run:
         # One database transaction: no partially published country on failure.
         db.request("POST", "rpc/store_liquidity_batch", body={"p_country": args.country, "p_raw": raw, "p_results": results})
         for metric in sorted({row["metric"] for row in results}):
             latest = db.request("GET", "liquidity_indices", params={"country": f"eq.{args.country}",
-                                "metric": f"eq.{metric}", "method_version": f"eq.{US_VERSION if args.country == 'US' else VERSION}", "order": "observation_date.desc", "limit": "1"})
+                                "metric": f"eq.{metric}", "method_version": f"eq.{US_VERSION if args.country == 'US' else KR_VERSION}", "order": "observation_date.desc", "limit": "1"})
             expected = max(r["observation_date"] for r in results if r["metric"] == metric)
             if not latest or latest[0]["observation_date"] != expected:
                 raise RuntimeError("Post-write verification failed")
-    print(json.dumps({"country": args.country, "saved": bool(db), "new_raw": len(raw), "metrics": {
+    print(json.dumps({"country": args.country, "saved": not args.dry_run, "new_raw": len(raw), "metrics": {
         metric: {"count": len([r for r in results if r["metric"] == metric]),
                  "first": min(r["observation_date"] for r in results if r["metric"] == metric),
                  "latest": max(r["observation_date"] for r in results if r["metric"] == metric)}

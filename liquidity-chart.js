@@ -21,7 +21,7 @@
   function render(card, state) {
     const host = card.querySelector('[data-liquidity-charts]');
     const isUS = card.dataset.liquidityCountry === 'US';
-    const metrics = isUS ? ['environment', 'momentum'] : ['pressure', 'capacity'];
+    const metrics = ['environment', 'momentum'];
     const [firstMetric, secondMetric] = metrics;
     if (!state.rows.length) { host.textContent = '아직 저장된 유동성 자료가 없습니다.'; return; }
     const byDate = new Map();
@@ -44,7 +44,7 @@
       return `<line x1="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" x2="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y="${HEIGHT-8}" text-anchor="middle" fill="#64748b" font-size="11">${year}</text>`;
     }).join('');
     const latest=metrics.map(metric=>state.rows.filter(row=>row.metric===metric).at(-1)).filter(Boolean);
-    host.innerHTML=`<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="${isUS ? '미국 주식시장 자금환경 주별 추이' : '유동성 압력과 여력 월별 추이'}">${years}${grids}${isUS ? `<line data-liquidity-neutral x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(50,initial)}" y2="${y(50,initial)}" stroke="#94a3b8" stroke-dasharray="4 4"/>` : ''}<path data-liquidity-pressure d="${pathFor(firstMetric,initial)}" fill="none" stroke="${colors[firstMetric]}" stroke-width="2.5"/><path data-liquidity-capacity d="${pathFor(secondMetric,initial)}" fill="none" stroke="${colors[secondMetric]}" stroke-width="2.5"/><line data-liquidity-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" class="policy-expectation-cursor"/><text data-liquidity-value text-anchor="middle" y="16" fill="#334155" font-size="12"></text><text data-liquidity-date text-anchor="middle" y="${HEIGHT-PADDING.bottom+14}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"><span style="color:${colors[firstMetric]}">${names[firstMetric]} ${Number(latest.find(r=>r.metric===firstMetric)?.score).toFixed(1)}</span><span style="color:${colors[secondMetric]}">${names[secondMetric]} ${Number(latest.find(r=>r.metric===secondMetric)?.score).toFixed(1)}</span><span class="text-slate-500">${isUS ? '주별 점수 · 우호도는 높을수록 상대적으로 우호적 · 방향은 50 초과 개선, 50 미만 악화' : '월별 점수 · 압력이 높을수록 자금조달 긴장, 여력이 높을수록 자금 기반이 풍부합니다.'}</span></div>`;
+    host.innerHTML=`<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="${isUS ? '미국' : '한국'} 주식시장 자금환경 주별 추이">${years}${grids}<line data-liquidity-neutral x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(50,initial)}" y2="${y(50,initial)}" stroke="#94a3b8" stroke-dasharray="4 4"/><path data-liquidity-pressure d="${pathFor(firstMetric,initial)}" fill="none" stroke="${colors[firstMetric]}" stroke-width="2.5"/><path data-liquidity-capacity d="${pathFor(secondMetric,initial)}" fill="none" stroke="${colors[secondMetric]}" stroke-width="2.5"/><line data-liquidity-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" class="policy-expectation-cursor"/><text data-liquidity-value text-anchor="middle" y="16" fill="#334155" font-size="12"></text><text data-liquidity-date text-anchor="middle" y="${HEIGHT-PADDING.bottom+14}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"><span style="color:${colors[firstMetric]}">${names[firstMetric]} ${Number(latest.find(r=>r.metric===firstMetric)?.score).toFixed(1)}</span><span style="color:${colors[secondMetric]}">${names[secondMetric]} ${Number(latest.find(r=>r.metric===secondMetric)?.score).toFixed(1)}</span><span class="text-slate-500">주별 점수 · 우호도는 높을수록 상대적으로 우호적 · 방향은 50 초과 개선, 50 미만 악화</span></div>`;
     const frame=host.querySelector('.policy-expectation-chart-frame'), svg=host.querySelector('.policy-expectation-chart-svg');
     const lines={[firstMetric]:host.querySelector('[data-liquidity-pressure]'),[secondMetric]:host.querySelector('[data-liquidity-capacity]')};
     const axisLabels=[...host.querySelectorAll('[data-liquidity-y-label]')], axisGrids=[...host.querySelectorAll('[data-liquidity-y-grid]')];
@@ -89,7 +89,7 @@
       cursor.setAttribute('x1',nearest.x);cursor.setAttribute('x2',nearest.x);cursor.classList.add('is-visible');
       value.setAttribute('x',nearest.x);dateLabel.setAttribute('x',nearest.x);
       value.textContent=metrics.map(metric=>`${names[metric]} ${Number.isFinite(nearest[metric])?nearest[metric].toFixed(1):'미발표'}`).join(' · ');
-      dateLabel.textContent=isUS ? nearest.observation_date : nearest.observation_date.slice(0,7); value.setAttribute('visibility','visible'); dateLabel.classList.add('is-visible');
+      dateLabel.textContent=nearest.observation_date; value.setAttribute('visibility','visible'); dateLabel.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave',()=>{cursor.classList.remove('is-visible');value.setAttribute('visibility','hidden');dateLabel.classList.remove('is-visible');});
   }
@@ -99,7 +99,7 @@
       const country = card.dataset.liquidityCountry;
       const state = states.get(country) || {rows:[],years:2}; states.set(country,state);
       const {data,error} = await utils.loadAllRows((from,to)=>supabaseClient.from('liquidity_indices')
-        .select('observation_date,metric,score,frequency,sample_count,is_warmup').eq('country',country).eq('method_version', country === 'US' ? 'us-equity-environment-weekly-v2' : 'liquidity-monthly-v2')
+        .select('observation_date,metric,score,frequency,sample_count,is_warmup').eq('country',country).eq('method_version', country === 'US' ? 'us-equity-environment-weekly-v2' : 'kr-equity-environment-weekly-v1')
         .order('observation_date').order('metric').range(from,to));
       if (error) { card.querySelector('[data-liquidity-charts]').textContent='유동성 자료를 불러오지 못했습니다. 다시 로그인하거나 잠시 후 새로고침해 주세요.'; return; }
       state.rows=(data||[]).filter(r=>r.score!==null && Number.isFinite(Number(r.score)) && Number.isFinite(Date.parse(r.observation_date)));

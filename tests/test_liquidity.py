@@ -53,6 +53,21 @@ class LiquidityTests(unittest.TestCase):
         del data['bond_flow'][months[1]]
         self.assertNotIn(months[-1], lp.features('KR', data)['capacity'])
 
+    def test_korea_equity_environment_uses_funding_money_equity_and_won(self):
+        months = [date(2021, month, 1) for month in (9, 10, 11, 12)]
+        day = date(2021, 12, 17)
+        data = dict(
+            base={day: 1}, call={day: 1.2}, kofr={day: 1.4},
+            m2={month: 100 + index for index, month in enumerate(months)},
+            lf={month: 200 + index * 2 for index, month in enumerate(months)},
+            foreign_flow_ratio={day: .02}, usdkrw_return={day: -.01},
+        )
+        result = lp.korea_equity_environment_features(data)[day]
+        self.assertAlmostEqual(result['funding_spread'], .3)
+        self.assertAlmostEqual(result['liquidity_growth'], 3)
+        self.assertEqual(result['equity_flow'], .02)
+        self.assertEqual(result['won_strength'], .01)
+
     def test_snapshot_exact_headers_and_null(self):
         payload = {'data': {'chart_opt': {'data': {'csv': 'period,기준금리,콜금리(익일물)\n1630454400000,0,\n1630540800000,1,2'}}}}
         rows = lp.parse_snapshot(payload, lp.SNAPSHOTS[849], date(2021,1,1), date(2022,1,1))
