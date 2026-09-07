@@ -106,7 +106,84 @@
     return dates.length ? timelineWidth(baseWidth, Math.min(...dates), Math.max(...dates), years) : baseWidth;
   }
 
-  function scrollableSvg(svg, width, baseWidth = 920) {
+  function visibleAxisDomain(points, left, right, symmetric = false) {
+    // Include the neighbouring samples at viewport edges so crossing curves fit too.
+    const values = points.filter(point => Number.isFinite(point.value)
+      && point.x >= left && point.x <= right).map(point => point.value);
+    const before = points.filter(point => point.x < left && Number.isFinite(point.value)).at(-1);
+    const after = points.find(point => point.x > right && Number.isFinite(point.value));
+    points.forEach(point => {
+      if (Number.isFinite(point.value) && (point.x === before?.x || point.x === after?.x)) values.push(point.value);
+    });
+    if (!values.length) return null;
+    const min = Math.min(...values), max = Math.max(...values);
+    const margin = Math.max((max - min) * .12, Math.max(Math.abs(min), Math.abs(max)) * .02, .0001);
+    if (symmetric) {
+      const extent = Math.max(Math.abs(min), Math.abs(max)) + margin;
+      return { min: -extent, max: extent };
+    }
+    return { min: min - margin, max: max + margin };
+  }
+
+  let axisClipSequence = 0;
+  function bindVisibleAxes(svg, frame, shell, width, config) {
+    const { top, bottom, axes } = config;
+    const ns = 'http://www.w3.org/2000/svg';
+    const clip = document.createElementNS(ns, 'clipPath');
+    clip.id = `visible-axis-${++axisClipSequence}`;
+    const rectangle = document.createElementNS(ns, 'rect');
+    Object.entries({ x: 0, y: top, width, height: bottom - top }).forEach(([key, value]) => rectangle.setAttribute(key, value));
+    clip.append(rectangle);
+    const defs = document.createElementNS(ns, 'defs');
+    defs.append(clip); svg.append(defs);
+    const bindings = axes.map(axis => ({
+      ...axis,
+      paths: [...svg.querySelectorAll(axis.selector)].filter(node => node.tagName === 'path').map(node => {
+        node.setAttribute('clip-path', `url(#${clip.id})`);
+        return { node, original: node.getAttribute('d') || '' };
+      }),
+      dots: [...svg.querySelectorAll(axis.selector)].filter(node => node.tagName === 'circle').map(node => ({ node, original: Number(node.getAttribute('cy')) })),
+      labels: [...shell.querySelectorAll('svg text')].filter(node => {
+        const x = Number(node.getAttribute('x'));
+        const pixel = Number(node.getAttribute('y')) - 3;
+        if (pixel < top - 1 || pixel > bottom + 1) return false;
+        return axis.side === 'right' ? x > width - 52 : x <= 55;
+      }).map(node => ({ node, pixel: Number(node.getAttribute('y')) - 3 })),
+    }));
+    let pending = null;
+    const update = () => {
+      pending = null;
+      if (!frame.clientWidth || !svg.getBoundingClientRect().width) return;
+      shell.querySelectorAll(':scope > svg').forEach(axis => { axis.style.height = `${svg.getBoundingClientRect().height}px`; });
+      const unitsPerPixel = width / svg.getBoundingClientRect().width;
+      const left = frame.scrollLeft * unitsPerPixel;
+      const right = (frame.scrollLeft + frame.clientWidth) * unitsPerPixel;
+      bindings.forEach(axis => {
+        const domain = visibleAxisDomain(axis.points, left, right, axis.symmetric);
+        if (!domain) return;
+        const inverted = axis.y(1) > axis.y(0);
+        const map = value => top + (inverted ? value - domain.min : domain.max - value) / (domain.max - domain.min) * (bottom - top);
+        const a = (map(1) - map(0)) / (axis.y(1) - axis.y(0));
+        const b = map(0) - a * axis.y(0);
+        axis.paths.forEach(({ node, original }) => {
+          let coordinate = 0;
+          node.setAttribute('d', original.replace(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi, number => (++coordinate % 2 ? number : (Number(number) * a + b).toFixed(2))));
+        });
+        axis.dots.forEach(({ node, original }) => node.setAttribute('cy', original * a + b));
+        axis.labels.forEach(({ node, pixel }) => {
+          const ratio = (pixel - top) / (bottom - top);
+          const value = inverted ? domain.min + ratio * (domain.max - domain.min) : domain.max - ratio * (domain.max - domain.min);
+          node.textContent = axis.format ? axis.format(value) : value.toLocaleString('en-US', { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 });
+        });
+      });
+    };
+    const schedule = () => { if (pending === null) pending = window.requestAnimationFrame(update); };
+    frame.addEventListener('scroll', schedule, { passive: true });
+    new ResizeObserver(schedule).observe(frame);
+    schedule();
+  }
+
+  function scrollableSvg(svg, width, baseWidth = 920, axes = null) {
     if (!svg) return;
     const frame = document.createElement('div');
     const shell = document.createElement('div');
@@ -144,6 +221,8 @@
       shell.append(fixedAxis);
     }
 
+    if (axes) bindVisibleAxes(svg, frame, shell, width, axes);
+
     // Relative width works even when a dashboard panel starts hidden.
     const observer = new ResizeObserver(() => {
       if (frame.clientWidth > 0) {
@@ -165,6 +244,6 @@
     });
   }
 
-  window.MacroWatchAnalysisChart = { niceStep, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { niceStep, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
 
