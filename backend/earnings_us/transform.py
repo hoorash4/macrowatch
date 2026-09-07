@@ -567,6 +567,6 @@ def extract_inline_xbrl_fact(
         period_start=min(starts), period_end=max(ends),
         top_line=values["top_line"][0], operating_income=values["operating_income"][0],
         net_income=values["net_income"][0], source_filing_id=accession,
-        filing_date=filing_date, is_pending=False, source="sec_edgar_inline_xbrl",
+        filing_date=filing_date, is_pending=False, source="sec_edgar",
     )
 
