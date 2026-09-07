@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -26,6 +27,16 @@ SEC_DELISTING_FORMS = frozenset({"25", "25-NSE"})
 
 class ProviderError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class SecFinancialFiling:
+    """A domestic SEC financial filing with its primary inline-XBRL document."""
+
+    accession: str
+    filing_date: date
+    report_date: date | None
+    primary_document: str
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -194,6 +205,52 @@ class SecEdgarClient:
 
     def company_facts(self, cik: str) -> dict[str, Any]:
         return self._get(f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{normalize_cik(cik)}.json", f"company facts {cik}")
+
+    def financial_filings(self, cik: str, *, filed_from: date, filed_to: date) -> list[SecFinancialFiling]:
+        """Return SEC 10-Q/10-K filings filed in the requested window."""
+        recent = self.submissions(cik).get("filings", {}).get("recent", {})
+        if not isinstance(recent, dict):
+            return []
+        result: list[SecFinancialFiling] = []
+        columns = zip(
+            recent.get("form", []), recent.get("filingDate", []), recent.get("reportDate", []),
+            recent.get("accessionNumber", []), recent.get("primaryDocument", []), strict=False,
+        )
+        for form, filed_on, reported_on, accession, primary_document in columns:
+            if str(form).upper() not in SEC_FORMS:
+                continue
+            try:
+                filing_date = date.fromisoformat(str(filed_on))
+            except ValueError:
+                continue
+            if not filed_from <= filing_date <= filed_to:
+                continue
+            try:
+                report_date = date.fromisoformat(str(reported_on))
+            except ValueError:
+                report_date = None
+            document = str(primary_document or "").strip()
+            if accession and document:
+                result.append(SecFinancialFiling(str(accession), filing_date, report_date, document))
+        return sorted({item.accession: item for item in result}.values(), key=lambda item: (item.filing_date, item.accession))
+
+    def inline_xbrl_instance(self, cik: str, filing: SecFinancialFiling) -> str | None:
+        """Read the filing's official inline-XBRL instance when companyfacts is stale."""
+        normalized = normalize_cik(cik)
+        if normalized is None:
+            return None
+        accession = re.sub(r"\D", "", filing.accession)
+        base = f"{SEC_ARCHIVES_BASE}/{int(normalized)}/{accession}"
+        directory = self._get(f"{base}/index.json", f"financial filing index {filing.accession}")
+        items = directory.get("directory", {}).get("item", []) if isinstance(directory, dict) else []
+        names = [
+            str(item.get("name") or "") for item in items if isinstance(item, dict)
+            and re.fullmatch(r"[A-Za-z0-9_.-]+_htm\.xml", str(item.get("name") or ""), re.I)
+        ]
+        if not names:
+            return None
+        name = sorted(names)[0]
+        return self._get_text(f"{base}/{name}", f"inline XBRL {filing.accession}")
 
     def new_financial_accessions(self, cik: str, since: date) -> set[str]:
         recent = self.submissions(cik).get("filings", {}).get("recent", {})

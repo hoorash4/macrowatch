@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from typing import Any
+from xml.etree import ElementTree
 
 from .models import USFinancialFact, market_period
 
@@ -490,4 +491,82 @@ def extract_new_sec_facts(
         if current is None or (fact.fully_complete, fact.filing_date) > (current.fully_complete, current.filing_date):
             result[physical_key] = fact
     return sorted(result.values(), key=lambda fact: (fact.period_end, fact.fiscal_quarter, fact.filing_date))
+
+
+def extract_inline_xbrl_fact(
+    company_id: str, content: str, *, year: int, quarter: int,
+    accession: str, filing_date: date,
+) -> USFinancialFact | None:
+    """Read an exact domestic quarter from an SEC filing's XBRL instance.
+
+    SEC's companyfacts feed can lag a filed 10-Q. This fallback accepts only
+    unsegmented duration contexts for the requested market quarter, so segment
+    disclosures cannot be mistaken for consolidated company results.
+    """
+    try:
+        root = ElementTree.fromstring(content)
+    except ElementTree.ParseError:
+        return None
+
+    def local_name(element) -> str:
+        return str(element.tag).rsplit("}", 1)[-1]
+
+    contexts: dict[str, tuple[date, date]] = {}
+    for element in root.iter():
+        if local_name(element) != "context" or "id" not in element.attrib:
+            continue
+        if any(local_name(child) in {"segment", "scenario"} for child in element.iter()):
+            continue
+        starts = [child.text for child in element.iter() if local_name(child) == "startDate"]
+        ends = [child.text for child in element.iter() if local_name(child) == "endDate"]
+        if len(starts) != 1 or len(ends) != 1:
+            continue
+        try:
+            contexts[str(element.attrib["id"])] = (
+                date.fromisoformat(str(starts[0])), date.fromisoformat(str(ends[0])),
+            )
+        except ValueError:
+            continue
+
+    matching_contexts = {
+        context_id: period for context_id, period in contexts.items()
+        if market_period(period[1]) == (year, quarter)
+        and 60 <= (period[1] - period[0]).days + 1 <= 130
+    }
+    if not matching_contexts:
+        return None
+
+    values: dict[str, tuple[Decimal, date, date]] = {}
+    for metric, bases in METRIC_BASES.items():
+        for basis in bases:
+            if len(basis) != 1:
+                continue
+            tag = basis[0]
+            candidates: list[tuple[date, date, Decimal]] = []
+            for element in root.iter():
+                if local_name(element) != tag:
+                    continue
+                period = matching_contexts.get(str(element.attrib.get("contextRef") or ""))
+                if period is None:
+                    continue
+                try:
+                    value = Decimal(str(element.text or "").replace(",", "").strip())
+                except Exception:
+                    continue
+                candidates.append((period[0], period[1], value))
+            if candidates:
+                start, end, value = max(candidates, key=lambda item: (item[1], item[0]))
+                values[metric] = (value, start, end)
+                break
+    if set(values) != set(METRIC_BASES):
+        return None
+    starts = [item[1] for item in values.values()]
+    ends = [item[2] for item in values.values()]
+    return USFinancialFact(
+        company_id=company_id, fiscal_year=year, fiscal_quarter=quarter,
+        period_start=min(starts), period_end=max(ends),
+        top_line=values["top_line"][0], operating_income=values["operating_income"][0],
+        net_income=values["net_income"][0], source_filing_id=accession,
+        filing_date=filing_date, is_pending=False, source="sec_edgar_inline_xbrl",
+    )
 
