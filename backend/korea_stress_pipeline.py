@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 import requests
 
-from common import SupabaseRest, month_start_months_ago, require_env as require_shared_env, uncapped_score
+from common import SupabaseRest, require_env as require_shared_env, uncapped_score
 
 
 ECOS = "https://ecos.bok.or.kr/api"
@@ -38,7 +38,6 @@ STRESS_BANDS = {
     "interbank_liquidity": (0.0, 1.5),   # KORIBOR 3M - KOFR
 }
 TIMEOUT = 45
-RETENTION_MONTHS = 37
 KMSI_COMPONENT_WEIGHT = 0.30
 KMSI_FSI_WEIGHT = 0.70
 HEADERS = {
@@ -299,11 +298,6 @@ def main() -> None:
     upsert(rows, url, service_key, "korea_market_stress_monthly", "month")
     if kospi_weekly:
         upsert(kospi_weekly, url, service_key, "korea_market_stress_weekly", "week")
-    # 새 월·주 자료가 모두 저장된 경우에만 37개월 경계 밖의 행을 정리한다.
-    cutoff = month_start_months_ago(today, RETENTION_MONTHS).isoformat()
-    database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
-    database.delete_before("korea_market_stress_monthly", "month", cutoff)
-    database.delete_before("korea_market_stress_weekly", "week", cutoff)
     print(f"upserted_months={len(rows)} kospi_weeks={len(kospi_weekly)} fsi_months={len(fsi)}")
 
 

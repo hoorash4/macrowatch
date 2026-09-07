@@ -53,6 +53,37 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 const CREDIT_STRESS_HISTORY_MONTHS = 36;
 const CREDIT_STRESS_CHART_HEIGHT = 375;
+const STRESS_HISTORY_QUERY_LIMIT = 5000;
+const STRESS_RANGE_DEFAULT_YEARS = '2';
+let usStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
+let koreaStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
+let emStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
+
+function filterStressHistory(rows, dateKey, rangeYears) {
+  if (rangeYears === 'max') return rows;
+  const latest = rows.reduce((value, row) => {
+    const timestamp = Date.parse(`${String(row[dateKey] || '')}T00:00:00Z`);
+    return Number.isFinite(timestamp) ? Math.max(value, timestamp) : value;
+  }, Number.NEGATIVE_INFINITY);
+  if (!Number.isFinite(latest)) return [];
+  const cutoff = new Date(latest);
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - Number(rangeYears));
+  return rows.filter((row) => Date.parse(`${String(row[dateKey] || '')}T00:00:00Z`) >= cutoff.getTime());
+}
+
+function bindStressRangeControls(selector, attribute, getRange, setRange, reload) {
+  document.querySelectorAll(`${selector} [${attribute}]`).forEach((button) => {
+    button.addEventListener('click', () => {
+      const range = button.getAttribute(attribute);
+      if (!range || range === getRange()) return;
+      setRange(range);
+      document.querySelectorAll(`${selector} [${attribute}]`).forEach((item) => {
+        item.classList.toggle('is-active', item.getAttribute(attribute) === range);
+      });
+      reload();
+    });
+  });
+}
 const NEWS_SENTIMENT_VIEWS = {
   recent: {
     days: 3,
@@ -581,15 +612,11 @@ async function loadMarketTension(monthlyRows = []) {
     .from('us_market_tension_weekly')
     .select('week,tension_index,financial_conditions_credit_index,financial_conditions_risk_index,sp500_friday_close,is_provisional')
     .order('week', { ascending: false })
-    .limit(160);
-  const monthlyResponse = await supabaseClient
-    .from('us_market_stress_index_monthly')
-    .select('month,stress_index')
-    .order('month', { ascending: false })
-    .limit(CREDIT_STRESS_HISTORY_MONTHS);
-  if (weeklyResponse.error || monthlyResponse.error) return;
-  renderMarketStressDashboard(monthlyRows.length ? monthlyRows : monthlyResponse.data || [], weeklyResponse.data || []);
-  const weeklyRows = (weeklyResponse.data || []).map((row) => ({ ...row, month: row.week }));
+    .limit(STRESS_HISTORY_QUERY_LIMIT);
+  if (weeklyResponse.error) return;
+  const selectedWeeklyRows = filterStressHistory(weeklyResponse.data || [], 'week', usStressRangeYears);
+  renderMarketStressDashboard(monthlyRows, selectedWeeklyRows);
+  const weeklyRows = selectedWeeklyRows.map((row) => ({ ...row, month: row.week }));
   renderCreditConditionsMomentum(weeklyRows);
 }
 
@@ -600,10 +627,11 @@ async function loadMarketStressDashboard() {
     const { data, error } = await supabaseClient.from('us_market_stress_index_monthly')
       .select('month,stress_index,is_provisional')
       .order('month', { ascending: false })
-      .limit(CREDIT_STRESS_HISTORY_MONTHS);
+      .limit(STRESS_HISTORY_QUERY_LIMIT);
     if (error) throw error;
-    renderMarketStressDashboard(data || []);
-    loadMarketTension(data || []);
+    const selectedRows = filterStressHistory(data || [], 'month', usStressRangeYears);
+    renderMarketStressDashboard(selectedRows);
+    loadMarketTension(selectedRows);
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">시장 스트레스 지수를 불러오지 못했습니다.</div>';
   }
@@ -705,9 +733,9 @@ async function loadEmStressDashboard() {
   try {
     const { data, error } = await supabaseClient.from('em_market_stress_weekly')
       .select('week,stress_index,eem_weekly_close,is_provisional')
-      .order('week', { ascending: false }).limit(160);
+      .order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT);
     if (error) throw error;
-    renderEmStressDashboard(data || []);
+    renderEmStressDashboard(filterStressHistory(data || [], 'week', emStressRangeYears));
   } catch (_) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 지수를 불러오지 못했습니다.</div>';
   }
@@ -854,10 +882,10 @@ async function loadKoreaStressDashboard() {
     const [monthlyResponse, weeklyResponse] = await Promise.all([
       supabaseClient.from('korea_market_stress_monthly')
         .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
-        .order('month', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS),
+        .order('month', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
       supabaseClient.from('korea_market_stress_weekly')
         .select('week,kospi_close,corporate_credit_spread,short_term_funding_spread')
-        .order('week', { ascending: false }).limit(CREDIT_STRESS_HISTORY_MONTHS * 6),
+        .order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
     ]);
     if (monthlyResponse.error) throw monthlyResponse.error;
     if (weeklyResponse.error) throw weeklyResponse.error;
@@ -870,7 +898,10 @@ async function loadKoreaStressDashboard() {
         // K-MSI 자체는 DB 자료만으로 계속 표시한다.
       }
     }
-    renderKoreaStressChart(displayRows, weeklyResponse.data || []);
+    renderKoreaStressChart(
+      filterStressHistory(displayRows, 'month', koreaStressRangeYears),
+      filterStressHistory(weeklyResponse.data || [], 'week', koreaStressRangeYears),
+    );
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';
   }
@@ -1128,6 +1159,9 @@ async function loadSectorFlowDashboard() {
 
 // 기존 대시보드 공개 계산 계약과 초기 로더 등록을 유지합니다.
 window.MacroWatchChartUtils = Object.freeze({ aggregateWeeklyDecisiveNews, calculateCorrelation, formatNewsDate });
+bindStressRangeControls('[data-us-stress-ranges]', 'data-us-stress-range', () => usStressRangeYears, (value) => { usStressRangeYears = value; }, loadMarketStressDashboard);
+bindStressRangeControls('[data-korea-stress-ranges]', 'data-korea-stress-range', () => koreaStressRangeYears, (value) => { koreaStressRangeYears = value; }, loadKoreaStressDashboard);
+bindStressRangeControls('[data-em-stress-ranges]', 'data-em-stress-range', () => emStressRangeYears, (value) => { emStressRangeYears = value; }, loadEmStressDashboard);
 window.MacroWatchDashboard?.registerLoader(async () => {
   await Promise.all([
     loadNewsSentimentDashboard(),

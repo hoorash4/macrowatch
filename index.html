@@ -235,6 +235,9 @@
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="analysis-chart-range-controls" data-us-stress-ranges aria-label="미국 시장 스트레스 지수 그래프 조회 기간">
+            <button type="button" data-us-stress-range="1">1년</button><button type="button" data-us-stress-range="2" class="is-active">2년</button><button type="button" data-us-stress-range="5">5년</button><button type="button" data-us-stress-range="max">MAX</button>
+          </div>
           <div id="credit-stress-chart" class="min-h-72">
             <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
           </div>
@@ -287,6 +290,9 @@
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="analysis-chart-range-controls" data-korea-stress-ranges aria-label="한국 시장 스트레스 지수 그래프 조회 기간">
+            <button type="button" data-korea-stress-range="1">1년</button><button type="button" data-korea-stress-range="2" class="is-active">2년</button><button type="button" data-korea-stress-range="5">5년</button><button type="button" data-korea-stress-range="max">MAX</button>
+          </div>
           <div id="korea-stress-chart" class="min-h-80">
             <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오는 중입니다.</div>
           </div>
@@ -386,6 +392,9 @@
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="analysis-chart-range-controls" data-em-stress-ranges aria-label="이머징 시장 스트레스 지수 그래프 조회 기간">
+            <button type="button" data-em-stress-range="1">1년</button><button type="button" data-em-stress-range="2" class="is-active">2년</button><button type="button" data-em-stress-range="5">5년</button><button type="button" data-em-stress-range="max">MAX</button>
+          </div>
           <div id="em-stress-chart" class="min-h-80">
             <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 데이터를 불러오는 중입니다.</div>
           </div>
@@ -858,7 +867,7 @@
   <script src="indicator-terms.js?v=3"></script>
   <script src="script.js?v=159"></script>
   <script src="analysis-chart-utils.js?v=4"></script>
-  <script src="dashboard-charts.js?v=31"></script>
+  <script src="dashboard-charts.js?v=32"></script>
   <script src="policy-chart.js?v=16"></script>
   <script src="policy-expectation-chart.js?v=12"></script>
   <script src="em-capacity-chart.js?v=4"></script>
