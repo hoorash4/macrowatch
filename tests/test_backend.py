@@ -360,14 +360,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("data-collapsible-count", admin_ui)
         self.assertIn("normalizedCount > 0 ? 'text-yellow-300' : 'text-slate-400'", admin_ui)
         self.assertIn("badge.classList.remove('hidden')", admin_ui)
-        self.assertIn("setListAttentionCount('uncertain-news-list', items.length)", admin_ui)
+        self.assertNotIn('id="uncertain-news-list"', admin_html)
+        self.assertNotIn("invokeAdmin('list_uncertain_news')", admin_ui)
         self.assertIn("item.review_type !== 'latest'", policy_ui)
         self.assertNotIn("item.review_type !== 'selected'", policy_ui)
         self.assertNotIn("details.open = true", policy_ui)
         self.assertNotIn("setListAttentionCount('member-list'", admin_ui)
         self.assertNotIn("setListAttentionCount('sector-etf-list'", admin_ui)
         self.assertNotIn("setListAttentionCount('extreme-news-rule-list'", admin_ui)
-        self.assertLess(admin_html.index('id="uncertain-news-list"'), admin_html.index('id="policy-review-list"'))
 
     def test_sector_registry_seed_is_bootstrap_only_and_never_replayed(self):
         migration = (ROOT / "supabase/migrations/20260827_seed_domestic_sector_etfs.sql").read_text(encoding="utf-8")
@@ -511,7 +511,7 @@ class SourceContractTests(unittest.TestCase):
         order_js = (ROOT / "admin-card-order.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
 
-        self.assertEqual(admin_html.count('data-admin-card-id='), 11)
+        self.assertEqual(admin_html.count('data-admin-card-id='), 10)
         self.assertIn('admin-card-order.js?v=2', admin_html)
         self.assertIn("initializeAdminCardOrder", admin_js)
         self.assertIn("get_admin_card_order", admin_js)

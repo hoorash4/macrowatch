@@ -98,10 +98,10 @@
   function initializeCollapsibleLists() {
     const labels = {
       'policy-review-list': 'FOMC 검토 목록', 'sector-etf-list': '섹터 ETF 목록',
-      'extreme-news-rule-list': '결정적 뉴스 기준 목록', 'uncertain-news-list': '불명확 뉴스 목록',
+      'extreme-news-rule-list': '결정적 뉴스 기준 목록',
       'earnings-v2-pending-list': '기업 실적 대기 목록', 'error-list': '수집 오류 목록'
     };
-    document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #uncertain-news-list, #earnings-v2-pending-list, #error-list').forEach((list) => {
+    document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #earnings-v2-pending-list, #error-list').forEach((list) => {
       if (list.parentElement?.tagName === 'DETAILS') return;
       const details = document.createElement('details');
       details.className = 'group';
@@ -264,26 +264,6 @@
     ).join('');
   }
 
-  function renderUncertainNews(items) {
-    const list = document.getElementById('uncertain-news-list');
-    setListAttentionCount('uncertain-news-list', items.length);
-    if (!items.length) {
-      list.innerHTML = '<p class="p-4 text-center text-sm text-emerald-400">검토할 불명확 뉴스가 없습니다.</p>';
-      return;
-    }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-4 last:border-0"><div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div class="min-w-0"><p class="text-xs text-slate-500">${escapeHtml(formatTime(item.published_at))} · ${escapeHtml(item.source_name)}</p><p class="mt-2 text-sm leading-relaxed text-slate-200">${escapeHtml(item.uncertain_summary || '시장 방향을 판단하기 어렵습니다.')}</p><div class="mt-2 flex flex-wrap gap-1">${(item.derived_keywords || []).map((keyword) => `<span class="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400">${escapeHtml(keyword)}</span>`).join('')}</div></div><div class="flex shrink-0 flex-wrap gap-2"><button data-article-id="${escapeHtml(item.id)}" data-sentiment="positive" class="resolve-news rounded-lg border border-emerald-700/60 px-2 py-1 text-xs font-bold text-emerald-300">긍정</button><button data-article-id="${escapeHtml(item.id)}" data-sentiment="negative" class="resolve-news rounded-lg border border-red-700/60 px-2 py-1 text-xs font-bold text-red-300">부정</button><button data-article-id="${escapeHtml(item.id)}" data-sentiment="neutral" class="resolve-news rounded-lg border border-slate-600 px-2 py-1 text-xs font-bold text-slate-300">중립</button><button data-article-id="${escapeHtml(item.id)}" class="exclude-news rounded-lg border border-amber-700/60 px-2 py-1 text-xs font-bold text-amber-300">제외</button></div></div></article>`).join('');
-    list.querySelectorAll('.resolve-news').forEach((button) => button.addEventListener('click', async () => {
-      button.disabled = true;
-      try { await invokeAdmin('resolve_uncertain_news', { article_id: button.dataset.articleId, sentiment: button.dataset.sentiment }); await loadUncertainNews(); }
-      catch (error) { showNotice('분류 저장 실패', error.message || '처리하지 못했습니다.', true); button.disabled = false; }
-    }));
-    list.querySelectorAll('.exclude-news').forEach((button) => button.addEventListener('click', async () => {
-      button.disabled = true;
-      try { await invokeAdmin('exclude_uncertain_news', { article_id: button.dataset.articleId }); await loadUncertainNews(); }
-      catch (error) { showNotice('제외 처리 실패', error.message || '처리하지 못했습니다.', true); button.disabled = false; }
-    }));
-  }
-
   function renderSectorEtfs(items) {
     const list = document.getElementById('sector-etf-list');
     if (!items.length) {
@@ -385,14 +365,6 @@
     finally { submit.disabled = false; }
   }
 
-  async function loadUncertainNews() {
-    try { renderUncertainNews((await invokeAdmin('list_uncertain_news')).items || []); }
-    catch (error) {
-      setListAttentionCount('uncertain-news-list', 0);
-      document.getElementById('uncertain-news-list').innerHTML = '<p class="p-4 text-center text-sm text-red-300">목록을 불러오지 못했습니다.</p>';
-    }
-  }
-
   function renderEarningsV2Pending(items) {
     const list = document.getElementById('earnings-v2-pending-list');
     setListAttentionCount('earnings-v2-pending-list', items.length);
@@ -442,7 +414,6 @@
     try {
       const status = await invokeAdmin('status');
       applyStatus(status);
-      await loadUncertainNews();
       await loadEarningsV2Pending();
       await loadSectorEtfs();
       await loadExtremeNewsRules();
@@ -562,7 +533,6 @@
       const current = Array.from(document.querySelectorAll('[data-schedule-time]'), (input) => input.value);
       renderScheduleTimeInputs(current);
     });
-    document.getElementById('refresh-uncertain-button').addEventListener('click', loadUncertainNews);
     document.getElementById('refresh-earnings-pending-button').addEventListener('click', loadEarningsV2Pending);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
