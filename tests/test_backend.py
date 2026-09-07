@@ -780,6 +780,19 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("today = date.today()", korea_pipeline)
         self.assertIn("today_month = today.replace(day=1).isoformat()", korea_pipeline)
 
+    def test_us_liquidity_uses_weekly_smoothed_version_without_changing_korea(self):
+        pipeline = (ROOT / "backend/liquidity_pipeline.py").read_text(encoding="utf-8")
+        chart = (ROOT / "liquidity-chart.js").read_text(encoding="utf-8")
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertIn('US_VERSION = "us-equity-environment-weekly-v2"', pipeline)
+        self.assertIn('"frequency": "W", "method_version": US_VERSION', pipeline)
+        self.assertIn('VERSION = "liquidity-monthly-v2"', pipeline)
+        self.assertIn("weekly_smoothed_features", pipeline)
+        self.assertIn("us-equity-environment-weekly-v2", chart)
+        self.assertIn("주별 점수", chart)
+        self.assertIn("최근 4주 평균", html)
+        self.assertIn("liquidity-chart.js?v=9", html)
+
     def test_admin_payload_cannot_override_api_action(self) -> None:
         admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
         frontend_core = (ROOT / "frontend-core.js").read_text(encoding="utf-8")

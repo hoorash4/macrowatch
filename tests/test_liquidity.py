@@ -6,6 +6,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 import liquidity_pipeline as lp
 
 
+def weekly_environment(start, end, value_for_index):
+    output, cursor, index = {}, start, 0
+    while cursor <= end:
+        output[cursor] = {key: value_for_index(index, direction)
+                          for key, direction in lp.US_DIRECTIONS.items()}
+        cursor += timedelta(weeks=1)
+        index += 1
+    return {'environment': output}
+
+
 class LiquidityTests(unittest.TestCase):
     def test_percentile_ties_and_direction(self):
         self.assertEqual(lp.percentile(1, [1, 1]), 50)
@@ -58,26 +68,39 @@ class LiquidityTests(unittest.TestCase):
 
     def test_future_does_not_change_past_score(self):
         from unittest.mock import patch
-        start = date(2016, 1, 1)
-        feature = {'environment': {lp.shift_month(start, i): {key: i for key in lp.US_DIRECTIONS} for i in range(72)}}
+        feature = weekly_environment(date(2016, 1, 1), date(2021, 12, 31),
+                                     lambda index, _direction: index)
         with patch.object(lp, 'features', return_value=feature):
-            before = lp.calculate('US', {}, date(2022, 1, 1))
-            feature['environment'][date(2022, 1, 1)] = {key: 100000 for key in lp.US_DIRECTIONS}
-            after = lp.calculate('US', {}, date(2022, 2, 1))
-        self.assertEqual(before, [r for r in after if r['observation_date'] < '2022-01-01'])
+            before = lp.calculate('US', {}, date(2022, 1, 3))
+            feature['environment'][date(2022, 1, 7)] = {key: 100000 for key in lp.US_DIRECTIONS}
+            after = lp.calculate('US', {}, date(2022, 1, 10))
+        self.assertEqual(before, [r for r in after if r['observation_date'] <= '2021-12-31'])
 
     def test_environment_direction_and_unchanged_momentum(self):
         from unittest.mock import patch
-        feature = {'environment': {lp.shift_month(date(2016, 1, 1), i): {key: 1 for key in lp.US_DIRECTIONS} for i in range(72)}}
+        feature = weekly_environment(date(2016, 1, 1), date(2021, 12, 31),
+                                     lambda _index, _direction: 1)
         with patch.object(lp, 'features', return_value=feature):
-            flat = lp.calculate('US', {}, date(2022, 1, 1))
+            flat = lp.calculate('US', {}, date(2022, 1, 3))
             self.assertTrue(all(row['score'] == 50 for row in flat))
-            feature['environment'][date(2021, 12, 1)] = {key: 1 + direction for key, direction in lp.US_DIRECTIONS.items()}
-            improved = lp.calculate('US', {}, date(2022, 1, 1))
-            self.assertTrue(all(row['score'] > 50 for row in improved if row['observation_date'] == '2021-12-01'))
-            del feature['environment'][date(2021, 11, 1)]
+            feature['environment'][date(2021, 12, 31)] = {
+                key: 1 + direction for key, direction in lp.US_DIRECTIONS.items()
+            }
+            improved = lp.calculate('US', {}, date(2022, 1, 3))
+            self.assertTrue(all(row['score'] > 50 for row in improved
+                                if row['observation_date'] == '2021-12-31'))
+            del feature['environment'][date(2021, 12, 10)]
             with self.assertRaises(RuntimeError):
-                lp.calculate('US', {}, date(2022, 1, 1))
+                lp.calculate('US', {}, date(2022, 1, 3))
+
+    def test_weekly_four_week_average_excludes_open_week(self):
+        values = {
+            date(2026, 7, 10): {'spread': 1}, date(2026, 7, 17): {'spread': 2},
+            date(2026, 7, 24): {'spread': 3}, date(2026, 7, 31): {'spread': 4},
+            date(2026, 8, 3): {'spread': 100},
+        }
+        self.assertEqual(lp.weekly_smoothed_features(values, date(2026, 8, 3)),
+                         {date(2026, 7, 31): {'spread': 2.5}})
 
     def test_monthly_average_before_ranking_and_open_month_excluded(self):
         values = {date(2026, 7, 1): {'spread': 0}, date(2026, 7, 31): {'spread': 10},

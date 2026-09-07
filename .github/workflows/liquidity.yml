@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths: [backend/liquidity_pipeline.py, .github/workflows/liquidity.yml]
   schedule:
-    # 18:10 KST, after Korean daily source releases. Monthly data stay monthly.
+    # 18:10 KST, after Korean daily source releases. US publishes completed weeks; KR stays monthly.
     - cron: '10 9 * * *'
   workflow_dispatch:
 

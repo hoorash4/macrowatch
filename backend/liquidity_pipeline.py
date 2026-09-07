@@ -16,7 +16,7 @@ import requests
 from common import SupabaseRest, fetch_fred_observations, require_env
 
 VERSION = "liquidity-monthly-v2"
-US_VERSION = "us-equity-environment-v1"
+US_VERSION = "us-equity-environment-weekly-v2"
 US_START = date(2021, 11, 1)
 US_DIRECTIONS = {"real_yield": -1, "credit_conditions": -1, "net_supply_change": 1, "funding_spread": -1}
 START = date(2021, 9, 7)  # Initial five-year history; never move this retention boundary.
@@ -226,24 +226,24 @@ def equity_environment_features(data):
 
 
 def calculate_equity_environment(data, end):
-    observations = monthly_features(features("US", data)["environment"], end)
+    observations = weekly_smoothed_features(features("US", data)["environment"], end)
     dates = sorted(observations)
     output = []
     for day in dates:
         if day < US_START:
             continue
-        previous_day = shift_month(day, -3)
+        previous_day = day - timedelta(weeks=13)
         if previous_day not in observations:
-            raise RuntimeError(f"Missing 3-month baseline for US environment: {day}")
-        history = [d for d in dates if shift_month(day, -60) < d <= day]
+            raise RuntimeError(f"Missing 13-week baseline for US environment: {day}")
+        history = [d for d in dates if day - timedelta(weeks=260) < d <= day]
         levels, changes, change_scores = {}, {}, {}
         for name, direction in US_DIRECTIONS.items():
             value = observations[day][name]
             rank = percentile(value, [observations[d][name] for d in history])
             levels[name] = rank if direction > 0 else 100 - rank
             changes[name] = direction * (value - observations[previous_day][name])
-            past_changes = [observations[d][name] - observations[shift_month(d, -3)][name]
-                            for d in history if shift_month(d, -3) in observations]
+            past_changes = [observations[d][name] - observations[d - timedelta(weeks=13)][name]
+                            for d in history if d - timedelta(weeks=13) in observations]
             rms = math.sqrt(sum(v * v for v in past_changes) / len(past_changes)) if past_changes else 0
             # Exactly 50 for no change. Changes in rolling ranks cannot imply improvement.
             change_scores[name] = 50 if not rms else 50 + 50 * math.tanh(changes[name] / (2 * rms))
@@ -252,18 +252,18 @@ def calculate_equity_environment(data, end):
             output.append({"country": "US", "metric": metric, "observation_date": day.isoformat(),
                            "score": round(sum(scores[k] * w for k, w in WEIGHTS["US", metric].items()), 4),
                            "components": components, "component_scores": scores,
-                           "sample_count": len(history), "is_warmup": len(history) < 12,
-                           "frequency": "M", "method_version": US_VERSION})
-    expected_last = shift_month(end.replace(day=1), -1)
+                           "sample_count": len(history), "is_warmup": len(history) < 52,
+                           "frequency": "W", "method_version": US_VERSION})
+    expected_last = end - timedelta(days=end.weekday() + 3)
     expected_dates = set()
-    cursor = US_START
+    cursor = US_START + timedelta(days=(4 - US_START.weekday()) % 7)
     while cursor <= expected_last:
         expected_dates.add(cursor.isoformat())
-        cursor = shift_month(cursor, 1)
+        cursor += timedelta(weeks=1)
     for metric in ("environment", "momentum"):
         actual = {row["observation_date"] for row in output if row["metric"] == metric}
         if actual != expected_dates:
-            raise RuntimeError(f"Incomplete US/{metric} monthly coverage: {sorted(expected_dates - actual)}")
+            raise RuntimeError(f"Incomplete US/{metric} weekly coverage: {sorted(expected_dates - actual)}")
     return output
 
 
@@ -284,6 +284,27 @@ def monthly_features(observations, end):
         grouped.setdefault(month, []).append(values)
     return {month: {key: sum(row[key] for row in rows) / len(rows)
                     for key in rows[0]} for month, rows in grouped.items()}
+
+
+def weekly_smoothed_features(observations, end):
+    """Publish completed ISO weeks as Friday-dated four-week moving averages."""
+    last_closed_friday = end - timedelta(days=end.weekday() + 3)
+    grouped = {}
+    for day, values in sorted(observations.items()):
+        week_end = day + timedelta(days=4 - day.weekday())
+        if week_end > last_closed_friday:
+            continue
+        grouped.setdefault(week_end, []).append(values)
+    weekly = {week: {key: sum(row[key] for row in rows) / len(rows)
+                     for key in rows[0]} for week, rows in grouped.items()}
+    smoothed = {}
+    for week in sorted(weekly):
+        window = [week - timedelta(weeks=offset) for offset in range(4)]
+        if not all(item in weekly for item in window):
+            continue
+        smoothed[week] = {key: sum(weekly[item][key] for item in window) / len(window)
+                          for key in weekly[week]}
+    return smoothed
 
 
 def calculate(country, data, end=None):
