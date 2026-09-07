@@ -43,6 +43,7 @@ jobs:
           node --check policy-chart.js
           node tests/test_dashboard.js
           node tests/test_policy_scoring.ts
+          node tests/test_sector_leadership.ts
       - name: Check Python syntax and behavior contracts
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt

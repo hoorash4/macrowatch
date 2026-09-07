@@ -1327,7 +1327,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current > ol > li:last-child { border-bottom:0; }
 .sector-flow-week-current .sector-flow-columns,
 .sector-flow-week-current > ol > li {
-  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 10.5rem repeat(3,7rem);
+  grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 10.5rem repeat(4,7rem);
   gap:.65rem;
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(n+4) { text-align:center; }
@@ -1361,6 +1361,30 @@ body:has(#app-shell:not(.hidden)) {
   font-size:.68rem;
   text-align:center;
 }
+.sector-flow-leadership {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.45rem;
+  color:#285f87;
+  font-size:.72rem;
+  font-weight:800;
+}
+.sector-flow-leadership > span {
+  width:3.5rem;
+  height:.38rem;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(47,105,154,.12);
+}
+.sector-flow-leadership > span > i {
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,#6ca4c9,#dc7a2d);
+}
+.sector-flow-leadership em { min-width:1.4rem; font-style:normal; }
+.sector-flow-leadership-empty { color:#92a4b2; font-weight:600; }
 .sector-flow-week-current .sector-flow-returns { display:contents; }
 .sector-flow-week-current .sector-flow-returns > span {
   justify-content:center;
@@ -1600,7 +1624,7 @@ body:has(#app-shell:not(.hidden)) {
     padding:0 .35rem;
   }
   .sector-flow-history { grid-template-columns:repeat(4,12rem); }
-  .sector-flow-week-current { min-width:48rem; }
+  .sector-flow-week-current { min-width:56rem; }
 }
 @keyframes dashboardSpin {
   to {

@@ -16,10 +16,12 @@ export type SectorRanking = {
   top10Streak: number;
   weeklyReturnPct: number;
   cumulativeReturnPct: number;
+  leadershipScore: number | null;
   priceStage: "open" | "intraday" | "close";
 };
 
 export type SectorPriceDate = { etfId: string; marketDate: string };
+export type MarketPrice = { marketDate: string; closePrice: number };
 
 const DAY_MS = 86_400_000;
 const dateValue = (value: string) => Date.parse(`${value}T00:00:00Z`);
@@ -58,7 +60,73 @@ function effectivePrice(row: SectorPrice, currentDate: string) {
   return row.closePrice;
 }
 
-export function calculateSectorRankings(prices: SectorPrice[], currentDate: string): SectorRanking[] {
+/**
+ * 최근 20거래일이 실제 상승 흐름일 때만, KOSPI 상승일에 반복적으로
+ * 초과수익을 낸 정도를 섹터 간 0~100으로 정규화합니다.
+ */
+export function calculateSectorLeadership(
+  prices: SectorPrice[], marketPrices: MarketPrice[], endpointDate: string,
+) {
+  const market = marketPrices
+    .filter((row) => row.marketDate <= endpointDate && row.closePrice > 0)
+    .sort((a, b) => a.marketDate.localeCompare(b.marketDate))
+    .slice(-21);
+  if (market.length < 21) return new Map<string, number>();
+
+  const marketReturns = market.slice(1).map((row, index) => ({
+    marketDate: row.marketDate,
+    previousDate: market[index].marketDate,
+    value: row.closePrice / market[index].closePrice - 1,
+    block: Math.floor(index / 5),
+  }));
+  const upDays = marketReturns.filter((row) => row.value > 0);
+  const marketCumulative = market[market.length - 1].closePrice / market[0].closePrice - 1;
+  if (upDays.length < 11 || marketCumulative <= 0) return new Map<string, number>();
+
+  const byEtf = new Map<string, Map<string, number>>();
+  prices.filter((row) => row.closePrice !== null && row.closePrice > 0 && row.marketDate <= endpointDate).forEach((row) => {
+    const history = byEtf.get(row.etfId) || new Map<string, number>();
+    history.set(row.marketDate, Number(row.closePrice));
+    byEtf.set(row.etfId, history);
+  });
+
+  const rawScores = new Map<string, number>();
+  for (const [etfId, history] of byEtf) {
+    const excessByUpDay: Array<{ value: number; block: number }> = [];
+    let complete = true;
+    for (const marketReturn of marketReturns) {
+      const previous = history.get(marketReturn.previousDate), current = history.get(marketReturn.marketDate);
+      if (!previous || !current) {
+        complete = false;
+        break;
+      }
+      if (marketReturn.value > 0) {
+        excessByUpDay.push({ value: current / previous - 1 - marketReturn.value, block: marketReturn.block });
+      }
+    }
+    if (!complete || excessByUpDay.length !== upDays.length) continue;
+    const positive = excessByUpDay.filter((row) => row.value > 0);
+    if (!positive.length) {
+      rawScores.set(etfId, 0);
+      continue;
+    }
+    const strength = positive.reduce((sum, row) => sum + row.value, 0) / positive.length;
+    const hitRate = positive.length / excessByUpDay.length;
+    const activeBlocks = new Set(positive.map((row) => row.block)).size;
+    const representedBlocks = new Set(excessByUpDay.map((row) => row.block)).size;
+    const persistence = hitRate * (representedBlocks ? activeBlocks / representedBlocks : 0);
+    rawScores.set(etfId, strength * persistence);
+  }
+
+  const positiveScores = [...rawScores.values()].filter((value) => value > 0).sort((a, b) => a - b);
+  if (!positiveScores.length) return new Map([...rawScores.keys()].map((etfId) => [etfId, 0]));
+  const reference = positiveScores[Math.max(0, Math.ceil(positiveScores.length * .9) - 1)];
+  return new Map([...rawScores].map(([etfId, raw]) => [etfId, Math.round(Math.min(100, raw / reference * 100))]));
+}
+
+export function calculateSectorRankings(
+  prices: SectorPrice[], currentDate: string, marketPrices: MarketPrice[] = [],
+): SectorRanking[] {
   const byEtf = new Map<string, SectorPrice[]>();
   for (const row of prices) {
     const list = byEtf.get(row.etfId) || [];
@@ -97,6 +165,8 @@ export function calculateSectorRankings(prices: SectorPrice[], currentDate: stri
   for (const [week, rows] of rawByWeek) ranked.set(week, new Map(rows.map((row, index) => [row.etfId, index + 1])));
   const output: SectorRanking[] = [];
   weekStarts.forEach((week, weekIndex) => {
+    const weekEnd = isoDate(dateValue(week) + 6 * DAY_MS);
+    const leadership = calculateSectorLeadership(prices, marketPrices, weekEnd < currentDate ? weekEnd : currentDate);
     const previous = weekIndex ? ranked.get(weekStarts[weekIndex - 1]) : null;
     (rawByWeek.get(week) || []).forEach((row, index) => {
       const rank = index + 1, previousRank = previous?.get(row.etfId) ?? null;
@@ -110,7 +180,8 @@ export function calculateSectorRankings(prices: SectorPrice[], currentDate: stri
         weekStart: week, etfId: row.etfId, rank, previousRank,
         isNew: rank <= 10 && (previousRank === null || previousRank > 10),
         top10Streak: rank <= 10 ? streak : 0,
-        weeklyReturnPct: row.weekly, cumulativeReturnPct: row.cumulative, priceStage: row.stage,
+        weeklyReturnPct: row.weekly, cumulativeReturnPct: row.cumulative,
+        leadershipScore: leadership.get(row.etfId) ?? null, priceStage: row.stage,
       });
     });
   });

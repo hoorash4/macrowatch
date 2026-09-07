@@ -624,13 +624,13 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /\.sector-flow-holdings \{[\s\S]*width:9rem;/);
   assert.match(styles, /\.sector-flow-week-current > ol \{\s*grid-template-columns:1fr;/);
   assert.match(styles, /sector-flow-week-current > ol > li:last-child \{ border-bottom:0; \}/);
-  assert.match(charts, /<span>대표종목<\/span><span>주간 수익률<\/span><span>4주 누적 수익률<\/span><span>랭킹 연속 유지<\/span>/);
+  assert.match(charts, /<span>대표종목<\/span><span>주간 수익률<\/span><span>4주 누적 수익률<\/span><span>랭킹 연속 유지<\/span><span>주도력<\/span>/);
   assert.match(charts, /function sectorTopHolding\(etf\)/);
   assert.match(charts, /isLatestWeek \? '주차' : '주'/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 10\.5rem repeat\(3,7rem\)/);
+  assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:2rem 2\.5rem minmax\(8rem,1fr\) 10\.5rem repeat\(4,7rem\)/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns \{ display:contents; \}/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns span:nth-child\(-n\+2\) \{ text-align:center; \}/);
-  assert.match(charts, /isLatestWeek \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}` : `\$\{streak\}\$\{returns\}`/);
+  assert.match(charts, /isLatestWeek \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}\$\{sectorLeadership\(row\.leadership_score\)\}` : `\$\{streak\}\$\{returns\}`/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-streak \{[\s\S]*font-size:\.68rem;[\s\S]*text-align:center;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-returns > span \{\s*justify-content:center;/);
   assert.match(styles, /\.sector-flow-top-holding \{[\s\S]*text-align:center;/);
@@ -662,7 +662,10 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns \{\s*padding:\.28rem \.2rem;/);
   assert.doesNotMatch(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns > span:nth-child\(2\)::before/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.7rem; \}/);
-  assert.match(styles, /sector-flow-week-current \{ min-width:48rem; \}/);
+  assert.match(styles, /sector-flow-week-current \{ min-width:56rem; \}/);
+  assert.match(charts, /function sectorLeadership\(value\)/);
+  assert.match(charts, /leadership_score/);
+  assert.match(styles, /\.sector-flow-leadership > span > i/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);
   assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.66rem;[\s\S]*font-weight:500;/);
   assert.doesNotMatch(styles, /margin-left:\.28rem/);

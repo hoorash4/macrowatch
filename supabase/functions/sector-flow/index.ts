@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createKisRequestRunner, fetchKisDailyPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
-import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
+import { createKisRequestRunner, fetchKisDailyPrices, fetchKisDomesticIndexPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type MarketPrice, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
 
 const DATABASE_PAGE_SIZE = 1000;
 const PRICE_RETENTION_WEEKS = 10;
@@ -15,6 +15,7 @@ type StoredSectorPrice = {
   price_stage: "open" | "intraday" | "close";
 };
 type StoredRankingAnchor = { etf_id: string; rank: number | string; previous_rank: number | string | null; top10_streak: number | string };
+type StoredMarketPrice = { market_date: string; close: number | string };
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
@@ -97,6 +98,7 @@ Deno.serve(async (request) => {
     const collected: Record<string, unknown>[] = [], failures: Array<{ ticker: string; error: string }> = [];
     const holdings: Record<string, unknown>[] = [], holdingRefreshIds: string[] = [];
     const holdingFailures: Array<{ ticker: string; error: string }> = [];
+    let benchmarkRefreshFailure: string | null = null;
     // 등록 도중 KIS가 일부 일봉만 반환해도 다음 정기 수집에서 자동 복구합니다.
     // 보관 구간의 국내 거래일 달력은 정상 수집된 다른 ETF들의 합집합을 사용합니다.
     const existingPrices = await loadSectorPriceHistory(admin, retentionStart);
@@ -151,6 +153,22 @@ Deno.serve(async (request) => {
           }
         }
       }
+      if (stage === "close") {
+        try {
+          const benchmark = await fetchKisDomesticIndexPrices(
+            credentials, token, "0001", new Date(`${retentionStart}T00:00:00Z`), end, "D", runKisRequest,
+          );
+          if (!benchmark.length) throw new Error("KIS 코스피 일봉 응답이 비어 있습니다.");
+          const { error: benchmarkError } = await admin.from("market_index_prices").upsert(benchmark.map((row) => ({
+            index_code: "KOSPI", market_date: row.marketDate, open: row.open, high: row.high,
+            low: row.low, close: row.close, volume: row.volume, source: "kis", updated_at: new Date().toISOString(),
+          })), { onConflict: "index_code,market_date" });
+          if (benchmarkError) throw benchmarkError;
+        } catch (error) {
+          // 기존 KOSPI 공용 시계열로 계산을 계속하되, 응답에는 최신화 실패를 명시합니다.
+          benchmarkRefreshFailure = error instanceof Error ? error.message : String(error);
+        }
+      }
       if (!collected.length) {
         if (failures.length) throw new Error(`ETF 가격 수집 실패: ${failures.length}건`);
         return json({ ok: true, stage, skipped: true, reason: "거래일 가격이 없습니다.", failures });
@@ -180,7 +198,14 @@ Deno.serve(async (request) => {
       closePrice: row.close_price === null ? null : Number(row.close_price),
       latestPrice: Number(row.latest_price), priceStage: row.price_stage,
     }));
-    const rankings = calculateSectorRankings(normalized, today);
+    const { data: storedMarket, error: marketError } = await admin.from("market_index_prices")
+      .select("market_date,close").eq("index_code", "KOSPI").gte("market_date", retentionStart)
+      .order("market_date", { ascending: true });
+    if (marketError) throw marketError;
+    const marketPrices: MarketPrice[] = ((storedMarket || []) as StoredMarketPrice[]).map((row) => ({
+      marketDate: row.market_date, closePrice: Number(row.close),
+    }));
+    const rankings = calculateSectorRankings(normalized, today, marketPrices);
     const currentRows = rankings.filter((row) => row.weekStart === currentWeek);
     const previousWeek = new Date(Date.parse(`${currentWeek}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
     const { data: previousRows, error: previousError } = await admin.from("market_sector_weekly_rankings")
@@ -215,7 +240,8 @@ Deno.serve(async (request) => {
       const { error: rankingError } = await admin.from("market_sector_weekly_rankings").insert(persistedRows.map((row) => ({
         week_start: row.weekStart, etf_id: row.etfId, rank: row.rank, previous_rank: row.previousRank,
         is_new: row.isNew, top10_streak: row.top10Streak, weekly_return_pct: row.weeklyReturnPct,
-        cumulative_return_pct: row.cumulativeReturnPct, price_stage: row.priceStage,
+        cumulative_return_pct: row.cumulativeReturnPct, leadership_score: row.leadershipScore,
+        price_stage: row.priceStage,
         calculated_at: new Date().toISOString(),
       })));
       if (rankingError) throw rankingError;
@@ -228,7 +254,10 @@ Deno.serve(async (request) => {
       ok: true, stage, rebuild_only: rebuildOnly, backfill_history: backfillHistory,
       auto_backfill_count: autoBackfillIds.size,
       registry_count: registry.length, price_rows: collected.length, holding_rows: holdings.length,
-      ranking_rows: persistedRows.length, retention_start: retentionStart, failures, holding_failures: holdingFailures,
+      ranking_rows: persistedRows.length,
+      leadership_rows: persistedRows.filter((row) => row.leadershipScore !== null).length,
+      retention_start: retentionStart, failures,
+      holding_failures: holdingFailures, benchmark_refresh_failure: benchmarkRefreshFailure,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

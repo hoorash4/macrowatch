@@ -86,6 +86,8 @@ jobs:
           # Keep the retired V1 schema absent even when the deployment is replayed.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260904000000_remove_earnings_v1.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260907214752_add_sector_leadership_score.sql
 
       - name: Deploy Edge Functions
         run: |
