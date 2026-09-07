@@ -109,15 +109,41 @@
   function scrollableSvg(svg, width, baseWidth = 920) {
     if (!svg) return;
     const frame = document.createElement('div');
+    const shell = document.createElement('div');
+    shell.style.cssText = 'position:relative;width:100%;min-width:0;background:#fff;';
     frame.dataset.historyScroll = 'true';
     frame.style.cssText = 'overflow-x:auto;overflow-y:hidden;width:100%;min-width:0;background:#fff;';
     frame.tabIndex = 0;
     frame.setAttribute('aria-label', '전체 이력 가로 스크롤');
-    svg.before(frame);
+    svg.before(shell);
+    shell.append(frame);
     frame.append(svg);
     svg.style.width = `${width / baseWidth * 100}%`;
     svg.style.maxWidth = 'none';
     svg.style.display = 'block';
+
+    // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
+    // 축의 라벨과 세로선만 별도 SVG에 복제해 왼쪽에 고정한다.
+    const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\\s+/).map(Number);
+    const axisNodes = [...svg.querySelectorAll('text,line')].filter((node) => {
+      const x = Number(node.getAttribute('x'));
+      const x1 = Number(node.getAttribute('x1'));
+      const x2 = Number(node.getAttribute('x2'));
+      return (node.tagName === 'text' && Number.isFinite(x) && x <= 55)
+        || (node.tagName === 'line' && Number.isFinite(x1) && x1 === x2 && x1 <= 65);
+    });
+    if (axisNodes.length && Number.isFinite(viewHeight)) {
+      const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      fixedAxis.setAttribute('viewBox', `0 0 72 ${viewHeight}`);
+      fixedAxis.setAttribute('aria-hidden', 'true');
+      fixedAxis.style.cssText = 'position:absolute;z-index:2;left:0;top:0;width:72px;height:100%;background:#fff;pointer-events:none;';
+      axisNodes.forEach((node) => {
+        fixedAxis.append(node.cloneNode(true));
+        node.setAttribute('visibility', 'hidden');
+      });
+      shell.append(fixedAxis);
+    }
+
     // Relative width works even when a dashboard panel starts hidden.
     const observer = new ResizeObserver(() => {
       if (frame.clientWidth > 0) {
