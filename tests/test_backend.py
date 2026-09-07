@@ -231,6 +231,50 @@ class CommonClientTests(unittest.TestCase):
 
 
 class SourceContractTests(unittest.TestCase):
+    def test_us_earnings_schedule_runs_snapshot_before_edgar_and_pending_retry(self):
+        workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+        backfill_workflow = (ROOT / ".github/workflows/earnings-us-backfill.yml").read_text(encoding="utf-8")
+        cli = (ROOT / "backend/earnings_us/automatic_cli.py").read_text(encoding="utf-8")
+
+        self.assertIn('cron: "0 2 * * *"', workflow)
+        self.assertIn('cron: "30 2 * * *"', workflow)
+        self.assertIn('cron: "0 3 * * *"', workflow)
+        self.assertNotIn('cron: "30 22 * * *"', workflow)
+        self.assertIn("options: [snapshot, edgar, incomplete, all]", workflow)
+        self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
+        self.assertIn("group: earnings-us-pipeline", workflow)
+        self.assertIn("group: earnings-us-pipeline", backfill_workflow)
+        universe_workflow = (ROOT / ".github/workflows/earnings-us-universe-backfill.yml").read_text(encoding="utf-8")
+        self.assertIn("group: earnings-us-pipeline", universe_workflow)
+
+    def test_scheduled_workflow_failure_email_is_centralized_and_complete(self):
+        notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")
+        us_workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
+        scheduled_names = set()
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            workflow = path.read_text(encoding="utf-8")
+            if re.search(r"(?m)^  schedule:", workflow):
+                scheduled_names.add(re.search(r"(?m)^name:\s*(.+)$", workflow).group(1).strip())
+
+        monitored_block = re.search(r"workflows:\n(?P<body>(?:\s+- .+\n)+)", notifier).group("body")
+        monitored_names = set(re.findall(r'^\s+- "(.+)"$', monitored_block, flags=re.MULTILINE))
+
+        self.assertEqual(monitored_names, scheduled_names)
+        self.assertIn("workflow_dispatch:", notifier)
+        self.assertIn("github.event_name == 'workflow_dispatch'", notifier)
+        self.assertIn("[MacroWatch][테스트] 예약 실행 실패 알림", notifier)
+        self.assertIn("github.event.workflow_run.event == 'schedule'", notifier)
+        self.assertIn("github.event.workflow_run.conclusion == 'failure'", notifier)
+        self.assertIn("github.event.workflow_run.conclusion == 'timed_out'", notifier)
+        self.assertIn("EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}", notifier)
+        self.assertIn("EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}", notifier)
+        self.assertIn("EMAIL_RCV_ADDRESS: ${{ secrets.EMAIL_RCV_ADDRESS }}", notifier)
+        self.assertIn('smtplib.SMTP("smtp.gmail.com", 587, timeout=30)', notifier)
+        self.assertIn('message["To"] = recipient', notifier)
+        self.assertIn("Failure notification email sent successfully.", notifier)
+        self.assertNotIn("notify_failure:", us_workflow)
+        self.assertNotIn("OUTLOOK_APP_PASSWORD", notifier)
+
     def test_closed_membership_keeps_passwords_in_supabase_auth(self):
         migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
         auth = (ROOT / "auth.js").read_text(encoding="utf-8")
@@ -467,7 +511,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('--phase', automatic_cli)
         self.assertIn('choices=("dart", "kis", "all")', automatic_cli)
         self.assertIn('args+=(--phase "$PHASE")', automatic_workflow)
-        self.assertNotIn("schedule:", automatic_workflow)
+        self.assertIn('cron: "30 10 * * 1-5"', automatic_workflow)
+        self.assertIn('cron: "30 11 * * 1-5"', automatic_workflow)
+        self.assertIn("github.event.schedule == '30 10 * * 1-5'", automatic_workflow)
+        self.assertIn("EARNINGS_FINANCIAL_SOURCE_TOKEN", automatic_workflow)
+        self.assertIn("DATA_GO_KR_SERVICE_KEY", automatic_workflow)
         self.assertNotIn("--year", automatic_workflow)
         self.assertNotIn("--quarter", automatic_workflow)
         self.assertNotIn("replace_company_quarters_for_backfill", pipeline)
@@ -478,6 +526,23 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("'korea_v2', 'daily_filings'", initializer)
         self.assertIn("'last_checked_date', (now() at time zone 'Asia/Seoul')::date", initializer)
         self.assertIn("on conflict (source, operation) do nothing", initializer)
+
+    def test_earnings_v2_public_history_and_seasonal_refresh_start_at_2016(self):
+        migration = (ROOT / "supabase/migrations/20260905090000_expand_earnings_chart_to_2016.sql").read_text(encoding="utf-8")
+
+        self.assertEqual(migration.count("market_year >= 2016"), 5)
+        self.assertNotIn("market_year >= 2019", migration)
+        self.assertIn("create or replace function earnings_v2.refresh_market_seasonal_adjustment()", migration)
+        self.assertIn("create or replace function public.earnings_v2_public_market_series", migration)
+        self.assertIn("select earnings_v2.refresh_market_seasonal_adjustment();", migration)
+
+    def test_backfill_replacement_uses_physical_market_period(self):
+        migration = (ROOT / "supabase/migrations/20260906204500_replace_backfill_rows_by_market_period.sql").read_text(encoding="utf-8")
+
+        self.assertIn("as incoming(company_id text, market_year integer, market_quarter smallint)", migration)
+        self.assertIn("q.market_year = incoming.market_year", migration)
+        self.assertIn("q.market_quarter = incoming.market_quarter", migration)
+        self.assertNotIn("q.fiscal_year = incoming.fiscal_year", migration)
 
     def test_target_alerts_use_db_tokens_retry_queue_and_visible_failures(self):
         checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
@@ -560,6 +625,9 @@ class SourceContractTests(unittest.TestCase):
 
     def test_fomc_pipeline_normalizes_ai_output_before_storage(self) -> None:
         pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
+        self.assertIn('const FOMC_MODEL = Deno.env.get("AI_MODEL_FOMC") || "gpt-5.6-terra"', pipeline)
+        self.assertIn("model: FOMC_MODEL", pipeline)
+        self.assertNotIn('Deno.env.get("AI_MODEL_STANDARD")', pipeline)
         self.assertIn("const REASON_CONFIDENCE_THRESHOLD = 0.55", pipeline)
         self.assertIn("function normalizedChangeBps", pipeline)
         self.assertIn("const isFiniteNumber = (value: unknown): value is number", pipeline)
@@ -630,6 +698,8 @@ class SourceContractTests(unittest.TestCase):
             self.assertNotIn("RETENTION_MONTHS", pipeline)
             self.assertNotIn("month_start_months_ago", pipeline)
             self.assertNotIn("delete_before(", pipeline)
+        self.assertIn("today = date.today()", korea_pipeline)
+        self.assertIn("today_month = today.replace(day=1).isoformat()", korea_pipeline)
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
         admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
@@ -723,3 +793,4 @@ class KoreaForeignFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

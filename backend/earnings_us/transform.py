@@ -1,0 +1,572 @@
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from typing import Any
+from xml.etree import ElementTree
+
+from .models import USFinancialFact, market_period
+
+
+METRIC_BASES = {
+    "top_line": (
+        ("Revenues",),
+        ("RevenueFromContractWithCustomerExcludingAssessedTax",),
+        ("RevenueFromContractWithCustomerIncludingAssessedTax",),
+        ("SalesRevenueNet",),
+        ("SalesRevenueGoodsNet",),
+        ("SalesRevenueServicesNet",),
+        ("OperatingRevenues",),
+        ("RegulatedAndUnregulatedOperatingRevenue",),
+        ("RevenuesNetOfInterestExpense",),
+        ("RevenuesExcludingInterestAndDividends",),
+        ("InterestIncomeExpenseNet", "NoninterestIncome"),
+        ("CostsAndExpenses", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"),
+        ("CostsAndExpenses", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"),
+        ("OperatingExpenses", "OperatingIncomeLoss"),
+    ),
+    "operating_income": (
+        ("OperatingIncomeLoss",),
+        ("IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",),
+        ("IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",),
+        ("ProfitLoss", "IncomeTaxExpenseBenefit"),
+        ("NetIncomeLoss", "IncomeTaxExpenseBenefit"),
+    ),
+    "net_income": (
+        ("NetIncomeLoss",),
+        ("ProfitLoss",),
+        ("NetIncomeLossAvailableToCommonStockholdersBasic",),
+        ("NetIncomeLossAvailableToCommonStockholdersDiluted",),
+        ("NetIncomeLossIncludingPortionAttributableToNonredeemableNoncontrollingInterest",),
+    ),
+}
+
+# Bank filers sometimes use an issuer extension for the consolidated line
+# labelled "Total revenues, net of interest expense".  It is the exact
+# top-line reported in the filing, not a synthetic sum of segment items.
+EXTENSION_METRIC_BASES = {
+    "top_line": (
+        ("RevenuesNetOfInterestExpense",),
+        ("TotalRevenuesNetOfInterestExpense",),
+        ("TotalRevenueNetOfInterestExpense",),
+    ),
+}
+
+# The SEC company-facts feed retains the issuer's display label for extensions.
+# Resolve the exact reported bank top line by that label when the issuer's
+# extension tag name differs from the common aliases above.
+EXTENSION_METRIC_LABELS = {
+    "top_line": {"total revenues net of interest expense"},
+}
+
+
+def _normalized_extension_label(value: object) -> str:
+    return " ".join(
+        "".join(character if character.isalnum() else " " for character in str(value or "").lower()).split()
+    )
+
+
+def _normalized_sec_row(
+    row: dict[str, Any], annual_ends: list[date], relabel_keys: set[tuple[int, str]],
+) -> dict[str, Any]:
+    """Repair demonstrably conflicting 10-Q labels from their physical periods."""
+    form = str(row.get("form") or "").upper()
+    fp = str(row.get("fp") or "")
+    fy = int(row.get("fy") or 0)
+    if form not in {"10-Q", "10-Q/A"}:
+        return row
+    try:
+        start = date.fromisoformat(str(row["start"]))
+        end = date.fromisoformat(str(row["end"]))
+    except (KeyError, ValueError):
+        return row
+    if end in annual_ends:
+        return {**row, "_year_end_comparison": True}
+    if fp != "FY" and (fy, fp) not in relabel_keys:
+        return row
+    days = (end - start).days + 1
+    previous_ends = [annual_end for annual_end in annual_ends if annual_end < end]
+    if 221 <= days <= 299:
+        fp = "Q3"
+    elif 131 <= days <= 220:
+        fp = "Q2"
+    elif 60 <= days <= 130 and previous_ends:
+        elapsed = (end - max(previous_ends)).days
+        fp = "Q1" if elapsed <= 120 else "Q2" if elapsed <= 220 else "Q3"
+    else:
+        return row
+    quarter = {"Q1": 1, "Q2": 2, "Q3": 3}[fp]
+    return {**row, "fy": _physical_fiscal_year(end, quarter, annual_ends, fy), "fp": fp}
+
+
+def _entry_groups(
+    payload: dict[str, Any], metric: str, annual_ends: list[date] | None = None,
+) -> list[list[list[dict[str, Any]]]]:
+    """Return single-tag or composite SEC fact bases in preference order."""
+    taxonomies = payload.get("facts", {})
+    facts = taxonomies.get("us-gaap", {}) if isinstance(taxonomies, dict) else {}
+    result: list[list[list[dict[str, Any]]]] = []
+    for basis in METRIC_BASES[metric]:
+        components: list[list[dict[str, Any]]] = []
+        for tag in basis:
+            fact = facts.get(tag, {}) if isinstance(facts, dict) else {}
+            units = fact.get("units", {}).get("USD", {}) if isinstance(fact, dict) else {}
+            rows = [item for item in units if isinstance(item, dict)] if isinstance(units, list) else []
+            physical_ends: dict[tuple[int, str], set[date]] = {}
+            for item in rows:
+                try:
+                    start = date.fromisoformat(str(item["start"]))
+                    end = date.fromisoformat(str(item["end"]))
+                    filed = date.fromisoformat(str(item["filed"]))
+                    key = (int(item.get("fy") or 0), str(item.get("fp") or ""))
+                except (KeyError, ValueError):
+                    continue
+                if (
+                    str(item.get("form") or "").upper() in {"10-Q", "10-Q/A"}
+                    and key[0] and key[1] in {"Q1", "Q2", "Q3"}
+                    and 60 <= (end - start).days + 1 <= 130
+                ):
+                    physical_ends.setdefault(key, set()).add(end)
+            relabel_keys = {key for key, ends in physical_ends.items() if len(ends) > 1}
+            components.append([
+                _normalized_sec_row(item, annual_ends or [], relabel_keys) for item in rows
+            ])
+        result.append(components)
+    extension_labels = EXTENSION_METRIC_LABELS.get(metric, set())
+    extension_tags = {tag for basis in EXTENSION_METRIC_BASES.get(metric, ()) for tag in basis}
+    if extension_tags or extension_labels:
+        extension_facts = [
+            fact for namespace, taxonomy in taxonomies.items()
+            if namespace not in {"us-gaap", "dei"} and isinstance(taxonomy, dict)
+            for name, fact in taxonomy.items()
+            if isinstance(fact, dict) and (
+                name in extension_tags or _normalized_extension_label(fact.get("label")) in extension_labels
+            )
+        ]
+        for extension_fact in extension_facts:
+            units = extension_fact.get("units", {}).get("USD", {}) if isinstance(extension_fact, dict) else {}
+            rows = [item for item in units if isinstance(item, dict)] if isinstance(units, list) else []
+            result.append([[_normalized_sec_row(item, annual_ends or [], set()) for item in rows]])
+    return result
+
+
+def _entry_value(entries: list[dict[str, Any]], fy: int, fp: str, accession: str | None, *, annual: bool) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    candidates: list[tuple[date, date, date, Decimal]] = []
+    for row in entries:
+        if row.get("_year_end_comparison"):
+            continue
+        if int(row.get("fy") or 0) != fy or str(row.get("fp") or "") != fp:
+            continue
+        if accession is not None and str(row.get("accn") or "") != accession:
+            continue
+        form = str(row.get("form") or "").upper()
+        allowed_forms = {"10-K", "10-K/A"} if annual or fp in {"FY", "Q4"} else {"10-Q", "10-Q/A"}
+        if form not in allowed_forms:
+            continue
+        try:
+            start, end, filed = date.fromisoformat(str(row["start"])), date.fromisoformat(str(row["end"])), date.fromisoformat(str(row["filed"]))
+            value = Decimal(str(row["val"]))
+        except (KeyError, ValueError, ArithmeticError):
+            continue
+        days = (end - start).days + 1
+        if annual and days < 300:
+            continue
+        if not annual and not 60 <= days <= 130:
+            continue
+        candidates.append((filed, start, end, value))
+    if not candidates:
+        return None, None, None, None
+    filed, start, end, value = max(candidates)
+    return value, start, end, filed
+
+
+def _cumulative_entry_value(
+    entries: list[dict[str, Any]], fy: int, fp: str, accession: str | None,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    """Return a fiscal YTD fact for Q2 or Q3 when no standalone fact exists."""
+    bounds = {"Q2": (131, 220), "Q3": (221, 299)}
+    if fp not in bounds:
+        return None, None, None, None
+    minimum, maximum = bounds[fp]
+    candidates: list[tuple[date, date, date, Decimal]] = []
+    for row in entries:
+        if row.get("_year_end_comparison"):
+            continue
+        if int(row.get("fy") or 0) != fy or str(row.get("fp") or "") != fp:
+            continue
+        if accession is not None and str(row.get("accn") or "") != accession:
+            continue
+        if str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+            continue
+        try:
+            start = date.fromisoformat(str(row["start"]))
+            end = date.fromisoformat(str(row["end"]))
+            filed = date.fromisoformat(str(row["filed"]))
+            value = Decimal(str(row["val"]))
+        except (KeyError, ValueError, ArithmeticError):
+            continue
+        if minimum <= (end - start).days + 1 <= maximum:
+            candidates.append((filed, start, end, value))
+    if not candidates:
+        return None, None, None, None
+    filed, start, end, value = max(candidates)
+    return value, start, end, filed
+
+
+def _basis_value(
+    components: list[list[dict[str, Any]]], fy: int, fp: str,
+    accession: str | None, *, annual: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    values = [_entry_value(rows, fy, fp, accession, annual=annual) for rows in components]
+    if not values or any(item[0] is None for item in values):
+        return None, None, None, None
+    return (
+        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
+        min(item[1] for item in values if item[1] is not None),
+        max(item[2] for item in values if item[2] is not None),
+        max(item[3] for item in values if item[3] is not None),
+    )
+
+
+def _cumulative_basis_value(
+    components: list[list[dict[str, Any]]], fy: int, fp: str, accession: str | None,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    values = [_cumulative_entry_value(rows, fy, fp, accession) for rows in components]
+    if not values or any(item[0] is None for item in values):
+        return None, None, None, None
+    return (
+        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
+        min(item[1] for item in values if item[1] is not None),
+        max(item[2] for item in values if item[2] is not None),
+        max(item[3] for item in values if item[3] is not None),
+    )
+
+
+def _physical_prior_basis_value(
+    components: list[list[dict[str, Any]]], fp: str, fiscal_start: date, before_end: date,
+    *, cumulative: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    """Find a prior fiscal-period fact by physical dates, ignoring unstable SEC ``fy`` labels."""
+    values: list[tuple[Decimal | None, date | None, date | None, date | None]] = []
+    for rows in components:
+        candidates: list[tuple[date, date, date, Decimal]] = []
+        for row in rows:
+            if row.get("_year_end_comparison"):
+                continue
+            if str(row.get("fp") or "") != fp or str(row.get("form") or "").upper() not in {"10-Q", "10-Q/A"}:
+                continue
+            try:
+                start = date.fromisoformat(str(row["start"]))
+                end = date.fromisoformat(str(row["end"]))
+                filed = date.fromisoformat(str(row["filed"]))
+                value = Decimal(str(row["val"]))
+            except (KeyError, ValueError, ArithmeticError):
+                continue
+            days = (end - start).days + 1
+            valid_duration = 131 <= days <= 299 if cumulative else 60 <= days <= 130
+            if start == fiscal_start and end < before_end and valid_duration:
+                candidates.append((end, filed, start, value))
+        if not candidates:
+            values.append((None, None, None, None))
+            continue
+        end, filed, start, value = max(candidates)
+        values.append((value, start, end, filed))
+    if not values or any(item[0] is None for item in values):
+        return None, None, None, None
+    return (
+        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
+        min(item[1] for item in values if item[1] is not None),
+        max(item[2] for item in values if item[2] is not None),
+        max(item[3] for item in values if item[3] is not None),
+    )
+
+
+def _first_basis_value(
+    groups: list[list[list[dict[str, Any]]]], fy: int, fp: str,
+    accession: str | None, *, annual: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    for components in groups:
+        result = _basis_value(components, fy, fp, accession, annual=annual)
+        if result[0] is not None:
+            return result
+    return None, None, None, None
+
+
+def _first_cumulative_basis_value(
+    groups: list[list[list[dict[str, Any]]]], fy: int, fp: str, accession: str | None,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    for components in groups:
+        result = _cumulative_basis_value(components, fy, fp, accession)
+        if result[0] is not None:
+            return result
+    return None, None, None, None
+
+
+def _metric_value(
+    groups: list[list[list[dict[str, Any]]]],
+    fy: int,
+    fp: str,
+    accession: str,
+    *,
+    annual: bool,
+    strict_annual_direct: bool = False,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    """Prefer direct facts, then derive quarters from SEC fiscal YTD facts."""
+    if annual:
+        # Some 10-K XBRL includes the standalone fourth quarter under the FY
+        # context. It is more direct than subtracting three earlier quarters.
+        direct = _first_basis_value(groups, fy, fp, accession, annual=False)
+        annual_context = _first_basis_value(groups, fy, fp, accession, annual=True)
+        direct_is_q4 = (
+            direct[0] is not None
+            and (
+                not strict_annual_direct
+                or (annual_context[2] is not None and direct[2] == annual_context[2])
+            )
+        )
+        if direct_is_q4:
+            return direct
+    for components in groups:
+        value, start, end, filed = _basis_value(components, fy, fp, accession, annual=annual)
+        if value is None:
+            continue
+        if not annual:
+            return value, start, end, filed
+        q3_ytd = _physical_prior_basis_value(components, "Q3", start, end, cumulative=True)
+        if q3_ytd[0] is None:
+            q3_ytd = _cumulative_basis_value(components, fy, "Q3", None)
+        if q3_ytd[0] is not None:
+            return value - q3_ytd[0], start, end, filed
+        prior = [_basis_value(components, fy, label, None, annual=False)[0] for label in ("Q1", "Q2", "Q3")]
+        if all(item is not None for item in prior):
+            return value - sum(prior, Decimal(0)), start, end, filed
+    if not annual and fp == "Q1":
+        # A late filer can omit Q1's direct top-line or operating fact but
+        # disclose both six-month YTD and standalone Q2 in the same 10-Q.
+        # Their exact difference is the missing first quarter.
+        for components in groups:
+            q2_ytd = _cumulative_basis_value(components, fy, "Q2", accession)
+            q2_direct = _basis_value(components, fy, "Q2", accession, annual=False)
+            if q2_ytd[0] is None or q2_direct[0] is None or q2_direct[1] is None:
+                continue
+            q1_end = q2_direct[1].fromordinal(q2_direct[1].toordinal() - 1)
+            return q2_ytd[0] - q2_direct[0], q2_ytd[1], q1_end, q2_ytd[3]
+    if not annual and fp in {"Q2", "Q3"}:
+        previous_fp = "Q1" if fp == "Q2" else "Q2"
+        for components in groups:
+            current_ytd = _cumulative_basis_value(components, fy, fp, accession)
+            previous = _physical_prior_basis_value(
+                components, previous_fp, current_ytd[1], current_ytd[2], cumulative=fp == "Q3",
+            ) if current_ytd[1] is not None and current_ytd[2] is not None else (None, None, None, None)
+            if previous[0] is None:
+                previous = (
+                    _basis_value(components, fy, "Q1", None, annual=False)
+                    if fp == "Q2"
+                    else _cumulative_basis_value(components, fy, previous_fp, None)
+                )
+            if current_ytd[0] is not None and previous[0] is not None:
+                return current_ytd[0] - previous[0], current_ytd[1], current_ytd[2], current_ytd[3]
+        current_ytd = _first_cumulative_basis_value(groups, fy, fp, accession)
+        previous = (
+            _first_basis_value(groups, fy, "Q1", None, annual=False)
+            if fp == "Q2"
+            else _first_cumulative_basis_value(groups, fy, previous_fp, None)
+        )
+        if current_ytd[0] is not None and previous[0] is not None:
+            return current_ytd[0] - previous[0], current_ytd[1], current_ytd[2], current_ytd[3]
+    if annual:
+        annual_value = _first_basis_value(groups, fy, fp, accession, annual=True)
+        q3_ytd = (None, None, None, None)
+        if annual_value[1] is not None and annual_value[2] is not None:
+            for components in groups:
+                q3_ytd = _physical_prior_basis_value(
+                    components, "Q3", annual_value[1], annual_value[2], cumulative=True,
+                )
+                if q3_ytd[0] is not None:
+                    break
+        if q3_ytd[0] is None:
+            q3_ytd = _first_cumulative_basis_value(groups, fy, "Q3", None)
+        if annual_value[0] is not None and q3_ytd[0] is not None:
+            return annual_value[0] - q3_ytd[0], annual_value[1], annual_value[2], annual_value[3]
+        prior = [
+            _first_basis_value(groups, fy, label, None, annual=False)[0]
+            for label in ("Q1", "Q2", "Q3")
+        ]
+        if annual_value[0] is not None and all(item is not None for item in prior):
+            return annual_value[0] - sum(prior, Decimal(0)), annual_value[1], annual_value[2], annual_value[3]
+    return None, None, None, None
+
+
+def _annual_period_ends(entries: dict[str, list[list[list[dict[str, Any]]]]]) -> list[date]:
+    """Return physical year ends independently of mutable SEC fiscal-year labels."""
+    result: set[date] = set()
+    for groups in entries.values():
+        for components in groups:
+            for rows in components:
+                for row in rows:
+                    if str(row.get("fp") or "") not in {"FY", "Q4"} or str(row.get("form") or "").upper() not in {"10-K", "10-K/A"}:
+                        continue
+                    try:
+                        start = date.fromisoformat(str(row["start"]))
+                        end = date.fromisoformat(str(row["end"]))
+                    except (KeyError, ValueError):
+                        continue
+                    if (end - start).days + 1 >= 300:
+                        result.add(end)
+    return sorted(result)
+
+
+def _physical_fiscal_year(period_end: date, quarter: int, annual_ends: list[date], fallback: int) -> int:
+    """Build a stable fiscal key from the represented period, not mutable SEC ``fy`` metadata."""
+    if quarter == 4:
+        return market_period(period_end)[0]
+    following = [end for end in annual_ends if period_end <= end <= period_end.fromordinal(period_end.toordinal() + 370)]
+    if following:
+        return market_period(min(following))[0]
+    preceding = [end for end in annual_ends if end < period_end and (period_end - end).days <= 370]
+    if preceding:
+        return market_period(max(preceding))[0] + 1
+    return fallback
+
+
+def extract_new_sec_facts(
+    company_id: str, payload: dict[str, Any], accessions: set[str],
+    *, strict_annual_direct: bool = False,
+) -> list[USFinancialFact]:
+    """Q1–Q3 use SEC's three-month facts; FY produces Q4 only after Q1–Q3 exist."""
+    raw_entries = {metric: _entry_groups(payload, metric) for metric in METRIC_BASES}
+    annual_ends = _annual_period_ends(raw_entries)
+    entries = {metric: _entry_groups(payload, metric, annual_ends) for metric in METRIC_BASES}
+    contexts: set[tuple[int, str, str]] = set()
+    for groups in entries.values():
+        for components in groups:
+            for rows in components:
+                for row in rows:
+                    accession, fp = str(row.get("accn") or ""), str(row.get("fp") or "")
+                    fy = int(row.get("fy") or 0)
+                    try:
+                        row_end = date.fromisoformat(str(row.get("end") or ""))
+                    except ValueError:
+                        row_end = None
+                    # A later 10-Q often repeats the previous fiscal year-end's
+                    # standalone three-month comparison.  It is useful when
+                    # deriving another fact, but it is not a new Q1-Q3 filing
+                    # context and must not overwrite the real prior quarter.
+                    if (
+                        str(row.get("form") or "").upper() in {"10-Q", "10-Q/A"}
+                        and row_end in annual_ends
+                    ):
+                        continue
+                    if accession in accessions and fp in {"Q1", "Q2", "Q3", "Q4", "FY"} and fy:
+                        contexts.add((fy, fp, accession))
+    result: dict[tuple[date, int], USFinancialFact] = {}
+    for fy, fp, accession in sorted(contexts):
+        quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4, "FY": 4}[fp]
+        annual = fp in {"Q4", "FY"}
+        values: dict[str, Decimal | None] = {}
+        starts: list[date] = []; ends: list[date] = []; filed_dates: list[date] = []
+        for metric, groups in entries.items():
+            value, start, end, filed = _metric_value(
+                groups, fy, fp, accession, annual=annual,
+                strict_annual_direct=strict_annual_direct,
+            )
+            values[metric] = value
+            if start: starts.append(start)
+            if end: ends.append(end)
+            if filed: filed_dates.append(filed)
+        if not ends:
+            continue
+        period_end, filing_date = max(ends), max(filed_dates)
+        fact = USFinancialFact(
+            company_id=company_id,
+            fiscal_year=_physical_fiscal_year(period_end, quarter, annual_ends, fy),
+            fiscal_quarter=quarter,
+            period_start=min(starts) if starts else None, period_end=period_end,
+            top_line=values["top_line"], operating_income=values["operating_income"], net_income=values["net_income"],
+            source_filing_id=accession, filing_date=filing_date,
+            is_pending=any(value is None for value in values.values()),
+        )
+        physical_key = (period_end, quarter)
+        current = result.get(physical_key)
+        if current is None or (fact.fully_complete, fact.filing_date) > (current.fully_complete, current.filing_date):
+            result[physical_key] = fact
+    return sorted(result.values(), key=lambda fact: (fact.period_end, fact.fiscal_quarter, fact.filing_date))
+
+
+def extract_inline_xbrl_fact(
+    company_id: str, content: str, *, year: int, quarter: int,
+    accession: str, filing_date: date,
+) -> USFinancialFact | None:
+    """Read an exact domestic quarter from an SEC filing's XBRL instance.
+
+    SEC's companyfacts feed can lag a filed 10-Q. This fallback accepts only
+    unsegmented duration contexts for the requested market quarter, so segment
+    disclosures cannot be mistaken for consolidated company results.
+    """
+    try:
+        root = ElementTree.fromstring(content)
+    except ElementTree.ParseError:
+        return None
+
+    def local_name(element) -> str:
+        return str(element.tag).rsplit("}", 1)[-1]
+
+    contexts: dict[str, tuple[date, date]] = {}
+    for element in root.iter():
+        if local_name(element) != "context" or "id" not in element.attrib:
+            continue
+        if any(local_name(child) in {"segment", "scenario"} for child in element.iter()):
+            continue
+        starts = [child.text for child in element.iter() if local_name(child) == "startDate"]
+        ends = [child.text for child in element.iter() if local_name(child) == "endDate"]
+        if len(starts) != 1 or len(ends) != 1:
+            continue
+        try:
+            contexts[str(element.attrib["id"])] = (
+                date.fromisoformat(str(starts[0])), date.fromisoformat(str(ends[0])),
+            )
+        except ValueError:
+            continue
+
+    matching_contexts = {
+        context_id: period for context_id, period in contexts.items()
+        if market_period(period[1]) == (year, quarter)
+        and 60 <= (period[1] - period[0]).days + 1 <= 130
+    }
+    if not matching_contexts:
+        return None
+
+    values: dict[str, tuple[Decimal, date, date]] = {}
+    for metric, bases in METRIC_BASES.items():
+        for basis in bases:
+            if len(basis) != 1:
+                continue
+            tag = basis[0]
+            candidates: list[tuple[date, date, Decimal]] = []
+            for element in root.iter():
+                if local_name(element) != tag:
+                    continue
+                period = matching_contexts.get(str(element.attrib.get("contextRef") or ""))
+                if period is None:
+                    continue
+                try:
+                    value = Decimal(str(element.text or "").replace(",", "").strip())
+                except Exception:
+                    continue
+                candidates.append((period[0], period[1], value))
+            if candidates:
+                start, end, value = max(candidates, key=lambda item: (item[1], item[0]))
+                values[metric] = (value, start, end)
+                break
+    if set(values) != set(METRIC_BASES):
+        return None
+    starts = [item[1] for item in values.values()]
+    ends = [item[2] for item in values.values()]
+    return USFinancialFact(
+        company_id=company_id, fiscal_year=year, fiscal_quarter=quarter,
+        period_start=min(starts), period_end=max(ends),
+        top_line=values["top_line"][0], operating_income=values["operating_income"][0],
+        net_income=values["net_income"][0], source_filing_id=accession,
+        filing_date=filing_date, is_pending=False, source="sec_edgar",
+    )
+

@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: Fiscal year (2016-2018 only)
+        description: Fiscal year (2015-2018 only)
         required: true
         default: "2016"
         type: choice
-        options: ["2016", "2017", "2018"]
+        options: ["2015", "2016", "2017", "2018"]
       quarter:
         description: One fiscal quarter
         required: true
@@ -17,6 +17,11 @@ on:
         options: ["1", "2", "3", "4"]
       write:
         description: Replace the selected quarter after validation
+        required: true
+        default: false
+        type: boolean
+      pending_only:
+        description: Retry only existing pending companies; preserves completed facts
         required: true
         default: false
         type: boolean
@@ -49,11 +54,19 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           WRITE: ${{ inputs.write }}
+          PENDING_ONLY: ${{ inputs.pending_only }}
         shell: bash
         run: |
           set -euo pipefail
-          args=(--year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}" --require-complete)
+          args=(--year "${{ inputs.year }}" --quarter "${{ inputs.quarter }}")
+          if [[ "$PENDING_ONLY" == "true" ]]; then
+            args+=(--pending-only)
+          else
+            args+=(--require-complete)
+          fi
           if [[ "$WRITE" == "true" ]]; then
             args+=(--write)
           fi

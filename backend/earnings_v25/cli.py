@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from .pipeline import KoreaEarningsV2Pipeline
+from .policy import MAX_BACKFILL_YEAR, MIN_BACKFILL_YEAR, SUPPORTED_YEARS
 from .runtime import execution_deadline
 
 
@@ -14,7 +15,7 @@ QUARTER_DEADLINE_SECONDS = 600
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="MacroWatch Earnings V2.5 2016-2018 raw-DART backfill")
+    result = argparse.ArgumentParser(description="MacroWatch Earnings V2.5 2015-2018 raw-DART backfill")
     result.add_argument("--year", type=int)
     result.add_argument("--quarter", type=int, choices=(1, 2, 3, 4))
     result.add_argument("--pending-only", action="store_true", help="지정한 과거 분기의 대기 기업만 재처리")
@@ -44,8 +45,10 @@ def main() -> None:
     deadline_seconds = int(os.getenv("EARNINGS_V2_DEADLINE_SECONDS", str(QUARTER_DEADLINE_SECONDS)))
     if args.year is None:
         argument_parser.error("--year가 필요합니다")
-    if args.year not in {2016, 2017, 2018}:
-        argument_parser.error("V2.5는 2016~2018년 백필에만 사용할 수 있습니다")
+    if args.year not in SUPPORTED_YEARS:
+        argument_parser.error(
+            f"V2.5는 {MIN_BACKFILL_YEAR}~{MAX_BACKFILL_YEAR}년 백필에만 사용할 수 있습니다"
+        )
     if args.quarter and args.recalculate_only:
         with execution_deadline(deadline_seconds):
             result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)

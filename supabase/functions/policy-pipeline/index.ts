@@ -32,6 +32,8 @@ const FED_BASE = "https://www.federalreserve.gov";
 const POLICY_PROMPT_VERSION = "v2.0";
 const REASON_CONFIDENCE_THRESHOLD = 0.55;
 const UNCERTAIN_CONFIDENCE_MAX = 0.549;
+// FOMC 브리핑은 뉴스 분석과 독립적으로 더 높은 추론 모델을 사용한다.
+const FOMC_MODEL = Deno.env.get("AI_MODEL_FOMC") || "gpt-5.6-terra";
 
 const RESPONSE_SCHEMA = {
   type: "object", additionalProperties: false,
@@ -173,7 +175,7 @@ async function analyzeStatement(statement: string, meetingDate: string, previous
   if (pressConferenceUrl) userContent.push({ type: "input_file", file_url: pressConferenceUrl });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna", reasoning: { effort: "low" }, max_output_tokens: 6_000, prompt_cache_key: "macrowatch-fomc-policy-v2.0", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: userContent }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
+    body: JSON.stringify({ model: FOMC_MODEL, reasoning: { effort: "low" }, max_output_tokens: 6_000, prompt_cache_key: "macrowatch-fomc-policy-v2.0", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: userContent }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI FOMC 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();

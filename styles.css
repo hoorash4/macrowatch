@@ -978,8 +978,21 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-legend-line--raw { height:1px; background:#94a3b8; opacity:.55; }
 .policy-expectation-legend-line--average { background:#475569; }
 
-/* 평균 금액 본차트와 증가율·델타 보조차트는 하나의 분석 배경 안에서 같은 시점을 공유합니다. */
+/* 합산 금액 본차트와 이익률·증가율 보조차트는 하나의 분석 배경 안에서 같은 시점을 공유합니다. */
 .korea-earnings-toolbar { display:flex; justify-content:flex-end; padding:.1rem .15rem .45rem; }
+.market-earnings-heading-control { display:flex; align-items:center; gap:.75rem; }
+.market-earnings-select { border:1px solid #cbd5e1; border-radius:.5rem; background:#fff; color:#334155; cursor:pointer; font:inherit; font-size:.78rem; font-weight:700; line-height:1.2; padding:.48rem .68rem; }
+.market-earnings-select:focus-visible { outline:2px solid #64748b; outline-offset:2px; }
+.company-earnings-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; padding:.1rem .15rem .45rem; }
+.company-earnings-search { position:relative; min-width:13rem; max-width:22rem; flex:1; }
+.company-earnings-search input { width:100%; border:1px solid #cbd5e1; border-radius:.5rem; background:#fff; padding:.42rem .65rem; color:#0f172a; font-size:.78rem; outline:none; }
+.company-earnings-search input:focus { border-color:#64748b; box-shadow:0 0 0 2px rgb(100 116 139 / .12); }
+.company-earnings-suggestions { position:absolute; z-index:20; top:calc(100% + .3rem); left:0; right:0; overflow:auto; max-height:16rem; border:1px solid #cbd5e1; border-radius:.55rem; background:#fff; box-shadow:0 10px 22px rgb(15 23 42 / .14); }
+.company-earnings-suggestions button { display:flex; width:100%; align-items:baseline; justify-content:space-between; gap:.75rem; border:0; border-bottom:1px solid #eef2f7; background:#fff; padding:.5rem .65rem; color:#334155; font-size:.75rem; text-align:left; }
+.company-earnings-suggestions button:last-child { border-bottom:0; }
+.company-earnings-suggestions button:hover,.company-earnings-suggestions button[aria-selected="true"] { background:#f1f5f9; }
+.company-earnings-suggestions button strong { color:#0f172a; font-size:.78rem; }
+.company-earnings-suggestions button span { flex:none; color:#64748b; font-size:.68rem; }
 .korea-earnings-summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem .9rem; min-height:2.15rem; padding:.35rem .25rem .5rem; color:#64748b; font-size:.75rem; }
 .korea-earnings-summary strong { color:#0f172a; font-size:1rem; font-weight:800; }
 .korea-earnings-chart-stack { display:grid; overflow:hidden; }
@@ -987,10 +1000,6 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-chart-panel + .korea-earnings-chart-panel { border-top:1px solid #dbe3ed; }
 .korea-earnings-chart-heading { display:flex; align-items:center; justify-content:space-between; min-height:2.1rem; padding:.4rem .75rem .2rem; color:#64748b; font-size:.7rem; }
 .korea-earnings-chart-heading strong { color:#334155; font-size:.78rem; font-weight:800; }
-.korea-earnings-subchart-stack { display:grid; }
-.korea-earnings-subchart { position:relative; min-width:0; overflow:hidden; }
-.korea-earnings-subchart + .korea-earnings-subchart { border-top:1px dashed #e2e8f0; }
-.korea-earnings-subchart > span { position:absolute; z-index:2; top:.35rem; left:4.55rem; color:#64748b; font-size:.64rem; font-weight:750; pointer-events:none; }
 .korea-earnings-chart-layout { display:flex; width:100%; min-width:0; }
 .korea-earnings-y-axis { width:64px; flex:none; background:transparent; }
 .korea-earnings-chart-frame { position:relative; min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
@@ -1001,6 +1010,7 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-period-label { fill:#64748b; font-size:10px; font-weight:650; }
 .korea-earnings-line { fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .korea-earnings-line--amount { stroke-width:2.5; }
+.korea-earnings-line--margin { stroke-width:2.2; }
 .korea-earnings-line--growth { stroke-width:2.2; }
 .korea-earnings-line--qoq { stroke-width:2; stroke-dasharray:6 4; }
 .korea-earnings-line--provisional { stroke-dasharray:6 4; opacity:.82; }
@@ -1017,7 +1027,11 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-legend-line--operating-income { background:#2563a8; }
 .korea-earnings-legend-line--net-income { background:#b7791f; }
 @media (max-width:640px) {
+  .market-earnings-heading-control { align-items:flex-start; flex-direction:column; gap:.45rem; }
   .korea-earnings-toolbar .analysis-chart-range-controls { align-self:flex-end; }
+  .company-earnings-toolbar { align-items:stretch; flex-direction:column; }
+  .company-earnings-search { max-width:none; }
+  .company-earnings-toolbar .analysis-chart-range-controls { align-self:flex-end; }
 }
 /* 밝은 카드에서 사용하는 데이터 대기·오류 상태입니다. */
 #app-shell .analysis-empty-state-light {

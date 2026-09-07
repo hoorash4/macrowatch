@@ -5,9 +5,10 @@ import os
 import re
 from datetime import date
 from decimal import Decimal
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .aggregation import aggregate_market, calculate_market_point
+from .financial_company import FinancialCompanyClient, merge_financial_company
 from .models import (
     CompanyIdentity,
     DelistingFiling,
@@ -32,6 +33,30 @@ TARGETS = {"kr_largecap": 100, "kr_kosdaq": 100}
 EXCHANGES = {"kr_largecap": "KOSPI", "kr_kosdaq": "KOSDAQ"}
 # V6부터 부분 기업행을 보존하고 잠정 바구니와 확정 총합을 분리한다.
 CALCULATION_VERSION = 6
+
+
+class _LazyKrwRates(Mapping[str, Decimal]):
+    """분기 외화 환율을 실제 사용 시점에 통화별 한 번만 조회한다."""
+
+    def __init__(self, loader: Callable[[str], Decimal]) -> None:
+        self._loader = loader
+        self._rates: dict[str, Decimal] = {}
+
+    def __getitem__(self, currency: str) -> Decimal:
+        currency = currency.upper()
+        if currency in self._rates:
+            return self._rates[currency]
+        rate = self._loader(currency)
+        if rate <= 0:
+            raise ValueError(f"{currency}/KRW rate must be positive")
+        self._rates[currency] = rate
+        return rate
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._rates)
+
+    def __len__(self) -> int:
+        return len(self._rates)
 
 
 def quarter_end(year: int, quarter: int) -> date:
@@ -206,8 +231,10 @@ class KoreaEarningsV2Pipeline:
     """분기 기업군, 부분 실적, 잠정·확정 집계를 한 생명주기로 관리한다."""
 
     def __init__(self, *, krx: KrxClient, dart: OpenDartClient, repository: EarningsV2Repository,
-                 kis: KisClient | None = None, fx: EcosFxClient | None = None) -> None:
+                 kis: KisClient | None = None, fx: EcosFxClient | None = None,
+                 financial_company: FinancialCompanyClient | None = None) -> None:
         self.krx, self.dart, self.repository, self.kis, self.fx = krx, dart, repository, kis, fx
+        self.financial_company = financial_company
 
     @staticmethod
     def _progress(stage: str, **details: Any) -> None:
@@ -221,7 +248,8 @@ class KoreaEarningsV2Pipeline:
             kis = KisClient(os.environ["KIS_APP_KEY"], os.environ["KIS_APP_SECRET"],
                             cached_token=repository.cached_kis_token, save_token=repository.save_kis_token)
         fx = EcosFxClient(os.environ["ECOS_API_KEY"]) if os.getenv("ECOS_API_KEY", "").strip() else None
-        return cls(krx=KrxClient.from_env(), dart=OpenDartClient.from_env(), repository=repository, kis=kis, fx=fx)
+        return cls(krx=KrxClient.from_env(), dart=OpenDartClient.from_env(), repository=repository,
+                   kis=kis, fx=fx, financial_company=FinancialCompanyClient.from_env())
 
     def _latest_public_operating_income(self, company_ids: Iterable[str], reference_date: date) -> dict[str, Decimal]:
         latest: dict[str, tuple[tuple[int, int], Decimal]] = {}
@@ -353,7 +381,7 @@ class KoreaEarningsV2Pipeline:
             grouped.setdefault(event.corp_code, []).append(event)
         result: dict[str, DelistingFiling] = {}
         for corp_code, candidates in grouped.items():
-            ordered = sorted(candidates, key=lambda row: (row.received_on, row.receipt_no))
+            ordered = sorted(candidates, key=lambda row: (row.event_on, row.receipt_no))
             result[corp_code] = next(
                 (row for row in ordered if row.event_type == "decision"), ordered[0],
             )
@@ -380,15 +408,19 @@ class KoreaEarningsV2Pipeline:
                 received_on=date.fromisoformat(str(row["received_on"])),
                 report_name=str(row["report_name"]),
                 event_type=str(row["event_type"]),
+                effective_on=(
+                    date.fromisoformat(str(row["effective_on"]))
+                    if row.get("effective_on") else None
+                ),
             )
             for row in rows
         ]
-        events.extend(event for event in supplied if start <= event.received_on <= end)
+        events.extend(event for event in supplied if start <= event.event_on <= end)
         events = [
             event for event in events
             if (
-                event.event_type == "final"
-                or event.received_on <= quarter_last_day
+                event.event_type in {"final", "absorbed_merger"}
+                or event.event_on <= quarter_last_day
             )
         ]
         return self._delisting_event_map(events)
@@ -410,9 +442,16 @@ class KoreaEarningsV2Pipeline:
             for event in self.dart.delisting_filings(
                 start, end, corp_code=identity.corp_code,
             ):
-                if event.event_type == "final" or event.received_on <= quarter_last_day:
+                if event.event_type == "final" or event.event_on <= quarter_last_day:
                     events[event.receipt_no] = event
-        ordered = sorted(events.values(), key=lambda row: (row.received_on, row.receipt_no))
+            merger_loader = getattr(self.dart, "absorbed_merger_filings", None)
+            if callable(merger_loader):
+                for event in merger_loader(
+                    date(year - 1, 1, 1), end, corp_code=identity.corp_code,
+                ):
+                    if start <= event.event_on <= end:
+                        events[event.receipt_no] = event
+        ordered = sorted(events.values(), key=lambda row: (row.event_on, row.receipt_no))
         if write and ordered:
             self.repository.upsert_delisting_events(event.db_row() for event in ordered)
         return ordered
@@ -463,7 +502,7 @@ class KoreaEarningsV2Pipeline:
         quarter: int,
         stored: dict[tuple[str, int, int], FinancialFact],
         *,
-        usd_krw_rate: Decimal,
+        krw_rates: Mapping[str, Decimal],
         write: bool,
     ) -> FinancialFact | None:
         previous_key = previous_period(year, quarter)
@@ -474,7 +513,7 @@ class KoreaEarningsV2Pipeline:
         # 필요한 정확한 직전 분기 한 건만 공급자에서 새로 구한다.
         fetched, _issues = self.collect_financials(
             [identity], previous_key[0], previous_key[1], {},
-            usd_krw_rate=usd_krw_rate,
+            krw_rates=krw_rates,
             tolerate_provider_errors=True,
             force_previous_cumulative=previous_key[1] > 1,
             persist_profiles=write,
@@ -603,14 +642,33 @@ class KoreaEarningsV2Pipeline:
             complete=fact.fully_complete,
         )
 
+        kis_issue = None
         if not fact.fully_complete and self.kis is not None:
             fact, kis_issue = self._try_kis_missing_financials(
                 identity, fact, year, quarter, stage=f"{stage}_kis",
                 propagate_provider_error=not tolerate_provider_errors,
                 previous_fact=previous_fact,
             )
-            if kis_issue is not None:
-                return fact, kis_issue
+        if (not fact.fully_complete and entity_kind == "financial"
+                and getattr(self, "financial_company", None) is not None):
+            self._progress("financial_company_source_start", company=identity.company_name)
+            try:
+                crno = self.dart.company_registration_number(identity.corp_code) or ""
+                if re.fullmatch(r"\d{13}", crno):
+                    snapshots = self.financial_company.quarter_financials(crno, year, quarter, industry_code)
+                    fact = merge_financial_company(fact, snapshots, year, quarter, previous_fact)
+                else:
+                    self._progress("financial_company_source_missing_identity", company=identity.company_name)
+            except ProviderError as error:
+                self._progress("financial_company_source_failed", company=identity.company_name, reason=str(error))
+                if not tolerate_provider_errors:
+                    raise
+                return fact.with_changes(is_pending=True), {
+                    "company": identity.company_name, "field": "financial_services_commission", "reason": str(error),
+                }
+            self._progress("financial_company_source_done", company=identity.company_name, complete=fact.fully_complete)
+        if kis_issue is not None and not fact.fully_complete:
+            return fact, kis_issue
         # 이 추정은 사용자가 허용한 과거 백필 전용 규칙이다. 자동 수집은
         # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.
         if (
@@ -635,9 +693,26 @@ class KoreaEarningsV2Pipeline:
             )
         return fact.with_changes(is_pending=not fact.fully_complete), None
 
+    @staticmethod
+    def _convert_fact_to_krw(
+        fact: FinancialFact,
+        krw_rates: Mapping[str, Decimal],
+    ) -> FinancialFact | None:
+        if fact.currency == "KRW":
+            return fact
+        rate = krw_rates.get(fact.currency)
+        if rate is None or rate <= 0:
+            return None
+        return fact.with_changes(
+            top_line=fact.top_line * rate if fact.top_line is not None else None,
+            operating_income=fact.operating_income * rate if fact.operating_income is not None else None,
+            net_income=fact.net_income * rate if fact.net_income is not None else None,
+            currency="KRW",
+        )
+
     def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
                            previous_facts: dict[str, FinancialFact] | None = None,
-                           *, usd_krw_rate: Decimal | None = None,
+                           *, krw_rates: Mapping[str, Decimal] | None = None,
                            tolerate_provider_errors: bool = False,
                            force_previous_cumulative: bool = False,
                            persist_profiles: bool = False,
@@ -647,6 +722,8 @@ class KoreaEarningsV2Pipeline:
         codes = [row.corp_code for row in identities]
         current = _group(self.dart.multi_accounts(codes, year, quarter), codes)
         previous_facts = previous_facts or {}
+        if krw_rates is None:
+            krw_rates = {}
         # 직전 분기의 누적 원본은 DB가 단일 진실 공급원이다. 과거 기업군에
         # 없었던 기업 등 실제 단독값 계산에 필요한 원본이 없는 경우에만
         # 해당 기업만 폴백한다. 현재 누적값 자체가 없는 필드는 재호출해도
@@ -691,16 +768,12 @@ class KoreaEarningsV2Pipeline:
                     f"pending:{identity.corp_code}:{year}:Q{quarter}", end, is_pending=True,
                 )
             if fact.currency != "KRW":
-                if fact.currency == "USD" and usd_krw_rate is not None:
-                    fact = fact.with_changes(
-                        top_line=fact.top_line * usd_krw_rate if fact.top_line is not None else None,
-                        operating_income=fact.operating_income * usd_krw_rate if fact.operating_income is not None else None,
-                        net_income=fact.net_income * usd_krw_rate if fact.net_income is not None else None,
-                        currency="KRW",
-                    )
+                converted = self._convert_fact_to_krw(fact, krw_rates)
+                if converted is not None:
+                    fact = converted
                 else:
                     fact = fact.with_changes(is_pending=True)
-                    issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
+                    issues.append({"company": identity.company_name, "field": "currency", "reason": f"missing {fact.currency}/KRW quarter rate"})
             if fact.currency == "KRW" and not fact.fully_complete:
                 fact, fallback_issue = self._resolve_missing_financials(
                     identity, fact, year, quarter,
@@ -857,13 +930,21 @@ class KoreaEarningsV2Pipeline:
                 "currency": "KRW", "selection_method": "direct_market_cap",
             } for row in members))
 
-    def _ensure_quarter_fx_rate(self, universes: dict[str, list[CompanyIdentity]],
-                                year: int, quarter: int, *, write: bool) -> QuarterFxRate:
-        stored = self.repository.quarter_fx_rate(year, quarter, "USD", "KRW")
+    def _ensure_quarter_fx_rate(
+        self,
+        universes: dict[str, list[CompanyIdentity]],
+        year: int,
+        quarter: int,
+        base_currency: str,
+        *,
+        write: bool,
+    ) -> QuarterFxRate:
+        base_currency = base_currency.upper()
+        stored = self.repository.quarter_fx_rate(year, quarter, base_currency, "KRW")
         if stored is not None:
             stored_rate = decimal_value(stored.get("rate"))
             if stored_rate is None or stored_rate <= 0:
-                raise ValueError(f"{year}Q{quarter} stored USD/KRW snapshot is invalid")
+                raise ValueError(f"{year}Q{quarter} stored {base_currency}/KRW snapshot is invalid")
             return QuarterFxRate(
                 fiscal_year=int(stored["fiscal_year"]),
                 fiscal_quarter=int(stored["fiscal_quarter"]),
@@ -875,16 +956,16 @@ class KoreaEarningsV2Pipeline:
                 source=str(stored.get("source") or "ecos"),
             )
         if self.fx is None:
-            raise ProviderError(f"{year}Q{quarter} USD/KRW snapshot is missing and ECOS is not configured")
+            raise ProviderError(f"{year}Q{quarter} {base_currency}/KRW snapshot is missing and ECOS is not configured")
         reference_dates = [row.reference_date for members in universes.values() for row in members]
         if not reference_dates:
             raise ValueError(f"{year}Q{quarter} universe is empty")
         target_date = max(reference_dates)
-        observed_on, rate = self.fx.latest_usd_krw(target_date)
+        observed_on, rate = self.fx.latest_krw(base_currency, target_date)
         snapshot = QuarterFxRate(
             fiscal_year=year,
             fiscal_quarter=quarter,
-            base_currency="USD",
+            base_currency=base_currency,
             quote_currency="KRW",
             target_date=target_date,
             observed_on=observed_on,
@@ -937,7 +1018,11 @@ class KoreaEarningsV2Pipeline:
             self._progress("krx_universe_done", **{market: len(rows) for market, rows in universes.items()})
             if write and discovered:
                 self._save_universes(discovered, year, quarter)
-            fx_rate = self._ensure_quarter_fx_rate(universes, year, quarter, write=write)
+            krw_rates = _LazyKrwRates(
+                lambda base_currency: self._ensure_quarter_fx_rate(
+                    universes, year, quarter, base_currency, write=write,
+                ).rate
+            )
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
             previous_key = previous_period(year, quarter)
             previous_universes = {
@@ -1023,7 +1108,7 @@ class KoreaEarningsV2Pipeline:
             fresh_facts, issues = (
                 self.collect_financials(
                     selected, year, quarter, previous_facts,
-                    usd_krw_rate=fx_rate.rate,
+                    krw_rates=krw_rates,
                     tolerate_provider_errors=incremental,
                     force_previous_cumulative=not incremental and not trust_previous_backfill,
                     persist_profiles=write,
@@ -1061,7 +1146,7 @@ class KoreaEarningsV2Pipeline:
                     continue
                 previous = self._previous_fact_for_delisting(
                     identity, year, quarter, stored,
-                    usd_krw_rate=fx_rate.rate, write=write,
+                    krw_rates=krw_rates, write=write,
                 )
                 if previous is None:
                     issues.append({

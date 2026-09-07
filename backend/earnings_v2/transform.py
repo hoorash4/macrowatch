@@ -13,7 +13,8 @@ from .models import FinancialFact
 
 HUNDRED = Decimal("100")
 MAX_SEASONAL_SAMPLES = 10
-MIN_SEASONAL_SAMPLES = 2
+MIN_SEASONAL_SAMPLES = 3
+SEASONAL_HISTORY_START_YEAR = 2016
 OP_IDS = {"dartoperatingincomeloss", "ifrsfulloperatingprofitloss"}
 NET_IDS = {"ifrsfullprofitloss", "dartprofitloss"}
 REVENUE_IDS = {
@@ -215,11 +216,24 @@ def extract_company_fact(
         "operating_income": _current_period_amount(current_op),
         "net_income": _current_period_amount(current_net),
     }
+    previous_rows_by_field = {
+        "top_line": previous_top,
+        "operating_income": previous_op,
+        "net_income": previous_net,
+    }
+    # DB 원본뿐 아니라 추가 호출한 직전분기 원본도 현재 누적과 통화가
+    # 같을 때만 차감한다. 통화가 바뀐 숫자를 그대로 빼면 환산 단계에서
+    # 시장 합계를 오염시키는 초대형 음수가 만들어진다.
     fallback_previous = {
-        "top_line": _cumulative_amount(previous_top, quarter - 1),
-        "operating_income": _cumulative_amount(previous_op, quarter - 1),
-        "net_income": _cumulative_amount(previous_net, quarter - 1),
-    } if quarter > 1 else {"top_line": None, "operating_income": None, "net_income": None}
+        field: (
+            _cumulative_amount(previous_row, quarter - 1)
+            if quarter > 1
+            and previous_row is not None
+            and str(previous_row.get("currency") or "KRW").strip().upper() == source_currency
+            else None
+        )
+        for field, previous_row in previous_rows_by_field.items()
+    }
     previous_cumulative = {}
     for field in current_cumulative:
         stored_value = _stored_cumulative(
@@ -346,25 +360,41 @@ def calculate_financial_point(
 def calculate_financial_series(rows: Iterable[FinancialFact]) -> list[FinancialFact]:
     ordered = sorted(rows, key=lambda row: row.key)
     by_key = {row.key: row for row in ordered}
-    result: list[FinancialFact] = []
-    windows: dict[tuple[str, int], list[Decimal]] = defaultdict(list)
-    for row in ordered:
-        samples = {
-            prefix: windows[(prefix, row.fiscal_quarter)]
-            for prefix in ("operating_income", "net_income")
-        }
+    provisional: list[FinancialFact] = []
+    raw_by_index: list[dict[str, Decimal | None]] = []
+    samples: dict[tuple[str, int], list[tuple[int, Decimal]]] = defaultdict(list)
+    for index, row in enumerate(ordered):
+        previous = by_key.get(previous_period_key(row.fiscal_year, row.fiscal_quarter))
+        if row.fiscal_year == SEASONAL_HISTORY_START_YEAR and row.fiscal_quarter == 1:
+            previous = None
         calculated, raw = calculate_financial_point(
             row,
-            previous=by_key.get(previous_period_key(row.fiscal_year, row.fiscal_quarter)),
+            previous=previous,
             prior_year=by_key.get((row.fiscal_year - 1, row.fiscal_quarter)),
-            seasonal_samples=samples,
+            seasonal_samples={},
         )
-        result.append(calculated)
+        provisional.append(calculated)
+        raw_by_index.append(raw)
         for prefix, value in raw.items():
-            if value is not None:
-                window = windows[(prefix, row.fiscal_quarter)]
-                window.append(value)
-                del window[:-MAX_SEASONAL_SAMPLES]
+            if value is not None and row.fiscal_year >= SEASONAL_HISTORY_START_YEAR:
+                samples[(prefix, row.fiscal_quarter)].append((index, value))
+
+    result: list[FinancialFact] = []
+    for index, row in enumerate(provisional):
+        updates: dict[str, Any] = {}
+        for prefix in ("operating_income", "net_income"):
+            raw = raw_by_index[index][prefix]
+            if raw is None:
+                continue
+            peers = [
+                value
+                for sample_index, value in samples[(prefix, row.fiscal_quarter)]
+                if sample_index != index
+            ][-MAX_SEASONAL_SAMPLES:]
+            if len(peers) >= MIN_SEASONAL_SAMPLES:
+                updates[f"{prefix}_qoq_sa_pct"] = raw - Decimal(str(median(peers)))
+                updates[f"{prefix}_qoq_state"] = "normal"
+        result.append(row.with_changes(**updates))
     return result
 
 
@@ -391,3 +421,4 @@ def update_seasonal_window(
         samples[year] = value
     retained = sorted(samples.items())[-MAX_SEASONAL_SAMPLES:]
     return [sample_year for sample_year, _ in retained], [sample_value for _, sample_value in retained]
+

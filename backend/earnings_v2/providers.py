@@ -14,6 +14,8 @@ from typing import Any
 
 import requests
 
+from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
+
 from .http import (
     RETRYABLE_STATUS_CODES,
     ExecutionDeadlineExceeded,
@@ -30,6 +32,13 @@ OPEN_DART_BASE = "https://opendart.fss.or.kr/api"
 KRX_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
 KIS_BASE = "https://openapi.koreainvestment.com:9443"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
+ECOS_KRW_SPECS = {
+    "USD": ("0000001", Decimal("1")),
+    # ECOS 731Y001의 엔화 값은 100엔당 원화이므로 1엔당 원화로 정규화한다.
+    "JPY": ("0000002", Decimal("0.01")),
+    "EUR": ("0000003", Decimal("1")),
+    "CNY": ("0000053", Decimal("1")),
+}
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
 DELISTING_TITLES = {
@@ -263,12 +272,24 @@ class OpenDartClient:
         }, retry_total=retry_total)
         return [row for row in payload.get("list", []) if isinstance(row, dict)]
 
-    def company_profile(self, corp_code: str) -> dict[str, str] | None:
+    def company_details(self, corp_code: str) -> dict[str, str]:
         payload = self._get("company.json", {"corp_code": corp_code})
         industry_code = str(payload.get("induty_code") or "").strip()
-        if not industry_code:
-            return None
-        return {"industry_code": industry_code}
+        registration_number = re.sub(r"\D", "", str(payload.get("jurir_no") or ""))
+        return {
+            "industry_code": industry_code,
+            "registration_number": (
+                registration_number if re.fullmatch(r"\d{13}", registration_number) else ""
+            ),
+        }
+
+    def company_profile(self, corp_code: str) -> dict[str, str] | None:
+        industry_code = self.company_details(corp_code)["industry_code"]
+        return {"industry_code": industry_code} if industry_code else None
+
+    def company_registration_number(self, corp_code: str) -> str | None:
+        number = self.company_details(corp_code)["registration_number"]
+        return number or None
 
     def single_accounts(
         self,
@@ -382,6 +403,114 @@ class OpenDartClient:
                 break
             page += 1
         return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
+
+    def merger_decision_corp_codes(self, start: date, end: date) -> set[str]:
+        """기간 중 회사합병 결정 공시를 낸 회사 코드만 가볍게 찾는다."""
+        result: set[str] = set()
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "B",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            items = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            for row in items:
+                code = str(row.get("corp_code") or "").strip()
+                title = normalized_disclosure_title(row.get("report_nm"))
+                if re.fullmatch(r"\d{8}", code) and title.endswith("회사합병결정)"):
+                    result.add(code)
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return result
+
+    def _merger_decision_disclosures(
+        self, start: date, end: date, *, corp_code: str,
+    ) -> list[dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "corp_code": corp_code,
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "B",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            for row in payload.get("list", []):
+                if not isinstance(row, dict):
+                    continue
+                receipt = str(row.get("rcept_no") or "").strip()
+                title = normalized_disclosure_title(row.get("report_nm"))
+                if re.fullmatch(r"\d{14}", receipt) and title.endswith("회사합병결정)"):
+                    rows[receipt] = row
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return sorted(rows.values(), key=lambda row: str(row.get("rcept_no") or ""), reverse=True)
+
+    def absorbed_merger_filings(
+        self, start: date, end: date, *, corp_code: str,
+    ) -> list[DelistingFiling]:
+        """구조화 합병 공시 중 공시회사 자신이 소멸하는 건만 반환한다."""
+        payload = self._get("cmpMgDecsn.json", {
+            "corp_code": corp_code,
+            "bgn_de": start.strftime("%Y%m%d"),
+            "end_de": end.strftime("%Y%m%d"),
+        })
+        result: dict[str, DelistingFiling] = {}
+        for row in payload.get("list", []):
+            if not isinstance(row, dict):
+                continue
+            parsed = parse_absorbed_merger(row, expected_corp_code=corp_code)
+            if parsed is None:
+                continue
+            result[parsed.receipt_no] = DelistingFiling(
+                corp_code=parsed.corp_code,
+                receipt_no=parsed.receipt_no,
+                received_on=parsed.received_on,
+                report_name=parsed.report_name,
+                event_type="absorbed_merger",
+                effective_on=parsed.effective_on,
+            )
+        if not result:
+            for disclosure in self._merger_decision_disclosures(
+                start, end, corp_code=corp_code,
+            ):
+                title = str(disclosure.get("report_nm") or "")
+                if title.lstrip().startswith("[첨부정정]"):
+                    continue
+                receipt = str(disclosure.get("rcept_no") or "").strip()
+                try:
+                    archive = self._get(
+                        "document.xml", {"rcept_no": receipt}, binary=True,
+                    )
+                except ProviderError:
+                    continue
+                parsed = parse_absorbed_merger_archive(
+                    archive,
+                    expected_corp_code=corp_code,
+                    corp_name=str(disclosure.get("corp_name") or ""),
+                    receipt_no=receipt,
+                )
+                if parsed is None:
+                    continue
+                result[parsed.receipt_no] = DelistingFiling(
+                    corp_code=parsed.corp_code,
+                    receipt_no=parsed.receipt_no,
+                    received_on=parsed.received_on,
+                    report_name=parsed.report_name,
+                    event_type="absorbed_merger",
+                    effective_on=parsed.effective_on,
+                )
+                break
+        return sorted(result.values(), key=lambda row: (row.event_on, row.receipt_no))
 
 
 class KrxClient:
@@ -589,29 +718,37 @@ class KisClient:
 
 
 class EcosFxClient:
-    """기준일 이전의 최근 USD/KRW 종가를 조회한다."""
+    """기준일 이전의 최근 외화/KRW 종가를 1 외화 단위 기준으로 조회한다."""
 
     def __init__(self, api_key: str, *, session: Any | None = None) -> None:
         if not api_key.strip():
             raise ValueError("ECOS API key is required")
         self.api_key = api_key.strip()
         self.session = session or _session()
-        self.cache: dict[date, tuple[date, Decimal]] = {}
+        self.cache: dict[tuple[str, date], tuple[date, Decimal]] = {}
         self.request_count = 0
 
-    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
-        if reference_date in self.cache:
-            return self.cache[reference_date]
+    def latest_krw(self, base_currency: str, reference_date: date) -> tuple[date, Decimal]:
+        base_currency = base_currency.upper()
+        spec = ECOS_KRW_SPECS.get(base_currency)
+        if spec is None:
+            raise ProviderError(f"ECOS does not support {base_currency}/KRW")
+        cache_key = (base_currency, reference_date)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        item_code, unit_multiplier = spec
+        operation = f"{base_currency}/KRW"
         start = reference_date - timedelta(days=10)
         url = (
             f"{ECOS_BASE}/{self.api_key}/json/kr/1/100/731Y001/D/"
-            f"{start:%Y%m%d}/{reference_date:%Y%m%d}/0000001"
+            f"{start:%Y%m%d}/{reference_date:%Y%m%d}/{item_code}"
         )
         self.request_count += 1
         try:
             payload = bounded_request(
                 self.session, "GET", url,
-                provider="ECOS", operation="USD/KRW",
+                provider="ECOS", operation=operation,
                 total_timeout=ECOS_TOTAL_TIMEOUT,
                 attempt_timeout=9,
                 connect_timeout=CONNECT_TIMEOUT,
@@ -620,17 +757,17 @@ class EcosFxClient:
         except ExecutionDeadlineExceeded:
             raise
         except Exception as exc:
-            raise ProviderError(safe_request_failure("ECOS", "USD/KRW", exc)) from None
+            raise ProviderError(safe_request_failure("ECOS", operation, exc)) from None
         if not isinstance(payload, dict):
-            raise ProviderError("ECOS USD/KRW returned invalid JSON")
+            raise ProviderError(f"ECOS {operation} returned invalid JSON")
         result = payload.get("RESULT")
         if isinstance(result, dict):
             code = re.sub(r"[^0-9A-Za-z_-]", "", str(result.get("CODE") or "unknown"))
-            raise ProviderError(f"ECOS USD/KRW rejected the request ({code})")
+            raise ProviderError(f"ECOS {operation} rejected the request ({code})")
         statistic = payload.get("StatisticSearch")
         rows = statistic.get("row") if isinstance(statistic, dict) else None
         if not isinstance(rows, list):
-            raise ProviderError("ECOS USD/KRW returned invalid data")
+            raise ProviderError(f"ECOS {operation} returned invalid data")
         candidates: list[tuple[date, Decimal]] = []
         for row in rows if isinstance(rows, list) else []:
             value = _decimal(row.get("DATA_VALUE"))
@@ -640,9 +777,18 @@ class EcosFxClient:
                 and re.fullmatch(r"\d{8}", observed)
                 and observed <= reference_date.strftime("%Y%m%d")
             ):
-                candidates.append((date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"), value))
+                candidates.append((
+                    date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"),
+                    value * unit_multiplier,
+                ))
         if not candidates:
-            raise ProviderError("ECOS returned no USD/KRW value near quarter end")
+            raise ProviderError(f"ECOS returned no {operation} value near quarter end")
         latest = max(candidates, key=lambda item: item[0])
-        self.cache[reference_date] = latest
+        self.cache[cache_key] = latest
         return latest
+
+    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
+        return self.latest_krw("USD", reference_date)
+
+    def latest_jpy_krw(self, reference_date: date) -> tuple[date, Decimal]:
+        return self.latest_krw("JPY", reference_date)

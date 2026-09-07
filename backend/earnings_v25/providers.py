@@ -8,11 +8,14 @@ import time
 import zipfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import requests
+
+from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
 
 from .http import (
     RETRYABLE_STATUS_CODES,
@@ -29,7 +32,85 @@ from .models import DelistingFiling, PeriodicFiling, Security
 OPEN_DART_BASE = "https://opendart.fss.or.kr/api"
 KRX_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
 ECOS_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
+ECOS_KRW_SPECS = {
+    "USD": ("0000001", Decimal("1")),
+    # ECOS 731Y001의 엔화 값은 100엔당 원화이므로 1엔당 원화로 정규화한다.
+    "JPY": ("0000002", Decimal("0.01")),
+}
+FINANCIAL_COMPANY_FUNCTION = "earnings-financial-company-source"
 REPORT_CODES = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
+FINANCIAL_SECTOR_SPECS: dict[str, dict[str, Any]] = {
+    "bank": {
+        "industry_prefixes": ("641",),
+        "title": "은행_재무현황_주요자금조달운용_요약손익계산서(은행)",
+        "scope": "OFS",
+        "name_field": "bnkSmryPlSbjCdNm",
+        "cumulative_field": "bnkSmryPlSbjCmtlAt",
+        "standalone_field": "bnkSmryPlSbjThqrAmt",
+        "top_line": ("영업수익",),
+        "operating_income": ("영업이익",),
+        "net_income": ("당기순이익",),
+    },
+    "holding": {
+        "industry_prefixes": ("64992",),
+        "title": "금융지주_재무현황_요약연결손익계산서",
+        "scope": "CFS",
+        "name_field": "smryLnkPlAcitCdNm",
+        "cumulative_field": "smryLnkPlAcitCmtlAmt",
+        "standalone_field": "smryLnkPlAcitAmt",
+        "top_line": ("영업수익",),
+        "operating_income": ("영업이익",),
+        "net_income": ("연결당기순이익", "총당기순이익"),
+    },
+    "life": {
+        "industry_prefixes": ("65110",),
+        "title": "생보_재무현황_요약손익계산서(전체)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "smryPlAcitCmtlAmt",
+        "standalone_field": "smryPlAcitThqrAmt",
+        "top_line_sum": (
+            "보험손익_보험영업수익",
+            "투자손익_투자영업수익",
+            "특별계정손익_특별계정수익",
+        ),
+        "operating_income": ("영업이익",),
+        "net_income": ("당기순이익",),
+    },
+    "nonlife": {
+        "industry_prefixes": ("65121",),
+        "title": "손보_재무현황_요약손익계산서(전체)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "smryPlAcitCmtlAmt",
+        "standalone_field": "smryPlAcitThqrAmt",
+        "top_line_sum": ("경과보험료", "투자영업수익", "특별계정이익_특별계정수익"),
+        "operating_income": ("총영업이익",),
+        "net_income": ("당기순이익(또는 당기순손실)",),
+    },
+    "card": {
+        "industry_prefixes": ("64913",),
+        "title": "신용카드_재무현황_요약손익계산서(08.03월이후)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "smryPlAcitCmtlAmt",
+        "standalone_field": "smryPlAcitThqrAmt",
+        "top_line": ("영업수익",),
+        "operating_income": ("영업이익",),
+        "net_income": ("당기순이익(손실)",),
+    },
+    "securities": {
+        "industry_prefixes": ("66121",),
+        "title": "증권_재무현황_요약손익계산서(11.06월이후)",
+        "scope": "OFS",
+        "name_field": "smryPlAcitCdNm",
+        "cumulative_field": "cmtlAmt",
+        "standalone_field": "thqrAmt",
+        "top_line": ("[영업수익]",),
+        "operating_income": ("[영업이익(손실)]",),
+        "net_income": ("[당기순이익(손실)]",),
+    },
+}
 KRX_ENDPOINTS = {"kr_largecap": "stk_bydd_trd", "kr_kosdaq": "ksq_bydd_trd"}
 DELISTING_TITLES = {
     "상장폐지결정": "decision",
@@ -46,6 +127,22 @@ class ProviderError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
         self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class FinancialCompanySnapshot:
+    """금융위원회 요약재무제표의 한 보고서·재무제표 범위 원본값."""
+
+    crno: str
+    report_code: str
+    consolidation_scope: str | None
+    currency: str
+    top_line_cumulative: Decimal | None
+    operating_income_cumulative: Decimal | None
+    net_income_cumulative: Decimal | None
+    top_line_standalone: Decimal | None = None
+    operating_income_standalone: Decimal | None = None
+    net_income_standalone: Decimal | None = None
 
 
 def _retryable_request_error(error: Exception) -> bool:
@@ -266,9 +363,13 @@ class OpenDartClient:
     def company_profile(self, corp_code: str) -> dict[str, str] | None:
         payload = self._get("company.json", {"corp_code": corp_code})
         industry_code = str(payload.get("induty_code") or "").strip()
-        if not industry_code:
-            return None
-        return {"industry_code": industry_code}
+        jurir_no = re.sub(r"\D", "", str(payload.get("jurir_no") or ""))
+        profile: dict[str, str] = {}
+        if industry_code:
+            profile["industry_code"] = industry_code
+        if re.fullmatch(r"\d{13}", jurir_no):
+            profile["jurir_no"] = jurir_no
+        return profile or None
 
     def single_accounts(
         self,
@@ -429,6 +530,421 @@ class OpenDartClient:
             page += 1
         return sorted(result.values(), key=lambda row: (row.received_on, row.receipt_no))
 
+    def merger_decision_corp_codes(self, start: date, end: date) -> set[str]:
+        """기간 중 회사합병 결정 공시를 낸 회사 코드만 가볍게 찾는다."""
+        result: set[str] = set()
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "B",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            items = [row for row in payload.get("list", []) if isinstance(row, dict)]
+            for row in items:
+                code = str(row.get("corp_code") or "").strip()
+                title = normalized_disclosure_title(row.get("report_nm"))
+                if re.fullmatch(r"\d{8}", code) and title.endswith("회사합병결정)"):
+                    result.add(code)
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return result
+
+    def _merger_decision_disclosures(
+        self, start: date, end: date, *, corp_code: str,
+    ) -> list[dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        page = 1
+        while True:
+            payload = self._get("list.json", {
+                "corp_code": corp_code,
+                "bgn_de": start.strftime("%Y%m%d"),
+                "end_de": end.strftime("%Y%m%d"),
+                "pblntf_ty": "B",
+                "page_no": str(page),
+                "page_count": "100",
+            })
+            for row in payload.get("list", []):
+                if not isinstance(row, dict):
+                    continue
+                receipt = str(row.get("rcept_no") or "").strip()
+                title = normalized_disclosure_title(row.get("report_nm"))
+                if re.fullmatch(r"\d{14}", receipt) and title.endswith("회사합병결정)"):
+                    rows[receipt] = row
+            total_pages = int(payload.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return sorted(rows.values(), key=lambda row: str(row.get("rcept_no") or ""), reverse=True)
+
+    def absorbed_merger_filings(
+        self, start: date, end: date, *, corp_code: str,
+    ) -> list[DelistingFiling]:
+        """구조화 합병 공시 중 공시회사 자신이 소멸하는 건만 반환한다."""
+        payload = self._get("cmpMgDecsn.json", {
+            "corp_code": corp_code,
+            "bgn_de": start.strftime("%Y%m%d"),
+            "end_de": end.strftime("%Y%m%d"),
+        })
+        result: dict[str, DelistingFiling] = {}
+        for row in payload.get("list", []):
+            if not isinstance(row, dict):
+                continue
+            parsed = parse_absorbed_merger(row, expected_corp_code=corp_code)
+            if parsed is None:
+                continue
+            result[parsed.receipt_no] = DelistingFiling(
+                corp_code=parsed.corp_code,
+                receipt_no=parsed.receipt_no,
+                received_on=parsed.received_on,
+                report_name=parsed.report_name,
+                event_type="absorbed_merger",
+                effective_on=parsed.effective_on,
+            )
+        if not result:
+            for disclosure in self._merger_decision_disclosures(
+                start, end, corp_code=corp_code,
+            ):
+                title = str(disclosure.get("report_nm") or "")
+                if title.lstrip().startswith("[첨부정정]"):
+                    continue
+                receipt = str(disclosure.get("rcept_no") or "").strip()
+                try:
+                    archive = self._get(
+                        "document.xml", {"rcept_no": receipt}, binary=True,
+                    )
+                except ProviderError:
+                    continue
+                parsed = parse_absorbed_merger_archive(
+                    archive,
+                    expected_corp_code=corp_code,
+                    corp_name=str(disclosure.get("corp_name") or ""),
+                    receipt_no=receipt,
+                )
+                if parsed is None:
+                    continue
+                result[parsed.receipt_no] = DelistingFiling(
+                    corp_code=parsed.corp_code,
+                    receipt_no=parsed.receipt_no,
+                    received_on=parsed.received_on,
+                    report_name=parsed.report_name,
+                    event_type="absorbed_merger",
+                    effective_on=parsed.effective_on,
+                )
+                break
+        return sorted(result.values(), key=lambda row: (row.event_on, row.receipt_no))
+
+
+def _financial_company_report_code(row: dict[str, Any]) -> str | None:
+    """금융위 API의 보고서 코드를 OpenDART와 같은 분기 식별자로 정규화한다."""
+    report_code = str(row.get("rptCd") or "").strip()
+    if report_code in REPORT_CODES.values():
+        return report_code
+    report_name = str(row.get("rptCdNm") or "")
+    month_match = re.search(r"(?:^|[^0-9])(03|06|09|12)(?:[^0-9]|$)", report_name)
+    if month_match is None:
+        return None
+    return {"03": "11013", "06": "11012", "09": "11014", "12": "11011"}[month_match.group(1)]
+
+
+def _financial_company_scope(row: dict[str, Any]) -> str | None:
+    """명시된 연결·별도 구분만 사용한다. 알 수 없는 범위는 추측하지 않는다."""
+    value = " ".join(
+        str(row.get(field) or "")
+        for field in ("fnclDcd", "fnclDcdNm")
+    ).upper()
+    if "CFS" in value or "연결" in value:
+        return "CFS"
+    if "OFS" in value or "별도" in value or "개별" in value:
+        return "OFS"
+    return None
+
+
+class FinancialCompanyClient:
+    """금융위 키는 GitHub Actions secret에서 받아 보호된 프록시에만 전달한다."""
+
+    def __init__(
+        self,
+        supabase_url: str,
+        service_key: str,
+        internal_token: str,
+        public_data_key: str,
+        *,
+        session: Any | None = None,
+    ) -> None:
+        self.supabase_url = supabase_url.rstrip("/")
+        self.service_key = service_key.strip()
+        self.internal_token = internal_token.strip()
+        self.public_data_key = public_data_key.strip()
+        if not self.supabase_url or not self.service_key or not self.internal_token or not self.public_data_key:
+            raise ValueError("Supabase URL, service key, internal token, and public-data key are required for financial-company lookup")
+        self.session = session or _session()
+        self.request_count = 0
+        self._sector_rows_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+
+    @classmethod
+    def from_env(cls) -> "FinancialCompanyClient | None":
+        url = os.getenv("SUPABASE_URL", "").strip()
+        service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        internal_token = os.getenv("EARNINGS_FINANCIAL_SOURCE_TOKEN", "").strip()
+        public_data_key = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
+        return cls(url, service_key, internal_token, public_data_key) if url and service_key and internal_token and public_data_key else None
+
+    @staticmethod
+    def _sector_for_industry(industry_code: str | None) -> str | None:
+        code = str(industry_code or "").strip()
+        for sector, spec in FINANCIAL_SECTOR_SPECS.items():
+            if any(code.startswith(prefix) for prefix in spec["industry_prefixes"]):
+                return sector
+        return None
+
+    def _source_request(
+        self,
+        payload: dict[str, Any],
+        *,
+        operation: str,
+        total_timeout: float = 30,
+        attempt_timeout: float = 12,
+    ) -> dict[str, Any]:
+        self.request_count += 1
+        try:
+            result = bounded_request(
+                self.session,
+                "POST",
+                f"{self.supabase_url}/functions/v1/{FINANCIAL_COMPANY_FUNCTION}",
+                provider="Financial Services Commission",
+                operation=operation,
+                headers={
+                    "Authorization": f"Bearer {self.internal_token}",
+                    "apikey": self.service_key,
+                    "Content-Type": "application/json",
+                    "X-Public-Data-API-Key": self.public_data_key,
+                },
+                json=payload,
+                total_timeout=total_timeout,
+                attempt_timeout=attempt_timeout,
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=STANDARD_READ_TIMEOUT,
+                on_retry=lambda attempt, reason, remaining: self._progress(
+                    "provider_request_retry",
+                    provider="Financial Services Commission", endpoint=operation,
+                    attempt=attempt, reason=reason, remaining_budget_seconds=remaining,
+                ),
+            )
+        except ExecutionDeadlineExceeded:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                safe_request_failure("Financial Services Commission", operation, exc),
+                retryable=_retryable_request_error(exc),
+            ) from None
+        if not isinstance(result, dict):
+            raise ProviderError("Financial Services Commission returned invalid JSON")
+        return result
+
+    def _sector_rows(self, sector: str, base_month: str) -> list[dict[str, Any]]:
+        cache_key = (sector, base_month)
+        cached = self._sector_rows_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        spec = FINANCIAL_SECTOR_SPECS[sector]
+        rows: list[dict[str, Any]] = []
+        seen_pages: set[tuple[str, str, str, int]] = set()
+        for page_no in range(1, 6):
+            payload = self._source_request(
+                {
+                    "mode": "sector_financial",
+                    "sector": sector,
+                    "bas_ym": base_month,
+                    "title": spec["title"],
+                    "num_of_rows": 9999,
+                    "page_no": page_no,
+                },
+                operation=f"sector-financial:{sector}:{page_no}",
+                total_timeout=60,
+                attempt_timeout=30,
+            )
+            status = str(payload.get("status") or "")
+            if status == "no_report":
+                break
+            if status != "ok":
+                raise ProviderError("Financial Services Commission rejected the sector request")
+            raw_rows = payload.get("rows")
+            if not isinstance(raw_rows, list):
+                raise ProviderError("Financial Services Commission returned invalid sector data")
+            page_rows = [row for row in raw_rows if isinstance(row, dict)]
+            if not page_rows:
+                break
+            signature = (
+                str(page_rows[0].get("crno") or ""),
+                str(page_rows[-1].get("crno") or ""),
+                str(page_rows[-1].get(spec["name_field"]) or ""),
+                len(page_rows),
+            )
+            if signature in seen_pages:
+                break
+            seen_pages.add(signature)
+            rows.extend(page_rows)
+            if len(page_rows) < 9999:
+                break
+        self._sector_rows_cache[cache_key] = rows
+        return rows
+
+    @staticmethod
+    def _sector_amount(
+        account_rows: dict[str, dict[str, Any]],
+        labels: tuple[str, ...],
+        field: str,
+    ) -> Decimal | None:
+        for label in labels:
+            if label in account_rows:
+                return _decimal(account_rows[label].get(field))
+        return None
+
+    @staticmethod
+    def _sector_sum(
+        account_rows: dict[str, dict[str, Any]],
+        labels: tuple[str, ...],
+        field: str,
+    ) -> Decimal | None:
+        values = [
+            _decimal(account_rows[label].get(field))
+            for label in labels
+            if label in account_rows
+        ]
+        if len(values) != len(labels) or any(value is None for value in values):
+            return None
+        return sum((value for value in values if value is not None), Decimal(0))
+
+    def _sector_quarter_financials(
+        self,
+        crno: str,
+        year: int,
+        quarter: int,
+        sector: str,
+    ) -> list[FinancialCompanySnapshot]:
+        spec = FINANCIAL_SECTOR_SPECS[sector]
+        base_month = f"{year}{quarter * 3:02d}"
+        rows = [
+            row for row in self._sector_rows(sector, base_month)
+            if str(row.get("crno") or "").strip() == crno
+            and str(row.get("basYm") or "").strip() == base_month
+        ]
+        account_rows = {
+            str(row.get(spec["name_field"]) or "").strip(): row
+            for row in rows
+            if str(row.get(spec["name_field"]) or "").strip()
+        }
+        if not account_rows:
+            return []
+
+        cumulative_field = str(spec["cumulative_field"])
+        standalone_field = str(spec["standalone_field"])
+        top_sum = spec.get("top_line_sum")
+        if isinstance(top_sum, tuple):
+            top_line_cumulative = self._sector_sum(account_rows, top_sum, cumulative_field)
+            top_line_standalone = self._sector_sum(account_rows, top_sum, standalone_field)
+        else:
+            labels = spec["top_line"]
+            top_line_cumulative = self._sector_amount(account_rows, labels, cumulative_field)
+            top_line_standalone = self._sector_amount(account_rows, labels, standalone_field)
+
+        return [FinancialCompanySnapshot(
+            crno=crno,
+            report_code=REPORT_CODES[quarter],
+            consolidation_scope=str(spec["scope"]),
+            currency="KRW",
+            top_line_cumulative=top_line_cumulative,
+            operating_income_cumulative=self._sector_amount(
+                account_rows, spec["operating_income"], cumulative_field,
+            ),
+            net_income_cumulative=self._sector_amount(
+                account_rows, spec["net_income"], cumulative_field,
+            ),
+            top_line_standalone=top_line_standalone,
+            operating_income_standalone=self._sector_amount(
+                account_rows, spec["operating_income"], standalone_field,
+            ),
+            net_income_standalone=self._sector_amount(
+                account_rows, spec["net_income"], standalone_field,
+            ),
+        )]
+
+    def quarter_financial_candidates(
+        self, crno: str, year: int, quarter: int,
+        industry_code: str | None = None, *, preferred_scope: str | None = None,
+    ) -> list[FinancialCompanySnapshot]:
+        """V2.5-only: supplement partial sector reports with the common API."""
+        sector = self._sector_for_industry(industry_code)
+        candidates = self._sector_quarter_financials(crno, year, quarter, sector) if sector else []
+        fields = ("top_line", "operating_income", "net_income")
+        if any(
+            (preferred_scope is None or item.consolidation_scope == preferred_scope)
+            and all(getattr(item, f"{field}_cumulative") is not None
+                    or getattr(item, f"{field}_standalone") is not None for field in fields)
+            for item in candidates
+        ):
+            return candidates
+        common = self.quarter_financials(crno, year, quarter, None)
+        if any(item.crno != crno for item in common):
+            raise ProviderError("Financial Services Commission returned a different company")
+        return candidates + common
+
+    def quarter_financials(
+        self,
+        crno: str,
+        year: int,
+        quarter: int,
+        industry_code: str | None = None,
+    ) -> list[FinancialCompanySnapshot]:
+        sector = self._sector_for_industry(industry_code)
+        if sector is not None:
+            sector_snapshots = self._sector_quarter_financials(
+                crno, year, quarter, sector,
+            )
+            if sector_snapshots:
+                return sector_snapshots
+
+        payload = self._source_request(
+            {"crno": crno, "fiscal_year": year},
+            operation="financial-company-source",
+        )
+        status = str(payload.get("status") or "")
+        if status in {"not_found", "ambiguous", "no_report"}:
+            return []
+        if status != "ok":
+            raise ProviderError("Financial Services Commission rejected the request")
+
+        returned_crno = str(payload.get("crno") or "").strip()
+        reports = payload.get("reports")
+        if not re.fullmatch(r"\d{13}", returned_crno) or not isinstance(reports, list):
+            raise ProviderError("Financial Services Commission returned invalid financial-company data")
+        target_report = REPORT_CODES[quarter]
+        snapshots: list[FinancialCompanySnapshot] = []
+        for raw in reports:
+            if not isinstance(raw, dict) or _financial_company_report_code(raw) != target_report:
+                continue
+            currency = str(raw.get("curCd") or "KRW").strip().upper()
+            snapshots.append(FinancialCompanySnapshot(
+                crno=returned_crno,
+                report_code=target_report,
+                consolidation_scope=_financial_company_scope(raw),
+                currency=currency or "KRW",
+                top_line_cumulative=_decimal(raw.get("fncoSaleAmt")),
+                operating_income_cumulative=_decimal(raw.get("fncoBzopPft")),
+                net_income_cumulative=_decimal(raw.get("fncoCrtmNpf")),
+            ))
+        return snapshots
+
+    @staticmethod
+    def _progress(stage: str, **details: Any) -> None:
+        print(json.dumps({"stage": stage, **details}, ensure_ascii=False, default=str), flush=True)
+
 
 class KrxClient:
     def __init__(self, auth_key: str, *, session: Any | None = None) -> None:
@@ -491,29 +1007,37 @@ class KrxClient:
 
 
 class EcosFxClient:
-    """기준일 이전의 최근 USD/KRW 종가를 조회한다."""
+    """기준일 이전의 최근 외화/KRW 종가를 1 외화 단위 기준으로 조회한다."""
 
     def __init__(self, api_key: str, *, session: Any | None = None) -> None:
         if not api_key.strip():
             raise ValueError("ECOS API key is required")
         self.api_key = api_key.strip()
         self.session = session or _session()
-        self.cache: dict[date, tuple[date, Decimal]] = {}
+        self.cache: dict[tuple[str, date], tuple[date, Decimal]] = {}
         self.request_count = 0
 
-    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
-        if reference_date in self.cache:
-            return self.cache[reference_date]
+    def latest_krw(self, base_currency: str, reference_date: date) -> tuple[date, Decimal]:
+        base_currency = base_currency.upper()
+        spec = ECOS_KRW_SPECS.get(base_currency)
+        if spec is None:
+            raise ProviderError(f"ECOS does not support {base_currency}/KRW")
+        cache_key = (base_currency, reference_date)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        item_code, unit_multiplier = spec
+        operation = f"{base_currency}/KRW"
         start = reference_date - timedelta(days=10)
         url = (
             f"{ECOS_BASE}/{self.api_key}/json/kr/1/100/731Y001/D/"
-            f"{start:%Y%m%d}/{reference_date:%Y%m%d}/0000001"
+            f"{start:%Y%m%d}/{reference_date:%Y%m%d}/{item_code}"
         )
         self.request_count += 1
         try:
             payload = bounded_request(
                 self.session, "GET", url,
-                provider="ECOS", operation="USD/KRW",
+                provider="ECOS", operation=operation,
                 total_timeout=ECOS_TOTAL_TIMEOUT,
                 attempt_timeout=9,
                 connect_timeout=CONNECT_TIMEOUT,
@@ -522,19 +1046,19 @@ class EcosFxClient:
         except ExecutionDeadlineExceeded:
             raise
         except Exception as exc:
-            raise ProviderError(safe_request_failure("ECOS", "USD/KRW", exc)) from None
+            raise ProviderError(safe_request_failure("ECOS", operation, exc)) from None
         if not isinstance(payload, dict):
-            raise ProviderError("ECOS USD/KRW returned invalid JSON")
+            raise ProviderError(f"ECOS {operation} returned invalid JSON")
         result = payload.get("RESULT")
         if isinstance(result, dict):
             code = re.sub(r"[^0-9A-Za-z_-]", "", str(result.get("CODE") or "unknown"))
-            raise ProviderError(f"ECOS USD/KRW rejected the request ({code})")
+            raise ProviderError(f"ECOS {operation} rejected the request ({code})")
         statistic = payload.get("StatisticSearch")
         rows = statistic.get("row") if isinstance(statistic, dict) else None
         if not isinstance(rows, list):
-            raise ProviderError("ECOS USD/KRW returned invalid data")
+            raise ProviderError(f"ECOS {operation} returned invalid data")
         candidates: list[tuple[date, Decimal]] = []
-        for row in rows if isinstance(rows, list) else []:
+        for row in rows:
             value = _decimal(row.get("DATA_VALUE"))
             observed = str(row.get("TIME") or "")
             if (
@@ -542,9 +1066,19 @@ class EcosFxClient:
                 and re.fullmatch(r"\d{8}", observed)
                 and observed <= reference_date.strftime("%Y%m%d")
             ):
-                candidates.append((date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"), value))
+                normalized = value * unit_multiplier
+                candidates.append((
+                    date.fromisoformat(f"{observed[:4]}-{observed[4:6]}-{observed[6:]}"),
+                    normalized,
+                ))
         if not candidates:
-            raise ProviderError("ECOS returned no USD/KRW value near quarter end")
+            raise ProviderError(f"ECOS returned no {operation} value near quarter end")
         latest = max(candidates, key=lambda item: item[0])
-        self.cache[reference_date] = latest
+        self.cache[cache_key] = latest
         return latest
+
+    def latest_usd_krw(self, reference_date: date) -> tuple[date, Decimal]:
+        return self.latest_krw("USD", reference_date)
+
+    def latest_jpy_krw(self, reference_date: date) -> tuple[date, Decimal]:
+        return self.latest_krw("JPY", reference_date)

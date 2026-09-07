@@ -4,11 +4,14 @@ import unittest
 import requests
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
+from zipfile import ZipFile
 
 from earnings_v2.aggregation import aggregate_market
 from earnings_v2.automatic import KoreaEarningsV2AutomaticPipeline
 from earnings_v2.automatic_cli import DAILY_DEADLINE_SECONDS as AUTOMATIC_DEADLINE_SECONDS
 from earnings_v2.models import CompanyIdentity, DelistingFiling, FinancialFact, PeriodicFiling
+from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
 from earnings_v2.cli import QUARTER_DEADLINE_SECONDS, completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
 from earnings_v2.http import (
@@ -180,7 +183,8 @@ class SimulatedRepository:
         wanted = set(corp_codes)
         return [
             dict(row) for row in self.delisting_rows.values()
-            if row["corp_code"] in wanted and start <= row["received_on"] <= end
+            if row["corp_code"] in wanted
+            and start <= (row.get("effective_on") or row["received_on"]) <= end
         ]
 
     def company_history(self, company_ids):
@@ -252,9 +256,10 @@ class SimulatedRepository:
 
 
 class SimulatedDart:
-    def __init__(self, filings=(), delistings=()):
+    def __init__(self, filings=(), delistings=(), mergers=()):
         self.filings = list(filings)
         self.delistings = list(delistings)
+        self.mergers = list(mergers)
         self.financial_calls: list[tuple[tuple[str, ...], int, int]] = []
         self.profile_calls: list[str] = []
         self.single_calls: list[tuple[str, int, int, str]] = []
@@ -271,6 +276,12 @@ class SimulatedDart:
             row for row in self.delistings
             if corp_code is None or row.corp_code == corp_code
         ]
+
+    def merger_decision_corp_codes(self, _start, _end):
+        return {row.corp_code for row in self.mergers}
+
+    def absorbed_merger_filings(self, _start, _end, *, corp_code):
+        return [row for row in self.mergers if row.corp_code == corp_code]
 
     def multi_accounts(self, corp_codes, year, quarter):
         codes = tuple(corp_codes)
@@ -290,17 +301,28 @@ class SimulatedDart:
         return complete(corp_code, current="20", cumulative="120", scope=scope)
 
 
-class UsdDart(SimulatedDart):
-    def __init__(self, target_corp: str, filings=()):
+class ForeignCurrencyDart(SimulatedDart):
+    def __init__(self, target_corp: str, currency: str, filings=()):
         super().__init__(filings)
         self.target_corp = target_corp
+        self.currency = currency
 
     def multi_accounts(self, corp_codes, year, quarter):
         rows = super().multi_accounts(corp_codes, year, quarter)
         return [
-            {**item, "currency": "USD"} if item["corp_code"] == self.target_corp else item
+            {**item, "currency": self.currency} if item["corp_code"] == self.target_corp else item
             for item in rows
         ]
+
+
+class UsdDart(ForeignCurrencyDart):
+    def __init__(self, target_corp: str, filings=()):
+        super().__init__(target_corp, "USD", filings)
+
+
+class JpyDart(ForeignCurrencyDart):
+    def __init__(self, target_corp: str, filings=()):
+        super().__init__(target_corp, "JPY", filings)
 
 
 class SimulatedKis:
@@ -365,6 +387,10 @@ class FailingFx:
         self.request_count += 1
         raise ProviderError("ECOS USD/KRW timed out (ConnectTimeout)")
 
+    def latest_krw(self, base_currency, _reference_date):
+        self.request_count += 1
+        raise ProviderError(f"ECOS {base_currency}/KRW timed out (ConnectTimeout)")
+
 
 class FixedFx:
     def __init__(self, rate=Decimal("1300")):
@@ -375,12 +401,87 @@ class FixedFx:
         self.request_count += 1
         return reference_date, self.rate
 
+    def latest_krw(self, _base_currency, reference_date):
+        self.request_count += 1
+        return reference_date, self.rate
+
 
 class SimulatedKrx:
     request_count = 0
 
 
 class OpenDartTransportTests(unittest.TestCase):
+    def test_structured_merger_parser_accepts_only_absorbed_company(self):
+        absorbed = parse_absorbed_merger({
+            "corp_code": "00838421",
+            "rcept_no": "20180117001035",
+            "corp_name": "씨제이이앤엠",
+            "mgptncmp_cmpnm": "(주)씨제이오쇼핑\n(CJ O SHOPPING CO., Ltd)",
+            "mg_mth": "(주)씨제이오쇼핑이 씨제이이앤엠(주)를 흡수합병\n- 존속회사: (주)씨제이오쇼핑\n- 소멸회사: 씨제이이앤엠(주)",
+            "mgsc_mgdt": "2018년 07월 01일",
+        }, expected_corp_code="00838421")
+        survivor = parse_absorbed_merger({
+            "corp_code": "00123456",
+            "rcept_no": "20180117001036",
+            "corp_name": "주식회사 씨제이오쇼핑",
+            "mgptncmp_cmpnm": "씨제이이앤엠 주식회사",
+            "mg_mth": "주식회사 씨제이오쇼핑이 씨제이이앤엠 주식회사를 흡수합병",
+            "mgsc_mgdt": "2018.07.01",
+        }, expected_corp_code="00123456")
+
+        self.assertIsNotNone(absorbed)
+        assert absorbed is not None
+        self.assertEqual(absorbed.effective_on, date(2018, 7, 1))
+        self.assertIsNone(survivor)
+
+    def test_legacy_merger_archive_requires_explicit_dissolved_company(self):
+        document = """
+        <TABLE><TR><TD>합병방법</TD><TD>미래에셋대우 주식회사가 미래에셋증권 주식회사를 흡수합병
+        - 존속법인 : 미래에셋대우 주식회사 - 소멸법인 : 미래에셋증권 주식회사</TD></TR>
+        <TR><TD>합병기일</TD><TD>2016년 11월 01일</TD></TR></TABLE>
+        """
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr("report.xml", document.encode("cp949"))
+
+        event = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00311030",
+            corp_name="미래에셋증권", receipt_no="20160513004518",
+        )
+        survivor = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00111722",
+            corp_name="미래에셋대우", receipt_no="20160513004348",
+        )
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.effective_on, date(2016, 11, 1))
+        self.assertIsNone(survivor)
+
+    def test_legacy_merger_archive_accepts_explicit_absorbed_company(self):
+        document = """
+        <TABLE><TR><TD>합병 당사회사</TD><TD>합병회사 : 주식회사 지에스리테일
+        피합병회사 : 주식회사 지에스홈쇼핑</TD></TR>
+        <TR><TD>합병기일</TD><TD>2021년 07월 01일</TD></TR></TABLE>
+        """
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr("report.xml", document.encode("cp949"))
+
+        event = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00207755",
+            corp_name="지에스홈쇼핑", receipt_no="20201110000001",
+        )
+        survivor = parse_absorbed_merger_archive(
+            buffer.getvalue(), expected_corp_code="00676928",
+            corp_name="지에스리테일", receipt_no="20201110000002",
+        )
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.effective_on, date(2021, 7, 1))
+        self.assertIsNone(survivor)
+
     def test_corporation_map_streams_the_archive(self):
         class Response:
             @staticmethod
@@ -927,6 +1028,67 @@ class ProviderReliabilityTests(unittest.TestCase):
         self.assertEqual(rate, Decimal("1360.25"))
         self.assertEqual(client.request_count, 1)
 
+    def test_ecos_normalizes_jpy_quote_to_one_yen(self):
+        class Response:
+            content = b"{}"
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"StatisticSearch": {"row": [
+                    {"TIME": "20250630", "DATA_VALUE": "950"},
+                ]}}
+
+        class Session:
+            calls = []
+
+            def get(self, url, **_kwargs):
+                self.calls.append(url)
+                return Response()
+
+        session = Session()
+        client = EcosFxClient("secret", session=session)
+
+        observed_on, rate = client.latest_krw("JPY", date(2025, 6, 30))
+
+        self.assertEqual(observed_on, date(2025, 6, 30))
+        self.assertEqual(rate, Decimal("9.50"))
+        self.assertIn("/0000002", session.calls[0])
+
+    def test_ecos_uses_official_eur_and_cny_items_without_unit_scaling(self):
+        class Response:
+            content = b"{}"
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"StatisticSearch": {"row": [
+                    {"TIME": "20250630", "DATA_VALUE": "190"},
+                ]}}
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **_kwargs):
+                self.calls.append(url)
+                return Response()
+
+        session = Session()
+        client = EcosFxClient("secret", session=session)
+
+        for currency, item_code in (("EUR", "0000003"), ("CNY", "0000053")):
+            with self.subTest(currency=currency):
+                _observed_on, rate = client.latest_krw(currency, date(2025, 6, 30))
+                self.assertEqual(rate, Decimal("190"))
+                self.assertIn(f"/{item_code}", session.calls[-1])
+
 
 class CliContractTests(unittest.TestCase):
     def test_korean_market_targets_are_one_hundred_each(self):
@@ -1251,6 +1413,53 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             repository.company_rows[(target_company, 2026, 2)]["source_filing_id"],
             "delisting_previous_quarter:20260620000001",
         )
+
+    def test_absorbed_merger_uses_effective_date_and_previous_quarter(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.seed_company(
+            target_company, top_line=None,
+            operating_income=None, net_income=None, pending=True,
+        )
+        previous = fact(2026, 1, "9", company=target_company).with_changes(
+            source_top_line_cumulative=Decimal("90"),
+            source_operating_income_cumulative=Decimal("9"),
+            source_net_income_cumulative=Decimal("9"),
+        )
+        repository.company_rows[(target_company, 2026, 1)] = previous.db_row(
+            calculation_version=6,
+        )
+        merger = DelistingFiling(
+            target_corp, "20260117000001", date(2026, 1, 17),
+            "회사합병 결정(피흡수합병)", "absorbed_merger",
+            effective_on=date(2026, 7, 1),
+        )
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(mergers=[merger]),
+            repository=repository, kis=SimulatedKis(),
+        )
+
+        before_effective = pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            delisting_filings=[merger], event_effective_cutoff=date(2026, 6, 30),
+            retry_pending=False,
+        )
+        self.assertTrue(repository.company_rows[(target_company, 2026, 2)]["is_pending"])
+        self.assertEqual(before_effective["resolved_delisting_companies"], 0)
+
+        after_effective = pipeline.run_quarter(
+            2026, 2, write=True, incremental=True,
+            delisting_filings=[merger], event_effective_cutoff=date(2026, 7, 1),
+        )
+        stored = repository.company_rows[(target_company, 2026, 2)]
+        self.assertFalse(stored["is_pending"])
+        self.assertEqual(stored["top_line"], Decimal("90"))
+        self.assertEqual(
+            stored["source_filing_id"],
+            "delisting_previous_quarter:20260117000001",
+        )
+        self.assertEqual(after_effective["resolved_delisting_companies"], 1)
 
     def test_final_delisting_after_quarter_end_resolves_previous_pending_quarter(self):
         target_company = "kr:00000099"
@@ -1583,7 +1792,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             pipeline.run_quarter(2026, 2, write=True)
 
         self.assertEqual(fx.request_count, 1)
-        self.assertEqual(pipeline.dart.financial_calls, [])
+        self.assertTrue(pipeline.dart.financial_calls)
         stored = repository.company_rows[(target_company, 2026, 2)]
         self.assertEqual(stored["top_line"], Decimal("100"))
         self.assertFalse(stored["is_pending"])
@@ -1617,6 +1826,36 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(second_fx.request_count, 0)
         self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("26000"))
 
+    def test_quarter_fx_snapshot_converts_jpy_per_one_yen(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.fx_rates.clear()
+        fx = FixedFx(Decimal("10"))
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=JpyDart(target_corp), repository=repository,
+            kis=SimulatedKis(), fx=fx,
+        )
+
+        pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(fx.request_count, 1)
+        self.assertEqual(repository.company_rows[(target_company, 2026, 2)]["top_line"], Decimal("200"))
+        self.assertIn((2026, 2, "JPY", "KRW"), repository.fx_rates)
+
+    def test_krw_only_quarter_does_not_query_ecos(self):
+        repository = self.populated_repository()
+        repository.fx_rates.clear()
+        fx = FixedFx()
+        pipeline = KoreaEarningsV2Pipeline(
+            krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository,
+            kis=SimulatedKis(), fx=fx,
+        )
+
+        pipeline.run_quarter(2026, 2, write=True)
+
+        self.assertEqual(fx.request_count, 0)
+
     def test_backfill_application_deadline_stops_before_replacement(self):
         target_company = "kr:00000099"
 
@@ -1640,7 +1879,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertFalse(stored["is_pending"])
         self.assertEqual(repository.states["2026Q2"]["status"], "failed")
 
-    def test_daily_fx_snapshot_failure_stops_before_financial_collection(self):
+    def test_daily_fx_failure_preserves_stored_financials(self):
         target_company = "kr:00000099"
         target_corp = "00000099"
         receipt = PeriodicFiling(
@@ -1662,7 +1901,55 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
         self.assertEqual(stored["top_line"], Decimal("100"))
         self.assertFalse(stored["is_pending"])
         self.assertEqual(fx.request_count, 1)
-        self.assertEqual(dart.financial_calls, [])
+        self.assertTrue(dart.financial_calls)
+
+    def test_automatic_converts_supported_foreign_currencies_lazily(self):
+        target_company = "kr:00000099"
+        target_corp = "00000099"
+        receipt = PeriodicFiling(
+            target_corp, "20260902000009", date(2026, 9, 2), "반기보고서 (2026.06)",
+        )
+        for currency in ("USD", "JPY", "EUR", "CNY"):
+            with self.subTest(currency=currency):
+                repository = self.populated_repository()
+                repository.fx_rates.clear()
+                fx = FixedFx(Decimal("10"))
+                dart = ForeignCurrencyDart(target_corp, currency, [receipt])
+                pipeline = KoreaEarningsV2AutomaticPipeline(
+                    krx=SimulatedKrx(), dart=dart, repository=repository,
+                    kis=SimulatedKis(), fx=fx,
+                )
+
+                pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+                self.assertEqual(fx.request_count, 1)
+                self.assertEqual(
+                    repository.company_rows[(target_company, 2026, 2)]["top_line"],
+                    Decimal("200"),
+                )
+                self.assertIn((2026, 2, currency, "KRW"), repository.fx_rates)
+
+    def test_automatic_krw_only_collection_does_not_query_ecos(self):
+        target_corp = "00000099"
+        repository = self.populated_repository()
+        repository.fx_rates.clear()
+        fx = FixedFx()
+        pipeline = KoreaEarningsV2AutomaticPipeline(
+            krx=SimulatedKrx(),
+            dart=SimulatedDart([
+                PeriodicFiling(
+                    target_corp, "20260902000009", date(2026, 9, 2),
+                    "반기보고서 (2026.06)",
+                ),
+            ]),
+            repository=repository,
+            kis=SimulatedKis(),
+            fx=fx,
+        )
+
+        pipeline.run_daily(write=True, today=date(2026, 9, 2))
+
+        self.assertEqual(fx.request_count, 0)
 
     def test_pending_kis_failure_is_isolated_from_other_companies(self):
         class MissingSingleDart(SimulatedDart):
@@ -1963,6 +2250,36 @@ class QuarterlyExtractionTests(unittest.TestCase):
         self.assertEqual(value.operating_income, Decimal("60"))
         self.assertEqual(value.net_income, Decimal("60"))
         self.assertTrue(value.source_filing_id.startswith("annual_without_q3_average:"))
+
+    def test_q4_does_not_subtract_fetched_q3_in_another_currency(self):
+        current = [
+            {**item, "currency": "USD"}
+            for item in complete("00000001", current="400", cumulative="")
+        ]
+        previous = complete("00000001", current="100", cumulative="300")
+
+        value = extract_company_fact(
+            "00000001", "kr:1", 2023, 4, current, previous,
+        )
+
+        self.assertEqual(value.operating_income, Decimal("100"))
+        self.assertEqual(value.source_currency, "USD")
+        self.assertTrue(value.source_filing_id.startswith("annual_without_q3_average:"))
+
+    def test_automatic_q4_currency_change_remains_missing(self):
+        current = [
+            {**item, "currency": "USD"}
+            for item in complete("00000001", current="400", cumulative="")
+        ]
+        previous = complete("00000001", current="100", cumulative="300")
+
+        value = extract_company_fact(
+            "00000001", "kr:1", 2023, 4, current, previous,
+            allow_annual_average=False,
+        )
+
+        self.assertIsNone(value.operating_income)
+        self.assertEqual(value.source_currency, "USD")
 
     def test_automatic_q4_without_q3_cumulative_remains_missing(self):
         value = extract_company_fact(
@@ -2344,14 +2661,26 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertIsNone(rows[-1].operating_income_yoy_pct)
         self.assertEqual(rows[-1].operating_income_yoy_state, "black_turn")
 
-    def test_seasonal_qoq_waits_for_two_historical_same_quarter_transitions(self):
+    def test_historical_seasonal_qoq_uses_full_leave_one_out_sample(self):
         rows = [
             fact(2020, 4, "100"), fact(2021, 1, "110"), fact(2021, 2, "100"), fact(2021, 3, "100"), fact(2021, 4, "100"),
-            fact(2022, 1, "120"), fact(2022, 2, "100"), fact(2022, 3, "100"), fact(2022, 4, "100"), fact(2023, 1, "130"),
+            fact(2022, 1, "120"), fact(2022, 2, "100"), fact(2022, 3, "100"), fact(2022, 4, "100"),
+            fact(2023, 1, "130"), fact(2023, 2, "100"), fact(2023, 3, "100"), fact(2023, 4, "100"), fact(2024, 1, "140"),
         ]
         calculated = calculate_financial_series(rows)
-        self.assertEqual(calculated[1].operating_income_qoq_state, "insufficient_history")
+        self.assertEqual(calculated[1].operating_income_qoq_state, "normal")
+        self.assertEqual(calculated[1].operating_income_qoq_sa_pct, Decimal("-20"))
+        self.assertEqual(calculated[9].operating_income_qoq_state, "normal")
         self.assertEqual(calculated[-1].operating_income_qoq_state, "normal")
+
+    def test_historical_seasonal_qoq_starts_at_2016(self):
+        rows = [
+            fact(2015, 4, "100"), fact(2016, 1, "110"),
+            fact(2016, 2, "100"), fact(2016, 3, "100"), fact(2016, 4, "100"),
+        ]
+        calculated = calculate_financial_series(rows)
+        self.assertEqual(calculated[1].operating_income_qoq_state, "missing_prior")
+        self.assertIsNone(calculated[1].operating_income_qoq_sa_pct)
 
     def test_incremental_point_uses_saved_window_without_recalculating_history(self):
         current = fact(2026, 2, "130")
@@ -2360,11 +2689,11 @@ class GrowthAndAggregationTests(unittest.TestCase):
             previous=fact(2026, 1, "100"),
             prior_year=fact(2025, 2, "110"),
             seasonal_samples={
-                "operating_income": [Decimal("10"), Decimal("20")],
-                "net_income": [Decimal("10"), Decimal("20")],
+                "operating_income": [Decimal("10"), Decimal("20"), Decimal("30")],
+                "net_income": [Decimal("10"), Decimal("20"), Decimal("30")],
             },
         )
-        self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("15"))
+        self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("10"))
         self.assertEqual(raw["operating_income"], Decimal("30"))
 
     def test_scope_change_does_not_block_yoy_or_qoq(self):
@@ -2374,12 +2703,12 @@ class GrowthAndAggregationTests(unittest.TestCase):
             previous=fact(2026, 1, "100").with_changes(consolidation_scope="OFS"),
             prior_year=fact(2025, 2, "100").with_changes(consolidation_scope="OFS"),
             seasonal_samples={
-                "operating_income": [Decimal("10"), Decimal("20")],
-                "net_income": [Decimal("10"), Decimal("20")],
+                "operating_income": [Decimal("10"), Decimal("20"), Decimal("30")],
+                "net_income": [Decimal("10"), Decimal("20"), Decimal("30")],
             },
         )
         self.assertEqual(calculated.operating_income_yoy_pct, Decimal("30.0"))
-        self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("15"))
+        self.assertEqual(calculated.operating_income_qoq_sa_pct, Decimal("10"))
         self.assertEqual(raw["operating_income"], Decimal("30"))
 
     def test_seasonal_window_replaces_same_year_and_keeps_only_ten_samples(self):
@@ -2415,7 +2744,7 @@ class GrowthAndAggregationTests(unittest.TestCase):
         stored = fact(2026, 2, "10").db_row(calculation_version=6)
         self.assertFalse(stored["is_pending"])
 
-    def test_pending_company_is_excluded_even_when_profit_values_exist(self):
+    def test_pending_company_contributes_each_available_current_metric(self):
         current_members = [member("a", 1), member("b", 2)]
         previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
         current = {
@@ -2427,7 +2756,9 @@ class GrowthAndAggregationTests(unittest.TestCase):
             "kr_largecap", 2026, 2, current_members, current, 2,
             comparison_members=previous_members, comparison_facts=previous,
         )
-        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.top_line_total, Decimal("320"))
+        self.assertEqual(market.operating_income_total, Decimal("1011"))
+        self.assertEqual(market.net_income_total, Decimal("1011"))
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
@@ -2439,7 +2770,7 @@ class GrowthAndAggregationTests(unittest.TestCase):
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
-    def test_incomplete_prior_placeholder_is_omitted_from_provisional_total(self):
+    def test_incomplete_prior_placeholder_contributes_its_available_metrics(self):
         current_members = [member("a", 1), member("b", 2)]
         previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
         current = {"a": fact(2026, 2, "12", company="a")}
@@ -2448,7 +2779,26 @@ class GrowthAndAggregationTests(unittest.TestCase):
             "kr_largecap", 2026, 2, current_members, current, 2,
             comparison_members=previous_members, comparison_facts=previous,
         )
-        self.assertEqual(market.operating_income_total, Decimal("12"))
+        self.assertEqual(market.top_line_total, Decimal("120"))
+        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.net_income_total, Decimal("32"))
+        self.assertEqual(market.completion_status, "provisional")
+
+    def test_unconverted_pending_currency_uses_krw_placeholder(self):
+        current_members = [member("a", 1), member("b", 2)]
+        previous_members = [member("a", 1, year=2026, quarter=1), member("b", 2, year=2026, quarter=1)]
+        current = {
+            "a": fact(2026, 2, "12", company="a"),
+            "b": fact(2026, 2, "999", company="b").with_changes(currency="EUR", is_pending=True),
+        }
+        previous = {"a": fact(2026, 1, "10", company="a"), "b": fact(2026, 1, "20", company="b")}
+
+        market = aggregate_market(
+            "kr_largecap", 2026, 2, current_members, current, 2,
+            comparison_members=previous_members, comparison_facts=previous,
+        )
+
+        self.assertEqual(market.operating_income_total, Decimal("32"))
         self.assertEqual(market.completion_status, "provisional")
 
     def test_market_db_row_maps_domain_status_to_database_lifecycle(self):
@@ -2470,7 +2820,7 @@ class GrowthAndAggregationTests(unittest.TestCase):
             "kr_largecap", 2026, 2, current_members, current, 2,
             comparison_members=previous_members, comparison_facts=previous,
         )
-        self.assertEqual(market.operating_income_total, Decimal("32"))
+        self.assertEqual(market.operating_income_total, Decimal("42"))
         self.assertEqual(market.reported_company_count, 1)
         self.assertEqual(market.completion_status, "provisional")
 
@@ -2494,3 +2844,4 @@ class GrowthAndAggregationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

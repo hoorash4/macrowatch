@@ -1,0 +1,105 @@
+name: Notify scheduled workflow failures
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Send a test failure-notification email
+        required: true
+        default: test
+        type: choice
+        options: [test]
+  workflow_run:
+    workflows:
+      - "Analyze daily news"
+      - "Backup database to Google Drive"
+      - "Check macro targets"
+      - "Earnings U.S. automatic"
+      - "Earnings V2 Korea automatic"
+      - "Refresh central-bank policy signals"
+      - "Refresh EM capital capacity"
+      - "Refresh Emerging Market Stress"
+      - "Refresh equity-bond relative value"
+      - "Refresh Korea foreign flow"
+      - "Refresh Korean market stress"
+      - "Refresh KOSPI market context"
+      - "Refresh market-implied policy expectations"
+      - "Refresh sector flow"
+      - "Refresh U.S. credit stress"
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.event == 'schedule' &&
+         (github.event.workflow_run.conclusion == 'failure' ||
+          github.event.workflow_run.conclusion == 'timed_out'))
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Email administrator
+        env:
+          EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
+          EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}
+          EMAIL_RCV_ADDRESS: ${{ secrets.EMAIL_RCV_ADDRESS }}
+          IS_TEST: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+          SOURCE_WORKFLOW: ${{ github.event_name == 'workflow_dispatch' && '공통 실패 알림' || github.event.workflow_run.name }}
+          SOURCE_CONCLUSION: ${{ github.event_name == 'workflow_dispatch' && 'test' || github.event.workflow_run.conclusion }}
+          SOURCE_RUN_URL: ${{ github.event_name == 'workflow_dispatch' && format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) || github.event.workflow_run.html_url }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt || github.event.workflow_run.run_attempt }}
+          SOURCE_COMMIT_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+          SOURCE_FINISHED_AT: ${{ github.event_name == 'workflow_dispatch' && 'manual-test' || github.event.workflow_run.updated_at }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import smtplib
+          import ssl
+          from email.message import EmailMessage
+
+          account = os.environ.get("EMAIL_ADMIN", "").strip()
+          password = os.environ.get("EMAIL_APP_KEY", "").strip()
+          recipient = os.environ.get("EMAIL_RCV_ADDRESS", "").strip()
+          if not account:
+              raise RuntimeError("EMAIL_ADMIN GitHub Actions secret is missing")
+          if not password:
+              raise RuntimeError("EMAIL_APP_KEY GitHub Actions secret is missing")
+          if not recipient:
+              raise RuntimeError("EMAIL_RCV_ADDRESS GitHub Actions secret is missing")
+
+          workflow = os.environ["SOURCE_WORKFLOW"]
+          conclusion = os.environ["SOURCE_CONCLUSION"]
+          is_test = os.environ.get("IS_TEST") == "true"
+          message = EmailMessage()
+          message["From"] = account
+          message["To"] = recipient
+          message["Subject"] = (
+              "[MacroWatch][테스트] 예약 실행 실패 알림"
+              if is_test
+              else f"[MacroWatch] 예약 실행 실패: {workflow}"
+          )
+          message.set_content(
+              ("MacroWatch 예약 실행 실패 메일의 테스트입니다.\n\n" if is_test else
+               "MacroWatch 예약 자동 실행이 실패했습니다.\n\n") +
+              f"워크플로: {workflow}\n"
+              f"결과: {conclusion}\n"
+              f"완료 시각: {os.environ['SOURCE_FINISHED_AT']}\n"
+              f"실행 시도: {os.environ['SOURCE_RUN_ATTEMPT']}\n"
+              f"커밋: {os.environ['SOURCE_COMMIT_SHA']}\n"
+              f"로그: {os.environ['SOURCE_RUN_URL']}\n"
+          )
+
+          with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
+              smtp.ehlo()
+              smtp.starttls(context=ssl.create_default_context())
+              smtp.ehlo()
+              smtp.login(account, password)
+              smtp.send_message(message)
+          print("Failure notification email sent successfully.")
+          PY

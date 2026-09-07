@@ -1,13 +1,13 @@
 """Read V2.5 financial facts from an official DART filing archive.
 
-The 2016-2018 structured financial endpoints can return status 013 even when
+The 2015-2018 structured financial endpoints can return status 013 even when
 the accepted filing contains an income statement.  This module reuses the
 well-tested legacy table mechanics without changing the legacy or V2 paths.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from io import BytesIO
 import re
@@ -28,14 +28,17 @@ from .legacy_dart_financials import (
 
 
 ALIASES = {
-    "top_line": {"매출액", "매출", "수익", "영업수익"},
+    "top_line": {"매출액", "매출", "수익", "영업수익", "매출과지분법손익"},
     "operating_income": {"영업이익", "영업이익손실", "영업손익", "영업손실"},
     "net_income": {
         "순이익", "순이익손실", "당기순이익", "당기순이익손실",
-        "당기순손익", "당기순손실", "분당기순이익", "분당기순이익손실",
+        "당기순손익", "당기순손실", "당분기순이익", "당분기순이익손실",
+        "분당기순이익", "분당기순이익손실", "당기연결순이익",
         "분기순이익", "분기순이익손실",
         "반기순이익", "반기순이익손실", "연결분기순이익",
         "연결반기순이익", "연결당기순이익",
+        "분기순손실", "반기순손실", "당분기순손실", "분기연결순이익",
+        "연결총당기순이익", "연결총당기순이익손실",
     },
 }
 
@@ -53,8 +56,20 @@ class RawDartStatement:
 
 
 def _metric_for_label(value: str) -> str | None:
-    label = _normalize(value)
-    account_label = _normalize(re.split(r"[（(]", value, maxsplit=1)[0])
+    # DART cells can append presentation-only note markers and reserve-adjusted
+    # profit explanations to an otherwise exact account name. Remove only
+    # those decorations; do not fuzzy-match or combine financial concepts.
+    canonical = re.sub(r"[（(](당|분)[）)]", r"\1", value)
+    canonical = re.split(
+        r"&cr;|<\s*주석|[（(]\s*(?:주석|대손준비금|비상위험준비금)",
+        canonical,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    label = _normalize(canonical)
+    if "귀속" in label:
+        return None
+    account_label = _normalize(re.split(r"[（(]", canonical, maxsplit=1)[0])
     for metric, aliases in ALIASES.items():
         if label in aliases or account_label in aliases:
             return metric
@@ -98,6 +113,52 @@ def _parse_document(document: str, report_code: str, fiscal_year: int) -> list[R
                 cumulative[metric] = amount * multiplier if amount is not None else None
                 standalone[metric] = current * multiplier if current is not None else None
                 break
+        if cumulative["net_income"] is None:
+            for row_index, row in enumerate(parser.rows):
+                if not row or _metric_for_label(row[0]) != "net_income":
+                    continue
+                attribution = {}
+                for child_index in range(row_index + 1, min(row_index + 4, len(parser.rows))):
+                    child = parser.rows[child_index]
+                    if not child:
+                        continue
+                    label = _normalize(child[0])
+                    if label in {"지배기업소유주지분", "비지배지분"}:
+                        attribution[label] = (
+                            _choose_cumulative_amount(parser.rows, child_index, 0, report_code=report_code),
+                            _choose_standalone_amount(parser.rows, child_index, 0, report_code=report_code),
+                        )
+                if len(attribution) == 2:
+                    for index, target in enumerate((cumulative, standalone)):
+                        amounts = [value[index] for value in attribution.values()]
+                        if all(value is not None for value in amounts):
+                            target["net_income"] = sum(amounts) * multiplier
+        # A blank net-income subtotal may still have an explicit pre-tax
+        # total and income-tax expense. Do not assume an absent tax is zero,
+        # or derive total profit from continuing operations alone.
+        if cumulative["net_income"] is None and "중단영업" not in plain:
+            components = {}
+            for row_index, row in enumerate(parser.rows):
+                if not row:
+                    continue
+                label = _normalize(row[0])
+                component = (
+                    "pretax" if label in {"법인세비용차감전순이익", "법인세비용차감전순이익손실", "법인세차감전순이익"}
+                    else "tax" if label in {"법인세비용", "법인세비용수익"} else None
+                )
+                if component:
+                    components[component] = (
+                        _choose_cumulative_amount(parser.rows, row_index, 0, report_code=report_code),
+                        _choose_standalone_amount(parser.rows, row_index, 0, report_code=report_code),
+                    )
+            if (all(key in components for key in ("pretax", "tax"))
+                    and components["tax"][0] is not None and components["tax"][0] >= 0):
+                # Both signed components must be present. Negative tax
+                # presentations vary, so leave those for reported totals.
+                for index, target in enumerate((cumulative, standalone)):
+                    pretax, tax = components["pretax"][index], components["tax"][index]
+                    if pretax is not None and tax is not None and tax >= 0:
+                        target["net_income"] = (pretax - tax) * multiplier
         if sum(value is not None for value in cumulative.values()) >= 2:
             title_text = re.sub(r"<[^>]+>", " ", local_prefix + table)
             statements.append(RawDartStatement(
@@ -152,6 +213,24 @@ def parse_raw_filing_archive(
         }
         if len(unique) == 1:
             result[scope] = next(iter(unique.values()))
+    # Summary tables sometimes lack a statement heading. Use their published
+    # net total only when BOTH exact current revenue and operating profit
+    # identify the detailed statement, with no competing reported net total.
+    all_statements = [item for items in grouped.values() for item in items]
+    for scope, chosen in list(result.items()):
+        if chosen.cumulative["net_income"] is not None:
+            continue
+        matches = [item for item in all_statements
+                   if not item.statement_title_confirmed
+                   and item.cumulative["net_income"] is not None
+                   and all(chosen.cumulative[field] is not None
+                           and item.cumulative[field] == chosen.cumulative[field]
+                           for field in ("top_line", "operating_income"))]
+        values = {item.cumulative["net_income"] for item in matches}
+        if len(values) == 1:
+            result[scope] = replace(chosen, cumulative={
+                **chosen.cumulative, "net_income": next(iter(values)),
+            })
     if not result:
         raise RawDartParseError("No unique income statement was found in the filing archive")
     return result

@@ -76,6 +76,8 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash
@@ -90,4 +92,5 @@ jobs:
           # 애플리케이션 마감선보다 30초 뒤의 외부 제한은 실패 상태 기록까지
           # 고장 난 경우에만 사용하는 최후 강제 종료 안전망이다.
           timeout --signal=TERM --kill-after=10s 660s python -m earnings_v2.cli "${args[@]}"
+
 

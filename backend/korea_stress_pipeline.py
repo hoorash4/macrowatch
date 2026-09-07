@@ -214,6 +214,7 @@ def main() -> None:
     key = require_env("ECOS_API_KEY")
     url = require_env("SUPABASE_URL")
     service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
+    today = date.today()
     values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
     kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
     corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], args.years)
@@ -242,7 +243,7 @@ def main() -> None:
         print(f"fsi_unavailable={error}")
         fsi = existing_fsi
     months = sorted(set().union(*[set(rows) for rows in values.values()]))
-    today_month = date.today().replace(day=1).isoformat()
+    today_month = today.replace(day=1).isoformat()
     rows = []
     last_official_fsi: float | None = None
     for month in months:

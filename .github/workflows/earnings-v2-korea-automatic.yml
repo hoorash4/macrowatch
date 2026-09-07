@@ -1,8 +1,10 @@
 name: Earnings V2 Korea automatic
 
 on:
-  # 최소 15년 역사 백필이 검증될 때까지 예약 실행은 추가하지 않는다.
-  # 재개 시 10:30 UTC(KST 19:30)는 dart, 11:30 UTC(KST 20:30)는 kis로 실행한다.
+  schedule:
+    # GitHub Actions cron uses UTC: KST 19:30 / 20:30 on weekdays.
+    - cron: "30 10 * * 1-5"
+    - cron: "30 11 * * 1-5"
   workflow_dispatch:
     inputs:
       phase:
@@ -40,13 +42,15 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           EARNINGS_V2_AUTOMATIC_DEADLINE_SECONDS: "240"
-          WRITE: ${{ inputs.write }}
-          PHASE: ${{ inputs.phase }}
+          WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
+          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 10 * * 1-5' && 'dart' || 'kis') || inputs.phase }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash

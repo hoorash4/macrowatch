@@ -23,7 +23,7 @@ def parser() -> argparse.ArgumentParser:
         "--phase",
         choices=("dart", "kis", "all"),
         default="all",
-        help="dart=19:30 공시 수집, kis=20:30 대기열 보완, all=수동 연속 검증",
+        help="dart=19:30 DART 다중·개별, kis=20:30 KIS·금융위 보완, all=수동 연속 검증",
     )
     return result
 

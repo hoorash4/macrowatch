@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .aggregation import aggregate_market, calculate_market_point
 from .models import (
@@ -17,8 +18,16 @@ from .models import (
     QuarterFxRate,
     Security,
 )
-from .providers import EcosFxClient, KrxClient, OpenDartClient, ProviderError, REPORT_CODES
-from .raw_dart_financials import RawDartStatement, parse_raw_filing_archive
+from .providers import (
+    EcosFxClient,
+    FinancialCompanyClient,
+    FinancialCompanySnapshot,
+    KrxClient,
+    OpenDartClient,
+    ProviderError,
+    REPORT_CODES,
+)
+from .raw_dart_financials import RawDartParseError, RawDartStatement, parse_raw_filing_archive
 from .repository import EarningsV2Repository
 from .runtime import execution_deadline
 from .transform import (
@@ -33,6 +42,37 @@ TARGETS = {"kr_largecap": 100, "kr_kosdaq": 100}
 EXCHANGES = {"kr_largecap": "KOSPI", "kr_kosdaq": "KOSDAQ"}
 # V6부터 부분 기업행을 보존하고 잠정 바구니와 확정 총합을 분리한다.
 CALCULATION_VERSION = 6
+
+
+class _LazyKrwRates(Mapping[str, Decimal]):
+    """분기 외화 환율을 실제 사용 시점에 통화별 한 번만 조회한다."""
+
+    def __init__(self, loader: Callable[[str], Decimal]) -> None:
+        self._loader = loader
+        self._rates: dict[str, Decimal] = {}
+        self._unavailable: set[str] = set()
+
+    def __getitem__(self, currency: str) -> Decimal:
+        currency = currency.upper()
+        if currency in self._rates:
+            return self._rates[currency]
+        if currency in self._unavailable:
+            raise KeyError(currency)
+        try:
+            rate = self._loader(currency)
+        except ProviderError:
+            self._unavailable.add(currency)
+            raise KeyError(currency) from None
+        if rate <= 0:
+            raise ValueError(f"{currency}/KRW rate must be positive")
+        self._rates[currency] = rate
+        return rate
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._rates)
+
+    def __len__(self) -> int:
+        return len(self._rates)
 
 
 def quarter_end(year: int, quarter: int) -> date:
@@ -207,8 +247,13 @@ class KoreaEarningsV2Pipeline:
     """분기 기업군, 부분 실적, 잠정·확정 집계를 한 생명주기로 관리한다."""
 
     def __init__(self, *, krx: KrxClient, dart: OpenDartClient, repository: EarningsV2Repository,
-                 fx: EcosFxClient | None = None) -> None:
-        self.krx, self.dart, self.repository, self.fx = krx, dart, repository, fx
+                 fx: EcosFxClient | None = None,
+                 financial_company: FinancialCompanyClient | None = None) -> None:
+        self.krx = krx
+        self.dart = dart
+        self.repository = repository
+        self.fx = fx
+        self.financial_company = financial_company
 
     @staticmethod
     def _progress(stage: str, **details: Any) -> None:
@@ -218,7 +263,13 @@ class KoreaEarningsV2Pipeline:
     def from_env(cls) -> "KoreaEarningsV2Pipeline":
         repository = EarningsV2Repository.from_env()
         fx = EcosFxClient(os.environ["ECOS_API_KEY"]) if os.getenv("ECOS_API_KEY", "").strip() else None
-        return cls(krx=KrxClient.from_env(), dart=OpenDartClient.from_env(), repository=repository, fx=fx)
+        return cls(
+            krx=KrxClient.from_env(),
+            dart=OpenDartClient.from_env(),
+            repository=repository,
+            fx=fx,
+            financial_company=FinancialCompanyClient.from_env(),
+        )
 
     def _latest_public_operating_income(self, company_ids: Iterable[str], reference_date: date) -> dict[str, Decimal]:
         latest: dict[str, tuple[tuple[int, int], Decimal]] = {}
@@ -289,7 +340,7 @@ class KoreaEarningsV2Pipeline:
             grouped.setdefault(event.corp_code, []).append(event)
         result: dict[str, DelistingFiling] = {}
         for corp_code, candidates in grouped.items():
-            ordered = sorted(candidates, key=lambda row: (row.received_on, row.receipt_no))
+            ordered = sorted(candidates, key=lambda row: (row.event_on, row.receipt_no))
             result[corp_code] = next(
                 (row for row in ordered if row.event_type == "decision"), ordered[0],
             )
@@ -316,15 +367,19 @@ class KoreaEarningsV2Pipeline:
                 received_on=date.fromisoformat(str(row["received_on"])),
                 report_name=str(row["report_name"]),
                 event_type=str(row["event_type"]),
+                effective_on=(
+                    date.fromisoformat(str(row["effective_on"]))
+                    if row.get("effective_on") else None
+                ),
             )
             for row in rows
         ]
-        events.extend(event for event in supplied if start <= event.received_on <= end)
+        events.extend(event for event in supplied if start <= event.event_on <= end)
         events = [
             event for event in events
             if (
-                event.event_type == "final"
-                or event.received_on <= quarter_last_day
+                event.event_type in {"final", "absorbed_merger"}
+                or event.event_on <= quarter_last_day
             )
         ]
         return self._delisting_event_map(events)
@@ -346,9 +401,16 @@ class KoreaEarningsV2Pipeline:
             for event in self.dart.delisting_filings(
                 start, end, corp_code=identity.corp_code,
             ):
-                if event.event_type == "final" or event.received_on <= quarter_last_day:
+                if event.event_type == "final" or event.event_on <= quarter_last_day:
                     events[event.receipt_no] = event
-        ordered = sorted(events.values(), key=lambda row: (row.received_on, row.receipt_no))
+            merger_loader = getattr(self.dart, "absorbed_merger_filings", None)
+            if callable(merger_loader):
+                for event in merger_loader(
+                    date(year - 1, 1, 1), end, corp_code=identity.corp_code,
+                ):
+                    if start <= event.event_on <= end:
+                        events[event.receipt_no] = event
+        ordered = sorted(events.values(), key=lambda row: (row.event_on, row.receipt_no))
         if write and ordered:
             self.repository.upsert_delisting_events(event.db_row() for event in ordered)
         return ordered
@@ -399,7 +461,7 @@ class KoreaEarningsV2Pipeline:
         quarter: int,
         stored: dict[tuple[str, int, int], FinancialFact],
         *,
-        usd_krw_rate: Decimal,
+        krw_rates: Mapping[str, Decimal],
         write: bool,
     ) -> FinancialFact | None:
         previous_key = previous_period(year, quarter)
@@ -410,7 +472,7 @@ class KoreaEarningsV2Pipeline:
         # 필요한 정확한 직전 분기 한 건만 공급자에서 새로 구한다.
         fetched, _issues = self.collect_financials(
             [identity], previous_key[0], previous_key[1], {},
-            usd_krw_rate=usd_krw_rate,
+            krw_rates=krw_rates,
             tolerate_provider_errors=True,
             force_previous_cumulative=previous_key[1] > 1,
             persist_profiles=write,
@@ -540,9 +602,9 @@ class KoreaEarningsV2Pipeline:
             if filing_period(filing) == (year, quarter)
         ]
         if not filings:
-            raise ProviderError(
-                f"OpenDART periodic filing not found for {identity.corp_code} {year}Q{quarter}"
-            )
+            # 정상 응답에 대상 분기 공시가 없는 것은 공급자 장애가 아니다.
+            # 기존 사실을 그대로 두어 이 기업만 incomplete로 유지한다.
+            return fact
         # Later receipts include accepted corrections, so use the latest filing
         # for the same fiscal period deterministically.
         filing = max(filings, key=lambda row: (row.received_on, row.receipt_no))
@@ -585,6 +647,230 @@ class KoreaEarningsV2Pipeline:
         })
         return fact.with_changes(**changes)
 
+    @staticmethod
+    def _financial_company_snapshot(
+        snapshots: Iterable[FinancialCompanySnapshot],
+        fact: FinancialFact,
+    ) -> FinancialCompanySnapshot | None:
+        """기존 값을 보존하면서 빈 지표를 채울 금융위 원본을 선택한다."""
+        candidates = list(snapshots)
+        if not candidates:
+            return None
+
+        def merged_scope(scope_candidates: list[FinancialCompanySnapshot]) -> FinancialCompanySnapshot:
+            chosen = scope_candidates[0]
+            changes = {}
+            for field in ("top_line", "operating_income", "net_income"):
+                if (getattr(chosen, f"{field}_cumulative") is not None
+                        or getattr(chosen, f"{field}_standalone") is not None):
+                    continue
+                other = next((item for item in scope_candidates[1:]
+                              if item.currency == chosen.currency
+                              and (getattr(item, f"{field}_cumulative") is not None
+                                   or getattr(item, f"{field}_standalone") is not None)), None)
+                if other is not None:
+                    for suffix in ("cumulative", "standalone"):
+                        changes[f"{field}_{suffix}"] = getattr(other, f"{field}_{suffix}")
+            return replace(chosen, **changes) if changes else chosen
+
+        matching_scope = [
+            item for item in candidates
+            if item.consolidation_scope == fact.consolidation_scope
+        ]
+        if matching_scope:
+            chosen = merged_scope(matching_scope)
+            if any(
+                getattr(fact, field, None) is None
+                and (getattr(chosen, f"{field}_cumulative") is not None
+                     or getattr(chosen, f"{field}_standalone") is not None)
+                for field in ("top_line", "operating_income", "net_income")
+            ):
+                return chosen
+
+        # 2015~2018 금융위 원본은 연결/별도 범위가 DART와 다르게 표기되는
+        # 사례가 있다. 이미 확보한 값은 유지하고, 반대 범위에서 빈 지표만
+        # 보완한다. 결과 행의 범위는 아래 저장 단계에서 기존 값 기준으로 유지된다.
+        missing_fields = [
+            field for field in ("top_line", "operating_income", "net_income")
+            if getattr(fact, field, None) is None
+        ]
+        for scope in ("CFS", "OFS", None):
+            scoped = [item for item in candidates if item.consolidation_scope == scope]
+            if not scoped:
+                continue
+            chosen = merged_scope(scoped)
+            if any(
+                getattr(chosen, f"{field}_cumulative") is not None
+                or getattr(chosen, f"{field}_standalone") is not None
+                for field in missing_fields
+            ):
+                return chosen
+
+        if all(getattr(fact, field) is None for field in (
+            "top_line", "operating_income", "net_income",
+        )):
+            for scope in ("CFS", "OFS"):
+                scoped = [item for item in candidates if item.consolidation_scope == scope]
+                if scoped:
+                    return scoped[0]
+        return None
+
+    @staticmethod
+    def _financial_company_standalone_value(
+        cumulative: Decimal | None,
+        quarter: int,
+        previous_cumulative: Decimal | None,
+    ) -> Decimal | None:
+        """금융위 누적 원본을 V2.5의 분기 실적으로 변환한다.
+
+        원본은 누적값만 제공한다. 직전 누적 원본이 있으면 차감하고, 없는
+        백필 경계에서만 해당 분기 수로 나눈다. 이 보정은 V2.5에만 남긴다.
+        """
+        if cumulative is None:
+            return None
+        if quarter == 1:
+            return cumulative
+        if previous_cumulative is not None:
+            return cumulative - previous_cumulative
+        return cumulative / Decimal(quarter)
+
+    def _financial_company_missing_financials(
+        self,
+        identity: CompanyIdentity,
+        fact: FinancialFact,
+        year: int,
+        quarter: int,
+        previous_fact: FinancialFact | None,
+        crno: str,
+        industry_code: str | None = None,
+    ) -> FinancialFact:
+        """금융위원회 원자료로만 빈 지표를 보완한다. 기존 값은 덮어쓰지 않는다."""
+        if self.financial_company is None:
+            return fact
+        self._progress("financial_company_source_start", company=identity.company_name)
+        try:
+            candidate_reader = getattr(self.financial_company, "quarter_financial_candidates", None)
+            snapshots = candidate_reader(
+                crno, year, quarter, industry_code,
+                preferred_scope=fact.consolidation_scope if any(
+                    getattr(fact, field) is not None for field in
+                    ("top_line", "operating_income", "net_income")) else None,
+            ) if candidate_reader is not None else (
+                self.financial_company.quarter_financials(
+                    crno, year, quarter, industry_code,
+                )
+                if industry_code is not None
+                else self.financial_company.quarter_financials(crno, year, quarter)
+            )
+            # Upgrade an incomplete separate statement only when a complete
+            # consolidated statement is available. Replace the entire metric
+            # set, never mix CFS revenue into OFS profits.
+            consolidated = next((item for item in snapshots
+                if item.consolidation_scope == "CFS" and item.currency == "KRW"
+                and all(getattr(item, f"{field}_cumulative") is not None
+                        or getattr(item, f"{field}_standalone") is not None
+                        for field in ("top_line", "operating_income", "net_income"))), None)
+            if fact.consolidation_scope == "OFS" and consolidated is not None:
+                self._progress("financial_company_scope_upgrade", company=identity.company_name,
+                               previous_scope="OFS", selected_scope="CFS")
+                fact = fact.with_changes(
+                    consolidation_scope="CFS", top_line=None, operating_income=None, net_income=None,
+                    source_top_line_cumulative=None, source_operating_income_cumulative=None,
+                    source_net_income_cumulative=None,
+                )
+            snapshot = self._financial_company_snapshot(snapshots, fact)
+        except ProviderError as error:
+            # 보완 공급자의 일시 실패는 이미 검증된 DART 경로를 막지 않는다.
+            # 다음 단계에서 기존 단일·원문 DART 경로로 이어진다.
+            self._progress(
+                "financial_company_source_failed",
+                company=identity.company_name,
+                reason=str(error),
+            )
+            return fact
+        if snapshot is None:
+            self._progress(
+                "financial_company_source_scope_mismatch" if snapshots else "financial_company_source_empty",
+                company=identity.company_name,
+                expected_scope=fact.consolidation_scope,
+                returned_scopes=[item.consolidation_scope for item in snapshots],
+            )
+            return fact
+        if snapshot.currency != "KRW":
+            self._progress(
+                "financial_company_source_unsupported_currency",
+                company=identity.company_name,
+                currency=snapshot.currency,
+            )
+            return fact
+
+        previous_cumulative = {
+            "top_line": previous_fact.source_top_line_cumulative if previous_fact else None,
+            "operating_income": previous_fact.source_operating_income_cumulative if previous_fact else None,
+            "net_income": previous_fact.source_net_income_cumulative if previous_fact else None,
+        }
+        cumulative = {
+            "top_line": snapshot.top_line_cumulative,
+            "operating_income": snapshot.operating_income_cumulative,
+            "net_income": snapshot.net_income_cumulative,
+        }
+        reported_standalone = {
+            "top_line": snapshot.top_line_standalone,
+            "operating_income": snapshot.operating_income_standalone,
+            "net_income": snapshot.net_income_standalone,
+        }
+        changes: dict[str, Any] = {}
+        for field, source_value in cumulative.items():
+            if getattr(fact, field) is not None:
+                continue
+            standalone = reported_standalone[field]
+            if standalone is None:
+                standalone = self._financial_company_standalone_value(
+                    source_value, quarter, previous_cumulative[field],
+                )
+            if standalone is not None:
+                changes[field] = standalone
+                changes[f"source_{field}_cumulative"] = source_value
+        if not changes:
+            self._progress("financial_company_source_no_metrics", company=identity.company_name)
+            return fact
+
+        existing_count = sum(
+            getattr(fact, field) is not None
+            for field in ("top_line", "operating_income", "net_income")
+        )
+        changes.update({
+            "consolidation_scope": (
+                snapshot.consolidation_scope
+                if existing_count == 0 and snapshot.consolidation_scope is not None
+                else fact.consolidation_scope
+            ),
+            "source": "financial_services_commission" if existing_count == 0 else "mixed",
+            "source_filing_id": (
+                f"financial_services_commission:{snapshot.crno}:{year}:{snapshot.report_code}"
+                if existing_count == 0
+                else (
+                    f"mixed:{fact.source_filing_id}|"
+                    f"financial_services_commission:{snapshot.crno}:{year}:{snapshot.report_code}"
+                )
+            ),
+            # 원 API가 정기공시 접수일을 주지 않으므로 기간 종료일만 기록한다.
+            "filing_date": quarter_end(year, quarter),
+            "currency": "KRW",
+            "source_currency": "KRW",
+        })
+        changes["is_pending"] = not all(
+            changes.get(field, getattr(fact, field)) is not None
+            for field in ("top_line", "operating_income", "net_income")
+        )
+        resolved = fact.with_changes(**changes)
+        self._progress(
+            "financial_company_source_done",
+            company=identity.company_name,
+            complete=resolved.fully_complete,
+        )
+        return resolved
+
     def _resolve_missing_financials(
         self,
         identity: CompanyIdentity,
@@ -618,7 +904,24 @@ class KoreaEarningsV2Pipeline:
                     "entity_kind": entity_kind,
                 }
 
-        # 업종과 관계없이 전체계정 단일 조회로 먼저 누락값을 보완한다.
+        # 2015~18년 금융회사 대기는 구조화·원문 DART가 이미 실패한 결과다.
+        # 금융위 원자료를 먼저 보완해 완료되면 같은 DART 재호출을 하지 않는다.
+        if entity_kind == "financial":
+            try:
+                financial_profile = self.dart.company_profile(identity.corp_code)
+            except ProviderError:
+                financial_profile = None
+            crno = str((financial_profile or {}).get("jurir_no") or "").strip()
+            if re.fullmatch(r"\d{13}", crno):
+                fact = self._financial_company_missing_financials(
+                    identity, fact, year, quarter, previous_fact, crno,
+                    industry_code,
+                )
+            if fact.fully_complete:
+                return fact.with_changes(is_pending=False), None
+
+        # 금융위 원자료가 채우지 못한 항목은 기존 OpenDART 단일·원문
+        # 경로로 이어서 보완한다. 공급자별 성공값은 빈 항목에만 적용한다.
         self._progress(f"{stage}_open_dart_start", company=identity.company_name)
         try:
             fact = self._single_open_dart_missing_financials(
@@ -634,9 +937,24 @@ class KoreaEarningsV2Pipeline:
 
         if not fact.fully_complete:
             self._progress(f"{stage}_raw_dart_start", company=identity.company_name)
-            fact = self._raw_open_dart_missing_financials(
-                identity, fact, year, quarter, previous_fact,
-            )
+            try:
+                fact = self._raw_open_dart_missing_financials(
+                    identity, fact, year, quarter, previous_fact,
+                )
+            except RawDartParseError as error:
+                self._progress(
+                    f"{stage}_raw_dart_ambiguous",
+                    company=identity.company_name,
+                    reason=str(error),
+                )
+            except ProviderError as error:
+                if error.retryable:
+                    raise
+                self._progress(
+                    f"{stage}_raw_dart_unavailable",
+                    company=identity.company_name,
+                    reason=str(error),
+                )
             self._progress(
                 f"{stage}_raw_dart_done", company=identity.company_name,
                 complete=fact.fully_complete,
@@ -646,8 +964,7 @@ class KoreaEarningsV2Pipeline:
         # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.
         if (
             allow_backfill_zero_top_line
-            and
-            fact.top_line is None
+            and fact.top_line is None
             and fact.profit_complete
             and entity_kind == "general"
             and fact.operating_income is not None
@@ -666,9 +983,28 @@ class KoreaEarningsV2Pipeline:
             )
         return fact.with_changes(is_pending=not fact.fully_complete), None
 
+
+
+    @staticmethod
+    def _convert_fact_to_krw(
+        fact: FinancialFact,
+        krw_rates: Mapping[str, Decimal],
+    ) -> FinancialFact | None:
+        if fact.currency == "KRW":
+            return fact
+        rate = krw_rates.get(fact.currency)
+        if rate is None or rate <= 0:
+            return None
+        return fact.with_changes(
+            top_line=fact.top_line * rate if fact.top_line is not None else None,
+            operating_income=fact.operating_income * rate if fact.operating_income is not None else None,
+            net_income=fact.net_income * rate if fact.net_income is not None else None,
+            currency="KRW",
+        )
+
     def collect_financials(self, identities: Iterable[CompanyIdentity], year: int, quarter: int,
                            previous_facts: dict[str, FinancialFact] | None = None,
-                           *, usd_krw_rate: Decimal | None = None,
+                           *, krw_rates: Mapping[str, Decimal] | None = None,
                            tolerate_provider_errors: bool = False,
                            force_previous_cumulative: bool = False,
                            persist_profiles: bool = False,
@@ -678,6 +1014,7 @@ class KoreaEarningsV2Pipeline:
         codes = [row.corp_code for row in identities]
         current = _group(self.dart.multi_accounts(codes, year, quarter), codes)
         previous_facts = previous_facts or {}
+        krw_rates = krw_rates or {}
         # 직전 분기의 누적 원본은 DB가 단일 진실 공급원이다. 과거 기업군에
         # 없었던 기업 등 실제 단독값 계산에 필요한 원본이 없는 경우에만
         # 해당 기업만 폴백한다. 현재 누적값 자체가 없는 필드는 재호출해도
@@ -722,16 +1059,12 @@ class KoreaEarningsV2Pipeline:
                     f"pending:{identity.corp_code}:{year}:Q{quarter}", end, is_pending=True,
                 )
             if fact.currency != "KRW":
-                if fact.currency == "USD" and usd_krw_rate is not None:
-                    fact = fact.with_changes(
-                        top_line=fact.top_line * usd_krw_rate if fact.top_line is not None else None,
-                        operating_income=fact.operating_income * usd_krw_rate if fact.operating_income is not None else None,
-                        net_income=fact.net_income * usd_krw_rate if fact.net_income is not None else None,
-                        currency="KRW",
-                    )
+                converted = self._convert_fact_to_krw(fact, krw_rates)
+                if converted is not None:
+                    fact = converted
                 else:
                     fact = fact.with_changes(is_pending=True)
-                    issues.append({"company": identity.company_name, "field": "currency", "reason": f"unsupported {fact.currency}"})
+                    issues.append({"company": identity.company_name, "field": "currency", "reason": f"missing {fact.currency}/KRW quarter rate"})
             if fact.currency == "KRW" and not fact.fully_complete:
                 fact, fallback_issue = self._resolve_missing_financials(
                     identity, fact, year, quarter,
@@ -888,13 +1221,23 @@ class KoreaEarningsV2Pipeline:
                 "currency": "KRW", "selection_method": "direct_market_cap",
             } for row in members))
 
-    def _ensure_quarter_fx_rate(self, universes: dict[str, list[CompanyIdentity]],
-                                year: int, quarter: int, *, write: bool) -> QuarterFxRate:
-        stored = self.repository.quarter_fx_rate(year, quarter, "USD", "KRW")
+    def _ensure_quarter_fx_rate(
+        self,
+        universes: dict[str, list[CompanyIdentity]],
+        year: int,
+        quarter: int,
+        base_currency: str,
+        *,
+        write: bool,
+    ) -> QuarterFxRate:
+        base_currency = base_currency.upper()
+        stored = self.repository.quarter_fx_rate(year, quarter, base_currency, "KRW")
         if stored is not None:
             stored_rate = decimal_value(stored.get("rate"))
             if stored_rate is None or stored_rate <= 0:
-                raise ValueError(f"{year}Q{quarter} stored USD/KRW snapshot is invalid")
+                raise ValueError(
+                    f"{year}Q{quarter} stored {base_currency}/KRW snapshot is invalid"
+                )
             return QuarterFxRate(
                 fiscal_year=int(stored["fiscal_year"]),
                 fiscal_quarter=int(stored["fiscal_quarter"]),
@@ -906,16 +1249,18 @@ class KoreaEarningsV2Pipeline:
                 source=str(stored.get("source") or "ecos"),
             )
         if self.fx is None:
-            raise ProviderError(f"{year}Q{quarter} USD/KRW snapshot is missing and ECOS is not configured")
+            raise ProviderError(
+                f"{year}Q{quarter} {base_currency}/KRW snapshot is missing and ECOS is not configured"
+            )
         reference_dates = [row.reference_date for members in universes.values() for row in members]
         if not reference_dates:
             raise ValueError(f"{year}Q{quarter} universe is empty")
         target_date = max(reference_dates)
-        observed_on, rate = self.fx.latest_usd_krw(target_date)
+        observed_on, rate = self.fx.latest_krw(base_currency, target_date)
         snapshot = QuarterFxRate(
             fiscal_year=year,
             fiscal_quarter=quarter,
-            base_currency="USD",
+            base_currency=base_currency,
             quote_currency="KRW",
             target_date=target_date,
             observed_on=observed_on,
@@ -924,6 +1269,21 @@ class KoreaEarningsV2Pipeline:
         if write:
             self.repository.upsert_quarter_fx_rate(snapshot.db_row())
         return snapshot
+
+    def _ensure_quarter_fx_rates(
+        self,
+        universes: dict[str, list[CompanyIdentity]],
+        year: int,
+        quarter: int,
+        *,
+        write: bool,
+    ) -> dict[str, QuarterFxRate]:
+        return {
+            base_currency: self._ensure_quarter_fx_rate(
+                universes, year, quarter, base_currency, write=write,
+            )
+            for base_currency in ("USD", "JPY")
+        }
 
     def run_quarter(self, year: int, quarter: int, *, write: bool = False,
                     incremental: bool = False,
@@ -968,7 +1328,13 @@ class KoreaEarningsV2Pipeline:
             self._progress("krx_universe_done", **{market: len(rows) for market, rows in universes.items()})
             if write and discovered:
                 self._save_universes(discovered, year, quarter)
-            fx_rate = self._ensure_quarter_fx_rate(universes, year, quarter, write=write)
+            # 원화 실적만 있는 일반 분기에는 ECOS를 호출하지 않는다. 외화 사실을
+            # 실제로 만났을 때만 해당 통화의 분기 환율을 DB 우선으로 한 번 조회한다.
+            krw_rates = _LazyKrwRates(
+                lambda base_currency: self._ensure_quarter_fx_rate(
+                    universes, year, quarter, base_currency, write=write,
+                ).rate
+            )
             identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
             previous_key = previous_period(year, quarter)
             previous_universes = {
@@ -1054,7 +1420,7 @@ class KoreaEarningsV2Pipeline:
             fresh_facts, issues = (
                 self.collect_financials(
                     selected, year, quarter, previous_facts,
-                    usd_krw_rate=fx_rate.rate,
+                    krw_rates=krw_rates,
                     tolerate_provider_errors=incremental,
                     force_previous_cumulative=not incremental and not trust_previous_backfill,
                     persist_profiles=write,
@@ -1092,7 +1458,7 @@ class KoreaEarningsV2Pipeline:
                     continue
                 previous = self._previous_fact_for_delisting(
                     identity, year, quarter, stored,
-                    usd_krw_rate=fx_rate.rate, write=write,
+                    krw_rates=krw_rates, write=write,
                 )
                 if previous is None:
                     issues.append({
@@ -1183,8 +1549,14 @@ class KoreaEarningsV2Pipeline:
                 "complete_facts": sum(not row.is_pending for row in current_facts),
                 "markets": {row.market_id: row.completion_status for row in current_markets},
                 "issues": issues,
-                "requests": {"krx": self.krx.request_count, "open_dart": self.dart.request_count,
-                             "ecos": self.fx.request_count if self.fx else 0},
+                "requests": {
+                    "krx": self.krx.request_count,
+                    "open_dart": self.dart.request_count,
+                    "financial_services_commission": (
+                        self.financial_company.request_count if self.financial_company else 0
+                    ),
+                    "ecos": self.fx.request_count if self.fx else 0,
+                },
                 "status": status,
             }
             if write:

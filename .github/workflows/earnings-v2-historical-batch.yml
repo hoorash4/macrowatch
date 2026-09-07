@@ -60,6 +60,8 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          EARNINGS_FINANCIAL_SOURCE_TOKEN: ${{ secrets.EARNINGS_FINANCIAL_SOURCE_TOKEN }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         shell: bash
@@ -85,4 +87,5 @@ jobs:
             echo "::endgroup::"
             first=false
           done
+
 
