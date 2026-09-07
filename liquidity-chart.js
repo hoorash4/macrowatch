@@ -67,7 +67,21 @@
       });
     };
     frame.addEventListener('scroll',()=>{if(animationFrame===null)animationFrame=window.requestAnimationFrame(updateVisibleScale);},{passive:true});
-    utils.scrollToLatest(frame); window.requestAnimationFrame(updateVisibleScale);
+    // 차트가 숨겨진 패널에서 먼저 그려지면 첫 프레임에는 폭이 0일 수 있다.
+    // 실제 폭이 확정된 뒤 한 번만 최신 구간(오른쪽 끝)으로 맞춘다.
+    const positionAtLatest = () => {
+      if (!frame.clientWidth || !frame.scrollWidth) return false;
+      frame.scrollLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+      window.requestAnimationFrame(updateVisibleScale);
+      return true;
+    };
+    window.requestAnimationFrame(() => {
+      if (positionAtLatest()) return;
+      const observer = new ResizeObserver(() => {
+        if (positionAtLatest()) observer.disconnect();
+      });
+      observer.observe(frame);
+    });
     const cursor=host.querySelector('[data-liquidity-cursor]'), value=host.querySelector('[data-liquidity-value]'), dateLabel=host.querySelector('[data-liquidity-date]');
     frame.addEventListener('pointermove',event=>{
       const bounds=svg.getBoundingClientRect(),pointerX=(event.clientX-bounds.left)/bounds.width*width;
