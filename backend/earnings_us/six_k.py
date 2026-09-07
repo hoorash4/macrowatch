@@ -182,7 +182,7 @@ def _scale(text: str) -> Decimal:
     ]
     if matches:
         return min(matches)[1]
-    if re.search(r"\b(?:us\$|rmb|cny|usd|eur|gbp|jpy|€|\$)\s*(?:mn|m)\b", text, re.I):
+    if re.search(r"(?:us\$|rmb|cny|usd|eur|gbp|jpy|€|\$)\s*(?:mn|m)\b", text, re.I):
         return Decimal("1000000")
     return Decimal(1)
 
@@ -406,7 +406,7 @@ def _half_year_values(
     candidates: list[tuple[int, dict[str, Decimal], dict[str, str], date | None]] = []
     for table in tables:
         joined = _clean(" ".join(cell for row in table for cell in row))
-        if "six months ended" not in joined.lower():
+        if "six months ended" not in joined.lower() and not re.search(r"\bh1\s+20\d{2}\b", joined, re.I):
             continue
         header_rows: list[str] = []
         values: dict[str, Decimal] = {}
@@ -434,6 +434,11 @@ def _half_year_values(
             values[metric] = numbers[index] * (local_scale if local_scale != 1 else _scale(default_text))
             currencies[metric] = _column_currency(header, index, len(numbers), _currency(joined))
             priorities[metric] = priority
+            # A consolidated H1 summary commonly appends regional sections
+            # below the group total. Once the three consolidated measures are
+            # present, later segment rows must not replace that statement.
+            if set(values) == set(_METRIC_LABELS):
+                break
         header = " ".join(header_rows)
         dates = [item for item in _loose_period_dates(header, prefer_split=True) if _matches_target_period(item, target)]
         candidates.append((len(values), values, currencies, dates[-1] if dates else None))
@@ -559,7 +564,8 @@ def extract_six_k_fact(
             term in lowered for term in ("financial results", "quarterly results", "three months ended")
         ) or re.search(r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700])
         if backfill_mode:
-            has_results_context = has_results_context or "quarter ended" in lowered or "six months ended" in lowered
+            has_results_context = has_results_context or "quarter ended" in lowered or "six months ended" in lowered \
+                or re.search(r"\bh1\s+20\d{2}\b", lowered) is not None
         if not has_results_context:
             continue
         table_values, table_currencies, table_end = _table_values(
