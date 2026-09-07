@@ -68,6 +68,20 @@ class LiquidityTests(unittest.TestCase):
         self.assertEqual(result['equity_flow'], .02)
         self.assertEqual(result['won_strength'], .01)
 
+    def test_korea_environment_starts_before_thirteen_week_momentum(self):
+        from unittest.mock import patch
+        keys = lp.ENVIRONMENT_DIRECTIONS['KR']
+        raw, day = {}, date(2021, 11, 26)
+        while day <= date(2022, 3, 18):
+            raw[day] = {key: 1 for key in keys}
+            day += timedelta(weeks=1)
+        with patch.object(lp, 'features', return_value={'environment': raw}):
+            rows = lp.calculate('KR', {'foreign_flow_ratio': {}}, date(2022, 3, 21))
+        environment = [row for row in rows if row['metric'] == 'environment']
+        momentum = [row for row in rows if row['metric'] == 'momentum']
+        self.assertEqual(environment[0]['observation_date'], '2021-12-17')
+        self.assertEqual(momentum[0]['observation_date'], '2022-03-18')
+
     def test_snapshot_exact_headers_and_null(self):
         payload = {'data': {'chart_opt': {'data': {'csv': 'period,기준금리,콜금리(익일물)\n1630454400000,0,\n1630540800000,1,2'}}}}
         rows = lp.parse_snapshot(payload, lp.SNAPSHOTS[849], date(2021,1,1), date(2022,1,1))

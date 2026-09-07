@@ -20,6 +20,7 @@ US_VERSION = "us-equity-environment-weekly-v2"
 KR_VERSION = "kr-equity-environment-weekly-v1"
 US_START = date(2021, 11, 1)
 KR_START = date(2021, 12, 17)
+KR_MOMENTUM_START = date(2022, 3, 18)
 ENVIRONMENT_DIRECTIONS = {
     "US": {"real_yield": -1, "credit_conditions": -1, "net_supply_change": 1, "funding_spread": -1},
     "KR": {"funding_spread": -1, "liquidity_growth": 1, "equity_flow": 1, "won_strength": 1},
@@ -265,35 +266,45 @@ def calculate_equity_environment(country, data, end):
     for day in dates:
         if day < start:
             continue
-        previous_day = day - timedelta(weeks=13)
-        if previous_day not in observations:
-            raise RuntimeError(f"Missing 13-week baseline for US environment: {day}")
         history = [d for d in dates if day - timedelta(weeks=260) < d <= day]
-        levels, changes, change_scores = {}, {}, {}
+        levels = {}
         for name, direction in directions.items():
             value = observations[day][name]
             rank = percentile(value, [observations[d][name] for d in history])
             levels[name] = rank if direction > 0 else 100 - rank
+        output.append({"country": country, "metric": "environment", "observation_date": day.isoformat(),
+                       "score": round(sum(levels[k] * w for k, w in WEIGHTS[country, "environment"].items()), 4),
+                       "components": observations[day], "component_scores": levels,
+                       "sample_count": len(history), "is_warmup": len(history) < 52,
+                       "frequency": "W", "method_version": version})
+        momentum_start = start if country == "US" else KR_MOMENTUM_START
+        if day < momentum_start:
+            continue
+        previous_day = day - timedelta(weeks=13)
+        if previous_day not in observations:
+            raise RuntimeError(f"Missing 13-week baseline for {country} environment: {day}")
+        changes, change_scores = {}, {}
+        for name, direction in directions.items():
+            value = observations[day][name]
             changes[name] = direction * (value - observations[previous_day][name])
             past_changes = [observations[d][name] - observations[d - timedelta(weeks=13)][name]
                             for d in history if d - timedelta(weeks=13) in observations]
             rms = math.sqrt(sum(v * v for v in past_changes) / len(past_changes)) if past_changes else 0
             # Exactly 50 for no change. Changes in rolling ranks cannot imply improvement.
             change_scores[name] = 50 if not rms else 50 + 50 * math.tanh(changes[name] / (2 * rms))
-        for metric, components, scores in (("environment", observations[day], levels),
-                                            ("momentum", changes, change_scores)):
-            output.append({"country": country, "metric": metric, "observation_date": day.isoformat(),
-                           "score": round(sum(scores[k] * w for k, w in WEIGHTS[country, metric].items()), 4),
-                           "components": components, "component_scores": scores,
-                           "sample_count": len(history), "is_warmup": len(history) < 52,
-                           "frequency": "W", "method_version": version})
+        output.append({"country": country, "metric": "momentum", "observation_date": day.isoformat(),
+                       "score": round(sum(change_scores[k] * w for k, w in WEIGHTS[country, "momentum"].items()), 4),
+                       "components": changes, "component_scores": change_scores,
+                       "sample_count": len(history), "is_warmup": len(history) < 52,
+                       "frequency": "W", "method_version": version})
     expected_last = end - timedelta(days=end.weekday() + 3)
-    expected_dates = set()
-    cursor = start + timedelta(days=(4 - start.weekday()) % 7)
-    while cursor <= expected_last:
-        expected_dates.add(cursor.isoformat())
-        cursor += timedelta(weeks=1)
     for metric in ("environment", "momentum"):
+        metric_start = start if metric == "environment" or country == "US" else KR_MOMENTUM_START
+        expected_dates = set()
+        cursor = metric_start + timedelta(days=(4 - metric_start.weekday()) % 7)
+        while cursor <= expected_last:
+            expected_dates.add(cursor.isoformat())
+            cursor += timedelta(weeks=1)
         actual = {row["observation_date"] for row in output if row["metric"] == metric}
         if actual != expected_dates:
             raise RuntimeError(f"Incomplete {country}/{metric} weekly coverage: {sorted(expected_dates - actual)}")
