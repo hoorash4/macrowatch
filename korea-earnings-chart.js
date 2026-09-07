@@ -112,19 +112,10 @@
   }
 
   // 각 차트가 자기 단위와 현재 표시 구간에 맞는 Y축을 독립적으로 사용합니다.
-  function axisDomain(values, { includeZero = false, paddingRatio = 0.05, targetIntervals = 4 } = {}) {
-    const finiteValues = values.filter(Number.isFinite);
-    if (!finiteValues.length) return { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1] };
-    let minimum = Math.min(...finiteValues), maximum = Math.max(...finiteValues);
-    if (includeZero) { minimum = Math.min(0, minimum); maximum = Math.max(0, maximum); }
-    const span = maximum - minimum;
-    const padding = span > Number.EPSILON ? span * paddingRatio : Math.max(Math.abs(maximum) * paddingRatio, 1);
-    // 증가율이 한쪽 부호에만 있을 때 0 반대편까지 축을 넓히지 않습니다.
-    const paddedMin = includeZero && minimum === 0 ? 0 : minimum - padding;
-    const paddedMax = includeZero && maximum === 0 ? 0 : maximum + padding;
-    // 눈금 반올림으로 표시 범위를 다시 넓히지 않습니다. 현재 보이는
-    // 값이 차트 높이를 충분히 사용하도록 최소 여백만 둔 5개 눈금입니다.
-    const domainMin = paddedMin, domainMax = paddedMax;
+  function axisDomain(values, { includeZero = false, targetIntervals = 4 } = {}) {
+    const base = window.MacroWatchAnalysisChart.axisDomain(values, { includeZero });
+    if (!base) return { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1] };
+    const { min: domainMin, max: domainMax } = base;
     const ticks = includeZero && domainMin < 0 && domainMax > 0
       ? [domainMin, domainMin / 2, 0, domainMax / 2, domainMax]
       : Array.from({ length: targetIntervals + 1 }, (_, index) => (
@@ -230,7 +221,9 @@
     const periodCursor = spec.showPeriodLabels
       ? `<text data-korea-earnings-cursor-period x="0" y="${spec.height - 8}" text-anchor="middle" class="korea-earnings-cursor-period"></text>`
       : '';
-    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" style="height:${spec.height}px" viewBox="0 0 ${AXIS_WIDTH} ${spec.height}" aria-hidden="true">${axis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${grids}${labels}${lines}${dots}<line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
+    const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
+    const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
+    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" style="height:${spec.height}px" viewBox="0 0 ${AXIS_WIDTH} ${spec.height}" aria-hidden="true">${axis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
     const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
@@ -267,10 +260,13 @@
     const updateVisibleScale = () => {
       scaleFrame = null;
       const visibleStart = frame.scrollLeft, visibleEnd = visibleStart + frame.clientWidth;
-      const visible = points.filter((_, index) => {
+      const visibleIndexes = points.flatMap((_, index) => {
         const pointX = x(index);
-        return pointX >= visibleStart - 1 && pointX <= visibleEnd + 1;
+        return pointX >= visibleStart - 1 && pointX <= visibleEnd + 1 ? [index] : [];
       });
+      const visible = visibleIndexes.length
+        ? points.slice(Math.max(0, visibleIndexes[0] - 1), Math.min(points.length, visibleIndexes.at(-1) + 2))
+        : [];
       if (!visible.length) return;
       const visibleDomain = domainFor(visible);
       yLabels.forEach((label, index) => {

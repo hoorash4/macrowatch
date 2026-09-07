@@ -12,7 +12,7 @@
   function domainFor(points, metrics, includeNeutral = false) {
     const values = points.flatMap(point => metrics.map(metric => point[metric])).filter(Number.isFinite);
     if (includeNeutral) values.push(50);
-    const min = Math.min(...values), max = Math.max(...values), padding = Math.max(4, (max - min) * .12);
+    const min = Math.min(...values), max = Math.max(...values), padding = Math.max(4, (max - min) * .125);
     const lower = Math.max(0, min - padding), upper = Math.min(100, max + padding);
     const step = Math.max(1, utils.niceStep(Math.max(upper - lower, 4) / 4));
     return { min: Math.floor(lower / step) * step, max: Math.ceil(upper / step) * step, step };

@@ -113,10 +113,10 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   const source = fs.readFileSync(path.join(__dirname, '..', 'korea-earnings-chart.js'), 'utf8');
+  const utilities = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
   const context = {
     console, Math, Number, String, Array, Set, Map,
     window: {
-      MacroWatchAnalysisChart: { niceStep: () => 1, scrollToLatest: () => {}, loadAllRows: () => {} },
       MacroWatchDashboard: { registerLoader: () => {} },
       addEventListener: () => {},
     },
@@ -124,6 +124,9 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   };
   context.globalThis = context;
   vm.createContext(context);
+  vm.runInContext(utilities, context, { filename: 'analysis-chart-utils.js' });
+  context.window.MacroWatchAnalysisChart.scrollToLatest = () => {};
+  context.window.MacroWatchAnalysisChart.loadAllRows = () => {};
   vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
   const serverRows = [{
     market_year: 2015, market_quarter: 4,
@@ -181,7 +184,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.ok(rateDomain.min > 0, '증가율축은 0에 고정하지 않고 현재 자료 범위에 맞춘다');
   assert.ok(rateDomain.min < 20, '증가율축 하단에는 최소한의 시각 여백만 둔다');
   assert.ok(rateDomain.max > 30, '증가율축 상단은 표시 자료에 맞춰 자동 조정한다');
-  assert.ok((30 - 20) / (rateDomain.max - rateDomain.min) > 0.9, '표시 자료가 Y축 높이를 충분히 사용한다');
+  assert.equal((30 - 20) / (rateDomain.max - rateDomain.min), 0.8, '표시 자료가 상하 10% 여백을 제외한 높이를 사용한다');
   const qoqDomain = context.window.MacroWatchKoreaEarnings.axisDomain([-8, 20], { includeZero: true });
   assert.ok(qoqDomain.ticks.includes(0), '계절조정 QoQ축은 0 눈금을 반드시 포함한다');
   assert.match(html, /id="korea-earnings-dashboard"/);
@@ -353,13 +356,13 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /timelineWidth/);
   assert.match(chart, /visibleStart = frame\.scrollLeft/);
   assert.match(chart, /policy-chart-y-axis/);
-  assert.match(chart, /yMax < maximum \+ margin/);
+  assert.match(chart, /chartUtils\.axisDomain\(values/);
   assert.match(chart, /POLICY_CHART_MODE = 'oscillator'/);
   assert.match(chart, /OSCILLATOR_RETENTION = 0\.8/);
   assert.doesNotMatch(chart, /pre_event_value|point\.preValue|postY/);
   assert.match(chart, /elapsedDays \/ STANDARD_MEETING_DAYS/);
   assert.match(chart, /POLICY_CHART_MODE === 'legacy'/);
-  assert.match(chart, /yMin: -tickStep \* 2, yMax: tickStep \* 2/);
+  assert.match(chart, /yMin: domain\.min, yMax: domain\.max/);
   assert.match(chart, /adminLink\.hidden/);
   assert.match(chart, /macrowatch_policy_review_dates/);
   assert.doesNotMatch(chart, /slice\(-20\)/);
@@ -388,7 +391,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.match(chart, /function formatMonthDay/);
   assert.doesNotMatch(chart, /data-policy-expectation-value/);
   assert.match(chart, /selectedYears === 'max' \? String\(year\)\.slice\(-2\)/);
-  assert.match(chart, /chartUtils\.niceStep/);
+  assert.match(chart, /chartUtils\.axisDomain\(values/);
   assert.match(chart, /policy-expectation-y-label/);
   assert.match(chart, /policy-expectation-y-grid--zero/);
   assert.match(chart, /policy-expectation-chart-layout/);
@@ -400,7 +403,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.doesNotMatch(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="2" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=12/);
+  assert.match(html, /policy-expectation-chart\.js\?v=13/);
   const utils = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
   assert.match(utils, /FULL_HISTORY_SCROLL_RANGES = new Set\(\[5, 10\]\)/);
   assert.match(utils, /if \(selectedYears === 'max'\) return viewportWidth/);

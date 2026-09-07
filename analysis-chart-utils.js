@@ -4,6 +4,9 @@
   const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
   const SCROLL_HISTORY_YEARS = 10;
   const FULL_HISTORY_SCROLL_RANGES = new Set([5, 10]);
+  // 데이터가 플롯의 중앙 80%를 쓰게 해 상·하에 각각 눈에 보이는 10% 여백을 둡니다.
+  // 원자료 범위에 곱하는 값은 10%가 아니라 12.5%여야 최종 플롯에서 10%가 됩니다.
+  const VISIBLE_Y_PADDING = 0.1;
 
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
   function niceStep(value) {
@@ -106,6 +109,23 @@
     return dates.length ? timelineWidth(baseWidth, Math.min(...dates), Math.max(...dates), years) : baseWidth;
   }
 
+  function axisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null } = {}) {
+    const finiteValues = values.filter(Number.isFinite);
+    if (!finiteValues.length) return null;
+    let min = Math.min(...finiteValues), max = Math.max(...finiteValues);
+    if (includeZero) { min = Math.min(0, min); max = Math.max(0, max); }
+    const observedSpan = max - min;
+    const fallbackSpan = Math.max(Math.abs(min), Math.abs(max)) * .1 || 1;
+    const span = Math.max(observedSpan, minimumSpan ?? fallbackSpan);
+    if (symmetric) {
+      const extent = Math.max(Math.abs(min), Math.abs(max), span / 2);
+      const paddedExtent = extent / (1 - VISIBLE_Y_PADDING * 2);
+      return { min: -paddedExtent, max: paddedExtent };
+    }
+    const padding = span * VISIBLE_Y_PADDING / (1 - VISIBLE_Y_PADDING * 2);
+    return { min: min - padding, max: max + padding };
+  }
+
   function visibleAxisDomain(points, left, right, symmetric = false) {
     // Include the neighbouring samples at viewport edges so crossing curves fit too.
     const values = points.filter(point => Number.isFinite(point.value)
@@ -116,13 +136,10 @@
       if (Number.isFinite(point.value) && (point.x === before?.x || point.x === after?.x)) values.push(point.value);
     });
     if (!values.length) return null;
-    const min = Math.min(...values), max = Math.max(...values);
-    const margin = Math.max((max - min) * .12, Math.max(Math.abs(min), Math.abs(max)) * .02, .0001);
-    if (symmetric) {
-      const extent = Math.max(Math.abs(min), Math.abs(max)) + margin;
-      return { min: -extent, max: extent };
-    }
-    return { min: min - margin, max: max + margin };
+    return axisDomain(values, {
+      symmetric,
+      minimumSpan: Math.max(Math.abs(Math.min(...values)), Math.abs(Math.max(...values))) * .02 || .0001,
+    });
   }
 
   let axisClipSequence = 0;
@@ -142,7 +159,10 @@
         node.setAttribute('clip-path', `url(#${clip.id})`);
         return { node, original: node.getAttribute('d') || '' };
       }),
-      dots: [...svg.querySelectorAll(axis.selector)].filter(node => node.tagName === 'circle').map(node => ({ node, original: Number(node.getAttribute('cy')) })),
+      dots: [...svg.querySelectorAll(axis.selector)].filter(node => node.tagName === 'circle').map(node => {
+        node.setAttribute('clip-path', `url(#${clip.id})`);
+        return { node, original: Number(node.getAttribute('cy')) };
+      }),
       labels: [...shell.querySelectorAll('svg text')].filter(node => {
         const x = Number(node.getAttribute('x'));
         const pixel = Number(node.getAttribute('y')) - 3;
@@ -244,6 +264,6 @@
     });
   }
 
-  window.MacroWatchAnalysisChart = { niceStep, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
 

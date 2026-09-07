@@ -28,12 +28,9 @@
   }
 
   function verticalScale(points) {
-    const maximumObservedValue = Math.max(5, ...points.flatMap((point) => [
-      Math.abs(point.value),
-      Number.isFinite(point.fiveDayAverage) ? Math.abs(point.fiveDayAverage) : 0,
-    ])) * 1.05;
-    const tickStep = chartUtils.niceStep(maximumObservedValue / 2);
-    return { tickStep, maximumAbsoluteValue: tickStep * 2 };
+    const values = points.flatMap((point) => [point.value, point.fiveDayAverage]).filter(Number.isFinite);
+    const domain = chartUtils.axisDomain(values, { symmetric: true, minimumSpan: 10 }) || { min: -6.25, max: 6.25 };
+    return { tickStep: domain.max / 2, maximumAbsoluteValue: domain.max };
   }
 
   function withFiveDayAverage(rows) {

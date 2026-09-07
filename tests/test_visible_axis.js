@@ -6,6 +6,7 @@ const path = require('node:path');
 const context = { window: {} };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../analysis-chart-utils.js'), 'utf8'), context);
 const domain = context.window.MacroWatchAnalysisChart.visibleAxisDomain;
+const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
 
 test('visible window excludes distant spikes but includes boundary samples', () => {
   const points = [{ x: 0, value: 1000 }, { x: 10, value: 2 }, { x: 20, value: 3 }, { x: 30, value: 4 }, { x: 40, value: 5 }];
@@ -23,5 +24,16 @@ test('missing values are not zero and flat data retains a finite span', () => {
   const result = domain([{ x: 0, value: null }, { x: 1, value: 20 }, { x: 2, value: 20 }], 0, 2);
   assert.ok(result.min > 19 && result.max > 20);
   assert.equal(domain([{ x: 0, value: null }], 0, 1), null);
+});
+
+test('common axis domain reserves ten percent at both plot edges', () => {
+  const linear = axisDomain([20, 100]);
+  assert.ok(Math.abs((100 - 20) / (linear.max - linear.min) - .8) < 1e-12);
+  assert.ok(Math.abs((20 - linear.min) / (linear.max - linear.min) - .1) < 1e-12);
+  assert.ok(Math.abs((linear.max - 100) / (linear.max - linear.min) - .1) < 1e-12);
+  const zeroAxis = axisDomain([10, 40], { includeZero: true });
+  assert.ok(zeroAxis.min < 0);
+  const symmetric = axisDomain([-20, 100], { symmetric: true });
+  assert.equal(symmetric.min, -symmetric.max);
 });
 

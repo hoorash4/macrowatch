@@ -3,6 +3,7 @@ const vm = require('node:vm');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(require('node:path').join(__dirname,'../dashboard-charts.js'),'utf8');
+const utilities = fs.readFileSync(require('node:path').join(__dirname,'../analysis-chart-utils.js'),'utf8');
 const code = source.slice(source.indexOf('function toCreditStressNumber'), source.indexOf('async function loadCreditStressComponentsDashboard'));
 function harness(rows) {
   const nodes = new Map();
@@ -15,11 +16,11 @@ function harness(rows) {
   };
   const chart=node('chart'); chart.clientWidth=808;
   let resize;
-  const context={document:{getElementById:()=>chart},window:{MacroWatchAnalysisChart:{scrollToLatest(){}}},
+  const context={document:{getElementById:()=>chart},window:{},
     ResizeObserver:class{constructor(fn){resize=fn;} observe(){} disconnect(){}},
     requestAnimationFrame:fn=>{fn();return 1;},CREDIT_STRESS_HISTORY_MONTHS:37,CREDIT_STRESS_CHART_HEIGHT:280,
     monotoneSeriesPath:(rows,x,y)=>rows.map(r=>x(r)+','+y(r)).join(' ')};
-  vm.createContext(context); vm.runInContext(code,context);
+  vm.createContext(context); vm.runInContext(utilities,context); context.window.MacroWatchAnalysisChart.scrollToLatest=()=>{}; vm.runInContext(code,context);
   context.renderCreditStressComponents(rows);
   return {chart,node,resize};
 }
@@ -31,7 +32,7 @@ test('credit chart reuses earnings frame and exposes three values without invent
   assert.match(h.chart.innerHTML,/data-credit-left-axis/);
   assert.match(h.chart.innerHTML,/data-credit-right-axis/);
   assert.match(h.chart.innerHTML,/clipPath id="credit-risk-plot-clip"/);
-  assert.match(h.chart.innerHTML,/clip-path="url\\(#credit-risk-plot-clip\\)"/);
+  assert.match(h.chart.innerHTML,/clip-path="url\(#credit-risk-plot-clip\)"/);
   h.resize();
   h.node('.korea-earnings-chart-frame').events.pointermove({clientX:1776});
   assert.match(h.node('[data-credit-cursor-label]').innerHTML,/하이일드 스프레드: 5.00%p/);

@@ -30,24 +30,12 @@
 
   function visibleVerticalScale(points) {
     const values = points.map((point) => point.value).filter(Number.isFinite);
-    if (POLICY_CHART_MODE === 'oscillator') {
-      const maximumAbsoluteValue = Math.max(1, ...values.map(Math.abs)) * 1.1;
-      const tickStep = chartUtils.niceStep(maximumAbsoluteValue / 2);
-      return { tickStep, yMin: -tickStep * 2, yMax: tickStep * 2 };
-    }
-    const minimum = Math.min(...values);
-    const maximum = Math.max(...values);
-    const span = Math.max(maximum - minimum, 1);
-    const margin = span * 0.1;
-    const tickStep = chartUtils.niceStep((span + margin * 2) / 4);
-    let yMin = Math.floor((minimum - margin) / tickStep) * tickStep;
-    let yMax = yMin + tickStep * 4;
-    // 눈금 반올림이 어느 한쪽으로 치우쳐도 실제 값과 여백이 축 밖으로 나가지 않게 맞춥니다.
-    if (yMax < maximum + margin) {
-      yMax = Math.ceil((maximum + margin) / tickStep) * tickStep;
-      yMin = yMax - tickStep * 4;
-    }
-    return { tickStep, yMin, yMax };
+    const domain = chartUtils.axisDomain(values, {
+      symmetric: POLICY_CHART_MODE === 'oscillator',
+      minimumSpan: 1,
+    }) || { min: -1, max: 1 };
+    const tickStep = (domain.max - domain.min) / 4;
+    return { tickStep, yMin: domain.min, yMax: domain.max };
   }
 
   function render(container, rows, selectedYears) {

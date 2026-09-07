@@ -291,20 +291,14 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const scores = data.map((row) => Number(row.stress_index));
   const sp500Values = data.map((row) => Number(row.sp500_month_end_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
-  const minimumScore = Math.min(...scores);
-  const maximumScore = Math.max(...scores);
-  const scoreRange = Math.max(maximumScore - minimumScore, Math.max(maximumScore * 0.1, 1));
-  const gridStep = [0.5, 1, 2, 5, 10, 20, 50, 100].find((step) => step >= scoreRange / 4) || 100;
-  const axisMinimum = Math.max(0, Math.floor((minimumScore - scoreRange * 0.15) / gridStep) * gridStep);
-  const axisMaximum = Math.ceil((maximumScore + scoreRange * 0.15) / gridStep) * gridStep;
-  const axisRange = axisMaximum - axisMinimum || gridStep;
-  const sp500Minimum = hasSp500 ? Math.min(...sp500Values) : 0;
-  const sp500Maximum = hasSp500 ? Math.max(...sp500Values) : 0;
-  const sp500Range = Math.max(sp500Maximum - sp500Minimum, Math.max(sp500Maximum * 0.1, 1));
-  const sp500Step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((step) => step >= sp500Range / 4) || 5000;
-  const sp500AxisMinimum = hasSp500 ? Math.max(0, Math.floor((sp500Minimum - sp500Range * 0.15) / sp500Step) * sp500Step) : 0;
-  const sp500AxisMaximum = hasSp500 ? Math.ceil((sp500Maximum + sp500Range * 0.15) / sp500Step) * sp500Step : 1;
-  const sp500AxisRange = sp500AxisMaximum - sp500AxisMinimum || sp500Step;
+  const { min: axisMinimum, max: axisMaximum } = window.MacroWatchAnalysisChart.axisDomain(scores, { minimumSpan: 1 });
+  const axisRange = axisMaximum - axisMinimum || 1;
+  const gridStep = [0.5, 1, 2, 5, 10, 20, 50, 100].find((step) => step >= axisRange / 4) || 100;
+  const sp500Domain = hasSp500 ? window.MacroWatchAnalysisChart.axisDomain(sp500Values, { minimumSpan: 1 }) : { min: 0, max: 1 };
+  const sp500AxisMinimum = sp500Domain.min;
+  const sp500AxisMaximum = sp500Domain.max;
+  const sp500AxisRange = sp500AxisMaximum - sp500AxisMinimum || 1;
+  const sp500Step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((step) => step >= sp500AxisRange / 4) || 5000;
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
   const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - score)) / axisRange;
   const sp500Y = (value) => padding.top + ((height - padding.top - padding.bottom) * (sp500AxisMaximum - value)) / sp500AxisRange;
@@ -352,15 +346,14 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = { top: 20, right: 58, bottom: 32, left: 52 };
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
+  const values = weekly.map((row) => Number(row.tension_index));
+  const { min: lower, max: upper } = window.MacroWatchAnalysisChart.axisDomain(values, { minimumSpan: 1 });
+  const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
   const sp500Values = weekly.map((row) => Number(row.sp500_friday_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
-  const sp500Minimum = hasSp500 ? Math.min(...sp500Values) : 0;
-  const sp500Maximum = hasSp500 ? Math.max(...sp500Values) : 1;
-  const sp500Range = Math.max(sp500Maximum - sp500Minimum, Math.max(sp500Maximum * 0.1, 1));
-  const sp500Step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((step) => step >= sp500Range / 4) || 5000;
-  const sp500Lower = hasSp500 ? Math.max(0, Math.floor((sp500Minimum - sp500Range * .1) / sp500Step) * sp500Step) : 0;
-  const sp500Upper = hasSp500 ? Math.ceil((sp500Maximum + sp500Range * .1) / sp500Step) * sp500Step : 1;
+  const sp500Domain = hasSp500 ? window.MacroWatchAnalysisChart.axisDomain(sp500Values, { minimumSpan: 1 }) : { min: 0, max: 1 };
+  const sp500Lower = sp500Domain.min;
+  const sp500Upper = sp500Domain.max;
   const sp500Y = (value) => padding.top + ((height - padding.top - padding.bottom) * (sp500Upper - value)) / Math.max(1, sp500Upper - sp500Lower);
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
@@ -516,9 +509,8 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const width = chartId === 'credit-stress-momentum-chart' ? window.MacroWatchAnalysisChart.historyWidth(rows, 'month', usStressRangeYears) : 920;
   const height = 190;
   const padding = { top: 18, right: 52, bottom: 32, left: 52 };
-  const extent = Math.max(...data.flatMap((row) => [Math.abs(row.value), Math.abs(row.average || 0), Math.abs(row.secondaryAverage || 0)]), 0.005);
-  const step = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10].find((value) => value >= extent / 2) || 20;
-  const axisMaximum = Math.ceil((extent * 1.15) / step) * step;
+  const momentumValues = data.flatMap((row) => [row.value, row.average, row.secondaryAverage].filter(Number.isFinite));
+  const { max: axisMaximum } = window.MacroWatchAnalysisChart.axisDomain(momentumValues, { symmetric: true, minimumSpan: .01 });
   const formatAxisValue = (value) => {
     const digits = Math.abs(value) < 0.1 ? 3 : Math.abs(value) < 1 ? 2 : 1;
     return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
@@ -654,16 +646,12 @@ function renderEmStressDashboard(rows) {
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.stress_index));
-  const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1);
-  const lower = Math.max(0, minimum - range * .1), upper = maximum + range * .1;
+  const { min: lower, max: upper } = window.MacroWatchAnalysisChart.axisDomain(values, { minimumSpan: 1 });
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / Math.max(1, upper - lower);
   const eemValues = weekly.map((row) => Number(row.eem_weekly_close)).filter(Number.isFinite);
   const hasEem = eemValues.length > 1;
-  const eemMinimum = hasEem ? Math.min(...eemValues) : 0;
-  const eemMaximum = hasEem ? Math.max(...eemValues) : 1;
-  const eemRange = Math.max(eemMaximum - eemMinimum, 1);
-  const eemLower = Math.max(0, eemMinimum - eemRange * .1);
-  const eemUpper = eemMaximum + eemRange * .1;
+  const eemDomain = hasEem ? window.MacroWatchAnalysisChart.axisDomain(eemValues, { minimumSpan: 1 }) : { min: 0, max: 1 };
+  const eemLower = eemDomain.min, eemUpper = eemDomain.max;
   const eemY = (value) => padding.top + ((height - padding.top - padding.bottom) * (eemUpper - value)) / Math.max(1, eemUpper - eemLower);
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
@@ -772,13 +760,11 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const leftValues = data.map((row) => Number(row.stress_index)).filter(Number.isFinite);
-  const min = Math.min(...leftValues), max = Math.max(...leftValues), range = Math.max(max - min, 1);
-  const lower = Math.max(0, min - range * 0.12), upper = max + range * 0.12;
+  const { min: lower, max: upper } = window.MacroWatchAnalysisChart.axisDomain(leftValues, { minimumSpan: 1 });
   const y = (value) => padding.top + (height - padding.top - padding.bottom) * (upper - value) / Math.max(1, upper - lower);
   const kospiValues = weeklyKospi.map((row) => Number(row.kospi_close)).filter(Number.isFinite);
   const hasKospi = kospiValues.length > 1;
-  const kospiMin = hasKospi ? Math.min(...kospiValues) : 0, kospiMax = hasKospi ? Math.max(...kospiValues) : 1;
-  const kospiRange = Math.max(kospiMax - kospiMin, 1), kospiLower = Math.max(0, kospiMin - kospiRange * .12), kospiUpper = kospiMax + kospiRange * .12;
+  const kospiDomain = hasKospi ? window.MacroWatchAnalysisChart.axisDomain(kospiValues, { minimumSpan: 1 }) : { min: 0, max: 1 }, kospiLower = kospiDomain.min, kospiUpper = kospiDomain.max;
   const kospiY = (value) => padding.top + (height - padding.top - padding.bottom) * (kospiUpper - value) / Math.max(1, kospiUpper - kospiLower);
   const grid = Array.from({ length: 5 }, (_, index) => {
     const value = upper - (upper - lower) * index / 4, py = y(value);
@@ -964,21 +950,19 @@ function renderCreditStressComponents(rows) {
   const firstDate = Math.min(...dates);
   const lastDate = Math.max(...dates);
   const x = (index) => padding.left + ((dates[index] - firstDate) / Math.max(1, lastDate - firstDate)) * (width - padding.left - padding.right);
-  const scaleFor = (item, clampAtZero = false, source = data) => {
+  const scaleFor = (item, source = data) => {
     const values = source.map((row) => toCreditStressNumber(row[item.key])).filter(Number.isFinite);
     if (!values.length) {
-      if (source !== data) return scaleFor(item, clampAtZero);
+      if (source !== data) return scaleFor(item);
       values.push(0, 1);
     }
-    const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 0.01);
-    const lower = clampAtZero ? Math.max(0, minimum - range * .1) : minimum - range * .1;
-    const upper = maximum + range * .1;
+    const { min: lower, max: upper } = window.MacroWatchAnalysisChart.axisDomain(values, { minimumSpan: .01 });
     return { lower, upper, y: (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower) };
   };
   const [highYield, conditions, bankruptcy] = series;
   const highYieldScale = scaleFor(highYield);
   const conditionsScale = scaleFor(conditions);
-  const bankruptcyScale = scaleFor(bankruptcy, true);
+  const bankruptcyScale = scaleFor(bankruptcy);
   const pathFor = (item, scale, includeLatest = true) => {
     return monotoneSeriesPath(
       data.map((row, index) => ({ ...row, _chartIndex: index }))
@@ -1044,9 +1028,12 @@ function renderCreditStressComponents(rows) {
   });
   frame.addEventListener('pointerleave',hideCursor);
   const updateVisibleScale = () => {
-    const visible = data.filter((_,i)=>x(i)>=frame.scrollLeft && x(i)<=frame.scrollLeft+frame.clientWidth);
+    const visibleIndexes = data.map((_, index) => index).filter((index) => x(index) >= frame.scrollLeft && x(index) <= frame.scrollLeft + frame.clientWidth);
+    const visible = visibleIndexes.length
+      ? data.slice(Math.max(0, visibleIndexes[0] - 1), Math.min(data.length, visibleIndexes.at(-1) + 2))
+      : [];
     if (!visible.length) return;
-    const scales = series.map(item=>scaleFor(item,item===bankruptcy,visible));
+    const scales = series.map(item=>scaleFor(item,visible));
     chart.querySelector('[data-credit-left-axis]').innerHTML = ticksFor(scales[0],v=>v.toFixed(1),highYield.color);
     chart.querySelector('[data-credit-right-axis]').innerHTML = ticksFor(scales[2],v=>Math.round(v).toLocaleString('en-US'),bankruptcy.color,true);
     series.forEach((item,i)=>{

@@ -53,10 +53,9 @@
   }
 
   function verticalScale(points) {
-    const values = points.map((point) => Math.abs(point.value)).filter(Number.isFinite);
-    const maximum = Math.max(0.1, ...values) * 1.05;
-    const tickStep = chartUtils.niceStep(maximum / 2);
-    return { tickStep, maximumAbsoluteValue: tickStep * 2 };
+    const values = points.flatMap((point) => [point.value, point.dailyValue]).filter(Number.isFinite);
+    const domain = chartUtils.axisDomain(values, { symmetric: true, minimumSpan: .2 }) || { min: -.125, max: .125 };
+    return { tickStep: domain.max / 2, maximumAbsoluteValue: domain.max };
   }
 
   function render(container, rows, selectedYears) {
