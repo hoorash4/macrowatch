@@ -411,6 +411,26 @@ class USEarningsTransformTests(unittest.TestCase):
         self.assertEqual(fact.net_income, Decimal("116000000"))
         self.assertFalse(fact.is_pending)
 
+    def test_six_k_backfill_reads_flattened_qn_income_statement(self):
+        html = """
+        <div>Financial Results. REPORTED P&amp;L (EUR million) Q2 26 Q2 25 H1 26 H1 25
+        Revenue 2,603 2,410 4,701 4,469
+        Operating profit/(loss) 322 211 519 706
+        Net profit/(loss) 284 247 400 662</div>
+        """
+        filing = SixKFiling("flat-q2", date(2026, 7, 28), date(2026, 6, 30), "results.htm")
+
+        fact = extract_six_k_fact(
+            "company", filing, [SixKDocument("results.htm", html)], 2026, 2,
+            lambda _currency, _date: Decimal(1), backfill_mode=True,
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual((fact.top_line, fact.operating_income, fact.net_income), (
+            Decimal("2603000000"), Decimal("322000000"), Decimal("284000000"),
+        ))
+        self.assertFalse(fact.is_pending)
+
     def test_six_k_backfill_q1_bridge_can_allocate_a_reported_half_year(self):
         html = """
         <table><tr><th>Six months ended June 30, 2026</th><th>June 30, 2025</th></tr>

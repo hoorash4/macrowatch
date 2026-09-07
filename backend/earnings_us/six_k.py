@@ -182,6 +182,10 @@ def _scale(text: str) -> Decimal:
     ]
     if matches:
         return min(matches)[1]
+    if re.search(r"(?:us\$|rmb|cny|usd|eur|gbp|jpy|€|\$)\s+billions?\b", text, re.I):
+        return Decimal("1000000000")
+    if re.search(r"(?:us\$|rmb|cny|usd|eur|gbp|jpy|€|\$)\s+millions?\b", text, re.I):
+        return Decimal("1000000")
     if re.search(r"(?:us\$|rmb|cny|usd|eur|gbp|jpy|€|\$)\s*(?:mn|m)\b", text, re.I):
         return Decimal("1000000")
     return Decimal(1)
@@ -194,14 +198,14 @@ _METRIC_LABELS = {
     ),
     "operating_income": (
         "reported operating profit", "gaap operating income", "income from operations", "operating income",
-        "income loss from operations", "operating profit", "loss from operations", "operating loss",
+        "income loss from operations", "operating profit", "operating profit/(loss)", "loss from operations", "operating loss",
     ),
     "net_income": (
         "net income attributable to ordinary shareholders", "net income attributable to shareholders",
         "net income attributable to the company", "net income attributable to stockholders",
         "net loss attributable to ordinary shareholders", "net loss attributable to shareholders",
         "net loss attributable to the company", "net loss attributable to stockholders",
-        "net income", "net loss", "profit after tax", "profit for the period", "profit attributable to owners",
+        "net income", "net loss", "net profit", "net profit/(loss)", "profit after tax", "profit for the period", "profit attributable to owners",
     ),
 }
 
@@ -470,12 +474,18 @@ def _loose_period_dates(header: str, *, prefer_split: bool = False) -> list[date
 
 def _flat_values(text: str, target: tuple[int, int]) -> tuple[dict[str, Decimal], dict[str, str], date | None]:
     """Read image-backed statements that expose an accessibility text layer."""
-    anchors = [match.start() for match in re.finditer(r"three months ended", text, re.I)]
+    anchors = [match.start() for match in re.finditer(
+        r"three months ended|(?:reported\s+)?p&l", text, re.I,
+    )]
     best: tuple[int, dict[str, Decimal], dict[str, str], date | None] = (0, {}, {}, None)
     all_labels = sorted({label for labels in _METRIC_LABELS.values() for label in labels}, key=len, reverse=True)
     label_pattern = "|".join(re.escape(label) for label in all_labels)
     for start in anchors:
         block = text[start:start + 5000]
+        # Flattened accessibility text preserves slash-loss captions literally,
+        # unlike the regular table parser which receives them as a row label.
+        block = re.sub(r"\boperating\s+profit\s*/\s*\(loss\)", "operating profit", block, flags=re.I)
+        block = re.sub(r"\bnet\s+profit\s*/\s*\(loss\)", "net profit", block, flags=re.I)
         first_label = re.search(label_pattern, block, re.I)
         if first_label is None:
             continue
@@ -484,9 +494,27 @@ def _flat_values(text: str, target: tuple[int, int]) -> tuple[dict[str, Decimal]
         direct_count = _three_month_columns(header, len(dates))
         direct_dates = dates[:direct_count]
         matching = [index for index, item in enumerate(direct_dates) if _matches_target_period(item, target)]
-        if not matching:
-            continue
-        column = matching[-1]
+        period_end: date | None = direct_dates[matching[-1]] if matching else None
+        if matching:
+            column = matching[-1]
+        else:
+            # Some furnished reports flatten a complete income statement into
+            # text such as ``Q2 26 Q2 25 H1 26 H1 25`` instead of preserving
+            # date cells.  The Qn headings are still an explicit quarterly
+            # column definition, so use them before falling back to narrative.
+            headings = list(re.finditer(r"\bq([1-4])\s*(20\d{2}|\d{2})\b", header, re.I))
+            matching = []
+            for index, heading in enumerate(headings):
+                heading_year = int(heading.group(2))
+                if heading_year < 100:
+                    heading_year += 2000
+                if (heading_year, int(heading.group(1))) == target:
+                    matching.append(index)
+            if not matching:
+                continue
+            column = matching[-1]
+            direct_count = len(headings)
+            period_end = date(target[0], target[1] * 3, 31 if target[1] in {1, 4} else 30)
         values: dict[str, Decimal] = {}
         currencies: dict[str, str] = {}
         for metric, labels in _METRIC_LABELS.items():
@@ -504,7 +532,7 @@ def _flat_values(text: str, target: tuple[int, int]) -> tuple[dict[str, Decimal]
                     currencies[metric] = _currency(header)
                     break
         if len(values) > best[0]:
-            best = (len(values), values, currencies, direct_dates[column])
+            best = (len(values), values, currencies, period_end)
     return best[1], best[2], best[3]
 
 
@@ -580,6 +608,13 @@ def extract_six_k_fact(
             table_end = table_end or half_end
         document_dates = _loose_period_dates(text)
         dates = [item for item in document_dates if _matches_target_period(item, target)]
+        if not table_values:
+            flat_values, flat_currencies, flat_end = _flat_values(text, target)
+            if flat_values:
+                table_values, table_currencies = flat_values, flat_currencies
+                table_end = table_end or flat_end
+                if flat_end is not None and _matches_target_period(flat_end, target):
+                    dates = [flat_end]
         target_label = f"q{quarter} {year}"
         written_target = f"{('first', 'second', 'third', 'fourth')[quarter - 1]} quarter {year}"
         filing_name_has_quarter = re.search(
@@ -601,8 +636,6 @@ def extract_six_k_fact(
             dates = [filing.report_date]
         if not dates:
             continue
-        if not table_values:
-            table_values, table_currencies, table_end = _flat_values(text, target)
         for metric, value in table_values.items():
             values.setdefault(metric, value)
             currencies.setdefault(metric, table_currencies.get(metric, "USD"))
