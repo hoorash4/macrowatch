@@ -18,15 +18,18 @@ class LiquidityTests(unittest.TestCase):
         self.assertIsNone(lp.asof(values, date(2021, 9, 9), 7))
         self.assertIsNone(lp.asof(values, date(2021, 8, 31), 7))
 
-    def test_us_unit_conversion_and_zero_rrp(self):
+    def test_us_net_supply_units_and_rrp_release(self):
         day = date(2021, 9, 8)
-        data = dict(sofr={}, effr={}, p25={}, p75={}, iorb={},
-                    reserves={day: 4000000, day-timedelta(days=28): 2000000},
-                    assets={day: 20000}, rrp={day: 0})
-        result = lp.features('US', data)['capacity'][day]
-        self.assertEqual(result['reserve_ratio'], 20)
-        self.assertEqual(result['reserve_change'], 100)
-        self.assertEqual(result['rrp_ratio'], 0)
+        before = day - timedelta(days=91)
+        data = dict(sofr={day: .1}, iorb={day: .15}, ioer={},
+                    fed_assets={before: 8000000, day: 8000000},
+                    tga={before: 1000000, day: 1000000}, rrp={before: 1000, day: 0},
+                    real_yield={day: -1}, credit_conditions={day: -.1})
+        result = lp.features('US', data)['environment'][day]
+        self.assertAlmostEqual(result['net_supply_change'], (7000000 / 6000000 - 1) * 100)
+        self.assertAlmostEqual(result['funding_spread'], -.05)
+        data['rrp'][day] = 1000
+        self.assertEqual(lp.features('US', data)['environment'][day]['net_supply_change'], 0)
 
     def test_korea_flow_not_net_buys_or_double_counted(self):
         months = [date(2021, m, 1) for m in (6, 7, 8, 9)]
@@ -55,17 +58,26 @@ class LiquidityTests(unittest.TestCase):
 
     def test_future_does_not_change_past_score(self):
         from unittest.mock import patch
-        start = lp.START
-        feature = {'pressure': {}, 'capacity': {}}
-        for metric, rows in feature.items():
-            for i in range(80):
-                rows[start+timedelta(days=i)] = {key: i for key in lp.WEIGHTS['US', metric]}
+        start = date(2016, 1, 1)
+        feature = {'environment': {lp.shift_month(start, i): {key: i for key in lp.US_DIRECTIONS} for i in range(72)}}
         with patch.object(lp, 'features', return_value=feature):
-            before = lp.calculate('US', {})
-            for metric in feature:
-                feature[metric][start+timedelta(days=120)] = {key: 100000 for key in lp.WEIGHTS['US', metric]}
-            after = lp.calculate('US', {})
-        self.assertEqual(before, [r for r in after if r['observation_date'] <= (start+timedelta(days=79)).isoformat()])
+            before = lp.calculate('US', {}, date(2022, 1, 1))
+            feature['environment'][date(2022, 1, 1)] = {key: 100000 for key in lp.US_DIRECTIONS}
+            after = lp.calculate('US', {}, date(2022, 2, 1))
+        self.assertEqual(before, [r for r in after if r['observation_date'] < '2022-01-01'])
+
+    def test_environment_direction_and_unchanged_momentum(self):
+        from unittest.mock import patch
+        feature = {'environment': {lp.shift_month(date(2016, 1, 1), i): {key: 1 for key in lp.US_DIRECTIONS} for i in range(72)}}
+        with patch.object(lp, 'features', return_value=feature):
+            flat = lp.calculate('US', {}, date(2022, 1, 1))
+            self.assertTrue(all(row['score'] == 50 for row in flat))
+            feature['environment'][date(2021, 12, 1)] = {key: 1 + direction for key, direction in lp.US_DIRECTIONS.items()}
+            improved = lp.calculate('US', {}, date(2022, 1, 1))
+            self.assertTrue(all(row['score'] > 50 for row in improved if row['observation_date'] == '2021-12-01'))
+            del feature['environment'][date(2021, 11, 1)]
+            with self.assertRaises(RuntimeError):
+                lp.calculate('US', {}, date(2022, 1, 1))
 
     def test_monthly_average_before_ranking_and_open_month_excluded(self):
         values = {date(2026, 7, 1): {'spread': 0}, date(2026, 7, 31): {'spread': 10},

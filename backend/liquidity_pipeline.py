@@ -16,18 +16,22 @@ import requests
 from common import SupabaseRest, fetch_fred_observations, require_env
 
 VERSION = "liquidity-monthly-v2"
+US_VERSION = "us-equity-environment-v1"
+US_START = date(2021, 11, 1)
+US_DIRECTIONS = {"real_yield": -1, "credit_conditions": -1, "net_supply_change": 1, "funding_spread": -1}
 START = date(2021, 9, 7)  # Initial five-year history; never move this retention boundary.
 KR_PRESSURE_START = date(2021, 11, 25)
 SOURCE_START = date(2016, 8, 1)  # Calibration only; not displayed as backfill.
 WEIGHTS = {
-    ("US", "pressure"): {"secured_spread": .5, "unsecured_spread": .25, "dispersion": .25},
-    ("US", "capacity"): {"reserve_ratio": .5, "reserve_change": .25, "rrp_ratio": .25},
+    ("US", "environment"): {key: .25 for key in US_DIRECTIONS},
+    ("US", "momentum"): {key: .25 for key in US_DIRECTIONS},
     ("KR", "pressure"): {"call_spread": .5, "repo_spread": .5},
     ("KR", "capacity"): {"m2_change": .25, "lf_change": .25, "equity_flow": .25, "bond_flow": .25},
 }
 FRED = {
-    "sofr": "SOFR", "effr": "EFFR", "iorb": "IORB", "p25": "SOFR25", "p75": "SOFR75",
-    "reserves": "WRESBAL", "assets": "TLAACBW027SBOG", "rrp": "RRPONTSYD",
+    "sofr": "SOFR", "iorb": "IORB", "ioer": "IOER", "rrp": "RRPONTSYD",
+    "real_yield": "DFII10", "credit_conditions": "NFCICREDIT",
+    "fed_assets": "WALCL", "tga": "WTREGEN",
 }
 ECOS = {
     "kofr": ("817Y002", "D", "010901000"),
@@ -97,6 +101,8 @@ def collect(country, existing, end):
         key = require_env("FRED_API_KEY")
         for name, series in FRED.items():
             start = begin(name)
+            if name == "ioer" and result.get(name):
+                continue  # Discontinued in July 2021; used only to calibrate pre-IORB history.
             if start > end:
                 continue
             rows = fetch_fred_observations(series, key, start=start.isoformat(), end=end.isoformat())
@@ -150,8 +156,10 @@ def collect(country, existing, end):
         raise RuntimeError("A required source has no observations; no results will be saved")
     # Source calendars differ. Do not pretend stale observations are today's data.
     monthly = {"m2", "lf", "equity_flow", "bond_flow"}
-    weekly = {"reserves", "assets"}
+    weekly = {"fed_assets", "tga", "credit_conditions"}
     for name in expected:
+        if name == "ioer":
+            continue
         allowance = 100 if name in monthly else 21 if name in weekly else 10
         if (end - max(result[name])).days > allowance:
             raise RuntimeError(f"Stale source: {name}, latest={max(result[name])}")
@@ -169,20 +177,7 @@ def asof(values, day, max_age):
 def features(country, data):
     pressure, capacity = {}, {}
     if country == "US":
-        for day in sorted(set(data["sofr"]) & set(data["effr"]) & set(data["p25"]) & set(data["p75"])):
-            rate = asof(data["iorb"], day, 7)
-            if rate is not None:
-                pressure[day] = {"secured_spread": data["sofr"][day] - rate,
-                                 "unsecured_spread": data["effr"][day] - rate,
-                                 "dispersion": data["p75"][day] - data["p25"][day]}
-        for day, reserves in sorted(data["reserves"].items()):
-            assets, rrp = asof(data["assets"], day, 7), asof(data["rrp"], day, 7)
-            previous = asof(data["reserves"], day - timedelta(days=28), 7)
-            if assets and previous and rrp is not None:
-                # WRESBAL is USD millions; assets and ON RRP are USD billions.
-                capacity[day] = {"reserve_ratio": reserves / 1000 / assets * 100,
-                                 "reserve_change": (reserves / previous - 1) * 100,
-                                 "rrp_ratio": rrp / assets * 100}
+        return {"environment": equity_environment_features(data)}
     else:
         for day in sorted(set(data["call"]) & set(data["kofr"])):
             rate = asof(data["base"], day, 7)
@@ -201,6 +196,75 @@ def features(country, data):
                              "equity_flow": sum(data["equity_flow"][m] for m in months),
                              "bond_flow": sum(data["bond_flow"][m] for m in months)}
     return {"pressure": pressure, "capacity": capacity}
+
+
+def equity_environment_features(data):
+    """Funding environment proxies, not equity inflows or return forecasts."""
+    net = {}
+    for day, assets in sorted(data["fed_assets"].items()):
+        tga, rrp = asof(data["tga"], day, 14), asof(data["rrp"], day, 7)
+        if tga is not None and rrp is not None:
+            # WALCL and WTREGEN: USD millions. ON RRP: USD billions.
+            net[day] = assets - tga - rrp * 1000
+    supply = {}
+    for day, value in net.items():
+        previous = asof(net, day - timedelta(days=91), 14)
+        if previous is not None and previous > 0:
+            supply[day] = (value / previous - 1) * 100
+    output = {}
+    for day, real_yield in sorted(data["real_yield"].items()):
+        credit = asof(data["credit_conditions"], day, 14)
+        flow = asof(supply, day, 14)
+        sofr = asof(data["sofr"], day, 7)
+        rate = asof(data["iorb"], day, 7)
+        if rate is None:
+            rate = asof(data["ioer"], day, 7)
+        if all(value is not None for value in (credit, flow, sofr, rate)):
+            output[day] = {"real_yield": real_yield, "credit_conditions": credit,
+                           "net_supply_change": flow, "funding_spread": sofr - rate}
+    return output
+
+
+def calculate_equity_environment(data, end):
+    observations = monthly_features(features("US", data)["environment"], end)
+    dates = sorted(observations)
+    output = []
+    for day in dates:
+        if day < US_START:
+            continue
+        previous_day = shift_month(day, -3)
+        if previous_day not in observations:
+            raise RuntimeError(f"Missing 3-month baseline for US environment: {day}")
+        history = [d for d in dates if shift_month(day, -60) < d <= day]
+        levels, changes, change_scores = {}, {}, {}
+        for name, direction in US_DIRECTIONS.items():
+            value = observations[day][name]
+            rank = percentile(value, [observations[d][name] for d in history])
+            levels[name] = rank if direction > 0 else 100 - rank
+            changes[name] = direction * (value - observations[previous_day][name])
+            past_changes = [observations[d][name] - observations[shift_month(d, -3)][name]
+                            for d in history if shift_month(d, -3) in observations]
+            rms = math.sqrt(sum(v * v for v in past_changes) / len(past_changes)) if past_changes else 0
+            # Exactly 50 for no change. Changes in rolling ranks cannot imply improvement.
+            change_scores[name] = 50 if not rms else 50 + 50 * math.tanh(changes[name] / (2 * rms))
+        for metric, components, scores in (("environment", observations[day], levels),
+                                            ("momentum", changes, change_scores)):
+            output.append({"country": "US", "metric": metric, "observation_date": day.isoformat(),
+                           "score": round(sum(scores[k] * w for k, w in WEIGHTS["US", metric].items()), 4),
+                           "components": components, "component_scores": scores,
+                           "sample_count": len(history), "is_warmup": len(history) < 12,
+                           "frequency": "M", "method_version": US_VERSION})
+    expected_last = shift_month(end.replace(day=1), -1)
+    expected_dates = set()
+    cursor = US_START
+    while cursor <= expected_last:
+        expected_dates.add(cursor.isoformat())
+        cursor = shift_month(cursor, 1)
+    for metric in ("environment", "momentum"):
+        actual = {row["observation_date"] for row in output if row["metric"] == metric}
+        if actual != expected_dates:
+            raise RuntimeError(f"Incomplete US/{metric} monthly coverage: {sorted(expected_dates - actual)}")
+    return output
 
 
 def percentile(value, history):
@@ -224,6 +288,8 @@ def monthly_features(observations, end):
 
 def calculate(country, data, end=None):
     end = end or date.today()
+    if country == "US":
+        return calculate_equity_environment(data, end)
     output = []
     for metric, observations in features(country, data).items():
         observations = monthly_features(observations, end)
@@ -281,9 +347,9 @@ def main():
     if db:
         # One database transaction: no partially published country on failure.
         db.request("POST", "rpc/store_liquidity_batch", body={"p_country": args.country, "p_raw": raw, "p_results": results})
-        for metric in ("pressure", "capacity"):
+        for metric in sorted({row["metric"] for row in results}):
             latest = db.request("GET", "liquidity_indices", params={"country": f"eq.{args.country}",
-                                "metric": f"eq.{metric}", "method_version": f"eq.{VERSION}", "order": "observation_date.desc", "limit": "1"})
+                                "metric": f"eq.{metric}", "method_version": f"eq.{US_VERSION if args.country == 'US' else VERSION}", "order": "observation_date.desc", "limit": "1"})
             expected = max(r["observation_date"] for r in results if r["metric"] == metric)
             if not latest or latest[0]["observation_date"] != expected:
                 raise RuntimeError("Post-write verification failed")
@@ -291,7 +357,7 @@ def main():
         metric: {"count": len([r for r in results if r["metric"] == metric]),
                  "first": min(r["observation_date"] for r in results if r["metric"] == metric),
                  "latest": max(r["observation_date"] for r in results if r["metric"] == metric)}
-        for metric in ("pressure", "capacity")}}, ensure_ascii=False))
+        for metric in sorted({row["metric"] for row in results})}}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
