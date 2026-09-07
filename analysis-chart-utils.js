@@ -124,7 +124,7 @@
 
     // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
     // 축의 라벨과 세로선만 별도 SVG에 복제해 왼쪽에 고정한다.
-    const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\\s+/).map(Number);
+    const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
     const axisNodes = [...svg.querySelectorAll('text,line')].filter((node) => {
       const x = Number(node.getAttribute('x'));
       const x1 = Number(node.getAttribute('x1'));
