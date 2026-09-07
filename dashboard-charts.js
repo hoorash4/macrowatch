@@ -957,15 +957,19 @@ function renderCreditStressComponents(rows) {
     { key: 'financial_conditions_credit_index', label: '금융 신용여건', color: '#b91c1c', digits: 3, suffix: '' },
     { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#b7791f', digits: 0, suffix: '건' },
   ];
-  const width = 920;
+  const width = Math.max(680, (chart.clientWidth || 808) - 128, data.length * 48);
   const height = CREDIT_STRESS_CHART_HEIGHT;
-  const padding = { top: 20, right: 52, bottom: 32, left: 52 };
+  const padding = { top: 48, right: 16, bottom: 32, left: 16 };
   const dates = data.map((row) => new Date(row.month).getTime());
   const firstDate = Math.min(...dates);
   const lastDate = Math.max(...dates);
   const x = (index) => padding.left + ((dates[index] - firstDate) / Math.max(1, lastDate - firstDate)) * (width - padding.left - padding.right);
-  const scaleFor = (item, clampAtZero = false) => {
-    const values = data.map((row) => toCreditStressNumber(row[item.key])).filter(Number.isFinite);
+  const scaleFor = (item, clampAtZero = false, source = data) => {
+    const values = source.map((row) => toCreditStressNumber(row[item.key])).filter(Number.isFinite);
+    if (!values.length) {
+      if (source !== data) return scaleFor(item, clampAtZero);
+      values.push(0, 1);
+    }
     const minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 0.01);
     const lower = clampAtZero ? Math.max(0, minimum - range * .1) : minimum - range * .1;
     const upper = maximum + range * .1;
@@ -991,7 +995,7 @@ function renderCreditStressComponents(rows) {
     const previous = toCreditStressNumber(data[index - 1][item.key]);
     const current = toCreditStressNumber(data[index][item.key]);
     if (!Number.isFinite(previous) || !Number.isFinite(current)) return '';
-    return `<line x1="${x(index - 1).toFixed(1)}" y1="${scale.y(previous).toFixed(1)}" x2="${x(index).toFixed(1)}" y2="${scale.y(current).toFixed(1)}" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 4"/>`;
+    return `<line data-credit-latest="${item.key}" x1="${x(index - 1).toFixed(1)}" y1="${scale.y(previous).toFixed(1)}" x2="${x(index).toFixed(1)}" y2="${scale.y(current).toFixed(1)}" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 4"/>`;
   };
   const labels = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
   const yearGuides = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<line x1="${x(index)}" x2="${x(index)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>` : '').join('');
@@ -1000,13 +1004,74 @@ function renderCreditStressComponents(rows) {
     if (!Number.isFinite(value)) return '';
     const detail = `${row.month}\n${item.label}: ${value.toFixed(item.digits)}${item.suffix}${row.is_latest ? ' (잠정치)' : ''}`;
     const latestMarker = row.is_latest ? ` fill-opacity="0.25" stroke="${item.color}" stroke-width="1.5"` : '';
-    return `<circle cx="${x(index)}" cy="${scale.y(value)}" r="3.5" fill="${item.color}"${latestMarker} tabindex="0"><title>${detail}</title></circle>`;
+    return `<circle data-credit-point="${item.key}" data-credit-index="${index}" cx="${x(index)}" cy="${scale.y(value)}" r="3.5" fill="${item.color}"${latestMarker} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const ticksFor = (scale, formatter, color, axisX, withGrid = false) => Array.from({ length: 5 }, (_, index) => scale.upper - ((scale.upper - scale.lower) * index) / 4).map((value, index) => `${withGrid ? `<line x1="${padding.left}" x2="${width - padding.right}" y1="${scale.y(value)}" y2="${scale.y(value)}" stroke="#dbe3ed"${index === 0 || index === 4 ? '' : ' stroke-dasharray="3 4"'}/>` : ''}<text x="${axisX}" y="${scale.y(value) + 3}"${axisX === padding.left - 9 ? ' text-anchor="end"' : ''} fill="${color}" font-size="10">${formatter(value)}</text>`).join('');
-  const bankruptcyAxisX = width - 52;
-  const axes = `<line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${bankruptcyAxisX}" x2="${bankruptcyAxisX}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>`;
+
+  const ticksFor = (scale, formatter, color, right = false) => Array.from({ length: 5 }, (_, index) => {
+    const value = scale.upper - (scale.upper - scale.lower) * index / 4;
+    return `<text x="${right ? 8 : 58}" y="${scale.y(value) + 3}" text-anchor="${right ? 'start' : 'end'}" fill="${color}" font-size="10">${formatter(value)}</text>`;
+  }).join('');
   const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${axes}${ticksFor(highYieldScale, (value) => value.toFixed(1), highYield.color, padding.left - 9, true)}${yearGuides}${ticksFor(bankruptcyScale, (value) => Math.round(value).toLocaleString('en-US'), bankruptcy.color, bankruptcyAxisX + 8)}<path d="${pathFor(highYield, highYieldScale, false)}" fill="none" stroke="${highYield.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(conditions, conditionsScale, false)}" fill="none" stroke="${conditions.color}" stroke-width="2.5" stroke-linecap="round"/><path d="${pathFor(bankruptcy, bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round"/>${latestSegmentFor(highYield, highYieldScale)}${latestSegmentFor(conditions, conditionsScale)}${dotsFor(highYield, highYieldScale)}${dotsFor(bankruptcy, bankruptcyScale)}${labels}</svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`;
+  const grids = Array.from({length:5}, (_, i) => {
+    const py = padding.top + (height - padding.top - padding.bottom) * i / 4;
+    return `<line x1="${padding.left}" x2="${width-padding.right}" y1="${py}" y2="${py}" class="korea-earnings-grid"/>`;
+  }).join('');
+  chart.innerHTML = `<div class="korea-earnings-chart-layout"><svg data-credit-left-axis class="korea-earnings-y-axis" style="height:${height}px" viewBox="0 0 64 ${height}" aria-hidden="true"></svg><div class="korea-earnings-chart-frame" tabindex="0" aria-label="미국 신용위험 전체 이력 가로 스크롤"><svg class="korea-earnings-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${grids}${yearGuides}<path data-credit-series="${highYield.key}" d="${pathFor(highYield,highYieldScale,false)}" fill="none" stroke="${highYield.color}" stroke-width="2.5" stroke-linecap="round"/><path data-credit-series="${conditions.key}" d="${pathFor(conditions,conditionsScale,false)}" fill="none" stroke="${conditions.color}" stroke-width="2.5" stroke-linecap="round"/><path data-credit-series="${bankruptcy.key}" d="${pathFor(bankruptcy,bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="2.5" stroke-linecap="round"/>${latestSegmentFor(highYield,highYieldScale)}${latestSegmentFor(conditions,conditionsScale)}${dotsFor(highYield,highYieldScale)}${dotsFor(bankruptcy,bankruptcyScale)}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="korea-earnings-cursor"/><text data-credit-cursor-label class="korea-earnings-cursor-label" text-anchor="middle"></text><text data-credit-cursor-date y="${height-8}" class="korea-earnings-cursor-period" text-anchor="middle"></text></svg></div><svg data-credit-right-axis class="korea-earnings-y-axis" style="height:${height}px" viewBox="0 0 64 ${height}" aria-hidden="true"></svg></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`;
+  const frame = chart.querySelector('.korea-earnings-chart-frame');
+  const svg = frame.querySelector('svg');
+  const cursor = chart.querySelector('[data-credit-cursor]');
+  const cursorLabel = chart.querySelector('[data-credit-cursor-label]');
+  const cursorDate = chart.querySelector('[data-credit-cursor-date]');
+  const hideCursor = () => [cursor,cursorLabel,cursorDate].forEach(node=>node.classList.remove('is-visible'));
+  frame.addEventListener('pointermove', event => {
+    const bounds = svg.getBoundingClientRect();
+    const pointerX = (event.clientX - bounds.left) / bounds.width * width;
+    const index = data.reduce((best, _, i) => Math.abs(x(i)-pointerX) < Math.abs(x(best)-pointerX) ? i : best, 0);
+    const row = data[index], px = x(index);
+    const labelX = frame.scrollLeft + frame.clientWidth / 2;
+    cursor.setAttribute('x1',px); cursor.setAttribute('x2',px);
+    cursorLabel.innerHTML = series.map((item,i) => {
+      const value = toCreditStressNumber(row[item.key]);
+      return `<tspan x="${labelX}" y="${12+i*13}">${item.label}: ${Number.isFinite(value) ? value.toFixed(item.digits)+item.suffix : '미발표'}</tspan>`;
+    }).join('');
+    cursorDate.setAttribute('x', Math.max(frame.scrollLeft+40,Math.min(frame.scrollLeft+frame.clientWidth-40,px)));
+    cursorDate.textContent = row.month + (row.is_latest ? ' (잠정치)' : '');
+    [cursor,cursorLabel,cursorDate].forEach(node=>node.classList.add('is-visible'));
+  });
+  frame.addEventListener('pointerleave',hideCursor);
+  const updateVisibleScale = () => {
+    const visible = data.filter((_,i)=>x(i)>=frame.scrollLeft && x(i)<=frame.scrollLeft+frame.clientWidth);
+    if (!visible.length) return;
+    const scales = series.map(item=>scaleFor(item,item===bankruptcy,visible));
+    chart.querySelector('[data-credit-left-axis]').innerHTML = ticksFor(scales[0],v=>v.toFixed(1),highYield.color);
+    chart.querySelector('[data-credit-right-axis]').innerHTML = ticksFor(scales[2],v=>Math.round(v).toLocaleString('en-US'),bankruptcy.color,true);
+    series.forEach((item,i)=>{
+      const scale = scales[i];
+      chart.querySelector(`[data-credit-series="${item.key}"]`).setAttribute('d',pathFor(item,scale,item===bankruptcy));
+      chart.querySelectorAll(`[data-credit-point="${item.key}"]`).forEach(dot=>{
+        dot.setAttribute('cy',scale.y(toCreditStressNumber(data[Number(dot.dataset.creditIndex)][item.key])));
+      });
+      const segment = chart.querySelector(`[data-credit-latest="${item.key}"]`);
+      if (segment) {
+        const index = data.findIndex(row=>row.is_latest);
+        segment.setAttribute('y1',scale.y(toCreditStressNumber(data[index-1][item.key])));
+        segment.setAttribute('y2',scale.y(toCreditStressNumber(data[index][item.key])));
+      }
+    });
+  };
+  let pendingFrame = null;
+  frame.addEventListener('scroll',()=>{
+    hideCursor();
+    if (pendingFrame===null) pendingFrame=requestAnimationFrame(()=>{pendingFrame=null;updateVisibleScale();});
+  },{passive:true});
+  const observer = new ResizeObserver(()=>{
+    if (frame.clientWidth > 0) {
+      window.MacroWatchAnalysisChart.scrollToLatest(frame);
+      updateVisibleScale();
+      observer.disconnect();
+    }
+  });
+  observer.observe(frame);
 }
 
 async function loadCreditStressComponentsDashboard() {
