@@ -1124,7 +1124,7 @@ function sectorLeadership(value) {
   }
   const score = Math.max(0, Math.min(100, Math.round(Number(value))));
   if (!Number.isFinite(score)) return '<span class="sector-flow-leadership sector-flow-leadership-empty">—</span>';
-  return `<span class="sector-flow-leadership" title="최근 20거래일 시장 상승일의 초과수익 강도와 지속성"><span><i style="width:${score}%"></i></span><em>${score}</em></span>`;
+  return `<span class="sector-flow-leadership" title="최근 20거래일 상승장 조건 아래 10주간 초과수익 강도와 지속성"><span><i style="width:${score}%"></i></span><em>${score}</em></span>`;
 }
 
 function setSectorWeekHeading(card, week, isLatest) {

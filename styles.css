@@ -1365,7 +1365,7 @@ body:has(#app-shell:not(.hidden)) {
 .sector-flow-week-current .sector-flow-streak::before {
   position:absolute;
   top:50%;
-  left:-.98rem;
+  left:calc(50% - 3.825rem);
   width:1px;
   height:1rem;
   border-left:1px dashed rgba(47,105,154,.2);

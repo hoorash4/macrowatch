@@ -61,16 +61,17 @@ function effectivePrice(row: SectorPrice, currentDate: string) {
 }
 
 /**
- * 최근 20거래일이 실제 상승 흐름일 때만, KOSPI 상승일에 반복적으로
- * 초과수익을 낸 정도를 섹터 간 0~100으로 정규화합니다.
+ * 최근 20거래일이 실제 상승 흐름일 때만, 보관 중인 10주 전체에서
+ * KOSPI 상승일의 초과수익 강도와 지속성을 각각 평가합니다.
+ * 두 요소의 조화평균을 사용해 단기 급등이나 약한 장기 지속 중
+ * 어느 한쪽만으로 높은 주도력 점수가 나오지 않게 합니다.
  */
 export function calculateSectorLeadership(
   prices: SectorPrice[], marketPrices: MarketPrice[], endpointDate: string,
 ) {
   const market = marketPrices
     .filter((row) => row.marketDate <= endpointDate && row.closePrice > 0)
-    .sort((a, b) => a.marketDate.localeCompare(b.marketDate))
-    .slice(-21);
+    .sort((a, b) => a.marketDate.localeCompare(b.marketDate));
   if (market.length < 21) return new Map<string, number>();
 
   const marketReturns = market.slice(1).map((row, index) => ({
@@ -79,9 +80,12 @@ export function calculateSectorLeadership(
     value: row.closePrice / market[index].closePrice - 1,
     block: Math.floor(index / 5),
   }));
+  const recentMarket = market.slice(-21);
+  const recentReturns = recentMarket.slice(1).map((row, index) => row.closePrice / recentMarket[index].closePrice - 1);
+  const recentUpDays = recentReturns.filter((value) => value > 0);
+  const recentMarketCumulative = recentMarket[recentMarket.length - 1].closePrice / recentMarket[0].closePrice - 1;
+  if (recentUpDays.length < 11 || recentMarketCumulative <= 0) return new Map<string, number>();
   const upDays = marketReturns.filter((row) => row.value > 0);
-  const marketCumulative = market[market.length - 1].closePrice / market[0].closePrice - 1;
-  if (upDays.length < 11 || marketCumulative <= 0) return new Map<string, number>();
 
   const byEtf = new Map<string, Map<string, number>>();
   prices.filter((row) => row.closePrice !== null && row.closePrice > 0 && row.marketDate <= endpointDate).forEach((row) => {
@@ -90,7 +94,7 @@ export function calculateSectorLeadership(
     byEtf.set(row.etfId, history);
   });
 
-  const rawScores = new Map<string, number>();
+  const components = new Map<string, { strength: number; persistence: number }>();
   for (const [etfId, history] of byEtf) {
     const excessByUpDay: Array<{ value: number; block: number }> = [];
     let complete = true;
@@ -107,21 +111,32 @@ export function calculateSectorLeadership(
     if (!complete || excessByUpDay.length !== upDays.length) continue;
     const positive = excessByUpDay.filter((row) => row.value > 0);
     if (!positive.length) {
-      rawScores.set(etfId, 0);
+      components.set(etfId, { strength: 0, persistence: 0 });
       continue;
     }
-    const strength = positive.reduce((sum, row) => sum + row.value, 0) / positive.length;
+    // 부진한 상승일도 평균에 포함해 짧은 급등이 전체 강도를 덮지 못하게 합니다.
+    const strength = Math.max(0, excessByUpDay.reduce((sum, row) => sum + row.value, 0) / excessByUpDay.length);
     const hitRate = positive.length / excessByUpDay.length;
     const activeBlocks = new Set(positive.map((row) => row.block)).size;
     const representedBlocks = new Set(excessByUpDay.map((row) => row.block)).size;
-    const persistence = hitRate * (representedBlocks ? activeBlocks / representedBlocks : 0);
-    rawScores.set(etfId, strength * persistence);
+    // 절반 안팎의 우세는 뚜렷한 지속성이 아니다. 상승일의 50%를 넘긴
+    // 부분만 인정하고 80% 이상에서 최대가 되도록 해 횡보장의 점수 부풀림을 막는다.
+    const persistentHitRate = Math.min(1, Math.max(0, (hitRate - .5) / .3));
+    const persistence = persistentHitRate * (representedBlocks ? activeBlocks / representedBlocks : 0);
+    components.set(etfId, { strength, persistence });
   }
 
-  const positiveScores = [...rawScores.values()].filter((value) => value > 0).sort((a, b) => a - b);
-  if (!positiveScores.length) return new Map([...rawScores.keys()].map((etfId) => [etfId, 0]));
-  const reference = positiveScores[Math.max(0, Math.ceil(positiveScores.length * .9) - 1)];
-  return new Map([...rawScores].map(([etfId, raw]) => [etfId, Math.round(Math.min(100, raw / reference * 100))]));
+  const strengths = [...components.values()].map((value) => value.strength).filter((value) => value > 0).sort((a, b) => a - b);
+  if (!strengths.length) return new Map([...components.keys()].map((etfId) => [etfId, 0]));
+  const strengthReference = strengths[Math.max(0, Math.ceil(strengths.length * .9) - 1)];
+  return new Map([...components].map(([etfId, component]) => {
+    const strengthScore = Math.min(100, component.strength / strengthReference * 100);
+    const persistenceScore = Math.min(100, component.persistence * 100);
+    const score = strengthScore > 0 && persistenceScore > 0
+      ? 2 * strengthScore * persistenceScore / (strengthScore + persistenceScore)
+      : 0;
+    return [etfId, Math.round(score)];
+  }));
 }
 
 export function calculateSectorRankings(
