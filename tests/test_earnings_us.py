@@ -28,7 +28,7 @@ from earnings_us.constituents import (
     extract_nport_equity_holdings,
 )
 from earnings_us.pipeline import USEarningsAutomaticPipeline, in_snapshot_window
-from earnings_us.providers import ProviderError, SecEdgarClient
+from earnings_us.providers import ProviderError, SecEdgarClient, SecFinancialFiling
 from earnings_us.transform import extract_inline_xbrl_fact, extract_new_sec_facts
 from earnings_us.six_k import (
     SixKDocument, SixKFiling, extract_q1_from_h1_six_k_fact, extract_six_k_fact,
@@ -537,6 +537,252 @@ class USEarningsTransformTests(unittest.TestCase):
 
         self.assertEqual(result["updated_company_quarters"], 1)
         self.assertEqual(repository.saved[0]["top_line"], Decimal("200000000"))
+        self.assertFalse(repository.saved[0]["is_pending"])
+
+    @staticmethod
+    def _inline_quarter_xml() -> str:
+        return """
+        <xbrl xmlns='http://www.xbrl.org/2003/instance' xmlns:gaap='http://fasb.org/us-gaap/2026'>
+          <context id='quarter'><entity><identifier scheme='cik'>1</identifier></entity>
+            <period><startDate>2026-04-01</startDate><endDate>2026-06-30</endDate></period></context>
+          <gaap:Revenues contextRef='quarter'>200</gaap:Revenues>
+          <gaap:OperatingIncomeLoss contextRef='quarter'>20</gaap:OperatingIncomeLoss>
+          <gaap:NetIncomeLoss contextRef='quarter'>16</gaap:NetIncomeLoss>
+        </xbrl>
+        """
+
+    def test_daily_edgar_reads_exact_inline_xbrl_when_companyfacts_lags(self):
+        filing = SecFinancialFiling("q2-new", date(2026, 8, 1), date(2026, 6, 30), "q2.htm")
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+                self.cursor = None
+
+            def us_state(self, _operation):
+                return {"cursor": self.cursor} if self.cursor else None
+
+            def us_active_companies(self, _year):
+                return [{"company_id": "domestic", "company_name": "Domestic", "cik": "1"}]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, _operation, _status, cursor, *_args):
+                self.cursor = cursor
+
+        class Sec:
+            request_count = 0
+
+            def financial_filings(self, *_args, **_kwargs):
+                return [filing]
+
+            def company_facts(self, _cik):
+                return {"facts": {}}
+
+            def inline_xbrl_instance(self, *_args):
+                return USEarningsTransformTests._inline_quarter_xml()
+
+            def six_k_filings(self, *_args, **_kwargs):
+                return []
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+        pipeline.recalculate_market_period = lambda *_args: None
+
+        result = pipeline.daily_edgar(today=date(2026, 8, 2), write=True)
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["unresolved_financial_filings"], 0)
+        self.assertEqual(repository.saved[0]["source_filing_id"], "q2-new")
+        self.assertFalse(repository.saved[0]["is_pending"])
+
+    def test_daily_edgar_retries_unresolved_filing_after_date_cursor_advances(self):
+        filing = SecFinancialFiling("q2-late", date(2026, 8, 1), date(2026, 6, 30), "q2.htm")
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+                self.cursor = None
+
+            def us_state(self, _operation):
+                return {"cursor": self.cursor} if self.cursor else None
+
+            def us_active_companies(self, _year):
+                return [{"company_id": "domestic", "company_name": "Domestic", "cik": "1"}]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, _operation, _status, cursor, *_args):
+                self.cursor = cursor
+
+        class Sec:
+            request_count = 0
+
+            def __init__(self):
+                self.scan_count = 0
+                self.inline_count = 0
+
+            def financial_filings(self, *_args, **_kwargs):
+                self.scan_count += 1
+                return [filing] if self.scan_count == 1 else []
+
+            def company_facts(self, _cik):
+                return {"facts": {}}
+
+            def inline_xbrl_instance(self, *_args):
+                self.inline_count += 1
+                return None if self.inline_count == 1 else USEarningsTransformTests._inline_quarter_xml()
+
+            def six_k_filings(self, *_args, **_kwargs):
+                return []
+
+        repository, sec = Repository(), Sec()
+        pipeline = USEarningsAutomaticPipeline(repository, sec, None)
+        pipeline.recalculate_market_period = lambda *_args: None
+
+        first = pipeline.daily_edgar(today=date(2026, 8, 2), write=True)
+        second = pipeline.daily_edgar(today=date(2026, 8, 3), write=True)
+
+        self.assertEqual(first["status"], "incomplete")
+        self.assertEqual(first["unresolved_financial_filings"], 1)
+        self.assertEqual(second["status"], "ready")
+        self.assertEqual(second["unresolved_financial_filings"], 0)
+        self.assertEqual(len(repository.saved), 1)
+
+    def test_daily_edgar_does_not_advance_failed_company_cursor(self):
+        class Repository:
+            def __init__(self):
+                self.cursor = {"last_checked_date": "2026-08-01"}
+
+            def us_state(self, _operation):
+                return {"cursor": self.cursor}
+
+            def us_active_companies(self, _year):
+                return [{"company_id": "failed", "company_name": "Failed", "cik": "1"}]
+
+            def save_us_state(self, _operation, _status, cursor, *_args):
+                self.cursor = cursor
+
+        class Sec:
+            request_count = 0
+
+            def financial_filings(self, *_args, **_kwargs):
+                raise ProviderError("temporary SEC failure")
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+
+        result = pipeline.daily_edgar(today=date(2026, 8, 2), write=True)
+
+        self.assertEqual(result["status"], "incomplete")
+        self.assertEqual(repository.cursor["last_checked_date"], "2026-08-02")
+        self.assertEqual(repository.cursor["company_last_checked_dates"]["failed"], "2026-08-01")
+
+    def test_daily_edgar_retries_only_financial_results_six_k(self):
+        filing = SixKFiling("six-k-late", date(2026, 8, 1), date(2026, 6, 30), "results.htm")
+        financial_without_values = "<p>Quarterly financial results for the three months ended June 30, 2026.</p>"
+        table = """
+        <table><tr><th>Three Months Ended</th></tr><tr><th>June 30, 2026</th></tr>
+        <tr><th>($ in millions)</th></tr><tr><td>Revenue</td><td>200</td></tr>
+        <tr><td>Operating income</td><td>20</td></tr><tr><td>Net income</td><td>16</td></tr></table>
+        """
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+                self.cursor = None
+
+            def us_state(self, _operation):
+                return {"cursor": self.cursor} if self.cursor else None
+
+            def us_active_companies(self, _year):
+                return [{"company_id": "foreign", "company_name": "Foreign", "cik": "1"}]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, _operation, _status, cursor, *_args):
+                self.cursor = cursor
+
+        class Sec:
+            request_count = 0
+
+            def __init__(self):
+                self.scan_count = 0
+                self.document_count = 0
+
+            def financial_filings(self, *_args, **_kwargs):
+                return []
+
+            def six_k_filings(self, *_args, **_kwargs):
+                self.scan_count += 1
+                return [filing] if self.scan_count == 1 else []
+
+            def six_k_documents(self, *_args):
+                self.document_count += 1
+                content = financial_without_values if self.document_count == 1 else table
+                return [SixKDocument("results.htm", content)]
+
+        repository, sec = Repository(), Sec()
+        pipeline = USEarningsAutomaticPipeline(repository, sec, None)
+        pipeline.recalculate_market_period = lambda *_args: None
+
+        first = pipeline.daily_edgar(today=date(2026, 8, 2), write=True)
+        second = pipeline.daily_edgar(today=date(2026, 8, 3), write=True)
+
+        self.assertEqual(first["unresolved_six_k_filings"], 1)
+        self.assertEqual(second["unresolved_six_k_filings"], 0)
+        self.assertEqual(len(repository.saved), 1)
+
+    def test_retry_incomplete_uses_exact_inline_xbrl_fallback(self):
+        current = self.pending_fact()
+        filing = SecFinancialFiling("q2", date(2026, 8, 1), date(2026, 6, 30), "q2.htm")
+
+        class Repository:
+            def __init__(self):
+                self.saved = []
+
+            def us_pending_rows(self, _year):
+                return [{"market_id": "us_sp100", "market_year": 2026, "market_quarter": 2,
+                         "company_id": current.company_id}]
+
+            def us_active_companies(self, _year):
+                return [{"company_id": current.company_id, "company_name": "Domestic", "cik": "1"}]
+
+            def company_history(self, _ids):
+                return [current.db_row()]
+
+            def upsert_company_quarters(self, rows):
+                self.saved.extend(rows)
+
+            def save_us_state(self, *_args):
+                pass
+
+        class Sec:
+            request_count = 0
+
+            def company_facts(self, _cik):
+                return {"facts": {}}
+
+            def company_ticker_rows(self):
+                return [("DOM", "Domestic", "0000000001")]
+
+            def financial_filings(self, *_args, **_kwargs):
+                return [filing]
+
+            def inline_xbrl_instance(self, *_args):
+                return USEarningsTransformTests._inline_quarter_xml()
+
+        repository = Repository()
+        pipeline = USEarningsAutomaticPipeline(repository, Sec(), None)
+        pipeline.recalculate_market_period = lambda *_args: None
+
+        result = pipeline.retry_incomplete(today=date(2026, 9, 6), write=True)
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["remaining_pending_company_quarters"], 0)
         self.assertFalse(repository.saved[0]["is_pending"])
 
     def test_archive_selection_uses_post_quarter_filing_dates(self):

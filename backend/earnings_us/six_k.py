@@ -570,6 +570,27 @@ def _narrative_value(text: str, labels: tuple[str, ...], year: int) -> tuple[Dec
     return value, currency
 
 
+def _has_results_context(text: str, *, backfill_mode: bool = False) -> bool:
+    lowered = text.lower()
+    result = any(
+        term in lowered for term in ("financial results", "quarterly results", "three months ended")
+    ) or re.search(r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700]) is not None
+    if backfill_mode:
+        result = result or "quarter ended" in lowered or "six months ended" in lowered \
+            or re.search(r"\bh1\s+20\d{2}\b", lowered) is not None
+    return result
+
+
+def has_six_k_results_context(
+    documents: Iterable[SixKDocument], *, backfill_mode: bool = False,
+) -> bool:
+    """Return whether a 6-K document set appears to contain financial results."""
+    return any(
+        _has_results_context(parse_filing_html(document.text)[0], backfill_mode=backfill_mode)
+        for document in documents
+    )
+
+
 def extract_six_k_fact(
     company_id: str,
     filing: SixKFiling,
@@ -588,13 +609,7 @@ def extract_six_k_fact(
     for document in documents:
         text, tables, _ = parse_filing_html(document.text)
         lowered = text.lower()
-        has_results_context = any(
-            term in lowered for term in ("financial results", "quarterly results", "three months ended")
-        ) or re.search(r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700])
-        if backfill_mode:
-            has_results_context = has_results_context or "quarter ended" in lowered or "six months ended" in lowered \
-                or re.search(r"\bh1\s+20\d{2}\b", lowered) is not None
-        if not has_results_context:
+        if not _has_results_context(text, backfill_mode=backfill_mode):
             continue
         table_values, table_currencies, table_end = _table_values(
             tables, target, text, backfill_mode=backfill_mode,
