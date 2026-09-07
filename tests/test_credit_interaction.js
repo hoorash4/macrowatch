@@ -30,6 +30,8 @@ test('credit chart reuses earnings frame and exposes three values without invent
   assert.match(h.chart.innerHTML,/korea-earnings-chart-frame/);
   assert.match(h.chart.innerHTML,/data-credit-left-axis/);
   assert.match(h.chart.innerHTML,/data-credit-right-axis/);
+  assert.match(h.chart.innerHTML,/clipPath id="credit-risk-plot-clip"/);
+  assert.match(h.chart.innerHTML,/clip-path="url\\(#credit-risk-plot-clip\\)"/);
   h.resize();
   h.node('.korea-earnings-chart-frame').events.pointermove({clientX:1776});
   assert.match(h.node('[data-credit-cursor-label]').innerHTML,/하이일드 스프레드: 5.00%p/);

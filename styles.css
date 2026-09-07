@@ -949,7 +949,7 @@ body:has(#app-shell:not(.hidden)) {
 /* 시장금리 기반 정책 기대는 0선을 경계로 인상·인하 방향을 색으로 분리합니다. */
 .policy-expectation-chart-layout { display:flex; width:100%; min-width:0; }
 .policy-expectation-y-axis { width:46px; height:320px; flex:none; background:#f8fafc; }
-.policy-expectation-chart-frame { min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
+.policy-expectation-chart-frame { min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; }
 .policy-expectation-chart-svg { display:block; min-width:100%; height:320px; }
 .analysis-chart-range-controls { display:flex; justify-content:flex-end; gap:.3rem; padding:.1rem .15rem .35rem; }
 .analysis-chart-range-controls button { min-width:2.5rem; padding:.28rem .5rem; border:1px solid #cbd5e1; border-radius:.45rem; background:#fff; color:#64748b; font-size:.72rem; font-weight:700; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
@@ -1002,7 +1002,32 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-chart-heading strong { color:#334155; font-size:.78rem; font-weight:800; }
 .korea-earnings-chart-layout { display:flex; width:100%; min-width:0; }
 .korea-earnings-y-axis { width:64px; flex:none; background:transparent; }
-.korea-earnings-chart-frame { position:relative; min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#94a3b8 transparent; }
+.korea-earnings-chart-frame { position:relative; min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; }
+
+/* 차트의 가로 이력 이동은 이익시그널과 동일한 얇은 손잡이·투명 트랙을 사용합니다. */
+.policy-chart-frame,
+.policy-expectation-chart-frame,
+.korea-earnings-chart-frame,
+[data-history-scroll],
+#news-sentiment-history-scroll {
+  scrollbar-width:thin;
+  scrollbar-color:#94a3b8 transparent;
+}
+.policy-chart-frame::-webkit-scrollbar,
+.policy-expectation-chart-frame::-webkit-scrollbar,
+.korea-earnings-chart-frame::-webkit-scrollbar,
+[data-history-scroll]::-webkit-scrollbar,
+#news-sentiment-history-scroll::-webkit-scrollbar { height:8px; }
+.policy-chart-frame::-webkit-scrollbar-track,
+.policy-expectation-chart-frame::-webkit-scrollbar-track,
+.korea-earnings-chart-frame::-webkit-scrollbar-track,
+[data-history-scroll]::-webkit-scrollbar-track,
+#news-sentiment-history-scroll::-webkit-scrollbar-track { background:transparent; }
+.policy-chart-frame::-webkit-scrollbar-thumb,
+.policy-expectation-chart-frame::-webkit-scrollbar-thumb,
+.korea-earnings-chart-frame::-webkit-scrollbar-thumb,
+[data-history-scroll]::-webkit-scrollbar-thumb,
+#news-sentiment-history-scroll::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:#94a3b8; background-clip:padding-box; }
 .korea-earnings-chart-svg { display:block; min-width:100%; }
 .korea-earnings-grid { stroke:#e2e8f0; stroke-width:1; }
 .korea-earnings-grid--zero { stroke:#64748b; stroke-width:1.3; }
