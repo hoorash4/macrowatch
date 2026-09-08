@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=146">
+  <link rel="stylesheet" href="assets/css/styles.css?v=147">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -141,6 +141,11 @@
       <div class="dashboard-main">
     <!-- 04-1. 플로우 분석: 뉴스 흐름과 주도섹터 카드 -->
     <div class="dashboard-panels">
+    <div class="mobile-stress-switcher" role="tablist" aria-label="스트레스 지수 시장 선택" hidden>
+      <button type="button" data-mobile-stress-view="credit" role="tab" aria-selected="true">미국</button>
+      <button type="button" data-mobile-stress-view="korea" role="tab" aria-selected="false">한국</button>
+      <button type="button" data-mobile-stress-view="em" role="tab" aria-selected="false">이머징</button>
+    </div>
     <div class="market-overview" data-dashboard-panel="overview">
     <div class="dashboard-view-card">
     <div class="market-overview-grid">
@@ -777,6 +782,24 @@
       </div>
     </div>
 
+    <nav class="mobile-bottom-nav" aria-label="모바일 대시보드 메뉴">
+      <button type="button" data-mobile-dashboard-view="overview" aria-current="page">
+        <i class="fa-solid fa-house" aria-hidden="true"></i><span>홈</span>
+      </button>
+      <button type="button" data-mobile-dashboard-view="policy">
+        <i class="fa-solid fa-landmark" aria-hidden="true"></i><span>통화정책</span>
+      </button>
+      <button type="button" data-mobile-dashboard-view="earnings">
+        <i class="fa-solid fa-chart-column" aria-hidden="true"></i><span>기업이익</span>
+      </button>
+      <button type="button" data-mobile-dashboard-view="stress">
+        <i class="fa-solid fa-wave-square" aria-hidden="true"></i><span>스트레스</span>
+      </button>
+      <button type="button" data-mobile-dashboard-view="tracker">
+        <i class="fa-solid fa-bell" aria-hidden="true"></i><span>지표추적</span>
+      </button>
+    </nav>
+
     <footer class="dashboard-copyright border-t border-white/10 px-4 py-4 text-center text-[10px] tracking-[.14em] text-slate-400">© 2026 EVOTIVE RESEARCH. All rights reserved.</footer>
 
   </div>
@@ -979,7 +1002,7 @@
 
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="assets/js/core/indicator-terms.js?v=3"></script>
-  <script src="assets/js/dashboard/script.js?v=161"></script>
+  <script src="assets/js/dashboard/script.js?v=162"></script>
   <script src="assets/js/charts/analysis-chart-utils.js?v=10"></script>
   <script src="assets/js/dashboard/dashboard-charts.js?v=46"></script>
   <script src="assets/js/charts/policy-chart.js?v=17"></script>

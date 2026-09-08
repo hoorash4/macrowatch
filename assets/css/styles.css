@@ -2003,6 +2003,172 @@ body.is-pointer-dragging {
     bottom: 0;
     height: auto;
   }
+
+  /* 모바일에서는 기존 분석 결과를 앱 형태의 상단·하단 탐색 안에서 재사용합니다. */
+  #app-shell {
+    --dashboard-content-gutter: 0;
+    --dashboard-section-gap: 0;
+    padding-top: 0;
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    background: #f4f6f8;
+  }
+  .dashboard-nav {
+    overflow: visible;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 1px 0 rgba(20,36,51,.1);
+    backdrop-filter: blur(12px);
+  }
+  .dashboard-nav::before {
+    display: none;
+  }
+  .dashboard-nav-inner {
+    width: 100%;
+    min-width: 0;
+    padding: .72rem 1rem;
+  }
+  .dashboard-wordmark {
+    gap: .55rem;
+    margin: 0;
+  }
+  .dashboard-logo {
+    width: 36px;
+    height: 36px;
+  }
+  .dashboard-wordmark-copy strong {
+    font-size: 1.25rem;
+  }
+  .dashboard-wordmark-copy small {
+    display: none;
+  }
+  .dashboard-nav-item,
+  .dashboard-nav-label {
+    display: none !important;
+  }
+  .dashboard-nav-actions {
+    display: flex;
+    gap: .1rem;
+    margin-left: auto;
+  }
+  .dashboard-nav-actions button,
+  .dashboard-nav-actions a:not([hidden]) {
+    display: grid;
+    width: 36px;
+    height: 36px;
+  }
+  .dashboard-nav-actions #profile-button {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(64,83,97,.16);
+    background: #fff;
+    color: var(--color-text-primary);
+    font-size: .85rem;
+  }
+  .dashboard-main {
+    gap: 0;
+    width: 100%;
+    margin-top: 0;
+  }
+  .dashboard-panels {
+    gap: 0;
+    padding-top: 0;
+  }
+  .dashboard-view-card,
+  .dashboard-tracker-card {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+  .market-overview {
+    gap: 0;
+  }
+  .market-overview > .dashboard-view-card,
+  .dashboard-panels > .dashboard-view-card,
+  .dashboard-panels > section.dashboard-view-card,
+  .dashboard-tracker-card {
+    border-bottom: 1px solid rgba(64,83,97,.14);
+  }
+  .market-overview > .dashboard-view-card + .dashboard-view-card {
+    margin-top: .75rem;
+    border-top: 1px solid rgba(64,83,97,.1);
+  }
+  .mobile-stress-switcher {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0,1fr));
+    gap: .35rem;
+    padding: .75rem 1rem;
+    background: #fff;
+    border-bottom: 1px solid rgba(64,83,97,.12);
+  }
+  .mobile-stress-switcher[hidden] {
+    display: none;
+  }
+  .mobile-stress-switcher button {
+    min-height: 42px;
+    padding: .55rem .35rem;
+    border: 1px solid rgba(64,83,97,.16);
+    border-radius: .65rem;
+    background: #f4f6f8;
+    color: #667788;
+    font-size: .82rem;
+    font-weight: 700;
+  }
+  .mobile-stress-switcher button.is-active {
+    border-color: var(--color-brand-gold);
+    background: var(--color-brand-gold-soft);
+    color: var(--color-brand-navy);
+  }
+  .mobile-bottom-nav {
+    position: fixed;
+    z-index: 45;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0,1fr));
+    padding: .38rem max(.3rem, env(safe-area-inset-right)) calc(.38rem + env(safe-area-inset-bottom)) max(.3rem, env(safe-area-inset-left));
+    border-top: 1px solid rgba(20,36,51,.14);
+    background: rgba(255,255,255,.97);
+    box-shadow: 0 -8px 24px rgba(20,36,51,.07);
+    backdrop-filter: blur(14px);
+  }
+  .mobile-bottom-nav button {
+    display: flex;
+    min-width: 0;
+    min-height: 52px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .28rem;
+    padding: .25rem .1rem;
+    border: 0;
+    border-radius: .65rem;
+    background: transparent;
+    color: #7c8794;
+    font-size: .62rem;
+    font-weight: 650;
+  }
+  .mobile-bottom-nav button i {
+    font-size: .95rem;
+  }
+  .mobile-bottom-nav button.is-active {
+    background: var(--color-brand-gold-soft);
+    color: var(--color-brand-navy);
+  }
+  #app-shell > .dashboard-copyright {
+    margin-top: .75rem;
+    padding: 1rem;
+    background: #f4f6f8;
+  }
+}
+@media (min-width:768px) {
+  .mobile-bottom-nav,
+  .mobile-stress-switcher {
+    display: none !important;
+  }
 }
 /* 425px 이하에서는 화면 가장자리에 맞춰 최외곽 라운드만 제거합니다. */
 @media (max-width:425px) {

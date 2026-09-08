@@ -99,6 +99,22 @@ function loadDashboardScript() {
 
 const dashboard = loadDashboardScript();
 
+test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로 재구성한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+
+  for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker']) {
+    assert.match(html, new RegExp(`data-mobile-dashboard-view="${view}"`));
+  }
+  for (const view of ['credit', 'korea', 'em']) {
+    assert.match(html, new RegExp(`data-mobile-stress-view="${view}"`));
+  }
+  assert.match(script, /stressViews\.has\(selectedView\) \? 'stress' : selectedView/);
+  assert.match(styles, /@media \(max-width:767px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
+  assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
+});
+
 test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표현을 지원한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');

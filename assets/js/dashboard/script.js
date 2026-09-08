@@ -47,9 +47,13 @@ function toggleTargetValueInput(conditionId, valueId) {
 }
 
 function initializeDashboardNavigation() {
-  const buttons = [...document.querySelectorAll('[data-dashboard-view]')];
+  const desktopButtons = [...document.querySelectorAll('[data-dashboard-view]')];
+  const mobileButtons = [...document.querySelectorAll('[data-mobile-dashboard-view]')];
+  const stressButtons = [...document.querySelectorAll('[data-mobile-stress-view]')];
   const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
-  if (!buttons.length || !panels.length) return;
+  const stressSwitcher = document.querySelector('.mobile-stress-switcher');
+  const mobileViewport = window.matchMedia('(max-width: 767px)');
+  if (!desktopButtons.length || !panels.length) return;
 
   const hashByView = {
     overview: '#news',
@@ -63,15 +67,33 @@ function initializeDashboardNavigation() {
   const viewByHash = {
     ...Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view])),
   };
+  const stressViews = new Set(['credit', 'korea', 'em']);
+  let selectedView = 'overview';
+  let lastStressView = 'credit';
 
   const selectView = (view, updateHash = false) => {
-    const selectedView = hashByView[view] ? view : 'overview';
-    buttons.forEach((button) => {
+    const requestedView = view === 'stress' ? lastStressView : view;
+    selectedView = hashByView[requestedView] ? requestedView : 'overview';
+    if (stressViews.has(selectedView)) lastStressView = selectedView;
+
+    desktopButtons.forEach((button) => {
       const active = button.dataset.dashboardView === selectedView;
       button.classList.toggle('is-active', active);
       button.toggleAttribute('aria-current', active);
     });
+    const mobileView = stressViews.has(selectedView) ? 'stress' : selectedView;
+    mobileButtons.forEach((button) => {
+      const active = button.dataset.mobileDashboardView === mobileView;
+      button.classList.toggle('is-active', active);
+      button.toggleAttribute('aria-current', active);
+    });
+    stressButtons.forEach((button) => {
+      const active = button.dataset.mobileStressView === lastStressView;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
     panels.forEach((panel) => panel.classList.toggle('dashboard-panel-hidden', panel.dataset.dashboardPanel !== selectedView));
+    if (stressSwitcher) stressSwitcher.hidden = !(mobileViewport.matches && stressViews.has(selectedView));
     // 숨겨진 상태에서 크기를 계산한 차트가 메뉴 표시 직후 위치를 보정할 수 있도록 알립니다.
     window.dispatchEvent(new CustomEvent('macrowatch:dashboard-view-changed', { detail: { view: selectedView } }));
     if (updateHash) {
@@ -80,9 +102,12 @@ function initializeDashboardNavigation() {
     }
   };
 
-  buttons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.dashboardView, true)));
+  desktopButtons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.dashboardView, true)));
+  mobileButtons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.mobileDashboardView, true)));
+  stressButtons.forEach((button) => button.addEventListener('click', () => selectView(button.dataset.mobileStressView, true)));
   window.addEventListener('hashchange', () => selectView(viewByHash[location.hash]));
-  selectView(viewByHash[location.hash] || buttons.find((button) => button.classList.contains('is-active'))?.dataset.dashboardView || buttons[0].dataset.dashboardView);
+  mobileViewport.addEventListener('change', () => selectView(selectedView));
+  selectView(viewByHash[location.hash] || desktopButtons.find((button) => button.classList.contains('is-active'))?.dataset.dashboardView || desktopButtons[0].dataset.dashboardView);
 }
 
 function initializeDashboardScrollState() {
