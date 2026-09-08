@@ -623,7 +623,7 @@ test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막
   assert.match(chart, /news-sentiment-graph--recent/);
   assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-row\s*\{[\s\S]*?flex-direction: column/);
   assert.match(styles, /#news-sentiment-chart \.news-sentiment-row-date\s*\{[\s\S]*?align-self: flex-start[\s\S]*?text-align: left/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 3\.5rem;/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 4rem;/);
 });
 
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
