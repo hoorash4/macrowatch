@@ -16,7 +16,7 @@ import requests
 
 from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
 
-from .http import (
+from earnings_common.http import (
     RETRYABLE_STATUS_CODES,
     ExecutionDeadlineExceeded,
     InvalidJsonResponse,

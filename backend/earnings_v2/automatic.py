@@ -20,7 +20,7 @@ from .models import (
 )
 from .providers import EcosFxClient, KisClient, KrxClient, OpenDartClient, ProviderError
 from .repository import EarningsV2Repository
-from .runtime import execution_deadline
+from earnings_common.runtime import execution_deadline
 from .transform import (
     calculate_financial_point,
     decimal_value,

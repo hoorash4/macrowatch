@@ -29,7 +29,7 @@ from .providers import (
 )
 from .raw_dart_financials import RawDartParseError, RawDartStatement, parse_raw_filing_archive
 from .repository import EarningsV2Repository
-from .runtime import execution_deadline
+from earnings_common.runtime import execution_deadline
 from .transform import (
     calculate_financial_point,
     decimal_value,

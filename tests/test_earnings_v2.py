@@ -14,7 +14,7 @@ from earnings_v2.models import CompanyIdentity, DelistingFiling, FinancialFact, 
 from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
 from earnings_v2.cli import QUARTER_DEADLINE_SECONDS, completed_successfully, parser
 from earnings_v2.pipeline import TARGETS, KoreaEarningsV2Pipeline, _eligible_name, filing_period, latest_completed_quarter
-from earnings_v2.http import (
+from earnings_common.http import (
     RETRYABLE_STATUS_CODES,
     RETRY_TOTAL,
     ExecutionDeadlineExceeded,

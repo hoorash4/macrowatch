@@ -123,6 +123,7 @@ def bounded_request(
     on_progress: Any | None = None,
     monotonic: Any = time.monotonic,
     sleep: Any = time.sleep,
+    failure_formatter: Any | None = None,
     **kwargs: Any,
 ) -> Any:
     """연결·읽기·선택적 응답 총시간·재시도를 하나의 정책에서 관리한다."""
@@ -202,7 +203,8 @@ def bounded_request(
                 break
             if on_retry is not None:
                 remaining_budget = round(deadline - monotonic(), 3) if deadline is not None else None
-                on_retry(attempt, safe_request_failure(provider, operation, exc), remaining_budget)
+                format_failure = failure_formatter or safe_request_failure
+                on_retry(attempt, format_failure(provider, operation, exc), remaining_budget)
             sleep(delay)
     assert last_error is not None
     raise last_error

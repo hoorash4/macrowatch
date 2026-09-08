@@ -10,7 +10,7 @@ from html import unescape
 from typing import Any, Iterable
 from urllib.parse import urlencode
 
-from earnings_v2.http import bounded_request, provider_session, safe_request_failure
+from earnings_common.http import bounded_request, provider_session, safe_request_failure
 
 from .models import MarketSecurity
 from .providers import ProviderError, SecEdgarClient, normalize_cik, ticker_candidates

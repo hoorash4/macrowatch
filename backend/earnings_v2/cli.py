@@ -7,7 +7,7 @@ import sys
 from typing import Any
 
 from .pipeline import KoreaEarningsV2Pipeline
-from .runtime import execution_deadline
+from earnings_common.runtime import execution_deadline
 
 
 QUARTER_DEADLINE_SECONDS = 600
