@@ -6,8 +6,8 @@ const vm = require('node:vm');
 
 test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래프에 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const chart = fs.readFileSync(path.join(__dirname, '..', 'equity-bond-attractiveness-chart.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/equity-bond-attractiveness-chart.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
   assert.match(html, /equity-bond-attractiveness-chart\.js\?v=6/);
@@ -28,10 +28,10 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
 });
 
 test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만든다', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   const context = { window: {}, Number, Math, Set };
   vm.createContext(context);
-  vm.runInContext(source, context, { filename: 'analysis-chart-utils.js' });
+  vm.runInContext(source, context, { filename: 'assets/js/charts/analysis-chart-utils.js' });
   const pathValue = context.window.MacroWatchAnalysisChart.monotonePath([
     { x: 0, y: 10 }, { x: 10, y: 20 }, { x: 20, y: 15 },
   ]);
@@ -45,7 +45,7 @@ test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만
   assert.match(segments[1].path, /C 13\.33/);
 });
 
-// 브라우저 전역을 최소한으로 흉내 내어 script.js의 순수 보조 함수만 검증한다.
+// 브라우저 전역을 최소한으로 흉내 내어 assets/js/dashboard/script.js의 순수 보조 함수만 검증한다.
 // 실제 DOM 렌더링은 건드리지 않으며, 리팩터링 전후 계산 결과가 같은지 확인한다.
 function loadDashboardScript() {
   const context = {
@@ -90,7 +90,7 @@ function loadDashboardScript() {
   context.globalThis = context;
   vm.createContext(context);
   // 운영 HTML과 같은 순서로 공통 기반 → 페이지 셸/추적 → 차트 모듈을 불러온다.
-  for (const filename of ['frontend-core.js', 'indicator-terms.js', 'script.js', 'dashboard-charts.js']) {
+  for (const filename of ['assets/js/core/frontend-core.js', 'assets/js/core/indicator-terms.js', 'assets/js/dashboard/script.js', 'assets/js/dashboard/dashboard-charts.js']) {
     const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8');
     vm.runInContext(source, context, { filename });
   }
@@ -101,7 +101,7 @@ const dashboard = loadDashboardScript();
 
 test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표현을 지원한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   const queries = dashboard.window.MacroWatchDashboard.utils.buildFredSearchTerms('10년물');
 
   assert.match(html, /id="indicator-search-query"[^>]*class="input-surface-light/);
@@ -111,7 +111,7 @@ test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표�
 
 test('Korea foreign flow chart has scrollable short ranges over a five-year series', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const chart = fs.readFileSync(path.join(__dirname, '..', 'korea-foreign-flow-chart.js'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/korea-foreign-flow-chart.js'), 'utf8');
   for (const range of ['0.5', '1', '2', 'max']) assert.match(html, new RegExp(`data-korea-foreign-flow-range="${range}"`));
   assert.match(chart, /korea_foreign_flow_daily/);
   assert.match(chart, /chartUtils\.loadAllRows/);
@@ -134,9 +134,9 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
 
 test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  const source = fs.readFileSync(path.join(__dirname, '..', 'korea-earnings-chart.js'), 'utf8');
-  const utilities = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/korea-earnings-chart.js'), 'utf8');
+  const utilities = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   const context = {
     console, Math, Number, String, Array, Set, Map,
     window: {
@@ -147,10 +147,10 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   };
   context.globalThis = context;
   vm.createContext(context);
-  vm.runInContext(utilities, context, { filename: 'analysis-chart-utils.js' });
+  vm.runInContext(utilities, context, { filename: 'assets/js/charts/analysis-chart-utils.js' });
   context.window.MacroWatchAnalysisChart.scrollToLatest = () => {};
   context.window.MacroWatchAnalysisChart.loadAllRows = () => {};
-  vm.runInContext(source, context, { filename: 'korea-earnings-chart.js' });
+  vm.runInContext(source, context, { filename: 'assets/js/charts/korea-earnings-chart.js' });
   const serverRows = [{
     market_year: 2015, market_quarter: 4,
     target_company_count: 100, reported_company_count: 100, pending_company_count: 0,
@@ -286,13 +286,13 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
 
 
 test('미국 신용위험 그래프는 파산보호 신청값이 없는 최신 행을 0으로 그리지 않는다', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(source, /Number\.isFinite\(toCreditStressNumber\(row\[item\.key\]\)\)/);
   assert.match(source, /null을 좌표식에 넘기면[\s\S]*?0으로 강제 변환/);
 });
 
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
-  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
   const start = script.indexOf('async function handleAddTarget(e)');
   const end = script.indexOf('// ===== 지표 수정', start);
   const handler = script.slice(start, end);
@@ -321,7 +321,7 @@ test('결정적 뉴스는 수집일 기준 한국시간 월요일부터 일요�
 
 test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나란히 배치한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /decisive-news-description[\s\S]*decisive-news-summary-row[\s\S]*decisive-news-count-card[\s\S]*decisive-news-keyword-panel/);
   assert.match(styles, /\.decisive-news-summary-row\s*\{[\s\S]*?grid-template-columns:minmax\(13\.5rem,auto\) minmax\(0,1fr\)/);
   assert.match(html, /나열된 키워드가 포함된 뉴스를 지속적으로 관찰할 필요가 있습니다/);
@@ -331,7 +331,7 @@ test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나�
   assert.match(styles, /\.decisive-news-ai-note\s*\{[\s\S]*?display:block;/);
   assert.doesNotMatch(html, /표시 예시|#금융기관 부실|#신용시장 경색|#감염병 확산/);
   assert.match(html, /아직 집계된 키워드가 없습니다/);
-  assert.match(fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8'), /class="decisive-news-keyword">#\$\{escapeHtml\(keyword\)\}<\/span>/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8'), /class="decisive-news-keyword">#\$\{escapeHtml\(keyword\)\}<\/span>/);
 });
 
 test('상관계수 계산은 완전한 양·음의 관계를 보존한다', () => {
@@ -366,10 +366,10 @@ test('HTML inline 이벤트가 사용하는 핸들러만 명시적으로 공개�
 });
 
 test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공한다', () => {
-  const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-chart.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/policy-chart.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(chart, />\$\{label\}<\/text>/);
   assert.match(chart, /data-policy-cursor-period/);
   assert.match(chart, /data-policy-cursor-action/);
@@ -391,7 +391,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.doesNotMatch(chart, /slice\(-20\)/);
   assert.match(chart, /showNotice\('FOMC 수정 목록 등록'/);
   assert.doesNotMatch(chart, /window\.location\.assign/);
-  assert.match(fs.readFileSync(path.join(__dirname, '..', 'admin-policy-review.js'), 'utf8'), /article\.remove\(\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'assets/js/admin/admin-policy-review.js'), 'utf8'), /article\.remove\(\)/);
   assert.match(styles, /--color-chart-blue:\s*#2563a8/);
   assert.match(styles, /\.policy-chart-line\s*\{[^}]*stroke:var\(--color-chart-blue\)/);
   assert.match(chart, /macrowatch:dashboard-view-changed/);
@@ -402,7 +402,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
 });
 
 test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간별 조회를 제공한다', () => {
-  const chart = fs.readFileSync(path.join(__dirname, '..', 'policy-expectation-chart.js'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/policy-expectation-chart.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(chart, /selectedYears: 2/);
   assert.match(chart, /function rowsForTimeline/);
@@ -427,14 +427,14 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="2" class="is-active"/);
   assert.match(html, /policy-expectation-chart\.js\?v=13/);
-  const utils = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
+  const utils = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(utils, /FULL_HISTORY_SCROLL_RANGES = new Set\(\[5, 10\]\)/);
   assert.match(utils, /if \(selectedYears === 'max'\) return viewportWidth/);
   assert.match(utils, /FULL_HISTORY_SCROLL_RANGES\.has\(selectedYears\)/);
 });
 
 test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX로 조회한다', () => {
-  const chart = fs.readFileSync(path.join(__dirname, '..', 'em-capacity-chart.js'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/em-capacity-chart.js'), 'utf8');
   const pipeline = fs.readFileSync(path.join(__dirname, '..', 'backend', 'em_capital_capacity_pipeline.py'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(chart, /selectedYears: 1/);
@@ -450,7 +450,7 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 15);
   assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 32);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
@@ -467,7 +467,7 @@ test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', (
 
 test('공용 대화상자는 하나의 오버레이 컴포넌트와 층위 수정자만 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
 
   assert.equal((html.match(/class="modal-overlay[^\"]* hidden"/g) || []).length, 7);
   assert.doesNotMatch(html, /class="hidden fixed inset-0[^\"]*bg-black/);
@@ -476,7 +476,7 @@ test('공용 대화상자는 하나의 오버레이 컴포넌트와 층위 수�
 });
 
 test('분석 메뉴의 최상단 공간과 카드 간격은 공통 토큰을 사용한다', () => {
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(styles, /--dashboard-panel-top-space:\s*1\.5rem/);
   assert.match(styles, /--dashboard-card-gap:\s*1\.5rem/);
   assert.match(styles, /\.dashboard-panels\s*\{[\s\S]*?gap:var\(--dashboard-card-gap\);[\s\S]*?padding-top:var\(--dashboard-panel-top-space\);/);
@@ -486,7 +486,7 @@ test('분석 메뉴의 최상단 공간과 카드 간격은 공통 토큰을 사
 });
 
 test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰을 사용한다', () => {
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(styles, /--tracker-section-separation:\s*1\.5rem/);
   assert.match(styles, /--tracker-card-accent:\s*#8aa2b4/);
   assert.match(styles, /--tracker-card-border-width:\s*2px/);
@@ -496,8 +496,8 @@ test('공통 지표 추적 영역은 메뉴 카드와 구분되는 공통 토큰
 
 test('지표 추적 목록의 항목 구분선은 목록 컨테이너가 한 번만 그린다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
 
   assert.match(html, /id="target-list" class="divide-y divide-slate-800\/80"/);
   assert.doesNotMatch(script, /data-target-container[^\n]*\bborder-(?:b|t)\b/);
@@ -506,8 +506,8 @@ test('지표 추적 목록의 항목 구분선은 목록 컨테이너가 한 번
 });
 
 test('지표 순서 변경은 들어 올린 행의 중앙으로 판정하고 삽입선을 구분선 위에 표시한다', () => {
-  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
 
   assert.match(script, /function getDragPreviewCenterY\(pointerClientY\)/);
   assert.match(script, /document\.elementFromPoint\(clientX, dragCenterY\)/);
@@ -537,12 +537,12 @@ test('뉴스 흐름 안내는 전일 집계와 예상 완료 시점을 표시한
 
 test('프론트엔드 공통 기반과 차트 모듈은 운영 순서로 분리되어 있다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
-  const coreIndex = html.indexOf('<script src="frontend-core.js');
-  const authIndex = html.indexOf('<script src="auth.js');
-  const mainIndex = html.indexOf('<script src="script.js');
-  const chartIndex = html.indexOf('<script src="dashboard-charts.js');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const coreIndex = html.indexOf('<script src="assets/js/core/frontend-core.js');
+  const authIndex = html.indexOf('<script src="assets/js/core/auth.js');
+  const mainIndex = html.indexOf('<script src="assets/js/dashboard/script.js');
+  const chartIndex = html.indexOf('<script src="assets/js/dashboard/dashboard-charts.js');
   assert.ok(coreIndex < authIndex && authIndex < mainIndex && mainIndex < chartIndex);
   assert.doesNotMatch(main, /function renderMarketStressDashboard/);
   assert.match(charts, /function renderMarketStressDashboard/);
@@ -552,8 +552,8 @@ test('프론트엔드 공통 기반과 차트 모듈은 운영 순서로 분리�
 
 test('관리자 톱니는 권한 확인 전 hidden 속성으로 감춘다', () => {
   const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const authJs = fs.readFileSync(path.join(__dirname, '..', 'auth.js'), 'utf8');
-  const stylesCss = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const authJs = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');
+  const stylesCss = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(indexHtml, /id="admin-page-link"[^>]*hidden/);
   assert.match(authJs, /link\.hidden = true/);
   assert.match(authJs, /data\?\.is_admin === true\) link\.hidden = false/);
@@ -561,8 +561,8 @@ test('관리자 톱니는 권한 확인 전 hidden 속성으로 감춘다', () =
 });
 
 test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 공통 스타일을 사용한다', () => {
-  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(charts, /items-end justify-start/);
   assert.doesNotMatch(charts, /items-end justify-between/);
   assert.match(charts, /news-sentiment-graph--expanded/);
@@ -576,7 +576,7 @@ test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 
 });
 
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
-  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(charts, /valueLabel\.textContent = Number\(nearest\.stress_index\)\.toFixed\(2\)/);
   assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EM-MSI/);
   assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EEM/);
@@ -584,9 +584,9 @@ test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다',
 
 test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/sector-flow.yml'), 'utf8');
   assert.match(workflow, /10 0 \* \* 1-5/);
   assert.match(workflow, /30 3 \* \* 1-5/);
@@ -626,8 +626,8 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
 
 test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변동 기준으로 조회한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const charts = fs.readFileSync(path.join(__dirname, '..', 'dashboard-charts.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /data-sector-week-offset="0"/);
   assert.match(html, /이번 주 섹터별 주간 수익률 순위/);
   assert.match(charts, /isLatest \? '이번 주 섹터별 주간 수익률 순위'/);

@@ -15,11 +15,12 @@ $python = if ($pythonCommand -and $pythonCommand.Source -notlike '*\WindowsApps\
 
 Push-Location $root
 try {
-  foreach ($file in @('script.js', 'dashboard-charts.js', 'frontend-core.js', 'admin.js', 'auth.js')) {
+  foreach ($file in @('assets/js/dashboard/script.js', 'assets/js/dashboard/dashboard-charts.js', 'assets/js/core/frontend-core.js', 'assets/js/admin/admin.js', 'assets/js/core/auth.js')) {
     & $node --check $file
   }
   # --test는 일부 제한 환경에서 자식 프로세스를 만들기 때문에 파일을 직접 실행한다.
   & $node tests/test_dashboard.js
+  & $node tests/test_asset_paths.js
   & $python -m unittest discover -s tests -p 'test_*.py' -v
 } finally {
   Pop-Location

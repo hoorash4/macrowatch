@@ -115,7 +115,7 @@ input:focus::placeholder {
 }
 .evotive-source-logo {
   aspect-ratio: 1 / 1;
-  background: transparent url("./images/logo.png") center / contain no-repeat;
+  background: transparent url("../../images/logo.png") center / contain no-repeat;
 }
 /* ===== 02. 로그인 화면 =====
  * 로그인 전 화면 전용 규칙입니다.
@@ -448,7 +448,7 @@ body:has(#app-shell:not(.hidden)) {
   width:44px;
   height:44px;
   flex:none;
-  background:url("./images/logo.png") center / contain no-repeat;
+  background:url("../../images/logo.png") center / contain no-repeat;
 }
 .dashboard-wordmark-copy {
   display:grid;

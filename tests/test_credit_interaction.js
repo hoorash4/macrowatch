@@ -2,8 +2,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(require('node:path').join(__dirname,'../dashboard-charts.js'),'utf8');
-const utilities = fs.readFileSync(require('node:path').join(__dirname,'../analysis-chart-utils.js'),'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname,'../assets/js/dashboard/dashboard-charts.js'),'utf8');
+const utilities = fs.readFileSync(require('node:path').join(__dirname,'../assets/js/charts/analysis-chart-utils.js'),'utf8');
 const code = source.slice(source.indexOf('function toCreditStressNumber'), source.indexOf('async function loadCreditStressComponentsDashboard'));
 function harness(rows) {
   const nodes = new Map();

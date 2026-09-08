@@ -335,14 +335,14 @@ class SourceContractTests(unittest.TestCase):
 
     def test_closed_membership_keeps_passwords_in_supabase_auth(self):
         migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
-        auth = (ROOT / "auth.js").read_text(encoding="utf-8")
+        auth = (ROOT / "assets/js/core/auth.js").read_text(encoding="utf-8")
         admin = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         self.assertIn("add column if not exists username text", migration)
         self.assertIn("signInWithPassword", auth)
         self.assertIn('action === "create_member"', admin)
         self.assertNotIn("password text", migration.lower())
         self.assertIn("requires_reauthentication", admin)
-        admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
         self.assertIn("카카오 전용", admin_ui)
         self.assertIn("data-admin-credential", admin_ui)
@@ -355,8 +355,8 @@ class SourceContractTests(unittest.TestCase):
 
     def test_collapsed_admin_lists_show_only_actionable_review_counts(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
-        policy_ui = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
+        policy_ui = (ROOT / "assets/js/admin/admin-policy-review.js").read_text(encoding="utf-8")
         self.assertIn("data-collapsible-count", admin_ui)
         self.assertIn("normalizedCount > 0 ? 'text-yellow-300' : 'text-slate-400'", admin_ui)
         self.assertIn("badge.classList.remove('hidden')", admin_ui)
@@ -462,7 +462,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_new_sector_etf_registration_resolves_metadata_and_backfills_prices(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         kis = (ROOT / "supabase/functions/_shared/kis-client.ts").read_text(encoding="utf-8")
 
@@ -507,12 +507,12 @@ class SourceContractTests(unittest.TestCase):
 
     def test_admin_cards_are_reorderable_and_saved_per_admin(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
-        order_js = (ROOT / "admin-card-order.js").read_text(encoding="utf-8")
+        admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
+        order_js = (ROOT / "assets/js/admin/admin-card-order.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
 
         self.assertEqual(admin_html.count('data-admin-card-id='), 10)
-        self.assertIn('admin-card-order.js?v=2', admin_html)
+        self.assertIn('assets/js/admin/admin-card-order.js?v=2', admin_html)
         self.assertIn("initializeAdminCardOrder", admin_js)
         self.assertIn("get_admin_card_order", admin_js)
         self.assertIn("save_admin_card_order", admin_js)
@@ -526,7 +526,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_earnings_v2_pending_rows_are_immediately_manually_resolvable(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902213000_add_earnings_v2_manual_resolution.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "backend/earnings_v2/pipeline.py").read_text(encoding="utf-8")
@@ -782,7 +782,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_equity_liquidity_uses_country_specific_weekly_versions(self):
         pipeline = (ROOT / "backend/liquidity_pipeline.py").read_text(encoding="utf-8")
-        chart = (ROOT / "liquidity-chart.js").read_text(encoding="utf-8")
+        chart = (ROOT / "assets/js/charts/liquidity-chart.js").read_text(encoding="utf-8")
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('US_VERSION = "us-equity-environment-weekly-v2"', pipeline)
         self.assertIn('KR_VERSION = "kr-equity-environment-weekly-v1"', pipeline)
@@ -793,18 +793,18 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("주별 점수", chart)
         self.assertIn("최근 4주 평균", html)
         self.assertIn("한국 주식시장 자금환경", html)
-        self.assertIn("liquidity-chart.js?v=10", html)
+        self.assertIn("assets/js/charts/liquidity-chart.js?v=10", html)
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
-        admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
-        frontend_core = (ROOT / "frontend-core.js").read_text(encoding="utf-8")
-        policy_review = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
+        admin_client = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
+        frontend_core = (ROOT / "assets/js/core/frontend-core.js").read_text(encoding="utf-8")
+        policy_review = (ROOT / "assets/js/admin/admin-policy-review.js").read_text(encoding="utf-8")
         self.assertIn("functionClient.invoke('admin-control', { ...payload, action }", admin_client)
         self.assertIn("body: JSON.stringify(payload)", frontend_core)
         self.assertNotIn("action: article.dataset.policyAction", policy_review)
 
     def test_admin_registries_use_delete_without_activation_controls(self) -> None:
-        admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_client = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         admin_function = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         self.assertIn("data-delete-sector-id", admin_client)
         self.assertIn("data-delete-extreme-id", admin_client)
@@ -816,11 +816,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('action === "delete_extreme_news_rule"', admin_function)
 
     def test_all_site_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
-        helper = (ROOT / "autocomplete-off.js").read_text(encoding="utf-8")
+        helper = (ROOT / "assets/js/core/autocomplete-off.js").read_text(encoding="utf-8")
         self.assertIn("function disableAutocomplete", helper)
         self.assertIn("new MutationObserver", helper)
         for page in ("index.html", "admin.html"):
-            self.assertIn('autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
+            self.assertIn('assets/js/core/autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
 
     def test_news_schedule_avoids_hour_boundary_and_logs_failed_response(self) -> None:
         workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")

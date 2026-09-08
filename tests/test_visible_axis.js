@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const path = require('node:path');
 const context = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../analysis-chart-utils.js'), 'utf8'), context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/charts/analysis-chart-utils.js'), 'utf8'), context);
 const domain = context.window.MacroWatchAnalysisChart.visibleAxisDomain;
 const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
 
