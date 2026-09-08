@@ -129,7 +129,7 @@ function renderHorizontalSentimentBar(item, positive, negative, directionalCount
     ? `${renderHorizontalSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderHorizontalSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
     : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
   const date = view.showDates ? `<span class="news-sentiment-row-date w-10 shrink-0 text-right text-xs font-semibold text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
-  return `<div class="news-sentiment-row group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="news-sentiment-horizontal-bar flex h-12 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
+  return `<div class="news-sentiment-row group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="news-sentiment-horizontal-bar flex h-14 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
 }
 
 function renderVerticalSentimentBar(item, positive, negative, directionalCount, view, title) {
@@ -181,9 +181,13 @@ function renderNewsSentiment(rows) {
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
   // 그래프 아래 한 줄에서 범례와 기간 전환을 양쪽에 배치해 차트 영역을 넓게 사용한다.
   chart.innerHTML = `<div${graphId} class="news-sentiment-graph ${graphClass}">${bars}</div><div class="news-sentiment-toolbar">${legend}<div class="news-sentiment-controls">${controls}</div></div>`;
-  if (newsSentimentView === 'all') {
-    const historyChart = document.getElementById('news-sentiment-history-scroll');
-    if (historyChart) historyChart.scrollLeft = historyChart.scrollWidth;
+  if (view.layout === 'vertical') {
+    const historyChart = chart.querySelector('.news-sentiment-graph');
+    if (historyChart) {
+      window.requestAnimationFrame(() => {
+        historyChart.scrollLeft = historyChart.scrollWidth - historyChart.clientWidth;
+      });
+    }
   }
   chart.querySelectorAll('[data-news-sentiment-view]').forEach((button) => {
     button.addEventListener('click', () => {
