@@ -222,9 +222,7 @@
     svg.style.width = `${width / baseWidth * 100}%`;
     svg.style.maxWidth = 'none';
     svg.style.display = 'block';
-    // The scroll width and chart height are independent. Without this, the SVG's
-    // default aspect-ratio preservation letterboxes the plot vertically on mobile,
-    // while the fixed Y axis still occupies the full height.
+    // Both the plot and its pinned axis use the same explicit transform.
     svg.setAttribute('preserveAspectRatio', 'none');
 
     // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
@@ -252,12 +250,23 @@
 
     if (axes) bindVisibleAxes(svg, frame, shell, width, axes);
 
-    // Relative width works even when a dashboard panel starts hidden.
+    // Keep horizontal detail on phones instead of squeezing several years into
+    // a tall, narrow plot. The remaining history stays inside the scroll frame.
+    let previousWidth = 0;
     const observer = new ResizeObserver(() => {
-      if (frame.clientWidth > 0) {
-        scrollToLatest(frame);
-        observer.disconnect();
-      }
+      if (!frame.clientWidth || frame.clientWidth === previousWidth) return;
+      const ratio = previousWidth ? frame.scrollLeft / Math.max(1, frame.scrollWidth - previousWidth) : 1;
+      previousWidth = frame.clientWidth;
+      const mobile = window.matchMedia('(max-width: 1023px)').matches;
+      const scale = (mobile ? Math.max(680, frame.clientWidth) : frame.clientWidth) / baseWidth;
+      const renderedHeight = viewHeight * (mobile ? Math.min(1, scale) : 1);
+      svg.style.width = `${width * scale}px`;
+      svg.style.height = `${renderedHeight}px`;
+      shell.querySelectorAll(':scope > svg').forEach(axis => {
+        axis.style.width = `${72 * scale}px`;
+        axis.style.height = `${renderedHeight}px`;
+      });
+      frame.scrollLeft = ratio * Math.max(0, frame.scrollWidth - frame.clientWidth);
     });
     observer.observe(frame);
     frame.addEventListener('scroll', () => {
@@ -315,5 +324,33 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
   return output.join('');
 }
 
-  window.MacroWatchAnalysisChart = { monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  const seriesStyles = {
+    stress: { stroke: '#00838c', width: 3.25 },
+    stressProvisional: { stroke: '#d97706', width: 3.25, dash: '4 3' },
+    benchmark: { stroke: '#6b7280', width: 2 },
+    auxiliary: { stroke: '#6d4b91', width: 2.25 },
+    tension: { stroke: '#6d4b91', width: 3 },
+    tensionSecondary: { stroke: '#8b6aa9', width: 2.5, opacity: .48 },
+    raw: { stroke: ['#b4535d', '#2563a8'], width: 1.15, opacity: .3 },
+    average: { stroke: ['#b4535d', '#2563a8'], width: 2.5 },
+    capacityProvisional: { stroke: '#6b7280', width: 2.5, dash: '5 4', opacity: .9 },
+    operatingIncome: { stroke: 'var(--color-chart-blue)', width: 2.5 },
+    netIncome: { stroke: 'var(--color-chart-gold)', width: 2.5 },
+  };
+
+  function legendItem(label, style) {
+    const colors = Array.isArray(style.stroke) ? style.stroke : [style.stroke];
+    const swatch = colors.map((stroke, index) => `<line x1="${index * 32 / colors.length}" x2="${(index + 1) * 32 / colors.length}" y1="5" y2="5" stroke="${stroke}" stroke-width="${style.width || 2.5}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity != null ? ` stroke-opacity="${style.opacity}"` : ''}/>`).join('');
+    const safeLabel = String(label).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    return `<span class="chart-legend-item"><svg class="chart-legend-swatch" width="32" height="10" viewBox="0 0 32 10" aria-hidden="true">${swatch}</svg>${safeLabel}</span>`;
+  }
+
+  function initializeLegends() {
+    document.querySelectorAll('[data-chart-legend]').forEach(item => {
+      const style = seriesStyles[item.dataset.chartLegend];
+      if (style) item.outerHTML = legendItem(item.textContent, style);
+    });
+  }
+
+  window.MacroWatchAnalysisChart = { seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

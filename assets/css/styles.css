@@ -48,6 +48,7 @@
   --color-status-provisional: #d97706;
   --color-chart-axis: #94a3b8;
   --color-chart-blue: #2563a8;
+  --color-chart-gold: #b7791f;
   /* 공통 형태 */
   --radius-card: 1.25rem;
   --radius-control: .55rem;
@@ -997,11 +998,6 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-cursor.is-visible,.policy-expectation-cursor-detail.is-visible { opacity:1; }
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
 .policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
-.policy-expectation-legend-line { display:inline-block; width:1.25rem; height:2px; }
-.policy-expectation-legend-line--hike { background:#b4535d; }
-.policy-expectation-legend-line--cut { background:#2563a8; }
-.policy-expectation-legend-line--raw { height:1px; background:#94a3b8; opacity:.55; }
-.policy-expectation-legend-line--average { background:#475569; }
 
 /* 합산 금액 본차트와 이익률·증가율 보조차트는 하나의 분석 배경 안에서 같은 시점을 공유합니다. */
 .korea-earnings-toolbar { display:flex; justify-content:flex-end; padding:.1rem .15rem .45rem; }
@@ -1064,8 +1060,8 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-line--growth { stroke-width:2.2; }
 .korea-earnings-line--qoq { stroke-width:2; stroke-dasharray:6 4; }
 .korea-earnings-line--provisional { stroke-dasharray:6 4; opacity:.82; }
-.korea-earnings-line--operating-income { stroke:#2563a8; }
-.korea-earnings-line--net-income { stroke:#b7791f; }
+.korea-earnings-line--operating-income { stroke:var(--color-chart-blue); }
+.korea-earnings-line--net-income { stroke:var(--color-chart-gold); }
 .korea-earnings-point { stroke:#fff; stroke-width:1.25; }
 .korea-earnings-point--operating-income { fill:#2563a8; }
 .korea-earnings-point--net-income { fill:#b7791f; }
@@ -1073,9 +1069,6 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-cursor-label,.korea-earnings-cursor-period { opacity:0; fill:#334155; font-size:10px; font-weight:750; paint-order:stroke; stroke:#f8fafc; stroke-width:4; pointer-events:none; }
 .korea-earnings-cursor-period { fill:#64748b; font-size:9px; }
 .korea-earnings-cursor.is-visible,.korea-earnings-cursor-label.is-visible,.korea-earnings-cursor-period.is-visible { opacity:1; }
-.korea-earnings-legend-line { display:inline-block; width:1.25rem; height:2px; }
-.korea-earnings-legend-line--operating-income { background:#2563a8; }
-.korea-earnings-legend-line--net-income { background:#b7791f; }
 @media (max-width:640px) {
   .market-earnings-heading-control { align-items:flex-start; flex-direction:column; gap:.45rem; }
   .korea-earnings-toolbar .analysis-chart-range-controls { align-self:flex-end; }
@@ -1399,14 +1392,13 @@ body:has(#app-shell:not(.hidden)) {
   color:#fff;
   text-shadow:0 1px 2px rgba(0,0,0,.32);
 }
-/* 그래프 범례의 공통 선 모양입니다. 잠정치는 주황색 점선으로 통일합니다. */
-.chart-legend-line {
-  display:inline-block;
-  width:1.25rem;
-  height:.125rem;
-}
-.chart-legend-line-provisional {
-  border-top:2px dashed var(--color-status-provisional);
+/* 범례는 실제 시리즈의 색상·두께·점선 간격으로 그립니다. */
+.chart-legend-item { display:inline-flex; align-items:center; gap:.45rem; }
+.chart-legend-swatch { display:inline-block; flex:none; width:32px; height:10px; overflow:visible; }
+.chart-note { margin:.6rem .25rem 0; color:#64748b; font-size:.75rem; line-height:1.6; }
+@media (max-width:1023px) {
+  #credit-stress-chart, #korea-stress-chart, #em-stress-chart,
+  #credit-stress-momentum-chart, #korea-fsi-chart { min-height:0; }
 }
 /*
  * Tailwind CDN 호환 계층입니다.

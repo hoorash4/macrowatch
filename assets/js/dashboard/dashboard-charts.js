@@ -5,7 +5,7 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
-const { monotoneSeriesPath, monotoneStyledSegments } = window.MacroWatchAnalysisChart;
+const { monotoneSeriesPath, monotoneStyledSegments, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
@@ -241,6 +241,8 @@ function calculateCorrelation(pairs) {
 }
 
 function renderMarketStressDashboard(rows, weeklyRows = []) {
+  const weeklyLegend = document.querySelector('[data-us-stress-legend]');
+  if (weeklyLegend) weeklyLegend.style.display = weeklyRows.length ? '' : 'none';
   if (weeklyRows.length) return renderMarketStressAndTensionChart(weeklyRows);
   const chart = document.getElementById('credit-stress-chart');
   if (!chart) return;
@@ -303,7 +305,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const correlation = calculateCorrelation(correlationPairs);
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2"><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>US-MSI</span><span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 border-t-2 border-dashed border-amber-600"></i>US-MSI 잠정치</span>${hasSp500 ? '<span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>S&P 500 월말 종가</span>' : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2">${legendItem('US-MSI', { stroke: '#b7791f', width: 2.75 })}${legendItem('US-MSI 잠정치', { stroke: '#b7791f', width: 2.75, dash: '5 5' })}${hasSp500 ? legendItem('S&P 500 월말 종가', { stroke: '#6b7280', width: 2.25 }) : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
   // US-MSI는 선택 기간 전체의 고정 축으로 해석합니다. 스크롤은 범위 탐색만 담당하며,
   // 현재 보이는 구간마다 선 좌표를 다시 축척하지 않습니다.
   window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
@@ -344,7 +346,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     weekly, (row) => x(row.week), (row) => y(Number(row.tension_index)),
     (previous, row) => {
       const provisional = Boolean(previous.is_provisional || row.is_provisional);
-      return { stroke: provisional ? '#d97706' : '#00838c', width: 3.25, dash: provisional ? '4 3' : '' };
+      return provisional ? seriesStyles.stressProvisional : seriesStyles.stress;
     },
   );
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 주간 시장 스트레스 지수와 S&P 500 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${sp500Axis}${sp500Lines}${weeklyPaths}${years}</svg>`;
@@ -627,7 +629,7 @@ function renderEmStressDashboard(rows) {
     weekly, (row) => x(row.week), (row) => y(Number(row.stress_index)),
     (previous, row) => {
       const provisional = Boolean(previous.is_provisional || row.is_provisional);
-      return { stroke: provisional ? '#d97706' : '#00838c', width: 3.25, dash: provisional ? '4 3' : '' };
+      return provisional ? seriesStyles.stressProvisional : seriesStyles.stress;
     },
   );
   chart.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="이머징 시장 스트레스 지수와 EEM 주간 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${yearGuides}${eem}${paths}${eemLabels}${years}</svg>`;
@@ -732,7 +734,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     data, (row) => x(row.month), (row) => y(Number(row.stress_index)),
     (previous, row) => {
       const provisional = Boolean(previous.is_provisional || row.is_provisional);
-      return { stroke: provisional ? '#d97706' : '#00838c', width: 3.25, dash: provisional ? '4 3' : '' };
+      return provisional ? seriesStyles.stressProvisional : seriesStyles.stress;
     },
   );
   const kospi = hasKospi ? `<path d="${monotoneSeriesPath(weeklyKospi, (row) => x(row.week), (row) => kospiY(Number(row.kospi_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>` : '';
@@ -946,7 +948,13 @@ function renderCreditStressComponents(rows) {
     const value = scale.upper - (scale.upper - scale.lower) * index / 4;
     return `<text x="${right ? 8 : 58}" y="${scale.y(value) + 3}" text-anchor="${right ? 'start' : 'end'}" fill="${color}" font-size="10">${formatter(value)}</text>`;
   }).join('');
-  const legend = series.map((item) => `<span class="inline-flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full" style="background:${item.color}"></i>${item.label}</span>`).join('');
+  const legend = series.map(item => {
+    const latestIndex = data.findIndex(row => row.is_latest);
+    const hasLatestSegment = item.key !== 'business_bankruptcy_filings_3m_average' && latestIndex > 0
+      && [data[latestIndex - 1], data[latestIndex]].every(row => Number.isFinite(toCreditStressNumber(row[item.key])));
+    return legendItem(item.label, { stroke: item.color, width: 2.5 })
+      + (hasLatestSegment ? legendItem(`${item.label} 최신값`, { stroke: item.color, width: 2.5, dash: '5 4' }) : '');
+  }).join('');
   const grids = Array.from({length:5}, (_, i) => {
     const py = padding.top + (height - padding.top - padding.bottom) * i / 4;
     return `<line x1="${padding.left}" x2="${width-padding.right}" y1="${py}" y2="${py}" class="korea-earnings-grid"/>`;
@@ -1248,6 +1256,7 @@ async function loadSectorFlowDashboard() {
 }
 
 // 기존 대시보드 공개 계산 계약과 초기 로더 등록을 유지합니다.
+window.MacroWatchAnalysisChart.initializeLegends();
 window.MacroWatchChartUtils = Object.freeze({ aggregateWeeklyDecisiveNews, calculateCorrelation, formatNewsDate });
 bindStressRangeControls('[data-us-stress-ranges]', 'data-us-stress-range', () => usStressRangeYears, (value) => { usStressRangeYears = value; }, loadMarketStressDashboard);
 bindStressRangeControls('[data-korea-stress-ranges]', 'data-korea-stress-range', () => koreaStressRangeYears, (value) => { koreaStressRangeYears = value; }, loadKoreaStressDashboard);

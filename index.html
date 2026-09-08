@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=162">
+  <link rel="stylesheet" href="assets/css/styles.css?v=163">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -294,11 +294,11 @@
         </div>
       </div>
       <div class="px-5 pb-5 pt-0">
-        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>US-MSI</span>
-          <span class="inline-flex items-center gap-2"><i class="chart-legend-line chart-legend-line-provisional"></i>US-MSI 잠정치</span>
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>S&amp;P 500 주간 종가</span>
-          <span class="ml-auto inline-flex items-center gap-2"><span>(보조지표:</span><i class="h-0.5 w-5 bg-violet-800"></i><span>선행 긴장 시그널)</span></span>
+        <div data-us-stress-legend class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
+          <span data-chart-legend="stress">US-MSI</span>
+          <span data-chart-legend="stressProvisional">US-MSI 잠정치</span>
+          <span data-chart-legend="benchmark">S&amp;P 500 주간 종가</span>
+          <span data-chart-legend="tension">선행 긴장 시그널</span><span data-chart-legend="tensionSecondary">신용·위험 합성 시그널</span>
         </div>
       </div>
     </section>
@@ -363,10 +363,10 @@
       </div>
       <div class="px-5 pb-5 pt-0">
         <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>K-MSI</span>
-          <span class="inline-flex items-center gap-2"><i class="chart-legend-line chart-legend-line-provisional"></i>K-MSI 잠정치</span>
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-gray-500"></i>코스피 주간 종가</span>
-          <span class="ml-auto inline-flex items-center gap-2"><span>(보조지표:</span><i class="h-0.5 w-5 bg-violet-800"></i><span>한국은행 FSI)</span></span>
+          <span data-chart-legend="stress">K-MSI</span>
+          <span data-chart-legend="stressProvisional">K-MSI 잠정치</span>
+          <span data-chart-legend="benchmark">코스피 주간 종가</span>
+          <span data-chart-legend="auxiliary">한국은행 FSI</span>
         </div>
       </div>
     </section>
@@ -387,7 +387,7 @@
           </div>
           <div id="korea-foreign-flow-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">외국인 자금 유출입 강도를 불러오는 중입니다.</div></div>
         </div>
-        <div class="policy-expectation-legend" aria-label="외국인 자금 유출입 강도 범례"><span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일별 합성지표</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>10영업일 누적 합성지표</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 우위</span><span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유출 우위</span></div>
+        <div class="policy-expectation-legend" aria-label="외국인 자금 유출입 강도 범례"><span data-chart-legend="raw">일별 합성지표</span><span data-chart-legend="average">10영업일 누적 합성지표</span></div><p class="chart-note">0 위 · 유입 우위 / 0 아래 · 유출 우위</p>
       </div>
     </section>
 
@@ -440,10 +440,6 @@
             </section>
           </div>
         </div>
-        <div class="policy-expectation-legend" aria-label="시총 상위기업 합산 실적 범례">
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--operating-income"></i>영업이익</span>
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--net-income"></i>순이익</span>
-        </div>
       </div>
     </section>
 
@@ -488,10 +484,6 @@
             </section>
           </div>
         </div>
-        <div class="policy-expectation-legend" aria-label="개별 기업 이익 범례">
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--operating-income"></i>영업이익</span>
-          <span><i class="korea-earnings-legend-line korea-earnings-legend-line--net-income"></i>순이익</span>
-        </div>
       </div>
     </section>
 
@@ -519,9 +511,9 @@
       </div>
       <div class="px-5 pb-5 pt-0">
         <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-teal-600"></i>EM-MSI</span>
-          <span class="inline-flex items-center gap-2"><i class="chart-legend-line chart-legend-line-provisional"></i>EM-MSI 잠정치</span>
-          <span class="inline-flex items-center gap-2"><i class="h-0.5 w-5 bg-slate-500"></i>EEM 주간 종가</span>
+          <span data-chart-legend="stress">EM-MSI</span>
+          <span data-chart-legend="stressProvisional">EM-MSI 잠정치</span>
+          <span data-chart-legend="benchmark">EEM 주간 종가</span>
         </div>
       </div>
     </section>
@@ -549,9 +541,9 @@
           <div id="em-capacity-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">이머징 자금 유입 여건을 불러오는 중입니다.</div></div>
         </div>
         <div class="policy-expectation-legend" aria-label="이머징 자금 유입 여건 범례">
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>5영업일 평균</span>
-          <span><i class="chart-legend-line chart-legend-line-provisional"></i>잠정치</span>
+          <span data-chart-legend="raw">일간값</span>
+          <span data-chart-legend="average">5영업일 평균</span>
+          <span data-chart-legend="capacityProvisional">5영업일 평균 잠정치</span>
         </div>
       </div>
     </section>
@@ -604,8 +596,8 @@
           <div id="policy-expectation-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">시장 내재 정책금리 기대를 불러오는 중입니다.</div></div>
         </div>
         <div class="policy-expectation-legend" aria-label="정책금리 기대 스프레드 범례">
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>5영업일 평균</span>
+          <span data-chart-legend="raw">일간값</span>
+          <span data-chart-legend="average">5영업일 평균</span>
         </div>
       </div>
     </section>
@@ -1016,15 +1008,15 @@
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="assets/js/core/indicator-terms.js?v=3"></script>
   <script src="assets/js/dashboard/script.js?v=164"></script>
-  <script src="assets/js/charts/analysis-chart-utils.js?v=11"></script>
-  <script src="assets/js/dashboard/dashboard-charts.js?v=52"></script>
+  <script src="assets/js/charts/analysis-chart-utils.js?v=12"></script>
+  <script src="assets/js/dashboard/dashboard-charts.js?v=53"></script>
   <script src="assets/js/charts/policy-chart.js?v=17"></script>
   <script src="assets/js/charts/policy-expectation-chart.js?v=14"></script>
   <script src="assets/js/charts/em-capacity-chart.js?v=6"></script>
   <script src="assets/js/charts/korea-foreign-flow-chart.js?v=12"></script>
-  <script src="assets/js/charts/liquidity-chart.js?v=10"></script>
-  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=6"></script>
-  <script src="assets/js/charts/korea-earnings-chart.js?v=26"></script>
+  <script src="assets/js/charts/liquidity-chart.js?v=11"></script>
+  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=7"></script>
+  <script src="assets/js/charts/korea-earnings-chart.js?v=27"></script>
   <script src="assets/js/policy/policy-briefing.js?v=5"></script>
 </body>
 </html>

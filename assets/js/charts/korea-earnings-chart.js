@@ -224,6 +224,14 @@
     const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
     const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
     container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" style="height:${spec.height}px" viewBox="0 0 ${AXIS_WIDTH} ${spec.height}" aria-hidden="true">${axis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
+    const { legendItem, seriesStyles } = window.MacroWatchAnalysisChart;
+    const legend = metricSeries.map(metric => {
+      const base = seriesStyles[metric.key === 'operating_income' ? 'operatingIncome' : 'netIncome'];
+      const style = { ...base, width: spec.kind === 'amount' ? 2.5 : spec.kind === 'qoq' ? 2 : 2.2, dash: spec.kind === 'qoq' ? '6 4' : '' };
+      return legendItem(metric.label, style) + (metric.segments.some(segment => segment.key === 'provisional')
+        ? legendItem(`${metric.label} 잠정치`, { ...style, dash: '6 4', opacity: .82 }) : '');
+    }).join('');
+    container.insertAdjacentHTML('beforeend', `<div class="policy-expectation-legend" aria-label="${spec.key} 범례">${legend}</div>`);
     const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
