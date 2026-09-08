@@ -1,4 +1,4 @@
-"""Collect and store the weekly stock/bond relative-attractiveness flow."""
+"""Collect and store the weekly stock-attractiveness flow."""
 
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ def stored_rows(country: str, rows: list[dict], calculated_at: str) -> list[dict
         "sovereign_yield_pct": round(row["sovereign_yield_pct"], 6),
         "yield_gap_pct": round(row["yield_gap_pct"], 6),
         "earnings_momentum_pct": round(row["earnings_momentum_pct"], 6),
-        "relative_return_13w_pct": round(row["relative_return_13w_pct"], 6),
+        "equity_return_13w_pct": round(row["equity_return_13w_pct"], 6),
         "component_scores": row["components"],
         "method_version": METHOD_VERSION,
         "calculated_at": calculated_at,
@@ -109,16 +109,16 @@ def main() -> None:
     today = date.today()
     database = SupabaseRest()
     quarters = load_quarters(database)
-    yahoo = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, START, today)) for symbol in ("^KS11", "148070.KS", "OEF", "IEF")}
+    yahoo = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, START, today)) for symbol in ("^KS11", "OEF")}
     fred = weekly_last(valid_fred_values(fetch_fred_observations("DGS10", require_env("FRED_API_KEY"), start=START.isoformat(), end=today.isoformat())))
     ecos = weekly_last(fetch_ecos_10y(require_env("ECOS_API_KEY"), START, today))
     rows = []
-    for country, equity_symbol, bond_symbol, yields, anchor in (
-        ("KR", "^KS11", "148070.KS", ecos, None),
-        ("US", "OEF", "IEF", fred, 100.0 / fetch_oef_pe()),
+    for country, equity_symbol, yields, anchor in (
+        ("KR", "^KS11", ecos, None),
+        ("US", "OEF", fred, 100.0 / fetch_oef_pe()),
     ):
-        weeks = sorted(set(yahoo[equity_symbol]) & set(yahoo[bond_symbol]))
-        result = build_weekly_rows(country, weeks, yahoo[equity_symbol], yahoo[bond_symbol], align_to_weeks(yields, weeks), quarters[country], us_anchor_earnings_yield=anchor)
+        weeks = sorted(yahoo[equity_symbol])
+        result = build_weekly_rows(country, weeks, yahoo[equity_symbol], align_to_weeks(yields, weeks), quarters[country], us_anchor_earnings_yield=anchor)
         rows.extend(stored_rows(country, result, datetime.now(timezone.utc).isoformat()))
     if not rows:
         raise RuntimeError("No attractiveness rows were calculated")

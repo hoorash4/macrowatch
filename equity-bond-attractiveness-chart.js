@@ -30,18 +30,18 @@
     const first = Date.parse(dates[0]), last = Date.parse(dates.at(-1));
     const viewport = Math.max(680, (host.clientWidth || BASE_WIDTH) - AXIS);
     const width = utils.timelineWidth(viewport, first, last, state.years);
-    const domain = { min: -100, max: 100 };
+    const domain = { min: 0, max: 100 };
     const byCountry = Object.fromEntries(['KR', 'US'].map(country => [country, plotted.filter(row => row.country === country).map(row => ({
       ...row,
       x: scale(Date.parse(row.observation_date), first, last, LEFT, width - RIGHT),
       y: scale(Number(row.score), domain.min, domain.max, HEIGHT - BOTTOM, TOP),
     }))]));
-    const ticks = [-100, -50, 0, 50, 100];
+    const ticks = [0, 25, 50, 75, 100];
     const axis = ticks.map(value => `<text x="${AXIS - 8}" y="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP) + 3}" text-anchor="end" fill="#64748b" font-size="11">${value}</text>`).join('');
-    const grid = ticks.map(value => `<line x1="${LEFT}" x2="${width - RIGHT}" y1="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" y2="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" stroke="${value === 0 ? '#94a3b8' : '#e2e8f0'}" ${value === 0 ? 'stroke-dasharray="5 4"' : ''}/>`).join('');
+    const grid = ticks.map(value => `<line x1="${LEFT}" x2="${width - RIGHT}" y1="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" y2="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" stroke="${value === 50 ? '#94a3b8' : '#e2e8f0'}" ${value === 50 ? 'stroke-dasharray="5 4"' : ''}/>`).join('');
     const paths = ['KR', 'US'].map(country => `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="2.5"/>`).join('');
     const guides = timelineGuides(dates, first, last, width);
-    host.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${AXIS} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame" data-equity-bond-frame><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식 채권 상대매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="equity-bond-legend"><span style="color:${COLORS.KR}">${LABELS.KR}</span><span style="color:${COLORS.US}">${LABELS.US}</span><span>국가별 독립 점수 · 0 위 주식 우위 · 0 아래 국채 우위</span></div>`;
+    host.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${AXIS} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame" data-equity-bond-frame><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="equity-bond-legend"><span style="color:${COLORS.KR}">${LABELS.KR}</span><span style="color:${COLORS.US}">${LABELS.US}</span><span>국가별 독립 점수 · 높을수록 주식투자 환경 우호적</span></div>`;
     const frame = host.querySelector('[data-equity-bond-frame]');
     const svg = frame.querySelector('svg');
     const cursor = host.querySelector('[data-cursor]'), value = host.querySelector('[data-value]'), dateLabel = host.querySelector('[data-date]');
@@ -61,7 +61,7 @@
 
   async function load({ supabaseClient }) {
     if (!supabaseClient) return;
-    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient.from('equity_bond_attractiveness_weekly').select('country,observation_date,score').eq('method_version', 'equity-bond-attractiveness-v1').order('observation_date').order('country').range(from, to));
+    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient.from('equity_bond_attractiveness_weekly').select('country,observation_date,score').eq('method_version', 'stock-attractiveness-v2').order('observation_date').order('country').range(from, to));
     if (error) { host.textContent = '상대매력 자료를 불러오지 못했습니다.'; return; }
     state.rows = (data || []).filter(row => Number.isFinite(Number(row.score)));
     render();

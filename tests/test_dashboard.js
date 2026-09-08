@@ -4,15 +4,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
-test('주식 채권 상대매력 카드는 국가별 독립 점수를 한 그래프에 표시한다', () => {
+test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래프에 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const chart = fs.readFileSync(path.join(__dirname, '..', 'equity-bond-attractiveness-chart.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식\/채권 상대매력 흐름/);
+  assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=4/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=5/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
-  assert.match(chart, /국가별 독립 점수/);
+  assert.match(chart, /높을수록 주식투자 환경 우호적/);
+  assert.match(chart, /const domain = \{ min: 0, max: 100 \}/);
+  assert.match(chart, /const ticks = \[0, 25, 50, 75, 100\]/);
+  assert.match(chart, /stock-attractiveness-v2/);
   assert.match(chart, /한국\(KOSPI 100\)/);
   assert.match(chart, /미국\(S&P 100\)/);
   assert.match(chart, /registerLoader/);

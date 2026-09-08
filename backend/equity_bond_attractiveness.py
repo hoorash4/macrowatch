@@ -1,4 +1,4 @@
-"""Pure calculation for the Korea/US equity-versus-bond attractiveness flow."""
+"""Pure calculation for the Korea/US stock-attractiveness flow."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from math import isfinite
 LOOKBACK_WEEKS = 260
 RETURN_WEEKS = 13
 SMOOTH_WEEKS = 4
-METHOD_VERSION = "equity-bond-attractiveness-v1"
+METHOD_VERSION = "stock-attractiveness-v2"
 
 
 @dataclass(frozen=True)
@@ -21,14 +21,14 @@ class QuarterlyInput:
     market_cap: float | None
 
 
-def midrank_score(value: float, history: list[float]) -> float:
+def percentile_score(value: float, history: list[float]) -> float:
     values = sorted(item for item in history if isfinite(item))
     if not values:
         raise ValueError("percentile history is empty")
     lower = bisect_right(values, value) - values.count(value)
     equal = values.count(value)
     percentile = (lower + equal / 2) / len(values)
-    return percentile * 200.0 - 100.0
+    return percentile * 100.0
 
 
 def trailing_four_quarter_income(rows: list[QuarterlyInput]) -> list[tuple[date, float, float | None]]:
@@ -49,7 +49,6 @@ def build_weekly_rows(
     country: str,
     weeks: list[date],
     equity_prices: dict[date, float],
-    bond_prices: dict[date, float],
     sovereign_yields: dict[date, float],
     quarters: list[QuarterlyInput],
     *,
@@ -68,7 +67,7 @@ def build_weekly_rows(
     raw: list[dict] = []
     for index, week in enumerate(weeks):
         eligible = [item for item in available if item[0] <= week]
-        if not eligible or week not in equity_prices or week not in bond_prices or week not in sovereign_yields:
+        if not eligible or week not in equity_prices or week not in sovereign_yields:
             continue
         _, income, market_cap = eligible[-1]
         if country == "KR":
@@ -81,20 +80,20 @@ def build_weekly_rows(
             earnings_yield = us_anchor_earnings_yield * (income / anchor_income) / (equity_prices[week] / anchor_price)
         prior_week = weeks[index - RETURN_WEEKS] if index >= RETURN_WEEKS else None
         prior_year = weeks[index - 52] if index >= 52 else None
-        if prior_week not in equity_prices or prior_week not in bond_prices or prior_year is None:
+        if prior_week not in equity_prices or prior_year is None:
             continue
         prior_available = [item for item in available if item[0] <= prior_year]
         if not prior_available:
             continue
         prior_income = prior_available[-1][1]
-        relative_return = ((equity_prices[week] / equity_prices[prior_week]) - (bond_prices[week] / bond_prices[prior_week])) * 100.0
+        equity_return = (equity_prices[week] / equity_prices[prior_week] - 1.0) * 100.0
         raw.append({
             "observation_date": week,
             "earnings_yield_pct": earnings_yield,
             "sovereign_yield_pct": sovereign_yields[week],
             "yield_gap_pct": earnings_yield - sovereign_yields[week],
             "earnings_momentum_pct": symmetric_change(income, prior_income),
-            "relative_return_13w_pct": relative_return,
+            "equity_return_13w_pct": equity_return,
         })
     scored: list[dict] = []
     for index, item in enumerate(raw):
@@ -102,12 +101,12 @@ def build_weekly_rows(
         if len(history) < 52:
             continue
         components = {
-            "yield_gap": midrank_score(item["yield_gap_pct"], [row["yield_gap_pct"] for row in history]),
-            "earnings_momentum": midrank_score(item["earnings_momentum_pct"], [row["earnings_momentum_pct"] for row in history]),
-            "relative_return": midrank_score(item["relative_return_13w_pct"], [row["relative_return_13w_pct"] for row in history]),
+            "valuation": percentile_score(item["yield_gap_pct"], [row["yield_gap_pct"] for row in history]),
+            "earnings_environment": percentile_score(item["earnings_momentum_pct"], [row["earnings_momentum_pct"] for row in history]),
+            "market_confirmation": percentile_score(item["equity_return_13w_pct"], [row["equity_return_13w_pct"] for row in history]),
         }
         item = dict(item)
-        item["raw_score"] = components["yield_gap"] * .5 + components["earnings_momentum"] * .25 + components["relative_return"] * .25
+        item["raw_score"] = components["valuation"] * .45 + components["earnings_environment"] * .35 + components["market_confirmation"] * .20
         item["components"] = components
         scored.append(item)
     for index, item in enumerate(scored):
