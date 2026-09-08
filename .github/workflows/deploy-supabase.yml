@@ -90,6 +90,8 @@ jobs:
             --file supabase/migrations/20260907214752_add_sector_leadership_score.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260908083000_allow_korea_equity_environment.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260908123000_add_equity_bond_attractiveness.sql
 
       - name: Deploy Edge Functions
         run: |

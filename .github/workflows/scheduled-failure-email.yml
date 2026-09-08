@@ -20,6 +20,7 @@ on:
       - "Refresh EM capital capacity"
       - "Refresh Emerging Market Stress"
       - "Refresh equity-bond relative value"
+      - "Refresh equity-bond attractiveness flow"
       - "Refresh Korea foreign flow"
       - "Refresh Korean market stress"
       - "Refresh KOSPI market context"

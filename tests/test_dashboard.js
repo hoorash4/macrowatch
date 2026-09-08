@@ -4,6 +4,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
+test('주식 채권 상대매력 카드는 국가별 독립 점수를 한 그래프에 표시한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'equity-bond-attractiveness-chart.js'), 'utf8');
+  assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식\/채권 상대매력 흐름/);
+  assert.match(html, /data-equity-bond-ranges/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=1/);
+  assert.match(chart, /국가별 독립 점수/);
+  assert.match(chart, /한국\(KOSPI 100\)/);
+  assert.match(chart, /미국\(S&P 100\)/);
+  assert.match(chart, /registerLoader/);
+});
+
 test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만든다', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'analysis-chart-utils.js'), 'utf8');
   const context = { window: {}, Number, Math, Set };
@@ -428,14 +440,14 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 14);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 30);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 15);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 32);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 14);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 14);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 15);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 15);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);

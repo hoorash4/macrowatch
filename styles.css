@@ -2010,3 +2010,6 @@ body.is-pointer-dragging {
     border-radius: 0;
   }
 }
+
+.equity-bond-legend { display:flex; flex-wrap:wrap; gap:.35rem 1rem; margin-top:.55rem; color:#64748b; font-size:.72rem; }
+.equity-bond-legend span:nth-child(-n+2) { font-weight:700; }
