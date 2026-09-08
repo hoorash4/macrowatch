@@ -11,17 +11,15 @@
   const scale = (value, min, max, from, to) => max === min ? (from + to) / 2 : from + (value - min) / (max - min) * (to - from);
 
   function timelineGuides(dates, first, last, width) {
-    const shortRange = state.years === 1 || state.years === 2;
     let previousKey = '';
     return dates.map(value => {
       const observed = new Date(`${value}T00:00:00Z`);
-      const year = observed.getUTCFullYear(), month = observed.getUTCMonth() + 1;
-      const key = shortRange ? `${year}-${Math.floor((month - 1) / 3)}` : String(year);
-      if (key === previousKey || (shortRange && ![1, 4, 7, 10].includes(month))) return '';
+      const year = observed.getUTCFullYear();
+      const key = String(year);
+      if (key === previousKey) return '';
       previousKey = key;
       const x = scale(Date.parse(value), first, last, LEFT, width - RIGHT);
-      const label = shortRange ? `${String(year).slice(-2)}.${String(month).padStart(2, '0')}` : String(year);
-      return `<line x1="${x}" x2="${x}" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${label}</text>`;
+      return `<line x1="${x}" x2="${x}" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${year}</text>`;
     }).join('');
   }
 
