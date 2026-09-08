@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createKisRequestRunner, fetchKisDailyPrices, fetchKisDomesticIndexPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
-import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type MarketPrice, type SectorPrice, type SectorRanking } from "../_shared/sector-flow.ts";
+import { createKisRequestRunner, fetchKisDailyPrices, fetchKisDomesticIndexPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
+import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type MarketPrice, type SectorPrice, type SectorRanking } from "../_shared/market/sector-flow.ts";
 
 const DATABASE_PAGE_SIZE = 1000;
 const PRICE_RETENTION_WEEKS = 10;

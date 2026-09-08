@@ -15,13 +15,17 @@ $python = if ($pythonCommand -and $pythonCommand.Source -notlike '*\WindowsApps\
 
 Push-Location $root
 try {
-  foreach ($file in @('assets/js/dashboard/script.js', 'assets/js/dashboard/dashboard-charts.js', 'assets/js/core/frontend-core.js', 'assets/js/admin/admin.js', 'assets/js/core/auth.js')) {
-    & $node --check $file
+  foreach ($file in Get-ChildItem assets/js -Recurse -Filter *.js) {
+    & $node --check $file.FullName
+    if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax check failed: $($file.FullName)" }
   }
   # --test는 일부 제한 환경에서 자식 프로세스를 만들기 때문에 파일을 직접 실행한다.
-  & $node tests/test_dashboard.js
-  & $node tests/test_asset_paths.js
+  foreach ($file in Get-ChildItem tests -File | Where-Object { $_.Name -match '^test_.*\.(js|ts)$' }) {
+    & $node $file.FullName
+    if ($LASTEXITCODE -ne 0) { throw "Node test failed: $($file.FullName)" }
+  }
   & $python -m unittest discover -s tests -p 'test_*.py' -v
+  if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
 } finally {
   Pop-Location
 }

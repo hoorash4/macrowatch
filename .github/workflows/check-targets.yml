@@ -42,5 +42,5 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
           EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}
-        run: python backend/check_targets.py
+        run: PYTHONPATH=backend python -m tracking.check_targets
 

@@ -90,7 +90,7 @@ function loadDashboardScript() {
   context.globalThis = context;
   vm.createContext(context);
   // 운영 HTML과 같은 순서로 공통 기반 → 페이지 셸/추적 → 차트 모듈을 불러온다.
-  for (const filename of ['assets/js/core/frontend-core.js', 'assets/js/core/indicator-terms.js', 'assets/js/dashboard/script.js', 'assets/js/dashboard/dashboard-charts.js']) {
+  for (const filename of ['assets/js/core/frontend-core.js', 'assets/js/core/indicator-terms.js', 'assets/js/dashboard/script.js', 'assets/js/charts/analysis-chart-utils.js', 'assets/js/dashboard/dashboard-charts.js']) {
     const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8');
     vm.runInContext(source, context, { filename });
   }
@@ -435,7 +435,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
 
 test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX로 조회한다', () => {
   const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/em-capacity-chart.js'), 'utf8');
-  const pipeline = fs.readFileSync(path.join(__dirname, '..', 'backend', 'em_capital_capacity_pipeline.py'), 'utf8');
+  const pipeline = fs.readFileSync(path.join(__dirname, '..', 'backend', 'signals', 'em_capital_capacity_pipeline.py'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(chart, /selectedYears: 1/);
   for (const range of ['0.5', '1', '2', 'max']) assert.match(html, new RegExp(`data-em-capacity-range="${range}"`));

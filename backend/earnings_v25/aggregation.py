@@ -4,7 +4,7 @@ from collections.abc import Iterable, Mapping
 from datetime import date
 from decimal import Decimal
 
-from .models import CompanyIdentity, FinancialFact, MarketFact
+from earnings_common.models import CompanyIdentity, FinancialFact, MarketFact
 from .transform import calculate_financial_point, calculate_financial_series
 
 

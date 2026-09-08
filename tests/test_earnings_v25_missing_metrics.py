@@ -11,7 +11,7 @@ from earnings_v25.raw_dart_financials import _parse_document, _metric_for_label,
 from earnings_v25.legacy_dart_financials import _amount
 from earnings_v25.providers import FinancialCompanyClient, FinancialCompanySnapshot
 from earnings_v25.pipeline import KoreaEarningsV2Pipeline
-from earnings_v25.models import FinancialFact
+from earnings_common.models import FinancialFact
 from datetime import date
 
 

@@ -6,7 +6,7 @@ import argparse
 from datetime import date, timedelta
 
 from common import SupabaseRest, carry_forward, require_env, uncapped_score
-from financial_stress_sources import (
+from sources.financial_stress import (
     TIMEOUT_SECONDS,
     collect_business_filings,
     fetch_cmdi_monthly,

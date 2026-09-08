@@ -9,7 +9,7 @@ from io import BytesIO
 from zipfile import ZipFile
 
 from earnings_v25.diagnose_structured import parser, relevant_accounts
-from earnings_v25.models import FinancialFact
+from earnings_common.models import FinancialFact
 from earnings_v25.pipeline import KoreaEarningsV2Pipeline, _LazyKrwRates
 from earnings_v25.policy import SUPPORTED_YEARS
 from earnings_v25.providers import EcosFxClient, ProviderError

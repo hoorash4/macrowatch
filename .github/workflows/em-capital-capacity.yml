@@ -33,4 +33,4 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python backend/em_capital_capacity_pipeline.py --years 3
+        run: PYTHONPATH=backend python -m signals.em_capital_capacity_pipeline --years 3

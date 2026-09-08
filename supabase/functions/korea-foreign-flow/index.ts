@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisKospiForeignNetBuy, fetchKisKospiMarketDays, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
-import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/korea-foreign-flow.ts";
+import { fetchKisKospiForeignNetBuy, fetchKisKospiMarketDays, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
+import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/market/korea-foreign-flow.ts";
 
 const WAIT_MS = 350, RETENTION_YEARS = 5, CALCULATION_YEARS = 8;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

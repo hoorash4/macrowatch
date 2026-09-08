@@ -5,7 +5,7 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
-from earnings_v2.models import CompanyIdentity, FinancialFact
+from earnings_common.models import CompanyIdentity, FinancialFact
 from earnings_v25.pipeline import KoreaEarningsV2Pipeline
 from earnings_v25.providers import FinancialCompanyClient, FinancialCompanySnapshot
 

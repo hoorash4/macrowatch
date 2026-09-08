@@ -1,0 +1,4 @@
+---
+layout: null
+---
+{% capture stylesheet %}{% include_relative assets/css/styles.css %}{% endcapture %}{{ stylesheet | replace: '../../images/', './images/' }}

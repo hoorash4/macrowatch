@@ -264,6 +264,48 @@
     });
   }
 
-  window.MacroWatchAnalysisChart = { niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+function monotoneSeriesPath(rows, xFor, yFor) {
+  const paths = [];
+  let segment = [];
+  const flush = () => {
+    if (segment.length) paths.push(monotonePath(segment));
+    segment = [];
+  };
+  rows.forEach((row, index) => {
+    const x = Number(xFor(row, index)), y = Number(yFor(row, index));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { flush(); return; }
+    segment.push({ x, y });
+  });
+  flush();
+  return paths.join(' ');
+}
+
+function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
+  const output = [];
+  let points = [], style = null;
+  const flush = () => {
+    if (points.length < 2 || !style) { points = []; return; }
+    output.push(`<path d="${monotonePath(points)}" fill="none" stroke="${style.stroke}" stroke-width="${style.width || 3.25}" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity ? ` stroke-opacity="${style.opacity}"` : ''}/>`);
+    points = [];
+  };
+  rows.slice(1).forEach((row, index) => {
+    const previous = rows[index];
+    const nextStyle = styleForPair(previous, row);
+    const before = { x: Number(xFor(previous, index)), y: Number(yFor(previous, index)) };
+    const current = { x: Number(xFor(row, index + 1)), y: Number(yFor(row, index + 1)) };
+    if (![before.x, before.y, current.x, current.y].every(Number.isFinite)) { flush(); style = null; return; }
+    if (!style || JSON.stringify(style) !== JSON.stringify(nextStyle)) {
+      flush();
+      style = nextStyle;
+      points = [before, current];
+    } else {
+      points.push(current);
+    }
+  });
+  flush();
+  return output.join('');
+}
+
+  window.MacroWatchAnalysisChart = { monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
 

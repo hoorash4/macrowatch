@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from common import SupabaseRest, fetch_fred_observations, require_env
-from equity_bond_model import MODEL_VERSION, MonthlyInputs, build_feature_rows, walk_forward_forecasts
+from signals.equity_bond_model import MODEL_VERSION, MonthlyInputs, build_feature_rows, walk_forward_forecasts
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
 

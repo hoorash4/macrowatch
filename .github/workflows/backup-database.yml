@@ -45,7 +45,7 @@ jobs:
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
-          BACKUP_ENCRYPTION_PASSWORD="$(python backend/backup_crypto.py)"
+          BACKUP_ENCRYPTION_PASSWORD="$(PYTHONPATH=backend python -m operations.backup_crypto)"
           gpg --batch --yes --pinentry-mode loopback \
             --passphrase "$BACKUP_ENCRYPTION_PASSWORD" \
             --symmetric --cipher-algo AES256 \
@@ -57,5 +57,5 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_DRIVE_LATEST_FILE_ID: ${{ secrets.GOOGLE_DRIVE_LATEST_FILE_ID }}
           GOOGLE_DRIVE_PREVIOUS_FILE_ID: ${{ secrets.GOOGLE_DRIVE_PREVIOUS_FILE_ID }}
-        run: python backend/upload_drive_backup.py macrowatch-backup.tar.gz.gpg
+        run: PYTHONPATH=backend python -m operations.upload_drive_backup macrowatch-backup.tar.gz.gpg
 

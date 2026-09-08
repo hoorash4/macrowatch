@@ -1,8 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { analyzeCandidates } from "../_shared/openai-adapter.ts";
-import { loadMarketContext } from "../_shared/market-context.ts";
-import type { ArticleSentiment, Candidate, ExtremeNewsRule, SourceName } from "../_shared/news-types.ts";
+import { analyzeCandidates } from "../_shared/news/openai-adapter.ts";
+import { loadMarketContext } from "../_shared/market/market-context.ts";
+import type { ArticleSentiment, Candidate, ExtremeNewsRule, SourceName } from "../_shared/news/news-types.ts";
 
 const DEFAULT_LOOKBACK_HOURS = 24;
 const MAX_LOOKBACK_HOURS = 15 * 24;

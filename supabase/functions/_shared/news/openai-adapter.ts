@@ -1,6 +1,6 @@
 import type { ArticleSentiment, Candidate, ExtremeNewsRule } from "./news-types.ts";
-import { AI_POLICY } from "./ai-policy.ts";
-import type { MarketContext } from "./market-indicators.ts";
+import { AI_POLICY } from "../policy/ai-policy.ts";
+import type { MarketContext } from "../market/market-indicators.ts";
 
 const SENTIMENTS = ["positive", "neutral", "negative", "uncertain"] as const;
 

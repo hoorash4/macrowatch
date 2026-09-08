@@ -6,7 +6,6 @@ from decimal import Decimal
 from typing import Any
 
 
-
 @dataclass(frozen=True)
 class Security:
     stock_code: str
@@ -164,3 +163,4 @@ class MarketFact:
         row["lifecycle_status"] = row.pop("completion_status")
         row["calculation_version"] = calculation_version
         return row
+

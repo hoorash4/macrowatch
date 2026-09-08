@@ -5,50 +5,11 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
+const { monotoneSeriesPath, monotoneStyledSegments } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
-function monotoneSeriesPath(rows, xFor, yFor) {
-  const paths = [];
-  let segment = [];
-  const flush = () => {
-    if (segment.length) paths.push(window.MacroWatchAnalysisChart.monotonePath(segment));
-    segment = [];
-  };
-  rows.forEach((row, index) => {
-    const x = Number(xFor(row, index)), y = Number(yFor(row, index));
-    if (!Number.isFinite(x) || !Number.isFinite(y)) { flush(); return; }
-    segment.push({ x, y });
-  });
-  flush();
-  return paths.join(' ');
-}
 
-function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
-  const output = [];
-  let points = [], style = null;
-  const flush = () => {
-    if (points.length < 2 || !style) { points = []; return; }
-    output.push(`<path d="${window.MacroWatchAnalysisChart.monotonePath(points)}" fill="none" stroke="${style.stroke}" stroke-width="${style.width || 3.25}" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity ? ` stroke-opacity="${style.opacity}"` : ''}/>`);
-    points = [];
-  };
-  rows.slice(1).forEach((row, index) => {
-    const previous = rows[index];
-    const nextStyle = styleForPair(previous, row);
-    const before = { x: Number(xFor(previous, index)), y: Number(yFor(previous, index)) };
-    const current = { x: Number(xFor(row, index + 1)), y: Number(yFor(row, index + 1)) };
-    if (![before.x, before.y, current.x, current.y].every(Number.isFinite)) { flush(); style = null; return; }
-    if (!style || JSON.stringify(style) !== JSON.stringify(nextStyle)) {
-      flush();
-      style = nextStyle;
-      points = [before, current];
-    } else {
-      points.push(current);
-    }
-  });
-  flush();
-  return output.join('');
-}
 
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 const CREDIT_STRESS_HISTORY_MONTHS = 36;
@@ -59,10 +20,6 @@ let usStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
 let koreaStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
 let emStressRangeYears = STRESS_RANGE_DEFAULT_YEARS;
 
-function filterStressHistory(rows) {
-  // Range is a viewport scale; retain every stored period for scrolling.
-  return rows;
-}
 
 function bindStressRangeControls(selector, attribute, getRange, setRange, reload) {
   document.querySelectorAll(`${selector} [${attribute}]`).forEach((button) => {
@@ -605,7 +562,7 @@ async function loadMarketTension(monthlyRows = []) {
     .order('week', { ascending: false })
     .limit(STRESS_HISTORY_QUERY_LIMIT);
   if (weeklyResponse.error) return;
-  const selectedWeeklyRows = filterStressHistory(weeklyResponse.data || [], 'week', usStressRangeYears);
+  const selectedWeeklyRows = weeklyResponse.data || [];
   renderMarketStressDashboard(monthlyRows, selectedWeeklyRows);
   const weeklyRows = selectedWeeklyRows.map((row) => ({ ...row, month: row.week }));
   renderCreditConditionsMomentum(weeklyRows);
@@ -620,7 +577,7 @@ async function loadMarketStressDashboard() {
       .order('month', { ascending: false })
       .limit(STRESS_HISTORY_QUERY_LIMIT);
     if (error) throw error;
-    const selectedRows = filterStressHistory(data || [], 'month', usStressRangeYears);
+    const selectedRows = data || [];
     renderMarketStressDashboard(selectedRows);
     loadMarketTension(selectedRows);
   } catch (error) {
@@ -726,7 +683,7 @@ async function loadEmStressDashboard() {
       .select('week,stress_index,eem_weekly_close,is_provisional')
       .order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT);
     if (error) throw error;
-    renderEmStressDashboard(filterStressHistory(data || [], 'week', emStressRangeYears));
+    renderEmStressDashboard(data || []);
   } catch (_) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 지수를 불러오지 못했습니다.</div>';
   }
@@ -895,8 +852,8 @@ async function loadKoreaStressDashboard() {
       }
     }
     renderKoreaStressChart(
-      filterStressHistory(displayRows, 'month', koreaStressRangeYears),
-      filterStressHistory(weeklyResponse.data || [], 'week', koreaStressRangeYears),
+      displayRows,
+      weeklyResponse.data || [],
     );
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';
@@ -1250,4 +1207,3 @@ window.MacroWatchDashboard?.registerLoader(async () => {
   ]);
 });
 })();
-

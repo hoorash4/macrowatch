@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
+import { fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

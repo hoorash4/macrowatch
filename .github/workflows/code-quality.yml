@@ -38,24 +38,13 @@ jobs:
           deno-version: v2.x
       - name: Check JavaScript syntax and behavior contracts
         run: |
-          node --check assets/js/dashboard/script.js
-          node --check assets/js/admin/admin.js
-          node --check assets/js/admin/admin-policy-review.js
-          node --check assets/js/core/auth.js
-          node --check assets/js/charts/policy-chart.js
-          node tests/test_dashboard.js
-          node tests/test_asset_paths.js
-          node tests/test_policy_scoring.ts
-          node tests/test_sector_leadership.ts
+          find assets/js -name '*.js' -print0 | xargs -0 -n1 node --check
+          for test in tests/test_*.js tests/test_*.ts; do node "$test"; done
       - name: Check Python syntax and behavior contracts
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
           python -m compileall -q backend
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check Supabase Edge Function types
-        # 현재 리팩터링 대상부터 엄격하게 검사한다. 기존 함수들의 타입 부채는
-        # 기능별로 정리할 때 이 목록에 순차적으로 추가한다.
         run: |
-          deno check supabase/functions/news-pipeline/index.ts
-          deno check supabase/functions/policy-pipeline/index.ts
-          deno check supabase/functions/admin-control/index.ts
+          for entry in supabase/functions/*/index.ts; do deno check "$entry"; done

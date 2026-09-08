@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { scorePolicyHistory } from "../supabase/functions/_shared/policy-scoring.ts";
-import type { PolicyAction, PolicyReason, PolicyScoringInput } from "../supabase/functions/_shared/policy-types.ts";
+import { scorePolicyHistory } from "../supabase/functions/_shared/policy/policy-scoring.ts";
+import type { PolicyAction, PolicyReason, PolicyScoringInput } from "../supabase/functions/_shared/policy/policy-types.ts";
 
 function rows(values: Array<[PolicyAction, PolicyReason, number?, boolean?]>): PolicyScoringInput[] {
   return values.map(([action, reason, change_bps = action === "hold" ? 0 : action === "hike" ? 25 : -25, is_emergency = false], index) => ({

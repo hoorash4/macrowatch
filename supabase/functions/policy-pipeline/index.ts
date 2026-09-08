@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { recomputePolicyScores } from "../_shared/policy-score-store.ts";
-import { POLICY_SCORE_PROFILE } from "../_shared/policy-scoring.ts";
+import { recomputePolicyScores } from "../_shared/policy/policy-score-store.ts";
+import { POLICY_SCORE_PROFILE } from "../_shared/policy/policy-scoring.ts";
 import { FOMC_POLICY_PROMPT_V2 } from "./fomc-prompt-v2.ts";
 
 type Action = "hike" | "hold" | "cut";

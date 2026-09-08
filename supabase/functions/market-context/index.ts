@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { calculateMarketContext, type MarketCandle } from "../_shared/market-indicators.ts";
+import { calculateMarketContext, type MarketCandle } from "../_shared/market/market-indicators.ts";
 
 const API_URL = "https://apis.data.go.kr/1160100/service/GetMarketIndexInfoService/getStockMarketIndex";
 const BOOTSTRAP_DAYS = 140, REFRESH_DAYS = 10, CONCURRENCY = 1, REQUEST_INTERVAL_MS = 250;
