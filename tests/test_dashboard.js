@@ -123,7 +123,7 @@ test('모바일 로그인은 밝은 한 열 앱 화면을 사용한다', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(styles, /@media \(max-width:768px\)[\s\S]*?body:has\(#auth-screen:not\(\.hidden\)\)[\s\S]*?background: #f4f6f8/);
   assert.match(styles, /#auth-screen \.auth-content-grid[\s\S]*?max-width: 460px[\s\S]*?background: none/);
-  assert.match(styles, /#auth-screen \.auth-panel[\s\S]*?background: transparent[\s\S]*?box-shadow: none/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#auth-screen \.auth-panel\s*\{[^}]*border: 1px solid #cfd6dc;[^}]*background: #fff;/);
   for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker']) {
     assert.match(html, new RegExp(`data-auth-dashboard-view="${view}"`));
   }

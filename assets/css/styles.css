@@ -1946,6 +1946,7 @@ body.is-pointer-dragging {
   .auth-header .evotive-source-logo {
     width: 48px;
     height: 38px;
+    background-color: transparent;
   }
   .auth-header .font-cinzel {
     font-size: 1rem;
@@ -1978,10 +1979,12 @@ body.is-pointer-dragging {
     width: 100%;
     max-width: none;
     margin: 0;
-    padding: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
+    padding: 1.5rem 1.25rem;
+    border: 1px solid #cfd6dc;
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(20,36,51,.06);
+    box-sizing: border-box;
   }
   #auth-screen .auth-panel h2 {
     margin-top: .35rem;
