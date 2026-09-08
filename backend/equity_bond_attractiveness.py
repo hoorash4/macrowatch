@@ -11,7 +11,7 @@ from math import isfinite
 LOOKBACK_WEEKS = 260
 RETURN_WEEKS = 13
 SMOOTH_WEEKS = 4
-METHOD_VERSION = "stock-attractiveness-v2"
+METHOD_VERSION = "stock-attractiveness-v3"
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ def build_weekly_rows(
     *,
     us_anchor_earnings_yield: float | None = None,
 ) -> list[dict]:
-    """Build causal weekly scores; quarterly figures become available after a reporting lag."""
+    """Historical valuation proxy with reporting lags and a current US valuation anchor."""
 
     ttm = trailing_four_quarter_income(quarters)
     lag = timedelta(days=75 if country == "KR" else 60)
@@ -64,16 +64,25 @@ def build_weekly_rows(
     anchor_available = [item for item in available if weeks and item[0] <= weeks[-1]]
     anchor_income = anchor_available[-1][1] if anchor_available else 0.0
     anchor_price = equity_prices.get(weeks[-1]) if weeks else None
+    price_dates = sorted(equity_prices)
     raw: list[dict] = []
     for index, week in enumerate(weeks):
         eligible = [item for item in available if item[0] <= week]
         if not eligible or week not in equity_prices or week not in sovereign_yields:
             continue
-        _, income, market_cap = eligible[-1]
+        available_date, income, market_cap = eligible[-1]
+        if equity_prices[week] <= 0:
+            continue
         if country == "KR":
             if not market_cap or market_cap <= 0:
                 continue
-            earnings_yield = income / market_cap * 100.0
+            # The cap belongs to the quarter end, not the reporting-lag date.
+            cap_date = available_date - lag
+            price_index = bisect_right(price_dates, cap_date) - 1
+            if price_index < 0 or equity_prices[price_dates[price_index]] <= 0:
+                continue
+            current_cap = market_cap * equity_prices[week] / equity_prices[price_dates[price_index]]
+            earnings_yield = income / current_cap * 100.0
         else:
             if not anchor_price or not anchor_income or equity_prices[week] <= 0:
                 continue
@@ -96,17 +105,21 @@ def build_weekly_rows(
             "equity_return_13w_pct": equity_return,
         })
     scored: list[dict] = []
+    gaps = {row["observation_date"]: row["yield_gap_pct"] for row in raw}
+    for item in raw:
+        prior_gap = gaps.get(item["observation_date"] - timedelta(weeks=RETURN_WEEKS))
+        item["gap_change_13w_pp"] = None if prior_gap is None else item["yield_gap_pct"] - prior_gap
     for index, item in enumerate(raw):
         history = raw[max(0, index - LOOKBACK_WEEKS + 1):index + 1]
-        if len(history) < 52:
+        change_history = [row["gap_change_13w_pp"] for row in history if row["gap_change_13w_pp"] is not None]
+        if len(change_history) < 52 or item["gap_change_13w_pp"] is None:
             continue
         components = {
-            "valuation": percentile_score(item["yield_gap_pct"], [row["yield_gap_pct"] for row in history]),
-            "earnings_environment": percentile_score(item["earnings_momentum_pct"], [row["earnings_momentum_pct"] for row in history]),
-            "market_confirmation": percentile_score(item["equity_return_13w_pct"], [row["equity_return_13w_pct"] for row in history]),
+            "yield_gap_level": percentile_score(item["yield_gap_pct"], [row["yield_gap_pct"] for row in history]),
+            "yield_gap_change": percentile_score(item["gap_change_13w_pp"], change_history),
         }
         item = dict(item)
-        item["raw_score"] = components["valuation"] * .45 + components["earnings_environment"] * .35 + components["market_confirmation"] * .20
+        item["raw_score"] = components["yield_gap_level"] * .70 + components["yield_gap_change"] * .30
         item["components"] = components
         scored.append(item)
     for index, item in enumerate(scored):

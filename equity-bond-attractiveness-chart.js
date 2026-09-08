@@ -61,7 +61,7 @@
 
   async function load({ supabaseClient }) {
     if (!supabaseClient) return;
-    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient.from('equity_bond_attractiveness_weekly').select('country,observation_date,score').eq('method_version', 'stock-attractiveness-v2').order('observation_date').order('country').range(from, to));
+    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient.from('equity_bond_attractiveness_weekly').select('country,observation_date,score').eq('method_version', 'stock-attractiveness-v3').order('observation_date').order('country').range(from, to));
     if (error) { host.textContent = '상대매력 자료를 불러오지 못했습니다.'; return; }
     state.rows = (data || []).filter(row => Number.isFinite(Number(row.score)));
     render();
