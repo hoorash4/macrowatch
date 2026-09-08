@@ -11,6 +11,7 @@ test('주식 채권 상대매력 카드는 국가별 독립 점수를 한 그래
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식\/채권 상대매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
   assert.match(html, /equity-bond-attractiveness-chart\.js\?v=2/);
+  assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.match(chart, /국가별 독립 점수/);
   assert.match(chart, /한국\(KOSPI 100\)/);
   assert.match(chart, /미국\(S&P 100\)/);
