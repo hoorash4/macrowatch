@@ -621,7 +621,7 @@ test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막
   assert.match(chart, /news-sentiment-horizontal-bar/);
   assert.match(chart, /news-sentiment-horizontal-bar flex h-12/);
   assert.match(chart, /news-sentiment-graph--recent/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-row\s*\{[\s\S]*?flex-direction: column;[\s\S]*?gap: \.2rem/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#news-sentiment-chart \.news-sentiment-row\s*\{[\s\S]*?flex-direction: column;[\s\S]*?gap: \.2rem/);
   assert.match(styles, /#news-sentiment-chart \.news-sentiment-row-date\s*\{[\s\S]*?align-self: flex-start[\s\S]*?text-align: left/);
   assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#news-sentiment-chart \.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 6rem;[\s\S]*?flex: none;/);
 });
