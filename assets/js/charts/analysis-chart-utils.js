@@ -222,6 +222,10 @@
     svg.style.width = `${width / baseWidth * 100}%`;
     svg.style.maxWidth = 'none';
     svg.style.display = 'block';
+    // The scroll width and chart height are independent. Without this, the SVG's
+    // default aspect-ratio preservation letterboxes the plot vertically on mobile,
+    // while the fixed Y axis still occupies the full height.
+    svg.setAttribute('preserveAspectRatio', 'none');
 
     // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
     // 축의 라벨과 세로선만 별도 SVG에 복제해 왼쪽에 고정한다.
@@ -236,8 +240,9 @@
     if (axisNodes.length && Number.isFinite(viewHeight)) {
       const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       fixedAxis.setAttribute('viewBox', `0 0 72 ${viewHeight}`);
+      fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
-      fixedAxis.style.cssText = 'position:absolute;z-index:2;left:0;top:0;width:72px;height:100%;background:#fff;pointer-events:none;';
+      fixedAxis.style.cssText = `position:absolute;z-index:2;left:0;top:0;width:72px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
       axisNodes.forEach((node) => {
         fixedAxis.append(node.cloneNode(true));
         node.setAttribute('visibility', 'hidden');

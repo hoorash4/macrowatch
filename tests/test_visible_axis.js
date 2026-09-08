@@ -7,6 +7,14 @@ const context = { window: {} };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/charts/analysis-chart-utils.js'), 'utf8'), context);
 const domain = context.window.MacroWatchAnalysisChart.visibleAxisDomain;
 const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
+const source = fs.readFileSync(path.join(__dirname, '../assets/js/charts/analysis-chart-utils.js'), 'utf8');
+
+test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
+  assert.match(source, /svg\.setAttribute\('preserveAspectRatio', 'none'\)/);
+  assert.match(source, /fixedAxis\.setAttribute\('preserveAspectRatio', 'none'\)/);
+  assert.match(source, /height:\$\{viewHeight\}px/);
+  assert.doesNotMatch(source, /width:72px;height:100%/);
+});
 
 test('visible domain preserves duplicate boundary coordinates and input ordering', () => {
   const points = [{ x: 9, value: 20 }, { x: 1, value: 30 }, { x: 9, value: 50 },
