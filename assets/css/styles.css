@@ -1321,12 +1321,12 @@ body:has(#app-shell:not(.hidden)) {
   background:#fbe7d1;
   color:#ad5218;
 }
-.sector-flow-week-current > ol {
+.sector-flow-week-current .sector-flow-week-body > ol {
   grid-template-columns:1fr;
 }
-.sector-flow-week-current > ol > li:last-child { border-bottom:0; }
+.sector-flow-week-current .sector-flow-week-body > ol > li:last-child { border-bottom:0; }
 .sector-flow-week-current .sector-flow-columns,
-.sector-flow-week-current > ol > li {
+.sector-flow-week-current .sector-flow-week-body > ol > li {
   grid-template-columns:2rem 2.5rem minmax(8rem,1fr) 10.5rem repeat(4,7rem);
   gap:.65rem;
 }
@@ -1343,13 +1343,13 @@ body:has(#app-shell:not(.hidden)) {
   font-weight:500;
   white-space:nowrap;
 }
-.sector-flow-week-current > ol > li > .sector-flow-rank,
-.sector-flow-week-current > ol > li > .sector-flow-change { justify-self:center; }
-.sector-flow-week-current > ol > li {
+.sector-flow-week-current .sector-flow-week-body > ol > li > .sector-flow-rank,
+.sector-flow-week-current .sector-flow-week-body > ol > li > .sector-flow-change { justify-self:center; }
+.sector-flow-week-current .sector-flow-week-body > ol > li {
   position:relative;
   min-height:2.8rem;
 }
-.sector-flow-week-current > ol > li > strong,
+.sector-flow-week-current .sector-flow-week-body > ol > li > strong,
 .sector-flow-week-current .sector-flow-sector { font-size:.88rem; }
 .sector-flow-week-current .sector-flow-streak {
   position:relative;
@@ -1435,7 +1435,7 @@ body:has(#app-shell:not(.hidden)) {
 }
 .sector-flow-week-current .sector-flow-columns span:nth-child(4)::before { display:none; }
 /* 연속 배지는 원래 크기를 유지하고, 열 경계선은 행의 고정 열 너비를 기준으로 그립니다. */
-.sector-flow-week-current > ol > li::after {
+.sector-flow-week-current .sector-flow-week-body > ol > li::after {
   position:absolute;
   top:50%;
   right:7.325rem;
@@ -1625,17 +1625,7 @@ body:has(#app-shell:not(.hidden)) {
   }
 }
 @media (max-width:640px) {
-  .sector-flow-preview {
-    gap:.25rem;
-    overflow-x:auto;
-    padding-bottom:1rem;
-  }
-  .sector-flow-week {
-    min-width:12rem;
-    padding:0 .35rem;
-  }
-  .sector-flow-history { grid-template-columns:repeat(4,12rem); }
-  .sector-flow-week-current { min-width:56rem; }
+  .sector-flow-preview { padding-bottom:1rem; }
 }
 @keyframes dashboardSpin {
   to {
@@ -2101,6 +2091,42 @@ body.is-pointer-dragging {
     padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
     background: #f4f6f8;
   }
+  /* 어떤 내부 표나 그래프도 페이지와 최상위 카드를 화면 밖으로 밀지 못하게 합니다. */
+  body:has(#app-shell:not(.hidden)) {
+    overflow-x: hidden;
+  }
+  #app-shell,
+  .dashboard-workspace,
+  .dashboard-main,
+  .dashboard-panels,
+  .market-overview,
+  .market-overview-grid,
+  [data-dashboard-panel],
+  .dashboard-view-card,
+  .dashboard-tracker-card,
+  #app-shell .analysis-card {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .dashboard-main > *,
+  .dashboard-panels > *,
+  .market-overview > *,
+  .market-overview-grid > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  #app-shell .analysis-card {
+    overflow: hidden;
+  }
+  #app-shell .analysis-card-header,
+  #app-shell .analysis-card > div,
+  #app-shell .analysis-card > section {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
   .dashboard-nav {
     overflow: visible;
     background: rgba(255,255,255,.96);
@@ -2173,6 +2199,53 @@ body.is-pointer-dragging {
   }
   .market-overview {
     gap: 0;
+  }
+  /* 주도섹터는 주차별 카드 하나가 한 화면을 차지하고 좌우 스와이프로 이동합니다. */
+  .sector-flow-preview {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    gap: 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 1rem;
+    box-sizing: border-box;
+    scroll-padding-inline: 1rem;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sector-flow-preview::-webkit-scrollbar {
+    display: none;
+  }
+  .sector-flow-history {
+    display: contents;
+  }
+  .sector-flow-week,
+  .sector-flow-week-current {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 0 100%;
+    padding: 0;
+    box-sizing: border-box;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+  .sector-flow-week-body {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sector-flow-week-current .sector-flow-week-body > .sector-flow-columns,
+  .sector-flow-week-current .sector-flow-week-body > ol {
+    width: 56rem;
+    min-width: 56rem;
+    box-sizing: border-box;
   }
   .market-overview > .dashboard-view-card,
   .dashboard-panels > .dashboard-view-card,
