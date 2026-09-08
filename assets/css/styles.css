@@ -1395,7 +1395,6 @@ body:has(#app-shell:not(.hidden)) {
 /* 범례는 실제 시리즈의 색상·두께·점선 간격으로 그립니다. */
 .chart-legend-item { display:inline-flex; align-items:center; gap:.45rem; }
 .chart-legend-swatch { display:inline-block; flex:none; width:32px; height:10px; overflow:visible; }
-.chart-note { margin:.6rem .25rem 0; color:#64748b; font-size:.75rem; line-height:1.6; }
 @media (max-width:1023px) {
   #credit-stress-chart, #korea-stress-chart, #em-stress-chart,
   #credit-stress-momentum-chart, #korea-fsi-chart { min-height:0; }

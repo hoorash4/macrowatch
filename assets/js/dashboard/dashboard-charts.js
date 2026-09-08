@@ -262,7 +262,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 20, right: 52, bottom: 32, left: 52 };
   const scores = data.map((row) => Number(row.stress_index));
-  const sp500Values = data.map((row) => Number(row.sp500_month_end_close)).filter(Number.isFinite);
+  const sp500Values = data.map((row) => toCreditStressNumber(row.sp500_month_end_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
   const { min: axisMinimum, max: axisMaximum } = window.MacroWatchAnalysisChart.axisDomain(scores, { minimumSpan: 1 });
   const axisRange = axisMaximum - axisMinimum || 1;
@@ -274,7 +274,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const sp500Step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((step) => step >= sp500AxisRange / 4) || 5000;
   const x = (index) => padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, data.length - 1);
   const y = (score) => padding.top + ((height - padding.top - padding.bottom) * (axisMaximum - score)) / axisRange;
-  const sp500Y = (value) => padding.top + ((height - padding.top - padding.bottom) * (sp500AxisMaximum - value)) / sp500AxisRange;
+  const sp500Y = (value) => Number.isFinite(value) ? padding.top + ((height - padding.top - padding.bottom) * (sp500AxisMaximum - value)) / sp500AxisRange : NaN;
   const labels = data.map((row, index) => {
     const month = String(row.month || '');
     if (!month.endsWith('-01') || (index !== 0 && !month.endsWith('-01-01'))) return '';
@@ -289,9 +289,9 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     const detail = `${row.month}\nUS-MSI: ${Number(row.stress_index).toFixed(1)}${provisional ? ' (잠정치)' : ' (확정치)'}`;
     return `<circle cx="${x(index)}" cy="${y(Number(row.stress_index))}" r="3.75" fill="#b7791f"${provisional ? ' fill-opacity="0.35" stroke="#b7791f" stroke-width="1.5"' : ''} tabindex="0"><title>${detail}</title></circle>`;
   }).join('');
-  const sp500Lines = `<path d="${monotoneSeriesPath(data, (_, index) => x(index), (row) => sp500Y(Number(row.sp500_month_end_close)))}" fill="none" stroke="#6b7280" stroke-width="2.25" stroke-linecap="round"/>`;
+  const sp500Lines = `<path d="${monotoneSeriesPath(data, (_, index) => x(index), (row) => sp500Y(toCreditStressNumber(row.sp500_month_end_close)))}" fill="none" stroke="#6b7280" stroke-width="2.25" stroke-linecap="round"/>`;
   const sp500Dots = data.map((row, index) => {
-    const value = Number(row.sp500_month_end_close);
+    const value = toCreditStressNumber(row.sp500_month_end_close);
     if (!Number.isFinite(value)) return '';
     return `<circle cx="${x(index)}" cy="${sp500Y(value)}" r="3.25" fill="#6b7280" tabindex="0"><title>${row.month}\nS&P 500 월말 종가: ${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</title></circle>`;
   }).join('');
@@ -300,12 +300,12 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     (_, index) => sp500AxisMinimum + index * sp500Step,
   ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#6b7280" font-size="10">${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</text>`).join('') : '';
   const correlationPairs = data
-    .map((row) => [Number(row.stress_index), Number(row.sp500_month_end_close)])
+    .map((row) => [Number(row.stress_index), toCreditStressNumber(row.sp500_month_end_close)])
     .filter(([stress, sp500]) => Number.isFinite(stress) && Number.isFinite(sp500));
   const correlation = calculateCorrelation(correlationPairs);
   const grid = Array.from({ length: Math.round(axisRange / gridStep) + 1 }, (_, index) => axisMinimum + index * gridStep)
     .map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${Number.isInteger(score) ? score : score.toFixed(1)}</text>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2">${legendItem('US-MSI', { stroke: '#b7791f', width: 2.75 })}${legendItem('US-MSI 잠정치', { stroke: '#b7791f', width: 2.75, dash: '5 5' })}${hasSp500 ? legendItem('S&P 500 월말 종가', { stroke: '#6b7280', width: 2.25 }) : ''}</div><span>월 단위로 업데이트됩니다.</span></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2">${legendItem('US-MSI', { stroke: '#b7791f', width: 2.75 })}${legendItem('US-MSI 잠정치', { stroke: '#b7791f', width: 2.75, dash: '5 5' })}${hasSp500 ? legendItem('S&P 500 월말 종가', { stroke: '#6b7280', width: 2.25 }) : ''}</div></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${correlation.toFixed(2)}</p>`}`;
   // US-MSI는 선택 기간 전체의 고정 축으로 해석합니다. 스크롤은 범위 탐색만 담당하며,
   // 현재 보이는 구간마다 선 좌표를 다시 축척하지 않습니다.
   window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
@@ -319,7 +319,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
-  const sp500Values = weekly.map((row) => Number(row.sp500_friday_close)).filter(Number.isFinite);
+  const sp500Values = weekly.map((row) => toCreditStressNumber(row.sp500_friday_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
   const sp500Minimum = hasSp500 ? Math.min(...sp500Values) : 0;
   const sp500Maximum = hasSp500 ? Math.max(...sp500Values) : 1;
@@ -327,7 +327,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const sp500Step = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((step) => step >= sp500Range / 4) || 5000;
   const sp500Lower = hasSp500 ? Math.max(0, Math.floor((sp500Minimum - sp500Range * .1) / sp500Step) * sp500Step) : 0;
   const sp500Upper = hasSp500 ? Math.ceil((sp500Maximum + sp500Range * .1) / sp500Step) * sp500Step : 1;
-  const sp500Y = (value) => padding.top + ((height - padding.top - padding.bottom) * (sp500Upper - value)) / Math.max(1, sp500Upper - sp500Lower);
+  const sp500Y = (value) => Number.isFinite(value) ? padding.top + ((height - padding.top - padding.bottom) * (sp500Upper - value)) / Math.max(1, sp500Upper - sp500Lower) : NaN;
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
@@ -341,7 +341,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     { length: Math.round((sp500Upper - sp500Lower) / sp500Step) + 1 },
     (_, index) => sp500Lower + index * sp500Step,
   ).map((value) => `<text x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#6b7280" font-size="10">${value.toLocaleString('en-US')}</text>`).join('') : '';
-  const sp500Lines = `<path d="${monotoneSeriesPath(weekly, (row) => x(row.week), (row) => sp500Y(Number(row.sp500_friday_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
+  const sp500Lines = `<path d="${monotoneSeriesPath(weekly, (row) => x(row.week), (row) => sp500Y(toCreditStressNumber(row.sp500_friday_close)))}" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>`;
   const weeklyPaths = monotoneStyledSegments(
     weekly, (row) => x(row.week), (row) => y(Number(row.tension_index)),
     (previous, row) => {
