@@ -46,7 +46,7 @@
         <h1 class="font-pretendard">
           <span class="main-title-line"><span class="main-title-word title-evolving">Evolving</span> <span class="main-title-word title-insight">Insight</span></span><span class="main-title-line text-[#d1a55d]"><span class="main-title-word title-adaptive">Adaptive</span> <span class="main-title-word title-shift">Shift</span></span>
         </h1>
-        <p class="auth-intro-description mt-7 max-w-md text-sm leading-7 text-slate-300">EVOTIVE RESEARCH가 제공하는 MacroWatch는, 거시경제<span class="mobile-space"> </span>의 흐름과 주식시장의 중요한 변화를 놓치지 않도록 돕는 특별한 모니터링 도구입니다. <span class="inline-signal-dot" aria-label="monitoring active"></span></p>
+        <p class="auth-intro-description mt-7 max-w-md text-sm leading-7 text-slate-300">EVOTIVE RESEARCH가 제공하는 MacroWatch는, 거시경제<span class="mobile-space"> </span>의 흐름과 주식시장의 변화를 놓치지 않도록 돕는 특별한 모니터링 도구입니다. <span class="inline-signal-dot" aria-label="monitoring active"></span></p>
         
       </section>
       <section class="auth-form-region flex justify-center lg:justify-end">
@@ -177,7 +177,6 @@
           </div>
         </div>
         <p class="analysis-card-description">24시간 동안 기사화된 뉴스의 긍정·부정 흐름을 AI가 분석합니다.</p>
-        <p class="analysis-card-description">중장기 과열·침체 국면에서는 역발상 관점을 반영합니다.</p>
         <p class="analysis-card-description analysis-card-description--accent">매일 오전 1시경(KST) 업데이트됩니다.</p>
       </div>
       <div id="news-sentiment-chart" class="grid min-h-52 grid-cols-1 gap-5 p-5 sm:grid-cols-[auto_1fr]">
@@ -193,7 +192,7 @@
             <i class="fa-solid fa-bolt text-sm text-[#ffda8a]"></i>
             <p class="decisive-news-title text-base font-semibold">결정적 뉴스</p>
           </div>
-          <p class="decisive-news-description mt-2 text-sm leading-relaxed">단기 변동보다는 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스의 개수입니다. 나열된 키워드가 포함된 뉴스를 지속적으로 관찰할 필요가 있습니다.<span class="decisive-news-ai-note">·AI의 판단이므로 실제 중요도와 다를 수 있습니다.</span></p>
+          <p class="decisive-news-description mt-2 text-sm leading-relaxed">단기 변동보다는 향후 시장의 중장기 추세를 바꿀 수 있는 뉴스의 개수입니다. 나열된 키워드가 포함된 뉴스를 지속적으로 관찰할 필요가 있습니다.<span class="decisive-news-ai-note">· AI의 판단이므로 실제 중요도와 다를 수 있습니다.</span></p>
           <div class="decisive-news-summary-row">
             <div class="decisive-news-count-card">
               <div class="flex items-center gap-2">
@@ -240,7 +239,7 @@
       <div class="sector-flow-swipe-hint" data-sector-flow-swipe-indicator aria-label="주차 5/5">
         <div class="sector-flow-swipe-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="is-active"></i></div>
       </div>
-      <p id="sector-flow-update-note" class="sector-flow-note px-5 pb-5 text-right text-[11px] text-slate-500">매 영업일 시가·종가 반영</p>
+      <p id="sector-flow-update-note" class="sector-flow-note px-5 pb-5 text-right text-[11px] text-slate-500">매 영업일 시가·중가·종가 반영</p>
     </section>
     </div>
 
@@ -275,7 +274,7 @@
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
-            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">U.S. MARKET STRESS INDEX</p>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">US-MSI</p>
             <h2 id="credit-stress-title" class="analysis-card-title">미국 시장 스트레스 지수</h2>
           </div>
         </div>
@@ -317,7 +316,7 @@
           </div>
         </div>
         <p class="analysis-card-description">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
-        <p class="analysis-card-description">서로 단위가 다른 세 지표의 추세를 함께 비교합니다.</p>
+        <p class="analysis-card-description">파산보호 신청 건수의 경우 분기 자료 발표 시 월별 자료가 공개됩니다. 즉, 최근 월 자료는 정확하지 않습니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div id="credit-stress-components-chart" class="min-h-72">
@@ -330,12 +329,12 @@
     <section data-liquidity-country="US" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-label="미국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <h2 class="analysis-card-title">미국 주식시장 자금환경</h2>
-        <p class="mt-2 text-xs text-slate-500">현재 우호도는 높을수록 상대적으로 우호적입니다. 개선·악화 방향은 50을 기준으로 3개월 전보다 좋아졌는지 보여줍니다.</p>
+        <p class="mt-2 text-xs text-slate-500">MacroWatch가 개발한 주식시장 자금 환경 입니다. 높을 수록 자금 환경이 좋다는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. 단, 자금 환경이 좋다는 이유로 주가가 상승하지는 않습니다.</p>
         <div class="analysis-chart-range-controls mt-4" data-liquidity-ranges aria-label="미국 유동성 조회 기간">
           <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
         </div>
         <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
-        <details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">실질금리(10년), 신용여건(시카고연은 신용 하위지수), 순자금공급 대용치의 13주 변화율, SOFR−IORB를 각각 25% 반영합니다. 순자금공급 대용치는 연준 자산−TGA−역레포이며 실제 주식 유입액은 아닙니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 이를 해당 시점까지 최대 5년의 상대 백분위로 변환하고, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 방향 점수 50은 변화 없음, 우호도 50은 상대적 중간 수준입니다. 출처: 연준·뉴욕연준·시카고연은/FRED. 완료된 주까지만 표시합니다. 현재 공개된 수정계열을 사용한 설명지표이며 주가 상승 확률이나 당시 정보만을 사용한 투자 백테스트가 아닙니다.</p></details>
+        <!--<details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">실질금리(10년), 신용여건(시카고연은 신용 하위지수), 순자금공급 대용치의 13주 변화율, SOFR−IORB를 각각 25% 반영합니다. 순자금공급 대용치는 연준 자산−TGA−역레포이며 실제 주식 유입액은 아닙니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 이를 해당 시점까지 최대 5년의 상대 백분위로 변환하고, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 방향 점수 50은 변화 없음, 우호도 50은 상대적 중간 수준입니다. 출처: 연준·뉴욕연준·시카고연은/FRED. 완료된 주까지만 표시합니다. 현재 공개된 수정계열을 사용한 설명지표이며 주가 상승 확률이나 당시 정보만을 사용한 투자 백테스트가 아닙니다.</p></details>-->
       </div>
     </section>
 
@@ -344,11 +343,11 @@
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
-            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">K-MSI · KOREA MARKET STRESS INDEX</p>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">K-MSI(MARKET STRESS INDEX)</p>
             <h2 id="korea-stress-title" class="analysis-card-title">한국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한 월간 한국 시장 스트레스 지수입니다.</p>
+        <p class="analysis-card-description">MacroWatch가 개발한 주간 한국 시장 스트레스 지수입니다.</p>
         <p class="analysis-card-description">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
@@ -379,10 +378,10 @@
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-arrow-right-arrow-left text-sm"></i></span>
-          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA FOREIGN CAPITAL FLOW</p><h2 id="korea-foreign-flow-title" class="analysis-card-title">외국인 자금 유출입 강도</h2></div>
+          <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">FOREIGN CAPITAL FLOW</p><h2 id="korea-foreign-flow-title" class="analysis-card-title">외국인 자금 유출입 강도</h2></div>
         </div>
-        <p class="analysis-card-description">최근 10영업일의 외국인 순매수액·거래대금과 원화 누적 등락률을 각각 최근 3년 분포로 표준화해 50%씩 결합합니다.</p>
-        <p class="analysis-card-description">0 위는 유입 우위, 0 아래는 유출 우위입니다. 히스테리시스 기준 현재 상태: <span id="korea-foreign-flow-state" class="font-semibold text-slate-600">계산 중</span></p>
+        <p class="analysis-card-description">최근 10영업일의 외국인 유입 강도와 환율 등을 고려하여 최근 3년 분포로 표준화해 50%씩 결합합니다.</p>
+        <p class="analysis-card-description">히스테리시스 기준 현재 상태: <span id="korea-foreign-flow-state" class="font-semibold text-slate-600">계산 중</span></p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -399,12 +398,12 @@
     <section data-liquidity-country="KR" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-label="한국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <h2 class="analysis-card-title">한국 주식시장 자금환경</h2>
-        <p class="mt-2 text-xs text-slate-500">국내 유동성·단기자금·외국인 주식수급·원화 흐름을 결합해 한국 주식시장에 대한 현재 우호도와 개선·악화 방향을 보여줍니다.</p>
+        <p class="mt-2 text-xs text-slate-500">MacroWatch가 개발한 주식시장 자금 환경 입니다. 높을 수록 자금 환경이 좋다는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. 단, 자금 환경이 좋다는 이유로 주가가 상승하지는 않습니다.</p>
         <div class="analysis-chart-range-controls mt-4" data-liquidity-ranges aria-label="한국 유동성 조회 기간">
           <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
         </div>
         <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
-        <details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">단기 조달환경(콜금리·KOFR와 기준금리의 평균 스프레드), 국내 유동성(M2·Lf의 3개월 증가율 평균), 외국인 주식 순매수 비율, 원화 강도를 각각 25% 반영합니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 해당 시점까지 최대 5년 상대 백분위이며, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 50은 중립입니다. 출처: 한국은행 ECOS·금융경제 스냅샷, KIS. 완료된 주까지만 표시합니다. 수정계열 기반 설명지표로 투자 백테스트가 아닙니다.</p></details>
+        <!--<details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">단기 조달환경(콜금리·KOFR와 기준금리의 평균 스프레드), 국내 유동성(M2·Lf의 3개월 증가율 평균), 외국인 주식 순매수 비율, 원화 강도를 각각 25% 반영합니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 해당 시점까지 최대 5년 상대 백분위이며, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 50은 중립입니다. 출처: 한국은행 ECOS·금융경제 스냅샷, KIS. 완료된 주까지만 표시합니다. 수정계열 기반 설명지표로 투자 백테스트가 아닙니다.</p></details>-->
       </div>
     </section>
 
@@ -412,10 +411,10 @@
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-chart-column text-sm"></i></span>
-          <div class="market-earnings-heading-control"><div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA · U.S. TOP 100 · EARNINGS V2</p><h2 id="korea-earnings-title" class="analysis-card-title">시총 상위 100 이익 모멘텀</h2></div><label class="sr-only" for="market-earnings-select">시장 선택</label><select id="market-earnings-select" class="market-earnings-select" data-market-earnings-select><option value="kr_largecap">KOSPI 100</option><option value="kr_kosdaq">KOSDAQ 100</option><option value="us_sp100">S&amp;P 100</option><option value="us_nasdaq100">NASDAQ 100</option></select></div>
+          <div class="market-earnings-heading-control"><div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA · US TOP 100 EARNINGS</p><h2 id="korea-earnings-title" class="analysis-card-title">시총 상위 100 이익 모멘텀</h2></div><label class="sr-only" for="market-earnings-select">시장 선택</label><select id="market-earnings-select" class="market-earnings-select" data-market-earnings-select><option value="kr_largecap">KOSPI 100</option><option value="kr_kosdaq">KOSDAQ 100</option><option value="us_sp100">S&amp;P 100</option><option value="us_nasdaq100">NASDAQ 100</option></select></div>
         </div>
-        <p class="analysis-card-description">선택한 시장의 분기 말 시가총액 상위 기업군 영업이익과 순이익 합계를 표시합니다. 대기 기업은 잠정 집계에서 직전 분기 값으로 임시 보정하며, 잠정 구간은 점선으로 표시합니다. 완료된 분기는 현재 기업군의 실제 합계로 확정합니다.</p>
-        <p class="analysis-card-description">본차트는 계절조정 합산 금액, 아래 보조차트는 이익률·원본 전년동기 이익 증가율·계절조정 전분기 이익 증가율을 표시합니다. 각 차트에서 영업이익과 순이익을 함께 비교하며, 흑전·적전·계산 불가는 0 위치의 상태점으로 표시합니다.</p>
+        <p class="analysis-card-description">선택한 시장의 분기 말 기분 시가총액 상위 100개 기업군 영업이익과 순이익 합계를 표시합니다. 잠정치는 모든 기업의 실적이 업데이트되지 않았음을 의미합니다. 잠정 구간은 점선으로 표시합니다.</p>
+        <p class="analysis-card-description">흑전·적전·계산 불가는 0 위치의 상태점으로 표시합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -457,8 +456,8 @@
           <span class="analysis-card-icon"><i class="fa-solid fa-building-columns text-sm"></i></span>
           <div class="market-earnings-heading-control"><div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">KOREA · U.S. · COMPANY EARNINGS</p><h2 id="company-earnings-title" class="analysis-card-title">개별 기업 이익 모멘텀</h2></div><label class="sr-only" for="company-earnings-market-select">시장 선택</label><select id="company-earnings-market-select" class="market-earnings-select" data-company-earnings-market-select><option value="kr_largecap">KOSPI 100</option><option value="kr_kosdaq">KOSDAQ 100</option><option value="us_sp100">S&amp;P 100</option><option value="us_nasdaq100">NASDAQ 100</option></select></div>
         </div>
-        <p class="analysis-card-description">최신 분기 선택 시장의 100개 구성 기업 중 한 기업을 검색해 영업이익과 순이익을 확인합니다. 기본값은 해당 시장 시가총액 1위 기업이며, 미완결 분기는 점선으로 표시합니다.</p>
-        <p class="analysis-card-description">본차트는 기업이 공시한 원본 이익 금액을 그대로 표시합니다. 보조차트는 이익률·원본 전년동기 이익 증가율·계절조정 전분기 이익 증가율입니다.</p>
+        <p class="analysis-card-description">최근 분기 선택 시장의 100개 구성 기업 중 한 기업을 검색해 영업이익과 순이익 추이를 확인합니다. 기본값은 해당 시장 시가총액 1위 기업이며, 미완결 분기는 점선으로 표시합니다.</p>
+        <p class="analysis-card-description">흑전·적전·계산 불가는 0 위치의 상태점으로 표시합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -504,12 +503,12 @@
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-earth-americas text-sm"></i></span>
           <div>
-            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">EM-MSI · EMERGING MARKET STRESS INDEX</p>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">EM-MSI</p>
             <h2 id="em-stress-title" class="analysis-card-title">이머징 시장 스트레스 지수</h2>
           </div>
         </div>
         <p class="analysis-card-description">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description">높을수록 이머징 외화 신용시장과 통화의 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">높을수록 이머징 시장 스트레스가 높음을 뜻합니다.</p>
         <p class="analysis-card-description">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
@@ -540,9 +539,8 @@
             <h2 id="em-capacity-title" class="analysis-card-title">이머징 자금 유입 여건</h2>
           </div>
         </div>
-        <p class="analysis-card-description">달러·미국 실질금리·신용시장·금융여건을 바탕으로 미국 자금이 이머징으로 이동하기 유리한 환경인지 분석합니다.</p>
-        <p class="analysis-card-description">0 위는 유입에 유리한 환경, 0 아래는 자금 이동이 제약되는 환경을 뜻합니다.</p>
-        <p class="analysis-card-description">지연 발표되는 원자료가 도착하기 전까지 최신 구간은 잠정치로 표시됩니다.</p>
+        <p class="analysis-card-description">미국의 자금이 이머징 시장으로 유입되기 좋은 환경인지 보여줍니다.</p>
+        <p class="analysis-card-description">지연 발표되는 원자료가 업데이트되기 전까지 최신 구간은 잠정치로 표시됩니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -556,11 +554,8 @@
         </div>
         <div class="policy-expectation-legend" aria-label="이머징 자금 유입 여건 범례">
           <span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>5영업일 평균</span>
+          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>5영업일 평균</span>
           <span><i class="chart-legend-line chart-legend-line-provisional"></i>잠정치</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 유입 여건 우호적</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 유입 여건 제약</span>
-          <span>달러·실질금리·하이일드 OAS·NFCI 각 25%</span>
         </div>
       </div>
     </section>
@@ -574,7 +569,7 @@
             <h2 id="policy-signal-title" class="analysis-card-title">통화정책 시그널</h2>
           </div>
         </div>
-        <p class="analysis-card-description">회의별 정책 점수에 경과일 기준 감쇠를 적용합니다. 0 위는 금융시장 스트레스 정책 신호 우세, 0 아래는 완화·정상화 신호 우세를 뜻합니다.</p>
+        <p class="analysis-card-description">FOMC 회의 결과를 AI가 분석하여 주식 시장에 우호적인지를 판단합니다. 높아지면 비우호적입니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -599,7 +594,7 @@
             <h2 id="policy-expectation-title" class="analysis-card-title">시장 내재 정책금리 기대</h2>
           </div>
         </div>
-        <p class="analysis-card-description">미국채 3개월물과 2년물에 반영된 정책금리 경로를 실효연방기금금리(EFFR)와 비교합니다.</p>
+        <p class="analysis-card-description">MacroWatch가 독자 개발한, 미국 채권시장을 기본으로 정책금리 방향성 기대를 추적합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -615,9 +610,6 @@
         <div class="policy-expectation-legend" aria-label="정책금리 기대 스프레드 범례">
           <span><i class="policy-expectation-legend-line policy-expectation-legend-line--raw"></i>일간값</span>
           <span><i class="policy-expectation-legend-line policy-expectation-legend-line--average"></i>5영업일 평균</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--hike"></i>0 위 · 높은 금리 경로 기대</span>
-          <span><i class="policy-expectation-legend-line policy-expectation-legend-line--cut"></i>0 아래 · 낮은 금리 경로 기대</span>
-          <span>3개월물 70% · 2년물 30%</span>
         </div>
       </div>
     </section>
