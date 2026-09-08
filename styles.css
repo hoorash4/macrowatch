@@ -583,7 +583,9 @@ body:has(#app-shell:not(.hidden)) {
   display:grid;
   grid-template-columns:minmax(0, 1fr);
 }
-.market-overview-grid #news-sentiment-dashboard, .sector-flow-view-card #sector-flow-dashboard {
+.market-overview-grid #news-sentiment-dashboard,
+.sector-flow-view-card #sector-flow-dashboard,
+.equity-bond-attractiveness-view-card #equity-bond-attractiveness-dashboard {
   border:0;
   border-radius:0;
   background:transparent;
@@ -2011,5 +2013,8 @@ body.is-pointer-dragging {
   }
 }
 
+.equity-bond-attractiveness-view-card,
+#equity-bond-attractiveness-dashboard,
+[data-equity-bond-chart] { min-width:0; max-width:100%; overflow:hidden; }
 .equity-bond-legend { display:flex; flex-wrap:wrap; gap:.35rem 1rem; margin-top:.55rem; color:#64748b; font-size:.72rem; }
 .equity-bond-legend span:nth-child(-n+2) { font-weight:700; }

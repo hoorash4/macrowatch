@@ -7,13 +7,17 @@ const vm = require('node:vm');
 test('주식 채권 상대매력 카드는 국가별 독립 점수를 한 그래프에 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const chart = fs.readFileSync(path.join(__dirname, '..', 'equity-bond-attractiveness-chart.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식\/채권 상대매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=1/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=2/);
   assert.match(chart, /국가별 독립 점수/);
   assert.match(chart, /한국\(KOSPI 100\)/);
   assert.match(chart, /미국\(S&P 100\)/);
   assert.match(chart, /registerLoader/);
+  assert.match(chart, /timelineGuides/);
+  assert.doesNotMatch(chart, /이익수익률 \$\{/);
+  assert.match(styles, /equity-bond-attractiveness-view-card #equity-bond-attractiveness-dashboard[\s\S]*?background:transparent/);
 });
 
 test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만든다', () => {
