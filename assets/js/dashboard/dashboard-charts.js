@@ -214,6 +214,12 @@ async function loadNewsSentimentDashboard() {
 // ===== 미국 시장 스트레스 모듈 =====
 // 월간·주간 스트레스 데이터의 축 계산과 본지표·보조지표 렌더링을 담당한다.
 // 지수 산식과 원천 데이터 수집은 Python 파이프라인에서 수행한다.
+function createSvgElement(name, attributes) {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+  Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+  return element;
+}
+
 function calculateCorrelation(pairs) {
   if (pairs.length < 2) return null;
   const meanX = pairs.reduce((sum, [x]) => sum + x, 0) / pairs.length;
@@ -337,11 +343,6 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width);
   const svg = chart.querySelector('svg');
   if (!svg) return;
-  const createSvgElement = (name, attributes) => {
-    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
-    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
-    return element;
-  };
   const hoverGuide = createSvgElement('line', {
     y1: padding.top,
     y2: height - padding.bottom,
@@ -627,17 +628,12 @@ function renderEmStressDashboard(rows) {
     { points: weekly.map(row => ({ x: x(row.week), value: toCreditStressNumber(row.eem_weekly_close) })), y: eemY, side: 'right', selector: 'path[stroke="#6b7280"]' },
   ] });
 
-  const createElement = (name, attributes) => {
-    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
-    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
-    return element;
-  };
   const attachVerticalGuide = ({ host, source, showLabels }) => {
     const svg = host?.querySelector('svg');
     if (!svg) return;
-    const guide = createElement('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-    const valueLabel = showLabels ? createElement('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' }) : null;
-    const periodLabel = showLabels ? createElement('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, 'pointer-events': 'none', visibility: 'hidden' }) : null;
+    const guide = createSvgElement('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
+    const valueLabel = showLabels ? createSvgElement('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' }) : null;
+    const periodLabel = showLabels ? createSvgElement('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, 'pointer-events': 'none', visibility: 'hidden' }) : null;
     svg.append(guide);
     if (valueLabel && periodLabel) svg.append(valueLabel, periodLabel);
     const show = (week) => {
@@ -739,12 +735,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     { points: weeklyKospi.map(row => ({ x: x(row.week), value: toCreditStressNumber(row.kospi_close) })), y: kospiY, side: 'right', selector: 'path[stroke="#6b7280"]' },
   ] });
 
-  const createSvgElement = (name, attributes) => {
-    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
-    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
-    return element;
-  };
-  const attachHover = ({ host, hoverRows, valueKey, mapY, chartHeight, chartPadding, source, label, showLabels = true }) => {
+  const attachHover = ({ host, hoverRows, valueKey, chartHeight, chartPadding, source, label, showLabels = true }) => {
     const svg = host.querySelector('svg');
     if (!svg || !hoverRows.length) return;
     const guide = createSvgElement('line', { y1: chartPadding.top, y2: chartHeight - chartPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
@@ -784,7 +775,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
       window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', { detail: { active: false, source } }));
     });
   };
-  attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', mapY: y, chartHeight: height, chartPadding: padding, source: 'korea-main', label: '' });
+  attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', chartHeight: height, chartPadding: padding, source: 'korea-main', label: '' });
   if (!fsiChart) return;
   const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)) && Number(row.bok_fsi) !== 0);
   if (!fsiRows.length) {
@@ -809,7 +800,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   window.MacroWatchAnalysisChart.scrollableSvg(fsiChart.querySelector('svg'), width, 920, { top: fsiPadding.top, bottom: fsiHeight - fsiPadding.bottom, axes: [
     { points: fsiRows.map(row => ({ x: x(row.month), value: toCreditStressNumber(row.bok_fsi) })), y: fsiY, selector: 'path[stroke="#6d4b91"]' },
   ] });
-  attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', mapY: fsiY, chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI', showLabels: false });
+  attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI', showLabels: false });
 }
 
 async function fetchBokFsiForDisplay() {

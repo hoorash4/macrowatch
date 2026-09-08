@@ -5,7 +5,6 @@
   const MIN_VIEWPORT_WIDTH = 680;
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
-  const DATABASE_PAGE_SIZE = 1000;
   const state = { rows: [], selectedYears: 2 };
   const chartUtils = window.MacroWatchAnalysisChart;
 
@@ -17,10 +16,7 @@
     return chartUtils.rowsForRecentHistory(rows, 'observation_date', selectedYears);
   }
 
-  function scrollToLatest(frame) {
-    if (!frame) return;
-    chartUtils.scrollToLatest(frame);
-  }
+  const { scrollToLatest } = chartUtils;
 
   function formatMonthDay(period) {
     const [, month, day] = String(period).split('-').map(Number);
@@ -148,17 +144,12 @@
   }
 
   async function fetchAllRows(supabaseClient) {
-    const rows = [];
-    for (let from = 0; ; from += DATABASE_PAGE_SIZE) {
-      const { data, error } = await supabaseClient.from('policy_expectation_spreads')
+    const { data, error } = await chartUtils.loadAllRows((from, to) => supabaseClient.from('policy_expectation_spreads')
         .select('observation_date,near_term_spread_bps,cycle_spread_bps,expectation_spread_bps')
         .order('observation_date')
-        .range(from, from + DATABASE_PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = data || [];
-      rows.push(...page);
-      if (page.length < DATABASE_PAGE_SIZE) return rows;
-    }
+        .range(from, to));
+    if (error) throw error;
+    return data;
   }
 
   async function load({ supabaseClient }) {

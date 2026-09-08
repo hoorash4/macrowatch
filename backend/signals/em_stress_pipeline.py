@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 import requests
 
 from common import SupabaseRest, carry_forward as carry_forward_periods
-from common import fetch_fred_observations, require_env, uncapped_score
+from common import fetch_fred_observations, require_env as required_env, uncapped_score as score
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
@@ -36,11 +36,6 @@ SCALES = {
     "tail_risk_oas": (3.0, 20.0),
     "em_equity_volatility": (10.0, 80.0),
 }
-
-
-def required_env(name: str) -> str:
-    """기존 호출부를 유지하는 공통 환경변수 함수 어댑터."""
-    return require_env(name)
 
 
 def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
@@ -97,10 +92,6 @@ def carry_forward(values: dict[str, float], weeks: list[str]) -> dict[str, float
     return carry_forward_periods(values, weeks)
 
 
-def score(value: float, floor: float, reference: float) -> float:
-    return uncapped_score(value, floor, reference)
-
-
 def trailing_average(values: list[float], length: int = 4) -> float:
     window = values[-length:]
     return sum(window) / len(window)
@@ -114,6 +105,7 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
     carried_eem = carry_forward(eem_values, weeks)
     last_completed_friday = today - timedelta(days=(today.weekday() - 4) % 7)
     source_last_weeks = {key: max(values) for key, values in raw.items() if values}
+    required_last_weeks = [source_last_weeks[key] for key in WEIGHTS if key in source_last_weeks]
     hy_history: list[float] = []
     tail_history: list[float] = []
     volatility_history: list[float] = []
@@ -137,7 +129,6 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
         )
         week_date = date.fromisoformat(week)
         missing_actual = any(week not in raw[key] for key in WEIGHTS)
-        required_last_weeks = [source_last_weeks[key] for key in WEIGHTS if key in source_last_weeks]
         is_provisional = missing_actual or week_date > last_completed_friday or any(week > latest for latest in required_last_weeks)
         hy_average = trailing_average(hy_history)
         tail_average = trailing_average(tail_history)

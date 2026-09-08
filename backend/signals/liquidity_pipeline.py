@@ -263,10 +263,10 @@ def calculate_equity_environment(country, data, end):
     version = US_VERSION if country == "US" else KR_VERSION
     dates = sorted(observations)
     output = []
-    for day in dates:
+    for index, day in enumerate(dates):
         if day < start:
             continue
-        history = [d for d in dates if day - timedelta(weeks=260) < d <= day]
+        history = dates[bisect_right(dates, day - timedelta(weeks=260)):index + 1]
         levels = {}
         for name, direction in directions.items():
             value = observations[day][name]

@@ -2,7 +2,7 @@
   'use strict';
   const HEIGHT = 320, MIN_VIEWPORT_WIDTH = 680, Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
-  const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000, Z_WINDOW = 756, MIN_Z_HISTORY = 60;
+  const Z_WINDOW = 756, MIN_Z_HISTORY = 60;
   const state = { rows: [], selectedYears: 1 };
   const chartUtils = window.MacroWatchAnalysisChart;
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin ? (targetMin + targetMax) / 2 : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
@@ -63,9 +63,9 @@
     if (!points.length) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도 데이터가 아직 없습니다.</div>'; return; }
     const firstTimestamp = points[0].timestamp, lastTimestamp = points.at(-1).timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
-    const timelineWidth = selectedYears === 'max' ? viewportWidth : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
+    const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
-    const initialScale = verticalScale(points.flatMap((point) => [point, { value: point.dailyValue }]));
+    const initialScale = verticalScale(points);
     const pathFor = (maximum, key = 'value') => window.MacroWatchAnalysisChart.monotonePath(points
       .filter((point) => Number.isFinite(point[key]))
       .map((point) => ({
@@ -91,7 +91,7 @@
       animationFrame = null;
       const visiblePoints = points.filter((point) => point.x >= frame.scrollLeft && point.x <= frame.scrollLeft + frame.clientWidth);
       if (!visiblePoints.length) return;
-      const current = verticalScale(visiblePoints.flatMap((point) => [point, { value: point.dailyValue }]));
+      const current = verticalScale(visiblePoints);
       line.setAttribute('d', pathFor(current.maximumAbsoluteValue)); dailyLine.setAttribute('d', pathFor(current.maximumAbsoluteValue, 'dailyValue'));
       yLabels.forEach((label) => { const value = Number(label.dataset.koreaForeignFlowYMultiple) * current.tickStep; label.textContent = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`; });
     };

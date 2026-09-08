@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createKisRequestRunner, fetchKisDailyPrices, fetchKisDomesticIndexPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type MarketPrice, type SectorPrice, type SectorRanking } from "../_shared/market/sector-flow.ts";
@@ -17,9 +18,7 @@ type StoredSectorPrice = {
 type StoredRankingAnchor = { etf_id: string; rank: number | string; previous_rank: number | string | null; top10_streak: number | string };
 type StoredMarketPrice = { market_date: string; close: number | string };
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
-}
+
 
 function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);

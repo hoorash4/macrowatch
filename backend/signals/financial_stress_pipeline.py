@@ -28,14 +28,11 @@ SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 INDEX_HISTORY_YEARS = 3
-MONTHLY_STRESS_COMPONENTS = (
-    "excess_bond_premium",
-    "corporate_bond_market_distress_index",
-)
 MONTHLY_STRESS_COMPONENT_WEIGHTS = {
     "excess_bond_premium": 1,
     "corporate_bond_market_distress_index": 1,
 }
+MONTHLY_STRESS_COMPONENTS = tuple(MONTHLY_STRESS_COMPONENT_WEIGHTS)
 WEEKLY_TENSION_COMPONENT_WEIGHTS = {
     "high_yield": 0.20,
     "financial_conditions_credit": 0.20,

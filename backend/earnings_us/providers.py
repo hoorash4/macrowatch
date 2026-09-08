@@ -8,8 +8,6 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-import requests
-
 from earnings_common.http import bounded_request, provider_session, safe_request_failure
 
 from .models import MarketSecurity

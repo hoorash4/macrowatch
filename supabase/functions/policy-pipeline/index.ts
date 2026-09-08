@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recomputePolicyScores } from "../_shared/policy/policy-score-store.ts";
 import { POLICY_SCORE_PROFILE } from "../_shared/policy/policy-scoring.ts";
@@ -68,7 +69,6 @@ const RESPONSE_SCHEMA = {
   }, required: ["decision", "analysis", "briefing"],
 };
 
-function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } }); }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : typeof error === "object" ? JSON.stringify(error) : String(error); }
 function normalizeText(html: string) { return html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim(); }
 function dateFromUrl(url: string) { const matched = url.match(/(20\d{6})/); return matched ? `${matched[1].slice(0, 4)}-${matched[1].slice(4, 6)}-${matched[1].slice(6, 8)}` : null; }

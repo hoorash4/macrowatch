@@ -25,8 +25,8 @@ def percentile_score(value: float, history: list[float]) -> float:
     values = sorted(item for item in history if isfinite(item))
     if not values:
         raise ValueError("percentile history is empty")
-    lower = bisect_right(values, value) - values.count(value)
     equal = values.count(value)
+    lower = bisect_right(values, value) - equal
     percentile = (lower + equal / 2) / len(values)
     return percentile * 100.0
 
@@ -59,6 +59,7 @@ def build_weekly_rows(
     ttm = trailing_four_quarter_income(quarters)
     lag = timedelta(days=75 if country == "KR" else 60)
     available = [(period + lag, income, cap) for period, income, cap in ttm]
+    available_dates = [item[0] for item in available]
     if country == "US" and (not available or us_anchor_earnings_yield is None):
         raise ValueError("US calculation requires an earnings-yield anchor")
     anchor_available = [item for item in available if weeks and item[0] <= weeks[-1]]
@@ -67,10 +68,10 @@ def build_weekly_rows(
     price_dates = sorted(equity_prices)
     raw: list[dict] = []
     for index, week in enumerate(weeks):
-        eligible = [item for item in available if item[0] <= week]
-        if not eligible or week not in equity_prices or week not in sovereign_yields:
+        current_index = bisect_right(available_dates, week) - 1
+        if current_index < 0 or week not in equity_prices or week not in sovereign_yields:
             continue
-        available_date, income, market_cap = eligible[-1]
+        available_date, income, market_cap = available[current_index]
         if equity_prices[week] <= 0:
             continue
         if country == "KR":
@@ -91,10 +92,10 @@ def build_weekly_rows(
         prior_year = weeks[index - 52] if index >= 52 else None
         if prior_week not in equity_prices or prior_year is None:
             continue
-        prior_available = [item for item in available if item[0] <= prior_year]
-        if not prior_available:
+        prior_index = bisect_right(available_dates, prior_year) - 1
+        if prior_index < 0:
             continue
-        prior_income = prior_available[-1][1]
+        prior_income = available[prior_index][1]
         equity_return = (equity_prices[week] / equity_prices[prior_week] - 1.0) * 100.0
         raw.append({
             "observation_date": week,

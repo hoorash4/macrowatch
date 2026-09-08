@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 import requests
 
-from common import SupabaseRest, require_env as require_shared_env, uncapped_score
+from common import SupabaseRest, require_env, uncapped_score
 
 
 ECOS = "https://ecos.bok.or.kr/api"
@@ -50,11 +50,6 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
     "Cache-Control": "no-cache",
 }
-
-
-def require_env(name: str) -> str:
-    """기존 호출부를 유지하는 공통 환경변수 함수 어댑터."""
-    return require_shared_env(name)
 
 
 def request(path: list[str]) -> dict:
@@ -207,41 +202,8 @@ def fetch_existing_fsi(url: str, service_key: str, years: int) -> dict[str, floa
     return values
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=3)
-    args = parser.parse_args()
-    key = require_env("ECOS_API_KEY")
-    url = require_env("SUPABASE_URL")
-    service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
-    today = date.today()
-    values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
-    kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
-    corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], args.years)
-    treasury_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["treasury_3y"][1], args.years)
-    cp_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cp_91d"][1], args.years)
-    cd_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cd_91d"][1], args.years)
-    kospi_weekly = []
-    for week, (observed_at, kospi_close) in sorted(kospi_weekly_values.items()):
-        corporate = corporate_weekly_values.get(week)
-        treasury = treasury_weekly_values.get(week)
-        cp_weekly = cp_weekly_values.get(week)
-        cd_weekly = cd_weekly_values.get(week)
-        kospi_weekly.append({
-            "week": week,
-            "kospi_close": round(kospi_close, 2),
-            "observed_at": observed_at.isoformat(),
-            "corporate_credit_spread": round(corporate[1] - treasury[1], 4) if corporate and treasury else None,
-            "short_term_funding_spread": round(cp_weekly[1] - cd_weekly[1], 4) if cp_weekly and cd_weekly else None,
-        })
-    existing_fsi = fetch_existing_fsi(url, service_key, args.years)
-    try:
-        fsi = {**existing_fsi, **fetch_bok_fsi(args.years)}
-    except Exception as error:
-        # The MacroWatch index and KOSPI update must not stop merely because
-        # the official comparison series is temporarily unavailable.
-        print(f"fsi_unavailable={error}")
-        fsi = existing_fsi
+def build_monthly_rows(values: dict[str, dict[str, float]], fsi: dict[str, float], today: date) -> list[dict]:
+    """수집·저장과 분리된 기존 월간 K-MSI 계산."""
     months = sorted(set().union(*[set(rows) for rows in values.values()]))
     today_month = today.replace(day=1).isoformat()
     rows = []
@@ -294,6 +256,45 @@ def main() -> None:
             "bok_fsi": official_fsi if has_fsi else None,
             "is_provisional": month == today_month or not has_fsi,
         })
+    return rows
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--years", type=int, default=3)
+    args = parser.parse_args()
+    key = require_env("ECOS_API_KEY")
+    url = require_env("SUPABASE_URL")
+    service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
+    today = date.today()
+    values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
+    kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
+    corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], args.years)
+    treasury_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["treasury_3y"][1], args.years)
+    cp_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cp_91d"][1], args.years)
+    cd_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cd_91d"][1], args.years)
+    kospi_weekly = []
+    for week, (observed_at, kospi_close) in sorted(kospi_weekly_values.items()):
+        corporate = corporate_weekly_values.get(week)
+        treasury = treasury_weekly_values.get(week)
+        cp_weekly = cp_weekly_values.get(week)
+        cd_weekly = cd_weekly_values.get(week)
+        kospi_weekly.append({
+            "week": week,
+            "kospi_close": round(kospi_close, 2),
+            "observed_at": observed_at.isoformat(),
+            "corporate_credit_spread": round(corporate[1] - treasury[1], 4) if corporate and treasury else None,
+            "short_term_funding_spread": round(cp_weekly[1] - cd_weekly[1], 4) if cp_weekly and cd_weekly else None,
+        })
+    existing_fsi = fetch_existing_fsi(url, service_key, args.years)
+    try:
+        fsi = {**existing_fsi, **fetch_bok_fsi(args.years)}
+    except Exception as error:
+        # The MacroWatch index and KOSPI update must not stop merely because
+        # the official comparison series is temporarily unavailable.
+        print(f"fsi_unavailable={error}")
+        fsi = existing_fsi
+    rows = build_monthly_rows(values, fsi, today)
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
     upsert(rows, url, service_key, "korea_market_stress_monthly", "month")

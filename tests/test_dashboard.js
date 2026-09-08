@@ -426,7 +426,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.doesNotMatch(chart, /policy-expectation-x-tick/);
   for (const range of ['1', '2', '5', '10', 'max']) assert.match(html, new RegExp(`data-policy-expectation-range="${range}"`));
   assert.match(html, /data-policy-expectation-range="2" class="is-active"/);
-  assert.match(html, /policy-expectation-chart\.js\?v=13/);
+  assert.match(html, /policy-expectation-chart\.js\?v=\d+/);
   const utils = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(utils, /FULL_HISTORY_SCROLL_RANGES = new Set\(\[5, 10\]\)/);
   assert.match(utils, /if \(selectedYears === 'max'\) return viewportWidth/);

@@ -14,6 +14,7 @@ const DashboardApi = window.MacroWatchFrontend.createFunctionClient(supabaseClie
 const ITEMS_PER_TRACK = 8;
 const MAX_TRACKS = 10;
 const MAX_TARGETS = ITEMS_PER_TRACK * MAX_TRACKS;
+const DRAG_SCROLL_THRESHOLD = 80;
 
 let targets = [];
 let targetLoadError = false;
@@ -729,6 +730,7 @@ async function checkOneTarget(targetId) {
   }
 }
 function renderTargetItem(item, globalIndex) {
+  const collection = getCollectionState(item);
   return `
     <div data-target-container="${globalIndex}" class="py-3">
       <div data-target-row class="flex items-center justify-between gap-3 px-2 rounded-lg hover:bg-slate-800/30 transition">
@@ -746,12 +748,12 @@ function renderTargetItem(item, globalIndex) {
             </div>
             <span class="compact-mobile-summary block text-xs text-slate-400 mt-0.5">
               ${item.target_value !== null && item.target_value !== undefined ? `설정: <span class="text-blue-400 font-mono">${item.target_value}</span> | ` : ''}
-              현재: <span class="${getCollectionState(item).className} font-mono">${getCollectionState(item).label}</span>
+              현재: <span class="${collection.className} font-mono">${collection.label}</span>
             </span>
             <span class="target-condition-summary block text-xs text-slate-400 mt-0.5 truncate">
               <span class="text-slate-300 font-mono">${getConditionText(item.condition_type)}</span>
               ${item.target_value !== null && item.target_value !== undefined ? ` | 설정: <span class="text-blue-400 font-mono">${item.target_value}</span>` : ''}
-              | 현재: <span class="${getCollectionState(item).className} font-mono">${getCollectionState(item).label}</span>
+              | 현재: <span class="${collection.className} font-mono">${collection.label}</span>
             </span>
           </div>
         </div>
@@ -1044,11 +1046,10 @@ function getDragPreviewCenterY(pointerClientY) {
 
 // 드래그 중 화면 하단에 가까워질 때 아래 방향으로만 자동 스크롤합니다.
 function updateDownwardAutoScroll(clientX, clientY) {
-  const threshold = 80;
   pointerDragState.lastClientX = clientX;
   pointerDragState.lastClientY = clientY;
 
-  if (window.innerHeight - clientY >= threshold) {
+  if (window.innerHeight - clientY >= DRAG_SCROLL_THRESHOLD) {
     stopDownwardAutoScroll();
     return;
   }
@@ -1064,20 +1065,19 @@ function runDownwardAutoScroll() {
     return;
   }
 
-  const threshold = 80;
   const distanceFromBottom = Math.max(
     0,
     window.innerHeight - pointerDragState.lastClientY
   );
 
-  if (distanceFromBottom >= threshold) {
+  if (distanceFromBottom >= DRAG_SCROLL_THRESHOLD) {
     stopDownwardAutoScroll();
     return;
   }
 
   const speed = Math.max(
     2,
-    Math.ceil((threshold - distanceFromBottom) / threshold * 14)
+    Math.ceil((DRAG_SCROLL_THRESHOLD - distanceFromBottom) / DRAG_SCROLL_THRESHOLD * 14)
   );
   const previousScrollY = window.scrollY;
   window.scrollBy(0, speed);

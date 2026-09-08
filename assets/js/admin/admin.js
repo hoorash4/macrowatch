@@ -2,7 +2,13 @@
   const db = window.MacroWatchFrontend.createSupabaseClient();
   const { escapeHtml } = window.MacroWatchFrontend;
   const functionClient = window.MacroWatchFrontend.createFunctionClient(db);
-  let scheduleTimes = ['08:00', '18:00'];
+  const DEFAULT_SCHEDULE = ['08:00', '18:00'];
+  const WORKFLOW_CONTROLS = {
+    check: { button: 'run-check-button', badge: 'check-badge', action: 'run_check', idleLabel: '지금 지표 확인', success: '지표 확인이 완료되었습니다.' },
+    backup: { button: 'run-backup-button', badge: 'backup-badge', action: 'run_backup', idleLabel: '지금 수동 백업', success: '수동 백업이 완료되었습니다.' },
+    news: { button: 'run-news-button', badge: 'news-badge', action: 'run_news', idleLabel: '뉴스 분석 테스트', success: '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.' },
+  };
+  let scheduleTimes = [...DEFAULT_SCHEDULE];
   let adminCardOrder = null;
 
   function defaultScheduleTime(index) {
@@ -232,7 +238,7 @@
     setBadge(document.getElementById('news-badge'), data.news);
     document.getElementById('news-time').textContent = formatTime(data.news?.updated_at || data.news?.created_at);
 
-    scheduleTimes = Array.isArray(data.schedule?.times) && data.schedule.times.length ? data.schedule.times : ['08:00', '18:00'];
+    scheduleTimes = Array.isArray(data.schedule?.times) && data.schedule.times.length ? data.schedule.times : [...DEFAULT_SCHEDULE];
     document.getElementById('schedule-count').value = String(scheduleTimes.length);
     renderScheduleTimeInputs(scheduleTimes);
     document.getElementById('schedule-label').textContent = `매일 ${scheduleTimes.join(' · ')}`;
@@ -427,11 +433,12 @@
   }
 
   async function waitForCompletion(kind, requestedAt) {
+    const control = WORKFLOW_CONTROLS[kind] || WORKFLOW_CONTROLS.news;
     const requested = new Date(requestedAt).getTime() - 5000;
     for (let attempt = 0; attempt < 120; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       const { run } = await invokeAdmin('workflow_status', { kind });
-      setBadge(document.getElementById(kind === 'check' ? 'check-badge' : kind === 'backup' ? 'backup-badge' : 'news-badge'), run);
+      setBadge(document.getElementById(control.badge), run);
       if (run && new Date(run.created_at).getTime() >= requested && run.status === 'completed') {
         return run;
       }
@@ -440,19 +447,19 @@
   }
 
   async function runWorkflow(kind) {
-    const button = document.getElementById(kind === 'check' ? 'run-check-button' : kind === 'backup' ? 'run-backup-button' : 'run-news-button');
+    const control = WORKFLOW_CONTROLS[kind] || WORKFLOW_CONTROLS.news;
+    const button = document.getElementById(control.button);
     const label = button.querySelector('span');
-    const idleLabel = kind === 'check' ? '지금 지표 확인' : kind === 'backup' ? '지금 수동 백업' : '뉴스 분석 테스트';
     button.disabled = true;
     label.textContent = '진행 중';
-      setBadge(document.getElementById(kind === 'check' ? 'check-badge' : kind === 'backup' ? 'backup-badge' : 'news-badge'), {
+    setBadge(document.getElementById(control.badge), {
       status: 'queued'
     });
     try {
-      const result = await invokeAdmin(kind === 'check' ? 'run_check' : kind === 'backup' ? 'run_backup' : 'run_news');
+      const result = await invokeAdmin(control.action);
       const run = await waitForCompletion(kind, result.requested_at);
       if (run.conclusion === 'success') {
-        showNotice('실행 완료', kind === 'check' ? '지표 확인이 완료되었습니다.' : kind === 'backup' ? '수동 백업이 완료되었습니다.' : '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.');
+        showNotice('실행 완료', control.success);
       } else {
         showNotice('실행 실패', `작업이 ${run.conclusion || '실패'} 상태로 종료되었습니다.`, true);
       }
@@ -460,7 +467,7 @@
       showNotice('실행 실패', error.message || '작업을 실행하지 못했습니다.', true);
     } finally {
       button.disabled = false;
-      label.textContent = idleLabel;
+      label.textContent = control.idleLabel;
       await loadAll();
     }
   }
@@ -525,9 +532,9 @@
     initializeCollapsibleLists();
     protectCredentialInputs();
     document.getElementById('refresh-button').addEventListener('click', loadAll);
-    document.getElementById('run-check-button').addEventListener('click', () => runWorkflow('check'));
-    document.getElementById('run-backup-button').addEventListener('click', () => runWorkflow('backup'));
-    document.getElementById('run-news-button').addEventListener('click', () => runWorkflow('news'));
+    Object.entries(WORKFLOW_CONTROLS).forEach(([kind, control]) => {
+      document.getElementById(control.button).addEventListener('click', () => runWorkflow(kind));
+    });
     document.getElementById('save-schedule-button').addEventListener('click', saveSchedule);
     document.getElementById('schedule-count').addEventListener('change', () => {
       const current = Array.from(document.querySelectorAll('[data-schedule-time]'), (input) => input.value);

@@ -8,7 +8,7 @@
 - 1/2/5년은 한 화면의 시간 폭이며 전체 이력을 가로 스크롤한다. 전체/MAX만 전체 이력을 한 화면에 맞춘다. 흰 배경과 세로 커서의 값·날짜 표시를 사용한다.
 - 월별 표본이 12개 미만이면 초기 표본 부족을 표시한다.
 - 원자료는 계속 매일 수집하고, 완료된 월의 새 결과를 추가한다. 기존 v1 결과는 버전별로 보관하며 화면에서는 v2만 조회한다.
-- 적용 SQL: `backend/liquidity_monthly_v2.sql`. 각 국가 유동성 카드는 해당 메뉴 마지막, 지표 추적 알림은 `#tracker` 전용 메뉴이다.
+- 적용 SQL 기록: `supabase/reference/liquidity_monthly_v2.sql`. 각 국가 유동성 카드는 해당 메뉴 마지막, 지표 추적 알림은 `#tracker` 전용 메뉴이다.
 
 아래는 최초 v1 구축 기록이다. 위 개편 사항이 빈도·표시·버전 정책을 대체한다.
 
@@ -70,7 +70,7 @@ M2와 Lf는 합쳐 국내 통화 축 50%로 제한한다. 단순 금액 합산�
   한국은행 스냅샷은 공식 차트 전체 응답을 받되 이미 저장된 관측을 보존한다.
 - GitHub `Refresh liquidity pressure and capacity`, 매일 18:10 KST. 국가별 병렬 실행.
 - 공통 예약 실패 이메일 워크플로에 등록. 수집 오류·필수자료 누락·과도한 노후화는 실패.
-- 배포 SQL: `backend/liquidity_schema.sql` (Supabase MCP migration).
+- 배포 SQL 기록: `supabase/reference/liquidity_schema.sql` (Supabase MCP migration).
 
 ## 검증
 

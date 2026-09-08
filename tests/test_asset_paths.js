@@ -24,3 +24,12 @@ test('stylesheet images resolve relative to the stylesheet, not the document', (
     assert.ok(fs.statSync(path.resolve(path.dirname(cssFile), url)).isFile(), url);
   }
 });
+
+test('each page initializes each local script only once regardless of cache version', () => {
+  for (const entry of ['index.html', 'admin.html']) {
+    const html = fs.readFileSync(path.join(root, entry), 'utf8');
+    const scripts = [...html.matchAll(/<script\b[^>]*src="([^"]+)"/g)]
+      .map(([, url]) => url.split('?')[0]).filter(url => !/^https?:/.test(url));
+    assert.equal(new Set(scripts).size, scripts.length, entry);
+  }
+});
