@@ -55,6 +55,8 @@ DB migration은 이력과 운영 계약이므로
 - `tests/run_checks.ps1`: 로컬 기본 검사. 모든 화면·운영 검증을 대체하지 않는다.
 - `docs/REFACTOR_20260908.md`: 원복 기준, 단계별 변경·검증, 남은 작업.
 
-루트의 JavaScript·CSS 파일은 기존 URL 호환용 Jekyll 템플릿이며 실제 코드는
-`assets`에만 존재한다. 호환 파일을 독립 구현으로 되돌리지 않는다.
+루트에 JavaScript·CSS 호환 파일을 저장하지 않는다. `tools/build/pages-compat.cjs`가
+Jekyll 빌드 결과인 `_site`에만 기존 URL 파일을 생성한다. 실제 코드는 `assets`에만 존재한다.
+CI와 배포는 `.github/workflows/pages-build.yml`의 동일한 빌드·검증 절차를 사용한다.
+일반 문서는 `docs`에 모으며, 루트의 `AGENTS.md`와 `README.md`는 작업 지침·저장소 안내 진입점이다.
 전체 완료 여부와 운영 검증 결과는 단계 기록의 최종 검증을 확인한다.
