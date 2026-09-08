@@ -10,7 +10,7 @@ test('주식 채권 상대매력 카드는 국가별 독립 점수를 한 그래
   const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식\/채권 상대매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=3/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=4/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.match(chart, /국가별 독립 점수/);
   assert.match(chart, /한국\(KOSPI 100\)/);
@@ -19,6 +19,7 @@ test('주식 채권 상대매력 카드는 국가별 독립 점수를 한 그래
   assert.match(chart, /timelineGuides/);
   assert.match(chart, /const key = String\(year\)/);
   assert.doesNotMatch(chart, /String\(month\)\.padStart/);
+  assert.match(chart, /const HEIGHT = 320,[\s\S]*AXIS = 46/);
   assert.doesNotMatch(chart, /이익수익률 \$\{/);
   assert.match(styles, /equity-bond-attractiveness-view-card #equity-bond-attractiveness-dashboard[\s\S]*?background:transparent/);
 });
