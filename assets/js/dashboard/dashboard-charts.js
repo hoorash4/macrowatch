@@ -1068,11 +1068,11 @@ function sectorReturnTone(value) {
 
 function sectorLeadership(value) {
   if (value === null || value === undefined || value === '') {
-    return '<span class="sector-flow-leadership sector-flow-leadership-empty"><span><i style="width:0%"></i></span><em>—</em></span>';
+    return '<span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span>';
   }
   const score = Math.max(0, Math.min(100, Math.round(Number(value))));
-  if (!Number.isFinite(score)) return '<span class="sector-flow-leadership sector-flow-leadership-empty"><span><i style="width:0%"></i></span><em>—</em></span>';
-  return `<span class="sector-flow-leadership" title="최근 20거래일 상승장 조건 아래 10주간 초과수익 강도와 지속성"><span><i style="width:${score}%"></i></span><em>${score}</em></span>`;
+  if (!Number.isFinite(score)) return '<span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span>';
+  return `<span class="sector-flow-leadership" title="최근 20거래일 상승장 조건 아래 10주간 초과수익 강도와 지속성"><small>주도력</small><em>${score}</em></span>`;
 }
 
 function setSectorWeekHeading(card, week, isLatest) {
@@ -1093,12 +1093,6 @@ function sectorHoldingsTooltip(etf) {
     ? holdings.map((holding) => `<li><span>${escapeHtml(holding.holding_name)}</span></li>`).join('')
     : '<li class="sector-flow-holdings-empty"><span>미수집</span></li>';
   return `<button type="button" class="sector-flow-sector" aria-expanded="false"><span>${sectorName}</span><span class="sector-flow-holdings" role="tooltip"><b>섹터 대표 종목</b><ol>${items}</ol></span></button>`;
-}
-
-function sectorTopHolding(etf) {
-  const topHolding = [...(etf?.market_sector_etf_holdings || [])]
-    .sort((a, b) => Number(a.weight_rank) - Number(b.weight_rank))[0];
-  return `<span class="sector-flow-top-holding">${topHolding ? escapeHtml(topHolding.holding_name) : '미수집'}</span>`;
 }
 
 function closeSectorHoldings(trigger) {
@@ -1136,6 +1130,43 @@ function initializeSectorHoldingInteractions() {
   });
 }
 
+function initializeSectorFlowSwipeIndicator() {
+  const preview = document.querySelector('.sector-flow-preview');
+  const indicator = document.querySelector('[data-sector-flow-swipe-indicator]');
+  const dots = [...(indicator?.querySelectorAll('.sector-flow-swipe-dots i') || [])];
+  if (!preview || !indicator || !dots.length) return;
+  const update = () => {
+    const cards = [...preview.querySelectorAll('.sector-flow-week')];
+    const activeIndex = cards.reduce((closest, card, index) => (
+      Math.abs(card.offsetLeft - preview.scrollLeft) < Math.abs(cards[closest].offsetLeft - preview.scrollLeft) ? index : closest
+    ), 0);
+    dots.forEach((dot, index) => dot.classList.toggle('is-active', index === activeIndex));
+    indicator.setAttribute('aria-label', `주차 ${activeIndex + 1}/${cards.length}`);
+  };
+  const positionCurrentWeek = () => {
+    if (!window.matchMedia('(max-width: 768px)').matches || preview.dataset.initialWeekPositioned) {
+      update();
+      return;
+    }
+    const current = preview.querySelector('.sector-flow-week-current');
+    if (!current || !current.offsetWidth) return;
+    const paddingLeft = parseFloat(getComputedStyle(preview).paddingLeft) || 0;
+    preview.scrollLeft = Math.max(0, current.offsetLeft - paddingLeft);
+    preview.dataset.initialWeekPositioned = 'true';
+    update();
+  };
+  if (!preview.dataset.swipeIndicatorReady) {
+    preview.dataset.swipeIndicatorReady = 'true';
+    let frame = 0;
+    preview.addEventListener('scroll', () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    }, { passive: true });
+    window.addEventListener('resize', positionCurrentWeek);
+  }
+  requestAnimationFrame(positionCurrentWeek);
+}
+
 function renderSectorFlow(rows) {
   const grouped = new Map();
   rows.forEach((row) => {
@@ -1154,26 +1185,28 @@ function renderSectorFlow(rows) {
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = isLatestWeek
-      ? '<span>순위</span><span>변동</span><span>섹터 <span class="sector-flow-classification-note">(KRX 업종 구분과 다름)</span></span><span>대표종목</span><span>주간 수익률</span><span>4주 누적 수익률</span><span>랭킹 연속 유지</span><span>주도력</span>'
+      ? '<span>순위</span><span>변동</span><span>섹터 <span class="sector-flow-classification-note">(KRX 업종 구분과 다름)</span></span><span>연속</span>'
       : '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
       const etf = row.market_sector_etfs;
       const rank = `<b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}`;
-      const returns = `<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span></div>`;
+      const returns = `<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span>${isLatestWeek ? sectorLeadership(row.leadership_score) : ''}</div>`;
       const streak = `<span class="sector-flow-streak">${Number(row.top10_streak)}${isLatestWeek ? '주차' : '주'}</span>`;
-      return `<li>${rank}${isLatestWeek ? `${sectorTopHolding(etf)}${returns}${streak}${sectorLeadership(row.leadership_score)}` : `${streak}${returns}`}</li>`;
+      return `<li>${rank}${streak}${returns}</li>`;
     }).join('') : isLatestWeek
-      ? '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-top-holding">—</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div><span class="sector-flow-streak">—주차</span><span class="sector-flow-leadership sector-flow-leadership-empty">—</span></li>'
+      ? '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주차</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span><span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span></div></li>'
       : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
   if (note) note.textContent = '매 영업일 시가·종가 반영';
+  initializeSectorFlowSwipeIndicator();
 }
 
 async function loadSectorFlowDashboard() {
   if (!document.getElementById('sector-flow-dashboard') || !supabaseClient) return;
   initializeSectorHoldingInteractions();
+  initializeSectorFlowSwipeIndicator();
   const { data, error } = await supabaseClient.from('market_sector_weekly_rankings')
     .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,leadership_score,price_stage,market_sector_etfs(sector_name,market_sector_etf_holdings(holding_name,weight_pct,weight_rank))')
     // 전체 순위를 6주 보관하므로 현재 등록 규모보다 넉넉하게 읽고 화면에서 주차별 TOP 6만 추린다.
