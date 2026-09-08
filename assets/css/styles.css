@@ -2334,7 +2334,7 @@ body.is-pointer-dragging {
   .news-sentiment-row {
     flex-direction: column;
     align-items: stretch;
-    gap: .35rem;
+    gap: .2rem;
   }
   #news-sentiment-chart .news-sentiment-row-date {
     width: auto;
@@ -2343,7 +2343,7 @@ body.is-pointer-dragging {
   }
   #news-sentiment-chart .news-sentiment-horizontal-bar {
     width: 100%;
-    height: 4rem;
+    height: 6rem;
     flex: none;
   }
   .news-sentiment-graph--expanded .news-sentiment-bar--compact {
