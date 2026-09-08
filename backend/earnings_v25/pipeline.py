@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+import re
+from dataclasses import replace
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Any, Callable, Iterable, Iterator, Mapping
+
 from earnings_common.seasonal_windows import (
     _seasonal_window_index,
     _window_samples,
@@ -15,14 +23,6 @@ from earnings_common.periods import (
 )
 
 from earnings_common.db_rows import _financial_from_db, _market_from_db
-
-import json
-import os
-import re
-from dataclasses import replace
-from datetime import date, timedelta
-from decimal import Decimal
-from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .aggregation import aggregate_market, calculate_market_point
 from earnings_common.models import (

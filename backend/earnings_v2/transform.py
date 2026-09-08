@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import re
+from collections import defaultdict
+from collections.abc import Iterable
+from datetime import date
+from decimal import Decimal
+from statistics import median
+from typing import Any
+
 from earnings_common.dart_accounts import (
+    OP_IDS, NET_IDS, OP_NAMES, NET_NAMES,
     normalize_label,
     _statement_rows,
     _preferred_statement_rows,
@@ -14,21 +23,12 @@ from earnings_common.dart_accounts import (
     _filing_identity,
 )
 
-import re
-from collections import defaultdict
-from collections.abc import Iterable
-from datetime import date
-from decimal import Decimal
-from statistics import median
-from typing import Any
-
 from earnings_common.models import FinancialFact
 from earnings_common.values import HUNDRED, MAX_SEASONAL_SAMPLES, decimal_value, profit_margin, conventional_growth, update_seasonal_window
 
 
 MIN_SEASONAL_SAMPLES = 3
 SEASONAL_HISTORY_START_YEAR = 2016
-from earnings_common.dart_accounts import OP_IDS, NET_IDS, OP_NAMES, NET_NAMES
 
 
 

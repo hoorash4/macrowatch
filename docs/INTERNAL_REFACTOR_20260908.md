@@ -8,7 +8,7 @@
 - Review every tracked file. Review does not require changing every file.
 - Historical migrations, archived versions and backfill-only code are not rewritten for cosmetic consistency.
 - User clarified priority: active frontend, automatic collectors and Edge Functions. No further v2/v2.5 backfill refactoring.
-- Earlier uncommitted earnings extractions remain under review; not deployed.
+- Shared earnings extractions have regression coverage; collection policies remain separate.
 
 ## Review ledger
 
@@ -80,13 +80,48 @@ Partial inspection, automated scanning and passing tests do not mean a full revi
 - Not yet complete: full CSS/HTML review, remaining modules and historical-file
   references, CI Deno type checking, browser parity, deployment and final DB checks.
 
-## Remaining scope
+## Subsequent review and verification
 
-- Remaining frontend JS, both HTML entry points and complete CSS cascade.
-- Active Python collectors, sources, tracking/operations modules and US automatic pipeline.
-- All Edge Function entry points and shared modules.
-- Workflows, build tooling, configuration, tests, documentation and archive/runtime references.
-- File-by-file ledger expansion, behavior regression tests, deployment and read-only live verification.
+- All 19 active frontend JavaScript files, index.html, admin.html and the complete
+  stylesheet reviewed. Only adjacent identical CSS selector blocks were combined;
+  declarations and their order are unchanged. The duplicate admin autocomplete
+  script was removed; the existing head-loaded version remains. Changed assets
+  have cache versions updated, and duplicate entrypoint scripts have a regression test.
+- Korean automatic.py, automatic_cli.py, providers.py, financial_company.py and
+  aggregation.py reviewed. run_quarter already rejects non-incremental/backfill
+  flags before execution: its unreachable backfill branches were removed without
+  changing signatures, guards, policies or provider behavior. Common earnings
+  modules reviewed; backfill re-exports remain for actual existing callers.
+- US six_k.py and constituents.py reviewed in addition to the modules above.
+  Historical identity mappings and provider-specific fallback rules are functional
+  requirements, not disposable cleanup. Removed only confirmed unused imports.
+- Financial-company Edge source and the sector client used by V2 reviewed. Sector
+  mappings, cumulative/standalone rules, paging and timeouts remain unchanged.
+- All 29 workflow definitions reviewed, including failure email and diagnostic
+  workflows. No schedules, secrets, input defaults or workflow definitions changed.
+- Current docs reviewed; historical HANDOFF explicitly labelled as a dated snapshot.
+  Two obsolete SQL file references in LIQUIDITY_SPEC updated to their actual paths.
+- Full local verification: 350 Python tests pass. Node tests and JavaScript syntax
+  pass. New golden tests compare 845 complete US/Korea calculation rows and model
+  coefficients with values generated from ecc3888; no live recalculation performed.
+- PR checkpoint b143e81 passed CI, including Deno checks and the Pages build.
+  The subsequent commit still requires CI and production verification.
+- Production baseline SVG paths/text captured for US, Korea, emerging-market,
+  earnings, policy and flow views while authenticated. These are compared after deployment.
+
+## Release safety
+
+Several existing push/workflow_run triggers initiate historical recollection or
+notifications. A refactor is not permission to rerun those data jobs. After PR CI
+passes, use a merge commit carrying [skip ci], manually dispatch Pages, and deploy
+only affected Edge Functions through Supabase with their existing JWT settings.
+Do not run the general deployment workflow or replay migrations. Normal future
+schedules remain unchanged. Verify stored earnings checksums and rendered charts.
+
+Historical SQL migrations, archived versions and backfill-only files are retained
+as history/compatibility, not claimed to have been rewritten or exhaustively
+re-audited internally. Tests validate them where shared interfaces are affected.
+Completion of deployment and live verification must be recorded separately.
 
 ## Safeguards
 

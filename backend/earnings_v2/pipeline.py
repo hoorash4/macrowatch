@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import re
+from datetime import date
+from decimal import Decimal
+from typing import Any, Callable, Iterable, Iterator, Mapping
+
 from earnings_common.fx_rates import (
     _LazyKrwRates,
 )
@@ -19,13 +26,6 @@ from earnings_common.periods import (
 )
 
 from earnings_common.db_rows import _financial_from_db, _market_from_db
-
-import json
-import os
-import re
-from datetime import date
-from decimal import Decimal
-from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from .aggregation import aggregate_market, calculate_market_point
 from .financial_company import FinancialCompanyClient, merge_financial_company

@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from .aggregation import aggregate_us_market, with_market_metrics
-from .models import MarketSecurity, USCompany, USFinancialFact, market_period
+from .models import MarketSecurity, USFinancialFact, market_period
 from .constituents import USIndexConstituentClient
 from .providers import ProviderError, SecEdgarClient, SecFinancialFiling
 from .repository import USEarningsRepository

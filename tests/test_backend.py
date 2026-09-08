@@ -823,7 +823,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("function disableAutocomplete", helper)
         self.assertIn("new MutationObserver", helper)
         for page in ("index.html", "admin.html"):
-            self.assertIn('assets/js/core/autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
+            self.assertRegex((ROOT / page).read_text(encoding="utf-8"), r'assets/js/core/autocomplete-off\.js\?v=\d+')
 
     def test_news_schedule_avoids_hour_boundary_and_logs_failed_response(self) -> None:
         workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")

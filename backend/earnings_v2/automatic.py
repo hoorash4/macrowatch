@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import re
+from datetime import date
+from decimal import Decimal
+from typing import Any, Iterable, Mapping
+
 from earnings_common.fx_rates import (
     _LazyKrwRates,
 )
@@ -20,13 +27,6 @@ from earnings_common.periods import (
 
 from earnings_common.db_rows import _financial_from_db, _market_from_db
 
-import json
-import os
-import re
-from datetime import date
-from decimal import Decimal
-from typing import Any, Callable, Iterable, Iterator, Mapping
-
 from .aggregation import aggregate_market, calculate_market_point
 from .financial_company import FinancialCompanyClient, merge_financial_company
 from earnings_common.models import (
@@ -45,7 +45,6 @@ from .transform import (
     calculate_financial_point,
     decimal_value,
     extract_company_fact,
-    update_seasonal_window,
 )
 
 
@@ -882,73 +881,59 @@ class KoreaEarningsV2AutomaticPipeline:
                 for rows in [*universes.values(), *previous_universes.values()]
                 for row in rows
             }
-            # 백필은 현재 분기 기존값을 참조하지 않는다. 증분 수집만 현재값과 수동 확정을 읽는다.
-            reference_periods = [previous_key, (year - 1, quarter)]
-            if incremental:
-                reference_periods.insert(0, (year, quarter))
+            # 자동수집은 현재값과 수동 확정, 비교에 필요한 두 분기를 읽는다.
+            reference_periods = [(year, quarter), previous_key, (year - 1, quarter)]
             stored_rows = self.repository.company_periods(history_ids, reference_periods)
             stored, manual_ids = self._stored_facts(stored_rows, (year, quarter))
             supplied_delistings = list(delisting_filings or [])
             delisting_checked_codes: set[str] = set()
-            if incremental:
-                stored_current = {
-                    identity.company_id: stored[(identity.company_id, year, quarter)]
-                    for identity in identities
-                    if (identity.company_id, year, quarter) in stored
-                }
-                delisting_events = self._stored_delisting_events(
-                    identities, year, quarter, supplied_delistings,
+            stored_current = {
+                identity.company_id: stored[(identity.company_id, year, quarter)]
+                for identity in identities
+                if (identity.company_id, year, quarter) in stored
+            }
+            delisting_events = self._stored_delisting_events(
+                identities, year, quarter, supplied_delistings,
+                effective_cutoff=event_effective_cutoff,
+            )
+            if discover_delistings:
+                historical_candidates = [
+                    identity for identity in identities
+                    if stored_current.get(identity.company_id) is not None
+                    and stored_current[identity.company_id].is_pending
+                    and identity.corp_code not in delisting_events
+                ]
+                delisting_checked_codes.update(
+                    identity.corp_code for identity in historical_candidates
+                )
+                discovered_events = self._discover_delisting_events(
+                    historical_candidates, year, quarter, write=write,
                     effective_cutoff=event_effective_cutoff,
                 )
-                if discover_delistings:
-                    historical_candidates = [
-                        identity for identity in identities
-                        if stored_current.get(identity.company_id) is not None
-                        and stored_current[identity.company_id].is_pending
-                        and identity.corp_code not in delisting_events
-                    ]
-                    delisting_checked_codes.update(
-                        identity.corp_code for identity in historical_candidates
-                    )
-                    discovered_events = self._discover_delisting_events(
-                        historical_candidates, year, quarter, write=write,
-                        effective_cutoff=event_effective_cutoff,
-                    )
-                    delisting_events = self._delisting_event_map([
-                        *delisting_events.values(), *discovered_events,
-                    ])
-                provider_refresh = refresh_corp_codes or set()
-                selected = [
-                    row for row in identities
-                    if row.company_id not in manual_ids
-                    and row.corp_code not in delisting_events
-                    and (
+                delisting_events = self._delisting_event_map([
+                    *delisting_events.values(), *discovered_events,
+                ])
+            provider_refresh = refresh_corp_codes or set()
+            selected = [
+                row for row in identities
+                if row.company_id not in manual_ids
+                and row.corp_code not in delisting_events
+                and (
+                    row.corp_code in provider_refresh
+                    if refresh_only else (
                         row.corp_code in provider_refresh
-                        if refresh_only else (
-                            row.corp_code in provider_refresh
-                            or row.company_id not in stored_current
-                            or (
-                                stored_current[row.company_id].is_pending
-                                and (
-                                    stored_current[row.company_id].fully_complete
-                                    or stored_current[row.company_id].source_currency != "KRW"
-                                )
+                        or row.company_id not in stored_current
+                        or (
+                            stored_current[row.company_id].is_pending
+                            and (
+                                stored_current[row.company_id].fully_complete
+                                or stored_current[row.company_id].source_currency != "KRW"
                             )
                         )
                     )
-                ]
-                preserved = stored_current
-            else:
-                # 명시적 백필은 자동/수동 여부와 관계없이 공급자 원자료로 전부 교체한다.
-                stored_current = {}
-                delisting_events = self._stored_delisting_events(
-                    identities, year, quarter, supplied_delistings,
-                    effective_cutoff=event_effective_cutoff,
                 )
-                selected = [
-                    row for row in identities if row.corp_code not in delisting_events
-                ]
-                preserved = {}
+            ]
+            preserved = stored_current
             # 저장된 직전 누적 원본을 재사용한다. 시간순 백필의 최초 경계에서
             # 누적 원본이 없을 때만 collect_financials가 직전 분기를 추가 호출한다.
             previous_facts = {
@@ -960,8 +945,8 @@ class KoreaEarningsV2AutomaticPipeline:
                 self.collect_financials(
                     selected, year, quarter, previous_facts,
                     krw_rates=krw_rates,
-                    tolerate_provider_errors=incremental,
-                    force_previous_cumulative=not incremental and not trust_previous_backfill,
+                    tolerate_provider_errors=True,
+                    force_previous_cumulative=False,
                     persist_profiles=write,
                     allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                     use_kis=use_kis_for_fresh,
@@ -1026,7 +1011,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 issues = [item for item in issues if item.get("company") not in resolved_names]
             pending_fallbacks: dict[str, FinancialFact] = {}
             profile_updates: dict[str, dict[str, str]] = {}
-            if incremental and retry_pending:
+            if retry_pending:
                 selected_ids = {row.company_id for row in selected}
                 for identity in identities:
                     fact = stored_current.get(identity.company_id)
@@ -1446,7 +1431,6 @@ class KoreaEarningsV2AutomaticPipeline:
                 returned_periods=len(history), changed_periods=company_changed,
             )
 
-        changed_periods = sorted({(year, quarter) for _, year, quarter in changed})
         if write and changed:
             self.repository.upsert_company_quarters(
                 fact.db_row(calculation_version=CALCULATION_VERSION)

@@ -670,8 +670,7 @@ body:has(#app-shell:not(.hidden)) {
 .fomc-briefing-detail { border-top:1px solid rgba(71,85,105,.3); background:#f8fafc; }
 .fomc-briefing-detail-scroll { padding:1.25rem; }
 .fomc-briefing-result { padding:1rem 1.1rem; border:1px solid rgba(14,116,144,.22); border-top:3px solid #0e7490; border-radius:.75rem; background:linear-gradient(135deg,rgba(236,254,255,.72),rgba(241,245,249,.62)); }
-.fomc-briefing-result h3,.fomc-briefing-section h4 { margin:0; color:#172033; font-weight:750; letter-spacing:-.02em; }
-.fomc-briefing-result h3,.fomc-briefing-section h4 { display:flex; align-items:center; gap:.5rem; }
+.fomc-briefing-result h3,.fomc-briefing-section h4 { margin:0; color:#172033; font-weight:750; letter-spacing:-.02em; display:flex; align-items:center; gap:.5rem; }
 .fomc-briefing-result h3 { font-size:1rem; }
 .fomc-briefing-result h3 span,.fomc-briefing-section h4 span { display:inline-flex; width:1.65rem; height:1.65rem; flex:none; align-items:center; justify-content:center; border-radius:.45rem; background:rgba(14,116,144,.1); color:#0e7490; font-size:.72rem; }
 .fomc-briefing-result p { margin:.45rem 0 0; color:#334155; font-size:.86rem; }
@@ -969,8 +968,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-line--average { stroke-width:2.5; }
 .em-capacity-line--provisional { stroke-dasharray:5 4; opacity:.9; }
 .policy-expectation-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
-.policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; }
-.policy-expectation-cursor-detail { fill:#64748b; font-size:9px; font-weight:650; }
+.policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; fill:#64748b; font-size:9px; font-weight:650; }
 .policy-expectation-cursor.is-visible,.policy-expectation-cursor-detail.is-visible { opacity:1; }
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
 .policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
