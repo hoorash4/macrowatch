@@ -118,11 +118,20 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
 });
 
 test('모바일 로그인은 밝은 한 열 앱 화면을 사용한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const auth = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(styles, /@media \(max-width:768px\)[\s\S]*?body:has\(#auth-screen:not\(\.hidden\)\)[\s\S]*?background: #f4f6f8/);
   assert.match(styles, /#auth-screen \.auth-content-grid[\s\S]*?max-width: 460px[\s\S]*?background: none/);
   assert.match(styles, /#auth-screen \.auth-panel[\s\S]*?background: transparent[\s\S]*?box-shadow: none/);
-  assert.match(styles, /#auth-screen \.auth-footer[\s\S]*?env\(safe-area-inset-bottom\)/);
+  for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker']) {
+    assert.match(html, new RegExp(`data-auth-dashboard-view="${view}"`));
+  }
+  assert.match(auth, /querySelectorAll\('\[data-auth-dashboard-view\]'\)/);
+  assert.match(auth, /로그인이 필요합니다\./);
+  assert.match(auth, /메뉴를 보려면 먼저 로그인해 주세요\./);
+  assert.match(styles, /#auth-screen \.auth-layout[\s\S]*?padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(styles, /#service-preparing-modal\.is-auth-required/);
 });
 
 test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표현을 지원한다', () => {

@@ -176,12 +176,33 @@
   }
 
   function showServicePreparing() {
-    document.getElementById('service-preparing-modal')?.classList.remove('hidden');
+    const modal = document.getElementById('service-preparing-modal');
+    const title = document.getElementById('service-preparing-title');
+    const description = document.getElementById('service-preparing-description');
+    modal?.classList.remove('is-auth-required');
+    if (title) title.textContent = '서비스 준비 중입니다.';
+    if (description) description.textContent = 'ID/PW 로그인과 회원가입은 추후 제공할 예정입니다.';
+    modal?.classList.remove('hidden');
+    document.getElementById('service-preparing-close')?.focus();
+  }
+
+  function showAuthRequired() {
+    const modal = document.getElementById('service-preparing-modal');
+    const title = document.getElementById('service-preparing-title');
+    const description = document.getElementById('service-preparing-description');
+    modal?.classList.add('is-auth-required');
+    if (title) title.textContent = '로그인이 필요합니다.';
+    if (description) description.textContent = '메뉴를 보려면 먼저 로그인해 주세요.';
+    modal?.classList.remove('hidden');
     document.getElementById('service-preparing-close')?.focus();
   }
 
   function hideServicePreparing() {
-    document.getElementById('service-preparing-modal')?.classList.add('hidden');
+    const modal = document.getElementById('service-preparing-modal');
+    const shouldReturnToLogin = modal?.classList.contains('is-auth-required');
+    modal?.classList.add('hidden');
+    modal?.classList.remove('is-auth-required');
+    if (shouldReturnToLogin) document.getElementById('login-id')?.focus();
   }
 
   function bindLoginEvents() {
@@ -212,6 +233,9 @@
       } finally { button.disabled = false; }
     });
     document.getElementById('signup-placeholder-button')?.addEventListener('click', showServicePreparing);
+    document.querySelectorAll('[data-auth-dashboard-view]').forEach((button) => {
+      button.addEventListener('click', showAuthRequired);
+    });
     document.getElementById('service-preparing-close')?.addEventListener('click', hideServicePreparing);
     document.getElementById('service-preparing-modal')?.addEventListener('click', (event) => {
       if (event.target === event.currentTarget) hideServicePreparing();
