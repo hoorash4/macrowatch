@@ -737,7 +737,8 @@ test('모바일 카드 폭은 화면 안에 고정되고 주도섹터는 주차�
   assert.match(styles, /\.sector-flow-week,[\s\S]*?flex: 0 0 100%;[\s\S]*?scroll-snap-align: start;/);
   assert.match(styles, /\.sector-flow-week-body \{[\s\S]*?max-width: 100%;[\s\S]*?overflow-x: auto;/);
   assert.doesNotMatch(styles, /width: 56rem|min-width: 56rem/);
-  assert.match(html, /data-sector-flow-swipe-indicator[\s\S]*좌우로 넘겨보기[\s\S]*sector-flow-swipe-dots/);
+  assert.doesNotMatch(html, /좌우로 넘겨보기/);
+  assert.match(html, /class="sector-flow-preview"[\s\S]*data-sector-flow-swipe-indicator[\s\S]*sector-flow-swipe-dots/);
   assert.match(html, /class="sector-flow-history"[\s\S]*data-sector-week-offset="-1"[\s\S]*class="sector-flow-week sector-flow-week-current" data-sector-week-offset="0"/);
   assert.match(html, /data-sector-flow-swipe-indicator aria-label="주차 5\/5"[\s\S]*<i><\/i><i><\/i><i><\/i><i><\/i><i class="is-active"><\/i>/);
   assert.match(styles, /\.sector-flow-swipe-hint \{[\s\S]*?display: flex;[\s\S]*?align-items: center;/);
@@ -751,6 +752,20 @@ test('모바일 카드 폭은 화면 안에 고정되고 주도섹터는 주차�
   assert.match(charts, /function positionCurrentWeek|const positionCurrentWeek/);
   assert.match(charts, /preview\.scrollLeft = Math\.max\(0, current\.offsetLeft - paddingLeft\)/);
   assert.match(charts, /renderSectorFlow[\s\S]*initializeSectorFlowSwipeIndicator\(\)/);
+});
+
+test('개인설정 모달은 고정 헤더와 스크롤 본문에서 항상 닫을 수 있다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  const auth = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');
+  assert.match(html, /id="profile-modal"[\s\S]*role="dialog"[\s\S]*aria-modal="true"/);
+  assert.match(html, /class="profile-dialog[^"]*"[\s\S]*class="profile-dialog-header[^"]*"[\s\S]*id="profile-close-button"[\s\S]*class="profile-dialog-body"/);
+  assert.match(styles, /\.profile-dialog \{[\s\S]*?display:flex;[\s\S]*?max-height:min\(44rem,calc\(100svh - 2rem\)\);[\s\S]*?overflow:hidden;/);
+  assert.match(styles, /\.profile-dialog-body \{[\s\S]*?min-height:0;[\s\S]*?overflow-y:auto;/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#profile-close-button \{[\s\S]*?width:2\.75rem;[\s\S]*?height:2\.75rem;/);
+  assert.match(auth, /const closeProfileModal = \(\) => \{[\s\S]*?profileModal\.classList\.add\('hidden'\)/);
+  assert.match(auth, /event\.target === event\.currentTarget\) closeProfileModal\(\)/);
+  assert.match(auth, /event\.key === 'Escape'[\s\S]*?closeProfileModal\(\)/);
 });
 
 

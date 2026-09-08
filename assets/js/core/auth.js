@@ -246,12 +246,21 @@
   }
 
   function bindProfileEvents() {
+    const closeProfileModal = () => {
+      elements.profileModal.classList.add('hidden');
+      document.getElementById('profile-button')?.focus();
+    };
     document.getElementById('profile-button')?.addEventListener('click', async () => {
       elements.profileModal.classList.remove('hidden');
+      document.getElementById('profile-close-button')?.focus();
       await Promise.all([loadProfileIdentity(), loadKakaoStatus(), loadEmailStatus()]);
     });
-    document.getElementById('profile-close-button')?.addEventListener('click', () => {
-      elements.profileModal.classList.add('hidden');
+    document.getElementById('profile-close-button')?.addEventListener('click', closeProfileModal);
+    elements.profileModal.addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) closeProfileModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !elements.profileModal.classList.contains('hidden')) closeProfileModal();
     });
     elements.kakaoConnectButton.addEventListener('click', showServicePreparing);
     elements.kakaoUnlinkButton.addEventListener('click', async () => {
