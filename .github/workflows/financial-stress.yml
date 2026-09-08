@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - backend/financial_stress_pipeline.py
-      - backend/financial_stress_sources.py
+      - backend/signals/financial_stress_pipeline.py
+      - backend/sources/financial_stress.py
       - backend/common.py
       - supabase/migrations/**
       - .github/workflows/financial-stress.yml
@@ -45,7 +45,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            python backend/financial_stress_pipeline.py --years 3
+            PYTHONPATH=backend python -m signals.financial_stress_pipeline --years 3
           else
-            python backend/financial_stress_pipeline.py --years "${{ inputs.years || '3' }}"
+            PYTHONPATH=backend python -m signals.financial_stress_pipeline --years "${{ inputs.years || '3' }}"
           fi

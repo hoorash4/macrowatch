@@ -15,8 +15,8 @@ from earnings_v25.providers import (
     ProviderError as ExistingProviderError,
     FINANCIAL_COMPANY_FUNCTION, REPORT_CODES, CONNECT_TIMEOUT, STANDARD_READ_TIMEOUT,
 )
-from .http import ExecutionDeadlineExceeded, bounded_request, safe_request_failure
-from .models import FinancialFact
+from earnings_common.http import ExecutionDeadlineExceeded, bounded_request, safe_request_failure
+from earnings_common.models import FinancialFact
 from .providers import ProviderError, _retryable_request_error
 
 

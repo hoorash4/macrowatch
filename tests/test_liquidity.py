@@ -3,7 +3,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-import liquidity_pipeline as lp
+import signals.liquidity_pipeline as lp
 
 
 def weekly_environment(start, end, value_for_index):

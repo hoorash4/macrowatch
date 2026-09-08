@@ -10,7 +10,7 @@ from typing import Any
 
 import requests
 
-from earnings_v2.http import bounded_request, provider_session, safe_request_failure
+from earnings_common.http import bounded_request, provider_session, safe_request_failure
 
 from .models import MarketSecurity
 from .six_k import SixKDocument, SixKFiling, linked_financial_documents

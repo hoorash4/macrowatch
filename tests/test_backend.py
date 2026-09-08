@@ -27,15 +27,15 @@ except ModuleNotFoundError:
 if "openpyxl" not in sys.modules:
     sys.modules["openpyxl"] = types.ModuleType("openpyxl")
 
-import check_targets  # noqa: E402
+import tracking.check_targets as check_targets  # noqa: E402
 import common  # noqa: E402
-import em_stress_pipeline as em  # noqa: E402
-import em_capital_capacity_pipeline as em_capacity  # noqa: E402
-import financial_stress_pipeline as us  # noqa: E402
-import korea_stress_pipeline as kr  # noqa: E402
-import policy_expectation_pipeline as policy_expectation  # noqa: E402
-import equity_bond_model as equity_bond  # noqa: E402
-import equity_bond_pipeline as equity_bond_pipeline  # noqa: E402
+import signals.em_stress_pipeline as em  # noqa: E402
+import signals.em_capital_capacity_pipeline as em_capacity  # noqa: E402
+import signals.financial_stress_pipeline as us  # noqa: E402
+import signals.korea_stress_pipeline as kr  # noqa: E402
+import signals.policy_expectation_pipeline as policy_expectation  # noqa: E402
+import signals.equity_bond_model as equity_bond  # noqa: E402
+import signals.equity_bond_pipeline as equity_bond_pipeline  # noqa: E402
 
 
 class TargetConditionTests(unittest.TestCase):
@@ -335,14 +335,14 @@ class SourceContractTests(unittest.TestCase):
 
     def test_closed_membership_keeps_passwords_in_supabase_auth(self):
         migration = (ROOT / "supabase/migrations/20260827_add_closed_membership_accounts.sql").read_text(encoding="utf-8")
-        auth = (ROOT / "auth.js").read_text(encoding="utf-8")
+        auth = (ROOT / "assets/js/core/auth.js").read_text(encoding="utf-8")
         admin = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         self.assertIn("add column if not exists username text", migration)
         self.assertIn("signInWithPassword", auth)
         self.assertIn('action === "create_member"', admin)
         self.assertNotIn("password text", migration.lower())
         self.assertIn("requires_reauthentication", admin)
-        admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
         self.assertIn("카카오 전용", admin_ui)
         self.assertIn("data-admin-credential", admin_ui)
@@ -355,8 +355,8 @@ class SourceContractTests(unittest.TestCase):
 
     def test_collapsed_admin_lists_show_only_actionable_review_counts(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_ui = (ROOT / "admin.js").read_text(encoding="utf-8")
-        policy_ui = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
+        policy_ui = (ROOT / "assets/js/admin/admin-policy-review.js").read_text(encoding="utf-8")
         self.assertIn("data-collapsible-count", admin_ui)
         self.assertIn("normalizedCount > 0 ? 'text-yellow-300' : 'text-slate-400'", admin_ui)
         self.assertIn("badge.classList.remove('hidden')", admin_ui)
@@ -387,7 +387,7 @@ class SourceContractTests(unittest.TestCase):
         migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
         intraday_migration = (ROOT / "supabase/migrations/20260828_add_sector_intraday_prices.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "supabase/functions/sector-flow/index.ts").read_text(encoding="utf-8")
-        scoring = (ROOT / "supabase/functions/_shared/sector-flow.ts").read_text(encoding="utf-8")
+        scoring = (ROOT / "supabase/functions/_shared/market/sector-flow.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/sector-flow.yml").read_text(encoding="utf-8")
         self.assertIn("market_sector_etf_prices", migration)
         self.assertIn("market_sector_weekly_rankings", migration)
@@ -400,10 +400,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("DATABASE_PAGE_SIZE = 1000", pipeline)
         self.assertIn("PRICE_RETENTION_WEEKS = 10", pipeline)
         self.assertIn("RANKING_RETENTION_WEEKS = 6", pipeline)
-        self.assertIn("KIS_REQUEST_INTERVAL_MS", (ROOT / "supabase/functions/_shared/kis-client.ts").read_text(encoding="utf-8"))
+        self.assertIn("KIS_REQUEST_INTERVAL_MS", (ROOT / "supabase/functions/_shared/market/kis-client.ts").read_text(encoding="utf-8"))
         self.assertNotIn("const KIS_RATE_LIMIT_RETRY_DELAYS_MS", pipeline)
         self.assertIn("createKisRequestRunner", pipeline)
-        kis_client = (ROOT / "supabase/functions/_shared/kis-client.ts").read_text(encoding="utf-8")
+        kis_client = (ROOT / "supabase/functions/_shared/market/kis-client.ts").read_text(encoding="utf-8")
         self.assertIn('message.includes("초당 거래건수를 초과")', kis_client)
         self.assertIn("KIS_RATE_LIMIT_RETRY_DELAYS_MS", kis_client)
         self.assertIn("fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end)", pipeline)
@@ -462,9 +462,9 @@ class SourceContractTests(unittest.TestCase):
 
     def test_new_sector_etf_registration_resolves_metadata_and_backfills_prices(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
-        kis = (ROOT / "supabase/functions/_shared/kis-client.ts").read_text(encoding="utf-8")
+        kis = (ROOT / "supabase/functions/_shared/market/kis-client.ts").read_text(encoding="utf-8")
 
         self.assertIn('id="sector-name-input"', admin_html)
         self.assertIn('id="sector-etf-ticker-input"', admin_html)
@@ -476,12 +476,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("etf_ticker: document.getElementById('sector-etf-ticker-input').value", admin_js)
         self.assertIn("fetchKisDailyPriceBundle", control)
         self.assertIn("10 * 7 * 86_400_000", control)
-        self.assertIn('body: JSON.stringify({ stage: "close", rebuild_only: true })', control)
+        sector_registry = (ROOT / "supabase/functions/admin-control/sector-registry.ts").read_text(encoding="utf-8")
+        self.assertIn('body: JSON.stringify({ stage: "close", rebuild_only: true })', sector_registry)
         self.assertIn("issuerFromEtfName(bundle.instrumentName)", control)
         self.assertIn("hts_kor_isnm", kis)
         self.assertIn("fetchKisEtfTopHoldings", control)
-        self.assertIn("etf_ticker: validateEtfTicker(body.etf_ticker)", control)
-        self.assertIn("/^[A-Z0-9]{6}$/.test(ticker)", control)
+        validation = (ROOT / "supabase/functions/admin-control/validation.ts").read_text(encoding="utf-8")
+        self.assertIn("etf_ticker: validateEtfTicker(body.etf_ticker)", validation)
+        self.assertIn("/^[A-Z0-9]{6}$/.test(ticker)", validation)
         self.assertIn("etf_cnfg_issu_rlim", kis)
         self.assertNotIn("hts_avls", kis)
         self.assertNotIn("!/^\\d{6}$/.test(holdingTicker)", kis)
@@ -507,12 +509,12 @@ class SourceContractTests(unittest.TestCase):
 
     def test_admin_cards_are_reorderable_and_saved_per_admin(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
-        order_js = (ROOT / "admin-card-order.js").read_text(encoding="utf-8")
+        admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
+        order_js = (ROOT / "assets/js/admin/admin-card-order.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
 
         self.assertEqual(admin_html.count('data-admin-card-id='), 10)
-        self.assertIn('admin-card-order.js?v=2', admin_html)
+        self.assertIn('assets/js/admin/admin-card-order.js?v=2', admin_html)
         self.assertIn("initializeAdminCardOrder", admin_js)
         self.assertIn("get_admin_card_order", admin_js)
         self.assertIn("save_admin_card_order", admin_js)
@@ -526,7 +528,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_earnings_v2_pending_rows_are_immediately_manually_resolvable(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
-        admin_js = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902213000_add_earnings_v2_manual_resolution.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "backend/earnings_v2/pipeline.py").read_text(encoding="utf-8")
@@ -613,7 +615,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("q.fiscal_year = incoming.fiscal_year", migration)
 
     def test_target_alerts_use_db_tokens_retry_queue_and_visible_failures(self):
-        checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
+        checker = (ROOT / "backend/tracking/check_targets.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")
         kakao_auth = (ROOT / "supabase/functions/kakao-auth/index.ts").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260829_make_target_alerts_retryable.sql").read_text(encoding="utf-8")
@@ -633,7 +635,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("'pending', 'sent', 'failed', 'skipped'", migration)
 
     def test_target_alerts_support_email_channel_with_user_scoped_settings(self):
-        checker = (ROOT / "backend/check_targets.py").read_text(encoding="utf-8")
+        checker = (ROOT / "backend/tracking/check_targets.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/check-targets.yml").read_text(encoding="utf-8")
         settings = (ROOT / "supabase/functions/notification-settings/index.ts").read_text(encoding="utf-8")
         self.assertIn('channel == "email"', checker)
@@ -644,7 +646,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('.eq("user_id", user.id).eq("channel", "email")', settings)
 
     def test_news_prompt_remains_secret_driven(self) -> None:
-        adapter = (ROOT / "supabase/functions/_shared/openai-adapter.ts").read_text(encoding="utf-8")
+        adapter = (ROOT / "supabase/functions/_shared/news/openai-adapter.ts").read_text(encoding="utf-8")
         self.assertIn('Deno.env.get("NEWS_ANALYSIS_SYSTEM_PROMPT")', adapter)
         self.assertIn('prompt.replace(/\\{\\{news_candidates\\}\\}/gi, "")', adapter)
         self.assertIn('{{EXTREME_SIGNAL_CRITERIA}}', adapter)
@@ -656,7 +658,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("outputs.length - indexOutputs.length", pipeline)
 
     def test_market_context_has_both_disparity_directions(self) -> None:
-        indicators = (ROOT / "supabase/functions/_shared/market-indicators.ts").read_text(encoding="utf-8")
+        indicators = (ROOT / "supabase/functions/_shared/market/market-indicators.ts").read_text(encoding="utf-8")
         self.assertIn("disparity60_upside_widening", indicators)
         self.assertIn("disparity60_downside_widening", indicators)
         self.assertIn("bullish_stochastic_divergence", indicators)
@@ -720,8 +722,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("briefing: analysis.briefing", pipeline)
 
     def test_fomc_scores_round_symmetrically_to_integers(self) -> None:
-        scoring = (ROOT / "supabase/functions/_shared/policy-scoring.ts").read_text(encoding="utf-8")
-        admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
+        scoring = (ROOT / "supabase/functions/_shared/policy/policy-scoring.ts").read_text(encoding="utf-8")
+        admin = (ROOT / "supabase/functions/_shared/policy/policy-admin.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/central-bank-policy.yml").read_text(encoding="utf-8")
         self.assertIn('POLICY_SCORE_PROFILE = "fed-policy-v5"', scoring)
         self.assertIn("Math.sign(value) * Math.round(Math.abs(value))", scoring)
@@ -742,7 +744,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_fomc_briefing_alerts_are_idempotent_and_use_exact_messages(self) -> None:
         pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
-        sender = (ROOT / "backend/send_policy_briefing_alerts.py").read_text(encoding="utf-8")
+        sender = (ROOT / "backend/operations/send_policy_briefing_alerts.py").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260827_add_fomc_briefings.sql").read_text(encoding="utf-8")
         self.assertIn('const POLICY_PROMPT_VERSION = "v2.0"', pipeline)
         self.assertIn("source_state_hash", pipeline)
@@ -756,7 +758,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('mode === "recent" && (!saved.briefing', pipeline)
 
     def test_policy_admin_reviews_include_admin_selected_history(self) -> None:
-        policy_admin = (ROOT / "supabase/functions/_shared/policy-admin.ts").read_text(encoding="utf-8")
+        policy_admin = (ROOT / "supabase/functions/_shared/policy/policy-admin.ts").read_text(encoding="utf-8")
         self.assertIn('.neq("action", "hold")', policy_admin)
         self.assertIn('"uncertain"]', policy_admin)
         self.assertIn('String(rawScore).trim() === ""', policy_admin)
@@ -769,9 +771,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('row.admin_score_override ?? row.final_event_score', policy_admin)
 
     def test_stress_pipelines_preserve_accumulated_history(self):
-        us_pipeline = (ROOT / "backend/financial_stress_pipeline.py").read_text(encoding="utf-8")
-        korea_pipeline = (ROOT / "backend/korea_stress_pipeline.py").read_text(encoding="utf-8")
-        em_pipeline = (ROOT / "backend/em_stress_pipeline.py").read_text(encoding="utf-8")
+        us_pipeline = (ROOT / "backend/signals/financial_stress_pipeline.py").read_text(encoding="utf-8")
+        korea_pipeline = (ROOT / "backend/signals/korea_stress_pipeline.py").read_text(encoding="utf-8")
+        em_pipeline = (ROOT / "backend/signals/em_stress_pipeline.py").read_text(encoding="utf-8")
 
         for pipeline in (us_pipeline, korea_pipeline, em_pipeline):
             self.assertNotIn("RETENTION_MONTHS", pipeline)
@@ -781,8 +783,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("today_month = today.replace(day=1).isoformat()", korea_pipeline)
 
     def test_equity_liquidity_uses_country_specific_weekly_versions(self):
-        pipeline = (ROOT / "backend/liquidity_pipeline.py").read_text(encoding="utf-8")
-        chart = (ROOT / "liquidity-chart.js").read_text(encoding="utf-8")
+        pipeline = (ROOT / "backend/signals/liquidity_pipeline.py").read_text(encoding="utf-8")
+        chart = (ROOT / "assets/js/charts/liquidity-chart.js").read_text(encoding="utf-8")
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('US_VERSION = "us-equity-environment-weekly-v2"', pipeline)
         self.assertIn('KR_VERSION = "kr-equity-environment-weekly-v1"', pipeline)
@@ -793,18 +795,18 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("주별 점수", chart)
         self.assertIn("최근 4주 평균", html)
         self.assertIn("한국 주식시장 자금환경", html)
-        self.assertIn("liquidity-chart.js?v=10", html)
+        self.assertIn("assets/js/charts/liquidity-chart.js?v=10", html)
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
-        admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
-        frontend_core = (ROOT / "frontend-core.js").read_text(encoding="utf-8")
-        policy_review = (ROOT / "admin-policy-review.js").read_text(encoding="utf-8")
+        admin_client = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
+        frontend_core = (ROOT / "assets/js/core/frontend-core.js").read_text(encoding="utf-8")
+        policy_review = (ROOT / "assets/js/admin/admin-policy-review.js").read_text(encoding="utf-8")
         self.assertIn("functionClient.invoke('admin-control', { ...payload, action }", admin_client)
         self.assertIn("body: JSON.stringify(payload)", frontend_core)
         self.assertNotIn("action: article.dataset.policyAction", policy_review)
 
     def test_admin_registries_use_delete_without_activation_controls(self) -> None:
-        admin_client = (ROOT / "admin.js").read_text(encoding="utf-8")
+        admin_client = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         admin_function = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         self.assertIn("data-delete-sector-id", admin_client)
         self.assertIn("data-delete-extreme-id", admin_client)
@@ -816,11 +818,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('action === "delete_extreme_news_rule"', admin_function)
 
     def test_all_site_inputs_disable_autocomplete_for_current_and_future_fields(self) -> None:
-        helper = (ROOT / "autocomplete-off.js").read_text(encoding="utf-8")
+        helper = (ROOT / "assets/js/core/autocomplete-off.js").read_text(encoding="utf-8")
         self.assertIn("function disableAutocomplete", helper)
         self.assertIn("new MutationObserver", helper)
         for page in ("index.html", "admin.html"):
-            self.assertIn('autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
+            self.assertIn('assets/js/core/autocomplete-off.js?v=1', (ROOT / page).read_text(encoding="utf-8"))
 
     def test_news_schedule_avoids_hour_boundary_and_logs_failed_response(self) -> None:
         workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")
@@ -831,7 +833,7 @@ class SourceContractTests(unittest.TestCase):
 
     def test_financial_stress_workflow_tracks_source_adapter(self) -> None:
         workflow = (ROOT / ".github/workflows/financial-stress.yml").read_text(encoding="utf-8")
-        self.assertIn("backend/financial_stress_sources.py", workflow)
+        self.assertIn("backend/sources/financial_stress.py", workflow)
 
     def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
         initial = (ROOT / "supabase/migrations/20260824_article_sentiment_pipeline.sql").read_text(encoding="utf-8")
@@ -875,7 +877,7 @@ class EmergingIndexTests(unittest.TestCase):
 
 class KoreaForeignFlowTests(unittest.TestCase):
     def test_pipeline_uses_normalized_equal_weight_components(self) -> None:
-        scoring = (ROOT / "supabase/functions/_shared/korea-foreign-flow.ts").read_text(encoding="utf-8")
+        scoring = (ROOT / "supabase/functions/_shared/market/korea-foreign-flow.ts").read_text(encoding="utf-8")
         pipeline = (ROOT / "supabase/functions/korea-foreign-flow/index.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/korea-foreign-flow.yml").read_text(encoding="utf-8")
         self.assertIn("foreignNetBuyAmount / row.kospiTradingValue", scoring)

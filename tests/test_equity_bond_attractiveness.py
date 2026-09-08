@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from equity_bond_attractiveness import QuarterlyInput, build_weekly_rows, percentile_score, symmetric_change
+from signals.equity_bond_attractiveness import QuarterlyInput, build_weekly_rows, percentile_score, symmetric_change
 
 
 class EquityBondAttractivenessTests(unittest.TestCase):

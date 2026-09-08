@@ -534,7 +534,7 @@ class USEarningsAutomaticPipeline:
     def _market_history(self, market: str) -> list[Any]:
         rows = self.repository.market_history(market)
         # Existing reader output has all fields required by MarketFact.db_row; only current records matter here.
-        from earnings_v2.models import MarketFact
+        from earnings_common.models import MarketFact
         result = []
         for row in rows:
             try:

@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Iterable
 
 from earnings_v2.aggregation import calculate_market_series
-from earnings_v2.models import MarketFact
+from earnings_common.models import MarketFact
 
 from .models import USCompany, USFinancialFact
 

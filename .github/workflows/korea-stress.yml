@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - backend/korea_stress_pipeline.py
+      - backend/signals/korea_stress_pipeline.py
       - backend/common.py
       - supabase/migrations/20260825_add_korea_market_stress.sql
       - .github/workflows/korea-stress.yml
@@ -35,4 +35,4 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python backend/korea_stress_pipeline.py --years "${{ inputs.years || '3' }}"
+        run: PYTHONPATH=backend python -m signals.korea_stress_pipeline --years "${{ inputs.years || '3' }}"

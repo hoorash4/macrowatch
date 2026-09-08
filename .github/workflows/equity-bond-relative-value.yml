@@ -38,4 +38,4 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python backend/equity_bond_pipeline.py --start-year "${{ inputs.start_year || '2002' }}"
+        run: PYTHONPATH=backend python -m signals.equity_bond_pipeline --start-year "${{ inputs.start_year || '2002' }}"

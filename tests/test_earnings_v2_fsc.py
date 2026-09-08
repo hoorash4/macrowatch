@@ -13,7 +13,7 @@ from test_earnings_v2 import (
 )
 from earnings_v2.automatic import KoreaEarningsV2AutomaticPipeline
 from earnings_v2.financial_company import FinancialCompanyClient, merge_financial_company
-from earnings_v2.http import ExecutionDeadlineExceeded
+from earnings_common.http import ExecutionDeadlineExceeded
 from earnings_v2.pipeline import KoreaEarningsV2Pipeline
 from earnings_v2.providers import ProviderError, OpenDartClient
 from earnings_v25.providers import FinancialCompanySnapshot, FINANCIAL_SECTOR_SPECS, REPORT_CODES

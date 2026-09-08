@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateSectorLeadership } from "../supabase/functions/_shared/sector-flow.ts";
+import { calculateSectorLeadership } from "../supabase/functions/_shared/market/sector-flow.ts";
 
 const dates = Array.from({ length: 51 }, (_, index) => {
   const date = new Date(Date.UTC(2026, 0, 1 + index));

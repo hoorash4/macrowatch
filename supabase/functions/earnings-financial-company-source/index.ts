@@ -95,7 +95,7 @@ function sourceError(payload: Record<string, unknown>) {
   const header = response?.header && typeof response.header === "object"
     ? response.header as Record<string, unknown>
     : Object.values(payload).find((value): value is Record<string, unknown> => (
-      Boolean(value) && typeof value === "object" && "resultCode" in value
+      value !== null && typeof value === "object" && "resultCode" in value
     ));
   const code = String(header?.resultCode ?? "");
   return code && code !== "00" && code !== "000" ? code : null;

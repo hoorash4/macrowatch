@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "*.js"
+      - "assets/**"
       - "backend/**"
       - "supabase/functions/**"
       - "tests/**"
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - "*.js"
+      - "assets/**"
       - "backend/**"
       - "supabase/functions/**"
       - "tests/**"
@@ -20,6 +22,20 @@ permissions:
   contents: read
 
 jobs:
+  pages-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - run: node tests/check_pages_build.cjs _site
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -36,23 +52,15 @@ jobs:
           deno-version: v2.x
       - name: Check JavaScript syntax and behavior contracts
         run: |
-          node --check script.js
-          node --check admin.js
-          node --check admin-policy-review.js
-          node --check auth.js
-          node --check policy-chart.js
-          node tests/test_dashboard.js
-          node tests/test_policy_scoring.ts
-          node tests/test_sector_leadership.ts
+          find assets/js -name '*.js' -print0 | xargs -0 -n1 node --check
+          for test in tests/test_*.js tests/test_*.ts; do node "$test"; done
       - name: Check Python syntax and behavior contracts
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
           python -m compileall -q backend
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check Supabase Edge Function types
-        # 현재 리팩터링 대상부터 엄격하게 검사한다. 기존 함수들의 타입 부채는
-        # 기능별로 정리할 때 이 목록에 순차적으로 추가한다.
         run: |
-          deno check supabase/functions/news-pipeline/index.ts
-          deno check supabase/functions/policy-pipeline/index.ts
-          deno check supabase/functions/admin-control/index.ts
+          failed=0
+          for entry in supabase/functions/*/index.ts; do deno check "$entry" || failed=1; done
+          exit "$failed"

@@ -14,9 +14,9 @@ from typing import Any
 
 import requests
 
-from corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
+from earnings_common.corporate_events import parse_absorbed_merger, parse_absorbed_merger_archive
 
-from .http import (
+from earnings_common.http import (
     RETRYABLE_STATUS_CODES,
     ExecutionDeadlineExceeded,
     InvalidJsonResponse,
@@ -25,7 +25,7 @@ from .http import (
     provider_session,
     safe_request_failure,
 )
-from .models import DelistingFiling, PeriodicFiling, Security
+from earnings_common.models import DelistingFiling, PeriodicFiling, Security
 
 
 OPEN_DART_BASE = "https://opendart.fss.or.kr/api"

@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="styles.css?v=145">
+  <link rel="stylesheet" href="assets/css/styles.css?v=145">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -726,7 +726,7 @@
             Drag & Drop 사용 안내
             - 평소에는 짧은 안내 문구만 보여줍니다.
             - ? 버튼에 마우스를 올리거나 클릭하면 자세한 사용법이 아래로 펼쳐집니다.
-            - 실제 순서 변경 기능 자체는 script.js의 드래그 관련 함수가 담당합니다.
+            - 실제 순서 변경 기능 자체는 assets/js/dashboard/script.js의 드래그 관련 함수가 담당합니다.
           -->
           <div class="track-help">
             <i class="fa-solid fa-arrows-up-down track-help-icon" aria-hidden="true"></i>
@@ -972,24 +972,24 @@
   </div>
 
   <!-- 공통 브라우저 기반과 로그인 처리: 뒤 모듈이 같은 Supabase 클라이언트를 재사용합니다. -->
-  <script src="autocomplete-off.js?v=1"></script>
-  <script src="config.js?v=1"></script>
-  <script src="frontend-core.js?v=1"></script>
-  <script src="auth.js?v=18"></script>
+  <script src="assets/js/core/autocomplete-off.js?v=1"></script>
+  <script src="assets/js/core/config.js?v=1"></script>
+  <script src="assets/js/core/frontend-core.js?v=1"></script>
+  <script src="assets/js/core/auth.js?v=18"></script>
 
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
-  <script src="indicator-terms.js?v=3"></script>
-  <script src="script.js?v=160"></script>
-  <script src="analysis-chart-utils.js?v=9"></script>
-  <script src="dashboard-charts.js?v=45"></script>
-  <script src="policy-chart.js?v=17"></script>
-  <script src="policy-expectation-chart.js?v=13"></script>
-  <script src="em-capacity-chart.js?v=5"></script>
-  <script src="korea-foreign-flow-chart.js?v=11"></script>
-  <script src="liquidity-chart.js?v=10"></script>
-  <script src="equity-bond-attractiveness-chart.js?v=6"></script>
-  <script src="korea-earnings-chart.js?v=25"></script>
-  <script src="policy-briefing.js?v=5"></script>
+  <script src="assets/js/core/indicator-terms.js?v=3"></script>
+  <script src="assets/js/dashboard/script.js?v=160"></script>
+  <script src="assets/js/charts/analysis-chart-utils.js?v=9"></script>
+  <script src="assets/js/dashboard/dashboard-charts.js?v=45"></script>
+  <script src="assets/js/charts/policy-chart.js?v=17"></script>
+  <script src="assets/js/charts/policy-expectation-chart.js?v=13"></script>
+  <script src="assets/js/charts/em-capacity-chart.js?v=5"></script>
+  <script src="assets/js/charts/korea-foreign-flow-chart.js?v=11"></script>
+  <script src="assets/js/charts/liquidity-chart.js?v=10"></script>
+  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=6"></script>
+  <script src="assets/js/charts/korea-earnings-chart.js?v=25"></script>
+  <script src="assets/js/policy/policy-briefing.js?v=5"></script>
 </body>
 </html>
 

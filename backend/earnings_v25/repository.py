@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterable
 
-from .http import resilient_session, safe_request_failure
+from earnings_common.http import resilient_session
+from .transport_policy import safe_request_failure
 
 
 STORE_TIMEOUT = (5, 20)

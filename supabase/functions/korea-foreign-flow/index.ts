@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchKisKospiForeignNetBuy, fetchKisKospiMarketDays, getKisAccessToken, loadKisCredentials } from "../_shared/kis-client.ts";
-import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/korea-foreign-flow.ts";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchKisKospiForeignNetBuy, fetchKisKospiMarketDays, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
+import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/market/korea-foreign-flow.ts";
 
 const WAIT_MS = 350, RETENTION_YEARS = 5, CALCULATION_YEARS = 8;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,7 +26,7 @@ function latestFxOnOrBefore(values: Map<string, number>, marketDate: string) {
   return [...values.entries()].filter(([date]) => date <= marketDate).sort(([a], [b]) => b.localeCompare(a))[0]?.[1];
 }
 
-async function loadRawHistory(admin: ReturnType<typeof createClient>, start: string) {
+async function loadRawHistory(admin: SupabaseClient, start: string) {
   const rows: Record<string, unknown>[] = [];
   for (let offset = 0;; offset += 1000) {
     const { data, error } = await admin.from("korea_foreign_flow_raw")

@@ -64,4 +64,4 @@ jobs:
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
         run: |
           python -m pip install --disable-pip-version-check --quiet requests
-          python backend/send_policy_briefing_alerts.py
+          PYTHONPATH=backend python -m operations.send_policy_briefing_alerts

@@ -6,8 +6,8 @@ on:
     paths:
       - ".github/workflows/korea-foreign-flow.yml"
       - "supabase/functions/korea-foreign-flow/**"
-      - "supabase/functions/_shared/korea-foreign-flow.ts"
-      - "supabase/functions/_shared/kis-client.ts"
+      - "supabase/functions/_shared/market/korea-foreign-flow.ts"
+      - "supabase/functions/_shared/market/kis-client.ts"
   schedule:
     - cron: "0 8 * * 1-5"
   workflow_dispatch:
