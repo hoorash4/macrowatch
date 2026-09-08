@@ -602,6 +602,8 @@ test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 
   assert.doesNotMatch(charts, /items-end justify-between/);
   assert.match(charts, /news-sentiment-graph--expanded/);
   assert.match(styles, /grid-template-columns:repeat\(30,minmax\(1\.5rem,1fr\)\)/);
+  assert.match(charts, /expanded:\s*\{[\s\S]*?barWidthClass: 'news-sentiment-bar--compact'[\s\S]*?showNumbers: false/);
+  assert.match(styles, /\.news-sentiment-bar--compact\s*\{[\s\S]*?width:\.875rem;[\s\S]*?min-width:\.875rem;[\s\S]*?max-width:\.875rem;/);
   assert.match(charts, /class="news-sentiment-view-button"/);
   assert.match(charts, /news-sentiment-view-button--back/);
   assert.match(styles, /\.news-sentiment-view-button\s*\{/);

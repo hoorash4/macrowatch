@@ -870,6 +870,11 @@ body:has(#app-shell:not(.hidden)) {
 .news-sentiment-graph--expanded > .group {
   justify-self:center;
 }
+.news-sentiment-bar--compact {
+  width:.875rem;
+  min-width:.875rem;
+  max-width:.875rem;
+}
 .news-sentiment-toolbar {
   display:flex;
   align-items:center;

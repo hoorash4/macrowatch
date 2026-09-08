@@ -44,9 +44,9 @@ const NEWS_SENTIMENT_VIEWS = {
   expanded: {
     days: 30,
     layout: 'vertical',
-    barWidthClass: 'min-w-6 max-w-6',
+    barWidthClass: 'news-sentiment-bar--compact',
     gapClass: 'gap-0',
-    showNumbers: true,
+    showNumbers: false,
     showDates: true,
   },
   all: {
