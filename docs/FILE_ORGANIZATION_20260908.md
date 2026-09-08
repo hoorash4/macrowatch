@@ -18,4 +18,10 @@
 ## 검증
 
 루트 배치 검사와 실제 Jekyll 결과물 검사로 새 경로 및 기존 URL의 내용 일치를 확인한다.
-검증·배포 결과는 후속 완료 기록에 남긴다.
+PR #35로 병합했고 Pages 배포 34182083963이 성공했다.
+Python 343개, Node 61개 및 전체 Edge 타입 검사가 통과했다.
+공개 배포의 기존 JS 주소 19개 모두 실제 소스와 내용이 일치하며,
+CSS·이전/새 문서 주소·사용자/관리자 페이지가 HTTP 200으로 열림을 확인했다.
+GitHub main 루트 파일은 .gitignore, AGENTS.md, README.md, index.html, admin.html만 남았다.
+Pages 소스 설정만 MCP의 지원 범위 밖이어서 브라우저로 전환했으며,
+나머지 GitHub 상태와 결과는 MCP로 확인했다.
