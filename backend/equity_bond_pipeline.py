@@ -13,13 +13,11 @@ from bisect import bisect_right
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-import requests
-
 from common import SupabaseRest, fetch_fred_observations, require_env
 from equity_bond_model import MODEL_VERSION, MonthlyInputs, build_feature_rows, walk_forward_forecasts
+from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
 
-YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 FRED_SERIES = {
     "real_yield_10y": "DFII10",
     "yield_curve_10y_2y": "T10Y2Y",
@@ -42,51 +40,6 @@ def first_of_month(value: date) -> date:
 
 def previous_completed_month(today: date) -> date:
     return first_of_month(today) - timedelta(days=1)
-
-
-def valid_fred_values(observations: list[dict[str, Any]]) -> dict[date, float]:
-    values: dict[date, float] = {}
-    for observation in observations:
-        try:
-            values[date.fromisoformat(str(observation["date"]))] = float(observation["value"])
-        except (KeyError, TypeError, ValueError):
-            continue
-    return values
-
-
-def fetch_yahoo_adjusted(symbol: str, start: date, end: date) -> dict[date, float]:
-    """Fetch split- and distribution-adjusted closes from Yahoo's chart feed."""
-
-    period1 = int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    period2 = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    response = requests.get(
-        YAHOO_CHART_URL.format(symbol=symbol),
-        params={
-            "period1": period1,
-            "period2": period2,
-            "interval": "1d",
-            "events": "div,splits",
-            "includeAdjustedClose": "true",
-        },
-        headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"},
-        timeout=45,
-    )
-    response.raise_for_status()
-    result = response.json().get("chart", {}).get("result") or []
-    if not result:
-        raise RuntimeError(f"Yahoo returned no chart result for {symbol}")
-    chart = result[0]
-    timestamps = chart.get("timestamp") or []
-    adjusted_groups = chart.get("indicators", {}).get("adjclose") or []
-    adjusted = adjusted_groups[0].get("adjclose", []) if adjusted_groups else []
-    values: dict[date, float] = {}
-    for timestamp, raw_value in zip(timestamps, adjusted):
-        if raw_value is None:
-            continue
-        values[datetime.fromtimestamp(int(timestamp), tz=timezone.utc).date()] = float(raw_value)
-    if not values:
-        raise RuntimeError(f"Yahoo returned no adjusted closes for {symbol}")
-    return values
 
 
 def month_end_values(values: dict[date, float]) -> dict[date, tuple[date, float]]:

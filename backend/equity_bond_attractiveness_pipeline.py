@@ -9,7 +9,7 @@ import requests
 
 from common import SupabaseRest, fetch_fred_observations, require_env
 from equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows
-from equity_bond_pipeline import fetch_yahoo_adjusted, valid_fred_values
+from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
 
 OEF_PAGE = "https://www.ishares.com/us/products/239723/ishares-sp-100-etf"
