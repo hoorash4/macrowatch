@@ -61,4 +61,6 @@ jobs:
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check Supabase Edge Function types
         run: |
-          for entry in supabase/functions/*/index.ts; do deno check "$entry"; done
+          failed=0
+          for entry in supabase/functions/*/index.ts; do deno check "$entry" || failed=1; done
+          exit "$failed"
