@@ -610,6 +610,17 @@ test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 
   assert.match(styles, /\.news-sentiment-toolbar\s*\{[\s\S]*?justify-content:space-between;/);
 });
 
+test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막대 왼쪽 위에 둔다', () => {
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  assert.match(chart, /news-sentiment-row-date/);
+  assert.match(chart, /news-sentiment-horizontal-bar/);
+  assert.match(chart, /news-sentiment-graph--recent/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-row\s*\{[\s\S]*?flex-direction: column/);
+  assert.match(styles, /#news-sentiment-chart \.news-sentiment-row-date\s*\{[\s\S]*?align-self: flex-start[\s\S]*?text-align: left/);
+  assert.match(styles, /\.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%/);
+});
+
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
   const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(charts, /valueLabel\.textContent = Number\(nearest\.stress_index\)\.toFixed\(2\)/);

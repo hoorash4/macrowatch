@@ -128,8 +128,8 @@ function renderHorizontalSentimentBar(item, positive, negative, directionalCount
   const bar = directionalCount
     ? `${renderHorizontalSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderHorizontalSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
     : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
-  const date = view.showDates ? `<span class="w-10 shrink-0 text-right text-xs font-semibold text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
-  return `<div class="group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="flex h-12 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
+  const date = view.showDates ? `<span class="news-sentiment-row-date w-10 shrink-0 text-right text-xs font-semibold text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
+  return `<div class="news-sentiment-row group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="news-sentiment-horizontal-bar flex h-12 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
 }
 
 function renderVerticalSentimentBar(item, positive, negative, directionalCount, view, title) {
@@ -175,7 +175,7 @@ function renderNewsSentiment(rows) {
       : '',
   ].join('');
   const graphClass = view.layout === 'horizontal'
-    ? 'flex h-60 min-w-0 flex-col justify-center gap-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6'
+    ? 'news-sentiment-graph--recent flex h-60 min-w-0 flex-col justify-center gap-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6'
     // 30일 화면은 완성 시점의 30칸 간격을 먼저 확보하고 왼쪽부터 하루씩 채운다.
     : `${newsSentimentView === 'expanded' ? 'news-sentiment-graph--expanded' : 'flex'} h-60 min-w-0 items-end justify-start ${view.gapClass} overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-4`;
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';

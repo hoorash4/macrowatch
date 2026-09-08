@@ -2267,6 +2267,31 @@ body.is-pointer-dragging {
     background: var(--color-brand-navy);
     color: #fff;
   }
+  /* 최근 뉴스 막대는 날짜 열을 없애고 날짜를 막대 왼쪽 위에 배치해 가로폭을 모두 사용합니다. */
+  #news-sentiment-chart {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+  .news-sentiment-graph--recent {
+    height: auto;
+    min-height: 15rem;
+    gap: 1rem;
+    padding: .9rem .75rem;
+  }
+  .news-sentiment-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .35rem;
+  }
+  #news-sentiment-chart .news-sentiment-row-date {
+    width: auto;
+    align-self: flex-start;
+    text-align: left;
+  }
+  .news-sentiment-horizontal-bar {
+    width: 100%;
+    flex: none;
+  }
   #app-shell > .dashboard-copyright {
     margin-top: .75rem;
     padding: 1rem;
