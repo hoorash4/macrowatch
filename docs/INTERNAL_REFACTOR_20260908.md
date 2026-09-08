@@ -1,4 +1,4 @@
-# Internal refactor — in progress, not a completion report
+# Internal refactor — active-code release and verification
 
 ## Contract and rollback
 
@@ -121,7 +121,41 @@ schedules remain unchanged. Verify stored earnings checksums and rendered charts
 Historical SQL migrations, archived versions and backfill-only files are retained
 as history/compatibility, not claimed to have been rewritten or exhaustively
 re-audited internally. Tests validate them where shared interfaces are affected.
-Completion of deployment and live verification must be recorded separately.
+## Released checkpoint
+
+- PR #36 merged as `3b5d662aa830d7ff84f25ae2b2f06ad9b74c4fb5`.
+- CI run `34186597708`: 350 Python and 72 Node tests, all JavaScript syntax,
+  all Edge entrypoint Deno type checks, and Pages compatibility build passed.
+- Pages release `34186852472`: build and deployment succeeded.
+- Eight affected Edge functions deployed directly: admin-control 118,
+  kis-market-test 37, korea-foreign-flow 30, market-context 25, news-pipeline 107,
+  policy-pipeline 40, sector-flow-scheduler 9, sector-flow 44. Existing JWT settings
+  retained. No SQL migration, recollection, recalculation or notification run.
+- Six authenticated production views: all 43 visible SVG representations match
+  before/after exactly (path data, text, viewBox). Administrator headings and
+  control structure match. No browser error log entries observed.
+- Company prefix search returns ranked matches; empty-search outside click closes
+  suggestions. S&P market selection and MAX range render 2016–2026.
+- DB full-row JSONB MD5, ordered by primary dimensions, unchanged:
+  company_quarters 16,476 / `8b43ae5b33de92c81bf271331bdd1d9a`;
+  market_quarters 176 / `9a6195dac9eac0326ba6166edcbe589c`.
+- Active changes do not include AGENTS edits: the user's independent main-branch
+  update was merged intact. All workflow, DB schema and dependency files unchanged.
+- Elapsed work approximately 80 minutes, including inspection, tests and deployment.
+
+### Verification limits and recovery
+
+Real notification sends, account writes, paid AI calls and full scheduled provider
+collection were deliberately not triggered. Their offline contracts and types were
+checked; this does not claim live end-to-end execution of those external effects.
+Historical migrations/archive internals were not rewritten. No blanket claim that
+every historical file is free of all duplication or defects is made.
+
+To undo this release, revert merge `3b5d662` with mainline parent 1 on a new branch,
+validate the revert and redeploy Pages plus the same eight Edge functions from the
+reverted tree. Preserve the independent AGENTS commit. Avoid push-triggered data
+refreshes as above. Do not restore a DB backup: this release did not modify data.
+Remote baseline branch `codex/restore-before-internal-20260908` is retained.
 
 ## Safeguards
 
