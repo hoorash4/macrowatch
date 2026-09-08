@@ -21,12 +21,9 @@ class DeploymentStructureTests(unittest.TestCase):
             for target in re.findall(r'\bbackend/[\w/]+\.py\b', text):
                 self.assertTrue((ROOT / target).is_file(), f'{workflow.name}: {target}')
 
-    def test_legacy_asset_urls_are_generated_from_canonical_sources(self):
-        for source in (ROOT / 'assets/js').rglob('*.js'):
-            alias = ROOT / source.name
-            text = alias.read_text(encoding='utf8')
-            self.assertTrue(text.startswith('---\nlayout: null\n---\n'))
-            self.assertIn('{% include_relative ' + source.relative_to(ROOT).as_posix() + ' %}', text)
-            self.assertNotIn('function ', text)
-        dashboard = (ROOT / 'dashboard-charts.js').read_text(encoding='utf8')
-        self.assertLess(dashboard.index('assets/js/charts/analysis-chart-utils.js'), dashboard.index('assets/js/dashboard/dashboard-charts.js'))
+    def test_root_contains_only_required_document_entries(self):
+        self.assertEqual({p.name for p in ROOT.glob('*.md')}, {'AGENTS.md', 'README.md'})
+        self.assertEqual(list(ROOT.glob('*.js')), [])
+        self.assertEqual(list(ROOT.glob('*.css')), [])
+        for name in ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']:
+            self.assertTrue((ROOT / 'docs' / name).is_file())

@@ -11,6 +11,11 @@ for (const name of fs.readdirSync('assets/js', {recursive:true}).filter(name => 
   new vm.Script(served, {filename:path.basename(name)});
 }
 assert.equal(read(path.join(site,'styles.css')).trim(), read('assets/css/styles.css').replaceAll('../../images/', './images/').trim());
+const dashboard = read(path.join(site, 'dashboard-charts.js'));
+assert.ok(dashboard.startsWith(read('assets/js/charts/analysis-chart-utils.js')));
+for (const name of ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
+  assert.equal(read(path.join(site, name)), read(path.join('docs', name)));
+}
 for(const name of ['index.html','admin.html']) {
   for(const [,url] of read(path.join(site,name)).matchAll(/<(?:script|link)\b[^>]*?(?:src|href)="([^"]+)"/g)) {
     if(/^(?:https?:|\/\/|#)/.test(url))continue;

@@ -1,0 +1,26 @@
+name: Build Pages artifact
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - run: node tools/build/pages-compat.cjs _site
+      - run: node tests/check_pages_build.cjs _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site

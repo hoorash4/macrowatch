@@ -9,6 +9,9 @@ on:
       - "backend/**"
       - "supabase/functions/**"
       - "tests/**"
+      - "tools/build/**"
+      - "docs/**"
+      - ".github/workflows/pages-*.yml"
       - ".github/workflows/code-quality.yml"
   pull_request:
     paths:
@@ -17,24 +20,16 @@ on:
       - "backend/**"
       - "supabase/functions/**"
       - "tests/**"
+      - "tools/build/**"
+      - "docs/**"
+      - ".github/workflows/*.yml"
 
 permissions:
   contents: read
 
 jobs:
   pages-contract:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-      - uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./
-          destination: ./_site
-      - run: node tests/check_pages_build.cjs _site
+    uses: ./.github/workflows/pages-build.yml
 
   verify:
     runs-on: ubuntu-latest
