@@ -2162,7 +2162,7 @@ body.is-pointer-dragging {
     flex-direction: column;
     align-items: center;
     gap: .45rem;
-    margin: -.35rem 0 .8rem;
+    margin: .8rem 0 -.45rem;
     color: #718598;
     font-size: .68rem;
     font-weight: 700;
