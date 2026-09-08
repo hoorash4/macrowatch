@@ -277,8 +277,7 @@
             <h2 id="credit-stress-title" class="analysis-card-title">미국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한 주간 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">MSI(Market Stress Index)는 시장이 받을 수 있는 스트레스를 지수화 하였습니다. 정치, 언론 등을 제외한 금융적 스트레스 만을 의미합니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
@@ -315,7 +314,7 @@
           </div>
         </div>
         <p class="analysis-card-description">월별 하이일드 스프레드, 금융 신용여건, 기업 파산보호 신청 추이입니다.</p>
-        <p class="analysis-card-description">파산보호 신청 건수의 경우 분기 자료 발표 시 월별 자료가 공개됩니다. 즉, 최근 월 자료는 정확하지 않습니다.</p>
+        <p class="analysis-card-description">파산보호 신청 건수의 경우 분기 자료 발표 시 월별 자료가 함께 발표되므로, 최근 월 자료는 정확하지 않습니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div id="credit-stress-components-chart" class="min-h-72">
@@ -328,7 +327,7 @@
     <section data-liquidity-country="US" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-label="미국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <h2 class="analysis-card-title">미국 주식시장 자금환경</h2>
-        <p class="mt-2 text-xs text-slate-500">MacroWatch가 개발한 주식시장 자금 환경 입니다. 높을 수록 자금 환경이 좋다는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. 단, 자금 환경이 좋다는 이유로 주가가 상승하지는 않습니다.</p>
+        <p class="mt-2 text-xs text-slate-500">자금시장의 환경이 주식시장에 우호적인가를 나타냅니다. 단순 유동성과는 다르며, 높을 수록 우호적 환경이라는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. * 독자 개발 지표</p>
         <div class="analysis-chart-range-controls mt-4" data-liquidity-ranges aria-label="미국 유동성 조회 기간">
           <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
         </div>
@@ -342,12 +341,11 @@
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
           <div>
-            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">K-MSI(MARKET STRESS INDEX)</p>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">K-MSI</p>
             <h2 id="korea-stress-title" class="analysis-card-title">한국 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한 주간 한국 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description">높을수록 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">MSI(Market Stress Index)는 시장이 받을 수 있는 스트레스를 지수화 하였습니다. 정치, 지정학, 언론 등을 제외한 금융적 스트레스 만을 의미합니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
@@ -379,7 +377,7 @@
           <span class="analysis-card-icon"><i class="fa-solid fa-arrow-right-arrow-left text-sm"></i></span>
           <div><p class="analysis-card-eyebrow analysis-card-eyebrow--amber">FOREIGN CAPITAL FLOW</p><h2 id="korea-foreign-flow-title" class="analysis-card-title">외국인 자금 유출입 강도</h2></div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한 외국인 자금 유출입 강도입니다. 최근 10영업일의 외국인 움직임과 환율 등을 고려하여 최근 3년 분포로 표준화해 50%씩 결합합니다.</p>
+        <p class="analysis-card-description">최근 10영업일의 외국인 움직임과 환율 등을 고려하여 외국인 투자자의 주식시장 유입 강도를 타나냅니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">히스테리시스 기준 현재 상태: <span id="korea-foreign-flow-state" class="font-semibold text-slate-600">계산 중</span></p>
       </div>
       <div class="px-5 pb-5 pt-5">
@@ -397,7 +395,7 @@
     <section data-liquidity-country="KR" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-label="한국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <h2 class="analysis-card-title">한국 주식시장 자금환경</h2>
-        <p class="mt-2 text-xs text-slate-500">MacroWatch가 개발한 주식시장 자금 환경 입니다. 높을 수록 자금 환경이 좋다는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. 단, 자금 환경이 좋다는 이유로 주가가 상승하지는 않습니다.</p>
+        <p class="mt-2 text-xs text-slate-500">자금시장의 환경이 주식시장에 우호적인가를 나타냅니다. 단순 유동성과는 다르며, 높을 수록 우호적 환경이라는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. * 독자 개발 지표</p>
         <div class="analysis-chart-range-controls mt-4" data-liquidity-ranges aria-label="한국 유동성 조회 기간">
           <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
         </div>
@@ -506,8 +504,7 @@
             <h2 id="em-stress-title" class="analysis-card-title">이머징 시장 스트레스 지수</h2>
           </div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한 주간 이머징 시장 스트레스 지수입니다.</p>
-        <p class="analysis-card-description">높을수록 이머징 시장 스트레스가 높음을 뜻합니다.</p>
+        <p class="analysis-card-description">MSI(Market Stress Index)는 시장이 받을 수 있는 스트레스를 지수화 하였습니다. 정치, 언론 등을 제외한 금융적 스트레스 만을 의미합니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
@@ -538,7 +535,7 @@
             <h2 id="em-capacity-title" class="analysis-card-title">이머징 자금 유입 여건</h2>
           </div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한 이머징 시장으로의 자금 유입 여건입니다. 미국의 자금이 이머징 시장으로 유입되기 좋은 환경인지 보여줍니다.</p>
+        <p class="analysis-card-description">해외 자금시장 환경이 이머징 시장으로의 자금 유입에 우호적인 상황인지 보여줍니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">지연 발표되는 원자료가 업데이트되기 전까지 최신 구간은 잠정치로 표시됩니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
@@ -568,7 +565,7 @@
             <h2 id="policy-signal-title" class="analysis-card-title">통화정책 시그널</h2>
           </div>
         </div>
-        <p class="analysis-card-description">FOMC 회의 결과를 AI가 분석하여 주식 시장에 우호적인지를 판단합니다. 높아지면 비우호적입니다.</p>
+        <p class="analysis-card-description">FOMC 회의 결과를 AI가 분석하여 주식 시장에 우호적인지를 판단하여 지수화합니다. 높아지면 비우호적입니다. * 독자 개발 지표</p>
       </div>
       <div class="px-5 pb-2 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -593,7 +590,7 @@
             <h2 id="policy-expectation-title" class="analysis-card-title">시장 내재 정책금리 기대</h2>
           </div>
         </div>
-        <p class="analysis-card-description">MacroWatch가 개발한, 미국 채권시장을 기본으로 정책금리 방향성 기대를 추적합니다.</p>
+        <p class="analysis-card-description">미국 채권시장을 기본으로 하여 정책금리 방향성 기대를 추적합니다. * 독자 개발 지표</p>
       </div>
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
