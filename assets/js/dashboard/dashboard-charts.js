@@ -184,7 +184,7 @@ function renderNewsSentiment(rows) {
   // 그래프 아래 한 줄에서 범례와 기간 전환을 양쪽에 배치해 차트 영역을 넓게 사용한다.
   chart.innerHTML = `<div${graphId} class="news-sentiment-graph ${graphClass}">${bars}</div><div class="news-sentiment-toolbar">${legend}<div class="news-sentiment-controls">${controls}</div></div>`;
   const shouldFocusLatest = newsSentimentView === 'all'
-    || (newsSentimentView === 'expanded' && window.matchMedia('(max-width: 768px)').matches);
+    || (newsSentimentView === 'expanded' && window.matchMedia('(max-width: 1023px)').matches);
   if (shouldFocusLatest) {
     const historyChart = chart.querySelector('.news-sentiment-graph');
     if (historyChart) {
@@ -1163,7 +1163,7 @@ function initializeSectorFlowSwipeIndicator() {
     indicator.setAttribute('aria-label', `주차 ${activeIndex + 1}/${cards.length}`);
   };
   const positionCurrentWeek = () => {
-    if (!window.matchMedia('(max-width: 768px)').matches || preview.dataset.initialWeekPositioned) {
+    if (!window.matchMedia('(max-width: 1023px)').matches || preview.dataset.initialWeekPositioned) {
       update();
       return;
     }
@@ -1183,7 +1183,7 @@ function initializeSectorFlowSwipeIndicator() {
     }, { passive: true });
     window.addEventListener('resize', positionCurrentWeek);
     window.addEventListener('resize', () => {
-      const mobileLayout = window.matchMedia('(max-width: 768px)').matches;
+      const mobileLayout = window.matchMedia('(max-width: 1023px)').matches;
       if (mobileLayout === sectorFlowMobileLayout) return;
       renderSectorFlow(sectorFlowRows);
     });
@@ -1192,7 +1192,7 @@ function initializeSectorFlowSwipeIndicator() {
 }
 
 function renderSectorFlow(rows) {
-  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  const isMobile = window.matchMedia('(max-width: 1023px)').matches;
   sectorFlowMobileLayout = isMobile;
   const grouped = new Map();
   rows.forEach((row) => {

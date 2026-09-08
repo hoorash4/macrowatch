@@ -1860,8 +1860,8 @@ body.is-pointer-dragging {
    데스크톱 기본 디자인은 위쪽 규칙을 사용합니다.
    아래에서는 화면 폭이 작아질 때 꼭 필요한 배치와 크기만 바꿉니다.
    반응형으로 작아지게 만들어서 소형 스마트폰인 320px 까지는 온전하게 표현 됨.
-  1023 - 1024까지 랩탑 등 컴퓨터 화면 용.
-  768px 이하를 모바일 앱 화면으로 처리.
+  1024px 이상은 데스크톱 화면으로 처리.
+  1023px 이하의 스마트폰과 태블릿은 모바일 앱 화면으로 처리.
   스마트폰의 경우 적응형으로 작아지게 코딩했으므로 별도의 처리 불필요함.
 */
 @media (max-width:1023px) {
@@ -1909,7 +1909,7 @@ body.is-pointer-dragging {
     margin-left: .22em;
   }
 }
-@media (max-width:768px) {
+@media (max-width:1023px) {
   /* 로그인과 대시보드는 같은 모바일 기준에서 앱 형태로 전환합니다. */
   body:has(#auth-screen:not(.hidden)) {
     padding: 0;
@@ -1955,6 +1955,7 @@ body.is-pointer-dragging {
     align-content: center;
     width: 100%;
     max-width: 460px;
+    grid-template-columns: minmax(0, 1fr);
     margin: 0 auto;
     padding: 1.75rem 1.25rem 2rem;
     gap: 1.5rem;
@@ -2363,7 +2364,7 @@ body.is-pointer-dragging {
     background: #f4f6f8;
   }
 }
-@media (min-width:769px) {
+@media (min-width:1024px) {
   .sector-flow-week-current .sector-flow-week-body > ol {
     grid-template-columns: 1fr;
   }

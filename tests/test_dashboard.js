@@ -111,9 +111,9 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
     assert.match(html, new RegExp(`data-mobile-stress-view="${view}"`));
   }
   assert.match(script, /stressViews\.has\(selectedView\) \? 'stress' : selectedView/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
-  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?\.mobile-bottom-nav/);
-  assert.match(script, /matchMedia\('\(max-width: 768px\)'\)/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
+  assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?\.mobile-bottom-nav/);
+  assert.match(script, /matchMedia\('\(max-width: 1023px\)'\)/);
   assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
 });
 
@@ -121,9 +121,9 @@ test('모바일 로그인은 밝은 한 열 앱 화면을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const auth = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?body:has\(#auth-screen:not\(\.hidden\)\)[\s\S]*?background: #f4f6f8/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?body:has\(#auth-screen:not\(\.hidden\)\)[\s\S]*?background: #f4f6f8/);
   assert.match(styles, /#auth-screen \.auth-content-grid[\s\S]*?max-width: 460px[\s\S]*?background: none/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#auth-screen \.auth-panel\s*\{[^}]*border: 1px solid #cfd6dc;[^}]*background: #fff;/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?#auth-screen \.auth-panel\s*\{[^}]*border: 1px solid #cfd6dc;[^}]*background: #fff;/);
   for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker']) {
     assert.match(html, new RegExp(`data-auth-dashboard-view="${view}"`));
   }
@@ -603,9 +603,9 @@ test('뉴스 흐름 확장 그래프는 데스크톱 원형을 유지하고 모�
   assert.match(charts, /news-sentiment-graph--expanded/);
   assert.match(styles, /grid-template-columns:repeat\(30,minmax\(1\.5rem,1fr\)\)/);
   assert.match(charts, /expanded:\s*\{[\s\S]*?barWidthClass: 'news-sentiment-bar--compact min-w-6 max-w-6'[\s\S]*?showNumbers: true/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-graph--expanded \.news-sentiment-bar--compact\s*\{[\s\S]*?width: \.875rem;[\s\S]*?min-width: \.875rem;[\s\S]*?max-width: \.875rem;/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-graph--expanded \.news-sentiment-segment-value\s*\{\s*display: none;/);
-  assert.match(charts, /newsSentimentView === 'all'[\s\S]*?newsSentimentView === 'expanded' && window\.matchMedia\('\(max-width: 768px\)'\)\.matches[\s\S]*?scrollLeft = historyChart\.scrollWidth - historyChart\.clientWidth/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?\.news-sentiment-graph--expanded \.news-sentiment-bar--compact\s*\{[\s\S]*?width: \.875rem;[\s\S]*?min-width: \.875rem;[\s\S]*?max-width: \.875rem;/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?\.news-sentiment-graph--expanded \.news-sentiment-segment-value\s*\{\s*display: none;/);
+  assert.match(charts, /newsSentimentView === 'all'[\s\S]*?newsSentimentView === 'expanded' && window\.matchMedia\('\(max-width: 1023px\)'\)\.matches[\s\S]*?scrollLeft = historyChart\.scrollWidth - historyChart\.clientWidth/);
   assert.match(charts, /class="news-sentiment-view-button"/);
   assert.match(charts, /news-sentiment-view-button--back/);
   assert.match(styles, /\.news-sentiment-view-button\s*\{/);
@@ -621,9 +621,9 @@ test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막
   assert.match(chart, /news-sentiment-horizontal-bar/);
   assert.match(chart, /news-sentiment-horizontal-bar flex h-12/);
   assert.match(chart, /news-sentiment-graph--recent/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#news-sentiment-chart \.news-sentiment-row\s*\{[\s\S]*?flex-direction: column;[\s\S]*?gap: \.2rem/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?#news-sentiment-chart \.news-sentiment-row\s*\{[\s\S]*?flex-direction: column;[\s\S]*?gap: \.2rem/);
   assert.match(styles, /#news-sentiment-chart \.news-sentiment-row-date\s*\{[\s\S]*?align-self: flex-start[\s\S]*?text-align: left/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#news-sentiment-chart \.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 1\.75rem;[\s\S]*?flex: none;/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?#news-sentiment-chart \.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 1\.75rem;[\s\S]*?flex: none;/);
 });
 
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
@@ -703,13 +703,13 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.doesNotMatch(html, /대표종목/);
   assert.match(charts, /isLatestWeek \? '주차' : '주'/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:1\.65rem 2\.15rem minmax\(0,1fr\) 2rem/);
-  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?grid-template-columns: 2rem 2\.5rem minmax\(8rem,1fr\) 10\.5rem repeat\(4,7rem\)/);
+  assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?grid-template-columns: 2rem 2\.5rem minmax\(8rem,1fr\) 10\.5rem repeat\(4,7rem\)/);
   assert.match(charts, /isLatestWeek && isMobile \? sectorLeadership\(row\.leadership_score, true\) : ''/);
   assert.match(charts, /isLatestWeek && !isMobile \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}\$\{sectorLeadership\(row\.leadership_score\)\}`/);
   assert.match(styles, /sector-flow-week-current header > strong \{ font-size:\.9rem; \}/);
-  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size: \.74rem;/);
+  assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size: \.74rem;/);
   assert.match(styles, /\.sector-flow-week li b \{[\s\S]*width:1\.45rem;[\s\S]*min-height:1\.35rem;[\s\S]*font-size:\.66rem;/);
-  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?sector-flow-week-current \.sector-flow-sector \{\s*font-size: \.88rem;/);
+  assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?sector-flow-week-current \.sector-flow-sector \{\s*font-size: \.88rem;/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\)[\s\S]*\.sector-flow-streak \{[\s\S]*justify-self:center;[\s\S]*text-align:center;/);
   assert.doesNotMatch(styles, /sector-flow-(rank|change) \{ transform:translateX/);
   assert.match(styles, /\.sector-flow-columns \{[\s\S]*border-bottom:1px solid rgba\(47,105,154,\.2\)/);
@@ -727,9 +727,9 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(charts, /leadership_score/);
   assert.match(charts, /sector-flow-leadership sector-flow-leadership-empty"><small>주도력<\/small><em>—<\/em>/);
   assert.match(charts, /style="width:\$\{score\}%"/);
-  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?\.sector-flow-leadership > span > i/);
+  assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?\.sector-flow-leadership > span > i/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);
-  assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.58rem;[\s\S]*font-weight:500;[\s\S]*@media \(min-width:769px\)[\s\S]*?\.sector-flow-classification-note \{[\s\S]*font-size: \.66rem;/);
+  assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.58rem;[\s\S]*font-weight:500;[\s\S]*@media \(min-width:1024px\)[\s\S]*?\.sector-flow-classification-note \{[\s\S]*font-size: \.66rem;/);
   assert.doesNotMatch(styles, /margin-left:\.28rem/);
 });
 
@@ -737,7 +737,7 @@ test('모바일 카드 폭은 화면 안에 고정되고 주도섹터는 주차�
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.equal((html.match(/class="sector-flow-week-body"/g) || []).length, 5);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?body:has\(#app-shell:not\(\.hidden\)\) \{[\s\S]*?overflow-x: hidden;/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?body:has\(#app-shell:not\(\.hidden\)\) \{[\s\S]*?overflow-x: hidden;/);
   assert.match(styles, /#app-shell,[\s\S]*?\.dashboard-view-card,[\s\S]*?#app-shell \.analysis-card \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
   assert.match(styles, /\.sector-flow-preview \{[\s\S]*?display: flex;[\s\S]*?overflow-x: auto;[\s\S]*?scroll-snap-type: x mandatory;/);
   assert.match(styles, /\.sector-flow-history \{\s*display: contents;/);
@@ -751,7 +751,7 @@ test('모바일 카드 폭은 화면 안에 고정되고 주도섹터는 주차�
   assert.match(styles, /\.sector-flow-swipe-hint \{[\s\S]*?display: flex;[\s\S]*?align-items: center;/);
   assert.match(styles, /\.sector-flow-swipe-dots i\.is-active \{[\s\S]*?width: 1rem;[\s\S]*?background: #cf742b;/);
   assert.match(styles, /\.sector-flow-week-current \{\s*order:-1;/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.sector-flow-week-current \{\s*order: 0;/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?\.sector-flow-week-current \{\s*order: 0;/);
   const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(charts, /function initializeSectorFlowSwipeIndicator\(\)/);
   assert.match(charts, /preview\.addEventListener\('scroll',[\s\S]*requestAnimationFrame\(update\)/);
@@ -769,7 +769,7 @@ test('개인설정 모달은 고정 헤더와 스크롤 본문에서 항상 닫�
   assert.match(html, /class="profile-dialog[^"]*"[\s\S]*class="profile-dialog-header[^"]*"[\s\S]*id="profile-close-button"[\s\S]*class="profile-dialog-body"/);
   assert.match(styles, /\.profile-dialog \{[\s\S]*?display:flex;[\s\S]*?max-height:min\(44rem,calc\(100svh - 2rem\)\);[\s\S]*?overflow:hidden;/);
   assert.match(styles, /\.profile-dialog-body \{[\s\S]*?min-height:0;[\s\S]*?overflow-y:auto;/);
-  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?#profile-close-button \{[\s\S]*?width:2\.75rem;[\s\S]*?height:2\.75rem;/);
+  assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?#profile-close-button \{[\s\S]*?width:2\.75rem;[\s\S]*?height:2\.75rem;/);
   assert.match(auth, /const closeProfileModal = \(\) => \{[\s\S]*?profileModal\.classList\.add\('hidden'\)/);
   assert.match(auth, /event\.target === event\.currentTarget\) closeProfileModal\(\)/);
   assert.match(auth, /event\.key === 'Escape'[\s\S]*?closeProfileModal\(\)/);

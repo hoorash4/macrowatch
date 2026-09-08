@@ -52,7 +52,7 @@ function initializeDashboardNavigation() {
   const stressButtons = [...document.querySelectorAll('[data-mobile-stress-view]')];
   const panels = [...document.querySelectorAll('[data-dashboard-panel]')];
   const stressSwitcher = document.querySelector('.mobile-stress-switcher');
-  const mobileViewport = window.matchMedia('(max-width: 768px)');
+  const mobileViewport = window.matchMedia('(max-width: 1023px)');
   if (!desktopButtons.length || !panels.length) return;
 
   const hashByView = {
