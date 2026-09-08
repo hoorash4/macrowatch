@@ -8,6 +8,14 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/charts/ana
 const domain = context.window.MacroWatchAnalysisChart.visibleAxisDomain;
 const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
 
+test('visible domain preserves duplicate boundary coordinates and input ordering', () => {
+  const points = [{ x: 9, value: 20 }, { x: 1, value: 30 }, { x: 9, value: 50 },
+    { x: 12, value: 100 }, { x: 11, value: 200 }, { x: 12, value: 300 }, { x: 10, value: null }];
+  const values = [20, 50, 100, 300];
+  const expected = axisDomain(values, { minimumSpan: 6 });
+  assert.equal(JSON.stringify(domain(points, 10, 10)), JSON.stringify(expected));
+});
+
 test('visible window excludes distant spikes but includes boundary samples', () => {
   const points = [{ x: 0, value: 1000 }, { x: 10, value: 2 }, { x: 20, value: 3 }, { x: 30, value: 4 }, { x: 40, value: 5 }];
   const recent = domain(points, 20, 40);

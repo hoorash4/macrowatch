@@ -128,10 +128,14 @@
 
   function visibleAxisDomain(points, left, right, symmetric = false) {
     // Include the neighbouring samples at viewport edges so crossing curves fit too.
-    const values = points.filter(point => Number.isFinite(point.value)
-      && point.x >= left && point.x <= right).map(point => point.value);
-    const before = points.filter(point => point.x < left && Number.isFinite(point.value)).at(-1);
-    const after = points.find(point => point.x > right && Number.isFinite(point.value));
+    const values = [];
+    let before, after;
+    points.forEach(point => {
+      if (!Number.isFinite(point.value)) return;
+      if (point.x >= left && point.x <= right) values.push(point.value);
+      if (point.x < left) before = point;
+      if (after === undefined && point.x > right) after = point;
+    });
     points.forEach(point => {
       if (Number.isFinite(point.value) && (point.x === before?.x || point.x === after?.x)) values.push(point.value);
     });
@@ -221,7 +225,7 @@
 
     // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
     // 축의 라벨과 세로선만 별도 SVG에 복제해 왼쪽에 고정한다.
-    const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    const [,,, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
     const axisNodes = [...svg.querySelectorAll('text,line')].filter((node) => {
       const x = Number(node.getAttribute('x'));
       const x1 = Number(node.getAttribute('x1'));
@@ -308,4 +312,3 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
 
   window.MacroWatchAnalysisChart = { monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
-

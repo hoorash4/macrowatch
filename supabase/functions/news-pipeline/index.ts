@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { analyzeCandidates } from "../_shared/news/openai-adapter.ts";
 import { loadMarketContext } from "../_shared/market/market-context.ts";
@@ -21,13 +22,6 @@ const RSS_FEEDS: Record<SourceName, string[]> = {
 };
 
 type SourceError = { source: SourceName; feed: string; error: string };
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
-}
 
 function errorText(error: unknown) {
   return error instanceof Error
@@ -158,7 +152,7 @@ function parseTargetDate(value: unknown) {
 }
 
 async function collectCandidates(lookbackHours: number, targetDate: string | null = null) {
-  const sources: SourceName[] = ["yonhap", "maekyung", "financial_news"];
+  const sources = Object.keys(RSS_FEEDS) as SourceName[];
   const results = await Promise.all(sources.map((source) => fetchRss(source, lookbackHours)));
   const candidates = deduplicate(results.flatMap((result) => result.candidates));
   // 정기 실행은 기존 rolling 24시간 수집을 그대로 유지한다. 날짜 백필만

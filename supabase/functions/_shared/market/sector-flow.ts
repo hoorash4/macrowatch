@@ -161,9 +161,9 @@ export function calculateSectorRankings(
     const fourWeekStart = isoDate(dateValue(weekStart) - 3 * 7 * DAY_MS);
     const rows = [];
     for (const [etfId, history] of byEtf) {
-      const baseline = [...history].reverse().find((item) => item.marketDate < weekStart && item.closePrice !== null);
-      const fourWeekBaseline = [...history].reverse().find((item) => item.marketDate < fourWeekStart && item.closePrice !== null);
-      const endpoint = [...history].reverse().find((item) => item.marketDate <= weekEnd && item.marketDate <= currentDate && effectivePrice(item, currentDate) !== null);
+      const baseline = history.findLast((item) => item.marketDate < weekStart && item.closePrice !== null);
+      const fourWeekBaseline = history.findLast((item) => item.marketDate < fourWeekStart && item.closePrice !== null);
+      const endpoint = history.findLast((item) => item.marketDate <= weekEnd && item.marketDate <= currentDate && effectivePrice(item, currentDate) !== null);
       if (!baseline?.closePrice || !fourWeekBaseline?.closePrice || !endpoint) continue;
       const endpointPrice = effectivePrice(endpoint, currentDate);
       if (!endpointPrice || endpoint.marketDate < weekStart) continue;

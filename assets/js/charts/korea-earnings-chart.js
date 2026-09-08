@@ -279,10 +279,13 @@
         grid.setAttribute('y1', gridY); grid.setAttribute('y2', gridY);
         grid.classList.toggle('korea-earnings-grid--zero', Math.abs(value) < Number.EPSILON);
       });
-      metricSeries.forEach((metric) => lineElements.get(metric.key)?.forEach((line) => {
-        const segment = lineSegments(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding)[Number(line.dataset.segmentIndex)];
-        if (segment) line.setAttribute('d', segment.path);
-      }));
+      metricSeries.forEach((metric) => {
+        const segments = lineSegments(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding);
+        lineElements.get(metric.key)?.forEach((line) => {
+          const segment = segments[Number(line.dataset.segmentIndex)];
+          if (segment) line.setAttribute('d', segment.path);
+        });
+      });
       pointElements.forEach((point) => {
         const metricKey = point.dataset.koreaEarningsPoint;
         const value = metricSeries.find((metric) => metric.key === metricKey)?.points[Number(point.dataset.pointIndex)]?.value;
@@ -483,4 +486,3 @@
   window.MacroWatchKoreaEarnings = Object.freeze({ seriesFromMarketRows, seriesFromCompanyRows, axisDomain, provisionalEdgeStates });
   window.MacroWatchDashboard?.registerLoader(load);
 })();
-

@@ -31,17 +31,18 @@
     }
 
     async function invoke(functionName, payload, options = {}, retried = false) {
+      const requiresAuth = options.authenticated !== false;
       const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
         method: 'POST',
         headers: {
           apikey: supabasePublishableKey,
-          Authorization: `Bearer ${await accessToken()}`,
+          Authorization: `Bearer ${requiresAuth ? await accessToken() : supabasePublishableKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
       });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 401 && !retried) {
+      if (requiresAuth && response.status === 401 && !retried) {
         const refreshed = await supabaseClient.auth.refreshSession();
         if (!refreshed.error && refreshed.data.session) {
           return invoke(functionName, payload, options, true);

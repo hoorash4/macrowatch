@@ -5,7 +5,6 @@
   const MIN_VIEWPORT_WIDTH = 680;
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
-  const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
   const state = { rows: [], selectedYears: 1 };
   const chartUtils = window.MacroWatchAnalysisChart;
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
@@ -42,9 +41,7 @@
     const firstTimestamp = points[0].timestamp;
     const lastTimestamp = points[points.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
-    const timelineWidth = selectedYears === 'max'
-      ? viewportWidth
-      : Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
+    const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
     const initialScale = verticalScale(points);
     const pathFor = (key, maximum, sourcePoints = points) => window.MacroWatchAnalysisChart.monotonePath(sourcePoints

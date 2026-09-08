@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchKisKospiForeignNetBuy, fetchKisKospiMarketDays, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/market/korea-foreign-flow.ts";
@@ -6,7 +7,7 @@ import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/market/
 const WAIT_MS = 350, RETENTION_YEARS = 5, CALCULATION_YEARS = 8;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const compact = (value: string) => value.replaceAll("-", "");
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
+
 
 async function fetchFx(start: string, end: string): Promise<Map<string, number>> {
   const key = Deno.env.get("ECOS_API_KEY")?.trim();

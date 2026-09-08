@@ -13,6 +13,7 @@ for (const name of fs.readdirSync('assets/js', {recursive:true}).filter(name => 
 assert.equal(read(path.join(site,'styles.css')).trim(), read('assets/css/styles.css').replaceAll('../../images/', './images/').trim());
 const dashboard = read(path.join(site, 'dashboard-charts.js'));
 assert.ok(dashboard.startsWith(read('assets/js/charts/analysis-chart-utils.js')));
+assert.ok(read(path.join(site, 'auth.js')).startsWith(read('assets/js/core/frontend-core.js')));
 for (const name of ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
   assert.equal(read(path.join(site, name)), read(path.join('docs', name)));
 }

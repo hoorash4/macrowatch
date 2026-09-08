@@ -8,13 +8,17 @@ if (site === root || !fs.existsSync(path.join(site, 'index.html'))) {
 }
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 const names = new Set();
+const legacyDependencies = {
+  'dashboard-charts.js': 'assets/js/charts/analysis-chart-utils.js',
+  'auth.js': 'assets/js/core/frontend-core.js',
+};
 for (const relative of fs.readdirSync(path.join(root, 'assets/js'), {recursive: true})) {
   if (!relative.endsWith('.js')) continue;
   const name = path.basename(relative);
   if (names.has(name)) throw new Error(`Duplicate legacy asset name: ${name}`);
   names.add(name);
-  const dependency = name === 'dashboard-charts.js'
-    ? read('assets/js/charts/analysis-chart-utils.js') + '\n'
+  const dependency = legacyDependencies[name]
+    ? read(legacyDependencies[name]) + '\n'
     : '';
   fs.writeFileSync(path.join(site, name), dependency + read(path.join('assets/js', relative)));
 }

@@ -564,7 +564,7 @@ class SourceContractTests(unittest.TestCase):
         automatic_cli = (ROOT / "backend/earnings_v2/automatic_cli.py").read_text(encoding="utf-8")
         automatic_workflow = (ROOT / ".github/workflows/earnings-v2-korea-automatic.yml").read_text(encoding="utf-8")
         providers = (ROOT / "backend/earnings_v2/providers.py").read_text(encoding="utf-8")
-        repository = (ROOT / "backend/earnings_v2/repository.py").read_text(encoding="utf-8")
+        repository = (ROOT / "backend/earnings_common/repository.py").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902224500_add_earnings_v2_daily_checkpoint_read.sql").read_text(encoding="utf-8")
         initializer = (ROOT / "supabase/migrations/20260902225000_initialize_earnings_v2_daily_checkpoint.sql").read_text(encoding="utf-8")
 
@@ -665,8 +665,9 @@ class SourceContractTests(unittest.TestCase):
 
     def test_news_sources_and_partial_failure_reporting_remain_enabled(self) -> None:
         pipeline = (ROOT / "supabase/functions/news-pipeline/index.ts").read_text(encoding="utf-8")
-        for source in ('"yonhap"', '"maekyung"', '"financial_news"'):
-            self.assertIn(source, pipeline)
+        for source in ('yonhap', 'maekyung', 'financial_news'):
+            self.assertIn(f'{source}: [', pipeline)
+        self.assertIn('Object.keys(RSS_FEEDS)', pipeline)
         self.assertIn("Promise.allSettled", pipeline)
         self.assertIn("errors: results.flatMap", pipeline)
 
@@ -889,4 +890,3 @@ class KoreaForeignFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

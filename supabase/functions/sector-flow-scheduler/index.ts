@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type PriceStage = "open" | "intraday" | "close";
@@ -16,12 +17,7 @@ const SLOTS: ScheduleSlot[] = [
   { name: "market-close", stage: "close", startMinute: 15 * 60 + 40, endMinute: 16 * 60 + 10 },
 ];
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
-}
+
 
 function kstParts(now = new Date()) {
   const shifted = new Date(now.getTime() + 9 * 3_600_000);

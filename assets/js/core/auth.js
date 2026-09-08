@@ -1,7 +1,7 @@
 (() => {
-  const { supabaseUrl: AUTH_SUPABASE_URL, supabasePublishableKey: AUTH_SUPABASE_KEY } = window.MacroWatchFrontend.config;
   const KAKAO_OAUTH_STATE_KEY = 'macrowatch.kakao-oauth-state';
   const authClient = window.MacroWatchFrontend.createSupabaseClient();
+  const functionClient = window.MacroWatchFrontend.createFunctionClient(authClient);
   window.macroWatchSupabase = authClient;
   const elements = {};
   let initialized = false;
@@ -16,66 +16,17 @@
     elements.submitLabel.textContent = isBusy ? '카카오 연결 중' : label;
   }
 
-  async function getAccessToken() {
-    const { data, error } = await authClient.auth.getSession();
-    if (error || !data.session?.access_token) {
-      throw new Error('로그인이 필요합니다.');
-    }
-    return data.session.access_token;
-  }
-
-  async function invokeKakao(action, payload = {}, retried = false) {
-    const requiresAuth = action !== 'start' && action !== 'exchange';
-    const token = requiresAuth ? await getAccessToken() : AUTH_SUPABASE_KEY;
-    const response = await fetch(`${AUTH_SUPABASE_URL}/functions/v1/kakao-auth`, {
-      method: 'POST',
-      headers: {
-        apikey: AUTH_SUPABASE_KEY,
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ action, ...payload })
+  function invokeKakao(action, payload = {}) {
+    return functionClient.invoke('kakao-auth', { action, ...payload }, {
+      authenticated: action !== 'start' && action !== 'exchange',
+      errorMessage: (status) => `카카오 요청에 실패했습니다. (${status})`,
     });
-    const data = await response.json().catch(() => ({}));
-    if (requiresAuth && response.status === 401 && !retried) {
-      const refreshed = await authClient.auth.refreshSession();
-      if (!refreshed.error && refreshed.data.session) {
-        return invokeKakao(action, payload, true);
-      }
-    }
-    if (!response.ok) throw new Error(data?.error || `카카오 요청에 실패했습니다. (${response.status})`);
-    if (data?.error) throw new Error(data.error);
-    return data;
   }
 
-  async function invokeEmailSettings(action, payload = {}, retried = false) {
-    const token = await getAccessToken();
-    const response = await fetch(`${AUTH_SUPABASE_URL}/functions/v1/notification-settings`, {
-      method: 'POST',
-      headers: { apikey: AUTH_SUPABASE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...payload })
+  function invokeEmailSettings(action, payload = {}) {
+    return functionClient.invoke('notification-settings', { action, ...payload }, {
+      errorMessage: (status) => `이메일 설정 요청에 실패했습니다. (${status})`,
     });
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 401 && !retried) {
-      const refreshed = await authClient.auth.refreshSession();
-      if (!refreshed.error && refreshed.data.session) return invokeEmailSettings(action, payload, true);
-    }
-    if (!response.ok || data?.error) throw new Error(data?.error || `이메일 설정 요청에 실패했습니다. (${response.status})`);
-    return data;
-  }
-
-  async function beginKakaoLogin() {
-    setBusy(true);
-    setMessage();
-    try {
-      const data = await invokeKakao('start');
-      if (!data?.authorize_url || !data?.state) throw new Error('카카오 로그인 정보를 받지 못했습니다.');
-      window.sessionStorage.setItem(KAKAO_OAUTH_STATE_KEY, data.state);
-      window.location.assign(data.authorize_url);
-    } catch (error) {
-      setMessage(error.message || '카카오 로그인을 시작하지 못했습니다.');
-      setBusy(false);
-    }
   }
 
   async function finishKakaoLogin(code, state) {
@@ -203,7 +154,7 @@
     }
   }
 
-  async function initialize() {
+  function bindElements() {
     elements.authScreen = document.getElementById('auth-screen');
     elements.appShell = document.getElementById('app-shell');
     elements.form = document.getElementById('auth-form');
@@ -222,18 +173,22 @@
     elements.emailAddress = document.getElementById('email-alert-address');
     elements.emailSaveButton = document.getElementById('email-alert-save-button');
     elements.emailRemoveButton = document.getElementById('email-alert-remove-button');
+  }
 
+  function showServicePreparing() {
+    document.getElementById('service-preparing-modal')?.classList.remove('hidden');
+    document.getElementById('service-preparing-close')?.focus();
+  }
+
+  function hideServicePreparing() {
+    document.getElementById('service-preparing-modal')?.classList.add('hidden');
+  }
+
+  function bindLoginEvents() {
     elements.form.addEventListener('submit', (event) => {
       event.preventDefault();
       showServicePreparing();
     });
-    const showServicePreparing = () => {
-      document.getElementById('service-preparing-modal')?.classList.remove('hidden');
-      document.getElementById('service-preparing-close')?.focus();
-    };
-    const hideServicePreparing = () => {
-      document.getElementById('service-preparing-modal')?.classList.add('hidden');
-    };
     document.getElementById('password-login-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const button = document.getElementById('password-login-button');
@@ -264,6 +219,9 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') hideServicePreparing();
     });
+  }
+
+  function bindProfileEvents() {
     document.getElementById('profile-button')?.addEventListener('click', async () => {
       elements.profileModal.classList.remove('hidden');
       await Promise.all([loadProfileIdentity(), loadKakaoStatus(), loadEmailStatus()]);
@@ -293,6 +251,9 @@
       catch (error) { window.alert(error.message || '이메일 알림을 해제하지 못했습니다.'); }
       finally { elements.emailRemoveButton.disabled = false; }
     });
+  }
+
+  function bindAccountEvents() {
     document.getElementById('password-change-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const current = document.getElementById('current-password').value;
@@ -335,7 +296,13 @@
       await authClient?.auth.signOut();
       showLogin();
     });
+  }
 
+  async function initialize() {
+    bindElements();
+    bindLoginEvents();
+    bindProfileEvents();
+    bindAccountEvents();
     if (!authClient) {
       showLogin('로그인 기능을 불러오지 못했습니다.');
       return;

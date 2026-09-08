@@ -170,16 +170,16 @@ def fit_logistic_l2(
     dimensions = matrix.shape[1]
     positive_rate = min(max(sum(labels) / len(labels), 1e-5), 1.0 - 1e-5)
     intercept = log(positive_rate / (1.0 - positive_rate))
-    weights = [0.0] * dimensions
+    weights = np.zeros(dimensions)
     for iteration in range(iterations):
-        linear = np.clip(intercept + matrix @ np.asarray(weights), -700.0, 700.0)
+        linear = np.clip(intercept + matrix @ weights, -700.0, 700.0)
         error = 1.0 / (1.0 + np.exp(-linear)) - outcome
         intercept_gradient = float(error.mean())
-        gradients = matrix.T @ error / len(matrix) + penalty * np.asarray(weights)
+        gradients = matrix.T @ error / len(matrix) + penalty * weights
         scale = learning_rate / sqrt(1.0 + iteration / 250.0)
         intercept -= scale * intercept_gradient
-        weights = (np.asarray(weights) - scale * gradients).tolist()
-    return intercept, weights
+        weights = weights - scale * gradients
+    return intercept, weights.tolist()
 
 
 def _sample_quantile(values: Sequence[float], quantile: float) -> float:

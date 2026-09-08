@@ -213,11 +213,10 @@ def _cumulative_entry_value(
     return value, start, end, filed
 
 
-def _basis_value(
-    components: list[list[dict[str, Any]]], fy: int, fp: str,
-    accession: str | None, *, annual: bool,
+def _combine_basis_values(
+    values: list[tuple[Decimal | None, date | None, date | None, date | None]],
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
-    values = [_entry_value(rows, fy, fp, accession, annual=annual) for rows in components]
+    """Combine complete components without changing their date/value selection."""
     if not values or any(item[0] is None for item in values):
         return None, None, None, None
     return (
@@ -226,20 +225,21 @@ def _basis_value(
         max(item[2] for item in values if item[2] is not None),
         max(item[3] for item in values if item[3] is not None),
     )
+
+
+def _basis_value(
+    components: list[list[dict[str, Any]]], fy: int, fp: str,
+    accession: str | None, *, annual: bool,
+) -> tuple[Decimal | None, date | None, date | None, date | None]:
+    values = [_entry_value(rows, fy, fp, accession, annual=annual) for rows in components]
+    return _combine_basis_values(values)
 
 
 def _cumulative_basis_value(
     components: list[list[dict[str, Any]]], fy: int, fp: str, accession: str | None,
 ) -> tuple[Decimal | None, date | None, date | None, date | None]:
     values = [_cumulative_entry_value(rows, fy, fp, accession) for rows in components]
-    if not values or any(item[0] is None for item in values):
-        return None, None, None, None
-    return (
-        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
-        min(item[1] for item in values if item[1] is not None),
-        max(item[2] for item in values if item[2] is not None),
-        max(item[3] for item in values if item[3] is not None),
-    )
+    return _combine_basis_values(values)
 
 
 def _physical_prior_basis_value(
@@ -271,14 +271,7 @@ def _physical_prior_basis_value(
             continue
         end, filed, start, value = max(candidates)
         values.append((value, start, end, filed))
-    if not values or any(item[0] is None for item in values):
-        return None, None, None, None
-    return (
-        sum((item[0] for item in values if item[0] is not None), Decimal(0)),
-        min(item[1] for item in values if item[1] is not None),
-        max(item[2] for item in values if item[2] is not None),
-        max(item[3] for item in values if item[3] is not None),
-    )
+    return _combine_basis_values(values)
 
 
 def _first_basis_value(

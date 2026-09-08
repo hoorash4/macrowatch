@@ -134,7 +134,7 @@ class USEarningsAutomaticPipeline:
         return max(candidates, key=lambda fact: (fact.period_end, fact.filing_date)) if candidates else None
 
     @staticmethod
-    def _financial_queue_item(company: dict[str, Any], filing: SecFinancialFiling) -> dict[str, Any]:
+    def _financial_queue_item(company: dict[str, Any], filing: SecFinancialFiling | SixKFiling) -> dict[str, Any]:
         return {
             "company_id": str(company["company_id"]), "company_name": str(company.get("company_name") or ""),
             "cik": str(company.get("cik") or ""), "accession": filing.accession,
@@ -143,15 +143,9 @@ class USEarningsAutomaticPipeline:
             "primary_document": filing.primary_document,
         }
 
-    @staticmethod
-    def _six_k_queue_item(company: dict[str, Any], filing: SixKFiling) -> dict[str, Any]:
-        return {
-            "company_id": str(company["company_id"]), "company_name": str(company.get("company_name") or ""),
-            "cik": str(company.get("cik") or ""), "accession": filing.accession,
-            "filing_date": filing.filing_date.isoformat(),
-            "report_date": filing.report_date.isoformat() if filing.report_date else None,
-            "primary_document": filing.primary_document,
-        }
+    # Both filing queues persist the same cursor contract, but retain their
+    # separate replay types and collection policies.
+    _six_k_queue_item = _financial_queue_item
 
     @staticmethod
     def _queued_financial_filing(item: dict[str, Any]) -> SecFinancialFiling | None:
@@ -406,11 +400,15 @@ class USEarningsAutomaticPipeline:
                 self.repository.save_us_state("retry_incomplete", "ready", {"date": current_day.isoformat()})
             return result
 
-        company_ids = sorted({key[0] for key in unique_pending})
+        pending_by_company: dict[str, list[tuple[str, int, int]]] = defaultdict(list)
+        for key in unique_pending:
+            pending_by_company[key[0]].append(key)
+        company_ids = sorted(pending_by_company)
+        company_id_set = set(company_ids)
         companies = {
             str(row["company_id"]): row
             for row in self.repository.us_active_companies(current_day.year - 2)
-            if str(row.get("company_id") or "") in company_ids
+            if str(row.get("company_id") or "") in company_id_set
         }
         history = self.repository.company_history(company_ids)
         by_market_period: dict[tuple[str, int, int], USFinancialFact] = {}
@@ -437,7 +435,7 @@ class USEarningsAutomaticPipeline:
             company = companies.get(company_id)
             cik = str(company.get("cik") or "") if company else ""
             company_name = str(company.get("company_name") or company_id) if company else company_id
-            company_pending = [key for key in unique_pending if key[0] == company_id]
+            company_pending = pending_by_company[company_id]
             if not cik:
                 issues.append({"company": company_name, "reason": "SEC CIK missing"})
                 continue

@@ -1,5 +1,19 @@
 from __future__ import annotations
 
+from earnings_common.seasonal_windows import (
+    _seasonal_window_index,
+    _window_samples,
+    _advance_window,
+)
+
+from earnings_common.periods import (
+    quarter_end,
+    quarter_start,
+    quarter_resolution_end,
+    previous_period,
+    latest_completed_quarter,
+)
+
 from earnings_common.db_rows import _financial_from_db, _market_from_db
 
 import json
@@ -77,86 +91,6 @@ class _LazyKrwRates(Mapping[str, Decimal]):
         return len(self._rates)
 
 
-def quarter_end(year: int, quarter: int) -> date:
-    return date(year, quarter * 3, 31 if quarter in {1, 4} else 30)
-
-
-def quarter_start(year: int, quarter: int) -> date:
-    return date(year, (quarter - 1) * 3 + 1, 1)
-
-
-def quarter_resolution_end(year: int, quarter: int) -> date:
-    """해당 분기 실적이 통상 확정되는 시점까지 최종 상폐공시를 찾는다."""
-    if quarter == 1:
-        return date(year, 5, 15)
-    if quarter == 2:
-        return date(year, 8, 14)
-    if quarter == 3:
-        return date(year, 11, 14)
-    return date(year + 1, 3, 31)
-
-
-def previous_period(year: int, quarter: int) -> tuple[int, int]:
-    return (year - 1, 4) if quarter == 1 else (year, quarter - 1)
-
-
-def _seasonal_window_index(rows: Iterable[dict[str, Any]]) -> dict[tuple[str, str, int], tuple[list[int], list[Decimal]]]:
-    windows: dict[tuple[str, str, int], tuple[list[int], list[Decimal]]] = {}
-    for row in rows:
-        pairs = [
-            (int(year), parsed)
-            for year, value in zip(row.get("sample_years") or [], row.get("sample_values") or [])
-            if (parsed := decimal_value(value)) is not None
-        ]
-        windows[(str(row["entity_id"]), str(row["metric"]), int(row["fiscal_quarter"]))] = (
-            [year for year, _ in pairs],
-            [value for _, value in pairs],
-        )
-    return windows
-
-
-def _window_samples(
-    windows: dict[tuple[str, str, int], tuple[list[int], list[Decimal]]],
-    entity_id: str,
-    metric: str,
-    quarter: int,
-    before_year: int,
-) -> list[Decimal]:
-    years, values = windows.get((entity_id, metric, quarter), ([], []))
-    return [value for year, value in zip(years, values) if year < before_year]
-
-
-def _advance_window(
-    windows: dict[tuple[str, str, int], tuple[list[int], list[Decimal]]],
-    *,
-    entity_type: str,
-    entity_id: str,
-    metric: str,
-    year: int,
-    quarter: int,
-    value: Decimal | None,
-) -> dict[str, Any] | None:
-    key = (entity_id, metric, quarter)
-    if key not in windows and value is None:
-        return None
-    years, values = windows.get(key, ([], []))
-    updated_years, updated_values = update_seasonal_window(years, values, year=year, value=value)
-    windows[key] = (updated_years, updated_values)
-    return {
-        "entity_type": entity_type,
-        "entity_id": entity_id,
-        "metric": metric,
-        "fiscal_quarter": quarter,
-        "sample_years": updated_years,
-        "sample_values": updated_values,
-    }
-
-
-def latest_completed_quarter(today: date) -> tuple[int, int]:
-    current_quarter = (today.month - 1) // 3 + 1
-    return previous_period(today.year, current_quarter)
-
-
 def filing_period(filing: PeriodicFiling) -> tuple[int, int] | None:
     """정기보고서명 끝의 기준월을 회계 분기로 변환한다."""
     match = re.search(r"\((\d{4})\.(03|06|09|12)\)", filing.report_name)
@@ -179,12 +113,6 @@ def _group(rows: Iterable[dict[str, Any]], corp_codes: Iterable[str]) -> dict[st
         if corp_code in result:
             result[corp_code].append(row)
     return result
-
-
-
-
-
-
 
 
 def _identity_from_universe(row: dict[str, Any]) -> CompanyIdentity:
@@ -938,7 +866,6 @@ class KoreaEarningsV2Pipeline:
                 source_filing_id=f"zero_top_line:{fact.source_filing_id}",
             )
         return fact.with_changes(is_pending=not fact.fully_complete), None
-
 
 
     @staticmethod

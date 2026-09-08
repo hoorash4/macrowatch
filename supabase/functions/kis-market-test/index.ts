@@ -1,13 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchKisDailyPrices, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
-}
+
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
