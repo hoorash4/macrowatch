@@ -88,9 +88,11 @@ export function calculateSectorLeadership(
   const upDays = marketReturns.filter((row) => row.value > 0);
 
   const byEtf = new Map<string, Map<string, number>>();
-  prices.filter((row) => row.closePrice !== null && row.closePrice > 0 && row.marketDate <= endpointDate).forEach((row) => {
+  prices.filter((row) => row.marketDate <= endpointDate).forEach((row) => {
+    const price = effectivePrice(row, endpointDate);
+    if (price === null || price <= 0) return;
     const history = byEtf.get(row.etfId) || new Map<string, number>();
-    history.set(row.marketDate, Number(row.closePrice));
+    history.set(row.marketDate, Number(price));
     byEtf.set(row.etfId, history);
   });
 

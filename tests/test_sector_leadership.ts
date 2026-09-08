@@ -55,6 +55,18 @@ test("상승일의 절반 안팎에서만 우세하면 상대적으로 강해도
   assert.ok((scores.get("inconsistent") || 0) < 30);
 });
 
+test("새로 등록해 이력을 백필한 섹터는 장중 최신가로도 주도력을 산출한다", () => {
+  const marketReturns = Array.from({ length: 50 }, (_, index) => index % 5 < 3 ? .01 : -.003);
+  const intraday = sectorRows("new-sector", marketReturns.map((value) => value > 0 ? value + .006 : value));
+  intraday[intraday.length - 1] = {
+    ...intraday.at(-1)!, closePrice: null, latestPrice: intraday.at(-1)!.closePrice!, priceStage: "open",
+  };
+  const scores = calculateSectorLeadership(intraday, marketRows(marketReturns), dates.at(-1)!);
+
+  assert.ok(scores.has("new-sector"));
+  assert.ok((scores.get("new-sector") || 0) > 0);
+});
+
 test("최근 20거래일의 상승일이 11일 미만이면 주도력을 산출하지 않는다", () => {
   const marketReturns = Array.from({ length: 50 }, (_, index) => index < 30 ? .005 : index % 2 === 0 ? .02 : -.01);
   const scores = calculateSectorLeadership(
