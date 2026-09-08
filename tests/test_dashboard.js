@@ -595,16 +595,17 @@ test('관리자 톱니는 권한 확인 전 hidden 속성으로 감춘다', () =
   assert.match(stylesCss, /\.dashboard-nav-actions \[hidden\]\s*\{\s*display:none/);
 });
 
-test('뉴스 흐름 확장 그래프는 왼쪽부터 채우고 기간 버튼은 공통 스타일을 사용한다', () => {
+test('뉴스 흐름 확장 그래프는 데스크톱 원형을 유지하고 모바일에서만 압축해 최신 막대에 맞춘다', () => {
   const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(charts, /items-end justify-start/);
   assert.doesNotMatch(charts, /items-end justify-between/);
   assert.match(charts, /news-sentiment-graph--expanded/);
   assert.match(styles, /grid-template-columns:repeat\(30,minmax\(1\.5rem,1fr\)\)/);
-  assert.match(charts, /expanded:\s*\{[\s\S]*?barWidthClass: 'news-sentiment-bar--compact'[\s\S]*?showNumbers: false/);
-  assert.match(styles, /\.news-sentiment-bar--compact\s*\{[\s\S]*?width:\.875rem;[\s\S]*?min-width:\.875rem;[\s\S]*?max-width:\.875rem;/);
-  assert.match(charts, /if \(view\.layout === 'vertical'\)[\s\S]*?requestAnimationFrame\(\(\) => \{[\s\S]*?scrollLeft = historyChart\.scrollWidth - historyChart\.clientWidth/);
+  assert.match(charts, /expanded:\s*\{[\s\S]*?barWidthClass: 'news-sentiment-bar--compact min-w-6 max-w-6'[\s\S]*?showNumbers: true/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-graph--expanded \.news-sentiment-bar--compact\s*\{[\s\S]*?width: \.875rem;[\s\S]*?min-width: \.875rem;[\s\S]*?max-width: \.875rem;/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-graph--expanded \.news-sentiment-segment-value\s*\{\s*display: none;/);
+  assert.match(charts, /newsSentimentView === 'all'[\s\S]*?newsSentimentView === 'expanded' && window\.matchMedia\('\(max-width: 768px\)'\)\.matches[\s\S]*?scrollLeft = historyChart\.scrollWidth - historyChart\.clientWidth/);
   assert.match(charts, /class="news-sentiment-view-button"/);
   assert.match(charts, /news-sentiment-view-button--back/);
   assert.match(styles, /\.news-sentiment-view-button\s*\{/);
@@ -618,12 +619,11 @@ test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(chart, /news-sentiment-row-date/);
   assert.match(chart, /news-sentiment-horizontal-bar/);
-  assert.match(chart, /news-sentiment-horizontal-bar flex h-14/);
-  assert.doesNotMatch(chart, /news-sentiment-horizontal-bar flex h-12/);
+  assert.match(chart, /news-sentiment-horizontal-bar flex h-12/);
   assert.match(chart, /news-sentiment-graph--recent/);
   assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-row\s*\{[\s\S]*?flex-direction: column/);
   assert.match(styles, /#news-sentiment-chart \.news-sentiment-row-date\s*\{[\s\S]*?align-self: flex-start[\s\S]*?text-align: left/);
-  assert.match(styles, /\.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.news-sentiment-horizontal-bar\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 3\.5rem;/);
 });
 
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
@@ -697,17 +697,19 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.match(styles, /sector-flow-week \.sector-flow-holdings > b[\s\S]*width:100%;[\s\S]*background:#e7f1f8/);
   assert.match(styles, /\.sector-flow-holdings \{[\s\S]*width:9rem;/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-week-body > ol > li:last-child \{ border-bottom:0; \}/);
-  assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span><\/span><span>연속<\/span>/);
-  assert.doesNotMatch(charts, /대표종목|function sectorTopHolding/);
+  assert.match(charts, /isMobile[\s\S]*섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span><\/span><span>연속<\/span>/);
+  assert.match(charts, /<span>대표종목<\/span><span>주간 수익률<\/span><span>4주 누적 수익률<\/span><span>랭킹 연속 유지<\/span><span>주도력<\/span>/);
+  assert.match(charts, /function sectorTopHolding\(etf\)/);
   assert.doesNotMatch(html, /대표종목/);
   assert.match(charts, /isLatestWeek \? '주차' : '주'/);
   assert.match(styles, /sector-flow-week-current \.sector-flow-columns,[\s\S]*grid-template-columns:1\.65rem 2\.15rem minmax\(0,1fr\) 2rem/);
-  assert.match(charts, /const returns = `[\s\S]*\$\{isLatestWeek \? sectorLeadership\(row\.leadership_score\) : ''\}<\/div>`/);
-  assert.match(charts, /return `<li>\$\{rank\}\$\{streak\}\$\{returns\}<\/li>`/);
+  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?grid-template-columns: 2rem 2\.5rem minmax\(8rem,1fr\) 10\.5rem repeat\(4,7rem\)/);
+  assert.match(charts, /isLatestWeek && isMobile \? sectorLeadership\(row\.leadership_score, true\) : ''/);
+  assert.match(charts, /isLatestWeek && !isMobile \? `\$\{sectorTopHolding\(etf\)\}\$\{returns\}\$\{streak\}\$\{sectorLeadership\(row\.leadership_score\)\}`/);
   assert.match(styles, /sector-flow-week-current header > strong \{ font-size:\.9rem; \}/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size:\.64rem;/);
+  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?sector-flow-week-current \.sector-flow-columns \{[\s\S]*font-size: \.74rem;/);
   assert.match(styles, /\.sector-flow-week li b \{[\s\S]*width:1\.45rem;[\s\S]*min-height:1\.35rem;[\s\S]*font-size:\.66rem;/);
-  assert.match(styles, /sector-flow-week-current \.sector-flow-sector \{ font-size:\.86rem; \}/);
+  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?sector-flow-week-current \.sector-flow-sector \{\s*font-size: \.88rem;/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\)[\s\S]*\.sector-flow-streak \{[\s\S]*justify-self:center;[\s\S]*text-align:center;/);
   assert.doesNotMatch(styles, /sector-flow-(rank|change) \{ transform:translateX/);
   assert.match(styles, /\.sector-flow-columns \{[\s\S]*border-bottom:1px solid rgba\(47,105,154,\.2\)/);
@@ -721,13 +723,13 @@ test('주도섹터는 이번 주와 과거 4주를 표시하고 한 주를 변�
   assert.doesNotMatch(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns > span:nth-child\(2\)::before/);
   assert.match(styles, /sector-flow-week:not\(\.sector-flow-week-current\) \.sector-flow-returns em \{ font-size:\.7rem; \}/);
   assert.doesNotMatch(styles, /sector-flow-week-current \{ min-width:56rem; \}/);
-  assert.match(charts, /function sectorLeadership\(value\)/);
+  assert.match(charts, /function sectorLeadership\(value, compact = false\)/);
   assert.match(charts, /leadership_score/);
   assert.match(charts, /sector-flow-leadership sector-flow-leadership-empty"><small>주도력<\/small><em>—<\/em>/);
-  assert.doesNotMatch(charts, /style="width:\$\{score\}%"/);
-  assert.doesNotMatch(styles, /\.sector-flow-leadership > span > i/);
+  assert.match(charts, /style="width:\$\{score\}%"/);
+  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?\.sector-flow-leadership > span > i/);
   assert.match(charts, /섹터 <span class="sector-flow-classification-note">\(KRX 업종 구분과 다름\)<\/span>/);
-  assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.58rem;[\s\S]*font-weight:500;/);
+  assert.match(styles, /\.sector-flow-classification-note \{[\s\S]*font-size:\.58rem;[\s\S]*font-weight:500;[\s\S]*@media \(min-width:769px\)[\s\S]*?\.sector-flow-classification-note \{[\s\S]*font-size: \.66rem;/);
   assert.doesNotMatch(styles, /margin-left:\.28rem/);
 });
 

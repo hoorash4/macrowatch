@@ -44,9 +44,9 @@ const NEWS_SENTIMENT_VIEWS = {
   expanded: {
     days: 30,
     layout: 'vertical',
-    barWidthClass: 'news-sentiment-bar--compact',
+    barWidthClass: 'news-sentiment-bar--compact min-w-6 max-w-6',
     gapClass: 'gap-0',
-    showNumbers: false,
+    showNumbers: true,
     showDates: true,
   },
   all: {
@@ -60,6 +60,8 @@ const NEWS_SENTIMENT_VIEWS = {
 };
 let newsSentimentRows = [];
 let newsSentimentView = 'recent';
+let sectorFlowRows = [];
+let sectorFlowMobileLayout = null;
 
 // ===== 뉴스 흐름 분석 모듈 =====
 // 일별 집계 데이터 조회, 긍정·부정 비율 계산, 기간별 막대 렌더링을 담당한다.
@@ -114,7 +116,7 @@ function formatNewsDate(value) {
 
 function renderSentimentSegment(percent, colorClass, showLabel) {
   if (!percent) return '';
-  const label = showLabel && percent >= 16 ? `<span class="text-[9px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
+  const label = showLabel && percent >= 16 ? `<span class="news-sentiment-segment-value text-[9px] font-bold text-white/90">${Math.round(percent)}%</span>` : '';
   return `<span class="flex items-center justify-center ${colorClass}" style="height:${percent}%">${label}</span>`;
 }
 
@@ -129,7 +131,7 @@ function renderHorizontalSentimentBar(item, positive, negative, directionalCount
     ? `${renderHorizontalSentimentSegment(positive, 'bg-red-900 transition group-hover:bg-red-800', view.showNumbers)}${renderHorizontalSentimentSegment(negative, 'bg-blue-900 transition group-hover:bg-blue-800', view.showNumbers)}`
     : '<span class="m-auto text-[9px] font-semibold text-slate-500">—</span>';
   const date = view.showDates ? `<span class="news-sentiment-row-date w-10 shrink-0 text-right text-xs font-semibold text-slate-600">${formatNewsDate(item.article_date)}</span>` : '';
-  return `<div class="news-sentiment-row group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="news-sentiment-horizontal-bar flex h-14 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
+  return `<div class="news-sentiment-row group flex w-full items-center gap-3"${title ? ` title="${title}"` : ''}>${date}<div class="news-sentiment-horizontal-bar flex h-12 min-w-0 flex-1 overflow-hidden rounded-lg bg-slate-200/80 ring-1 ring-inset ring-slate-300 shadow-sm">${bar}</div></div>`;
 }
 
 function renderVerticalSentimentBar(item, positive, negative, directionalCount, view, title) {
@@ -181,7 +183,9 @@ function renderNewsSentiment(rows) {
   const graphId = newsSentimentView === 'all' ? ' id="news-sentiment-history-scroll"' : '';
   // 그래프 아래 한 줄에서 범례와 기간 전환을 양쪽에 배치해 차트 영역을 넓게 사용한다.
   chart.innerHTML = `<div${graphId} class="news-sentiment-graph ${graphClass}">${bars}</div><div class="news-sentiment-toolbar">${legend}<div class="news-sentiment-controls">${controls}</div></div>`;
-  if (view.layout === 'vertical') {
+  const shouldFocusLatest = newsSentimentView === 'all'
+    || (newsSentimentView === 'expanded' && window.matchMedia('(max-width: 768px)').matches);
+  if (shouldFocusLatest) {
     const historyChart = chart.querySelector('.news-sentiment-graph');
     if (historyChart) {
       window.requestAnimationFrame(() => {
@@ -1070,13 +1074,18 @@ function sectorReturnTone(value) {
   return number > 0 ? 'sector-return-positive' : 'sector-return-negative';
 }
 
-function sectorLeadership(value) {
+function sectorLeadership(value, compact = false) {
+  const empty = compact
+    ? '<span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span>'
+    : '<span class="sector-flow-leadership sector-flow-leadership-empty"><span><i style="width:0%"></i></span><em>—</em></span>';
   if (value === null || value === undefined || value === '') {
-    return '<span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span>';
+    return empty;
   }
   const score = Math.max(0, Math.min(100, Math.round(Number(value))));
-  if (!Number.isFinite(score)) return '<span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span>';
-  return `<span class="sector-flow-leadership" title="최근 20거래일 상승장 조건 아래 10주간 초과수익 강도와 지속성"><small>주도력</small><em>${score}</em></span>`;
+  if (!Number.isFinite(score)) return empty;
+  return compact
+    ? `<span class="sector-flow-leadership" title="최근 20거래일 상승장 조건 아래 10주간 초과수익 강도와 지속성"><small>주도력</small><em>${score}</em></span>`
+    : `<span class="sector-flow-leadership" title="최근 20거래일 상승장 조건 아래 10주간 초과수익 강도와 지속성"><span><i style="width:${score}%"></i></span><em>${score}</em></span>`;
 }
 
 function setSectorWeekHeading(card, week, isLatest) {
@@ -1097,6 +1106,12 @@ function sectorHoldingsTooltip(etf) {
     ? holdings.map((holding) => `<li><span>${escapeHtml(holding.holding_name)}</span></li>`).join('')
     : '<li class="sector-flow-holdings-empty"><span>미수집</span></li>';
   return `<button type="button" class="sector-flow-sector" aria-expanded="false"><span>${sectorName}</span><span class="sector-flow-holdings" role="tooltip"><b>섹터 대표 종목</b><ol>${items}</ol></span></button>`;
+}
+
+function sectorTopHolding(etf) {
+  const topHolding = [...(etf?.market_sector_etf_holdings || [])]
+    .sort((a, b) => Number(a.weight_rank) - Number(b.weight_rank))[0];
+  return `<span class="sector-flow-top-holding">${topHolding ? escapeHtml(topHolding.holding_name) : '미수집'}</span>`;
 }
 
 function closeSectorHoldings(trigger) {
@@ -1167,11 +1182,18 @@ function initializeSectorFlowSwipeIndicator() {
       frame = requestAnimationFrame(update);
     }, { passive: true });
     window.addEventListener('resize', positionCurrentWeek);
+    window.addEventListener('resize', () => {
+      const mobileLayout = window.matchMedia('(max-width: 768px)').matches;
+      if (mobileLayout === sectorFlowMobileLayout) return;
+      renderSectorFlow(sectorFlowRows);
+    });
   }
   requestAnimationFrame(positionCurrentWeek);
 }
 
 function renderSectorFlow(rows) {
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  sectorFlowMobileLayout = isMobile;
   const grouped = new Map();
   rows.forEach((row) => {
     const list = grouped.get(row.week_start) || [];
@@ -1189,17 +1211,21 @@ function renderSectorFlow(rows) {
     if (!body) return;
     const columns = card.querySelector('.sector-flow-columns');
     if (columns) columns.innerHTML = isLatestWeek
-      ? '<span>순위</span><span>변동</span><span>섹터 <span class="sector-flow-classification-note">(KRX 업종 구분과 다름)</span></span><span>연속</span>'
+      ? isMobile
+        ? '<span>순위</span><span>변동</span><span>섹터 <span class="sector-flow-classification-note">(KRX 업종 구분과 다름)</span></span><span>연속</span>'
+        : '<span>순위</span><span>변동</span><span>섹터 <span class="sector-flow-classification-note">(KRX 업종 구분과 다름)</span></span><span>대표종목</span><span>주간 수익률</span><span>4주 누적 수익률</span><span>랭킹 연속 유지</span><span>주도력</span>'
       : '<span>순위</span><span>변동</span><span>섹터</span><span>연속</span>';
     setSectorWeekHeading(card, week, isLatestWeek);
     body.innerHTML = list.length ? list.map((row) => {
       const etf = row.market_sector_etfs;
       const rank = `<b class="sector-flow-rank">${Number(row.rank)}</b><span class="sector-flow-change">${sectorRankChange(row, isLatestWeek)}</span>${sectorHoldingsTooltip(etf)}`;
-      const returns = `<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span>${isLatestWeek ? sectorLeadership(row.leadership_score) : ''}</div>`;
+      const returns = `<div class="sector-flow-returns"><span><small>주간</small><em class="${sectorReturnTone(row.weekly_return_pct)}">${sectorReturn(row.weekly_return_pct)}</em></span><span><small>누적</small><em class="${sectorReturnTone(row.cumulative_return_pct)}">${sectorReturn(row.cumulative_return_pct)}</em></span>${isLatestWeek && isMobile ? sectorLeadership(row.leadership_score, true) : ''}</div>`;
       const streak = `<span class="sector-flow-streak">${Number(row.top10_streak)}${isLatestWeek ? '주차' : '주'}</span>`;
-      return `<li>${rank}${streak}${returns}</li>`;
+      return `<li>${rank}${isLatestWeek && !isMobile ? `${sectorTopHolding(etf)}${returns}${streak}${sectorLeadership(row.leadership_score)}` : `${streak}${returns}`}</li>`;
     }).join('') : isLatestWeek
-      ? '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주차</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span><span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span></div></li>'
+      ? isMobile
+        ? '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주차</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span><span class="sector-flow-leadership sector-flow-leadership-empty"><small>주도력</small><em>—</em></span></div></li>'
+        : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-top-holding">—</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div><span class="sector-flow-streak">—주차</span><span class="sector-flow-leadership sector-flow-leadership-empty"><span><i style="width:0%"></i></span><em>—</em></span></li>'
       : '<li><b class="sector-flow-rank">—</b><span class="sector-flow-change">—</span><strong>산출 대기</strong><span class="sector-flow-streak">—주</span><div class="sector-flow-returns"><span><small>주간</small><em>—</em></span><span><small>누적</small><em>—</em></span></div></li>';
   });
   const note = document.getElementById('sector-flow-update-note');
@@ -1211,12 +1237,14 @@ async function loadSectorFlowDashboard() {
   if (!document.getElementById('sector-flow-dashboard') || !supabaseClient) return;
   initializeSectorHoldingInteractions();
   initializeSectorFlowSwipeIndicator();
+  renderSectorFlow(sectorFlowRows);
   const { data, error } = await supabaseClient.from('market_sector_weekly_rankings')
     .select('week_start,rank,previous_rank,is_new,top10_streak,weekly_return_pct,cumulative_return_pct,leadership_score,price_stage,market_sector_etfs(sector_name,market_sector_etf_holdings(holding_name,weight_pct,weight_rank))')
     // 전체 순위를 6주 보관하므로 현재 등록 규모보다 넉넉하게 읽고 화면에서 주차별 TOP 6만 추린다.
     .order('week_start', { ascending: false }).order('rank', { ascending: true }).limit(1000);
   if (error) return;
-  renderSectorFlow(data || []);
+  sectorFlowRows = data || [];
+  renderSectorFlow(sectorFlowRows);
 }
 
 // 기존 대시보드 공개 계산 계약과 초기 로더 등록을 유지합니다.
