@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createKisRequestRunner, fetchKisDailyPrices, fetchKisDomesticIndexPrices, fetchKisEtfCurrentPrice, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 import { calculateSectorRankings, incompletePriceHistoryIds, mondayOf, type MarketPrice, type SectorPrice, type SectorRanking } from "../_shared/market/sector-flow.ts";
 
@@ -26,7 +26,7 @@ function kstDate() {
 }
 
 // Supabase Data API의 기본 행 제한을 넘는 가격 이력도 빠짐없이 읽습니다.
-async function loadSectorPriceHistory(admin: ReturnType<typeof createClient>, historyStart: string) {
+async function loadSectorPriceHistory(admin: SupabaseClient, historyStart: string) {
   const allRows: StoredSectorPrice[] = [];
   for (let from = 0;; from += DATABASE_PAGE_SIZE) {
     const { data, error } = await admin.from("market_sector_etf_prices")
