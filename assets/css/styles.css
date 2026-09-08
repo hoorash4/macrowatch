@@ -1933,7 +1933,7 @@ body.is-pointer-dragging {
    아래에서는 화면 폭이 작아질 때 꼭 필요한 배치와 크기만 바꿉니다.
    반응형으로 작아지게 만들어서 소형 스마트폰인 320px 까지는 온전하게 표현 됨.
   1023 - 1024까지 랩탑 등 컴퓨터 화면 용.
-  767 - 768이 아이패드 기준값. 767부터 타블릿으로 처리.
+  768px 이하를 모바일 앱 화면으로 처리.
   스마트폰의 경우 적응형으로 작아지게 코딩했으므로 별도의 처리 불필요함.
 */
 @media (max-width:1023px) {
@@ -1981,11 +1981,99 @@ body.is-pointer-dragging {
     margin-left: .22em;
   }
 }
-@media (max-width:767px) {
-  /* 767px 이하에서만 로고 블럭 크기를 화면 폭에 맞춰 줄입니다. */
+@media (max-width:768px) {
+  /* 로그인과 대시보드는 같은 모바일 기준에서 앱 형태로 전환합니다. */
+  body:has(#auth-screen:not(.hidden)) {
+    padding: 0;
+    background: #f4f6f8;
+    color: var(--color-brand-navy);
+  }
+  #auth-screen,
+  .auth-canvas {
+    min-height: 100vh;
+    min-height: 100svh;
+    border-radius: 0;
+    background: #f4f6f8;
+  }
+  #auth-screen .auth-layout {
+    min-height: 100vh;
+    min-height: 100svh;
+    background: #f4f6f8;
+    color: var(--color-brand-navy);
+  }
+  #auth-screen .auth-header {
+    min-height: 72px;
+    padding: .75rem 1rem;
+    background: rgba(255,255,255,.96);
+    border-bottom-color: rgba(20,36,51,.1);
+    box-shadow: 0 1px 0 rgba(20,36,51,.04);
+  }
   #auth-screen .auth-brand-group {
-    transform: scale(clamp(.7, calc(100vw / 767px), 1));
-    transform-origin: left center;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    transform: none;
+  }
+  .auth-header .evotive-source-logo {
+    width: 48px;
+    height: 38px;
+  }
+  .auth-header .font-cinzel {
+    font-size: 1rem;
+  }
+  #auth-screen .auth-content-grid {
+    align-content: center;
+    width: 100%;
+    max-width: 460px;
+    margin: 0 auto;
+    padding: 1.75rem 1.25rem 2rem;
+    gap: 1.5rem;
+    background: none;
+  }
+  #auth-screen .auth-intro h1 {
+    color: var(--color-brand-navy);
+    font-size: clamp(1.9rem,9vw,2.6rem);
+    line-height: 1.14;
+  }
+  #auth-screen .auth-intro-description {
+    margin-top: 1rem;
+    padding-left: .85rem;
+    color: var(--color-text-secondary);
+    font-size: .84rem;
+    line-height: 1.75;
+  }
+  #auth-screen .auth-form-region {
+    display: block;
+  }
+  #auth-screen .auth-panel {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  #auth-screen .auth-panel h2 {
+    margin-top: .35rem;
+    font-size: 1.65rem;
+  }
+  #auth-screen .auth-panel input {
+    min-height: 50px;
+    border-color: #cfd6dc;
+    border-radius: .75rem;
+    background: #fff;
+  }
+  #auth-submit,
+  #password-login-button {
+    min-height: 50px;
+    border-radius: .75rem;
+  }
+  #auth-screen .auth-footer {
+    min-height: 48px;
+    padding: .85rem 1rem calc(.85rem + env(safe-area-inset-bottom));
+    border-top-color: rgba(20,36,51,.1);
+    background: #fff;
   }
   .mobile-space {
     display: inline;
@@ -2164,7 +2252,7 @@ body.is-pointer-dragging {
     background: #f4f6f8;
   }
 }
-@media (min-width:768px) {
+@media (min-width:769px) {
   .mobile-bottom-nav,
   .mobile-stress-switcher {
     display: none !important;

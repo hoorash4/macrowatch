@@ -111,8 +111,18 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
     assert.match(html, new RegExp(`data-mobile-stress-view="${view}"`));
   }
   assert.match(script, /stressViews\.has\(selectedView\) \? 'stress' : selectedView/);
-  assert.match(styles, /@media \(max-width:767px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
+  assert.match(styles, /@media \(min-width:769px\)[\s\S]*?\.mobile-bottom-nav/);
+  assert.match(script, /matchMedia\('\(max-width: 768px\)'\)/);
   assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
+});
+
+test('모바일 로그인은 밝은 한 열 앱 화면을 사용한다', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  assert.match(styles, /@media \(max-width:768px\)[\s\S]*?body:has\(#auth-screen:not\(\.hidden\)\)[\s\S]*?background: #f4f6f8/);
+  assert.match(styles, /#auth-screen \.auth-content-grid[\s\S]*?max-width: 460px[\s\S]*?background: none/);
+  assert.match(styles, /#auth-screen \.auth-panel[\s\S]*?background: transparent[\s\S]*?box-shadow: none/);
+  assert.match(styles, /#auth-screen \.auth-footer[\s\S]*?env\(safe-area-inset-bottom\)/);
 });
 
 test('지표 코드 검색은 밝은 입력 표면과 단독 국채 만기 표현을 지원한다', () => {
