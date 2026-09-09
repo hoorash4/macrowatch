@@ -141,6 +141,7 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(chart, /treasury_10y_5d_pct/);
   assert.match(chart, /withTreasuryAverage/);
   assert.match(chart, /addMonthsIso/);
+  assert.match(chart, /data-inflation-real-zero[\s\S]*stroke-width="1"/);
   assert.match(chart, /core: '#ea580c'/);
   assert.match(chart, /historyYears \/ Number\(state\.years\)/);
   assert.doesNotMatch(chart, /<circle/);
