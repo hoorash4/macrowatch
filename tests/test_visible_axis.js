@@ -49,6 +49,14 @@ test('every dashboard chart declares the common profile or common default', () =
   assert.match(dashboard, /const profile = createProfile\(\{ axisMode: 'dual', cursorSeries:[\s\S]*series\.map/);
 });
 
+test('MSI and legacy charts are mounted into the same canonical shell', () => {
+  assert.match(source, /shell\.className = `analysis-chart-shell analysis-chart-shell--\$\{axes\?\.axisMode \|\| 'single'\}`/);
+  assert.match(source, /shell\.className = `analysis-chart-shell analysis-chart-shell--\$\{profile\.axisMode\}`/);
+  assert.match(source, /frame\.querySelector\('svg'\)\?\.classList\.add\('analysis-chart-plot'\)/);
+  assert.match(styles, /\.analysis-chart-shell \{ position:relative; display:flex;/);
+  assert.match(styles, /\.analysis-chart-fixed-axis text \{ fill:#64748b; font-size:10px; font-weight:400;/);
+});
+
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
   assert.match(source, /svg\.setAttribute\('preserveAspectRatio', 'none'\)/);
   assert.match(source, /fixedAxis\.setAttribute\('preserveAspectRatio', 'none'\)/);

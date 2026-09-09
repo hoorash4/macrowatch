@@ -47,14 +47,27 @@
     if (!container) return null;
     const layout = container.querySelector('.policy-chart-layout,.policy-expectation-chart-layout,.korea-earnings-chart-layout');
     const frame = container.querySelector('.policy-chart-frame,.policy-expectation-chart-frame,.korea-earnings-chart-frame,[data-history-scroll]');
-    if (layout) layout.classList.add('analysis-chart-layout', `analysis-chart-layout--${profile.axisMode}`);
+    const canRebuild = Boolean(layout && frame && layout.children && typeof layout.before === 'function' && typeof layout.remove === 'function');
+    const legacyAxes = canRebuild ? [...layout.children].filter((node) => node.matches?.('svg.policy-chart-y-axis,svg.policy-expectation-y-axis,svg.korea-earnings-y-axis')) : [];
+    let shell = container.querySelector('.analysis-chart-shell');
+    if (canRebuild) {
+      shell = document.createElement('div');
+      shell.className = `analysis-chart-shell analysis-chart-shell--${profile.axisMode}`;
+      layout.before(shell);
+      if (legacyAxes[0]) shell.append(legacyAxes[0]);
+      shell.append(frame);
+      if (profile.axisMode === 'dual' && legacyAxes[1]) shell.append(legacyAxes[1]);
+      layout.remove();
+    }
     if (frame) {
       frame.classList.add('analysis-chart-frame');
       if (frame.dataset) frame.dataset.historyScroll = 'true';
       frame.tabIndex = 0;
+      frame.querySelector('svg')?.classList.add('analysis-chart-plot');
     }
-    container.querySelectorAll('.policy-chart-y-axis,.policy-expectation-y-axis,.korea-earnings-y-axis').forEach((axis) => {
+    container.querySelectorAll('.policy-chart-y-axis,.policy-expectation-y-axis,.korea-earnings-y-axis').forEach((axis, index) => {
       axis.classList.add('analysis-chart-fixed-axis');
+      axis.dataset.axisSide = profile.axisMode === 'dual' && index === 1 ? 'right' : 'left';
       axis.style.width = `${axisGutter}px`;
       axis.style.flex = `0 0 ${axisGutter}px`;
     });
@@ -340,7 +353,7 @@
     const frame = document.createElement('div');
     const track = document.createElement('div');
     const shell = document.createElement('div');
-    shell.style.cssText = 'position:relative;width:100%;min-width:0;background:#fff;';
+    shell.className = `analysis-chart-shell analysis-chart-shell--${axes?.axisMode || 'single'}`;
     frame.dataset.historyScroll = 'true';
     frame.className = 'policy-expectation-chart-frame';
     frame.style.cssText = 'overflow-x:auto;overflow-y:hidden;min-width:0;background:#fff;';
@@ -352,6 +365,7 @@
     track.append(svg);
     track.style.cssText = 'position:relative;min-width:100%;overflow:hidden;';
     svg.style.width = `${width / baseWidth * 100}%`;
+    svg.classList.add('analysis-chart-plot');
     svg.style.maxWidth = 'none';
     svg.style.display = 'block';
     // Both the plot and its pinned axis use the same explicit transform.
@@ -387,6 +401,8 @@
       if (!Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
       const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       fixedAxis.dataset.fixedAxisGutter = String(gutter);
+      fixedAxis.dataset.axisSide = side;
+      fixedAxis.setAttribute('class', 'analysis-chart-fixed-axis');
       fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - gutter} 0 ${gutter} ${viewHeight}` : `0 0 ${gutter} ${viewHeight}`);
       fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
