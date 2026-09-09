@@ -3,16 +3,24 @@
   const utils = window.MacroWatchAnalysisChart;
   const supabaseClient = window.macroWatchSupabase || window.MacroWatchFrontend?.createSupabaseClient();
   const state = { years: '2', rows: [] };
-  const COLOR = '#b4535d';
+  const COLORS = {
+    combinedRisk: '#b4535d',
+    financingRisk: '#2563a8',
+    optimism: '#64748b',
+  };
   const BASE_WIDTH = 920;
   const HEIGHT = 300;
-  const PADDING = { left: 58, right: 24, top: 24, bottom: 42 };
+  const PADDING = { left: 58, right: 58, top: 24, bottom: 42 };
   const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
   const monthLabel = value => String(value).slice(0, 7).replace('-', '.');
 
   function renderLegend() {
     const legend = document.getElementById('small-business-risk-legend');
-    if (legend) legend.innerHTML = utils.legendItem('중소기업 위험지수', { stroke: COLOR, width: utils.lineWidths.primary });
+    if (legend) legend.innerHTML = [
+      utils.legendItem('매출·차입·OAS 위험지수', { stroke: COLORS.combinedRisk, width: utils.lineWidths.primary }),
+      utils.legendItem('차입·OAS 위험지수', { stroke: COLORS.financingRisk, width: utils.lineWidths.comparison }),
+      utils.legendItem('NFIB 소기업낙관지수', { stroke: COLORS.optimism, width: utils.lineWidths.comparison }),
+    ].join('');
   }
 
   function render() {
@@ -26,11 +34,16 @@
     const first = timestamp(rows[0].month), last = timestamp(rows.at(-1).month);
     const width = utils.historyWidth(rows, 'month', state.years, BASE_WIDTH);
     const x = row => PADDING.left + (timestamp(row.month) - first) / Math.max(1, last - first) * (width - PADDING.left - PADDING.right);
-    const values = rows.map(row => Number(row.risk_index)).filter(Number.isFinite);
-    const domain = utils.axisDomain(values, { minimumSpan: 10 });
-    const y = value => PADDING.top + (domain.max - value) / (domain.max - domain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
-    const ticks = Array.from({ length: 5 }, (_, index) => domain.max - (domain.max - domain.min) * index / 4);
-    const grid = ticks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${y(value)}" y2="${y(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${PADDING.left - 9}" y="${y(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(0)}</text>`).join('');
+    const riskValues = rows.flatMap(row => [Number(row.risk_index), Number(row.financing_risk_index)]).filter(Number.isFinite);
+    const optimismValues = rows.map(row => Number(row.optimism_index)).filter(Number.isFinite);
+    const riskDomain = utils.axisDomain(riskValues, { minimumSpan: 10 });
+    const optimismDomain = utils.axisDomain(optimismValues, { minimumSpan: 5 });
+    const riskY = value => PADDING.top + (riskDomain.max - value) / (riskDomain.max - riskDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
+    const optimismY = value => PADDING.top + (optimismDomain.max - value) / (optimismDomain.max - optimismDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
+    const riskTicks = Array.from({ length: 5 }, (_, index) => riskDomain.max - (riskDomain.max - riskDomain.min) * index / 4);
+    const optimismTicks = Array.from({ length: 5 }, (_, index) => optimismDomain.max - (optimismDomain.max - optimismDomain.min) * index / 4);
+    const grid = riskTicks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(0)}</text>`).join('');
+    const rightAxis = optimismTicks.map(value => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${optimismY(value) + 4}" text-anchor="start" fill="#64748b" font-size="10">${value.toFixed(0)}</text>`).join('');
     const years = [...new Set(rows.map(row => String(row.month).slice(0, 4)))];
     const guides = years.map(year => {
       const point = rows.find(row => String(row.month).startsWith(year));
@@ -39,16 +52,29 @@
       const guide = pointX > 65 ? `<line x1="${pointX}" x2="${pointX}" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" stroke="#edf0f4"/>` : '';
       return `${guide}<text x="${pointX}" y="${HEIGHT - 14}" text-anchor="middle" fill="#64748b" font-size="10">${year}</text>`;
     }).join('');
-    const path = utils.monotoneSeriesPath(rows, x, row => y(Number(row.risk_index)));
-    host.innerHTML = `<svg class="w-full" style="height:${HEIGHT}px" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="미국 중소기업 위험지수 월별 추이">${grid}${guides}<path data-small-business-risk-line d="${path}" fill="none" stroke="${COLOR}" stroke-width="${utils.lineWidths.primary}" stroke-linecap="round"/><rect data-small-business-risk-hit x="${PADDING.left}" y="${PADDING.top}" width="${width - PADDING.left - PADDING.right}" height="${HEIGHT - PADDING.top - PADDING.bottom}" fill="transparent"/><line data-small-business-risk-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-small-business-risk-value x="0" y="16" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-small-business-risk-date x="0" y="${HEIGHT - PADDING.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
+    const combinedPath = utils.monotoneSeriesPath(rows, x, row => riskY(Number(row.risk_index)));
+    const financingRows = rows.filter(row => Number.isFinite(Number(row.financing_risk_index)));
+    const financingPath = utils.monotoneSeriesPath(financingRows, x, row => riskY(Number(row.financing_risk_index)));
+    const optimismRows = rows.filter(row => Number.isFinite(Number(row.optimism_index)));
+    const optimismPath = utils.monotoneSeriesPath(optimismRows, x, row => optimismY(Number(row.optimism_index)));
+    host.innerHTML = `<svg class="w-full" style="height:${HEIGHT}px" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="미국 중소기업 위험지수와 NFIB 소기업낙관지수 월별 추이">${grid}${rightAxis}${guides}<path data-small-business-risk-line d="${combinedPath}" fill="none" stroke="${COLORS.combinedRisk}" stroke-width="${utils.lineWidths.primary}" stroke-linecap="round"/><path data-small-business-financing-line d="${financingPath}" fill="none" stroke="${COLORS.financingRisk}" stroke-width="${utils.lineWidths.comparison}" stroke-linecap="round"/><path data-small-business-optimism-line d="${optimismPath}" fill="none" stroke="${COLORS.optimism}" stroke-width="${utils.lineWidths.comparison}" stroke-linecap="round"/><rect data-small-business-risk-hit x="${PADDING.left}" y="${PADDING.top}" width="${width - PADDING.left - PADDING.right}" height="${HEIGHT - PADDING.top - PADDING.bottom}" fill="transparent"/><line data-small-business-risk-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-small-business-risk-value x="0" y="16" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-small-business-risk-date x="0" y="${HEIGHT - PADDING.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
     utils.scrollableSvg(host.querySelector('svg'), width, BASE_WIDTH, {
       top: PADDING.top,
       bottom: HEIGHT - PADDING.bottom,
       axes: [{
         side: 'left',
-        y,
-        points: rows.map(row => ({ x: x(row), value: Number(row.risk_index) })),
-        selector: '[data-small-business-risk-line]',
+        y: riskY,
+        points: rows.flatMap(row => [
+          { x: x(row), value: Number(row.risk_index) },
+          { x: x(row), value: Number(row.financing_risk_index) },
+        ]),
+        selector: '[data-small-business-risk-line], [data-small-business-financing-line]',
+        format: value => value.toFixed(0),
+      }, {
+        side: 'right',
+        y: optimismY,
+        points: optimismRows.map(row => ({ x: x(row), value: Number(row.optimism_index) })),
+        selector: '[data-small-business-optimism-line]',
         format: value => value.toFixed(0),
       }],
     });
@@ -62,7 +88,11 @@
       const cursor = host.querySelector('[data-small-business-risk-cursor]');
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursor.classList.add('is-visible');
       const value = host.querySelector('[data-small-business-risk-value]');
-      value.setAttribute('x', Math.max(90, Math.min(width - 90, cursorX))); value.setAttribute('visibility', 'visible'); value.textContent = Number(nearest.risk_index).toFixed(1);
+      value.setAttribute('x', Math.max(130, Math.min(width - 130, cursorX))); value.setAttribute('visibility', 'visible');
+      const labels = [`위험 ${Number(nearest.risk_index).toFixed(1)}`];
+      if (Number.isFinite(Number(nearest.financing_risk_index))) labels.push(`차입·OAS ${Number(nearest.financing_risk_index).toFixed(1)}`);
+      if (Number.isFinite(Number(nearest.optimism_index))) labels.push(`낙관 ${Number(nearest.optimism_index).toFixed(1)}`);
+      value.textContent = labels.join(' · ');
       const date = host.querySelector('[data-small-business-risk-date]');
       date.setAttribute('x', cursorX); date.textContent = monthLabel(nearest.month); date.classList.add('is-visible');
     });
@@ -79,7 +109,7 @@
     if (!host || !supabaseClient) return;
     const { data, error } = await utils.loadAllRows((from, to) => supabaseClient
       .from('us_small_business_risk_monthly')
-      .select('month,risk_index,includes_oas,is_provisional')
+      .select('month,risk_index,financing_risk_index,optimism_index,includes_oas,is_provisional')
       .order('month', { ascending: true })
       .range(from, to));
     if (error) {

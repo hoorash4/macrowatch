@@ -28,6 +28,7 @@ def build_rows(
     sales_expectations: dict[str, float],
     borrowing_difficulty: dict[str, float],
     high_yield_oas: dict[str, float],
+    optimism_index: dict[str, float],
     today: date,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
@@ -42,12 +43,20 @@ def build_rows(
         scores = {key: component_score(value, key) for key, value in raw_values.items()}
         weight_total = sum(COMPONENT_WEIGHTS[key] for key in scores)
         risk_index = sum(scores[key] * COMPONENT_WEIGHTS[key] for key in scores) / weight_total
+        financing_scores = {"borrowing_difficulty": scores["borrowing_difficulty"]}
+        if "high_yield_oas" in scores:
+            financing_scores["high_yield_oas"] = scores["high_yield_oas"]
+        financing_weights = {"borrowing_difficulty": 60.0, "high_yield_oas": 40.0}
+        financing_weight_total = sum(financing_weights[key] for key in financing_scores)
+        financing_risk_index = sum(financing_scores[key] * financing_weights[key] for key in financing_scores) / financing_weight_total
         rows.append({
             "month": month,
             "risk_index": round(risk_index, 2),
+            "financing_risk_index": round(financing_risk_index, 2),
             "sales_expectation_net": round(sales_expectations[month], 4),
             "borrowing_difficulty_pct": round(borrowing_difficulty[month], 4),
             "high_yield_oas_pct": round(high_yield_oas[month], 4) if month in high_yield_oas else None,
+            "optimism_index": round(optimism_index[month], 4) if month in optimism_index else None,
             "includes_oas": month in high_yield_oas,
             "is_provisional": month == current_month,
         })
@@ -84,11 +93,11 @@ def main() -> None:
     start = date(today.year - args.years, today.month, 1)
     end = today.replace(day=1)
     database = SupabaseRest(timeout=TIMEOUT_SECONDS)
-    sales, borrowing = fetch_nfib_monthly(start, end)
+    sales, borrowing, optimism = fetch_nfib_monthly(start, end)
     stored_oas = existing_oas(database, start)
     fresh_oas = fetch_fred_monthly(HIGH_YIELD_SERIES, require_env("FRED_API_KEY"), start, today)
     oas = {**stored_oas, **fresh_oas}
-    rows = build_rows(sales, borrowing, oas, today)
+    rows = build_rows(sales, borrowing, oas, optimism, today)
     if not rows:
         raise RuntimeError("저장할 미국 중소기업 위험지수 데이터가 없습니다.")
     if args.replace:

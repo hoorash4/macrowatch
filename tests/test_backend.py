@@ -848,13 +848,18 @@ class SourceContractTests(unittest.TestCase):
         sales = {"2023-08-01": -15.0, "2023-09-01": -15.0}
         borrowing = {"2023-08-01": 8.5, "2023-09-01": 8.5}
         oas = {"2023-09-01": 11.0}
-        rows = small_business.build_rows(sales, borrowing, oas, date(2026, 9, 9))
+        optimism = {"2023-08-01": 91.2, "2023-09-01": 90.7}
+        rows = small_business.build_rows(sales, borrowing, oas, optimism, date(2026, 9, 9))
         sales_score = small_business.component_score(-15.0, "sales_expectation")
         borrowing_score = small_business.component_score(8.5, "borrowing_difficulty")
         oas_score = small_business.component_score(11.0, "high_yield_oas")
+        self.assertGreater(small_business.component_score(4.0, "high_yield_oas"), small_business.component_score(3.0, "high_yield_oas"))
         self.assertEqual(rows[0]["risk_index"], round((sales_score * 30 + borrowing_score * 40) / 70, 2))
+        self.assertEqual(rows[0]["financing_risk_index"], round(borrowing_score, 2))
+        self.assertEqual(rows[0]["optimism_index"], 91.2)
         self.assertFalse(rows[0]["includes_oas"])
         self.assertEqual(rows[1]["risk_index"], round((sales_score * 30 + borrowing_score * 40 + oas_score * 30) / 100, 2))
+        self.assertEqual(rows[1]["financing_risk_index"], round(borrowing_score * .6 + oas_score * .4, 2))
         self.assertTrue(rows[1]["includes_oas"])
 
     def test_nfib_answer_parser_builds_sales_net_and_harder_share(self) -> None:
@@ -863,16 +868,21 @@ class SourceContractTests(unittest.TestCase):
             for code, value in ((1, 10), (2, 20), (4, 4), (5, 6))
         ]
         credit_rows = [{"monthyear": "1/1/2026", "resp_acode": 3, "percent": 7.5}]
-        with patch.object(small_business_source, "_request_rows", side_effect=[sales_rows, credit_rows]):
-            sales, borrowing = small_business_source.fetch_nfib_monthly(date(2026, 1, 1), date(2026, 1, 1))
+        optimism_rows = [{"monthyear": "2026/1/1", "OPT_INDEX": 98.7}]
+        with patch.object(small_business_source, "_request_rows", side_effect=[sales_rows, credit_rows]), \
+                patch.object(small_business_source, "_request_indicator_rows", return_value=optimism_rows):
+            sales, borrowing, optimism = small_business_source.fetch_nfib_monthly(date(2026, 1, 1), date(2026, 1, 1))
         self.assertEqual(sales["2026-01-01"], 20.0)
         self.assertEqual(borrowing["2026-01-01"], 7.5)
+        self.assertEqual(optimism["2026-01-01"], 98.7)
 
     def test_small_business_card_uses_common_chart_widths_and_liquidity_icons(self) -> None:
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         chart = (ROOT / "assets/js/charts/small-business-risk-chart.js").read_text(encoding="utf-8")
         self.assertIn("미국 중소기업 위험지수", html)
         self.assertIn("utils.lineWidths.primary", chart)
+        self.assertIn("utils.lineWidths.comparison", chart)
+        self.assertIn("NFIB 소기업낙관지수", chart)
         self.assertIn("utils.scrollableSvg", chart)
         for title in ("미국 주식시장 자금환경", "한국 주식시장 자금환경"):
             self.assertRegex(html, rf"fa-money-bill-transfer[^<]*</i></span>\s*<h2[^>]*>{title}</h2>")

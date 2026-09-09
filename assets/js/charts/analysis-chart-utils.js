@@ -234,32 +234,39 @@
     svg.setAttribute('preserveAspectRatio', 'none');
 
     // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
-    // 축의 라벨과 세로선만 별도 SVG에 복제해 왼쪽에 고정한다.
-    const [,,, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
-    const axisNodes = [...svg.querySelectorAll('text,line')].filter((node) => {
+    // 축의 라벨과 세로선만 별도 SVG에 복제해 양쪽에 고정한다.
+    const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    const axisCandidates = [...svg.querySelectorAll('text,line')].filter((node) => {
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
+      return true;
+    });
+    const leftAxisNodes = axisCandidates.filter((node) => {
       const x = Number(node.getAttribute('x'));
       const x1 = Number(node.getAttribute('x1'));
       const x2 = Number(node.getAttribute('x2'));
       return (node.tagName === 'text' && Number.isFinite(x) && x <= 55)
         || (node.tagName === 'line' && Number.isFinite(x1) && x1 === x2 && x1 <= 65);
     });
-    if (axisNodes.length && Number.isFinite(viewHeight)) {
+    const rightAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-right-axis]'));
+    const appendFixedAxis = (nodes, side) => {
+      if (!nodes.length || !Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
       const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      fixedAxis.setAttribute('viewBox', `0 0 72 ${viewHeight}`);
+      fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - 72} 0 72 ${viewHeight}` : `0 0 72 ${viewHeight}`);
       fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
-      fixedAxis.style.cssText = `position:absolute;z-index:2;left:0;top:0;width:72px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
-      axisNodes.forEach((node) => {
+      fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:72px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
+      nodes.forEach((node) => {
         fixedAxis.append(node.cloneNode(true));
         node.setAttribute('visibility', 'hidden');
       });
       shell.append(fixedAxis);
       const scrollbarMask = document.createElement('span');
       scrollbarMask.setAttribute('aria-hidden', 'true');
-      scrollbarMask.style.cssText = 'position:absolute;z-index:3;left:0;bottom:0;width:72px;height:8px;background:#fff;pointer-events:none;';
+      scrollbarMask.style.cssText = `position:absolute;z-index:3;${side}:0;bottom:0;width:72px;height:8px;background:#fff;pointer-events:none;`;
       shell.append(scrollbarMask);
-    }
+    };
+    appendFixedAxis(leftAxisNodes, 'left');
+    appendFixedAxis(rightAxisNodes, 'right');
 
     if (axes) bindVisibleAxes(svg, frame, shell, width, axes);
 
