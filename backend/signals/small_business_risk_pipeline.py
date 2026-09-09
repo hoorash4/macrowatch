@@ -11,8 +11,10 @@ from sources.small_business_risk import TIMEOUT_SECONDS, fetch_fred_monthly, fet
 
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 COMPONENT_WEIGHTS = {"borrowing_difficulty": 60.0, "high_yield_oas": 40.0}
+SURVEY_WEIGHTS = {"borrowing_difficulty": 60.0, "sales_expectation": 40.0}
 # 고정 기준을 써서 새 달이 추가되어도 과거 점수가 재작성되지 않게 한다.
 COMPONENT_SCALES = {
+    "sales_expectation": (20.0, -50.0),
     "borrowing_difficulty": (2.0, 15.0),
     "high_yield_oas": (2.0, 20.0),
 }
@@ -39,9 +41,15 @@ def build_rows(
         scores = {key: component_score(value, key) for key, value in raw_values.items()}
         weight_total = sum(COMPONENT_WEIGHTS[key] for key in scores)
         risk_index = sum(scores[key] * COMPONENT_WEIGHTS[key] for key in scores) / weight_total
+        survey_scores = {
+            "borrowing_difficulty": scores["borrowing_difficulty"],
+            "sales_expectation": component_score(sales_expectations[month], "sales_expectation"),
+        }
+        survey_risk_index = sum(survey_scores[key] * SURVEY_WEIGHTS[key] for key in survey_scores) / sum(SURVEY_WEIGHTS.values())
         rows.append({
             "month": month,
             "risk_index": round(risk_index, 2),
+            "survey_risk_index": round(survey_risk_index, 2),
             "sales_expectation_net": round(sales_expectations[month], 4),
             "borrowing_difficulty_pct": round(borrowing_difficulty[month], 4),
             "high_yield_oas_pct": round(high_yield_oas[month], 4) if month in high_yield_oas else None,
