@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/inflation-model.yml"
+      - "backend/inflation_pipeline.py"
+      - "backend/inflation_lead_model.py"
       - "supabase/migrations/20260909061156_add_us_inflation_model.sql"
   schedule:
     # 08:35 KST, after the latest U.S. market and Cleveland Fed inputs settle.
