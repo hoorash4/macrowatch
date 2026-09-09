@@ -601,9 +601,20 @@ body:has(#app-shell:not(.hidden)) {
 .inflation-chart-toolbar {
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-end;
   gap:.75rem;
   margin-bottom:.75rem;
+}
+.inflation-real-rate-panel {
+  margin-top:.5rem;
+  border-top:1px solid #dbe3ed;
+  padding-top:.45rem;
+}
+.inflation-real-rate-panel > p {
+  padding:0 .25rem .1rem;
+  color:#64748b;
+  font-size:.7rem;
+  font-weight:700;
 }
 /* 모든 분석 카드 헤더의 기본 여백과 구분선을 이 한 곳에서 관리합니다. */
 .analysis-card-header {

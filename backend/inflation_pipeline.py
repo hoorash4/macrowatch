@@ -55,6 +55,7 @@ FRED_SERIES = {
     "core_ppi": "WPSFD49511",
     "dollar": "DTWEXBGS",
     "policy_rate": "DFEDTARU",
+    "treasury_10y": "DGS10",
 }
 COMMODITY_GROUPS = {
     "energy": ("CL=F", "RB=F", "HO=F", "NG=F"),
@@ -637,7 +638,8 @@ def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str
         {
             "observed_on": observed_on.isoformat(),
             "target_upper_pct": round(value, 4),
-            "source": "FRED:DFEDTARU",
+            "treasury_10y_pct": round(latest_on_or_before(fred["treasury_10y"], observed_on), 4),
+            "source": "FRED:DFEDTARU,DGS10",
             "updated_at": updated_at,
         }
         for observed_on, value in sorted(fred["policy_rate"].items())
@@ -682,13 +684,18 @@ def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day:
     ) or []
     policy = client.request(
         "GET", "us_policy_rate_daily",
-        params={"select": "observed_on,source", "order": "observed_on.desc", "limit": "1"},
+        params={"select": "observed_on,source,treasury_10y_pct", "order": "observed_on.desc", "limit": "1"},
     ) or []
     if not monthly or monthly[0].get("month") != expected_month:
         raise RuntimeError("Monthly inflation verification did not return the expected latest row")
     if monthly[0].get("model_version") != MODEL_VERSION:
         raise RuntimeError("Inflation verification found an unexpected model version")
-    if not policy or policy[0].get("observed_on") != expected_policy_day or policy[0].get("source") != "FRED:DFEDTARU":
+    if (
+        not policy
+        or policy[0].get("observed_on") != expected_policy_day
+        or policy[0].get("source") != "FRED:DFEDTARU,DGS10"
+        or policy[0].get("treasury_10y_pct") is None
+    ):
         raise RuntimeError("Policy-rate verification did not return the expected latest row")
 
 

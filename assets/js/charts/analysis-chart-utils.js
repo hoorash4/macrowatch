@@ -229,6 +229,7 @@
     // 축의 라벨과 세로선만 별도 SVG에 복제해 왼쪽에 고정한다.
     const [,,, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
     const axisNodes = [...svg.querySelectorAll('text,line')].filter((node) => {
+      if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       const x = Number(node.getAttribute('x'));
       const x1 = Number(node.getAttribute('x1'));
       const x2 = Number(node.getAttribute('x2'));
@@ -246,6 +247,10 @@
         node.setAttribute('visibility', 'hidden');
       });
       shell.append(fixedAxis);
+      const scrollbarMask = document.createElement('span');
+      scrollbarMask.setAttribute('aria-hidden', 'true');
+      scrollbarMask.style.cssText = 'position:absolute;z-index:3;left:0;bottom:0;width:72px;height:8px;background:#fff;pointer-events:none;';
+      shell.append(scrollbarMask);
     }
 
     if (axes) bindVisibleAxes(svg, frame, shell, width, axes);

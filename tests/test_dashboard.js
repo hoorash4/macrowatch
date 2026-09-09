@@ -117,10 +117,12 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
   assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
 });
 
-test('미국 스트레스 화면 아래에 통합물가 카드와 전용 차트를 둔다', () => {
+test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/inflation-chart.js'), 'utf8');
-  assert.match(html, /credit-stress-components-dashboard[\s\S]*inflation-model-dashboard[\s\S]*data-liquidity-country="US"/);
+  assert.match(html, /policy-expectation-dashboard[\s\S]*inflation-model-dashboard[\s\S]*fomc-briefing-dashboard/);
+  assert.match(html, /id="inflation-model-dashboard" data-dashboard-panel="policy"/);
+  assert.match(html, /통합물가지수와 금리/);
   assert.match(html, /PCE 60%·조정 CPI 30%·소비연관 PPI 10%/);
   assert.doesNotMatch(html, /data-inflation-kind=/);
   assert.match(html, /data-inflation-range="1"[\s\S]*data-inflation-range="2"/);
@@ -131,10 +133,12 @@ test('미국 스트레스 화면 아래에 통합물가 카드와 전용 차트�
   assert.doesNotMatch(chart, /시장 선행/);
   assert.match(chart, /기준금리/);
   assert.match(chart, /실질금리/);
-  assert.match(html, /inflation-real-rate-summary/);
+  assert.match(html, /inflation-real-rate-chart/);
   assert.match(chart, /data-inflation-cursor/);
   assert.match(chart, /formatCursorMonth\(nearest\.month\)/);
-  assert.match(chart, /nearest = monthly\.reduce/);
+  assert.match(chart, /showMonth\(monthly\.reduce/);
+  assert.match(chart, /treasury_10y_pct/);
+  assert.match(chart, /core: '#ea580c'/);
   assert.match(chart, /historyYears \/ Number\(state\.years\)/);
   assert.doesNotMatch(chart, /<circle/);
   assert.doesNotMatch(chart, /기준이나 의미|높을수록/);

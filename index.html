@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=165">
+  <link rel="stylesheet" href="assets/css/styles.css?v=166">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -324,38 +324,6 @@
     </section>
 
 
-    <section id="inflation-model-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="inflation-model-title">
-      <div class="analysis-card-header">
-        <div class="analysis-card-heading-row">
-          <span class="analysis-card-icon"><i class="fa-solid fa-chart-area text-sm"></i></span>
-          <div>
-            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">MACROWATCH INFLATION MODEL</p>
-            <h2 id="inflation-model-title" class="analysis-card-title">통합물가 추정치</h2>
-          </div>
-        </div>
-        <p class="analysis-card-description">PCE 60%·조정 CPI 30%·소비연관 PPI 10%를 결합한 통합물가입니다.</p>
-        <p class="analysis-card-description">최신월은 PCE 발표 전까지 원자재 가격과 CPI·PCE 나우캐스트를 반영해 영업일마다 갱신되는 잠정치입니다. 실질금리는 통합물가와 기준금리로 계산합니다.</p>
-      </div>
-      <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="inflation-chart-toolbar">
-            <div class="analysis-chart-range-controls" data-inflation-ranges aria-label="통합물가 그래프 조회 기간">
-              <button type="button" data-inflation-range="1">1년</button>
-              <button type="button" data-inflation-range="2">2년</button>
-              <button type="button" data-inflation-range="5" class="is-active">5년</button>
-              <button type="button" data-inflation-range="max">MAX</button>
-            </div>
-          </div>
-          <div id="inflation-model-chart" class="min-h-80">
-            <div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">통합물가 데이터를 불러오는 중입니다.</div>
-          </div>
-        </div>
-        <div id="inflation-real-rate-summary" class="mt-3 grid gap-2 sm:grid-cols-2" aria-label="최신 실질금리 보조지표"></div>
-        <div id="inflation-model-legend" class="policy-expectation-legend" aria-label="통합물가 그래프 범례"></div>
-      </div>
-    </section>
-
-
     <section data-liquidity-country="US" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-label="미국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <h2 class="analysis-card-title">미국 주식시장 자금환경</h2>
@@ -631,6 +599,42 @@
           <span data-chart-legend="raw">일간값</span>
           <span data-chart-legend="average">5영업일 평균</span>
         </div>
+      </div>
+    </section>
+
+    <section id="inflation-model-dashboard" data-dashboard-panel="policy" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="inflation-model-title">
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-chart-area text-sm"></i></span>
+          <div>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">MACROWATCH INFLATION MODEL</p>
+            <h2 id="inflation-model-title" class="analysis-card-title">통합물가지수와 금리</h2>
+          </div>
+        </div>
+        <p class="analysis-card-description">PCE 60%·조정 CPI 30%·소비연관 PPI 10%를 결합한 통합물가입니다.</p>
+        <p class="analysis-card-description">최신월은 PCE 발표 전까지 원자재 가격과 CPI·PCE 나우캐스트를 반영해 영업일마다 갱신되는 잠정치입니다. 실질금리는 통합물가와 기준금리로 계산합니다.</p>
+      </div>
+      <div class="px-5 pb-5 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="inflation-chart-toolbar">
+            <div class="analysis-chart-range-controls" data-inflation-ranges aria-label="통합물가 그래프 조회 기간">
+              <button type="button" data-inflation-range="1">1년</button>
+              <button type="button" data-inflation-range="2">2년</button>
+              <button type="button" data-inflation-range="5" class="is-active">5년</button>
+              <button type="button" data-inflation-range="max">MAX</button>
+            </div>
+          </div>
+          <div id="inflation-model-chart" class="min-h-80">
+            <div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">통합물가 데이터를 불러오는 중입니다.</div>
+          </div>
+          <div class="inflation-real-rate-panel">
+            <p>실질금리</p>
+            <div id="inflation-real-rate-chart" class="min-h-40">
+              <div class="analysis-empty-state-light flex min-h-32 items-center justify-center text-xs text-slate-400">실질금리 데이터를 불러오는 중입니다.</div>
+            </div>
+          </div>
+        </div>
+        <div id="inflation-model-legend" class="policy-expectation-legend" aria-label="통합물가 그래프 범례"></div>
       </div>
     </section>
 
@@ -1040,9 +1044,9 @@
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="assets/js/core/indicator-terms.js?v=3"></script>
   <script src="assets/js/dashboard/script.js?v=164"></script>
-  <script src="assets/js/charts/analysis-chart-utils.js?v=12"></script>
+  <script src="assets/js/charts/analysis-chart-utils.js?v=13"></script>
   <script src="assets/js/dashboard/dashboard-charts.js?v=54"></script>
-  <script src="assets/js/charts/inflation-chart.js?v=4"></script>
+  <script src="assets/js/charts/inflation-chart.js?v=5"></script>
   <script src="assets/js/charts/policy-chart.js?v=17"></script>
   <script src="assets/js/charts/policy-expectation-chart.js?v=14"></script>
   <script src="assets/js/charts/em-capacity-chart.js?v=6"></script>

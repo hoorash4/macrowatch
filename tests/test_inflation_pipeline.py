@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, save_automatic
+from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, policy_rows, save_automatic
 
 
 class FakeSupabase:
@@ -21,6 +21,15 @@ class FakeSupabase:
 
 
 class InflationPipelineTests(unittest.TestCase):
+    def test_policy_rows_carry_latest_ten_year_yield(self):
+        fred = {
+            "policy_rate": {date(2026, 9, 7): 5.5, date(2026, 9, 8): 5.5},
+            "treasury_10y": {date(2026, 9, 7): 4.1},
+        }
+        rows = policy_rows(fred, date(2026, 9, 1), "2026-09-09T00:00:00Z")
+        self.assertEqual(rows[-1]["treasury_10y_pct"], 4.1)
+        self.assertEqual(rows[-1]["source"], "FRED:DFEDTARU,DGS10")
+
     @patch("backend.inflation_pipeline.requests.get")
     def test_nowcast_keeps_business_day_vintages_after_target_month(self, get):
         class Response:
