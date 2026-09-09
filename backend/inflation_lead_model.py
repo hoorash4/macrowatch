@@ -1,9 +1,8 @@
-"""Pure calculations for the MacroWatch inflation prototype.
+"""Pure calculations for the MacroWatch integrated-inflation model.
 
-The integrated headline series is PCE-compatible: a published PCE value is the
-monthly anchor.  CPI and PPI are release bridges for a month whose PCE value is
-not available yet.  Market prices estimate the change from that anchor; they
-are not treated as a second official inflation index.
+Headline and core are separate composites.  Each combines CPI, PCE, and a
+matching PPI measure.  PPI is first aligned to consumer-inflation volatility so
+that its larger swings do not dominate the common percentage scale.
 """
 
 from __future__ import annotations
@@ -14,8 +13,9 @@ from typing import Sequence
 import numpy as np
 
 
-MODEL_VERSION = "inflation_lead_v0"
+MODEL_VERSION = "inflation_lead_v1"
 RIDGE_ALPHAS = (0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
+DEFAULT_COMPOSITE_WEIGHTS = (0.40, 0.40, 0.20)
 
 
 @dataclass(frozen=True)
@@ -29,10 +29,18 @@ class RidgeModel:
 
 @dataclass(frozen=True)
 class IntegratedInflation:
-    headline_yoy_pct: float
-    core_yoy_pct: float | None
+    yoy_pct: float
     status: str
-    source: str
+    cpi_yoy_pct: float
+    pce_yoy_pct: float
+    aligned_ppi_yoy_pct: float
+
+
+@dataclass(frozen=True)
+class ProducerCalibration:
+    consumer_mean_pct: float
+    producer_mean_pct: float
+    producer_to_consumer_scale: float
 
 
 def fit_ridge(
@@ -96,29 +104,55 @@ def select_ridge_alpha(
     return min(scores, key=scores.get)
 
 
-def choose_integrated_inflation(
+def calibrate_producer_inflation(
     *,
-    published_pce_yoy_pct: float | None,
-    published_core_pce_yoy_pct: float | None,
-    bridged_pce_yoy_pct: float | None,
-    bridged_core_pce_yoy_pct: float | None = None,
-) -> IntegratedInflation:
-    """Return a final PCE anchor or the CPI/PPI bridge when PCE is pending."""
+    consumer_yoy_history: Sequence[float],
+    producer_yoy_history: Sequence[float],
+) -> ProducerCalibration:
+    """Fit the fixed pre-backtest scale used to align PPI with CPI/PCE."""
 
-    if published_pce_yoy_pct is not None:
-        return IntegratedInflation(
-            headline_yoy_pct=float(published_pce_yoy_pct),
-            core_yoy_pct=None if published_core_pce_yoy_pct is None else float(published_core_pce_yoy_pct),
-            status="final",
-            source="PCE",
-        )
-    if bridged_pce_yoy_pct is None:
-        raise ValueError("a PCE value or a bridge estimate is required")
+    consumer = np.asarray(consumer_yoy_history, dtype=float)
+    producer = np.asarray(producer_yoy_history, dtype=float)
+    if len(consumer) < 24 or len(consumer) != len(producer):
+        raise ValueError("matching calibration histories need at least 24 months")
+    producer_deviation = float(producer.std())
+    if producer_deviation < 1e-9:
+        raise ValueError("producer calibration history must vary")
+    return ProducerCalibration(
+        consumer_mean_pct=float(consumer.mean()),
+        producer_mean_pct=float(producer.mean()),
+        producer_to_consumer_scale=float(consumer.std() / producer_deviation),
+    )
+
+
+def align_producer_inflation(ppi_yoy_pct: float, calibration: ProducerCalibration) -> float:
+    return calibration.consumer_mean_pct + calibration.producer_to_consumer_scale * (
+        ppi_yoy_pct - calibration.producer_mean_pct
+    )
+
+
+def integrated_inflation_yoy(
+    *,
+    cpi_yoy_pct: float,
+    pce_yoy_pct: float,
+    ppi_yoy_pct: float,
+    producer_calibration: ProducerCalibration,
+    status: str,
+    weights: Sequence[float] = DEFAULT_COMPOSITE_WEIGHTS,
+) -> IntegratedInflation:
+    """Combine CPI, PCE, and volatility-aligned PPI on one percent scale."""
+
+    if status not in {"provisional", "final"}:
+        raise ValueError("status must be provisional or final")
+    if len(weights) != 3 or any(weight < 0.0 for weight in weights) or abs(sum(weights) - 1.0) > 1e-9:
+        raise ValueError("three non-negative weights must sum to one")
+    aligned_ppi = align_producer_inflation(ppi_yoy_pct, producer_calibration)
     return IntegratedInflation(
-        headline_yoy_pct=float(bridged_pce_yoy_pct),
-        core_yoy_pct=None if bridged_core_pce_yoy_pct is None else float(bridged_core_pce_yoy_pct),
-        status="provisional",
-        source="CPI/PPI bridge",
+        yoy_pct=float(weights[0] * cpi_yoy_pct + weights[1] * pce_yoy_pct + weights[2] * aligned_ppi),
+        status=status,
+        cpi_yoy_pct=float(cpi_yoy_pct),
+        pce_yoy_pct=float(pce_yoy_pct),
+        aligned_ppi_yoy_pct=float(aligned_ppi),
     )
 
 
@@ -140,4 +174,3 @@ def month_to_date_average_return_pct(
     if not current_month_prices or prior_month_average <= 0.0:
         raise ValueError("prices must be non-empty and prior average must be positive")
     return 100.0 * (float(np.mean(current_month_prices)) / prior_month_average - 1.0)
-
