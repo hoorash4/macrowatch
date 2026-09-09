@@ -1025,6 +1025,7 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-cursor-value { fill:#334155; }
 .analysis-chart-cursor-date { fill:#64748b; }
 .analysis-chart-year-label { fill:#64748b; font-size:12px; font-weight:400; }
+.analysis-chart-zero-line { stroke:#94a3b8; stroke-width:1; }
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
 .policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
 

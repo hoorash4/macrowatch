@@ -370,6 +370,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   });
   const svg = chart.querySelector('svg');
   if (!svg) return;
+  const frame = chart.querySelector('[data-history-scroll]');
   const hoverGuide = createSvgElement('line', {
     y1: padding.top,
     y2: height - padding.bottom,
@@ -496,7 +497,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const end = domainEnd ? new Date(domainEnd).getTime() : Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value + axisMaximum : axisMaximum - value)) / (axisMaximum * 2);
-  const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="${value === 0 ? '#536579' : '#dbe3ed'}"${value === 0 ? '' : ' stroke-dasharray="3 4"'}/><text data-chart-left-axis x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
+  const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}"${value === 0 ? ' class="analysis-chart-zero-line"' : ' stroke="#dbe3ed" stroke-dasharray="3 4"'}/><text data-chart-left-axis x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
   const lines = showChanges ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.value))}" fill="none" stroke="${lineColor}" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/>` : '';
   const averageLines = `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.average))}" fill="none" stroke="${averageColor}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/>`;
   const secondaryAverageLines = secondaryAverageColor ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.secondaryAverage))}" fill="none" stroke="${secondaryAverageColor}" stroke-width="${lineWidths.auxiliary}" stroke-opacity="0.48" stroke-linecap="round"/>` : '';
@@ -659,6 +660,7 @@ function renderEmStressDashboard(rows) {
   const attachVerticalGuide = ({ host, source, showLabels }) => {
     const svg = host?.querySelector('svg');
     if (!svg) return;
+    const frame = host.querySelector('[data-history-scroll]');
     const guide = createSvgElement('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
     const valueLabel = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
     const periodLabel = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;

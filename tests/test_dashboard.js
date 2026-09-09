@@ -73,9 +73,12 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   const dashboardCharts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-year-label \{ fill:#64748b; font-size:12px; font-weight:400;/);
+  assert.match(styles, /\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:1;/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
   assert.match(dashboardCharts, /chartPadding\('dual', \{ top: 20, bottom: 38 \}\)/);
+  assert.match(dashboardCharts, /const frame = chart\.querySelector\('\[data-history-scroll\]'\);/);
+  assert.match(dashboardCharts, /const frame = host\.querySelector\('\[data-history-scroll\]'\);/);
   assert.doesNotMatch(dashboardCharts, /'font-size': 11, 'font-weight': 700/);
 });
 
