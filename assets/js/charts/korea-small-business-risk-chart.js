@@ -17,7 +17,8 @@
     const legend = document.getElementById('korea-small-business-risk-legend');
     if (legend) legend.innerHTML = [
       utils.legendItem('중소기업 위험지수', { stroke: COLORS.risk, width: utils.lineWidths.primary }),
-      utils.legendItem('중소기업 업황전망 SBHI', { stroke: COLORS.headline, width: utils.lineWidths.comparison }),
+      utils.legendItem('중소기업 위험지수 잠정치', { stroke: COLORS.risk, width: utils.lineWidths.primary, dash: '5 4' }),
+      utils.legendItem('중소기업 경기전망 SBHI', { stroke: COLORS.headline, width: utils.lineWidths.comparison }),
     ].join('');
   }
 
@@ -50,10 +51,14 @@
       const guide = pointX > 65 ? `<line x1="${pointX}" x2="${pointX}" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" stroke="#edf0f4"/>` : '';
       return `${guide}<text x="${pointX}" y="${HEIGHT - 14}" text-anchor="middle" fill="#64748b" font-size="10">${year}</text>`;
     }).join('');
-    const riskPath = utils.monotoneSeriesPath(rows, x, row => riskY(Number(row.risk_index)));
+    const finalRows = rows.filter(row => !row.is_provisional);
+    const provisionalRows = rows.filter(row => row.is_provisional);
+    const provisionalBridgeRows = provisionalRows.length && finalRows.length ? [finalRows.at(-1), ...provisionalRows] : provisionalRows;
+    const finalRiskPath = utils.monotoneSeriesPath(finalRows, x, row => riskY(Number(row.risk_index)));
+    const provisionalRiskPath = utils.monotoneSeriesPath(provisionalBridgeRows, x, row => riskY(Number(row.risk_index)));
     const headlineRows = rows.filter(row => Number.isFinite(Number(row.headline_outlook_sbhi)));
     const headlinePath = utils.monotoneSeriesPath(headlineRows, x, row => headlineY(Number(row.headline_outlook_sbhi)));
-    host.innerHTML = `<svg class="w-full" style="height:${HEIGHT}px" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국 중소기업 위험지수와 중소기업 업황전망 SBHI 월별 추이">${grid}${rightAxis}${guides}<path data-korea-small-business-risk-line d="${riskPath}" fill="none" stroke="${COLORS.risk}" stroke-width="${utils.lineWidths.primary}" stroke-linecap="round"/><path data-small-business-headline-line d="${headlinePath}" fill="none" stroke="${COLORS.headline}" stroke-width="${utils.lineWidths.comparison}" stroke-linecap="round"/><rect data-korea-small-business-risk-hit x="${PADDING.left}" y="${PADDING.top}" width="${width - PADDING.left - PADDING.right}" height="${HEIGHT - PADDING.top - PADDING.bottom}" fill="transparent"/><line data-korea-small-business-risk-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-small-business-risk-value x="0" y="16" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-korea-small-business-risk-date x="0" y="${HEIGHT - PADDING.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
+    host.innerHTML = `<svg class="w-full" style="height:${HEIGHT}px" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국 중소기업 위험지수와 중소기업 경기전망 SBHI 월별 추이">${grid}${rightAxis}${guides}<path data-korea-small-business-risk-line d="${finalRiskPath}" fill="none" stroke="${COLORS.risk}" stroke-width="${utils.lineWidths.primary}" stroke-linecap="round"/><path data-korea-small-business-risk-line data-provisional d="${provisionalRiskPath}" fill="none" stroke="${COLORS.risk}" stroke-width="${utils.lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path data-small-business-headline-line d="${headlinePath}" fill="none" stroke="${COLORS.headline}" stroke-width="${utils.lineWidths.comparison}" stroke-linecap="round"/><rect data-korea-small-business-risk-hit x="${PADDING.left}" y="${PADDING.top}" width="${width - PADDING.left - PADDING.right}" height="${HEIGHT - PADDING.top - PADDING.bottom}" fill="transparent"/><line data-korea-small-business-risk-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-small-business-risk-value x="0" y="16" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-korea-small-business-risk-date x="0" y="${HEIGHT - PADDING.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
     utils.scrollableSvg(host.querySelector('svg'), width, BASE_WIDTH, {
       top: PADDING.top,
       bottom: HEIGHT - PADDING.bottom,
@@ -83,7 +88,8 @@
       const value = host.querySelector('[data-korea-small-business-risk-value]');
       value.setAttribute('x', Math.max(130, Math.min(width - 130, cursorX))); value.setAttribute('visibility', 'visible');
       const labels = [`위험 ${Number(nearest.risk_index).toFixed(1)}`];
-      if (Number.isFinite(Number(nearest.headline_outlook_sbhi))) labels.push(`업황 ${Number(nearest.headline_outlook_sbhi).toFixed(1)}`);
+      if (Number.isFinite(Number(nearest.headline_outlook_sbhi))) labels.push(`경기전망 ${Number(nearest.headline_outlook_sbhi).toFixed(1)}`);
+      if (nearest.is_provisional) labels.push('잠정치');
       value.textContent = labels.join(' · ');
       const date = host.querySelector('[data-korea-small-business-risk-date]');
       date.setAttribute('x', cursorX); date.textContent = monthLabel(nearest.month); date.classList.add('is-visible');
