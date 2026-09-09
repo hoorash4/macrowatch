@@ -5,7 +5,7 @@ on:
     workflows: ["Deploy Supabase changes"]
     types: [completed]
   schedule:
-    # 06:40 KST: KOSIS와 금감원 신규 월을 매일 확인한다.
+    # 06:40 KST: KOSIS와 ECOS 신규 월을 매일 확인한다.
     - cron: "40 21 * * *"
   workflow_dispatch:
     inputs:
@@ -33,10 +33,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install data clients
-        run: pip install --disable-pip-version-check requests pypdf
+        run: pip install --disable-pip-version-check requests pypdf olefile
       - name: Collect Korea small business risk
         env:
           KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |

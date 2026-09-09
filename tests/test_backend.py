@@ -940,12 +940,22 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(params["objL1"], "15340a.a")
         self.assertEqual(params["prdSe"], "M")
 
-    def test_fss_parser_uses_sme_corporation_rate_and_reference_month(self) -> None:
-        month, value = korea_small_business_source.parse_fss_report(
-            "’25.12월말 기준 국내은행 자료. 중소법인 연체율(0.64%)은 전월보다 하락했다."
+    def test_ecos_parser_and_request_use_nationwide_sme_loan_series(self) -> None:
+        rows = [{"TIME": "202501", "DATA_VALUE": "0.77"}, {"TIME": "202502", "DATA_VALUE": "0.84"}]
+        self.assertEqual(
+            korea_small_business_source.parse_ecos_delinquency_rows(rows, date(2025, 1, 1), date(2025, 2, 1)),
+            {"2025-01-01": 0.77, "2025-02-01": 0.84},
         )
-        self.assertEqual(month, "2025-12-01")
-        self.assertEqual(value, 0.64)
+        response = Mock(status_code=200)
+        response.raise_for_status = Mock()
+        response.json.return_value = {"StatisticSearch": {"row": rows}}
+        session = Mock()
+        session.get.return_value = response
+        korea_small_business_source.fetch_ecos_sme_delinquency(
+            date(2025, 1, 1), date(2025, 2, 1), api_key="test", session=session
+        )
+        url = session.get.call_args.args[0]
+        self.assertIn("/141Y005/M/202501/202502/R4AB12/X00", url)
 
     def test_kbiz_parser_separates_concatenated_one_decimal_series(self) -> None:
         report = korea_small_business_source.parse_kbiz_report(
@@ -992,6 +1002,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("중소기업 업황전망 SBHI", chart)
         workflow = (ROOT / ".github/workflows/korea-small-business-risk.yml").read_text(encoding="utf-8")
         self.assertIn("KOSIS_API_KEY", workflow)
+        self.assertIn("ECOS_API_KEY", workflow)
         self.assertIn("--start 2020-01 --replace", workflow)
         self.assertIn("--bootstrap-if-empty", workflow)
         self.assertIn('workflows: ["Deploy Supabase changes"]', workflow)

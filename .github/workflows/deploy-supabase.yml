@@ -100,6 +100,8 @@ jobs:
             --file supabase/migrations/20260909090000_add_us_policy_rate_daily.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260909141525_add_kr_small_business_risk.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260910011500_use_ecos_sme_delinquency.sql
 
       - name: Deploy Edge Functions
         run: |

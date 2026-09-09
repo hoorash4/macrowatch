@@ -63,7 +63,7 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict[str, object]]:
             "funding_source_month": month,
             "utilization_sa_pct": round(utilization_value, 4),
             "utilization_source_month": utilization_month,
-            "sme_corporation_delinquency_pct": round(delinquency_value, 4),
+            "sme_loan_delinquency_pct": round(delinquency_value, 4),
             "delinquency_source_month": delinquency_month,
             "headline_outlook_sbhi": round(headline[month], 4) if month in headline else None,
             "is_provisional": utilization_month < month or delinquency_month < month,

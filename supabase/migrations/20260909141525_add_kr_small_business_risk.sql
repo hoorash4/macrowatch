@@ -5,7 +5,7 @@ create table if not exists public.kr_small_business_risk_monthly (
   funding_source_month date not null,
   utilization_sa_pct numeric(8, 4) not null,
   utilization_source_month date not null,
-  sme_corporation_delinquency_pct numeric(8, 4) not null,
+  sme_loan_delinquency_pct numeric(8, 4) not null,
   delinquency_source_month date not null,
   headline_outlook_sbhi numeric(8, 4),
   is_provisional boolean not null default true,
@@ -23,4 +23,4 @@ create policy "Authenticated users can read Korean small business risk"
   on public.kr_small_business_risk_monthly for select to authenticated using (true);
 
 comment on table public.kr_small_business_risk_monthly is
-  'Monthly Korean SME risk index: funding outlook SBHI 35%, seasonally adjusted manufacturing utilization 30%, and SME corporation delinquency rate 35%.';
+  'Monthly Korean SME risk index: funding outlook SBHI 35%, seasonally adjusted manufacturing utilization 30%, and nationwide SME loan delinquency rate (1 month or more) 35%.';
