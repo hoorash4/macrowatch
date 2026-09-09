@@ -50,6 +50,8 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   assert.match(source, /const leftGutter = Number\.isFinite\(Number\(axes\?\.left\)\)/);
   assert.match(source, /const rightGutter = Number\.isFinite\(Number\(axes\?\.right\)\)/);
   assert.match(source, /fixedAxis\.dataset\.fixedAxisGutter = String\(gutter\)/);
+  assert.match(source, /const boundaryX = side === 'right' \? viewWidth - gutter \+ \.5 : gutter - \.5/);
+  assert.match(source, /공통 고정축이 그래프와 축 숫자의 경계에 세로선을 한 번만 그립니다/);
   assert.match(source, /frame\.style\.width = `calc\(100% - \$\{renderedLeftGutter \+ renderedRightGutter\}px\)`/);
   assert.match(source, /svg\.style\.marginLeft = `-\$\{renderedLeftGutter\}px`/);
   assert.doesNotMatch(source, /scrollbarMask/);

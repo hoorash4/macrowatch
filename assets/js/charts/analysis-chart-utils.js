@@ -264,6 +264,8 @@
     const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
     const leftGutter = Number.isFinite(Number(axes?.left)) ? Number(axes.left) : axisGutter;
     const rightGutter = Number.isFinite(Number(axes?.right)) ? Number(axes.right) : axisGutter;
+    const axisTop = Number.isFinite(Number(axes?.top)) ? Number(axes.top) : 0;
+    const axisBottom = Number.isFinite(Number(axes?.bottom)) ? Number(axes.bottom) : viewHeight;
     const axisCandidates = [...svg.querySelectorAll('text,line')].filter((node) => {
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       return true;
@@ -271,19 +273,37 @@
     const leftAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-left-axis]'));
     const rightAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-right-axis]'));
     const appendFixedAxis = (nodes, side, gutter) => {
-      if (!nodes.length || !Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
+      if (!Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
       const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       fixedAxis.dataset.fixedAxisGutter = String(gutter);
       fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - gutter} 0 ${gutter} ${viewHeight}` : `0 0 ${gutter} ${viewHeight}`);
       fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
       fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:${gutter}px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
+      const boundary = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      const boundaryX = side === 'right' ? viewWidth - gutter + .5 : gutter - .5;
+      boundary.setAttribute('x1', boundaryX);
+      boundary.setAttribute('x2', boundaryX);
+      boundary.setAttribute('y1', axisTop);
+      boundary.setAttribute('y2', axisBottom);
+      boundary.setAttribute('stroke', '#94a3b8');
+      boundary.setAttribute('vector-effect', 'non-scaling-stroke');
+      fixedAxis.append(boundary);
       nodes.forEach((node) => {
         fixedAxis.append(node.cloneNode(true));
         node.setAttribute('visibility', 'hidden');
       });
       shell.append(fixedAxis);
     };
+
+    // 렌더러 안의 Y축 세로선은 시계열 SVG와 함께 이동하므로 숨기고,
+    // 공통 고정축이 그래프와 축 숫자의 경계에 세로선을 한 번만 그립니다.
+    [...svg.querySelectorAll('line')].forEach((line) => {
+      const x1 = Number(line.getAttribute('x1')), x2 = Number(line.getAttribute('x2'));
+      const y1 = Number(line.getAttribute('y1')), y2 = Number(line.getAttribute('y2'));
+      if (x1 !== x2 || Math.abs(y1 - axisTop) > .5 || Math.abs(y2 - axisBottom) > .5) return;
+      if (Math.abs(x1 - leftGutter) <= .5 || Math.abs(x1 - (viewWidth - rightGutter)) <= .5) line.setAttribute('visibility', 'hidden');
+    });
     appendFixedAxis(leftAxisNodes, 'left', leftGutter);
     appendFixedAxis(rightAxisNodes, 'right', rightGutter);
 
