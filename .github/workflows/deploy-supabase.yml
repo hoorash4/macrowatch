@@ -96,6 +96,8 @@ jobs:
             --file supabase/migrations/20260908150000_add_stock_attractiveness_v2.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260909061156_add_us_inflation_model.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260909090000_add_us_policy_rate_daily.sql
 
       - name: Deploy Edge Functions
         run: |

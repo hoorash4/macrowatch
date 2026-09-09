@@ -8,6 +8,7 @@ on:
       - "backend/inflation_pipeline.py"
       - "backend/inflation_lead_model.py"
       - "supabase/migrations/20260909061156_add_us_inflation_model.sql"
+      - "supabase/migrations/20260909090000_add_us_policy_rate_daily.sql"
   schedule:
     # 08:35 KST, after the latest U.S. market and Cleveland Fed inputs settle.
     - cron: "35 23 * * *"
@@ -48,11 +49,15 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             mode="backfill"
             for attempt in $(seq 1 24); do
-              status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              monthly_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
                 "$SUPABASE_URL/rest/v1/us_inflation_monthly?select=month&limit=1" \
                 -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
                 -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")"
-              [ "$status" = "200" ] && break
+              policy_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+                "$SUPABASE_URL/rest/v1/us_policy_rate_daily?select=observed_on&limit=1" \
+                -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+                -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")"
+              [ "$monthly_status" = "200" ] && [ "$policy_status" = "200" ] && break
               [ "$attempt" = "24" ] && { echo "Inflation schema was not ready"; exit 1; }
               sleep 10
             done

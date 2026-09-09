@@ -13,7 +13,7 @@ from typing import Sequence
 import numpy as np
 
 
-MODEL_VERSION = "inflation_lead_v2_603010"
+MODEL_VERSION = "inflation_nowcast_v3_603010"
 RIDGE_ALPHAS = (0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
 # Function arguments are ordered CPI, PCE, PPI.  The published model gives PCE
 # the largest role while retaining smaller CPI and consumer-PPI characteristics.

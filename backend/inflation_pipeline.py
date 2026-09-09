@@ -241,7 +241,10 @@ def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
             points = []
             for index, label in enumerate(labels):
                 observed_on = parse_chart_date(label.get("label", ""), target)
-                if observed_on is None or month_start(observed_on) != target:
+                # A monthly nowcast remains live after month-end until the
+                # corresponding release. Keep those later business-day
+                # vintages so the current provisional value can still move.
+                if observed_on is None or observed_on < target:
                     continue
                 try:
                     cpi = float(cpi_values[index].get("value"))
@@ -629,16 +632,37 @@ def batched(rows: list[dict[str, object]], size: int = 400) -> Iterable[list[dic
         yield rows[index:index + size]
 
 
-def save_backfill(client: SupabaseRest, start: date, monthly: list[dict[str, object]], daily: list[dict[str, object]]) -> None:
-    client.request("DELETE", "us_inflation_leading_daily", params={"observed_on": f"gte.{start.isoformat()}"}, prefer="return=minimal")
+def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str) -> list[dict[str, object]]:
+    return [
+        {
+            "observed_on": observed_on.isoformat(),
+            "target_upper_pct": round(value, 4),
+            "source": "FRED:DFEDTARU",
+            "updated_at": updated_at,
+        }
+        for observed_on, value in sorted(fred["policy_rate"].items())
+        if observed_on >= start
+    ]
+
+
+def save_policy_backfill(client: SupabaseRest, start: date, rows: list[dict[str, object]]) -> None:
+    client.request("DELETE", "us_policy_rate_daily", params={"observed_on": f"gte.{start.isoformat()}"}, prefer="return=minimal")
+    for batch in batched(rows):
+        client.upsert("us_policy_rate_daily", batch, conflict="observed_on")
+
+
+def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
+    if rows:
+        client.upsert("us_policy_rate_daily", rows[-1], conflict="observed_on")
+
+
+def save_backfill(client: SupabaseRest, start: date, monthly: list[dict[str, object]]) -> None:
     client.request("DELETE", "us_inflation_monthly", params={"month": f"gte.{start.isoformat()}"}, prefer="return=minimal")
     for rows in batched(monthly):
         client.upsert("us_inflation_monthly", rows, conflict="month")
-    for rows in batched(daily):
-        client.upsert("us_inflation_leading_daily", rows, conflict="observed_on")
 
 
-def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]], daily: list[dict[str, object]]) -> None:
+def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> None:
     existing = client.request("GET", "us_inflation_monthly", params={"select": "month,status", "limit": "500"}) or []
     status_by_month = {row["month"]: row["status"] for row in existing}
     selected_monthly = [
@@ -649,25 +673,23 @@ def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]], daily
     ]
     if selected_monthly:
         client.upsert("us_inflation_monthly", selected_monthly, conflict="month")
-    if daily:
-        client.upsert("us_inflation_leading_daily", daily[-1], conflict="observed_on")
 
 
-def verify_saved(client: SupabaseRest, expected_month: str, expected_day: str) -> None:
+def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day: str) -> None:
     monthly = client.request(
         "GET", "us_inflation_monthly",
         params={"select": "month,status,model_version", "order": "month.desc", "limit": "1"},
     ) or []
-    daily = client.request(
-        "GET", "us_inflation_leading_daily",
-        params={"select": "observed_on,target_month,model_version", "order": "observed_on.desc", "limit": "1"},
+    policy = client.request(
+        "GET", "us_policy_rate_daily",
+        params={"select": "observed_on,source", "order": "observed_on.desc", "limit": "1"},
     ) or []
     if not monthly or monthly[0].get("month") != expected_month:
         raise RuntimeError("Monthly inflation verification did not return the expected latest row")
-    if not daily or daily[0].get("observed_on") != expected_day:
-        raise RuntimeError("Daily inflation verification did not return the expected latest row")
-    if monthly[0].get("model_version") != MODEL_VERSION or daily[0].get("model_version") != MODEL_VERSION:
+    if monthly[0].get("model_version") != MODEL_VERSION:
         raise RuntimeError("Inflation verification found an unexpected model version")
+    if not policy or policy[0].get("observed_on") != expected_policy_day or policy[0].get("source") != "FRED:DFEDTARU":
+        raise RuntimeError("Policy-rate verification did not return the expected latest row")
 
 
 def main() -> None:
@@ -702,8 +724,9 @@ def main() -> None:
     updated_at = datetime.now(timezone.utc).isoformat()
     for row in monthly:
         row["updated_at"] = updated_at
-    for row in daily:
-        row["updated_at"] = updated_at
+    policies = policy_rows(fred, args.start, updated_at)
+    if not policies:
+        raise RuntimeError("Policy-rate calculation produced no publishable rows")
 
     client = SupabaseRest(
         url=require_env("SUPABASE_URL"),
@@ -711,15 +734,18 @@ def main() -> None:
         timeout=TIMEOUT_SECONDS,
     )
     if args.mode == "backfill":
-        save_backfill(client, args.start, monthly, daily)
+        save_backfill(client, args.start, monthly)
+        save_policy_backfill(client, args.start, policies)
     else:
-        save_automatic(client, monthly, daily)
-    verify_saved(client, str(monthly[-1]["month"]), str(daily[-1]["observed_on"]))
+        save_automatic(client, monthly)
+        save_policy_automatic(client, policies)
+    verify_saved(client, str(monthly[-1]["month"]), str(policies[-1]["observed_on"]))
     print(json.dumps({
         "mode": args.mode,
         "model_version": MODEL_VERSION,
         "monthly_rows_calculated": len(monthly),
         "daily_rows_calculated": len(daily),
+        "policy_rows_calculated": len(policies),
         "latest_month": monthly[-1]["month"],
         "latest_day": daily[-1]["observed_on"],
     }, ensure_ascii=False))

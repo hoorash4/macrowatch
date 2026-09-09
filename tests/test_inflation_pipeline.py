@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from backend.inflation_pipeline import fetch_bls_series, save_automatic
+from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, save_automatic
 
 
 class FakeSupabase:
@@ -21,6 +21,32 @@ class FakeSupabase:
 
 
 class InflationPipelineTests(unittest.TestCase):
+    @patch("backend.inflation_pipeline.requests.get")
+    def test_nowcast_keeps_business_day_vintages_after_target_month(self, get):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return [{
+                    "chart": {"subcaption": "2026-08"},
+                    "categories": [{"category": [{"label": "8/29"}, {"label": "9/2"}]}],
+                    "dataset": [
+                        {"seriesname": "CPI Inflation", "data": [{"value": "0.2"}, {"value": "0.3"}]},
+                        {"seriesname": "PCE Inflation", "data": [{"value": "0.1"}, {"value": "0.2"}]},
+                        {"seriesname": "Core CPI Inflation", "data": [{"value": "0.2"}, {"value": "0.3"}]},
+                        {"seriesname": "Core PCE Inflation", "data": [{"value": "0.1"}, {"value": "0.2"}]},
+                    ],
+                }]
+
+        get.return_value = Response()
+        result = fetch_cleveland_nowcasts()
+        target = date(2026, 8, 1)
+        self.assertEqual(
+            [point.observed_on for point in result["headline"][target]],
+            [date(2026, 8, 29), date(2026, 9, 2)],
+        )
+
     @patch("backend.inflation_pipeline.requests.post")
     def test_bls_history_is_fetched_in_public_api_year_blocks(self, post):
         class Response:
@@ -51,11 +77,10 @@ class InflationPipelineTests(unittest.TestCase):
             {"month": "2026-07-01", "status": "final"},
             {"month": "2026-08-01", "status": "provisional"},
         ]
-        daily = [{"observed_on": "2026-09-08"}]
-        save_automatic(client, monthly, daily)
+        save_automatic(client, monthly)
         stored_months = [row["month"] for row in client.upserts[0][1]]
         self.assertEqual(stored_months, ["2026-07-01", "2026-08-01"])
-        self.assertEqual(client.upserts[1], ("us_inflation_leading_daily", daily[-1], "observed_on"))
+        self.assertEqual(len(client.upserts), 1)
 
 
 if __name__ == "__main__":
