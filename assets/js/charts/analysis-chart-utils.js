@@ -7,6 +7,7 @@
   // 데이터가 플롯의 중앙 80%를 쓰게 해 상·하에 각각 눈에 보이는 10% 여백을 둡니다.
   // 원자료 범위에 곱하는 값은 10%가 아니라 12.5%여야 최종 플롯에서 10%가 됩니다.
   const VISIBLE_Y_PADDING = 0.1;
+  const axisGutter = 72;
 
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
   function niceStep(value) {
@@ -174,7 +175,9 @@
         const x = Number(node.getAttribute('x'));
         const pixel = Number(node.getAttribute('y')) - 3;
         if (pixel < top - 1 || pixel > bottom + 1) return false;
-        return axis.side === 'right' ? x > width - 52 : x <= 55;
+        return axis.side === 'right'
+          ? node.matches('[data-chart-right-axis]') || x > width - 52
+          : node.matches('[data-chart-left-axis]') || x <= 55;
       }).map(node => ({ node, pixel: Number(node.getAttribute('y')) - 3 })),
     }));
     let pending = null;
@@ -244,17 +247,18 @@
       const x = Number(node.getAttribute('x'));
       const x1 = Number(node.getAttribute('x1'));
       const x2 = Number(node.getAttribute('x2'));
-      return (node.tagName === 'text' && Number.isFinite(x) && x <= 55)
+      return node.matches('[data-chart-left-axis]')
+        || (node.tagName === 'text' && Number.isFinite(x) && x <= 55)
         || (node.tagName === 'line' && Number.isFinite(x1) && x1 === x2 && x1 <= 65);
     });
     const rightAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-right-axis]'));
     const appendFixedAxis = (nodes, side) => {
       if (!nodes.length || !Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
       const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - 72} 0 72 ${viewHeight}` : `0 0 72 ${viewHeight}`);
+      fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - axisGutter} 0 ${axisGutter} ${viewHeight}` : `0 0 ${axisGutter} ${viewHeight}`);
       fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
-      fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:72px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
+      fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:${axisGutter}px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
       nodes.forEach((node) => {
         fixedAxis.append(node.cloneNode(true));
         node.setAttribute('visibility', 'hidden');
@@ -262,7 +266,7 @@
       shell.append(fixedAxis);
       const scrollbarMask = document.createElement('span');
       scrollbarMask.setAttribute('aria-hidden', 'true');
-      scrollbarMask.style.cssText = `position:absolute;z-index:3;${side}:0;bottom:0;width:72px;height:8px;background:#fff;pointer-events:none;`;
+      scrollbarMask.style.cssText = `position:absolute;z-index:3;${side}:0;bottom:0;width:${axisGutter}px;height:18px;background:#fff;pointer-events:none;`;
       shell.append(scrollbarMask);
     };
     appendFixedAxis(leftAxisNodes, 'left');
@@ -283,7 +287,7 @@
       svg.style.width = `${width * scale}px`;
       svg.style.height = `${renderedHeight}px`;
       shell.querySelectorAll(':scope > svg').forEach(axis => {
-        axis.style.width = `${72 * scale}px`;
+        axis.style.width = `${axisGutter * scale}px`;
         axis.style.height = `${renderedHeight}px`;
       });
       frame.scrollLeft = ratio * Math.max(0, frame.scrollWidth - frame.clientWidth);
@@ -377,5 +381,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { axisGutter, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

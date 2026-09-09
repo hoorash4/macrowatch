@@ -10,10 +10,9 @@ from sources.small_business_risk import TIMEOUT_SECONDS, fetch_fred_monthly, fet
 
 
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
-COMPONENT_WEIGHTS = {"sales_expectation": 30.0, "borrowing_difficulty": 40.0, "high_yield_oas": 30.0}
+COMPONENT_WEIGHTS = {"borrowing_difficulty": 60.0, "high_yield_oas": 40.0}
 # 고정 기준을 써서 새 달이 추가되어도 과거 점수가 재작성되지 않게 한다.
 COMPONENT_SCALES = {
-    "sales_expectation": (20.0, -50.0),
     "borrowing_difficulty": (2.0, 15.0),
     "high_yield_oas": (2.0, 20.0),
 }
@@ -34,25 +33,15 @@ def build_rows(
     rows: list[dict[str, object]] = []
     current_month = today.replace(day=1).isoformat()
     for month in sorted(sales_expectations.keys() & borrowing_difficulty.keys()):
-        raw_values = {
-            "sales_expectation": sales_expectations[month],
-            "borrowing_difficulty": borrowing_difficulty[month],
-        }
+        raw_values = {"borrowing_difficulty": borrowing_difficulty[month]}
         if month in high_yield_oas:
             raw_values["high_yield_oas"] = high_yield_oas[month]
         scores = {key: component_score(value, key) for key, value in raw_values.items()}
         weight_total = sum(COMPONENT_WEIGHTS[key] for key in scores)
         risk_index = sum(scores[key] * COMPONENT_WEIGHTS[key] for key in scores) / weight_total
-        financing_scores = {"borrowing_difficulty": scores["borrowing_difficulty"]}
-        if "high_yield_oas" in scores:
-            financing_scores["high_yield_oas"] = scores["high_yield_oas"]
-        financing_weights = {"borrowing_difficulty": 60.0, "high_yield_oas": 40.0}
-        financing_weight_total = sum(financing_weights[key] for key in financing_scores)
-        financing_risk_index = sum(financing_scores[key] * financing_weights[key] for key in financing_scores) / financing_weight_total
         rows.append({
             "month": month,
             "risk_index": round(risk_index, 2),
-            "financing_risk_index": round(financing_risk_index, 2),
             "sales_expectation_net": round(sales_expectations[month], 4),
             "borrowing_difficulty_pct": round(borrowing_difficulty[month], 4),
             "high_yield_oas_pct": round(high_yield_oas[month], 4) if month in high_yield_oas else None,
