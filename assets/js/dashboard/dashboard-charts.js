@@ -507,6 +507,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     left: padding.left,
     right: padding.right,
     axisMode: padding.axisMode,
+    xAxisMode: 'zero',
     top: padding.top,
     bottom: height - padding.bottom,
     axes: [],

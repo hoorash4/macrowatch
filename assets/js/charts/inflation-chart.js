@@ -117,6 +117,7 @@
     chartUtils.scrollableSvg(realHost.querySelector('svg'), width, baseWidth, {
       left: realPadding.left, right: realPadding.right,
       axisMode: realPadding.axisMode,
+      xAxisMode: 'zero',
       top: realPadding.top, bottom: realHeight - realPadding.bottom,
       axes: [{
         side: 'left',

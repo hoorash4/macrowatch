@@ -303,14 +303,16 @@
     const dualAxis = axes?.axisMode === 'dual' || rightGutter >= axisLayouts.dual.right;
     // 날짜 라벨이 놓이는 플롯 하단은 공통 X축이다. 최하단 점선 눈금이 있더라도
     // 이 실선이 같은 위치를 덮어 Y축과 동일한 경계를 만든다.
-    const bottomAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    bottomAxis.setAttribute('x1', leftGutter);
-    bottomAxis.setAttribute('x2', viewWidth - rightGutter);
-    bottomAxis.setAttribute('y1', axisBottom);
-    bottomAxis.setAttribute('y2', axisBottom);
-    bottomAxis.setAttribute('class', 'analysis-chart-axis-line');
-    bottomAxis.setAttribute('pointer-events', 'none');
-    svg.append(bottomAxis);
+    if (axes?.xAxisMode !== 'zero') {
+      const bottomAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      bottomAxis.setAttribute('x1', leftGutter);
+      bottomAxis.setAttribute('x2', viewWidth - rightGutter);
+      bottomAxis.setAttribute('y1', axisBottom);
+      bottomAxis.setAttribute('y2', axisBottom);
+      bottomAxis.setAttribute('class', 'analysis-chart-axis-line');
+      bottomAxis.setAttribute('pointer-events', 'none');
+      svg.append(bottomAxis);
+    }
     const axisCandidates = [...svg.querySelectorAll('text,line')].filter((node) => {
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       return true;
@@ -331,8 +333,7 @@
       boundary.setAttribute('x2', boundaryX);
       boundary.setAttribute('y1', axisTop);
       boundary.setAttribute('y2', axisBottom);
-      boundary.setAttribute('stroke', '#94a3b8');
-      boundary.setAttribute('vector-effect', 'non-scaling-stroke');
+      boundary.setAttribute('class', 'analysis-chart-axis-line');
       fixedAxis.append(boundary);
       nodes.forEach((node) => {
         const clone = node.cloneNode(true);
