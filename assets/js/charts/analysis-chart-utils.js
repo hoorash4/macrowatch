@@ -35,7 +35,28 @@
 
   function scrollToLatest(frame) {
     if (!frame) return;
-    window.requestAnimationFrame(() => { frame.scrollLeft = frame.scrollWidth - frame.clientWidth; });
+    let observer = null;
+    let finishing = false;
+    const position = () => {
+      if (!frame.isConnected || frame.clientWidth <= 0) return false;
+      frame.scrollLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
+      return true;
+    };
+    const finish = () => {
+      if (finishing) return;
+      finishing = true;
+      window.requestAnimationFrame(() => {
+        position();
+        observer?.disconnect();
+      });
+    };
+    observer = new ResizeObserver(() => {
+      if (position()) finish();
+    });
+    observer.observe(frame);
+    window.requestAnimationFrame(() => {
+      if (position()) finish();
+    });
   }
 
   // Supabase REST 조회는 프로젝트 설정과 무관하게 한 요청에서 반환되는 행 수가
