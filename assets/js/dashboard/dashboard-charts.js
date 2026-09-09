@@ -5,7 +5,7 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
-const { monotoneSeriesPath, monotoneStyledSegments, chartPadding, positionCursorText, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
+const { monotoneSeriesPath, monotoneStyledSegments, chartPadding, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
@@ -320,7 +320,8 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
 
 function renderMarketStressAndTensionChart(weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
-  const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  const weeklySource = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index)));
+  const { rows: weekly } = primarySeriesWindow(weeklySource, 'week');
   if (!chart || !weekly.length) return;
   const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 38 });
   const dates = weekly.map((row) => new Date(row.week).getTime());
@@ -620,9 +621,8 @@ async function loadMarketStressDashboard() {
 // 이머징 지수와 비교 자산의 공통 주간 시계열을 렌더링한다.
 function renderEmStressDashboard(rows) {
   const chart = document.getElementById('em-stress-chart');
-  const weekly = [...rows]
-    .filter((row) => Number.isFinite(Number(row.stress_index)))
-    .sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  const weeklySource = [...rows].filter((row) => Number.isFinite(Number(row.stress_index)));
+  const { rows: weekly } = primarySeriesWindow(weeklySource, 'week');
   if (!chart || !weekly.length) return;
   const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 38 });
   const dates = weekly.map((row) => new Date(row.week).getTime());
@@ -723,11 +723,11 @@ async function loadEmStressDashboard() {
 function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const chart = document.getElementById('korea-stress-chart');
   const fsiChart = document.getElementById('korea-fsi-chart');
-  const data = [...rows]
-    .filter((row) => Number.isFinite(Number(row.stress_index)))
-    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const dataSource = [...rows].filter((row) => Number.isFinite(Number(row.stress_index)));
+  const { start: primaryStart, rows: data } = primarySeriesWindow(dataSource, 'month');
   const weeklyKospiSource = [...weeklyKospiRows]
     .filter((row) => Number.isFinite(Number(row.kospi_close)))
+    .filter((row) => !primaryStart || String(row.week) >= primaryStart)
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart) return;
   if (!data.length) {

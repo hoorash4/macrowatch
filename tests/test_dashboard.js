@@ -45,6 +45,20 @@ test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만
   assert.match(segments[1].path, /C 13\.33/);
 });
 
+test('비교 그래프는 첫 확정 메인지표 이전 자료를 표시하지 않는다', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
+  const context = { window: {}, Number, Math, Set };
+  vm.createContext(context);
+  vm.runInContext(source, context, { filename: 'assets/js/charts/analysis-chart-utils.js' });
+  const result = context.window.MacroWatchAnalysisChart.primarySeriesWindow([
+    { month: '2022-01-01', is_provisional: true },
+    { month: '2023-01-01', is_provisional: false },
+    { month: '2024-01-01', is_provisional: true },
+  ], 'month');
+  assert.equal(result.start, '2023-01-01');
+  assert.deepEqual(Array.from(result.rows, row => row.month), ['2023-01-01', '2024-01-01']);
+});
+
 test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌우 축 폭으로 분리한다', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(source, /const leftGutter = Number\.isFinite\(Number\(axes\?\.left\)\)/);

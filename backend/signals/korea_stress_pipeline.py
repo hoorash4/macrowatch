@@ -176,6 +176,16 @@ def upsert(rows: list[dict], url: str, service_key: str, table: str, conflict: s
     )
 
 
+def delete_invalid_leading_rows(url: str, service_key: str, first_official_fsi_month: str) -> None:
+    """K-MSI가 성립하기 전 저장된 구성요소 단독 행만 제거한다."""
+    SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT).request(
+        "DELETE",
+        "korea_market_stress_monthly",
+        params={"month": f"lt.{first_official_fsi_month}", "bok_fsi": "is.null"},
+        prefer="return=minimal",
+    )
+
+
 def fetch_existing_fsi(url: str, service_key: str, years: int) -> dict[str, float]:
     """Keep the last official FSI reading if the source is briefly unavailable."""
     first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
@@ -234,6 +244,10 @@ def build_monthly_rows(values: dict[str, dict[str, float]], fsi: dict[str, float
         has_fsi = isinstance(official_fsi, float) and official_fsi != 0
         if has_fsi:
             last_official_fsi = official_fsi
+        # 공식 FSI가 한 번도 관측되지 않은 구간에는 70% FSI·30% 시장요소인
+        # K-MSI 자체가 성립하지 않는다. 구성요소만 계산해 잠정치로 저장하지 않는다.
+        if last_official_fsi is None:
+            continue
         # FSI is published with a lag.  Until the official value arrives,
         # retain the last official reading for the composite only and mark
         # that month provisional.  Do not expose the carried value as an
@@ -298,9 +312,11 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
     upsert(rows, url, service_key, "korea_market_stress_monthly", "month")
+    first_official_fsi_month = min(fsi)
+    delete_invalid_leading_rows(url, service_key, first_official_fsi_month)
     if kospi_weekly:
         upsert(kospi_weekly, url, service_key, "korea_market_stress_weekly", "week")
-    print(f"upserted_months={len(rows)} kospi_weeks={len(kospi_weekly)} fsi_months={len(fsi)}")
+    print(f"upserted_months={len(rows)} kospi_weeks={len(kospi_weekly)} fsi_months={len(fsi)} cleaned_before={first_official_fsi_month}")
 
 
 if __name__ == "__main__":

@@ -152,6 +152,27 @@ class TargetConditionTests(unittest.TestCase):
 
 
 class SharedCalculationTests(unittest.TestCase):
+    def test_korea_msi_starts_only_when_the_first_official_fsi_exists(self) -> None:
+        months = ["2023-01-01", "2023-02-01", "2023-03-01"]
+        values = {
+            key: {month: 1.0 for month in months}
+            for key in kr.SERIES
+        }
+        rows = kr.build_monthly_rows(values, {"2023-02-01": 18.0}, date(2023, 3, 15))
+        self.assertEqual([row["month"] for row in rows], ["2023-02-01", "2023-03-01"])
+        self.assertFalse(rows[0]["is_provisional"])
+        self.assertTrue(rows[1]["is_provisional"])
+
+    def test_korea_msi_cleanup_only_removes_pre_fsi_rows_without_fsi(self) -> None:
+        with patch.object(kr, "SupabaseRest") as rest:
+            kr.delete_invalid_leading_rows("https://example.supabase.co", "secret", "2023-02-01")
+        rest.return_value.request.assert_called_once_with(
+            "DELETE",
+            "korea_market_stress_monthly",
+            params={"month": "lt.2023-02-01", "bok_fsi": "is.null"},
+            prefer="return=minimal",
+        )
+
     def test_em_capacity_is_equal_weighted_and_reverses_adverse_inputs(self) -> None:
         periods = [f"2026-{month:02d}-{day:02d}" for month in (1, 2, 3) for day in range(1, 29)][:61]
         rising = {period: float(index + 1) for index, period in enumerate(periods)}

@@ -92,6 +92,14 @@
     });
   }
 
+  function primarySeriesWindow(rows, dateKey) {
+    const ordered = [...(rows || [])].sort((a, b) => String(a?.[dateKey] || '').localeCompare(String(b?.[dateKey] || '')));
+    if (!ordered.length) return { start: null, rows: [] };
+    const firstPrimary = ordered.find((row) => !row.is_provisional) || ordered[0];
+    const start = String(firstPrimary?.[dateKey] || '');
+    return { start, rows: ordered.filter((row) => String(row?.[dateKey] || '') >= start) };
+  }
+
   // Supabase REST 조회는 프로젝트 설정과 무관하게 한 요청에서 반환되는 행 수가
   // 제한될 수 있으므로, 장기 일별 시계열은 마지막 페이지까지 나누어 읽습니다.
   async function loadAllRows(fetchPage, pageSize = 1000) {
@@ -479,5 +487,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
