@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=164">
+  <link rel="stylesheet" href="assets/css/styles.css?v=165">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -320,6 +320,40 @@
         <div id="credit-stress-components-chart" class="min-h-72">
           <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
         </div>
+      </div>
+    </section>
+
+
+    <section id="inflation-model-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="inflation-model-title">
+      <div class="analysis-card-header">
+        <div class="analysis-card-heading-row">
+          <span class="analysis-card-icon"><i class="fa-solid fa-chart-area text-sm"></i></span>
+          <div>
+            <p class="analysis-card-eyebrow analysis-card-eyebrow--amber">MACROWATCH INFLATION MODEL</p>
+            <h2 id="inflation-model-title" class="analysis-card-title">통합물가와 선행지표</h2>
+          </div>
+        </div>
+        <p class="analysis-card-description">PCE 60%·조정 CPI 30%·소비연관 PPI 10%를 결합한 물가와 시장 선행값입니다.</p>
+        <p class="analysis-card-description">최신월은 PCE 발표 전까지 잠정치이며, 실질금리는 통합물가와 기준금리로 계산합니다.</p>
+      </div>
+      <div class="px-5 pb-5 pt-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="inflation-chart-toolbar">
+            <div class="analysis-chart-range-controls" data-inflation-kinds aria-label="통합물가 종류">
+              <button type="button" data-inflation-kind="headline" class="is-active">Headline</button>
+              <button type="button" data-inflation-kind="core">Core</button>
+            </div>
+            <div class="analysis-chart-range-controls" data-inflation-ranges aria-label="통합물가 그래프 조회 기간">
+              <button type="button" data-inflation-range="2" class="is-active">2년</button>
+              <button type="button" data-inflation-range="5">5년</button>
+              <button type="button" data-inflation-range="max">MAX</button>
+            </div>
+          </div>
+          <div id="inflation-model-chart" class="min-h-80">
+            <div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">통합물가 데이터를 불러오는 중입니다.</div>
+          </div>
+        </div>
+        <div id="inflation-model-legend" class="policy-expectation-legend" aria-label="통합물가 그래프 범례"></div>
       </div>
     </section>
 
@@ -1010,6 +1044,7 @@
   <script src="assets/js/dashboard/script.js?v=164"></script>
   <script src="assets/js/charts/analysis-chart-utils.js?v=12"></script>
   <script src="assets/js/dashboard/dashboard-charts.js?v=54"></script>
+  <script src="assets/js/charts/inflation-chart.js?v=1"></script>
   <script src="assets/js/charts/policy-chart.js?v=17"></script>
   <script src="assets/js/charts/policy-expectation-chart.js?v=14"></script>
   <script src="assets/js/charts/em-capacity-chart.js?v=6"></script>

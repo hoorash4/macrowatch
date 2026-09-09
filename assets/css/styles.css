@@ -595,6 +595,16 @@ body:has(#app-shell:not(.hidden)) {
 #credit-stress-components-dashboard {
   margin-bottom:0;
 }
+#inflation-model-dashboard {
+  min-width:0;
+}
+.inflation-chart-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  margin-bottom:.75rem;
+}
 /* 모든 분석 카드 헤더의 기본 여백과 구분선을 이 한 곳에서 관리합니다. */
 .analysis-card-header {
   padding:var(--analysis-card-header-padding-y) var(--analysis-card-header-padding-x);
@@ -1397,7 +1407,17 @@ body:has(#app-shell:not(.hidden)) {
 .chart-legend-swatch { display:inline-block; flex:none; width:32px; height:10px; overflow:visible; }
 @media (max-width:1023px) {
   #credit-stress-chart, #korea-stress-chart, #em-stress-chart,
-  #credit-stress-momentum-chart, #korea-fsi-chart { min-height:0; }
+  #credit-stress-momentum-chart, #korea-fsi-chart, #inflation-model-chart { min-height:0; }
+  .inflation-chart-toolbar {
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .inflation-chart-toolbar .analysis-chart-range-controls {
+    width:100%;
+  }
+  .inflation-chart-toolbar .analysis-chart-range-controls button {
+    flex:1;
+  }
 }
 /*
  * Tailwind CDN 호환 계층입니다.

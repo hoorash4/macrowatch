@@ -1,0 +1,58 @@
+name: Refresh U.S. inflation model
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inflation-model.yml"
+      - "supabase/migrations/20260909061156_add_us_inflation_model.sql"
+  schedule:
+    # 08:35 KST, after the latest U.S. market and Cleveland Fed inputs settle.
+    - cron: "35 23 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "automatic keeps confirmed history; backfill replaces 2020+"
+        required: false
+        default: "automatic"
+        type: choice
+        options: [automatic, backfill]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-inflation-model
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install collector dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Calculate and store inflation series
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mode="${{ inputs.mode || 'automatic' }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            mode="backfill"
+            for attempt in $(seq 1 24); do
+              status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+                "$SUPABASE_URL/rest/v1/us_inflation_monthly?select=month&limit=1" \
+                -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+                -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")"
+              [ "$status" = "200" ] && break
+              [ "$attempt" = "24" ] && { echo "Inflation schema was not ready"; exit 1; }
+              sleep 10
+            done
+          fi
+          python backend/inflation_pipeline.py --mode "$mode" --start 2020-01-01

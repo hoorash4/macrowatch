@@ -117,6 +117,21 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
   assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
 });
 
+test('미국 스트레스 화면 아래에 통합물가 카드와 전용 차트를 둔다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/inflation-chart.js'), 'utf8');
+  assert.match(html, /credit-stress-components-dashboard[\s\S]*inflation-model-dashboard[\s\S]*data-liquidity-country="US"/);
+  assert.match(html, /PCE 60%·조정 CPI 30%·소비연관 PPI 10%/);
+  assert.match(html, /data-inflation-kind="headline"[\s\S]*data-inflation-kind="core"/);
+  assert.match(chart, /us_inflation_monthly/);
+  assert.match(chart, /us_inflation_leading_daily/);
+  assert.match(chart, /통합물가/);
+  assert.match(chart, /시장 선행/);
+  assert.match(chart, /기준금리/);
+  assert.match(chart, /실질금리/);
+  assert.doesNotMatch(chart, /기준이나 의미|높을수록/);
+});
+
 test('모바일 로그인은 밝은 한 열 앱 화면을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const auth = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');

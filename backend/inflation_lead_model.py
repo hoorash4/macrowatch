@@ -13,9 +13,12 @@ from typing import Sequence
 import numpy as np
 
 
-MODEL_VERSION = "inflation_lead_v1"
+MODEL_VERSION = "inflation_lead_v2_603010"
 RIDGE_ALPHAS = (0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
-DEFAULT_COMPOSITE_WEIGHTS = (0.30, 0.50, 0.20)
+# Function arguments are ordered CPI, PCE, PPI.  The published model gives PCE
+# the largest role while retaining smaller CPI and consumer-PPI characteristics.
+DEFAULT_COMPOSITE_WEIGHTS = (0.30, 0.60, 0.10)
+SHELTER_WEIGHT_REDUCTION = 0.10
 NOWCAST_CORRECTION_GRID = tuple(step / 20.0 for step in range(21))
 NOWCAST_WEIGHT_LOOKBACK_MONTHS = 24
 
@@ -104,6 +107,50 @@ def select_ridge_alpha(
             errors.append(abs(predict_ridge(model, matrix[index]) - outcome[index]))
         scores[alpha] = float(np.mean(errors))
     return min(scores, key=scores.get)
+
+
+def select_direction_ridge_alpha(
+    features: Sequence[Sequence[float]],
+    targets: Sequence[float],
+    *,
+    minimum_training_rows: int = 48,
+) -> float:
+    """Select ridge regularization by direction, with MAE as the tie-breaker."""
+
+    matrix = np.asarray(features, dtype=float)
+    outcome = np.asarray(targets, dtype=float)
+    start = max(minimum_training_rows, len(outcome) - 36)
+    if len(outcome) <= start + 6:
+        return 10.0
+    ranked: list[tuple[float, float, float]] = []
+    for alpha in RIDGE_ALPHAS:
+        predictions = []
+        actual = []
+        for index in range(start, len(outcome)):
+            model = fit_ridge(matrix[:index], outcome[:index], alpha=alpha)
+            predictions.append(predict_ridge(model, matrix[index]))
+            actual.append(float(outcome[index]))
+        direction = float((np.sign(actual) == np.sign(predictions)).mean())
+        mae = float(np.abs(np.asarray(actual) - np.asarray(predictions)).mean())
+        ranked.append((-direction, mae, float(alpha)))
+    return min(ranked)[-1]
+
+
+def shelter_adjusted_cpi_yoy(
+    *,
+    shelter_yoy_pct: float,
+    ex_shelter_yoy_pct: float,
+    official_shelter_weight: float,
+    reduction: float = SHELTER_WEIGHT_REDUCTION,
+) -> float:
+    """Reduce CPI shelter's official share while preserving the rest of CPI."""
+
+    if not 0.0 <= official_shelter_weight <= 1.0:
+        raise ValueError("official shelter weight must be between zero and one")
+    if not 0.0 <= reduction < 1.0:
+        raise ValueError("shelter reduction must be between zero and one")
+    adjusted_weight = official_shelter_weight * (1.0 - reduction)
+    return float(adjusted_weight * shelter_yoy_pct + (1.0 - adjusted_weight) * ex_shelter_yoy_pct)
 
 
 def calibrate_producer_inflation(

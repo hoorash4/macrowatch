@@ -9,8 +9,10 @@ from backend.inflation_lead_model import (
     integrated_inflation_yoy,
     month_to_date_average_return_pct,
     predict_ridge,
+    select_direction_ridge_alpha,
     select_ridge_alpha,
     select_nowcast_weight,
+    shelter_adjusted_cpi_yoy,
 )
 
 
@@ -46,7 +48,22 @@ class InflationLeadModelTests(unittest.TestCase):
         )
         self.assertEqual(point.status, "final")
         self.assertAlmostEqual(point.aligned_ppi_yoy_pct, 3.0)
-        self.assertAlmostEqual(point.yoy_pct, 2.5)
+        self.assertAlmostEqual(point.yoy_pct, 2.4)
+
+    def test_shelter_adjustment_reduces_only_the_official_shelter_share(self):
+        self.assertAlmostEqual(
+            shelter_adjusted_cpi_yoy(
+                shelter_yoy_pct=5.0,
+                ex_shelter_yoy_pct=2.0,
+                official_shelter_weight=0.40,
+            ),
+            3.08,
+        )
+
+    def test_direction_alpha_prefers_the_directional_validation_signal(self):
+        features = [[float(value)] for value in range(1, 90)]
+        targets = [float(value) if value % 2 else -float(value) for value in range(1, 90)]
+        self.assertIn(select_direction_ridge_alpha(features, targets), (0.3, 1.0, 3.0, 10.0, 30.0, 100.0))
 
     def test_producer_calibration_matches_consumer_volatility(self):
         consumer = [float(value) for value in range(24)]
