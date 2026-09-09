@@ -5,7 +5,7 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
-const { DEFAULT_RANGE_YEARS, chartProfile, monotoneSeriesPath, monotoneStyledSegments, chartPadding, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
+const { DEFAULT_RANGE_YEARS, chartLayout, chartProfile, monotoneSeriesPath, monotoneStyledSegments, chartPadding, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
@@ -13,7 +13,7 @@ const supabaseClient = window.macroWatchSupabase
 
 const NEWS_SENTIMENT_HISTORY_DAYS = 60;
 const CREDIT_STRESS_HISTORY_MONTHS = 36;
-const CREDIT_STRESS_CHART_HEIGHT = 375;
+const CREDIT_STRESS_CHART_HEIGHT = chartLayout.mainHeight;
 const STRESS_HISTORY_QUERY_LIMIT = 5000;
 const STRESS_RANGE_DEFAULT_YEARS = String(DEFAULT_RANGE_YEARS);
 const US_MSI_PROFILE = chartProfile({
@@ -274,7 +274,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   }
   const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', usStressRangeYears);
   const height = CREDIT_STRESS_CHART_HEIGHT;
-  const padding = chartPadding(US_MSI_PROFILE.axisMode, { top: 20, bottom: 32 });
+  const padding = chartPadding(US_MSI_PROFILE.axisMode);
   const scores = data.map((row) => Number(row.stress_index));
   const sp500Values = data.map((row) => toCreditStressNumber(row.sp500_month_end_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
@@ -337,7 +337,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const weeklySource = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index)));
   const { rows: weekly } = primarySeriesWindow(weeklySource, 'week');
   if (!chart || !weekly.length) return;
-  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding(US_MSI_PROFILE.axisMode, { top: 20, bottom: 38 });
+  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding(US_MSI_PROFILE.axisMode);
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
@@ -499,8 +499,8 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     return;
   }
   const width = chartId === 'credit-stress-momentum-chart' ? window.MacroWatchAnalysisChart.historyWidth(rows, 'month', usStressRangeYears) : 920;
-  const height = 190;
-  const padding = chartPadding('dual', { top: 18, bottom: 32 });
+  const height = chartLayout.auxiliaryHeight;
+  const padding = chartPadding('dual');
   const momentumValues = data.flatMap((row) => [row.value, row.average, row.secondaryAverage].filter(Number.isFinite));
   const { max: axisMaximum } = window.MacroWatchAnalysisChart.axisDomain(momentumValues, { symmetric: true, minimumSpan: .01 });
   const formatAxisValue = (value) => {
@@ -638,7 +638,7 @@ function renderEmStressDashboard(rows) {
   const weeklySource = [...rows].filter((row) => Number.isFinite(Number(row.stress_index)));
   const { rows: weekly } = primarySeriesWindow(weeklySource, 'week');
   if (!chart || !weekly.length) return;
-  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding(EM_MSI_PROFILE.axisMode, { top: 20, bottom: 38 });
+  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding(EM_MSI_PROFILE.axisMode);
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -750,7 +750,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     return;
   }
   const weeklyKospi = weeklyKospiSource;
-  const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', koreaStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding(KOREA_MSI_PROFILE.axisMode, { top: 20, bottom: 38 });
+  const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', koreaStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding(KOREA_MSI_PROFILE.axisMode);
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -832,7 +832,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     fsiChart.innerHTML = '<div class="flex min-h-32 items-center justify-center text-xs text-slate-400">한국은행 FSI 비교 자료가 연결되면 보조지표로 표시됩니다.</div>';
     return;
   }
-  const fsiHeight = 148, fsiPadding = chartPadding('dual', { top: 18, bottom: 28 });
+  const fsiHeight = chartLayout.auxiliaryHeight, fsiPadding = chartPadding('dual');
   const fsiValues = fsiRows.map((row) => Number(row.bok_fsi));
   const fsiMin = Math.min(...fsiValues), fsiMax = Math.max(...fsiValues), fsiRange = Math.max(fsiMax - fsiMin, 1);
   const fsiLower = Math.max(0, fsiMin - fsiRange * .12), fsiUpper = fsiMax + fsiRange * .12;
@@ -1006,10 +1006,8 @@ function renderCreditStressComponents(rows) {
   // 데이터 선·점만 플롯 사각형 안에서 자릅니다. 축·연도 표기·커서는 그대로 유지합니다.
   const plotClip = `<defs><clipPath id="credit-risk-plot-clip"><rect x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}"/></clipPath></defs>`;
   const plottedSeries = `<g clip-path="url(#credit-risk-plot-clip)"><path data-credit-series="${highYield.key}" d="${pathFor(highYield,highYieldScale,false)}" fill="none" stroke="${highYield.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${conditions.key}" d="${pathFor(conditions,conditionsScale,false)}" fill="none" stroke="${conditions.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${bankruptcy.key}" d="${pathFor(bankruptcy,bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="${widths.primary}" stroke-linecap="round"/>${latestSegmentFor(highYield,highYieldScale)}${latestSegmentFor(conditions,conditionsScale)}${dotsFor(highYield,highYieldScale)}${dotsFor(bankruptcy,bankruptcyScale)}</g>`;
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="korea-earnings-chart-layout"><svg data-credit-left-axis class="korea-earnings-y-axis" style="height:${height}px" viewBox="0 0 64 ${height}" aria-hidden="true"></svg><div class="korea-earnings-chart-frame" tabindex="0" aria-label="미국 신용위험 전체 이력 가로 스크롤"><svg class="korea-earnings-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${plotClip}${grids}${yearGuides}${plottedSeries}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="korea-earnings-cursor"/><text data-credit-cursor-label class="korea-earnings-cursor-label" text-anchor="middle"></text><text data-credit-cursor-date y="${height-8}" class="korea-earnings-cursor-period" text-anchor="middle"></text></svg></div><svg data-credit-right-axis class="korea-earnings-y-axis" style="height:${height}px" viewBox="0 0 64 ${height}" aria-hidden="true"></svg></div></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`;
-  window.MacroWatchAnalysisChart.standardizeChartFrame(chart, profile);
-  const frame = chart.querySelector('.korea-earnings-chart-frame');
-  const svg = frame.querySelector('svg');
+  const { frame, svg } = window.MacroWatchAnalysisChart.mountChartFrame({ container: chart, profile, height, axisViewWidth: 64, top: padding.top, bottom: padding.bottom, leftAxisMarkup: '', rightAxisMarkup: '', ariaLabel: '미국 신용 위험 장기 추이', plotMarkup: `<svg class="korea-earnings-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${plotClip}${grids}${yearGuides}${plottedSeries}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="korea-earnings-cursor"/><text data-credit-cursor-label class="korea-earnings-cursor-label" text-anchor="middle"></text><text data-credit-cursor-date y="${height-8}" class="korea-earnings-cursor-period" text-anchor="middle"></text></svg>` });
+  chart.insertAdjacentHTML('beforeend', `<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`);
   const cursor = chart.querySelector('[data-credit-cursor]');
   const cursorLabel = chart.querySelector('[data-credit-cursor-label]');
   const cursorDate = chart.querySelector('[data-credit-cursor-date]');
@@ -1037,8 +1035,8 @@ function renderCreditStressComponents(rows) {
       : [];
     if (!visible.length) return;
     const scales = series.map(item=>scaleFor(item,visible));
-    chart.querySelector('[data-credit-left-axis]').innerHTML = ticksFor(scales[0],v=>v.toFixed(1),highYield.color);
-    chart.querySelector('[data-credit-right-axis]').innerHTML = ticksFor(scales[2],v=>Math.round(v).toLocaleString('en-US'),bankruptcy.color,true);
+    window.MacroWatchAnalysisChart.updateFixedAxis(chart.querySelector('[data-axis-side="left"]'), ticksFor(scales[0],v=>v.toFixed(1),highYield.color));
+    window.MacroWatchAnalysisChart.updateFixedAxis(chart.querySelector('[data-axis-side="right"]'), ticksFor(scales[2],v=>Math.round(v).toLocaleString('en-US'),bankruptcy.color,true));
     series.forEach((item,i)=>{
       const scale = scales[i];
       chart.querySelector(`[data-credit-series="${item.key}"]`).setAttribute('d',pathFor(item,scale,item===bankruptcy));

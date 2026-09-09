@@ -10,7 +10,7 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=11/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=12/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.doesNotMatch(chart, /국가별 독립 점수|높을수록 주식투자 환경 우호적/);
   assert.match(chart, /const domain = \{ min: 0, max: 100 \}/);
@@ -22,7 +22,7 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
   assert.match(chart, /timelineGuides/);
   assert.match(chart, /const key = String\(year\)/);
   assert.doesNotMatch(chart, /String\(month\)\.padStart/);
-  assert.match(chart, /const HEIGHT = 320,[\s\S]*AXIS = 46/);
+  assert.match(chart, /mainHeight: HEIGHT[\s\S]*axisWidth: AXIS/);
   assert.doesNotMatch(chart, /이익수익률 \$\{/);
   assert.match(styles, /equity-bond-attractiveness-view-card #equity-bond-attractiveness-dashboard[\s\S]*?background:transparent/);
 });
@@ -73,7 +73,8 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   assert.match(source, /bottomAxis\.setAttribute\('y1', axisBottom\)/);
   assert.match(source, /bottomAxis\.setAttribute\('y2', axisBottom\)/);
   assert.match(source, /공통 고정축이 그래프와 축 숫자의 경계에 세로선을 한 번만 그립니다/);
-  assert.match(source, /frame\.style\.width = `calc\(100% - \$\{renderedLeftGutter \+ renderedRightGutter\}px\)`/);
+  assert.match(source, /if \(side === 'left'\) shell\.prepend\(fixedAxis\)/);
+  assert.match(source, /axis\.style\.flexBasis = `\$\{axisWidth\}px`/);
   assert.match(source, /track\.style\.width = `\$\{scrollTrackWidth\(frame\.clientWidth, width, scale, renderedLeftGutter, renderedRightGutter\)\}px`/);
   assert.match(source, /svg\.style\.left = `-\$\{renderedLeftGutter\}px`/);
   assert.doesNotMatch(source, /scrollbarMask/);
@@ -96,7 +97,7 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   assert.match(dashboardCharts, /xAxisMode: 'zero'/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
-  assert.match(dashboardCharts, /chartPadding\((?:US|KOREA|EM)_MSI_PROFILE\.axisMode, \{ top: 20, bottom: 38 \}\)/);
+  assert.match(dashboardCharts, /chartPadding\((?:US|KOREA|EM)_MSI_PROFILE\.axisMode\)/);
   assert.match(dashboardCharts, /const frame = chart\.querySelector\('\[data-history-scroll\]'\);/);
   assert.match(dashboardCharts, /const frame = host\.querySelector\('\[data-history-scroll\]'\);/);
   assert.doesNotMatch(dashboardCharts, /'font-size': 11, 'font-weight': 700/);
@@ -526,7 +527,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /rowsForRecentHistory/);
   assert.match(chart, /timelineWidth/);
   assert.match(chart, /visibleStart = frame\.scrollLeft/);
-  assert.match(chart, /policy-chart-y-axis/);
+  assert.match(chart, /mountChartFrame/);
   assert.match(chart, /chartUtils\.axisDomain\(values/);
   assert.match(chart, /POLICY_CHART_MODE = 'oscillator'/);
   assert.match(chart, /OSCILLATOR_RETENTION = 0\.8/);
@@ -565,9 +566,8 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.match(chart, /chartUtils\.axisDomain\(values/);
   assert.match(chart, /policy-expectation-y-label/);
   assert.match(chart, /policy-expectation-y-grid--zero/);
-  assert.match(chart, /policy-expectation-chart-layout/);
-  assert.match(chart, /policy-expectation-y-axis/);
-  assert.match(chart, /Y_AXIS_WIDTH = 46/);
+  assert.match(chart, /mountChartFrame/);
+  assert.match(chart, /chartLayout\.axisWidth/);
   assert.match(chart, /function verticalScale/);
   assert.match(chart, /visibleStart = frame\.scrollLeft/);
   assert.match(chart, /requestAnimationFrame\(updateVisibleScale\)/);

@@ -69,7 +69,7 @@
 
     const allDates = [...monthly.map(row => timestamp(addMonthsIso(row.month, 1))), ...policy.map(row => timestamp(row.observed_on))].filter(Number.isFinite);
     const first = Math.min(...allDates), last = Math.max(...allDates);
-    const baseWidth = 920, height = 360, padding = chartUtils.chartPadding('single', { top: 24, bottom: 42 });
+    const { baseWidth, mainHeight: height, auxiliaryHeight: realHeight } = chartUtils.chartLayout, padding = chartUtils.chartPadding('single', { top: chartUtils.chartLayout.plot.top, bottom: chartUtils.chartLayout.plot.bottom });
     const historyYears = (last - first) / (365.25 * 86400000);
     const width = state.years === 'max' ? baseWidth : Math.max(baseWidth, baseWidth * historyYears / Number(state.years));
     const xDate = value => padding.left + (timestamp(value) - first) / Math.max(1, last - first) * (width - padding.left - padding.right);
@@ -108,7 +108,7 @@
       ], selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"],path[stroke="${COLORS.policy}"],path[stroke="${COLORS.treasury}"]`, format: value => `${value.toFixed(1)}%` }],
     });
 
-    const realHeight = 160, realPadding = chartUtils.chartPadding('single', { top: 18, bottom: 32 });
+    const realPadding = chartUtils.chartPadding('single', { top: chartUtils.chartLayout.plot.top, bottom: chartUtils.chartLayout.plot.bottom });
     const realValues = monthly.flatMap(row => [Number(row.headline_real_rate_pct), Number(row.core_real_rate_pct)]).filter(Number.isFinite);
     const realDomain = chartUtils.axisDomain(realValues, { includeZero: true, minimumSpan: 2 });
     const realY = value => realPadding.top + (realDomain.max - value) / (realDomain.max - realDomain.min) * (realHeight - realPadding.top - realPadding.bottom);

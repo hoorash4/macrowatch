@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  const HEIGHT = 320;
-  const MIN_VIEWPORT_WIDTH = 680;
-  const Y_AXIS_WIDTH = 46;
-  const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
+  const HEIGHT = window.MacroWatchAnalysisChart.chartLayout.mainHeight;
+  const MIN_VIEWPORT_WIDTH = window.MacroWatchAnalysisChart.chartLayout.mobileMinWidth;
+  const Y_AXIS_WIDTH = window.MacroWatchAnalysisChart.chartLayout.axisWidth;
+  const PADDING = window.MacroWatchAnalysisChart.plotPadding();
   const chartUtils = window.MacroWatchAnalysisChart;
   const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'fiveDayAverage', label: '내재금리' }]) });
   const state = { rows: [], selectedYears: PROFILE.defaultYears };
@@ -90,7 +90,7 @@
     const yAxisLabels = yTickValues.map(({ multiple, y, label }) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"/><text data-policy-expectation-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
-    container.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${yAxisLabels}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
+    const { frame, svg } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: yAxisLabels, ariaLabel: '시장 내재 정책금리 기대', plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
       <defs><linearGradient id="policy-expectation-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#b4535d"/><stop offset="${gradientSplit}%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs>
       <g>${yearGuides}</g>
       <g>${yGridLines}</g>
@@ -100,11 +100,7 @@
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
       <text data-policy-expectation-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text>
       <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
-    </svg></div></div>`;
-
-    chartUtils.standardizeChartFrame(container, PROFILE);
-    const frame = container.querySelector('.policy-expectation-chart-frame');
-    const svg = container.querySelector('.policy-expectation-chart-svg');
+    </svg>` });
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
     const cursorValue = container.querySelector('[data-policy-expectation-value]');
@@ -187,7 +183,7 @@
 
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
     if (detail?.view !== 'policy') return;
-    scrollToLatest(document.querySelector('#policy-expectation-chart .policy-expectation-chart-frame'));
+    scrollToLatest(document.querySelector('#policy-expectation-chart [data-history-scroll]'));
   });
 
   window.MacroWatchDashboard?.registerLoader(load);

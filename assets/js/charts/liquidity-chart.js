@@ -12,8 +12,8 @@
   const names = { pressure: '유동성 압력', capacity: '유동성 여력', environment: '현재 우호도', momentum: '개선·악화 방향' };
   const colors = { pressure: '#b4535d', capacity: '#2563a8', environment: '#2563a8', momentum: '#b7791f' };
   const DAY = 86400000;
-  const HEIGHT = 280, MIN_VIEWPORT_WIDTH = 680, Y_AXIS_WIDTH = 52;
-  const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
+  const { mainHeight: HEIGHT, mobileMinWidth: MIN_VIEWPORT_WIDTH, axisWidth: Y_AXIS_WIDTH } = utils.chartLayout;
+  const PADDING = utils.plotPadding();
   const scale = (value, min, max, targetMin, targetMax) => max === min ? (targetMin + targetMax) / 2 : targetMin + ((value - min) / (max - min)) * (targetMax - targetMin);
 
   function domainFor(points, metrics, includeNeutral = false) {
@@ -50,9 +50,8 @@
       const timestamp=Date.UTC(year,0,1); if(timestamp<first||timestamp>last) return '';
       return `<line x1="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" x2="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y="${HEIGHT-8}" text-anchor="middle" fill="#64748b" font-size="11">${year}</text>`;
     }).join('');
-    host.innerHTML=`<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame"><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="${isUS ? '미국' : '한국'} 주식시장 자금환경 주별 추이">${years}${grids}<line data-liquidity-neutral x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(50,initial)}" y2="${y(50,initial)}" stroke="#94a3b8" stroke-dasharray="4 4"/><path data-liquidity-pressure d="${pathFor(firstMetric,initial)}" fill="none" stroke="${colors[firstMetric]}" stroke-width="${lineWidths.primary}"/><path data-liquidity-capacity d="${pathFor(secondMetric,initial)}" fill="none" stroke="${colors[secondMetric]}" stroke-width="${lineWidths.primary}"/><line data-liquidity-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" class="policy-expectation-cursor"/><text data-liquidity-value text-anchor="middle" y="16" fill="#334155" font-size="12"></text><text data-liquidity-date text-anchor="middle" y="${HEIGHT-PADDING.bottom+14}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="policy-expectation-legend">${utils.legendItem(names[firstMetric], { stroke: colors[firstMetric], width: lineWidths.primary })}${utils.legendItem(names[secondMetric], { stroke: colors[secondMetric], width: lineWidths.primary })}</div>`;
-    utils.standardizeChartFrame(host, PROFILE);
-    const frame=host.querySelector('.policy-expectation-chart-frame'), svg=host.querySelector('.policy-expectation-chart-svg');
+    const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: axis, ariaLabel: `${isUS ? '미국' : '한국'} 주식시장 자금환경`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="${isUS ? '미국' : '한국'} 주식시장 자금환경 주별 추이">${years}${grids}<line data-liquidity-neutral x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(50,initial)}" y2="${y(50,initial)}" stroke="#94a3b8" stroke-dasharray="4 4"/><path data-liquidity-pressure d="${pathFor(firstMetric,initial)}" fill="none" stroke="${colors[firstMetric]}" stroke-width="${lineWidths.primary}"/><path data-liquidity-capacity d="${pathFor(secondMetric,initial)}" fill="none" stroke="${colors[secondMetric]}" stroke-width="${lineWidths.primary}"/><line data-liquidity-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" class="policy-expectation-cursor"/><text data-liquidity-value text-anchor="middle" y="16" fill="#334155" font-size="12"></text><text data-liquidity-date text-anchor="middle" y="${HEIGHT-PADDING.bottom+14}" class="policy-expectation-cursor-detail"></text></svg>` });
+    host.insertAdjacentHTML('beforeend', `<div class="policy-expectation-legend">${utils.legendItem(names[firstMetric], { stroke: colors[firstMetric], width: lineWidths.primary })}${utils.legendItem(names[secondMetric], { stroke: colors[secondMetric], width: lineWidths.primary })}</div>`);
     const lines={[firstMetric]:host.querySelector('[data-liquidity-pressure]'),[secondMetric]:host.querySelector('[data-liquidity-capacity]')};
     const axisLabels=[...host.querySelectorAll('[data-liquidity-y-label]')], axisGrids=[...host.querySelectorAll('[data-liquidity-y-grid]')];
     let animationFrame=null;
@@ -126,4 +125,3 @@
   }
   window.MacroWatchDashboard?.registerLoader(load);
 })();
-

@@ -16,6 +16,18 @@
     single: Object.freeze({ left: axisGutter, right: 24 }),
     dual: Object.freeze({ left: axisGutter, right: 58 }),
   });
+  const chartLayout = Object.freeze({
+    baseWidth: 920,
+    mobileMinWidth: 680,
+    mainHeight: 375,
+    auxiliaryHeight: 148,
+    axisWidth: axisGutter,
+    plot: Object.freeze({ top: 20, right: 0, bottom: 38, left: 0 }),
+  });
+
+  function plotPadding(overrides = {}) {
+    return { ...chartLayout.plot, ...overrides };
+  }
 
   function chartProfile(overrides = {}) {
     return Object.freeze({
@@ -43,51 +55,82 @@
     }).join(' · ');
   }
 
-  function standardizeChartFrame(container, profile = chartProfiles.main) {
-    if (!container) return null;
-    const layout = container.querySelector('.policy-chart-layout,.policy-expectation-chart-layout,.korea-earnings-chart-layout');
-    const frame = container.querySelector('.policy-chart-frame,.policy-expectation-chart-frame,.korea-earnings-chart-frame,[data-history-scroll]');
-    const canRebuild = Boolean(layout && frame && layout.children && typeof layout.before === 'function' && typeof layout.remove === 'function');
-    const legacyAxes = canRebuild ? [...layout.children].filter((node) => node.matches?.('svg.policy-chart-y-axis,svg.policy-expectation-y-axis,svg.korea-earnings-y-axis')) : [];
-    let shell = container.querySelector('.analysis-chart-shell');
-    if (canRebuild) {
-      shell = document.createElement('div');
-      shell.className = `analysis-chart-shell analysis-chart-shell--${profile.axisMode}`;
-      layout.before(shell);
-      if (legacyAxes[0]) shell.append(legacyAxes[0]);
-      shell.append(frame);
-      if (profile.axisMode === 'dual' && legacyAxes[1]) shell.append(legacyAxes[1]);
-      layout.remove();
-    }
-    if (frame) {
-      frame.classList.add('analysis-chart-frame');
-      if (frame.dataset) frame.dataset.historyScroll = 'true';
-      frame.tabIndex = 0;
-      frame.querySelector('svg')?.classList.add('analysis-chart-plot');
-    }
-    container.querySelectorAll('.policy-chart-y-axis,.policy-expectation-y-axis,.korea-earnings-y-axis').forEach((axis, index) => {
-      axis.classList.add('analysis-chart-fixed-axis');
-      axis.dataset.axisSide = profile.axisMode === 'dual' && index === 1 ? 'right' : 'left';
-      axis.style.width = `${axisGutter}px`;
-      axis.style.flex = `0 0 ${axisGutter}px`;
+  function bindPanelScroll(frame) {
+    frame.addEventListener('scroll', () => {
+      const card = frame.closest('[data-dashboard-panel]');
+      if (!card) return;
+      const ratio = frame.scrollLeft / Math.max(1, frame.scrollWidth - frame.clientWidth);
+      card.querySelectorAll('[data-history-scroll]').forEach((peer) => {
+        if (peer !== frame) peer.scrollLeft = ratio * Math.max(0, peer.scrollWidth - peer.clientWidth);
+      });
+    }, { passive: true });
+  }
+
+  function createChartShell(profile = chartProfiles.main, ariaLabel = '시계열 그래프') {
+    const shell = document.createElement('div');
+    shell.className = `analysis-chart-shell analysis-chart-shell--${profile.axisMode}`;
+    const frame = document.createElement('div');
+    frame.className = 'analysis-chart-frame';
+    frame.dataset.historyScroll = 'true';
+    frame.tabIndex = 0;
+    frame.setAttribute('aria-label', `${ariaLabel} 전체 이력 가로 스크롤`);
+    bindPanelScroll(frame);
+    return { shell, frame };
+  }
+
+  function updateFixedAxis(node, markup) {
+    if (!node) return;
+    const side = node.dataset.axisSide || 'left';
+    const viewBox = node.getAttribute('viewBox').trim().split(/\s+/).map(Number);
+    const axisViewWidth = viewBox[2];
+    const height = viewBox[3];
+    node.innerHTML = markup;
+    node.querySelectorAll('text').forEach((label) => {
+      label.setAttribute('x', side === 'right' ? axisLabelGap : axisViewWidth - axisLabelGap);
+      label.setAttribute('text-anchor', side === 'right' ? 'start' : 'end');
     });
-    if (frame && frame.dataset && !frame.dataset.chartFrameBound) {
-      frame.dataset.chartFrameBound = 'true';
-      frame.addEventListener('scroll', () => {
-        const card = frame.closest('[data-dashboard-panel]');
-        if (!card) return;
-        const ratio = frame.scrollLeft / Math.max(1, frame.scrollWidth - frame.clientWidth);
-        card.querySelectorAll('[data-history-scroll]').forEach((peer) => {
-          if (peer !== frame) peer.scrollLeft = ratio * Math.max(0, peer.scrollWidth - peer.clientWidth);
-        });
-      }, { passive: true });
+    const boundary = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const boundaryX = side === 'right' ? .5 : axisViewWidth - .5;
+    boundary.setAttribute('x1', boundaryX);
+    boundary.setAttribute('x2', boundaryX);
+    boundary.setAttribute('y1', node.dataset.axisTop || chartLayout.plot.top);
+    boundary.setAttribute('y2', height - Number(node.dataset.axisBottom || chartLayout.plot.bottom));
+    boundary.setAttribute('class', 'analysis-chart-axis-line');
+    node.append(boundary);
+  }
+
+  function mountChartFrame({ container, profile = chartProfiles.main, height, axisViewWidth = axisGutter, top = chartLayout.plot.top, bottom = chartLayout.plot.bottom, leftAxisMarkup = '', rightAxisMarkup = '', plotMarkup, ariaLabel = '시계열 그래프' }) {
+    const { shell, frame } = createChartShell(profile, ariaLabel);
+    const axis = (side, markup) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      node.classList.add('analysis-chart-fixed-axis');
+      node.dataset.axisSide = side;
+      node.dataset.axisTop = String(top);
+      node.dataset.axisBottom = String(bottom);
+      node.setAttribute('viewBox', `0 0 ${axisViewWidth} ${height}`);
+      node.setAttribute('preserveAspectRatio', 'none');
+      node.setAttribute('aria-hidden', 'true');
+      node.style.height = `${height}px`;
+      updateFixedAxis(node, markup);
+      return node;
+    };
+    frame.innerHTML = plotMarkup;
+    const svg = frame.querySelector('svg');
+    svg?.classList.add('analysis-chart-plot');
+    if (svg) {
+      svg.style.height = `${height}px`;
+      svg.style.maxWidth = 'none';
+      svg.setAttribute('preserveAspectRatio', 'none');
     }
-    return frame;
+    shell.append(axis('left', leftAxisMarkup), frame);
+    if (profile.axisMode === 'dual') shell.append(axis('right', rightAxisMarkup));
+    container.replaceChildren(shell);
+    return { shell, frame, svg };
   }
 
   function chartPadding(axisMode = 'single', vertical = {}) {
     const horizontal = axisLayouts[axisMode] || axisLayouts.single;
-    return { ...horizontal, ...vertical, axisMode };
+    return { ...horizontal, top: chartLayout.plot.top, bottom: chartLayout.plot.bottom, ...vertical, axisMode };
   }
 
   function scrollTrackWidth(viewportWidth, contentWidth, scale, leftGutter, rightGutter) {
@@ -350,15 +393,9 @@
 
   function scrollableSvg(svg, width, baseWidth = 920, axes = null) {
     if (!svg) return;
-    const frame = document.createElement('div');
+    const profile = chartProfile({ axisMode: axes?.axisMode || 'single' });
+    const { shell, frame } = createChartShell(profile);
     const track = document.createElement('div');
-    const shell = document.createElement('div');
-    shell.className = `analysis-chart-shell analysis-chart-shell--${axes?.axisMode || 'single'}`;
-    frame.dataset.historyScroll = 'true';
-    frame.className = 'policy-expectation-chart-frame';
-    frame.style.cssText = 'overflow-x:auto;overflow-y:hidden;min-width:0;background:#fff;';
-    frame.tabIndex = 0;
-    frame.setAttribute('aria-label', '전체 이력 가로 스크롤');
     svg.before(shell);
     shell.append(frame);
     frame.append(track);
@@ -406,7 +443,7 @@
       fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - gutter} 0 ${gutter} ${viewHeight}` : `0 0 ${gutter} ${viewHeight}`);
       fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
-      fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:${gutter}px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
+      fixedAxis.style.cssText = `width:${gutter}px;flex:0 0 ${gutter}px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
       const boundary = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       const boundaryX = side === 'right' ? viewWidth - gutter + .5 : gutter - .5;
       boundary.setAttribute('x1', boundaryX);
@@ -424,7 +461,8 @@
         fixedAxis.append(clone);
         node.setAttribute('visibility', 'hidden');
       });
-      shell.append(fixedAxis);
+      if (side === 'left') shell.prepend(fixedAxis);
+      else shell.append(fixedAxis);
     };
 
     // 렌더러 안의 Y축 세로선은 시계열 SVG와 함께 이동하므로 숨기고,
@@ -453,9 +491,6 @@
       const renderedHeight = viewHeight * (mobile ? Math.min(1, scale) : 1);
       const renderedLeftGutter = leftGutter * scale;
       const renderedRightGutter = rightGutter * scale;
-      frame.style.width = `calc(100% - ${renderedLeftGutter + renderedRightGutter}px)`;
-      frame.style.marginLeft = `${renderedLeftGutter}px`;
-      frame.style.marginRight = `${renderedRightGutter}px`;
       track.style.width = `${scrollTrackWidth(frame.clientWidth, width, scale, renderedLeftGutter, renderedRightGutter)}px`;
       track.style.height = `${renderedHeight}px`;
       svg.style.width = `${width * scale}px`;
@@ -464,24 +499,15 @@
       svg.style.left = `-${renderedLeftGutter}px`;
       svg.style.top = '0';
       shell.querySelectorAll(':scope > svg[data-fixed-axis-gutter]').forEach(axis => {
-        axis.style.width = `${Number(axis.dataset.fixedAxisGutter) * scale}px`;
+        const axisWidth = Number(axis.dataset.fixedAxisGutter) * scale;
+        axis.style.width = `${axisWidth}px`;
+        axis.style.flexBasis = `${axisWidth}px`;
         axis.style.height = `${renderedHeight}px`;
       });
       previousFrameWidth = frame.clientWidth;
       frame.scrollLeft = ratio * Math.max(0, frame.scrollWidth - frame.clientWidth);
     });
     observer.observe(frame);
-    frame.addEventListener('scroll', () => {
-      const card = frame.closest('[data-dashboard-panel]');
-      if (!card) return;
-      const ratio = frame.scrollLeft / Math.max(1, frame.scrollWidth - frame.clientWidth);
-      card.querySelectorAll('[data-history-scroll]').forEach(peer => {
-        if (peer !== frame) {
-          const target = ratio * Math.max(0, peer.scrollWidth - peer.clientWidth);
-          if (Math.abs(peer.scrollLeft - target) > 1) peer.scrollLeft = target;
-        }
-      });
-    });
   }
 
 function monotoneSeriesPath(rows, xFor, yFor) {
@@ -559,5 +585,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartProfile, chartProfiles, cursorValueText, standardizeChartFrame, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, mountChartFrame, updateFixedAxis, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

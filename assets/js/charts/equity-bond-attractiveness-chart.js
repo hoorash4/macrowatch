@@ -12,7 +12,8 @@
     ]),
   });
   const state = { rows: [], years: PROFILE.defaultYears };
-  const HEIGHT = 320, BASE_WIDTH = 920, LEFT = 14, RIGHT = 24, TOP = 28, BOTTOM = 42, AXIS = 46;
+  const { mainHeight: HEIGHT, baseWidth: BASE_WIDTH, axisWidth: AXIS } = utils.chartLayout;
+  const { left: LEFT, right: RIGHT, top: TOP, bottom: BOTTOM } = utils.plotPadding();
   const COLORS = { KR: '#2563a8', US: '#b7791f' };
   const LABELS = { KR: '한국(KOSPI 100)', US: '미국(S&P 100)' };
   const scale = (value, min, max, from, to) => max === min ? (from + to) / 2 : from + (value - min) / (max - min) * (to - from);
@@ -48,10 +49,8 @@
     const grid = ticks.map(value => `<line x1="${LEFT}" x2="${width - RIGHT}" y1="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" y2="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" stroke="${value === 50 ? '#94a3b8' : '#e2e8f0'}" ${value === 50 ? 'stroke-dasharray="5 4"' : ''}/>`).join('');
     const paths = ['KR', 'US'].map(country => `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="${lineWidths.primary}"/>`).join('');
     const guides = timelineGuides(dates, first, last, width);
-    host.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${AXIS} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame" data-equity-bond-frame><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="equity-bond-legend">${utils.legendItem(LABELS.KR, { stroke: COLORS.KR, width: lineWidths.primary })}${utils.legendItem(LABELS.US, { stroke: COLORS.US, width: lineWidths.primary })}</div>`;
-    utils.standardizeChartFrame(host, PROFILE);
-    const frame = host.querySelector('[data-equity-bond-frame]');
-    const svg = frame.querySelector('svg');
+    const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: AXIS, leftAxisMarkup: axis, ariaLabel: `한미 주식투자 매력 흐름`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg>` });
+    host.insertAdjacentHTML('beforeend', `<div class="equity-bond-legend">${utils.legendItem(LABELS.KR, { stroke: COLORS.KR, width: lineWidths.primary })}${utils.legendItem(LABELS.US, { stroke: COLORS.US, width: lineWidths.primary })}</div>`);
     const cursor = host.querySelector('[data-cursor]'), value = host.querySelector('[data-value]'), dateLabel = host.querySelector('[data-date]');
     utils.scrollToLatest(frame);
     frame.addEventListener('pointermove', event => {

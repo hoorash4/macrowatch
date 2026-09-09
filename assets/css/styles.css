@@ -967,16 +967,6 @@ body:has(#app-shell:not(.hidden)) {
   border-color:#64748b;
   background:#e2e8f0;
 }
-.policy-chart-layout { display:flex; width:100%; min-width:0; }
-.policy-chart-y-axis { width:46px; height:320px; flex:none; background:#f8fafc; }
-.policy-chart-frame {
-  position:relative;
-  min-height:20rem;
-  min-width:0;
-  flex:1;
-  overflow-x:auto;
-  overflow-y:hidden;
-}
 .policy-chart-svg {
   display:block;
   max-width:none;
@@ -999,10 +989,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-chart-cursor-period.is-visible,.policy-chart-cursor-action.is-visible { opacity:1; }
 
 /* 시장금리 기반 정책 기대는 0선을 경계로 인상·인하 방향을 색으로 분리합니다. */
-.policy-expectation-chart-layout { display:flex; width:100%; min-width:0; }
-.policy-expectation-y-axis { width:46px; height:320px; flex:none; background:#f8fafc; }
-.policy-expectation-chart-frame { min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; }
-.policy-expectation-chart-svg { display:block; min-width:100%; height:320px; }
+.policy-expectation-chart-svg { display:block; min-width:100%; }
 .analysis-chart-range-controls { display:flex; justify-content:flex-end; gap:.3rem; padding:.1rem .15rem .35rem; }
 .analysis-chart-range-controls button { min-width:2.5rem; padding:.28rem .5rem; border:1px solid #cbd5e1; border-radius:.45rem; background:#fff; color:#64748b; font-size:.72rem; font-weight:700; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
 .analysis-chart-range-controls button:hover,.analysis-chart-range-controls button:focus-visible { border-color:#8293a8; color:#334155; }
@@ -1010,6 +997,7 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-shell { position:relative; display:flex; width:100%; min-width:0; align-items:stretch; overflow:hidden; background:#fff; }
 .analysis-chart-frame { position:relative; min-width:0; flex:1 1 auto; overflow-x:auto; overflow-y:hidden; background:#fff; }
 .analysis-chart-fixed-axis { z-index:2; width:52px; flex:0 0 52px; align-self:stretch; background:#fff; pointer-events:none; }
+.analysis-chart-fixed-axis[data-axis-side="right"] { width:58px; flex-basis:58px; }
 .analysis-chart-fixed-axis text { fill:#64748b; font-size:10px; font-weight:400; }
 .analysis-chart-plot { display:block; min-width:100%; background:#fff; }
 .analysis-chart-shell .policy-chart-cursor,
@@ -1062,32 +1050,16 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-chart-panel + .korea-earnings-chart-panel { border-top:1px solid #dbe3ed; }
 .korea-earnings-chart-heading { display:flex; align-items:center; justify-content:space-between; min-height:2.1rem; padding:.4rem .75rem .2rem; color:#64748b; font-size:.7rem; }
 .korea-earnings-chart-heading strong { color:#334155; font-size:.78rem; font-weight:800; }
-.korea-earnings-chart-layout { display:flex; width:100%; min-width:0; }
-.korea-earnings-y-axis { width:64px; flex:none; background:transparent; }
-.korea-earnings-chart-frame { position:relative; min-width:0; flex:1; overflow-x:auto; overflow-y:hidden; }
-
 /* 차트의 가로 이력 이동은 이익시그널과 동일한 얇은 손잡이·투명 트랙을 사용합니다. */
-.policy-chart-frame,
-.policy-expectation-chart-frame,
-.korea-earnings-chart-frame,
 [data-history-scroll],
 #news-sentiment-history-scroll {
   scrollbar-width:thin;
   scrollbar-color:#94a3b8 transparent;
 }
-.policy-chart-frame::-webkit-scrollbar,
-.policy-expectation-chart-frame::-webkit-scrollbar,
-.korea-earnings-chart-frame::-webkit-scrollbar,
 [data-history-scroll]::-webkit-scrollbar,
 #news-sentiment-history-scroll::-webkit-scrollbar { height:8px; }
-.policy-chart-frame::-webkit-scrollbar-track,
-.policy-expectation-chart-frame::-webkit-scrollbar-track,
-.korea-earnings-chart-frame::-webkit-scrollbar-track,
 [data-history-scroll]::-webkit-scrollbar-track,
 #news-sentiment-history-scroll::-webkit-scrollbar-track { background:transparent; }
-.policy-chart-frame::-webkit-scrollbar-thumb,
-.policy-expectation-chart-frame::-webkit-scrollbar-thumb,
-.korea-earnings-chart-frame::-webkit-scrollbar-thumb,
 [data-history-scroll]::-webkit-scrollbar-thumb,
 #news-sentiment-history-scroll::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:#94a3b8; background-clip:padding-box; }
 .korea-earnings-chart-svg { display:block; min-width:100%; }

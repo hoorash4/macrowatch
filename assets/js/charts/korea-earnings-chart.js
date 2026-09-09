@@ -14,10 +14,10 @@
     { key: 'net_income', label: '순이익', className: 'net-income' },
   ];
   const CHARTS = [
-    { key: 'amount', valueKey: 'amount', kind: 'amount', height: 320, includeZero: false, showPeriodLabels: true },
-    { key: 'margin', valueKey: 'marginPct', kind: 'margin', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
-    { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
-    { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: 140, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'amount', valueKey: 'amount', kind: 'amount', height: chartUtils.chartLayout.mainHeight, includeZero: false, showPeriodLabels: true },
+    { key: 'margin', valueKey: 'marginPct', kind: 'margin', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: true, unit: '%', showPeriodLabels: false },
   ];
   // 시장별 데이터와 기간 상태는 분리하되, 하나의 카드에서 선택한 시장만 렌더링합니다.
   const MARKET_CONFIGS = [
@@ -26,9 +26,9 @@
     { marketId: 'us_sp100', label: 'S&P 100', currency: 'USD' },
     { marketId: 'us_nasdaq100', label: 'NASDAQ 100', currency: 'USD' },
   ];
-  const AXIS_WIDTH = 64, MIN_WIDTH = 640;
+  const AXIS_WIDTH = chartUtils.chartLayout.axisWidth, MIN_WIDTH = 640;
   const DISPLAY_START_YEAR = 2016;
-  const BASE_PADDING = { top: 24, right: 24, left: 14 };
+  const BASE_PADDING = chartUtils.plotPadding();
   const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: PROFILE.defaultYears, loadError: null } }));
   const marketCard = { root: null, selectedMarketId: 'kr_largecap' };
   const companyCard = {
@@ -231,7 +231,7 @@
       : '';
     const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
     const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
-    container.innerHTML = `<div class="korea-earnings-chart-layout"><svg class="korea-earnings-y-axis" style="height:${spec.height}px" viewBox="0 0 ${AXIS_WIDTH} ${spec.height}" aria-hidden="true">${axis}</svg><div class="korea-earnings-chart-frame"><svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg></div></div>`;
+    const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg>` });
     const { legendItem, seriesStyles } = window.MacroWatchAnalysisChart;
     const legend = metricSeries.map(metric => {
       const base = seriesStyles[metric.key === 'operating_income' ? 'operatingIncome' : 'netIncome'];
@@ -240,8 +240,7 @@
         ? legendItem(`${metric.label} 잠정치`, { ...style, dash: '6 4', opacity: .82 }) : '');
     }).join('');
     container.insertAdjacentHTML('beforeend', `<div class="policy-expectation-legend" aria-label="${spec.key} 범례">${legend}</div>`);
-    chartUtils.standardizeChartFrame(container, PROFILE);
-    const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
+    const hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
     const yLabels = [...container.querySelectorAll('[data-korea-earnings-y-label]')];

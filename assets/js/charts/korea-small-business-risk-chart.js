@@ -11,9 +11,8 @@
     risk: '#b4535d',
     headline: '#64748b',
   };
-  const BASE_WIDTH = 920;
-  const HEIGHT = 300;
-  const PADDING = utils.chartPadding(PROFILE.axisMode, { top: 24, bottom: 42 });
+  const { baseWidth: BASE_WIDTH, mainHeight: HEIGHT } = utils.chartLayout;
+  const PADDING = utils.chartPadding(PROFILE.axisMode, { top: utils.chartLayout.plot.top, bottom: utils.chartLayout.plot.bottom });
   const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
   const monthLabel = value => String(value).slice(0, 7).replace('-', '.');
 

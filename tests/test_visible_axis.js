@@ -13,6 +13,10 @@ const styles = fs.readFileSync(path.join(__dirname, '../assets/css/styles.css'),
 test('chart profiles centralize the two-year default and structural options', () => {
   const utils = context.window.MacroWatchAnalysisChart;
   assert.equal(utils.DEFAULT_RANGE_YEARS, 2);
+  assert.equal(utils.chartLayout.mainHeight, 375);
+  assert.equal(utils.chartLayout.auxiliaryHeight, 148);
+  assert.equal(utils.chartLayout.axisWidth, 52);
+  assert.equal(utils.chartLayout.baseWidth, 920);
   assert.equal(utils.chartProfiles.main.defaultYears, 2);
   assert.equal(utils.chartProfiles.main.axisMode, 'single');
   assert.deepEqual([...utils.chartProfiles.main.auxiliaryPanels], []);
@@ -39,7 +43,7 @@ test('every dashboard chart declares the common profile or common default', () =
   for (const file of modules) {
     const moduleSource = fs.readFileSync(path.join(__dirname, file), 'utf8');
     assert.match(moduleSource, /chartProfile\(/, file);
-    if (!/scrollableSvg\(/.test(moduleSource)) assert.match(moduleSource, /standardizeChartFrame\(/, file);
+    assert.match(moduleSource, /mountChartFrame\(|scrollableSvg\(/, file);
   }
   const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(dashboard, /STRESS_RANGE_DEFAULT_YEARS = String\(DEFAULT_RANGE_YEARS\)/);
@@ -50,11 +54,17 @@ test('every dashboard chart declares the common profile or common default', () =
 });
 
 test('MSI and legacy charts are mounted into the same canonical shell', () => {
-  assert.match(source, /shell\.className = `analysis-chart-shell analysis-chart-shell--\$\{axes\?\.axisMode \|\| 'single'\}`/);
+  assert.match(source, /function createChartShell\(/);
   assert.match(source, /shell\.className = `analysis-chart-shell analysis-chart-shell--\$\{profile\.axisMode\}`/);
-  assert.match(source, /frame\.querySelector\('svg'\)\?\.classList\.add\('analysis-chart-plot'\)/);
+  assert.match(source, /function mountChartFrame[\s\S]*createChartShell\(profile, ariaLabel\)/);
+  assert.match(source, /function scrollableSvg[\s\S]*createChartShell\(profile\)/);
+  assert.doesNotMatch(source, /standardizeChartFrame/);
+  const allChartSources = fs.readdirSync(path.join(__dirname, '../assets/js/charts')).filter(file => file.endsWith('-chart.js'))
+    .map(file => fs.readFileSync(path.join(__dirname, '../assets/js/charts', file), 'utf8')).join('\n');
+  assert.doesNotMatch(allChartSources, /policy-chart-layout|policy-expectation-chart-layout|korea-earnings-chart-layout/);
   assert.match(styles, /\.analysis-chart-shell \{ position:relative; display:flex;/);
   assert.match(styles, /\.analysis-chart-fixed-axis text \{ fill:#64748b; font-size:10px; font-weight:400;/);
+  assert.match(source, /label\.setAttribute\('x', side === 'right' \? axisLabelGap : axisViewWidth - axisLabelGap\)/);
 });
 
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
