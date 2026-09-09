@@ -28,6 +28,7 @@ on:
       - "Refresh sector flow"
       - "Refresh U.S. credit stress"
       - "Refresh U.S. inflation model"
+      - "Refresh U.S. small business risk"
       - "Refresh liquidity pressure and capacity"
     types: [completed]
 

@@ -32,6 +32,8 @@ import common  # noqa: E402
 import signals.em_stress_pipeline as em  # noqa: E402
 import signals.em_capital_capacity_pipeline as em_capacity  # noqa: E402
 import signals.financial_stress_pipeline as us  # noqa: E402
+import signals.small_business_risk_pipeline as small_business  # noqa: E402
+import sources.small_business_risk as small_business_source  # noqa: E402
 import signals.korea_stress_pipeline as kr  # noqa: E402
 import signals.policy_expectation_pipeline as policy_expectation  # noqa: E402
 import signals.equity_bond_model as equity_bond  # noqa: E402
@@ -835,6 +837,45 @@ class SourceContractTests(unittest.TestCase):
     def test_financial_stress_workflow_tracks_source_adapter(self) -> None:
         workflow = (ROOT / ".github/workflows/financial-stress.yml").read_text(encoding="utf-8")
         self.assertIn("backend/sources/financial_stress.py", workflow)
+
+    def test_small_business_workflow_is_independent_and_keeps_ten_years(self) -> None:
+        workflow = (ROOT / ".github/workflows/small-business-risk.yml").read_text(encoding="utf-8")
+        self.assertIn("backend/sources/small_business_risk.py", workflow)
+        self.assertIn("signals.small_business_risk_pipeline --years 10", workflow)
+        self.assertIn('cron: "20 21 * * *"', workflow)
+
+    def test_small_business_risk_uses_available_component_weights(self) -> None:
+        sales = {"2023-08-01": -15.0, "2023-09-01": -15.0}
+        borrowing = {"2023-08-01": 8.5, "2023-09-01": 8.5}
+        oas = {"2023-09-01": 11.0}
+        rows = small_business.build_rows(sales, borrowing, oas, date(2026, 9, 9))
+        sales_score = small_business.component_score(-15.0, "sales_expectation")
+        borrowing_score = small_business.component_score(8.5, "borrowing_difficulty")
+        oas_score = small_business.component_score(11.0, "high_yield_oas")
+        self.assertEqual(rows[0]["risk_index"], round((sales_score * 30 + borrowing_score * 40) / 70, 2))
+        self.assertFalse(rows[0]["includes_oas"])
+        self.assertEqual(rows[1]["risk_index"], round((sales_score * 30 + borrowing_score * 40 + oas_score * 30) / 100, 2))
+        self.assertTrue(rows[1]["includes_oas"])
+
+    def test_nfib_answer_parser_builds_sales_net_and_harder_share(self) -> None:
+        sales_rows = [
+            {"monthyear": "1/1/2026", "resp_acode": code, "percent": value}
+            for code, value in ((1, 10), (2, 20), (4, 4), (5, 6))
+        ]
+        credit_rows = [{"monthyear": "1/1/2026", "resp_acode": 3, "percent": 7.5}]
+        with patch.object(small_business_source, "_request_rows", side_effect=[sales_rows, credit_rows]):
+            sales, borrowing = small_business_source.fetch_nfib_monthly(date(2026, 1, 1), date(2026, 1, 1))
+        self.assertEqual(sales["2026-01-01"], 20.0)
+        self.assertEqual(borrowing["2026-01-01"], 7.5)
+
+    def test_small_business_card_uses_common_chart_widths_and_liquidity_icons(self) -> None:
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        chart = (ROOT / "assets/js/charts/small-business-risk-chart.js").read_text(encoding="utf-8")
+        self.assertIn("미국 중소기업 위험지수", html)
+        self.assertIn("utils.lineWidths.primary", chart)
+        self.assertIn("utils.scrollableSvg", chart)
+        for title in ("미국 주식시장 자금환경", "한국 주식시장 자금환경"):
+            self.assertRegex(html, rf"fa-money-bill-transfer[^<]*</i></span>\s*<h2[^>]*>{title}</h2>")
 
     def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
         initial = (ROOT / "supabase/migrations/20260824_article_sentiment_pipeline.sql").read_text(encoding="utf-8")

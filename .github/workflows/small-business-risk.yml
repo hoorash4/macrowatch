@@ -1,0 +1,51 @@
+name: Refresh U.S. small business risk
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/signals/small_business_risk_pipeline.py
+      - backend/sources/small_business_risk.py
+      - backend/common.py
+      - supabase/migrations/**
+      - .github/workflows/small-business-risk.yml
+  schedule:
+    # 06:20 KST: NFIB 신규 월과 OAS 월평균을 매일 확인한다.
+    - cron: "20 21 * * *"
+  workflow_dispatch:
+    inputs:
+      replace:
+        description: "외부 원자료로 10년 구간 전체 교체"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-small-business-risk
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install data clients
+        run: pip install --disable-pip-version-check requests
+      - name: Collect small business risk
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.replace }}" = "true" ]; then
+            PYTHONPATH=backend python -m signals.small_business_risk_pipeline --years 10 --replace
+          else
+            PYTHONPATH=backend python -m signals.small_business_risk_pipeline --years 10
+          fi
