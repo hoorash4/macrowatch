@@ -2,6 +2,12 @@
   'use strict';
   const utils = window.MacroWatchAnalysisChart;
   const { lineWidths } = utils;
+  const PROFILE = utils.chartProfile({
+    cursorSeries: Object.freeze([
+      { key: 'environment', label: '현재 우호도' },
+      { key: 'momentum', label: '개선·악화 방향' },
+    ]),
+  });
   const states = new Map();
   const names = { pressure: '유동성 압력', capacity: '유동성 여력', environment: '현재 우호도', momentum: '개선·악화 방향' };
   const colors = { pressure: '#b4535d', capacity: '#2563a8', environment: '#2563a8', momentum: '#b7791f' };
@@ -97,7 +103,7 @@
     if (!supabaseClient) return;
     await Promise.all([...document.querySelectorAll('[data-liquidity-country]')].map(async card => {
       const country = card.dataset.liquidityCountry;
-      const state = states.get(country) || {rows:[],years:2}; states.set(country,state);
+      const state = states.get(country) || {rows:[],years:PROFILE.defaultYears}; states.set(country,state);
       const {data,error} = await utils.loadAllRows((from,to)=>supabaseClient.from('liquidity_indices')
         .select('observation_date,metric,score,frequency,sample_count,is_warmup').eq('country',country).eq('method_version', country === 'US' ? 'us-equity-environment-weekly-v2' : 'kr-equity-environment-weekly-v1')
         .order('observation_date').order('metric').range(from,to));

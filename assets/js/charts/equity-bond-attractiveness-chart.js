@@ -5,7 +5,13 @@
   const card = document.querySelector('#equity-bond-attractiveness-dashboard');
   if (!card || !utils) return;
   const host = card.querySelector('[data-equity-bond-chart]');
-  const state = { rows: [], years: 2 };
+  const PROFILE = utils.chartProfile({
+    cursorSeries: Object.freeze([
+      { key: 'kr_score', label: '한국' },
+      { key: 'us_score', label: '미국' },
+    ]),
+  });
+  const state = { rows: [], years: PROFILE.defaultYears };
   const HEIGHT = 320, BASE_WIDTH = 920, LEFT = 14, RIGHT = 24, TOP = 28, BOTTOM = 42, AXIS = 46;
   const COLORS = { KR: '#2563a8', US: '#b7791f' };
   const LABELS = { KR: '한국(KOSPI 100)', US: '미국(S&P 100)' };

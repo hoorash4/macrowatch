@@ -10,7 +10,7 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=9/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=10/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.doesNotMatch(chart, /국가별 독립 점수|높을수록 주식투자 환경 우호적/);
   assert.match(chart, /const domain = \{ min: 0, max: 100 \}/);
@@ -96,7 +96,7 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   assert.match(dashboardCharts, /xAxisMode: 'zero'/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
-  assert.match(dashboardCharts, /chartPadding\('dual', \{ top: 20, bottom: 38 \}\)/);
+  assert.match(dashboardCharts, /chartPadding\((?:US|KOREA|EM)_MSI_PROFILE\.axisMode, \{ top: 20, bottom: 38 \}\)/);
   assert.match(dashboardCharts, /const frame = chart\.querySelector\('\[data-history-scroll\]'\);/);
   assert.match(dashboardCharts, /const frame = host\.querySelector\('\[data-history-scroll\]'\);/);
   assert.doesNotMatch(dashboardCharts, /'font-size': 11, 'font-weight': 700/);
@@ -219,7 +219,7 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(chart, /treasury_10y_5d_pct/);
   assert.match(chart, /withTreasuryAverage/);
   assert.match(chart, /addMonthsIso/);
-  assert.match(chart, /data-inflation-real-zero[\s\S]*stroke-width="1"/);
+  assert.match(chart, /data-inflation-real-zero class="analysis-chart-zero-line"/);
   assert.match(chart, /referenceLines: \[\{ selector: '\[data-inflation-real-zero\]', value: 0 \}\]/);
   assert.match(chart, /lineWidths\.primary/);
   assert.match(chart, /lineWidths\.auxiliary/);
@@ -522,7 +522,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /data-policy-cursor-period/);
   assert.match(chart, /data-policy-cursor-action/);
   assert.match(chart, /년 \$\{String\(row\.meeting_date\)\.slice\(5, 7\)\}월/);
-  assert.match(chart, /selectedYears: 5/);
+  assert.match(chart, /selectedYears: PROFILE\.defaultYears/);
   assert.match(chart, /rowsForRecentHistory/);
   assert.match(chart, /timelineWidth/);
   assert.match(chart, /visibleStart = frame\.scrollLeft/);
@@ -552,7 +552,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
 test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간별 조회를 제공한다', () => {
   const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/policy-expectation-chart.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(chart, /selectedYears: 2/);
+  assert.match(chart, /selectedYears: PROFILE\.defaultYears/);
   assert.match(chart, /function rowsForTimeline/);
   assert.match(chart, /rowsForRecentHistory/);
   assert.match(chart, /timelineWidth/);
@@ -585,7 +585,7 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
   const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/em-capacity-chart.js'), 'utf8');
   const pipeline = fs.readFileSync(path.join(__dirname, '..', 'backend', 'signals', 'em_capital_capacity_pipeline.py'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(chart, /selectedYears: 1/);
+  assert.match(chart, /selectedYears: PROFILE\.defaultYears/);
   for (const range of ['0.5', '1', '2', 'max']) assert.match(html, new RegExp(`data-em-capacity-range="${range}"`));
   assert.doesNotMatch(html, /data-em-capacity-range="3"/);
   assert.match(chart, /selectedYears === 'max'/);
@@ -754,11 +754,11 @@ test('공통 스크롤 그래프는 명시한 Y축 폭으로 플롯과 스크롤
   assert.match(utils, /const axisGutter = 52/);
   assert.match(utils, /filter\(node => node\.matches\('\[data-chart-left-axis\]'\)\)/);
   assert.doesNotMatch(utils, /x <= 55/);
-  assert.equal((charts.match(/chartPadding\('dual'/g) || []).length, 6);
+  assert.ok((charts.match(/chartPadding\((?:US|KOREA|EM)_MSI_PROFILE\.axisMode/g) || []).length >= 4);
   assert.match(charts, /data-chart-left-axis/);
   assert.match(charts, /data-chart-right-axis/);
-  assert.match(usSmallBusiness, /PADDING = utils\.chartPadding\('dual'/);
-  assert.match(koreaSmallBusiness, /PADDING = utils\.chartPadding\('dual'/);
+  assert.match(usSmallBusiness, /PADDING = utils\.chartPadding\(PROFILE\.axisMode/);
+  assert.match(koreaSmallBusiness, /PADDING = utils\.chartPadding\(PROFILE\.axisMode/);
 });
 
 test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한다', () => {

@@ -431,7 +431,7 @@
       <div class="px-5 pb-5 pt-5">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="analysis-chart-range-controls" data-korea-foreign-flow-ranges aria-label="외국인 자금 유출입 강도 그래프 조회 기간">
-            <button type="button" data-korea-foreign-flow-range="0.5">6개월</button><button type="button" data-korea-foreign-flow-range="1" class="is-active">1년</button><button type="button" data-korea-foreign-flow-range="2">2년</button><button type="button" data-korea-foreign-flow-range="max">MAX</button>
+            <button type="button" data-korea-foreign-flow-range="0.5">6개월</button><button type="button" data-korea-foreign-flow-range="1">1년</button><button type="button" data-korea-foreign-flow-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-korea-foreign-flow-range="max">MAX</button>
           </div>
           <div id="korea-foreign-flow-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">외국인 자금 유출입 강도를 불러오는 중입니다.</div></div>
         </div>
@@ -468,7 +468,7 @@
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="korea-earnings-toolbar">
             <div class="analysis-chart-range-controls" data-earnings-ranges aria-label="합산 실적 그래프 조회 기간">
-              <button type="button" data-earnings-range="5" class="is-active">5년</button><button type="button" data-earnings-range="10">10년</button><button type="button" data-earnings-range="max">MAX</button>
+              <button type="button" data-earnings-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-earnings-range="5">5년</button><button type="button" data-earnings-range="10">10년</button><button type="button" data-earnings-range="max">MAX</button>
             </div>
           </div>
           <div id="korea-earnings-summary" data-earnings-summary class="korea-earnings-summary" aria-live="polite"></div>
@@ -512,7 +512,7 @@
               <div id="company-earnings-suggestions" data-company-earnings-suggestions class="company-earnings-suggestions" role="listbox" hidden></div>
             </div>
             <div class="analysis-chart-range-controls" data-earnings-ranges aria-label="개별 기업 이익 그래프 조회 기간">
-              <button type="button" data-earnings-range="5" class="is-active">5년</button><button type="button" data-earnings-range="10">10년</button><button type="button" data-earnings-range="max">MAX</button>
+              <button type="button" data-earnings-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-earnings-range="5">5년</button><button type="button" data-earnings-range="10">10년</button><button type="button" data-earnings-range="max">MAX</button>
             </div>
           </div>
           <div id="company-earnings-summary" data-earnings-summary class="korea-earnings-summary" aria-live="polite"></div>
@@ -585,8 +585,8 @@
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="analysis-chart-range-controls" data-em-capacity-ranges aria-label="이머징 자금 유입 여건 그래프 조회 기간">
             <button type="button" data-em-capacity-range="0.5">6개월</button>
-            <button type="button" data-em-capacity-range="1" class="is-active">1년</button>
-            <button type="button" data-em-capacity-range="2">2년</button>
+            <button type="button" data-em-capacity-range="1">1년</button>
+            <button type="button" data-em-capacity-range="2" class="is-active" aria-pressed="true">2년</button>
             <button type="button" data-em-capacity-range="max">MAX</button>
           </div>
           <div id="em-capacity-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">이머징 자금 유입 여건을 불러오는 중입니다.</div></div>
@@ -614,8 +614,8 @@
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="analysis-chart-range-controls" data-policy-chart-ranges aria-label="통화정책 시그널 그래프 조회 기간">
             <button type="button" data-policy-chart-range="1">1년</button>
-            <button type="button" data-policy-chart-range="2">2년</button>
-            <button type="button" data-policy-chart-range="5" class="is-active">5년</button>
+            <button type="button" data-policy-chart-range="2" class="is-active" aria-pressed="true">2년</button>
+            <button type="button" data-policy-chart-range="5">5년</button>
             <button type="button" data-policy-chart-range="10">10년</button>
             <button type="button" data-policy-chart-range="max">MAX</button>
           </div>
@@ -1095,18 +1095,18 @@
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="assets/js/core/indicator-terms.js?v=3"></script>
   <script src="assets/js/dashboard/script.js?v=164"></script>
-  <script src="assets/js/charts/analysis-chart-utils.js?v=24"></script>
-  <script src="assets/js/dashboard/dashboard-charts.js?v=61"></script>
-  <script src="assets/js/charts/inflation-chart.js?v=15"></script>
-  <script src="assets/js/charts/small-business-risk-chart.js?v=10"></script>
-  <script src="assets/js/charts/korea-small-business-risk-chart.js?v=6"></script>
-  <script src="assets/js/charts/policy-chart.js?v=17"></script>
-  <script src="assets/js/charts/policy-expectation-chart.js?v=14"></script>
-  <script src="assets/js/charts/em-capacity-chart.js?v=6"></script>
-  <script src="assets/js/charts/korea-foreign-flow-chart.js?v=12"></script>
-  <script src="assets/js/charts/liquidity-chart.js?v=13"></script>
-  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=9"></script>
-  <script src="assets/js/charts/korea-earnings-chart.js?v=28"></script>
+  <script src="assets/js/charts/analysis-chart-utils.js?v=25"></script>
+  <script src="assets/js/dashboard/dashboard-charts.js?v=62"></script>
+  <script src="assets/js/charts/inflation-chart.js?v=16"></script>
+  <script src="assets/js/charts/small-business-risk-chart.js?v=11"></script>
+  <script src="assets/js/charts/korea-small-business-risk-chart.js?v=7"></script>
+  <script src="assets/js/charts/policy-chart.js?v=18"></script>
+  <script src="assets/js/charts/policy-expectation-chart.js?v=15"></script>
+  <script src="assets/js/charts/em-capacity-chart.js?v=7"></script>
+  <script src="assets/js/charts/korea-foreign-flow-chart.js?v=13"></script>
+  <script src="assets/js/charts/liquidity-chart.js?v=14"></script>
+  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=10"></script>
+  <script src="assets/js/charts/korea-earnings-chart.js?v=29"></script>
   <script src="assets/js/policy/policy-briefing.js?v=5"></script>
 </body>
 </html>

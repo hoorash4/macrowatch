@@ -3,8 +3,9 @@
   const HEIGHT = 320, MIN_VIEWPORT_WIDTH = 680, Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
   const Z_WINDOW = 756, MIN_Z_HISTORY = 60;
-  const state = { rows: [], selectedYears: 1 };
   const chartUtils = window.MacroWatchAnalysisChart;
+  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'value', label: '외국인 자금흐름' }]) });
+  const state = { rows: [], selectedYears: PROFILE.defaultYears };
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin ? (targetMin + targetMax) / 2 : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
   const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
 

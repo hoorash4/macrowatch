@@ -2,14 +2,18 @@
   'use strict';
   const utils = window.MacroWatchAnalysisChart;
   const supabaseClient = window.macroWatchSupabase || window.MacroWatchFrontend?.createSupabaseClient();
-  const state = { years: '2', rows: [] };
+  const PROFILE = utils.chartProfile({
+    axisMode: 'dual',
+    cursorSeries: Object.freeze([{ key: 'risk_index', label: '위험', format: value => value.toFixed(1) }]),
+  });
+  const state = { years: String(PROFILE.defaultYears), rows: [] };
   const COLORS = {
     risk: '#b4535d',
     headline: '#64748b',
   };
   const BASE_WIDTH = 920;
   const HEIGHT = 300;
-  const PADDING = utils.chartPadding('dual', { top: 24, bottom: 42 });
+  const PADDING = utils.chartPadding(PROFILE.axisMode, { top: 24, bottom: 42 });
   const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
   const monthLabel = value => String(value).slice(0, 7).replace('-', '.');
 
@@ -91,10 +95,7 @@
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursor.classList.add('is-visible');
       const value = host.querySelector('[data-korea-small-business-risk-value]');
       value.setAttribute('visibility', 'visible');
-      const labels = [`위험 ${Number(nearest.risk_index).toFixed(1)}`];
-      if (Number.isFinite(Number(nearest.headline_outlook_sbhi))) labels.push(`경기전망 ${Number(nearest.headline_outlook_sbhi).toFixed(1)}`);
-      if (nearest.is_provisional) labels.push('잠정치');
-      value.textContent = labels.join(' · ');
+      value.textContent = `${utils.cursorValueText(nearest, PROFILE.cursorSeries)}${nearest.is_provisional ? ' · 잠정치' : ''}`;
       const date = host.querySelector('[data-korea-small-business-risk-date]');
       date.textContent = monthLabel(nearest.month); date.classList.add('is-visible');
       utils.positionCursorText(value, cursorX, frame);

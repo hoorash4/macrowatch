@@ -1,5 +1,13 @@
 (() => {
   'use strict';
+  const chartUtils = window.MacroWatchAnalysisChart;
+  const PROFILE = chartUtils.chartProfile({
+    auxiliaryPanels: Object.freeze(['margin', 'growth', 'qoq']),
+    cursorSeries: Object.freeze([
+      { key: 'operating_income', label: '영업이익' },
+      { key: 'net_income', label: '순이익' },
+    ]),
+  });
 
   const METRICS = [
     { key: 'operating_income', label: '영업이익', className: 'operating-income' },
@@ -21,12 +29,12 @@
   const AXIS_WIDTH = 64, MIN_WIDTH = 640;
   const DISPLAY_START_YEAR = 2016;
   const BASE_PADDING = { top: 24, right: 24, left: 14 };
-  const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: 5, loadError: null } }));
+  const markets = MARKET_CONFIGS.map((config) => ({ ...config, root: null, state: { series: [], years: PROFILE.defaultYears, loadError: null } }));
   const marketCard = { root: null, selectedMarketId: 'kr_largecap' };
   const companyCard = {
     label: '개별 기업', type: 'company', root: null,
     currency: 'KRW',
-    state: { series: [], years: 5, candidates: [], selected: null, selectedMarketId: 'kr_largecap' },
+    state: { series: [], years: PROFILE.defaultYears, candidates: [], selected: null, selectedMarketId: 'kr_largecap' },
   };
 
   // Number(null)은 0이므로 DB의 계산 불가값을 먼저 걸러야 가짜 0점이 생기지 않습니다.

@@ -4,6 +4,7 @@
   const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
   const SCROLL_HISTORY_YEARS = 10;
   const FULL_HISTORY_SCROLL_RANGES = new Set([5, 10]);
+  const DEFAULT_RANGE_YEARS = 2;
   // 데이터가 플롯의 중앙 80%를 쓰게 해 상·하에 각각 눈에 보이는 10% 여백을 둡니다.
   // 원자료 범위에 곱하는 값은 10%가 아니라 12.5%여야 최종 플롯에서 10%가 됩니다.
   const VISIBLE_Y_PADDING = 0.1;
@@ -15,6 +16,32 @@
     single: Object.freeze({ left: axisGutter, right: 24 }),
     dual: Object.freeze({ left: axisGutter, right: 58 }),
   });
+
+  function chartProfile(overrides = {}) {
+    return Object.freeze({
+      defaultYears: DEFAULT_RANGE_YEARS,
+      axisMode: 'single',
+      auxiliaryPanels: Object.freeze([]),
+      cursorSeries: Object.freeze([]),
+      ...overrides,
+    });
+  }
+
+  const chartProfiles = Object.freeze({
+    main: chartProfile(),
+    dualAxis: chartProfile({ axisMode: 'dual' }),
+    mainWithAuxiliary: chartProfile({ auxiliaryPanels: Object.freeze(['auxiliary']) }),
+  });
+
+  function cursorValueText(row, series) {
+    return (series || []).flatMap((item) => {
+      const raw = typeof item.value === 'function' ? item.value(row) : row?.[item.key];
+      const value = Number(raw);
+      if (!Number.isFinite(value)) return [];
+      const formatted = item.format ? item.format(value, row) : String(value);
+      return [`${item.label ? `${item.label} ` : ''}${formatted}`];
+    }).join(' · ');
+  }
 
   function chartPadding(axisMode = 'single', vertical = {}) {
     const horizontal = axisLayouts[axisMode] || axisLayouts.single;
@@ -487,5 +514,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartProfile, chartProfiles, cursorValueText, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

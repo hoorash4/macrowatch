@@ -10,6 +10,41 @@ const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
 const source = fs.readFileSync(path.join(__dirname, '../assets/js/charts/analysis-chart-utils.js'), 'utf8');
 const styles = fs.readFileSync(path.join(__dirname, '../assets/css/styles.css'), 'utf8');
 
+test('chart profiles centralize the two-year default and structural options', () => {
+  const utils = context.window.MacroWatchAnalysisChart;
+  assert.equal(utils.DEFAULT_RANGE_YEARS, 2);
+  assert.equal(utils.chartProfiles.main.defaultYears, 2);
+  assert.equal(utils.chartProfiles.main.axisMode, 'single');
+  assert.deepEqual([...utils.chartProfiles.main.auxiliaryPanels], []);
+  const profile = utils.chartProfile({ axisMode: 'dual', auxiliaryPanels: ['first', 'second'], cursorSeries: [{ key: 'main', label: '메인' }] });
+  assert.equal(profile.defaultYears, 2);
+  assert.equal(profile.axisMode, 'dual');
+  assert.deepEqual([...profile.auxiliaryPanels], ['first', 'second']);
+  assert.equal(utils.cursorValueText({ main: 12.345, comparison: 99 }, [{ key: 'main', label: '메인', format: value => value.toFixed(1) }]), '메인 12.3');
+});
+
+test('every dashboard chart declares the common profile or common default', () => {
+  const modules = [
+    '../assets/js/charts/policy-chart.js',
+    '../assets/js/charts/policy-expectation-chart.js',
+    '../assets/js/charts/em-capacity-chart.js',
+    '../assets/js/charts/korea-foreign-flow-chart.js',
+    '../assets/js/charts/liquidity-chart.js',
+    '../assets/js/charts/equity-bond-attractiveness-chart.js',
+    '../assets/js/charts/korea-earnings-chart.js',
+    '../assets/js/charts/inflation-chart.js',
+    '../assets/js/charts/small-business-risk-chart.js',
+    '../assets/js/charts/korea-small-business-risk-chart.js',
+  ];
+  for (const file of modules) assert.match(fs.readFileSync(path.join(__dirname, file), 'utf8'), /chartProfile\(/, file);
+  const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  assert.match(dashboard, /STRESS_RANGE_DEFAULT_YEARS = String\(DEFAULT_RANGE_YEARS\)/);
+  assert.match(dashboard, /US_MSI_PROFILE = chartProfile/);
+  assert.match(dashboard, /KOREA_MSI_PROFILE = chartProfile/);
+  assert.match(dashboard, /EM_MSI_PROFILE = chartProfile/);
+  assert.match(dashboard, /const profile = createProfile\(\{ cursorSeries:[\s\S]*series\.map/);
+});
+
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
   assert.match(source, /svg\.setAttribute\('preserveAspectRatio', 'none'\)/);
   assert.match(source, /fixedAxis\.setAttribute\('preserveAspectRatio', 'none'\)/);

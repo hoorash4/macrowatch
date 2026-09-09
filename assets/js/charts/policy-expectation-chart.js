@@ -5,8 +5,9 @@
   const MIN_VIEWPORT_WIDTH = 680;
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
-  const state = { rows: [], selectedYears: 2 };
   const chartUtils = window.MacroWatchAnalysisChart;
+  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'expected_rate', label: '내재금리' }]) });
+  const state = { rows: [], selectedYears: PROFILE.defaultYears };
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2
