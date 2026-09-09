@@ -16,6 +16,10 @@
     return Date.parse(`${String(value)}T00:00:00Z`);
   }
 
+  function formatCursorMonth(value) {
+    return String(value).slice(0, 7).replace('-', '.');
+  }
+
   function stepPath(rows, x, y, key) {
     const points = rows.filter(row => Number.isFinite(Number(row[key])));
     if (!points.length) return '';
@@ -124,7 +128,7 @@
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX);
       valueLabel.setAttribute('x', labelX); dateLabel.setAttribute('x', cursorX);
       valueLabel.textContent = `통합 ${formatValue(monthlyAtDate[actualKey])} · 선행 ${formatValue(nearest[leadKey])} · 기준 ${formatValue(nearest.policy_rate_upper_pct)} · 실질 ${formatValue(monthlyAtDate[realMonthlyKey])}`;
-      dateLabel.textContent = String(nearest.observed_on);
+      dateLabel.textContent = formatCursorMonth(nearest.observed_on);
       cursor.classList.add('is-visible'); dateLabel.classList.add('is-visible');
       valueLabel.setAttribute('visibility', 'visible');
     });

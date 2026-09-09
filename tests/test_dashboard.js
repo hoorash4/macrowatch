@@ -131,6 +131,7 @@ test('미국 스트레스 화면 아래에 통합물가 카드와 전용 차트�
   assert.match(chart, /기준금리/);
   assert.match(chart, /실질금리/);
   assert.match(chart, /data-inflation-cursor/);
+  assert.match(chart, /formatCursorMonth\(nearest\.observed_on\)/);
   assert.match(chart, /historyYears \/ Number\(state\.years\)/);
   assert.doesNotMatch(chart, /<circle/);
   assert.doesNotMatch(chart, /기준이나 의미|높을수록/);
