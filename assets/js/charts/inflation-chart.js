@@ -67,7 +67,7 @@
 
     const allDates = [...monthly.map(row => timestamp(addMonthsIso(row.month, 1))), ...policy.map(row => timestamp(row.observed_on))].filter(Number.isFinite);
     const first = Math.min(...allDates), last = Math.max(...allDates);
-    const baseWidth = 920, height = 360, padding = { left: 58, right: 24, top: 24, bottom: 42 };
+    const baseWidth = 920, height = 360, padding = chartUtils.chartPadding('single', { top: 24, bottom: 42 });
     const historyYears = (last - first) / (365.25 * 86400000);
     const width = state.years === 'max' ? baseWidth : Math.max(baseWidth, baseWidth * historyYears / Number(state.years));
     const xDate = value => padding.left + (timestamp(value) - first) / Math.max(1, last - first) * (width - padding.left - padding.right);
@@ -98,6 +98,7 @@
     host.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="헤드라인과 코어 통합물가지수, 기준금리와 미국 10년물 금리 추이">${grid}${guides}<path d="${path(finalRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${path(finalRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${stepPath(policy, xPolicy, y, 'target_upper_pct')}" fill="none" stroke="${COLORS.policy}" stroke-width="${lineWidths.auxiliary}"/><path d="${path(policy, 'treasury_10y_5d_pct', y, xPolicy)}" fill="none" stroke="${COLORS.treasury}" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/><rect data-inflation-hit x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}" fill="transparent"/><line data-inflation-cursor x1="0" x2="0" y1="${padding.top}" y2="${height - padding.bottom}" class="policy-expectation-cursor"/><text data-inflation-value x="0" y="16" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-inflation-date x="0" y="${height - padding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
     chartUtils.scrollableSvg(host.querySelector('svg'), width, baseWidth, {
       left: padding.left, right: padding.right,
+      axisMode: padding.axisMode,
       top: padding.top, bottom: height - padding.bottom,
       axes: [{ side: 'left', y, points: [
         ...monthly.flatMap(row => [{ x: xInflation(row), value: Number(row.headline_yoy_pct) }, { x: xInflation(row), value: Number(row.core_yoy_pct) }]),
@@ -105,16 +106,17 @@
       ], selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"],path[stroke="${COLORS.policy}"],path[stroke="${COLORS.treasury}"]`, format: value => `${value.toFixed(1)}%` }],
     });
 
-    const realHeight = 160, realPadding = { left: 58, right: 24, top: 18, bottom: 32 };
+    const realHeight = 160, realPadding = chartUtils.chartPadding('single', { top: 18, bottom: 32 });
     const realValues = monthly.flatMap(row => [Number(row.headline_real_rate_pct), Number(row.core_real_rate_pct)]).filter(Number.isFinite);
     const realDomain = chartUtils.axisDomain(realValues, { includeZero: true, minimumSpan: 2 });
     const realY = value => realPadding.top + (realDomain.max - value) / (realDomain.max - realDomain.min) * (realHeight - realPadding.top - realPadding.bottom);
     const realTicks = Array.from({ length: 4 }, (_, index) => realDomain.max - (realDomain.max - realDomain.min) * index / 3);
-    const realGrid = realTicks.map(value => `<line x1="${realPadding.left}" x2="${width - realPadding.right}" y1="${realY(value)}" y2="${realY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${realPadding.left - 9}" y="${realY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}%</text>`).join('');
+    const realGrid = realTicks.map(value => `<line x1="${realPadding.left}" x2="${width - realPadding.right}" y1="${realY(value)}" y2="${realY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${realPadding.left - 9}" y="${realY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}%</text>`).join('');
     const realZeroLine = `<line data-inflation-real-zero x1="${realPadding.left}" x2="${width - realPadding.right}" y1="${realY(0)}" y2="${realY(0)}" stroke="#94a3b8" stroke-width="1"/>`;
     realHost.innerHTML = `<svg class="w-full" style="height:${realHeight}px" viewBox="0 0 ${width} ${realHeight}" role="img" aria-label="헤드라인과 코어 실질금리 보조지표">${realGrid}${realZeroLine}<path d="${path(monthly, 'headline_real_rate_pct', realY)}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/><path d="${path(monthly, 'core_real_rate_pct', realY)}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/><line data-inflation-real-cursor x1="0" x2="0" y1="${realPadding.top}" y2="${realHeight - realPadding.bottom}" class="policy-expectation-cursor"/><text data-inflation-real-value x="0" y="14" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-inflation-real-date x="0" y="${realHeight - realPadding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
     chartUtils.scrollableSvg(realHost.querySelector('svg'), width, baseWidth, {
       left: realPadding.left, right: realPadding.right,
+      axisMode: realPadding.axisMode,
       top: realPadding.top, bottom: realHeight - realPadding.bottom,
       axes: [{
         side: 'left',

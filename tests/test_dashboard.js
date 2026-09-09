@@ -49,12 +49,23 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(source, /const leftGutter = Number\.isFinite\(Number\(axes\?\.left\)\)/);
   assert.match(source, /const rightGutter = Number\.isFinite\(Number\(axes\?\.right\)\)/);
+  assert.match(source, /single: Object\.freeze\(\{ left: axisGutter, right: 24 \}\)/);
+  assert.match(source, /dual: Object\.freeze\(\{ left: axisGutter, right: 58 \}\)/);
   assert.match(source, /fixedAxis\.dataset\.fixedAxisGutter = String\(gutter\)/);
   assert.match(source, /const boundaryX = side === 'right' \? viewWidth - gutter \+ \.5 : gutter - \.5/);
   assert.match(source, /공통 고정축이 그래프와 축 숫자의 경계에 세로선을 한 번만 그립니다/);
   assert.match(source, /frame\.style\.width = `calc\(100% - \$\{renderedLeftGutter \+ renderedRightGutter\}px\)`/);
-  assert.match(source, /svg\.style\.marginLeft = `-\$\{renderedLeftGutter\}px`/);
+  assert.match(source, /track\.style\.width = `\$\{scrollTrackWidth\(frame\.clientWidth, width, scale, renderedLeftGutter, renderedRightGutter\)\}px`/);
+  assert.match(source, /svg\.style\.left = `-\$\{renderedLeftGutter\}px`/);
   assert.doesNotMatch(source, /scrollbarMask/);
+  const context = { window: {}, Number, Math, Set };
+  vm.createContext(context);
+  vm.runInContext(source, context, { filename: 'assets/js/charts/analysis-chart-utils.js' });
+  const scale = 900 / 920;
+  const left = 52 * scale, right = 58 * scale;
+  const viewport = 900 - left - right;
+  assert.equal(context.window.MacroWatchAnalysisChart.scrollTrackWidth(viewport, 920, scale, left, right), viewport);
+  assert.ok(context.window.MacroWatchAnalysisChart.scrollTrackWidth(viewport, 1840, scale, left, right) > viewport);
 });
 
 // 브라우저 전역을 최소한으로 흉내 내어 assets/js/dashboard/script.js의 순수 보조 함수만 검증한다.
@@ -688,11 +699,11 @@ test('공통 스크롤 그래프는 명시한 Y축 폭으로 플롯과 스크롤
   assert.match(utils, /const axisGutter = 52/);
   assert.match(utils, /filter\(node => node\.matches\('\[data-chart-left-axis\]'\)\)/);
   assert.doesNotMatch(utils, /x <= 55/);
-  assert.equal((charts.match(/left:\s*(?:fsiP|p)adding\.left,\s*right:\s*(?:fsiP|p)adding\.right/g) || []).length, 6);
+  assert.equal((charts.match(/chartPadding\('dual'/g) || []).length, 6);
   assert.match(charts, /data-chart-left-axis/);
   assert.match(charts, /data-chart-right-axis/);
-  assert.match(usSmallBusiness, /PADDING = \{ left: utils\.axisGutter, right: 42/);
-  assert.match(koreaSmallBusiness, /PADDING = \{ left: utils\.axisGutter, right: 42/);
+  assert.match(usSmallBusiness, /PADDING = utils\.chartPadding\('dual'/);
+  assert.match(koreaSmallBusiness, /PADDING = utils\.chartPadding\('dual'/);
 });
 
 test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한다', () => {

@@ -9,7 +9,7 @@
   };
   const BASE_WIDTH = 920;
   const HEIGHT = 300;
-  const PADDING = { left: utils.axisGutter, right: 42, top: 24, bottom: 42 };
+  const PADDING = utils.chartPadding('dual', { top: 24, bottom: 42 });
   const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
   const monthLabel = value => String(value).slice(0, 7).replace('-', '.');
 
@@ -57,6 +57,7 @@
     utils.scrollableSvg(host.querySelector('svg'), width, BASE_WIDTH, {
       left: PADDING.left,
       right: PADDING.right,
+      axisMode: PADDING.axisMode,
       top: PADDING.top,
       bottom: HEIGHT - PADDING.bottom,
       axes: [{

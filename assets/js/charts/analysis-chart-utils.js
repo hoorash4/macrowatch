@@ -10,6 +10,20 @@
   // 고정 Y축이 차지하는 공통 폭. 두 자리~소수 축 라벨은 52px 안에서 충분하며,
   // 이 값이 곧 플롯과 스크롤의 좌우 경계가 된다.
   const axisGutter = 52;
+  const axisLabelGap = 14;
+  const axisLayouts = Object.freeze({
+    single: Object.freeze({ left: axisGutter, right: 24 }),
+    dual: Object.freeze({ left: axisGutter, right: 58 }),
+  });
+
+  function chartPadding(axisMode = 'single', vertical = {}) {
+    const horizontal = axisLayouts[axisMode] || axisLayouts.single;
+    return { ...horizontal, ...vertical, axisMode };
+  }
+
+  function scrollTrackWidth(viewportWidth, contentWidth, scale, leftGutter, rightGutter) {
+    return Math.max(viewportWidth, contentWidth * scale - leftGutter - rightGutter);
+  }
 
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
   function niceStep(value) {
@@ -243,6 +257,7 @@
   function scrollableSvg(svg, width, baseWidth = 920, axes = null) {
     if (!svg) return;
     const frame = document.createElement('div');
+    const track = document.createElement('div');
     const shell = document.createElement('div');
     shell.style.cssText = 'position:relative;width:100%;min-width:0;background:#fff;';
     frame.dataset.historyScroll = 'true';
@@ -252,7 +267,9 @@
     frame.setAttribute('aria-label', '전체 이력 가로 스크롤');
     svg.before(shell);
     shell.append(frame);
-    frame.append(svg);
+    frame.append(track);
+    track.append(svg);
+    track.style.cssText = 'position:relative;min-width:100%;overflow:hidden;';
     svg.style.width = `${width / baseWidth * 100}%`;
     svg.style.maxWidth = 'none';
     svg.style.display = 'block';
@@ -266,6 +283,7 @@
     const rightGutter = Number.isFinite(Number(axes?.right)) ? Number(axes.right) : axisGutter;
     const axisTop = Number.isFinite(Number(axes?.top)) ? Number(axes.top) : 0;
     const axisBottom = Number.isFinite(Number(axes?.bottom)) ? Number(axes.bottom) : viewHeight;
+    const dualAxis = axes?.axisMode === 'dual' || rightGutter >= axisLayouts.dual.right;
     const axisCandidates = [...svg.querySelectorAll('text,line')].filter((node) => {
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       return true;
@@ -290,7 +308,12 @@
       boundary.setAttribute('vector-effect', 'non-scaling-stroke');
       fixedAxis.append(boundary);
       nodes.forEach((node) => {
-        fixedAxis.append(node.cloneNode(true));
+        const clone = node.cloneNode(true);
+        if (clone.tagName === 'text') {
+          clone.setAttribute('x', side === 'right' ? viewWidth - gutter + axisLabelGap : gutter - axisLabelGap);
+          clone.setAttribute('text-anchor', side === 'right' ? 'start' : 'end');
+        }
+        fixedAxis.append(clone);
         node.setAttribute('visibility', 'hidden');
       });
       shell.append(fixedAxis);
@@ -305,7 +328,7 @@
       if (Math.abs(x1 - leftGutter) <= .5 || Math.abs(x1 - (viewWidth - rightGutter)) <= .5) line.setAttribute('visibility', 'hidden');
     });
     appendFixedAxis(leftAxisNodes, 'left', leftGutter);
-    appendFixedAxis(rightAxisNodes, 'right', rightGutter);
+    if (dualAxis) appendFixedAxis(rightAxisNodes, 'right', rightGutter);
 
     if (axes?.axes?.length) bindVisibleAxes(svg, frame, shell, width, axes);
 
@@ -325,10 +348,13 @@
       frame.style.width = `calc(100% - ${renderedLeftGutter + renderedRightGutter}px)`;
       frame.style.marginLeft = `${renderedLeftGutter}px`;
       frame.style.marginRight = `${renderedRightGutter}px`;
+      track.style.width = `${scrollTrackWidth(frame.clientWidth, width, scale, renderedLeftGutter, renderedRightGutter)}px`;
+      track.style.height = `${renderedHeight}px`;
       svg.style.width = `${width * scale}px`;
       svg.style.height = `${renderedHeight}px`;
-      svg.style.marginLeft = `-${renderedLeftGutter}px`;
-      svg.style.marginRight = `-${renderedRightGutter}px`;
+      svg.style.position = 'absolute';
+      svg.style.left = `-${renderedLeftGutter}px`;
+      svg.style.top = '0';
       shell.querySelectorAll(':scope > svg[data-fixed-axis-gutter]').forEach(axis => {
         axis.style.width = `${Number(axis.dataset.fixedAxisGutter) * scale}px`;
         axis.style.height = `${renderedHeight}px`;
@@ -425,5 +451,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { axisGutter, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { axisGutter, axisLayouts, chartPadding, scrollTrackWidth, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
