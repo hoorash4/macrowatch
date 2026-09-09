@@ -49,6 +49,7 @@
     const paths = ['KR', 'US'].map(country => `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="${lineWidths.primary}"/>`).join('');
     const guides = timelineGuides(dates, first, last, width);
     host.innerHTML = `<div class="policy-expectation-chart-layout"><svg class="policy-expectation-y-axis" viewBox="0 0 ${AXIS} ${HEIGHT}" aria-hidden="true">${axis}</svg><div class="policy-expectation-chart-frame" data-equity-bond-frame><svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg></div></div><div class="equity-bond-legend">${utils.legendItem(LABELS.KR, { stroke: COLORS.KR, width: lineWidths.primary })}${utils.legendItem(LABELS.US, { stroke: COLORS.US, width: lineWidths.primary })}</div>`;
+    utils.standardizeChartFrame(host, PROFILE);
     const frame = host.querySelector('[data-equity-bond-frame]');
     const svg = frame.querySelector('svg');
     const cursor = host.querySelector('[data-cursor]'), value = host.querySelector('[data-value]'), dateLabel = host.querySelector('[data-date]');

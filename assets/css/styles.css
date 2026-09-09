@@ -1007,6 +1007,9 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-range-controls button { min-width:2.5rem; padding:.28rem .5rem; border:1px solid #cbd5e1; border-radius:.45rem; background:#fff; color:#64748b; font-size:.72rem; font-weight:700; transition:background-color .16s ease,border-color .16s ease,color .16s ease; }
 .analysis-chart-range-controls button:hover,.analysis-chart-range-controls button:focus-visible { border-color:#8293a8; color:#334155; }
 .analysis-chart-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
+.analysis-chart-layout { display:flex; width:100%; min-width:0; align-items:stretch; background:#fff; }
+.analysis-chart-frame { position:relative; min-width:0; flex:1 1 auto; overflow-x:auto; overflow-y:hidden; background:#fff; }
+.analysis-chart-fixed-axis { width:52px; flex:0 0 52px; align-self:stretch; background:#fff; }
 .policy-expectation-year-guide { stroke:#e2e8f0; stroke-width:1; }
 .policy-expectation-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-expectation-zero-label { fill:#64748b; font-size:9px; font-weight:700; }

@@ -86,6 +86,7 @@
       return `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-chart-y-tick"/><text data-policy-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-chart-y-label">${Number(value.toFixed(2))}</text>`;
     }).join('');
     container.innerHTML = `<div class="policy-chart-layout"><svg class="policy-chart-y-axis" viewBox="0 0 ${Y_AXIS_WIDTH} ${HEIGHT}" aria-hidden="true">${axisLabels}</svg><div class="policy-chart-frame"><svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수"><g>${yearTicks}</g><g>${gridLines}</g><path d="${pathFor(initialScale)}" class="policy-chart-line"/><g data-policy-points>${circlesFor(initialScale)}</g><line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/><text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 11}" class="policy-chart-cursor-action"></text><text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-chart-cursor-period"></text></svg></div></div>`;
+    chartUtils.standardizeChartFrame(container, PROFILE);
     const frame = container.querySelector('.policy-chart-frame');
     const svg = container.querySelector('.policy-chart-svg');
     const line = container.querySelector('.policy-chart-line');

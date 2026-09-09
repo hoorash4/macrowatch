@@ -240,6 +240,7 @@
         ? legendItem(`${metric.label} 잠정치`, { ...style, dash: '6 4', opacity: .82 }) : '');
     }).join('');
     container.insertAdjacentHTML('beforeend', `<div class="policy-expectation-legend" aria-label="${spec.key} 범례">${legend}</div>`);
+    chartUtils.standardizeChartFrame(container, PROFILE);
     const frame = container.querySelector('.korea-earnings-chart-frame'), hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
@@ -259,7 +260,8 @@
       const labelX = Math.max(170, Math.min(chartWidth - 170, cursorX));
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursorLabel.setAttribute('x', labelX);
       cursorLabel.textContent = details;
-      cursor.classList.add('is-visible'); cursorLabel.classList.add('is-visible');
+      cursor.classList.add('is-visible');
+      cursorLabel.classList.toggle('is-visible', spec.kind === 'amount');
       if (cursorPeriod) {
         cursorPeriod.setAttribute('x', Math.max(32, Math.min(chartWidth - 32, cursorX)));
         cursorPeriod.textContent = periodLabel(point);

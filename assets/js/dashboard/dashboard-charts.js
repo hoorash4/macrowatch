@@ -938,7 +938,7 @@ function renderCreditStressComponents(rows) {
     { key: 'business_bankruptcy_filings_3m_average', label: '기업 파산보호 신청(3개월 평균)', color: '#b7791f', digits: 0, suffix: '건' },
   ];
   // 신용위험 추이는 세 계열이 모두 메인 지표이므로 공통 기본값의 명시적 예외입니다.
-  const profile = createProfile({ cursorSeries: Object.freeze(series.map((item) => Object.freeze({ ...item }))) });
+  const profile = createProfile({ axisMode: 'dual', cursorSeries: Object.freeze(series.map((item) => Object.freeze({ ...item }))) });
   const width = Math.max(680, (chart.clientWidth || 808) - 128, data.length * 48);
   const height = CREDIT_STRESS_CHART_HEIGHT;
   const padding = { top: 48, right: 16, bottom: 32, left: 16 };
@@ -1007,6 +1007,7 @@ function renderCreditStressComponents(rows) {
   const plotClip = `<defs><clipPath id="credit-risk-plot-clip"><rect x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}"/></clipPath></defs>`;
   const plottedSeries = `<g clip-path="url(#credit-risk-plot-clip)"><path data-credit-series="${highYield.key}" d="${pathFor(highYield,highYieldScale,false)}" fill="none" stroke="${highYield.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${conditions.key}" d="${pathFor(conditions,conditionsScale,false)}" fill="none" stroke="${conditions.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${bankruptcy.key}" d="${pathFor(bankruptcy,bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="${widths.primary}" stroke-linecap="round"/>${latestSegmentFor(highYield,highYieldScale)}${latestSegmentFor(conditions,conditionsScale)}${dotsFor(highYield,highYieldScale)}${dotsFor(bankruptcy,bankruptcyScale)}</g>`;
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="korea-earnings-chart-layout"><svg data-credit-left-axis class="korea-earnings-y-axis" style="height:${height}px" viewBox="0 0 64 ${height}" aria-hidden="true"></svg><div class="korea-earnings-chart-frame" tabindex="0" aria-label="미국 신용위험 전체 이력 가로 스크롤"><svg class="korea-earnings-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${plotClip}${grids}${yearGuides}${plottedSeries}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="korea-earnings-cursor"/><text data-credit-cursor-label class="korea-earnings-cursor-label" text-anchor="middle"></text><text data-credit-cursor-date y="${height-8}" class="korea-earnings-cursor-period" text-anchor="middle"></text></svg></div><svg data-credit-right-axis class="korea-earnings-y-axis" style="height:${height}px" viewBox="0 0 64 ${height}" aria-hidden="true"></svg></div></div><div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`;
+  window.MacroWatchAnalysisChart.standardizeChartFrame(chart, profile);
   const frame = chart.querySelector('.korea-earnings-chart-frame');
   const svg = frame.querySelector('svg');
   const cursor = chart.querySelector('[data-credit-cursor]');

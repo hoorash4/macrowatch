@@ -10,7 +10,7 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=10/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=11/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.doesNotMatch(chart, /국가별 독립 점수|높을수록 주식투자 환경 우호적/);
   assert.match(chart, /const domain = \{ min: 0, max: 100 \}/);
@@ -560,7 +560,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.match(chart, /policy-expectation-line--raw/);
   assert.match(chart, /policy-expectation-line--average/);
   assert.match(chart, /function formatMonthDay/);
-  assert.doesNotMatch(chart, /data-policy-expectation-value/);
+  assert.match(chart, /data-policy-expectation-value/);
   assert.match(chart, /selectedYears === 'max' \? String\(year\)\.slice\(-2\)/);
   assert.match(chart, /chartUtils\.axisDomain\(values/);
   assert.match(chart, /policy-expectation-y-label/);

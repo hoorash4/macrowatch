@@ -36,13 +36,17 @@ test('every dashboard chart declares the common profile or common default', () =
     '../assets/js/charts/small-business-risk-chart.js',
     '../assets/js/charts/korea-small-business-risk-chart.js',
   ];
-  for (const file of modules) assert.match(fs.readFileSync(path.join(__dirname, file), 'utf8'), /chartProfile\(/, file);
+  for (const file of modules) {
+    const moduleSource = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    assert.match(moduleSource, /chartProfile\(/, file);
+    if (!/scrollableSvg\(/.test(moduleSource)) assert.match(moduleSource, /standardizeChartFrame\(/, file);
+  }
   const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(dashboard, /STRESS_RANGE_DEFAULT_YEARS = String\(DEFAULT_RANGE_YEARS\)/);
   assert.match(dashboard, /US_MSI_PROFILE = chartProfile/);
   assert.match(dashboard, /KOREA_MSI_PROFILE = chartProfile/);
   assert.match(dashboard, /EM_MSI_PROFILE = chartProfile/);
-  assert.match(dashboard, /const profile = createProfile\(\{ cursorSeries:[\s\S]*series\.map/);
+  assert.match(dashboard, /const profile = createProfile\(\{ axisMode: 'dual', cursorSeries:[\s\S]*series\.map/);
 });
 
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {

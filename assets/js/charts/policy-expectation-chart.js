@@ -6,7 +6,7 @@
   const Y_AXIS_WIDTH = 46;
   const PADDING = { top: 28, right: 24, bottom: 42, left: 12 };
   const chartUtils = window.MacroWatchAnalysisChart;
-  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'expected_rate', label: '내재금리' }]) });
+  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'fiveDayAverage', label: '내재금리' }]) });
   const state = { rows: [], selectedYears: PROFILE.defaultYears };
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
@@ -98,13 +98,16 @@
       <path d="${rawPath}" class="policy-expectation-line policy-expectation-line--raw"/>
       <path d="${averagePath}" class="policy-expectation-line policy-expectation-line--average"/>
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
+      <text data-policy-expectation-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text>
       <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
     </svg></div></div>`;
 
+    chartUtils.standardizeChartFrame(container, PROFILE);
     const frame = container.querySelector('.policy-expectation-chart-frame');
     const svg = container.querySelector('.policy-expectation-chart-svg');
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
+    const cursorValue = container.querySelector('[data-policy-expectation-value]');
     const rawLine = container.querySelector('.policy-expectation-line--raw');
     const averageLine = container.querySelector('.policy-expectation-line--average');
     const yLabels = [...container.querySelectorAll('[data-policy-expectation-y-multiple]')];
@@ -137,10 +140,14 @@
       cursor.setAttribute('x2', nearest.x);
       cursorDetail.setAttribute('x', nearest.x);
       cursorDetail.textContent = formatMonthDay(nearest.observation_date);
+      cursorValue.textContent = chartUtils.cursorValueText(nearest, [{ key: 'fiveDayAverage', label: '내재금리', format: value => value.toFixed(2) }]);
+      cursorValue.setAttribute('visibility', 'visible');
+      chartUtils.positionCursorText(cursorValue, nearest.x, frame);
       for (const element of [cursor, cursorDetail]) element.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => {
       for (const element of [cursor, cursorDetail]) element.classList.remove('is-visible');
+      cursorValue.setAttribute('visibility', 'hidden');
     });
   }
 

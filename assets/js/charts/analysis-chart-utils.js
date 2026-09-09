@@ -43,6 +43,35 @@
     }).join(' · ');
   }
 
+  function standardizeChartFrame(container, profile = chartProfiles.main) {
+    if (!container) return null;
+    const layout = container.querySelector('.policy-chart-layout,.policy-expectation-chart-layout,.korea-earnings-chart-layout');
+    const frame = container.querySelector('.policy-chart-frame,.policy-expectation-chart-frame,.korea-earnings-chart-frame,[data-history-scroll]');
+    if (layout) layout.classList.add('analysis-chart-layout', `analysis-chart-layout--${profile.axisMode}`);
+    if (frame) {
+      frame.classList.add('analysis-chart-frame');
+      if (frame.dataset) frame.dataset.historyScroll = 'true';
+      frame.tabIndex = 0;
+    }
+    container.querySelectorAll('.policy-chart-y-axis,.policy-expectation-y-axis,.korea-earnings-y-axis').forEach((axis) => {
+      axis.classList.add('analysis-chart-fixed-axis');
+      axis.style.width = `${axisGutter}px`;
+      axis.style.flex = `0 0 ${axisGutter}px`;
+    });
+    if (frame && frame.dataset && !frame.dataset.chartFrameBound) {
+      frame.dataset.chartFrameBound = 'true';
+      frame.addEventListener('scroll', () => {
+        const card = frame.closest('[data-dashboard-panel]');
+        if (!card) return;
+        const ratio = frame.scrollLeft / Math.max(1, frame.scrollWidth - frame.clientWidth);
+        card.querySelectorAll('[data-history-scroll]').forEach((peer) => {
+          if (peer !== frame) peer.scrollLeft = ratio * Math.max(0, peer.scrollWidth - peer.clientWidth);
+        });
+      }, { passive: true });
+    }
+    return frame;
+  }
+
   function chartPadding(axisMode = 'single', vertical = {}) {
     const horizontal = axisLayouts[axisMode] || axisLayouts.single;
     return { ...horizontal, ...vertical, axisMode };
@@ -514,5 +543,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartProfile, chartProfiles, cursorValueText, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartProfile, chartProfiles, cursorValueText, standardizeChartFrame, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();
