@@ -9,6 +9,8 @@ from typing import Any
 
 import requests
 
+from common import fetch_fred_observations
+
 
 NFIB_PROCEDURE_URL = "https://api.nfib-sbet.org:443/rest/sbetdb/_proc/getTotals2"
 TIMEOUT_SECONDS = 45
@@ -85,3 +87,23 @@ def fetch_nfib_monthly(start: date, end: date) -> tuple[dict[str, float], dict[s
         if 3 in answers
     }
     return sales_expectations, borrowing_difficulty
+
+
+def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
+    """일별 FRED 관측값을 달력 월평균으로 집계한다."""
+    grouped: dict[str, list[float]] = defaultdict(list)
+    for observation in fetch_fred_observations(
+        series_id,
+        api_key,
+        start=start.isoformat(),
+        end=end.isoformat(),
+        timeout=TIMEOUT_SECONDS,
+    ):
+        raw_value, observed_on = observation.get("value"), observation.get("date")
+        if raw_value in (None, ".") or not isinstance(observed_on, str):
+            continue
+        try:
+            grouped[f"{observed_on[:7]}-01"].append(float(raw_value))
+        except (TypeError, ValueError):
+            continue
+    return {month: sum(values) / len(values) for month, values in grouped.items() if values}

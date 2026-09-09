@@ -6,8 +6,7 @@ import argparse
 from datetime import date
 
 from common import SupabaseRest, require_env, uncapped_score
-from sources.financial_stress import fetch_fred_monthly
-from sources.small_business_risk import TIMEOUT_SECONDS, fetch_nfib_monthly
+from sources.small_business_risk import TIMEOUT_SECONDS, fetch_fred_monthly, fetch_nfib_monthly
 
 
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
