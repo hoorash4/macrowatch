@@ -879,6 +879,7 @@ class SourceContractTests(unittest.TestCase):
         ]
         values = small_business.existing_legacy_oas(database, date(2023, 9, 1))
         self.assertEqual(values, {"2023-09-01": 3.9062})
+        self.assertEqual(database.request.call_args.args[1], "us_credit_stress_monthly")
         rows = [{"month": "2023-09-01"}, {"month": "2023-10-01"}]
         small_business.attach_legacy_oas(rows, values)
         self.assertEqual(set(rows[0]), set(rows[1]))

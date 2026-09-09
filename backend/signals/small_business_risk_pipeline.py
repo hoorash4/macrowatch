@@ -52,7 +52,7 @@ def existing_legacy_oas(database: SupabaseRest, start: date) -> dict[str, float]
     """산식에서 제외한 기존 OAS 원자료를 백필 중에도 보존한다."""
     rows = database.request(
         "GET",
-        "us_small_business_risk_monthly",
+        "us_credit_stress_monthly",
         params={
             "select": "month,high_yield_oas_pct",
             "month": f"gte.{start.replace(day=1).isoformat()}",
