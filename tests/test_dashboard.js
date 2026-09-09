@@ -53,6 +53,9 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   assert.match(source, /dual: Object\.freeze\(\{ left: axisGutter, right: 58 \}\)/);
   assert.match(source, /fixedAxis\.dataset\.fixedAxisGutter = String\(gutter\)/);
   assert.match(source, /const boundaryX = side === 'right' \? viewWidth - gutter \+ \.5 : gutter - \.5/);
+  assert.match(source, /bottomAxis\.setAttribute\('class', 'analysis-chart-axis-line'\)/);
+  assert.match(source, /bottomAxis\.setAttribute\('y1', axisBottom\)/);
+  assert.match(source, /bottomAxis\.setAttribute\('y2', axisBottom\)/);
   assert.match(source, /공통 고정축이 그래프와 축 숫자의 경계에 세로선을 한 번만 그립니다/);
   assert.match(source, /frame\.style\.width = `calc\(100% - \$\{renderedLeftGutter \+ renderedRightGutter\}px\)`/);
   assert.match(source, /track\.style\.width = `\$\{scrollTrackWidth\(frame\.clientWidth, width, scale, renderedLeftGutter, renderedRightGutter\)\}px`/);
@@ -73,7 +76,8 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   const dashboardCharts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-year-label \{ fill:#64748b; font-size:12px; font-weight:400;/);
-  assert.match(styles, /\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:1;/);
+  assert.match(styles, /\.analysis-chart-axis-line \{ stroke:#94a3b8; stroke-width:1; vector-effect:non-scaling-stroke;/);
+  assert.match(styles, /\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:\.75; vector-effect:non-scaling-stroke;/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
   assert.match(dashboardCharts, /chartPadding\('dual', \{ top: 20, bottom: 38 \}\)/);
