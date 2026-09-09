@@ -1009,6 +1009,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("중소기업 경기전망 SBHI(역)", chart)
         self.assertIn("value - headlineDomain.min", chart)
         self.assertIn('stroke-dasharray="5 4"', chart)
+        self.assertIn("utils.monotonePathSegments", chart)
+        self.assertNotIn("rows.filter(row => row.is_provisional)", chart)
         workflow = (ROOT / ".github/workflows/korea-small-business-risk.yml").read_text(encoding="utf-8")
         self.assertIn("KOSIS_API_KEY", workflow)
         self.assertIn("ECOS_API_KEY", workflow)

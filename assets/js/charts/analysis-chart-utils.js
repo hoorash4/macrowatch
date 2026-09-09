@@ -170,7 +170,7 @@
 
   let axisClipSequence = 0;
   function bindVisibleAxes(svg, frame, shell, width, config) {
-    const { top, bottom, axes } = config;
+    const { top, bottom, axes, left: plotLeft = 0 } = config;
     const ns = 'http://www.w3.org/2000/svg';
     const clip = document.createElementNS(ns, 'clipPath');
     clip.id = `visible-axis-${++axisClipSequence}`;
@@ -207,8 +207,8 @@
       if (!frame.clientWidth || !svg.getBoundingClientRect().width) return;
       shell.querySelectorAll(':scope > svg').forEach(axis => { axis.style.height = `${svg.getBoundingClientRect().height}px`; });
       const unitsPerPixel = width / svg.getBoundingClientRect().width;
-      const left = frame.scrollLeft * unitsPerPixel;
-      const right = (frame.scrollLeft + frame.clientWidth) * unitsPerPixel;
+      const left = plotLeft + frame.scrollLeft * unitsPerPixel;
+      const right = plotLeft + (frame.scrollLeft + frame.clientWidth) * unitsPerPixel;
       bindings.forEach(axis => {
         const domain = visibleAxisDomain(axis.points, left, right, axis.symmetric);
         if (!domain) return;
@@ -245,7 +245,8 @@
     const shell = document.createElement('div');
     shell.style.cssText = 'position:relative;width:100%;min-width:0;background:#fff;';
     frame.dataset.historyScroll = 'true';
-    frame.style.cssText = 'overflow-x:auto;overflow-y:hidden;width:100%;min-width:0;background:#fff;';
+    frame.className = 'policy-expectation-chart-frame';
+    frame.style.cssText = 'overflow-x:auto;overflow-y:hidden;min-width:0;background:#fff;';
     frame.tabIndex = 0;
     frame.setAttribute('aria-label', '전체 이력 가로 스크롤');
     svg.before(shell);
@@ -288,11 +289,6 @@
         node.setAttribute('visibility', 'hidden');
       });
       shell.append(fixedAxis);
-      const scrollbarMask = document.createElement('span');
-      scrollbarMask.setAttribute('aria-hidden', 'true');
-      scrollbarMask.dataset.scrollbarGutter = String(gutter);
-      scrollbarMask.style.cssText = `position:absolute;z-index:3;${side}:0;bottom:0;width:${gutter}px;height:18px;background:#fff;pointer-events:none;`;
-      shell.append(scrollbarMask);
     };
     appendFixedAxis(leftAxisNodes, 'left', leftGutter);
     appendFixedAxis(rightAxisNodes, 'right', rightGutter);
@@ -302,22 +298,28 @@
     // Keep horizontal detail on phones instead of squeezing several years into
     // a tall, narrow plot. The remaining history stays inside the scroll frame.
     let previousWidth = 0;
+    let previousFrameWidth = 0;
     const observer = new ResizeObserver(() => {
-      if (!frame.clientWidth || frame.clientWidth === previousWidth) return;
-      const ratio = previousWidth ? frame.scrollLeft / Math.max(1, frame.scrollWidth - previousWidth) : 1;
-      previousWidth = frame.clientWidth;
+      if (!shell.clientWidth || shell.clientWidth === previousWidth) return;
+      const ratio = previousWidth ? frame.scrollLeft / Math.max(1, frame.scrollWidth - previousFrameWidth) : 1;
+      previousWidth = shell.clientWidth;
       const mobile = window.matchMedia('(max-width: 1023px)').matches;
-      const scale = (mobile ? Math.max(680, frame.clientWidth) : frame.clientWidth) / baseWidth;
+      const scale = (mobile ? Math.max(680, shell.clientWidth) : shell.clientWidth) / baseWidth;
       const renderedHeight = viewHeight * (mobile ? Math.min(1, scale) : 1);
+      const renderedLeftGutter = leftGutter * scale;
+      const renderedRightGutter = rightGutter * scale;
+      frame.style.width = `calc(100% - ${renderedLeftGutter + renderedRightGutter}px)`;
+      frame.style.marginLeft = `${renderedLeftGutter}px`;
+      frame.style.marginRight = `${renderedRightGutter}px`;
       svg.style.width = `${width * scale}px`;
       svg.style.height = `${renderedHeight}px`;
+      svg.style.marginLeft = `-${renderedLeftGutter}px`;
+      svg.style.marginRight = `-${renderedRightGutter}px`;
       shell.querySelectorAll(':scope > svg[data-fixed-axis-gutter]').forEach(axis => {
         axis.style.width = `${Number(axis.dataset.fixedAxisGutter) * scale}px`;
         axis.style.height = `${renderedHeight}px`;
       });
-      shell.querySelectorAll(':scope > [data-scrollbar-gutter]').forEach(mask => {
-        mask.style.width = `${Number(mask.dataset.scrollbarGutter) * scale}px`;
-      });
+      previousFrameWidth = frame.clientWidth;
       frame.scrollLeft = ratio * Math.max(0, frame.scrollWidth - frame.clientWidth);
     });
     observer.observe(frame);

@@ -45,12 +45,14 @@ test('공통 시계열 보간은 실제 점을 지나는 모노톤 곡선을 만
   assert.match(segments[1].path, /C 13\.33/);
 });
 
-test('공통 스크롤 그래프는 실제 좌우 축 폭으로 그래프와 스크롤바를 가린다', () => {
+test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌우 축 폭으로 분리한다', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(source, /const leftGutter = Number\.isFinite\(Number\(axes\?\.left\)\)/);
   assert.match(source, /const rightGutter = Number\.isFinite\(Number\(axes\?\.right\)\)/);
   assert.match(source, /fixedAxis\.dataset\.fixedAxisGutter = String\(gutter\)/);
-  assert.match(source, /scrollbarMask\.dataset\.scrollbarGutter = String\(gutter\)/);
+  assert.match(source, /frame\.style\.width = `calc\(100% - \$\{renderedLeftGutter \+ renderedRightGutter\}px\)`/);
+  assert.match(source, /svg\.style\.marginLeft = `-\$\{renderedLeftGutter\}px`/);
+  assert.doesNotMatch(source, /scrollbarMask/);
 });
 
 // 브라우저 전역을 최소한으로 흉내 내어 assets/js/dashboard/script.js의 순수 보조 함수만 검증한다.
