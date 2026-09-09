@@ -380,20 +380,14 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     visibility: 'hidden',
   });
   const hoverValue = createSvgElement('text', {
+    class: 'analysis-chart-cursor-text analysis-chart-cursor-value',
     'text-anchor': 'middle',
-    fill: '#334155',
-    'font-size': 11,
-    'font-weight': 700,
-    stroke: '#f8fafc',
-    'stroke-width': 4,
-    'paint-order': 'stroke',
     'pointer-events': 'none',
     visibility: 'hidden',
   });
   const hoverPeriod = createSvgElement('text', {
+    class: 'analysis-chart-cursor-text analysis-chart-cursor-date',
     'text-anchor': 'middle',
-    fill: '#64748b',
-    'font-size': 10,
     'pointer-events': 'none',
     visibility: 'hidden',
   });
@@ -666,8 +660,8 @@ function renderEmStressDashboard(rows) {
     const svg = host?.querySelector('svg');
     if (!svg) return;
     const guide = createSvgElement('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-    const valueLabel = showLabels ? createSvgElement('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' }) : null;
-    const periodLabel = showLabels ? createSvgElement('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, 'pointer-events': 'none', visibility: 'hidden' }) : null;
+    const valueLabel = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
+    const periodLabel = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
     svg.append(guide);
     if (valueLabel && periodLabel) svg.append(valueLabel, periodLabel);
     const show = (week) => {
@@ -773,8 +767,8 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     const svg = host.querySelector('svg');
     if (!svg || !hoverRows.length) return;
     const guide = createSvgElement('line', { y1: chartPadding.top, y2: chartHeight - chartPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-    const value = showLabels ? createSvgElement('text', { 'text-anchor': 'middle', fill: '#334155', 'font-size': 11, 'font-weight': 700, stroke: '#f8fafc', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none', visibility: 'hidden' }) : null;
-    const period = showLabels ? createSvgElement('text', { 'text-anchor': 'middle', fill: '#64748b', 'font-size': 10, 'pointer-events': 'none', visibility: 'hidden' }) : null;
+    const value = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
+    const period = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
     svg.append(guide);
     if (value && period) svg.append(value, period);
     const show = (month) => {

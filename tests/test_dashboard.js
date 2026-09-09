@@ -68,6 +68,15 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   assert.ok(context.window.MacroWatchAnalysisChart.scrollTrackWidth(viewport, 1840, scale, left, right) > viewport);
 });
 
+test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기 글자를 사용한다', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  const dashboardCharts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
+  assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
+  assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
+  assert.doesNotMatch(dashboardCharts, /'font-size': 11, 'font-weight': 700/);
+});
+
 // 브라우저 전역을 최소한으로 흉내 내어 assets/js/dashboard/script.js의 순수 보조 함수만 검증한다.
 // 실제 DOM 렌더링은 건드리지 않으며, 리팩터링 전후 계산 결과가 같은지 확인한다.
 function loadDashboardScript() {
