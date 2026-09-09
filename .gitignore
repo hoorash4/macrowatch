@@ -7,3 +7,4 @@ __pycache__/
 .env.*
 supabase/.temp/
 _site/
+analysis_output/
