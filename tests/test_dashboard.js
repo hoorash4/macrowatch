@@ -72,9 +72,32 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   const dashboardCharts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
   assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
+  assert.match(styles, /\.analysis-chart-year-label \{ fill:#64748b; font-size:12px; font-weight:400;/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
   assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
+  assert.match(dashboardCharts, /chartPadding\('dual', \{ top: 20, bottom: 38 \}\)/);
   assert.doesNotMatch(dashboardCharts, /'font-size': 11, 'font-weight': 700/);
+});
+
+test('공통 커서 글자는 보이는 플롯 폭 안으로 이동한다', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
+  assert.match(source, /function positionCursorText\(node, desiredX, frame, inset = 6\)/);
+  assert.match(source, /const visibleLeft = \(frameBounds\.left - svgBounds\.left\) \* unitsPerPixel/);
+  assert.match(source, /const visibleRight = \(frameBounds\.right - svgBounds\.left\) \* unitsPerPixel/);
+  assert.match(source, /node\.getComputedTextLength/);
+  assert.match(source, /positionCursorText,/);
+  const context = { window: {}, Number, Math, Set };
+  vm.createContext(context);
+  vm.runInContext(source, context, { filename: 'assets/js/charts/analysis-chart-utils.js' });
+  const attributes = {};
+  const node = {
+    ownerSVGElement: { viewBox: { baseVal: { width: 1000 } }, getBoundingClientRect: () => ({ left: 0, width: 500 }) },
+    getComputedTextLength: () => 200,
+    setAttribute: (key, value) => { attributes[key] = Number(value); },
+  };
+  const frame = { getBoundingClientRect: () => ({ left: 50, right: 450 }) };
+  assert.equal(context.window.MacroWatchAnalysisChart.positionCursorText(node, 50, frame), 206);
+  assert.equal(context.window.MacroWatchAnalysisChart.positionCursorText(node, 950, frame), 794);
 });
 
 // 브라우저 전역을 최소한으로 흉내 내어 assets/js/dashboard/script.js의 순수 보조 함수만 검증한다.

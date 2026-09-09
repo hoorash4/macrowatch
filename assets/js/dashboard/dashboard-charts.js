@@ -5,7 +5,7 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
-const { monotoneSeriesPath, monotoneStyledSegments, chartPadding, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
+const { monotoneSeriesPath, monotoneStyledSegments, chartPadding, positionCursorText, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
@@ -278,7 +278,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const labels = data.map((row, index) => {
     const month = String(row.month || '');
     if (!month.endsWith('-01') || (index !== 0 && !month.endsWith('-01-01'))) return '';
-    return `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${month.slice(0, 4)}</text>`;
+    return `<text x="${x(index)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${month.slice(0, 4)}</text>`;
   }).join('');
   const lines = monotoneStyledSegments(
     data, (_, index) => x(index), (row) => y(Number(row.stress_index)),
@@ -322,7 +322,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const chart = document.getElementById('credit-stress-chart');
   const weekly = [...weeklyRows].filter((row) => Number.isFinite(Number(row.tension_index))).sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 32 });
+  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', usStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 38 });
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates), x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
   const values = weekly.map((row) => Number(row.tension_index)), minimum = Math.min(...values), maximum = Math.max(...values), range = Math.max(maximum - minimum, 1), lower = minimum - range * .1, upper = maximum + range * .1, y = (value) => padding.top + ((height - padding.top - padding.bottom) * (upper - value)) / (upper - lower);
@@ -337,7 +337,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const sp500Y = (value) => Number.isFinite(value) ? padding.top + ((height - padding.top - padding.bottom) * (sp500Upper - value)) / Math.max(1, sp500Upper - sp500Lower) : NaN;
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
+  const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${String(row.week).slice(0, 4)}</text>`).join('');
   const ticks = Array.from({ length: 5 }, (_, index) => index / 4);
   const grid = ticks.map((ratio) => {
     const value = upper - (upper - lower) * ratio;
@@ -401,14 +401,14 @@ function renderMarketStressAndTensionChart(weeklyRows) {
     hoverGuide.setAttribute('x1', pointX);
     hoverGuide.setAttribute('x2', pointX);
     hoverGuide.setAttribute('visibility', 'visible');
-    hoverValue.setAttribute('x', pointX);
     hoverValue.setAttribute('y', padding.top + 11);
     hoverValue.setAttribute('visibility', 'visible');
     hoverValue.textContent = Number(nearest.tension_index).toFixed(2);
-    hoverPeriod.setAttribute('x', pointX);
     hoverPeriod.setAttribute('y', height - padding.bottom + 12);
     hoverPeriod.setAttribute('visibility', 'visible');
     hoverPeriod.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
+    positionCursorText(hoverValue, pointX, frame);
+    positionCursorText(hoverPeriod, pointX, frame);
   };
   const setHover = (event) => {
     const bounds = svg.getBoundingClientRect();
@@ -622,7 +622,7 @@ function renderEmStressDashboard(rows) {
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.week).localeCompare(String(b.week)));
   if (!chart || !weekly.length) return;
-  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 32 });
+  const width = window.MacroWatchAnalysisChart.historyWidth(weekly, 'week', emStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 38 });
   const dates = weekly.map((row) => new Date(row.week).getTime());
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -636,7 +636,7 @@ function renderEmStressDashboard(rows) {
   const eemY = (value) => padding.top + ((height - padding.top - padding.bottom) * (eemUpper - value)) / Math.max(1, eemUpper - eemLower);
   const yearRows = weekly.filter((row, index) => index === 0 || String(row.week).slice(0, 4) !== String(weekly[index - 1].week).slice(0, 4));
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
-  const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.week).slice(0, 4)}</text>`).join('');
+  const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${String(row.week).slice(0, 4)}</text>`).join('');
   const grid = Array.from({ length: 5 }, (_, index) => {
     const value = upper - (upper - lower) * index / 4;
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
@@ -670,10 +670,12 @@ function renderEmStressDashboard(rows) {
       guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible');
       if (valueLabel && periodLabel) {
         const [, month, day] = String(nearest.week).split('-').map(Number);
-        valueLabel.setAttribute('x', pointX); valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
+        valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
         valueLabel.textContent = Number(nearest.stress_index).toFixed(2);
-        periodLabel.setAttribute('x', pointX); periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
+        periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
         periodLabel.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
+        positionCursorText(valueLabel, pointX, frame);
+        positionCursorText(periodLabel, pointX, frame);
       }
     };
     const clear = () => [guide, valueLabel, periodLabel].filter(Boolean).forEach((element) => element.setAttribute('visibility', 'hidden'));
@@ -731,7 +733,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     return;
   }
   const weeklyKospi = weeklyKospiSource;
-  const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', koreaStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 32 });
+  const width = window.MacroWatchAnalysisChart.historyWidth(data, 'month', koreaStressRangeYears), height = CREDIT_STRESS_CHART_HEIGHT, padding = chartPadding('dual', { top: 20, bottom: 38 });
   const dates = [...data.map((row) => new Date(row.month).getTime()), ...weeklyKospi.map((row) => new Date(row.week).getTime())];
   const start = Math.min(...dates), end = Math.max(...dates);
   const x = (month) => padding.left + ((new Date(month).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
@@ -747,7 +749,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}</text>`;
   }).join('');
   const years = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4));
-  const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>`).join('');
+  const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${String(row.month).slice(0, 4)}</text>`).join('');
   const stress = monotoneStyledSegments(
     data, (row) => x(row.month), (row) => y(Number(row.stress_index)),
     (previous, row) => {
@@ -766,6 +768,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const attachHover = ({ host, hoverRows, valueKey, chartHeight, chartPadding, source, label, showLabels = true }) => {
     const svg = host.querySelector('svg');
     if (!svg || !hoverRows.length) return;
+    const frame = host.querySelector('[data-history-scroll]');
     const guide = createSvgElement('line', { y1: chartPadding.top, y2: chartHeight - chartPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
     const value = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
     const period = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
@@ -776,10 +779,12 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
       const pointX = x(nearest.month);
       guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible');
       if (value && period) {
-        value.setAttribute('x', pointX); value.setAttribute('y', chartPadding.top + 12); value.setAttribute('visibility', 'visible');
+        value.setAttribute('y', chartPadding.top + 12); value.setAttribute('visibility', 'visible');
         value.textContent = `${label ? `${label} ` : ''}${Number(nearest[valueKey]).toFixed(2)}`;
-        period.setAttribute('x', pointX); period.setAttribute('y', chartHeight - chartPadding.bottom + 12); period.setAttribute('visibility', 'visible');
+        period.setAttribute('y', chartHeight - chartPadding.bottom + 12); period.setAttribute('visibility', 'visible');
         period.textContent = `${Number(String(nearest.month).slice(5, 7))}월`;
+        positionCursorText(value, pointX, frame);
+        positionCursorText(period, pointX, frame);
       }
     };
     const clear = () => [guide, value, period].filter(Boolean).forEach((element) => element.setAttribute('visibility', 'hidden'));

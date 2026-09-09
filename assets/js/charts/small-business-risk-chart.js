@@ -48,7 +48,7 @@
       if (!point) return '';
       const pointX = x(point);
       const guide = pointX > 65 ? `<line x1="${pointX}" x2="${pointX}" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" stroke="#edf0f4"/>` : '';
-      return `${guide}<text x="${pointX}" y="${HEIGHT - 14}" text-anchor="middle" fill="#64748b" font-size="10">${year}</text>`;
+      return `${guide}<text x="${pointX}" y="${HEIGHT - 16}" text-anchor="middle" class="analysis-chart-year-label">${year}</text>`;
     }).join('');
     const riskPath = utils.monotoneSeriesPath(rows, x, row => riskY(Number(row.risk_index)));
     const optimismRows = rows.filter(row => Number.isFinite(Number(row.optimism_index)));
@@ -84,12 +84,14 @@
       const cursor = host.querySelector('[data-small-business-risk-cursor]');
       cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursor.classList.add('is-visible');
       const value = host.querySelector('[data-small-business-risk-value]');
-      value.setAttribute('x', Math.max(130, Math.min(width - 130, cursorX))); value.setAttribute('visibility', 'visible');
+      value.setAttribute('visibility', 'visible');
       const labels = [`위험 ${Number(nearest.risk_index).toFixed(1)}`];
       if (Number.isFinite(Number(nearest.optimism_index))) labels.push(`낙관 ${Number(nearest.optimism_index).toFixed(1)}`);
       value.textContent = labels.join(' · ');
       const date = host.querySelector('[data-small-business-risk-date]');
-      date.setAttribute('x', cursorX); date.textContent = monthLabel(nearest.month); date.classList.add('is-visible');
+      date.textContent = monthLabel(nearest.month); date.classList.add('is-visible');
+      utils.positionCursorText(value, cursorX, frame);
+      utils.positionCursorText(date, cursorX, frame);
     });
     frame?.addEventListener('pointerleave', () => {
       host.querySelector('[data-small-business-risk-cursor]')?.classList.remove('is-visible');

@@ -25,6 +25,23 @@
     return Math.max(viewportWidth, contentWidth * scale - leftGutter - rightGutter);
   }
 
+  function positionCursorText(node, desiredX, frame, inset = 6) {
+    if (!node || !frame) return desiredX;
+    node.setAttribute('x', desiredX);
+    const svg = node.ownerSVGElement;
+    const svgBounds = svg?.getBoundingClientRect();
+    const frameBounds = frame.getBoundingClientRect();
+    const viewWidth = svg?.viewBox?.baseVal?.width;
+    if (!svgBounds?.width || !viewWidth) return desiredX;
+    const unitsPerPixel = viewWidth / svgBounds.width;
+    const visibleLeft = (frameBounds.left - svgBounds.left) * unitsPerPixel;
+    const visibleRight = (frameBounds.right - svgBounds.left) * unitsPerPixel;
+    const halfWidth = (node.getComputedTextLength?.() || 0) / 2;
+    const safeX = Math.max(visibleLeft + halfWidth + inset, Math.min(visibleRight - halfWidth - inset, desiredX));
+    node.setAttribute('x', safeX);
+    return safeX;
+  }
+
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
   function niceStep(value) {
     const safeValue = Math.max(Math.abs(value), Number.EPSILON);
@@ -451,5 +468,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { axisGutter, axisLayouts, chartPadding, scrollTrackWidth, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

@@ -93,7 +93,7 @@
     const years = [...new Set(displayRows.map(row => String(row.display_month).slice(0, 4)))];
     const guides = years.map(year => {
       const point = displayRows.find(row => String(row.display_month).startsWith(year));
-      return point ? `<line x1="${xDate(point.display_month)}" x2="${xDate(point.display_month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#edf0f4"/><text x="${xDate(point.display_month)}" y="${height - 14}" text-anchor="middle" fill="#64748b" font-size="10">${year}</text>` : '';
+      return point ? `<line x1="${xDate(point.display_month)}" x2="${xDate(point.display_month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#edf0f4"/><text x="${xDate(point.display_month)}" y="${height - 16}" text-anchor="middle" class="analysis-chart-year-label">${year}</text>` : '';
     }).join('');
     host.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="헤드라인과 코어 통합물가지수, 기준금리와 미국 10년물 금리 추이">${grid}${guides}<path d="${path(finalRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${path(finalRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${stepPath(policy, xPolicy, y, 'target_upper_pct')}" fill="none" stroke="${COLORS.policy}" stroke-width="${lineWidths.auxiliary}"/><path d="${path(policy, 'treasury_10y_5d_pct', y, xPolicy)}" fill="none" stroke="${COLORS.treasury}" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/><rect data-inflation-hit x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}" fill="transparent"/><line data-inflation-cursor x1="0" x2="0" y1="${padding.top}" y2="${height - padding.bottom}" class="policy-expectation-cursor"/><text data-inflation-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-inflation-date x="0" y="${height - padding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text></svg>`;
     chartUtils.scrollableSvg(host.querySelector('svg'), width, baseWidth, {
@@ -133,19 +133,22 @@
     const formatValue = value => Number.isFinite(finiteNumber(value)) ? `${finiteNumber(value).toFixed(2)}%` : '미발표';
     const latestPolicyFor = row => policy.filter(point => timestamp(point.observed_on) <= monthEndTimestamp(addMonthsIso(row.month, 1))).at(-1) || {};
     const showMonth = nearest => {
-      const cursorX = xInflation(nearest), labelX = Math.max(190, Math.min(width - 190, cursorX));
+      const cursorX = xInflation(nearest);
       const policyPoint = latestPolicyFor(nearest), status = nearest.status === 'provisional' ? '잠정' : '확정';
       const mainCursor = host.querySelector('[data-inflation-cursor]'), realCursor = realHost.querySelector('[data-inflation-real-cursor]');
       [mainCursor, realCursor].forEach(cursor => { cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursor.classList.add('is-visible'); });
       const mainValue = host.querySelector('[data-inflation-value]');
-      mainValue.setAttribute('x', labelX); mainValue.setAttribute('visibility', 'visible');
+      mainValue.setAttribute('visibility', 'visible');
       mainValue.textContent = `헤드라인 ${formatValue(nearest.headline_yoy_pct)} · 코어 ${formatValue(nearest.core_yoy_pct)} (${status}) · 기준 ${formatValue(policyPoint.target_upper_pct)} · 10년 ${formatValue(policyPoint.treasury_10y_5d_pct)}`;
       const realValue = realHost.querySelector('[data-inflation-real-value]');
-      realValue.setAttribute('x', labelX); realValue.setAttribute('visibility', 'visible');
+      realValue.setAttribute('visibility', 'visible');
       realValue.textContent = `헤드라인 실질 ${formatValue(nearest.headline_real_rate_pct)} · 코어 실질 ${formatValue(nearest.core_real_rate_pct)}`;
-      [host.querySelector('[data-inflation-date]'), realHost.querySelector('[data-inflation-real-date]')].forEach(label => {
-        label.setAttribute('x', cursorX); label.textContent = formatCursorMonth(addMonthsIso(nearest.month, 1)); label.classList.add('is-visible');
-      });
+      const mainDate = host.querySelector('[data-inflation-date]'), realDate = realHost.querySelector('[data-inflation-real-date]');
+      [mainDate, realDate].forEach(label => { label.textContent = formatCursorMonth(addMonthsIso(nearest.month, 1)); label.classList.add('is-visible'); });
+      chartUtils.positionCursorText(mainValue, cursorX, mainFrame);
+      chartUtils.positionCursorText(realValue, cursorX, realFrame);
+      chartUtils.positionCursorText(mainDate, cursorX, mainFrame);
+      chartUtils.positionCursorText(realDate, cursorX, realFrame);
     };
     const clearMonth = () => {
       [host.querySelector('[data-inflation-cursor]'), realHost.querySelector('[data-inflation-real-cursor]')].forEach(node => node?.classList.remove('is-visible'));

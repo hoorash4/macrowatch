@@ -1024,6 +1024,7 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-cursor-text { font-size:10px; font-weight:400; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; }
 .analysis-chart-cursor-value { fill:#334155; }
 .analysis-chart-cursor-date { fill:#64748b; }
+.analysis-chart-year-label { fill:#64748b; font-size:12px; font-weight:400; }
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
 .policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
 
