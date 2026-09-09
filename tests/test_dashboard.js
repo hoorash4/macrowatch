@@ -126,7 +126,7 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(html, /PCE 60%·조정 CPI 30%·소비연관 PPI 10%/);
   assert.doesNotMatch(html, /data-inflation-kind=/);
   assert.match(html, /data-inflation-range="1"[\s\S]*data-inflation-range="2"/);
-  assert.match(html, /data-inflation-range="5" class="is-active"/);
+  assert.match(html, /data-inflation-range="2" class="is-active"/);
   assert.match(chart, /us_inflation_monthly/);
   assert.match(chart, /us_policy_rate_daily/);
   assert.match(chart, /통합물가/);
@@ -135,9 +135,12 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(chart, /실질금리/);
   assert.match(html, /inflation-real-rate-chart/);
   assert.match(chart, /data-inflation-cursor/);
-  assert.match(chart, /formatCursorMonth\(nearest\.month\)/);
+  assert.match(chart, /formatCursorMonth\(addMonthsIso\(nearest\.month, 1\)\)/);
   assert.match(chart, /showMonth\(monthly\.reduce/);
   assert.match(chart, /treasury_10y_pct/);
+  assert.match(chart, /treasury_10y_5d_pct/);
+  assert.match(chart, /withTreasuryAverage/);
+  assert.match(chart, /addMonthsIso/);
   assert.match(chart, /core: '#ea580c'/);
   assert.match(chart, /historyYears \/ Number\(state\.years\)/);
   assert.doesNotMatch(chart, /<circle/);

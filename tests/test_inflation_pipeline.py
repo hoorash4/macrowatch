@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, policy_rows, save_automatic
+from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, policy_rows, save_automatic, save_policy_automatic
 
 
 class FakeSupabase:
@@ -21,13 +21,14 @@ class FakeSupabase:
 
 
 class InflationPipelineTests(unittest.TestCase):
-    def test_policy_rows_carry_latest_ten_year_yield(self):
+    def test_policy_rows_keep_ten_year_yield_on_business_observations_only(self):
         fred = {
             "policy_rate": {date(2026, 9, 7): 5.5, date(2026, 9, 8): 5.5},
             "treasury_10y": {date(2026, 9, 7): 4.1},
         }
         rows = policy_rows(fred, date(2026, 9, 1), "2026-09-09T00:00:00Z")
-        self.assertEqual(rows[-1]["treasury_10y_pct"], 4.1)
+        self.assertEqual(rows[0]["treasury_10y_pct"], 4.1)
+        self.assertIsNone(rows[-1]["treasury_10y_pct"])
         self.assertEqual(rows[-1]["source"], "FRED:DFEDTARU,DGS10")
 
     @patch("backend.inflation_pipeline.requests.get")
@@ -90,6 +91,12 @@ class InflationPipelineTests(unittest.TestCase):
         stored_months = [row["month"] for row in client.upserts[0][1]]
         self.assertEqual(stored_months, ["2026-07-01", "2026-08-01"])
         self.assertEqual(len(client.upserts), 1)
+
+    def test_policy_automatic_refreshes_delayed_ten_year_observations(self):
+        client = FakeSupabase()
+        rows = [{"observed_on": f"2026-09-{day:02d}"} for day in range(1, 13)]
+        save_policy_automatic(client, rows)
+        self.assertEqual(client.upserts[0], ("us_policy_rate_daily", rows[-10:], "observed_on"))
 
 
 if __name__ == "__main__":

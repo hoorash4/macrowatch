@@ -638,7 +638,10 @@ def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str
         {
             "observed_on": observed_on.isoformat(),
             "target_upper_pct": round(value, 4),
-            "treasury_10y_pct": round(latest_on_or_before(fred["treasury_10y"], observed_on), 4),
+            "treasury_10y_pct": (
+                round(fred["treasury_10y"][observed_on], 4)
+                if observed_on in fred["treasury_10y"] else None
+            ),
             "source": "FRED:DFEDTARU,DGS10",
             "updated_at": updated_at,
         }
@@ -655,7 +658,9 @@ def save_policy_backfill(client: SupabaseRest, start: date, rows: list[dict[str,
 
 def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
     if rows:
-        client.upsert("us_policy_rate_daily", rows[-1], conflict="observed_on")
+        # DGS10 can arrive one or more days after the policy-rate calendar row.
+        # Refresh a short tail so late business-day observations replace nulls.
+        client.upsert("us_policy_rate_daily", rows[-10:], conflict="observed_on")
 
 
 def save_backfill(client: SupabaseRest, start: date, monthly: list[dict[str, object]]) -> None:
@@ -684,7 +689,11 @@ def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day:
     ) or []
     policy = client.request(
         "GET", "us_policy_rate_daily",
-        params={"select": "observed_on,source,treasury_10y_pct", "order": "observed_on.desc", "limit": "1"},
+        params={"select": "observed_on,source", "order": "observed_on.desc", "limit": "1"},
+    ) or []
+    treasury = client.request(
+        "GET", "us_policy_rate_daily",
+        params={"select": "observed_on,treasury_10y_pct", "treasury_10y_pct": "not.is.null", "order": "observed_on.desc", "limit": "1"},
     ) or []
     if not monthly or monthly[0].get("month") != expected_month:
         raise RuntimeError("Monthly inflation verification did not return the expected latest row")
@@ -694,7 +703,8 @@ def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day:
         not policy
         or policy[0].get("observed_on") != expected_policy_day
         or policy[0].get("source") != "FRED:DFEDTARU,DGS10"
-        or policy[0].get("treasury_10y_pct") is None
+        or not treasury
+        or treasury[0].get("treasury_10y_pct") is None
     ):
         raise RuntimeError("Policy-rate verification did not return the expected latest row")
 
