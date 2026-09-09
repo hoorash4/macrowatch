@@ -34,6 +34,8 @@ import signals.em_capital_capacity_pipeline as em_capacity  # noqa: E402
 import signals.financial_stress_pipeline as us  # noqa: E402
 import signals.small_business_risk_pipeline as small_business  # noqa: E402
 import sources.small_business_risk as small_business_source  # noqa: E402
+import signals.korea_small_business_risk_pipeline as korea_small_business  # noqa: E402
+import sources.korea_small_business_risk as korea_small_business_source  # noqa: E402
 import signals.korea_stress_pipeline as kr  # noqa: E402
 import signals.policy_expectation_pipeline as policy_expectation  # noqa: E402
 import signals.equity_bond_model as equity_bond  # noqa: E402
@@ -897,6 +899,104 @@ class SourceContractTests(unittest.TestCase):
         for title in ("미국 주식시장 자금환경", "한국 주식시장 자금환경"):
             self.assertRegex(html, rf"fa-money-bill-transfer[^<]*</i></span>\s*<h2[^>]*>{title}</h2>")
 
+    def test_korea_small_business_risk_carries_lagging_components(self) -> None:
+        raw = {
+            "funding_outlook": {"2026-05-01": 77.0, "2026-06-01": 76.9},
+            "utilization_sa": {"2026-04-01": 75.7, "2026-05-01": 75.9},
+            "delinquency": {"2026-04-01": 0.90},
+            "headline_outlook": {"2026-05-01": 77.6, "2026-06-01": 79.6},
+        }
+        rows = korea_small_business.build_rows(raw)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[-1]["utilization_source_month"], "2026-05-01")
+        self.assertEqual(rows[-1]["delinquency_source_month"], "2026-04-01")
+        self.assertTrue(rows[-1]["is_provisional"])
+        expected = (
+            korea_small_business.component_score(76.9, "funding_outlook") * .35
+            + korea_small_business.component_score(75.9, "utilization_sa") * .30
+            + korea_small_business.component_score(.90, "delinquency") * .35
+        )
+        self.assertEqual(rows[-1]["risk_index"], round(expected, 2))
+        self.assertEqual(rows[-1]["headline_outlook_sbhi"], 79.6)
+
+    def test_kosis_parser_and_parameters_select_official_total_series(self) -> None:
+        rows = [
+            {"PRD_DE": "202601", "DT": "79.3"},
+            {"PRD_DE": "202602", "DT": "79.5"},
+            {"PRD_DE": "202603", "DT": "-"},
+        ]
+        parsed = korea_small_business_source.parse_kosis_rows(rows, date(2026, 1, 1), date(2026, 3, 1))
+        self.assertEqual(parsed, {"2026-01-01": 79.3, "2026-02-01": 79.5})
+        response = Mock(status_code=200)
+        response.raise_for_status = Mock()
+        response.json.return_value = rows
+        session = Mock()
+        session.get.return_value = response
+        korea_small_business_source.fetch_kosis_series(
+            "funding_outlook", date(2026, 1, 1), date(2026, 3, 1), api_key="test", session=session
+        )
+        params = session.get.call_args.kwargs["params"]
+        self.assertEqual(params["tblId"], "DT_D10116")
+        self.assertEqual(params["objL1"], "15340a.a")
+        self.assertEqual(params["prdSe"], "M")
+
+    def test_fss_parser_uses_sme_corporation_rate_and_reference_month(self) -> None:
+        month, value = korea_small_business_source.parse_fss_report(
+            "’25.12월말 기준 국내은행 자료. 중소법인 연체율(0.64%)은 전월보다 하락했다."
+        )
+        self.assertEqual(month, "2025-12-01")
+        self.assertEqual(value, 0.64)
+
+    def test_kbiz_parser_separates_concatenated_one_decimal_series(self) -> None:
+        report = korea_small_business_source.parse_kbiz_report(
+            """2022년 12월 전망
+            (전산업) 중소기업 12월 업황전망 SBHI는 81.7로 전월대비 0.6p 하락
+            전산업 경기전망 항목 자 금 사 정79.2 79.779.180.383.380.578.8△1.7△0.4수준판단
+            중소제조업 평균가동률(2022. 10월)
+            중소제조업(계절조정) -70.472.372.572.071.571.60.11.2소 기 업
+            """
+        )
+        self.assertEqual(report["headline_outlook"], ("2022-12-01", 81.7))
+        self.assertEqual(report["funding_outlook"], ("2022-12-01", 78.8))
+        self.assertEqual(report["utilization_sa"], ("2022-10-01", 71.6))
+
+    def test_kbiz_hwp_attachment_uses_official_viewer_parameters(self) -> None:
+        markup = """
+        <li><em>2020년 8월 결과보고서.hwp</em>
+        <a data-ds="bbsAttachFile" data-seq="64799"
+           onclick="fileViwer(this.getAttribute('data-ds'), this.getAttribute('data-seq'), '')">바로보기</a></li>
+        """
+        self.assertEqual(
+            korea_small_business_source._kbiz_hwp_viewer_attachments(markup),
+            [("bbsAttachFile", "64799")],
+        )
+
+    def test_korea_small_business_replacement_rejects_month_gaps(self) -> None:
+        raw = {
+            "funding_outlook": {"2020-01-01": 80.0, "2020-03-01": 81.0},
+            "headline_outlook": {"2020-01-01": 82.0, "2020-03-01": 83.0},
+        }
+        rows = [{"month": "2020-01-01"}, {"month": "2020-03-01"}]
+        with self.assertRaisesRegex(RuntimeError, "백필 완전성 검증 실패"):
+            korea_small_business.validate_replacement(raw, rows, date(2020, 1, 1))
+
+    def test_korea_small_business_card_reuses_common_graph_form(self) -> None:
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        chart = (ROOT / "assets/js/charts/korea-small-business-risk-chart.js").read_text(encoding="utf-8")
+        self.assertLess(html.index('id="korea-stress-dashboard"'), html.index('id="korea-small-business-risk-dashboard"'))
+        self.assertLess(html.index('id="korea-small-business-risk-dashboard"'), html.index('id="korea-foreign-flow-dashboard"'))
+        self.assertIn("utils.lineWidths.primary", chart)
+        self.assertIn("utils.lineWidths.comparison", chart)
+        self.assertIn("utils.scrollableSvg", chart)
+        self.assertIn("utils.scrollToLatest", chart)
+        self.assertIn("중소기업 업황전망 SBHI", chart)
+        workflow = (ROOT / ".github/workflows/korea-small-business-risk.yml").read_text(encoding="utf-8")
+        self.assertIn("KOSIS_API_KEY", workflow)
+        self.assertIn("--start 2020-01 --replace", workflow)
+        self.assertIn("--bootstrap-if-empty", workflow)
+        self.assertIn('workflows: ["Deploy Supabase changes"]', workflow)
+        deploy_workflow = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
+        self.assertIn("20260909141525_add_kr_small_business_risk.sql", deploy_workflow)
     def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
         initial = (ROOT / "supabase/migrations/20260824_article_sentiment_pipeline.sql").read_text(encoding="utf-8")
         upgrade = (ROOT / "supabase/migrations/20260827_allow_financial_news_source.sql").read_text(encoding="utf-8")

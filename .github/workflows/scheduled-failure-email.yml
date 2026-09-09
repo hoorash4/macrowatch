@@ -22,6 +22,7 @@ on:
       - "Refresh equity-bond relative value"
       - "Refresh equity-bond attractiveness flow"
       - "Refresh Korea foreign flow"
+      - "Refresh Korea small business risk"
       - "Refresh Korean market stress"
       - "Refresh KOSPI market context"
       - "Refresh market-implied policy expectations"
