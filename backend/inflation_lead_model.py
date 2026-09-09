@@ -16,6 +16,8 @@ import numpy as np
 MODEL_VERSION = "inflation_lead_v1"
 RIDGE_ALPHAS = (0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
 DEFAULT_COMPOSITE_WEIGHTS = (0.30, 0.50, 0.20)
+NOWCAST_CORRECTION_GRID = tuple(step / 20.0 for step in range(21))
+NOWCAST_WEIGHT_LOOKBACK_MONTHS = 24
 
 
 @dataclass(frozen=True)
@@ -154,6 +156,47 @@ def integrated_inflation_yoy(
         pce_yoy_pct=float(pce_yoy_pct),
         aligned_ppi_yoy_pct=float(aligned_ppi),
     )
+
+
+def blend_leading_forecasts(
+    commodity_led_model_change_pct: float,
+    broad_nowcast_change_pct: float,
+    nowcast_weight: float,
+) -> float:
+    """Blend two forecasts of the same total integrated-inflation change."""
+
+    if not 0.0 <= nowcast_weight <= 1.0:
+        raise ValueError("nowcast weight must be between zero and one")
+    return float(
+        commodity_led_model_change_pct
+        + nowcast_weight * (broad_nowcast_change_pct - commodity_led_model_change_pct)
+    )
+
+
+def select_nowcast_weight(
+    actual_changes_pct: Sequence[float],
+    commodity_model_changes_pct: Sequence[float],
+    broad_nowcast_changes_pct: Sequence[float],
+) -> float:
+    """Choose the causal ensemble weight that best predicted prior directions.
+
+    Direction accuracy is the product objective.  Mean absolute error breaks ties,
+    followed by the smaller weight so an unsupported external adjustment is
+    never added merely because several ratios produce the same score.
+    """
+
+    actual = np.asarray(actual_changes_pct, dtype=float)
+    commodity = np.asarray(commodity_model_changes_pct, dtype=float)
+    broad = np.asarray(broad_nowcast_changes_pct, dtype=float)
+    if len(actual) < 24 or len(commodity) != len(actual) or len(broad) != len(actual):
+        raise ValueError("matching histories need at least 24 months")
+    candidates = []
+    for ratio in NOWCAST_CORRECTION_GRID:
+        prediction = commodity + ratio * (broad - commodity)
+        direction_accuracy = float((np.sign(actual) == np.sign(prediction)).mean())
+        mean_absolute_error = float(np.abs(actual - prediction).mean())
+        candidates.append((-direction_accuracy, mean_absolute_error, ratio))
+    return float(min(candidates)[2])
 
 
 def fisher_real_rate_pct(nominal_rate_pct: float, inflation_yoy_pct: float) -> float:

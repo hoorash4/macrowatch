@@ -2,6 +2,7 @@ import unittest
 
 from backend.inflation_lead_model import (
     ProducerCalibration,
+    blend_leading_forecasts,
     calibrate_producer_inflation,
     fisher_real_rate_pct,
     fit_ridge,
@@ -9,10 +10,25 @@ from backend.inflation_lead_model import (
     month_to_date_average_return_pct,
     predict_ridge,
     select_ridge_alpha,
+    select_nowcast_weight,
 )
 
 
 class InflationLeadModelTests(unittest.TestCase):
+    def test_nowcast_weight_blends_two_total_forecasts(self):
+        self.assertAlmostEqual(blend_leading_forecasts(0.1, 0.5, 0.8), 0.42)
+        with self.assertRaises(ValueError):
+            blend_leading_forecasts(0.1, 0.5, 1.1)
+
+    def test_correction_ratio_is_selected_from_prior_direction_accuracy(self):
+        actual = [0.4 if index % 2 else -0.4 for index in range(24)]
+        commodity = [-value for value in actual]
+        broad = [2.0 * value for value in actual]
+        self.assertEqual(
+            select_nowcast_weight(actual, commodity, broad),
+            0.65,
+        )
+
     def test_ridge_recovers_linear_signal(self):
         features = [[value, value % 3] for value in range(1, 90)]
         targets = [0.25 + 0.4 * row[0] - 0.15 * row[1] for row in features]
