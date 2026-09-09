@@ -99,7 +99,7 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260909090000_add_us_policy_rate_daily.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-+            --file supabase/migrations/20260909141525_add_kr_small_business_risk.sql
+            --file supabase/migrations/20260909141525_add_kr_small_business_risk.sql
 
       - name: Deploy Edge Functions
         run: |
