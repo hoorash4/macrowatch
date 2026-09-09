@@ -8,6 +8,7 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/charts/ana
 const domain = context.window.MacroWatchAnalysisChart.visibleAxisDomain;
 const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
 const source = fs.readFileSync(path.join(__dirname, '../assets/js/charts/analysis-chart-utils.js'), 'utf8');
+const styles = fs.readFileSync(path.join(__dirname, '../assets/css/styles.css'), 'utf8');
 
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
   assert.match(source, /svg\.setAttribute\('preserveAspectRatio', 'none'\)/);
@@ -21,6 +22,28 @@ test('reference lines move with the visible Y-axis domain', () => {
   assert.match(source, /const pixel = map\(value\)\.toFixed\(2\)/);
   assert.match(source, /node\.setAttribute\('y1', pixel\)/);
   assert.match(source, /node\.setAttribute\('y2', pixel\)/);
+});
+
+test('all chart series use the centralized three-level line width tokens', () => {
+  assert.match(styles, /--chart-line-primary-width: 2\.5;/);
+  assert.match(styles, /--chart-line-auxiliary-width: 2;/);
+  assert.match(styles, /--chart-line-comparison-width: 2;/);
+  assert.match(source, /primary: 'var\(--chart-line-primary-width\)'/);
+  assert.match(source, /auxiliary: 'var\(--chart-line-auxiliary-width\)'/);
+  assert.match(source, /comparison: 'var\(--chart-line-comparison-width\)'/);
+  assert.match(source, /stress: \{ stroke: '#00838c', width: lineWidths\.primary \}/);
+  assert.match(source, /raw: \{ stroke: \['#b4535d', '#2563a8'\], width: lineWidths\.comparison/);
+  const consumers = [
+    '../assets/js/dashboard/dashboard-charts.js',
+    '../assets/js/charts/inflation-chart.js',
+    '../assets/js/charts/liquidity-chart.js',
+    '../assets/js/charts/equity-bond-attractiveness-chart.js',
+    '../assets/js/charts/korea-earnings-chart.js',
+  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+  assert.match(consumers, /lineWidths\.primary/);
+  assert.match(consumers, /lineWidths\.auxiliary/);
+  assert.match(consumers, /lineWidths\.comparison/);
+  assert.doesNotMatch(consumers, /stroke-width="(?:3\.25|3|2\.75|2\.5|2\.25|2\.2|1\.75|1\.15)"/);
 });
 
 test('visible domain preserves duplicate boundary coordinates and input ordering', () => {

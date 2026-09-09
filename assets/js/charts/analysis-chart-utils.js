@@ -316,7 +316,7 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
   let points = [], style = null;
   const flush = () => {
     if (points.length < 2 || !style) { points = []; return; }
-    output.push(`<path d="${monotonePath(points)}" fill="none" stroke="${style.stroke}" stroke-width="${style.width || 3.25}" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity ? ` stroke-opacity="${style.opacity}"` : ''}/>`);
+    output.push(`<path d="${monotonePath(points)}" fill="none" stroke="${style.stroke}" stroke-width="${style.width || lineWidths.primary}" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity ? ` stroke-opacity="${style.opacity}"` : ''}/>`);
     points = [];
   };
   rows.slice(1).forEach((row, index) => {
@@ -337,23 +337,28 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
   return output.join('');
 }
 
+  const lineWidths = Object.freeze({
+    primary: 'var(--chart-line-primary-width)',
+    auxiliary: 'var(--chart-line-auxiliary-width)',
+    comparison: 'var(--chart-line-comparison-width)',
+  });
   const seriesStyles = {
-    stress: { stroke: '#00838c', width: 3.25 },
-    stressProvisional: { stroke: '#d97706', width: 3.25, dash: '4 3' },
-    benchmark: { stroke: '#6b7280', width: 2 },
-    auxiliary: { stroke: '#6d4b91', width: 2.25 },
-    tension: { stroke: '#6d4b91', width: 3 },
-    tensionSecondary: { stroke: '#8b6aa9', width: 2.5, opacity: .48 },
-    raw: { stroke: ['#b4535d', '#2563a8'], width: 1.15, opacity: .3 },
-    average: { stroke: ['#b4535d', '#2563a8'], width: 2.5 },
-    capacityProvisional: { stroke: '#6b7280', width: 2.5, dash: '5 4', opacity: .9 },
-    operatingIncome: { stroke: 'var(--color-chart-blue)', width: 2.5 },
-    netIncome: { stroke: 'var(--color-chart-gold)', width: 2.5 },
+    stress: { stroke: '#00838c', width: lineWidths.primary },
+    stressProvisional: { stroke: '#d97706', width: lineWidths.primary, dash: '4 3' },
+    benchmark: { stroke: '#6b7280', width: lineWidths.comparison },
+    auxiliary: { stroke: '#6d4b91', width: lineWidths.auxiliary },
+    tension: { stroke: '#6d4b91', width: lineWidths.primary },
+    tensionSecondary: { stroke: '#8b6aa9', width: lineWidths.auxiliary, opacity: .48 },
+    raw: { stroke: ['#b4535d', '#2563a8'], width: lineWidths.comparison, opacity: .3 },
+    average: { stroke: ['#b4535d', '#2563a8'], width: lineWidths.primary },
+    capacityProvisional: { stroke: '#6b7280', width: lineWidths.primary, dash: '5 4', opacity: .9 },
+    operatingIncome: { stroke: 'var(--color-chart-blue)', width: lineWidths.primary },
+    netIncome: { stroke: 'var(--color-chart-gold)', width: lineWidths.primary },
   };
 
   function legendItem(label, style) {
     const colors = Array.isArray(style.stroke) ? style.stroke : [style.stroke];
-    const swatch = colors.map((stroke, index) => `<line x1="${index * 32 / colors.length}" x2="${(index + 1) * 32 / colors.length}" y1="5" y2="5" stroke="${stroke}" stroke-width="${style.width || 2.5}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity != null ? ` stroke-opacity="${style.opacity}"` : ''}/>`).join('');
+    const swatch = colors.map((stroke, index) => `<line x1="${index * 32 / colors.length}" x2="${(index + 1) * 32 / colors.length}" y1="5" y2="5" stroke="${stroke}" stroke-width="${style.width || lineWidths.primary}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}${style.opacity != null ? ` stroke-opacity="${style.opacity}"` : ''}/>`).join('');
     const safeLabel = String(label).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
     return `<span class="chart-legend-item"><svg class="chart-legend-swatch" width="32" height="10" viewBox="0 0 32 10" aria-hidden="true">${swatch}</svg>${safeLabel}</span>`;
   }
@@ -365,5 +370,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

@@ -227,7 +227,7 @@
     const { legendItem, seriesStyles } = window.MacroWatchAnalysisChart;
     const legend = metricSeries.map(metric => {
       const base = seriesStyles[metric.key === 'operating_income' ? 'operatingIncome' : 'netIncome'];
-      const style = { ...base, width: spec.kind === 'amount' ? 2.5 : spec.kind === 'qoq' ? 2 : 2.2, dash: spec.kind === 'qoq' ? '6 4' : '' };
+      const style = { ...base, dash: spec.kind === 'qoq' ? '6 4' : '' };
       return legendItem(metric.label, style) + (metric.segments.some(segment => segment.key === 'provisional')
         ? legendItem(`${metric.label} 잠정치`, { ...style, dash: '6 4', opacity: .82 }) : '');
     }).join('');

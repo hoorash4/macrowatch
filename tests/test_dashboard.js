@@ -10,7 +10,7 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=8/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=9/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.doesNotMatch(chart, /국가별 독립 점수|높을수록 주식투자 환경 우호적/);
   assert.match(chart, /const domain = \{ min: 0, max: 100 \}/);
@@ -143,6 +143,9 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(chart, /addMonthsIso/);
   assert.match(chart, /data-inflation-real-zero[\s\S]*stroke-width="1"/);
   assert.match(chart, /referenceLines: \[\{ selector: '\[data-inflation-real-zero\]', value: 0 \}\]/);
+  assert.match(chart, /lineWidths\.primary/);
+  assert.match(chart, /lineWidths\.auxiliary/);
+  assert.match(chart, /lineWidths\.comparison/);
   assert.match(chart, /core: '#ea580c'/);
   assert.match(chart, /historyYears \/ Number\(state\.years\)/);
   assert.doesNotMatch(chart, /<circle/);

@@ -49,6 +49,10 @@
   --color-chart-axis: #94a3b8;
   --color-chart-blue: #2563a8;
   --color-chart-gold: #b7791f;
+  /* 모든 데이터 그래프의 선 위계는 이 세 값만 사용합니다. */
+  --chart-line-primary-width: 2.5;
+  --chart-line-auxiliary-width: 2;
+  --chart-line-comparison-width: 2;
   /* 공통 형태 */
   --radius-card: 1.25rem;
   --radius-control: .55rem;
@@ -984,7 +988,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-chart-y-tick { stroke:#94a3b8; stroke-width:1; }
 .policy-chart-y-label { fill:#64748b; font-size:9px; font-weight:650; }
 .policy-chart-year-guide { stroke:#e2e8f0; stroke-width:1; }
-.policy-chart-line { fill:none; stroke:var(--color-chart-blue); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+.policy-chart-line { fill:none; stroke:var(--color-chart-blue); stroke-width:var(--chart-line-primary-width); stroke-linecap:round; stroke-linejoin:round; }
 .policy-chart-point { fill:#1e40af; stroke:#fff; stroke-width:1.5; }
 .policy-chart-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-chart-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
@@ -1011,8 +1015,8 @@ body:has(#app-shell:not(.hidden)) {
 .policy-expectation-y-tick { stroke:#94a3b8; stroke-width:1; }
 .policy-expectation-y-label { fill:#64748b; font-size:9px; font-weight:650; }
 .policy-expectation-line { fill:none; stroke:url(#policy-expectation-line-gradient); stroke-linecap:round; stroke-linejoin:round; }
-.policy-expectation-line--raw { opacity:.3; stroke-width:1.15; }
-.policy-expectation-line--average { stroke-width:2.5; }
+.policy-expectation-line--raw { opacity:.3; stroke-width:var(--chart-line-comparison-width); }
+.policy-expectation-line--average { stroke-width:var(--chart-line-primary-width); }
 .em-capacity-line--provisional { stroke-dasharray:5 4; opacity:.9; }
 .policy-expectation-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
 .policy-expectation-cursor-detail { opacity:0; pointer-events:none; paint-order:stroke; stroke:#f8fafc; stroke-width:4; fill:#64748b; font-size:9px; font-weight:650; }
@@ -1076,10 +1080,11 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-axis-label { fill:#64748b; font-size:9px; font-weight:650; }
 .korea-earnings-period-label { fill:#64748b; font-size:10px; font-weight:650; }
 .korea-earnings-line { fill:none; stroke-linecap:round; stroke-linejoin:round; }
-.korea-earnings-line--amount { stroke-width:2.5; }
-.korea-earnings-line--margin { stroke-width:2.2; }
-.korea-earnings-line--growth { stroke-width:2.2; }
-.korea-earnings-line--qoq { stroke-width:2; stroke-dasharray:6 4; }
+.korea-earnings-line--amount,
+.korea-earnings-line--margin,
+.korea-earnings-line--growth,
+.korea-earnings-line--qoq { stroke-width:var(--chart-line-primary-width); }
+.korea-earnings-line--qoq { stroke-dasharray:6 4; }
 .korea-earnings-line--provisional { stroke-dasharray:6 4; opacity:.82; }
 .korea-earnings-line--operating-income { stroke:var(--color-chart-blue); }
 .korea-earnings-line--net-income { stroke:var(--color-chart-gold); }
