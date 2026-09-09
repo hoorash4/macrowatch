@@ -7,7 +7,9 @@
   // 데이터가 플롯의 중앙 80%를 쓰게 해 상·하에 각각 눈에 보이는 10% 여백을 둡니다.
   // 원자료 범위에 곱하는 값은 10%가 아니라 12.5%여야 최종 플롯에서 10%가 됩니다.
   const VISIBLE_Y_PADDING = 0.1;
-  const axisGutter = 72;
+  // 고정 Y축이 차지하는 공통 폭. 두 자리~소수 축 라벨은 52px 안에서 충분하며,
+  // 이 값이 곧 플롯과 스크롤의 좌우 경계가 된다.
+  const axisGutter = 52;
 
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
   function niceStep(value) {
@@ -193,12 +195,11 @@
         [...svg.querySelectorAll(reference.selector)].map(node => ({ node, value: Number(reference.value) })),
       ).filter(reference => Number.isFinite(reference.value)),
       labels: [...shell.querySelectorAll('svg text')].filter(node => {
-        const x = Number(node.getAttribute('x'));
         const pixel = Number(node.getAttribute('y')) - 3;
         if (pixel < top - 1 || pixel > bottom + 1) return false;
         return axis.side === 'right'
-          ? node.matches('[data-chart-right-axis]') || x > width - 52
-          : node.matches('[data-chart-left-axis]') || x <= 55;
+          ? node.matches('[data-chart-right-axis]')
+          : node.matches('[data-chart-left-axis]');
       }).map(node => ({ node, pixel: Number(node.getAttribute('y')) - 3 })),
     }));
     let pending = null;
@@ -267,14 +268,7 @@
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       return true;
     });
-    const leftAxisNodes = axisCandidates.filter((node) => {
-      const x = Number(node.getAttribute('x'));
-      const x1 = Number(node.getAttribute('x1'));
-      const x2 = Number(node.getAttribute('x2'));
-      return node.matches('[data-chart-left-axis]')
-        || (node.tagName === 'text' && Number.isFinite(x) && x <= 55)
-        || (node.tagName === 'line' && Number.isFinite(x1) && x1 === x2 && x1 <= 65);
-    });
+    const leftAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-left-axis]'));
     const rightAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-right-axis]'));
     const appendFixedAxis = (nodes, side, gutter) => {
       if (!nodes.length || !Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
@@ -293,7 +287,7 @@
     appendFixedAxis(leftAxisNodes, 'left', leftGutter);
     appendFixedAxis(rightAxisNodes, 'right', rightGutter);
 
-    if (axes) bindVisibleAxes(svg, frame, shell, width, axes);
+    if (axes?.axes?.length) bindVisibleAxes(svg, frame, shell, width, axes);
 
     // Keep horizontal detail on phones instead of squeezing several years into
     // a tall, narrow plot. The remaining history stays inside the scroll frame.

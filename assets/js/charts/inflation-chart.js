@@ -80,7 +80,7 @@
     const domain = chartUtils.axisDomain(values, { includeZero: true, minimumSpan: 2 });
     const y = value => padding.top + (domain.max - value) / (domain.max - domain.min) * (height - padding.top - padding.bottom);
     const ticks = Array.from({ length: 6 }, (_, index) => domain.max - (domain.max - domain.min) * index / 5);
-    const grid = ticks.map(value => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed"${Math.abs(value) < .01 ? ' stroke-width="1.5"' : ' stroke-dasharray="3 4"'}/><text x="${padding.left - 9}" y="${y(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}%</text>`).join('');
+    const grid = ticks.map(value => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed"${Math.abs(value) < .01 ? ' stroke-width="1.5"' : ' stroke-dasharray="3 4"'}/><text data-chart-left-axis x="${padding.left - 9}" y="${y(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(1)}%</text>`).join('');
     const finalRows = monthly.filter(row => row.status === 'final');
     const provisionalRows = monthly.filter(row => row.status === 'provisional');
     const bridgeRows = provisionalRows.length && finalRows.length ? [finalRows.at(-1), ...provisionalRows] : provisionalRows;

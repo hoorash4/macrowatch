@@ -678,6 +678,21 @@ test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다',
   assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EEM/);
 });
 
+test('공통 스크롤 그래프는 명시한 Y축 폭으로 플롯과 스크롤 경계를 맞춘다', () => {
+  const utils = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
+  const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const usSmallBusiness = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/small-business-risk-chart.js'), 'utf8');
+  const koreaSmallBusiness = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/korea-small-business-risk-chart.js'), 'utf8');
+  assert.match(utils, /const axisGutter = 52/);
+  assert.match(utils, /filter\(node => node\.matches\('\[data-chart-left-axis\]'\)\)/);
+  assert.doesNotMatch(utils, /x <= 55/);
+  assert.equal((charts.match(/left:\s*(?:fsiP|p)adding\.left,\s*right:\s*(?:fsiP|p)adding\.right/g) || []).length, 6);
+  assert.match(charts, /data-chart-left-axis/);
+  assert.match(charts, /data-chart-right-axis/);
+  assert.match(usSmallBusiness, /PADDING = \{ left: utils\.axisGutter, right: 42/);
+  assert.match(koreaSmallBusiness, /PADDING = \{ left: utils\.axisGutter, right: 42/);
+});
+
 test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
