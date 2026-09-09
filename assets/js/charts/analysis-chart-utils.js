@@ -167,6 +167,9 @@
         node.setAttribute('clip-path', `url(#${clip.id})`);
         return { node, original: Number(node.getAttribute('cy')) };
       }),
+      referenceLines: (axis.referenceLines || []).flatMap(reference =>
+        [...svg.querySelectorAll(reference.selector)].map(node => ({ node, value: Number(reference.value) })),
+      ).filter(reference => Number.isFinite(reference.value)),
       labels: [...shell.querySelectorAll('svg text')].filter(node => {
         const x = Number(node.getAttribute('x'));
         const pixel = Number(node.getAttribute('y')) - 3;
@@ -194,6 +197,11 @@
           node.setAttribute('d', original.replace(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi, number => (++coordinate % 2 ? number : (Number(number) * a + b).toFixed(2))));
         });
         axis.dots.forEach(({ node, original }) => node.setAttribute('cy', original * a + b));
+        axis.referenceLines.forEach(({ node, value }) => {
+          const pixel = map(value).toFixed(2);
+          node.setAttribute('y1', pixel);
+          node.setAttribute('y2', pixel);
+        });
         axis.labels.forEach(({ node, pixel }) => {
           const ratio = (pixel - top) / (bottom - top);
           const value = inverted ? domain.min + ratio * (domain.max - domain.min) : domain.max - ratio * (domain.max - domain.min);

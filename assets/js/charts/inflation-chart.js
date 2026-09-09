@@ -113,7 +113,14 @@
     realHost.innerHTML = `<svg class="w-full" style="height:${realHeight}px" viewBox="0 0 ${width} ${realHeight}" role="img" aria-label="헤드라인과 코어 실질금리 보조지표">${realGrid}${realZeroLine}<path d="${path(monthly, 'headline_real_rate_pct', realY)}" fill="none" stroke="${COLORS.headline}" stroke-width="2" stroke-linecap="round"/><path d="${path(monthly, 'core_real_rate_pct', realY)}" fill="none" stroke="${COLORS.core}" stroke-width="2" stroke-linecap="round"/><line data-inflation-real-cursor x1="0" x2="0" y1="${realPadding.top}" y2="${realHeight - realPadding.bottom}" class="policy-expectation-cursor"/><text data-inflation-real-value x="0" y="14" text-anchor="middle" fill="#334155" font-size="10" font-weight="700" visibility="hidden"></text><text data-inflation-real-date x="0" y="${realHeight - realPadding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
     chartUtils.scrollableSvg(realHost.querySelector('svg'), width, baseWidth, {
       top: realPadding.top, bottom: realHeight - realPadding.bottom,
-      axes: [{ side: 'left', y: realY, points: monthly.flatMap(row => [{ x: xInflation(row), value: Number(row.headline_real_rate_pct) }, { x: xInflation(row), value: Number(row.core_real_rate_pct) }]), selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"]`, format: value => `${value.toFixed(1)}%` }],
+      axes: [{
+        side: 'left',
+        y: realY,
+        points: monthly.flatMap(row => [{ x: xInflation(row), value: Number(row.headline_real_rate_pct) }, { x: xInflation(row), value: Number(row.core_real_rate_pct) }]),
+        selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"]`,
+        referenceLines: [{ selector: '[data-inflation-real-zero]', value: 0 }],
+        format: value => `${value.toFixed(1)}%`,
+      }],
     });
 
     const mainFrame = host.querySelector('[data-history-scroll]'), realFrame = realHost.querySelector('[data-history-scroll]');

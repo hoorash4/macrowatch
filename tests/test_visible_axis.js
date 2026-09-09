@@ -16,6 +16,13 @@ test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () 
   assert.doesNotMatch(source, /width:72px;height:100%/);
 });
 
+test('reference lines move with the visible Y-axis domain', () => {
+  assert.match(source, /axis\.referenceLines\.forEach/);
+  assert.match(source, /const pixel = map\(value\)\.toFixed\(2\)/);
+  assert.match(source, /node\.setAttribute\('y1', pixel\)/);
+  assert.match(source, /node\.setAttribute\('y2', pixel\)/);
+});
+
 test('visible domain preserves duplicate boundary coordinates and input ordering', () => {
   const points = [{ x: 9, value: 20 }, { x: 1, value: 30 }, { x: 9, value: 50 },
     { x: 12, value: 100 }, { x: 11, value: 200 }, { x: 12, value: 300 }, { x: 10, value: null }];
