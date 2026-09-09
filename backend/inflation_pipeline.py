@@ -37,6 +37,8 @@ CLEVELAND_MONTHLY_URL = (
     "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/"
     "nowcast_month.json?sc_lang=en"
 )
+BLS_TIMESERIES_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+BLS_CORE_CPI_EX_SHELTER = "CUSR0000SA0L12E"
 YAHOO_CHART_URLS = (
     "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
     "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
@@ -47,7 +49,6 @@ FRED_SERIES = {
     "core_cpi": "CPILFESL",
     "shelter": "CUSR0000SAH1",
     "cpi_ex_shelter": "CUSR0000SA0L2",
-    "core_cpi_ex_shelter": "CUSR0000SA0L12E",
     "pce": "PCEPI",
     "core_pce": "PCEPILFE",
     "headline_ppi": "WPSFD49501",
@@ -121,6 +122,43 @@ def fetch_fred_series(api_key: str, today: date) -> dict[str, dict[date, float]]
             raise RuntimeError(f"FRED {series_id} returned no usable observations")
         output[name] = values
     return output
+
+
+def fetch_bls_series(series_id: str, today: date) -> dict[date, float]:
+    """Fetch a long monthly BLS series in public-API-sized year blocks."""
+
+    values: dict[date, float] = {}
+    for start_year in range(SOURCE_START.year, today.year + 1, 10):
+        end_year = min(start_year + 9, today.year)
+        response = requests.post(
+            BLS_TIMESERIES_URL,
+            json={
+                "seriesid": [series_id],
+                "startyear": str(start_year),
+                "endyear": str(end_year),
+            },
+            headers={"User-Agent": "MacroWatch inflation research/2.0"},
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") != "REQUEST_SUCCEEDED":
+            raise RuntimeError(f"BLS {series_id} request failed: {payload.get('message')}")
+        series = payload.get("Results", {}).get("series") or []
+        if not series:
+            raise RuntimeError(f"BLS {series_id} returned no series")
+        for row in series[0].get("data", []):
+            period = str(row.get("period", ""))
+            if not period.startswith("M") or period == "M13":
+                continue
+            try:
+                observed_on = date(int(row["year"]), int(period[1:]), 1)
+                values[observed_on] = float(row["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+    if not values:
+        raise RuntimeError(f"BLS {series_id} returned no usable observations")
+    return values
 
 
 def fetch_yahoo_series(symbol: str, today: date) -> dict[date, float]:
@@ -643,6 +681,7 @@ def main() -> None:
     fred_key = require_env("FRED_API_KEY")
     today = date.today()
     fred = fetch_fred_series(fred_key, today)
+    fred["core_cpi_ex_shelter"] = fetch_bls_series(BLS_CORE_CPI_EX_SHELTER, today)
     nowcasts = fetch_cleveland_nowcasts()
     prices = {
         symbol: fetch_yahoo_series(symbol, today)

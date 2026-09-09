@@ -1,6 +1,8 @@
 import unittest
+from datetime import date
+from unittest.mock import patch
 
-from backend.inflation_pipeline import save_automatic
+from backend.inflation_pipeline import fetch_bls_series, save_automatic
 
 
 class FakeSupabase:
@@ -19,6 +21,29 @@ class FakeSupabase:
 
 
 class InflationPipelineTests(unittest.TestCase):
+    @patch("backend.inflation_pipeline.requests.post")
+    def test_bls_history_is_fetched_in_public_api_year_blocks(self, post):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "status": "REQUEST_SUCCEEDED",
+                    "Results": {"series": [{"data": [
+                        {"year": "2026", "period": "M01", "value": "321.4"},
+                        {"year": "2026", "period": "M13", "value": "999"},
+                    ]}]},
+                }
+
+        post.return_value = Response()
+        values = fetch_bls_series("CUSR0000SA0L12E", date(2026, 9, 9))
+        self.assertEqual(values, {date(2026, 1, 1): 321.4})
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[0].kwargs["json"]["startyear"], "2009")
+        self.assertEqual(post.call_args_list[0].kwargs["json"]["endyear"], "2018")
+        self.assertEqual(post.call_args_list[1].kwargs["json"]["startyear"], "2019")
+
     def test_automatic_collection_preserves_confirmed_history(self):
         client = FakeSupabase()
         monthly = [
