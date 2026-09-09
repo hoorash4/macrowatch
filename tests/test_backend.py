@@ -931,10 +931,12 @@ class SourceContractTests(unittest.TestCase):
         response.raise_for_status = Mock()
         response.json.return_value = rows
         session = Mock()
-        session.get.return_value = response
-        korea_small_business_source.fetch_kosis_series(
-            "funding_outlook", date(2026, 1, 1), date(2026, 3, 1), api_key="test", session=session
-        )
+        session.get.side_effect = [korea_small_business_source.requests.Timeout(), response]
+        with patch("sources.korea_small_business_risk.time.sleep"):
+            korea_small_business_source.fetch_kosis_series(
+                "funding_outlook", date(2026, 1, 1), date(2026, 3, 1), api_key="test", session=session
+            )
+        self.assertEqual(session.get.call_count, 2)
         params = session.get.call_args.kwargs["params"]
         self.assertEqual(params["tblId"], "DT_D10116")
         self.assertEqual(params["objL1"], "15340a.a")

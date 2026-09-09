@@ -107,8 +107,7 @@ def fetch_kosis_series(
         "jsonVD": "Y",
     }
     client = session or requests.Session()
-    response = client.get(KOSIS_URL, params=params, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
+    response = _get_with_retry(client, KOSIS_URL, params=params)
     values = parse_kosis_rows(response.json(), effective_start, end)
     if not values:
         raise RuntimeError(f"KOSIS {name} 시계열이 비어 있습니다.")
@@ -117,13 +116,21 @@ def fetch_kosis_series(
 
 def _get_with_retry(session: requests.Session, url: str, **kwargs: Any) -> requests.Response:
     response = None
+    last_error: requests.RequestException | None = None
     for attempt in range(4):
-        response = session.get(url, timeout=TIMEOUT_SECONDS, **kwargs)
+        try:
+            response = session.get(url, timeout=TIMEOUT_SECONDS, **kwargs)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == 3:
+                raise
+            time.sleep(2**attempt)
+            continue
         if response.status_code not in {429, 500, 502, 503, 504} or attempt == 3:
             break
         time.sleep(2**attempt)
     if response is None:
-        raise RuntimeError(f"응답이 없습니다: {url}")
+        raise RuntimeError(f"응답이 없습니다: {url}") from last_error
     response.raise_for_status()
     return response
 
