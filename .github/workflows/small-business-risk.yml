@@ -10,7 +10,7 @@ on:
       - supabase/migrations/**
       - .github/workflows/small-business-risk.yml
   schedule:
-    # 06:20 KST: NFIB 신규 월과 OAS 월평균을 매일 확인한다.
+    # 06:20 KST: NFIB 신규 월을 매일 확인한다.
     - cron: "20 21 * * *"
   workflow_dispatch:
     inputs:
@@ -40,7 +40,6 @@ jobs:
         run: pip install --disable-pip-version-check requests
       - name: Collect small business risk
         env:
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |

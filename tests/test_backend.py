@@ -847,20 +847,15 @@ class SourceContractTests(unittest.TestCase):
     def test_small_business_risk_uses_available_component_weights(self) -> None:
         sales = {"2023-08-01": -15.0, "2023-09-01": -15.0}
         borrowing = {"2023-08-01": 8.5, "2023-09-01": 8.5}
-        oas = {"2023-09-01": 11.0}
         optimism = {"2023-08-01": 91.2, "2023-09-01": 90.7}
-        rows = small_business.build_rows(sales, borrowing, oas, optimism, date(2026, 9, 9))
+        rows = small_business.build_rows(sales, borrowing, optimism, date(2026, 9, 9))
         borrowing_score = small_business.component_score(8.5, "borrowing_difficulty")
-        oas_score = small_business.component_score(11.0, "high_yield_oas")
         sales_score = small_business.component_score(-15.0, "sales_expectation")
-        self.assertGreater(small_business.component_score(4.0, "high_yield_oas"), small_business.component_score(3.0, "high_yield_oas"))
-        self.assertEqual(rows[0]["risk_index"], round(borrowing_score, 2))
-        self.assertEqual(rows[0]["survey_risk_index"], round(borrowing_score * .6 + sales_score * .4, 2))
+        self.assertEqual(rows[0]["risk_index"], round(borrowing_score * .6 + sales_score * .4, 2))
         self.assertEqual(rows[0]["optimism_index"], 91.2)
-        self.assertFalse(rows[0]["includes_oas"])
-        self.assertEqual(rows[1]["risk_index"], round(borrowing_score * .6 + oas_score * .4, 2))
-        self.assertEqual(rows[1]["survey_risk_index"], round(borrowing_score * .6 + sales_score * .4, 2))
-        self.assertTrue(rows[1]["includes_oas"])
+        self.assertEqual(rows[1]["risk_index"], round(borrowing_score * .6 + sales_score * .4, 2))
+        self.assertNotIn("high_yield_oas_pct", rows[0])
+        self.assertNotIn("includes_oas", rows[0])
 
     def test_nfib_answer_parser_builds_sales_net_and_harder_share(self) -> None:
         sales_rows = [
