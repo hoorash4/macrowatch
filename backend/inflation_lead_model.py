@@ -15,7 +15,7 @@ import numpy as np
 
 MODEL_VERSION = "inflation_lead_v1"
 RIDGE_ALPHAS = (0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
-DEFAULT_COMPOSITE_WEIGHTS = (0.40, 0.40, 0.20)
+DEFAULT_COMPOSITE_WEIGHTS = (0.30, 0.50, 0.20)
 
 
 @dataclass(frozen=True)

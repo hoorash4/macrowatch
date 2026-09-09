@@ -30,7 +30,7 @@ class InflationLeadModelTests(unittest.TestCase):
         )
         self.assertEqual(point.status, "final")
         self.assertAlmostEqual(point.aligned_ppi_yoy_pct, 3.0)
-        self.assertAlmostEqual(point.yoy_pct, 2.6)
+        self.assertAlmostEqual(point.yoy_pct, 2.5)
 
     def test_producer_calibration_matches_consumer_volatility(self):
         consumer = [float(value) for value in range(24)]
