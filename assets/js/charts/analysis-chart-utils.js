@@ -13,7 +13,7 @@
   const axisGutter = 52;
   const axisLabelGap = 14;
   const axisLayouts = Object.freeze({
-    single: Object.freeze({ left: axisGutter, right: 24 }),
+    single: Object.freeze({ left: axisGutter, right: 0 }),
     dual: Object.freeze({ left: axisGutter, right: 58 }),
   });
   const chartLayout = Object.freeze({
@@ -33,6 +33,7 @@
     return Object.freeze({
       defaultYears: DEFAULT_RANGE_YEARS,
       axisMode: 'single',
+      xAxisMode: 'bottom',
       auxiliaryPanels: Object.freeze([]),
       cursorSeries: Object.freeze([]),
       ...overrides,
@@ -99,15 +100,16 @@
     node.append(boundary);
   }
 
-  function mountChartFrame({ container, profile = chartProfiles.main, height, axisViewWidth = axisGutter, top = chartLayout.plot.top, bottom = chartLayout.plot.bottom, leftAxisMarkup = '', rightAxisMarkup = '', plotMarkup, ariaLabel = '시계열 그래프' }) {
+  function mountChartFrame({ container, profile = chartProfiles.main, height, axisViewWidth = axisGutter, top = chartLayout.plot.top, bottom = chartLayout.plot.bottom, xAxisMode = profile.xAxisMode, leftAxisMarkup = '', rightAxisMarkup = '', plotMarkup, ariaLabel = '시계열 그래프' }) {
     const { shell, frame } = createChartShell(profile, ariaLabel);
     const axis = (side, markup) => {
+      const viewWidth = side === 'right' && profile.axisMode !== 'dual' ? 1 : axisViewWidth;
       const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       node.classList.add('analysis-chart-fixed-axis');
       node.dataset.axisSide = side;
       node.dataset.axisTop = String(top);
       node.dataset.axisBottom = String(bottom);
-      node.setAttribute('viewBox', `0 0 ${axisViewWidth} ${height}`);
+      node.setAttribute('viewBox', `0 0 ${viewWidth} ${height}`);
       node.setAttribute('preserveAspectRatio', 'none');
       node.setAttribute('aria-hidden', 'true');
       node.style.height = `${height}px`;
@@ -121,9 +123,20 @@
       svg.style.height = `${height}px`;
       svg.style.maxWidth = 'none';
       svg.setAttribute('preserveAspectRatio', 'none');
+      if (xAxisMode !== 'zero') {
+        const viewWidth = Number(svg.getAttribute('viewBox').trim().split(/\s+/)[2]);
+        const bottomAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        bottomAxis.setAttribute('x1', chartLayout.plot.left);
+        bottomAxis.setAttribute('x2', viewWidth - chartLayout.plot.right);
+        bottomAxis.setAttribute('y1', height - bottom);
+        bottomAxis.setAttribute('y2', height - bottom);
+        bottomAxis.setAttribute('class', 'analysis-chart-axis-line');
+        bottomAxis.setAttribute('pointer-events', 'none');
+        svg.append(bottomAxis);
+      }
     }
     shell.append(axis('left', leftAxisMarkup), frame);
-    if (profile.axisMode === 'dual') shell.append(axis('right', rightAxisMarkup));
+    shell.append(axis('right', profile.axisMode === 'dual' ? rightAxisMarkup : ''));
     container.replaceChildren(shell);
     return { shell, frame, svg };
   }
@@ -152,6 +165,54 @@
     const safeX = Math.max(visibleLeft + halfWidth + inset, Math.min(visibleRight - halfWidth - inset, desiredX));
     node.setAttribute('x', safeX);
     return safeX;
+  }
+
+  function attachChartCursor({ host, rows, xFor, width, height, top, bottom, valueText, dateText, eventName = null, source = null, eventDetail = (row) => ({ row }), rowFromDetail = (detail) => detail.row }) {
+    const svg = host?.querySelector('svg.analysis-chart-plot');
+    const frame = host?.querySelector('[data-history-scroll]');
+    if (!svg || !frame || !rows?.length) return null;
+    const element = (name, attributes) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', name);
+      Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
+      return node;
+    };
+    const guide = element('line', { y1: top, y2: height - bottom, class: 'analysis-chart-cursor-line', visibility: 'hidden' });
+    const value = valueText ? element('text', { y: top + 12, class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
+    const date = dateText ? element('text', { y: height - bottom + 12, class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
+    svg.append(guide, ...[value, date].filter(Boolean));
+    const nearestTo = (targetX) => rows.reduce((closest, row) => Math.abs(xFor(row) - targetX) < Math.abs(xFor(closest) - targetX) ? row : closest);
+    const show = (row) => {
+      const x = xFor(row);
+      guide.setAttribute('x1', x); guide.setAttribute('x2', x); guide.setAttribute('visibility', 'visible');
+      if (value) { value.textContent = valueText(row); value.setAttribute('visibility', 'visible'); positionCursorText(value, x, frame); }
+      if (date) { date.textContent = dateText(row); date.setAttribute('visibility', 'visible'); positionCursorText(date, x, frame); }
+    };
+    const clear = () => [guide, value, date].filter(Boolean).forEach((node) => node.setAttribute('visibility', 'hidden'));
+    frame.addEventListener('pointermove', (event) => {
+      const bounds = svg.getBoundingClientRect();
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+      const row = nearestTo(pointerX);
+      show(row);
+      if (eventName) window.dispatchEvent(new CustomEvent(eventName, { detail: { active: true, source, ...eventDetail(row) } }));
+    });
+    frame.addEventListener('pointerleave', () => {
+      clear();
+      if (eventName) window.dispatchEvent(new CustomEvent(eventName, { detail: { active: false, source } }));
+    });
+    if (eventName) {
+      const listenerKey = `${eventName}:${source || ''}`;
+      host._analysisChartCursorListeners ||= new Map();
+      const previous = host._analysisChartCursorListeners.get(listenerKey);
+      if (previous) window.removeEventListener(eventName, previous);
+      const sharedListener = ({ detail }) => {
+        if (detail.source === source) return;
+        const related = rowFromDetail(detail);
+        if (detail.active && related) show(nearestTo(xFor(related))); else clear();
+      };
+      host._analysisChartCursorListeners.set(listenerKey, sharedListener);
+      window.addEventListener(eventName, sharedListener);
+    }
+    return { show, clear };
   }
 
   // 작은 진폭에서도 축이 과도하게 뭉개지지 않도록 일반적인 1·2·5 단계보다 촘촘한 눈금을 사용합니다.
@@ -474,7 +535,7 @@
       if (Math.abs(x1 - leftGutter) <= .5 || Math.abs(x1 - (viewWidth - rightGutter)) <= .5) line.setAttribute('visibility', 'hidden');
     });
     appendFixedAxis(leftAxisNodes, 'left', leftGutter);
-    if (dualAxis) appendFixedAxis(rightAxisNodes, 'right', rightGutter);
+    appendFixedAxis(dualAxis ? rightAxisNodes : [], 'right', dualAxis ? rightGutter : 1);
 
     if (axes?.axes?.length) bindVisibleAxes(svg, frame, shell, width, axes);
 
@@ -585,5 +646,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, mountChartFrame, updateFixedAxis, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

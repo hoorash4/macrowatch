@@ -63,7 +63,7 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(source, /const leftGutter = Number\.isFinite\(Number\(axes\?\.left\)\)/);
   assert.match(source, /const rightGutter = Number\.isFinite\(Number\(axes\?\.right\)\)/);
-  assert.match(source, /single: Object\.freeze\(\{ left: axisGutter, right: 24 \}\)/);
+  assert.match(source, /single: Object\.freeze\(\{ left: axisGutter, right: 0 \}\)/);
   assert.match(source, /dual: Object\.freeze\(\{ left: axisGutter, right: 58 \}\)/);
   assert.match(source, /fixedAxis\.dataset\.fixedAxisGutter = String\(gutter\)/);
   assert.match(source, /const boundaryX = side === 'right' \? viewWidth - gutter \+ \.5 : gutter - \.5/);
@@ -91,16 +91,16 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
 test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기 글자를 사용한다', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   const dashboardCharts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const chartUtils = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-year-label \{ fill:#64748b; font-size:12px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-axis-line,[\s\S]*?\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:1; vector-effect:non-scaling-stroke; shape-rendering:crispEdges;/);
   assert.match(dashboardCharts, /xAxisMode: 'zero'/);
-  assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-value/);
-  assert.match(dashboardCharts, /analysis-chart-cursor-text analysis-chart-cursor-date/);
+  assert.match(chartUtils, /analysis-chart-cursor-text analysis-chart-cursor-value/);
+  assert.match(chartUtils, /analysis-chart-cursor-text analysis-chart-cursor-date/);
   assert.match(dashboardCharts, /chartPadding\((?:US|KOREA|EM)_MSI_PROFILE\.axisMode\)/);
-  assert.match(dashboardCharts, /const frame = chart\.querySelector\('\[data-history-scroll\]'\);/);
-  assert.match(dashboardCharts, /const frame = host\.querySelector\('\[data-history-scroll\]'\);/);
-  assert.doesNotMatch(dashboardCharts, /'font-size': 11, 'font-weight': 700/);
+  assert.ok((dashboardCharts.match(/attachChartCursor\(/g) || []).length >= 4);
+  assert.doesNotMatch(chartUtils, /'font-size': 11, 'font-weight': 700/);
 });
 
 test('공통 커서 글자는 보이는 플롯 폭 안으로 이동한다', () => {
@@ -741,9 +741,9 @@ test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막
 
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
   const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
-  assert.match(charts, /valueLabel\.textContent = Number\(nearest\.stress_index\)\.toFixed\(2\)/);
-  assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EM-MSI/);
-  assert.doesNotMatch(charts, /valueLabel\.textContent[^\n]*EEM/);
+  assert.match(charts, /valueText: \(row\) => Number\(row\.stress_index\)\.toFixed\(2\)/);
+  assert.doesNotMatch(charts, /valueText:[^\n]*EM-MSI/);
+  assert.doesNotMatch(charts, /valueText:[^\n]*EEM/);
 });
 
 test('공통 스크롤 그래프는 명시한 Y축 폭으로 플롯과 스크롤 경계를 맞춘다', () => {

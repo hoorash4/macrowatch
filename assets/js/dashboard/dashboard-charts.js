@@ -5,7 +5,7 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
-const { DEFAULT_RANGE_YEARS, chartLayout, chartProfile, monotoneSeriesPath, monotoneStyledSegments, chartPadding, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
+const { DEFAULT_RANGE_YEARS, chartLayout, chartProfile, monotoneSeriesPath, monotoneStyledSegments, chartPadding, primarySeriesWindow, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
@@ -236,12 +236,6 @@ async function loadNewsSentimentDashboard() {
 // ===== 미국 시장 스트레스 모듈 =====
 // 월간·주간 스트레스 데이터의 축 계산과 본지표·보조지표 렌더링을 담당한다.
 // 지수 산식과 원천 데이터 수집은 Python 파이프라인에서 수행한다.
-function createSvgElement(name, attributes) {
-  const element = document.createElementNS('http://www.w3.org/2000/svg', name);
-  Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
-  return element;
-}
-
 function calculateCorrelation(pairs) {
   if (pairs.length < 2) return null;
   const meanX = pairs.reduce((sum, [x]) => sum + x, 0) / pairs.length;
@@ -383,81 +377,12 @@ function renderMarketStressAndTensionChart(weeklyRows) {
       { points: weekly.map(row => ({ x: x(row.week), value: toCreditStressNumber(row.sp500_friday_close) })), y: sp500Y, side: 'right', selector: 'path[stroke="#6b7280"]' },
     ],
   });
-  const svg = chart.querySelector('svg');
-  if (!svg) return;
-  const frame = chart.querySelector('[data-history-scroll]');
-  const hoverGuide = createSvgElement('line', {
-    y1: padding.top,
-    y2: height - padding.bottom,
-    stroke: '#94a3b8',
-    'stroke-width': 0.75,
-    'stroke-dasharray': '3 4',
-    'pointer-events': 'none',
-    visibility: 'hidden',
-  });
-  const hoverValue = createSvgElement('text', {
-    class: 'analysis-chart-cursor-text analysis-chart-cursor-value',
-    'text-anchor': 'middle',
-    'pointer-events': 'none',
-    visibility: 'hidden',
-  });
-  const hoverPeriod = createSvgElement('text', {
-    class: 'analysis-chart-cursor-text analysis-chart-cursor-date',
-    'text-anchor': 'middle',
-    'pointer-events': 'none',
-    visibility: 'hidden',
-  });
-  svg.append(hoverGuide, hoverValue, hoverPeriod);
-  const showHover = (week) => {
-    const nearest = weekly.reduce((closest, row) => (
-      Math.abs(x(row.week) - x(week)) < Math.abs(x(closest.week) - x(week)) ? row : closest
-    ));
-    const pointX = x(nearest.week);
-    const [, month, day] = String(nearest.week).split('-').map(Number);
-    hoverGuide.setAttribute('x1', pointX);
-    hoverGuide.setAttribute('x2', pointX);
-    hoverGuide.setAttribute('visibility', 'visible');
-    hoverValue.setAttribute('y', padding.top + 11);
-    hoverValue.setAttribute('visibility', 'visible');
-    hoverValue.textContent = Number(nearest.tension_index).toFixed(2);
-    hoverPeriod.setAttribute('y', height - padding.bottom + 12);
-    hoverPeriod.setAttribute('visibility', 'visible');
-    hoverPeriod.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
-    positionCursorText(hoverValue, pointX, frame);
-    positionCursorText(hoverPeriod, pointX, frame);
-  };
-  const setHover = (event) => {
-    const bounds = svg.getBoundingClientRect();
-    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-    const nearest = weekly.reduce((closest, row) => (
-      Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest
-    ));
-    showHover(nearest.week);
-    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
-      detail: { active: true, source: 'stress', week: nearest.week },
-    }));
-  };
-  const clearHover = () => {
-    hoverGuide.setAttribute('visibility', 'hidden');
-    hoverValue.setAttribute('visibility', 'hidden');
-    hoverPeriod.setAttribute('visibility', 'hidden');
-  };
-  const handleSharedHover = ({ detail }) => {
-    if (detail.source === 'stress') return;
-    if (detail.active) showHover(detail.week);
-    else clearHover();
-  };
-  if (chart._marketStressHoverListener) {
-    window.removeEventListener('macrowatch:market-stress-hover', chart._marketStressHoverListener);
-  }
-  chart._marketStressHoverListener = handleSharedHover;
-  window.addEventListener('macrowatch:market-stress-hover', handleSharedHover);
-  svg.addEventListener('pointermove', setHover);
-  svg.addEventListener('pointerleave', () => {
-    clearHover();
-    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
-      detail: { active: false, source: 'stress' },
-    }));
+  window.MacroWatchAnalysisChart.attachChartCursor({
+    host: chart, rows: weekly, xFor: (row) => x(row.week), width, height, top: padding.top, bottom: padding.bottom,
+    valueText: (row) => Number(row.tension_index).toFixed(2),
+    dateText: (row) => { const [, month, day] = String(row.week).split('-').map(Number); return `${month}월 ${Math.ceil(day / 7)}주`; },
+    eventName: 'macrowatch:market-stress-hover', source: 'stress', eventDetail: (row) => ({ week: row.week }),
+    rowFromDetail: (detail) => weekly.find((row) => row.week === detail.week),
   });
 }
 
@@ -527,50 +452,10 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     bottom: height - padding.bottom,
     axes: [],
   });
-  const svg = chart.querySelector('svg');
-  if (!svg) return;
-  const hoverGuide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-  hoverGuide.setAttribute('y1', String(padding.top));
-  hoverGuide.setAttribute('y2', String(height - padding.bottom));
-  hoverGuide.setAttribute('stroke', '#94a3b8');
-  hoverGuide.setAttribute('stroke-width', '0.75');
-  hoverGuide.setAttribute('stroke-dasharray', '3 4');
-  hoverGuide.setAttribute('pointer-events', 'none');
-  hoverGuide.setAttribute('visibility', 'hidden');
-  svg.append(hoverGuide);
-  const showGuide = (week) => {
-    const pointX = x(week);
-    hoverGuide.setAttribute('x1', String(pointX));
-    hoverGuide.setAttribute('x2', String(pointX));
-    hoverGuide.setAttribute('visibility', 'visible');
-  };
-  const clearGuide = () => hoverGuide.setAttribute('visibility', 'hidden');
-  const handleSharedHover = ({ detail }) => {
-    if (detail.source === source) return;
-    if (detail.active) showGuide(detail.week);
-    else clearGuide();
-  };
-  if (chart._marketStressHoverListener) {
-    window.removeEventListener('macrowatch:market-stress-hover', chart._marketStressHoverListener);
-  }
-  chart._marketStressHoverListener = handleSharedHover;
-  window.addEventListener('macrowatch:market-stress-hover', handleSharedHover);
-  svg.addEventListener('pointermove', (event) => {
-    const bounds = svg.getBoundingClientRect();
-    const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-    const nearest = data.reduce((closest, row) => (
-      Math.abs(x(row.month) - pointerX) < Math.abs(x(closest.month) - pointerX) ? row : closest
-    ));
-    showGuide(nearest.month);
-    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
-      detail: { active: true, source, week: nearest.month },
-    }));
-  });
-  svg.addEventListener('pointerleave', () => {
-    clearGuide();
-    window.dispatchEvent(new CustomEvent('macrowatch:market-stress-hover', {
-      detail: { active: false, source },
-    }));
+  window.MacroWatchAnalysisChart.attachChartCursor({
+    host: chart, rows: data, xFor: (row) => x(row.month), width, height, top: padding.top, bottom: padding.bottom,
+    valueText: null, dateText: null, eventName: 'macrowatch:market-stress-hover', source,
+    eventDetail: (row) => ({ week: row.month }), rowFromDetail: (detail) => data.find((row) => row.month === detail.week),
   });
 }
 
@@ -672,50 +557,11 @@ function renderEmStressDashboard(rows) {
     { points: weekly.map(row => ({ x: x(row.week), value: toCreditStressNumber(row.eem_weekly_close) })), y: eemY, side: 'right', selector: 'path[stroke="#6b7280"]' },
   ] });
 
-  const attachVerticalGuide = ({ host, source, showLabels }) => {
-    const svg = host?.querySelector('svg');
-    if (!svg) return;
-    const frame = host.querySelector('[data-history-scroll]');
-    const guide = createSvgElement('line', { y1: padding.top, y2: height - padding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-    const valueLabel = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
-    const periodLabel = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
-    svg.append(guide);
-    if (valueLabel && periodLabel) svg.append(valueLabel, periodLabel);
-    const show = (week) => {
-      const nearest = weekly.reduce((closest, row) => Math.abs(x(row.week) - x(week)) < Math.abs(x(closest.week) - x(week)) ? row : closest);
-      const pointX = x(nearest.week);
-      guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible');
-      if (valueLabel && periodLabel) {
-        const [, month, day] = String(nearest.week).split('-').map(Number);
-        valueLabel.setAttribute('y', padding.top + 11); valueLabel.setAttribute('visibility', 'visible');
-        valueLabel.textContent = Number(nearest.stress_index).toFixed(2);
-        periodLabel.setAttribute('y', height - padding.bottom + 12); periodLabel.setAttribute('visibility', 'visible');
-        periodLabel.textContent = `${month}월 ${Math.ceil(day / 7)}주`;
-        positionCursorText(valueLabel, pointX, frame);
-        positionCursorText(periodLabel, pointX, frame);
-      }
-    };
-    const clear = () => [guide, valueLabel, periodLabel].filter(Boolean).forEach((element) => element.setAttribute('visibility', 'hidden'));
-    const onShared = ({ detail }) => {
-      if (detail.source === source) return;
-      if (detail.active) show(detail.week); else clear();
-    };
-    if (host._emStressGuideListener) window.removeEventListener('macrowatch:em-stress-hover', host._emStressGuideListener);
-    host._emStressGuideListener = onShared;
-    window.addEventListener('macrowatch:em-stress-hover', onShared);
-    svg.addEventListener('pointermove', (event) => {
-      const bounds = svg.getBoundingClientRect();
-      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-      const nearest = weekly.reduce((closest, row) => Math.abs(x(row.week) - pointerX) < Math.abs(x(closest.week) - pointerX) ? row : closest);
-      show(nearest.week);
-      window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: true, source, week: nearest.week } }));
-    });
-    svg.addEventListener('pointerleave', () => {
-      clear();
-      window.dispatchEvent(new CustomEvent('macrowatch:em-stress-hover', { detail: { active: false, source } }));
-    });
-  };
-  attachVerticalGuide({ host: chart, source: 'em-main', showLabels: true });
+  window.MacroWatchAnalysisChart.attachChartCursor({
+    host: chart, rows: weekly, xFor: (row) => x(row.week), width, height, top: padding.top, bottom: padding.bottom,
+    valueText: (row) => Number(row.stress_index).toFixed(2),
+    dateText: (row) => { const [, month, day] = String(row.week).split('-').map(Number); return `${month}월 ${Math.ceil(day / 7)}주`; },
+  });
 }
 
 async function loadEmStressDashboard() {
@@ -782,50 +628,12 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     { points: weeklyKospi.map(row => ({ x: x(row.week), value: toCreditStressNumber(row.kospi_close) })), y: kospiY, side: 'right', selector: 'path[stroke="#6b7280"]' },
   ] });
 
-  const attachHover = ({ host, hoverRows, valueKey, chartHeight, chartPadding, source, label, showLabels = true }) => {
-    const svg = host.querySelector('svg');
-    if (!svg || !hoverRows.length) return;
-    const frame = host.querySelector('[data-history-scroll]');
-    const guide = createSvgElement('line', { y1: chartPadding.top, y2: chartHeight - chartPadding.bottom, stroke: '#94a3b8', 'stroke-width': .75, 'stroke-dasharray': '3 4', 'pointer-events': 'none', visibility: 'hidden' });
-    const value = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-value', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
-    const period = showLabels ? createSvgElement('text', { class: 'analysis-chart-cursor-text analysis-chart-cursor-date', 'text-anchor': 'middle', visibility: 'hidden' }) : null;
-    svg.append(guide);
-    if (value && period) svg.append(value, period);
-    const show = (month) => {
-      const nearest = hoverRows.reduce((closest, row) => Math.abs(x(row.month) - x(month)) < Math.abs(x(closest.month) - x(month)) ? row : closest);
-      const pointX = x(nearest.month);
-      guide.setAttribute('x1', pointX); guide.setAttribute('x2', pointX); guide.setAttribute('visibility', 'visible');
-      if (value && period) {
-        value.setAttribute('y', chartPadding.top + 12); value.setAttribute('visibility', 'visible');
-        value.textContent = `${label ? `${label} ` : ''}${Number(nearest[valueKey]).toFixed(2)}`;
-        period.setAttribute('y', chartHeight - chartPadding.bottom + 12); period.setAttribute('visibility', 'visible');
-        period.textContent = `${Number(String(nearest.month).slice(5, 7))}월`;
-        positionCursorText(value, pointX, frame);
-        positionCursorText(period, pointX, frame);
-      }
-    };
-    const clear = () => [guide, value, period].filter(Boolean).forEach((element) => element.setAttribute('visibility', 'hidden'));
-    const onMove = (event) => {
-      const bounds = svg.getBoundingClientRect();
-      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-      const nearest = hoverRows.reduce((closest, row) => Math.abs(x(row.month) - pointerX) < Math.abs(x(closest.month) - pointerX) ? row : closest);
-      show(nearest.month);
-      window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', { detail: { active: true, source, month: nearest.month } }));
-    };
-    const onSharedHover = ({ detail }) => {
-      if (detail.source === source) return;
-      if (detail.active) show(detail.month); else clear();
-    };
-    if (host._koreaStressHoverListener) window.removeEventListener('macrowatch:korea-stress-hover', host._koreaStressHoverListener);
-    host._koreaStressHoverListener = onSharedHover;
-    window.addEventListener('macrowatch:korea-stress-hover', onSharedHover);
-    svg.addEventListener('pointermove', onMove);
-    svg.addEventListener('pointerleave', () => {
-      clear();
-      window.dispatchEvent(new CustomEvent('macrowatch:korea-stress-hover', { detail: { active: false, source } }));
-    });
-  };
-  attachHover({ host: chart, hoverRows: data, valueKey: 'stress_index', chartHeight: height, chartPadding: padding, source: 'korea-main', label: '' });
+  window.MacroWatchAnalysisChart.attachChartCursor({
+    host: chart, rows: data, xFor: (row) => x(row.month), width, height, top: padding.top, bottom: padding.bottom,
+    valueText: (row) => Number(row.stress_index).toFixed(2), dateText: (row) => `${Number(String(row.month).slice(5, 7))}월`,
+    eventName: 'macrowatch:korea-stress-hover', source: 'korea-main', eventDetail: (row) => ({ month: row.month }),
+    rowFromDetail: (detail) => data.find((row) => row.month === detail.month),
+  });
   if (!fsiChart) return;
   const fsiRows = data.filter((row) => Number.isFinite(Number(row.bok_fsi)) && Number(row.bok_fsi) !== 0);
   if (!fsiRows.length) {
@@ -850,7 +658,11 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   window.MacroWatchAnalysisChart.scrollableSvg(fsiChart.querySelector('svg'), width, 920, { left: fsiPadding.left, right: fsiPadding.right, axisMode: fsiPadding.axisMode, top: fsiPadding.top, bottom: fsiHeight - fsiPadding.bottom, axes: [
     { points: fsiRows.map(row => ({ x: x(row.month), value: toCreditStressNumber(row.bok_fsi) })), y: fsiY, selector: 'path[stroke="#6d4b91"]' },
   ] });
-  attachHover({ host: fsiChart, hoverRows: fsiRows, valueKey: 'bok_fsi', chartHeight: fsiHeight, chartPadding: fsiPadding, source: 'korea-fsi', label: 'FSI', showLabels: false });
+  window.MacroWatchAnalysisChart.attachChartCursor({
+    host: fsiChart, rows: fsiRows, xFor: (row) => x(row.month), width, height: fsiHeight, top: fsiPadding.top, bottom: fsiPadding.bottom,
+    valueText: null, dateText: null, eventName: 'macrowatch:korea-stress-hover', source: 'korea-fsi',
+    eventDetail: (row) => ({ month: row.month }), rowFromDetail: (detail) => fsiRows.find((row) => row.month === detail.month),
+  });
 }
 
 async function fetchBokFsiForDisplay() {

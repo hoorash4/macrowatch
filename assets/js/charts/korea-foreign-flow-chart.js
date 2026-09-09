@@ -4,7 +4,7 @@
   const PADDING = window.MacroWatchAnalysisChart.plotPadding();
   const Z_WINDOW = 756, MIN_Z_HISTORY = 60;
   const chartUtils = window.MacroWatchAnalysisChart;
-  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'value', label: '외국인 자금흐름' }]) });
+  const PROFILE = chartUtils.chartProfile({ xAxisMode: 'zero', cursorSeries: Object.freeze([{ key: 'value', label: '외국인 자금흐름' }]) });
   const state = { rows: [], selectedYears: PROFILE.defaultYears };
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin ? (targetMin + targetMax) / 2 : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
   const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;

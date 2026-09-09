@@ -19,6 +19,7 @@ test('chart profiles centralize the two-year default and structural options', ()
   assert.equal(utils.chartLayout.baseWidth, 920);
   assert.equal(utils.chartProfiles.main.defaultYears, 2);
   assert.equal(utils.chartProfiles.main.axisMode, 'single');
+  assert.equal(utils.chartProfiles.main.xAxisMode, 'bottom');
   assert.deepEqual([...utils.chartProfiles.main.auxiliaryPanels], []);
   const profile = utils.chartProfile({ axisMode: 'dual', auxiliaryPanels: ['first', 'second'], cursorSeries: [{ key: 'main', label: '메인' }] });
   assert.equal(profile.defaultYears, 2);
@@ -58,6 +59,9 @@ test('MSI and legacy charts are mounted into the same canonical shell', () => {
   assert.match(source, /shell\.className = `analysis-chart-shell analysis-chart-shell--\$\{profile\.axisMode\}`/);
   assert.match(source, /function mountChartFrame[\s\S]*createChartShell\(profile, ariaLabel\)/);
   assert.match(source, /function scrollableSvg[\s\S]*createChartShell\(profile\)/);
+  assert.match(source, /shell\.append\(axis\('right', profile\.axisMode === 'dual' \? rightAxisMarkup : ''\)\)/);
+  assert.match(source, /if \(xAxisMode !== 'zero'\)/);
+  assert.match(source, /function attachChartCursor\(/);
   assert.doesNotMatch(source, /standardizeChartFrame/);
   const allChartSources = fs.readdirSync(path.join(__dirname, '../assets/js/charts')).filter(file => file.endsWith('-chart.js'))
     .map(file => fs.readFileSync(path.join(__dirname, '../assets/js/charts', file), 'utf8')).join('\n');
@@ -65,6 +69,14 @@ test('MSI and legacy charts are mounted into the same canonical shell', () => {
   assert.match(styles, /\.analysis-chart-shell \{ position:relative; display:flex;/);
   assert.match(styles, /\.analysis-chart-fixed-axis text \{ fill:#64748b; font-size:10px; font-weight:400;/);
   assert.match(source, /label\.setAttribute\('x', side === 'right' \? axisLabelGap : axisViewWidth - axisLabelGap\)/);
+});
+
+test('MSI cursor and axis boundaries use the common chart component', () => {
+  const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  assert.ok((dashboard.match(/attachChartCursor\(/g) || []).length >= 4);
+  assert.doesNotMatch(dashboard, /createSvgElement|attachVerticalGuide|const attachHover|hoverGuide/);
+  assert.match(source, /frame\.addEventListener\('pointermove'/);
+  assert.match(source, /appendFixedAxis\(dualAxis \? rightAxisNodes : \[\], 'right', dualAxis \? rightGutter : 1\)/);
 });
 
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {

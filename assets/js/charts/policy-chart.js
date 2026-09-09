@@ -8,7 +8,7 @@
   const OSCILLATOR_RETENTION = 0.8;
   const STANDARD_MEETING_DAYS = 45;
   const chartUtils = window.MacroWatchAnalysisChart;
-  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'displayValue', label: '정책 스트레스' }]) });
+  const PROFILE = chartUtils.chartProfile({ xAxisMode: 'zero', cursorSeries: Object.freeze([{ key: 'displayValue', label: '정책 스트레스' }]) });
   const state = { rows: [], selectedYears: PROFILE.defaultYears };
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
     ? (targetMin + targetMax) / 2

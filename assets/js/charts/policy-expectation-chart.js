@@ -6,7 +6,7 @@
   const Y_AXIS_WIDTH = window.MacroWatchAnalysisChart.chartLayout.axisWidth;
   const PADDING = window.MacroWatchAnalysisChart.plotPadding();
   const chartUtils = window.MacroWatchAnalysisChart;
-  const PROFILE = chartUtils.chartProfile({ cursorSeries: Object.freeze([{ key: 'fiveDayAverage', label: '내재금리' }]) });
+  const PROFILE = chartUtils.chartProfile({ xAxisMode: 'zero', cursorSeries: Object.freeze([{ key: 'fiveDayAverage', label: '내재금리' }]) });
   const state = { rows: [], selectedYears: PROFILE.defaultYears };
 
   const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
