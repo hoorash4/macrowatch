@@ -67,6 +67,14 @@ def existing_legacy_oas(database: SupabaseRest, start: date) -> dict[str, float]
     }
 
 
+def attach_legacy_oas(rows: list[dict[str, object]], legacy_oas: dict[str, float]) -> None:
+    """일괄 upsert 열 구성을 통일하면서 기존 OAS 값만 보존한다."""
+    for row in rows:
+        month = str(row["month"])
+        row["high_yield_oas_pct"] = round(legacy_oas[month], 4) if month in legacy_oas else None
+        row["includes_oas"] = month in legacy_oas
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=10)
@@ -85,11 +93,7 @@ def main() -> None:
         raise RuntimeError("저장할 미국 중소기업 위험지수 데이터가 없습니다.")
     if args.replace:
         legacy_oas = existing_legacy_oas(database, start)
-        for row in rows:
-            month = str(row["month"])
-            if month in legacy_oas:
-                row["high_yield_oas_pct"] = round(legacy_oas[month], 4)
-                row["includes_oas"] = True
+        attach_legacy_oas(rows, legacy_oas)
         database.request(
             "DELETE",
             "us_small_business_risk_monthly",

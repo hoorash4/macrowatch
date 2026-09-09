@@ -7,7 +7,7 @@ import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -870,6 +870,20 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(sales["2026-01-01"], 20.0)
         self.assertEqual(borrowing["2026-01-01"], 7.5)
         self.assertEqual(optimism["2026-01-01"], 98.7)
+
+    def test_small_business_legacy_oas_is_preserved_for_replace(self) -> None:
+        database = Mock()
+        database.request.return_value = [
+            {"month": "2023-09-01", "high_yield_oas_pct": "3.9062"},
+            {"month": "2023-10-01", "high_yield_oas_pct": None},
+        ]
+        values = small_business.existing_legacy_oas(database, date(2023, 9, 1))
+        self.assertEqual(values, {"2023-09-01": 3.9062})
+        rows = [{"month": "2023-09-01"}, {"month": "2023-10-01"}]
+        small_business.attach_legacy_oas(rows, values)
+        self.assertEqual(set(rows[0]), set(rows[1]))
+        self.assertEqual(rows[0]["high_yield_oas_pct"], 3.9062)
+        self.assertIsNone(rows[1]["high_yield_oas_pct"])
 
     def test_small_business_card_uses_common_chart_widths_and_liquidity_icons(self) -> None:
         html = (ROOT / "index.html").read_text(encoding="utf-8")
