@@ -899,6 +899,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("utils.scrollableSvg", chart)
         self.assertIn("left: PADDING.left", chart)
         self.assertIn("right: PADDING.right", chart)
+        self.assertIn("right: 52", chart)
         for title in ("미국 주식시장 자금환경", "한국 주식시장 자금환경"):
             self.assertRegex(html, rf"fa-money-bill-transfer[^<]*</i></span>\s*<h2[^>]*>{title}</h2>")
 
@@ -1005,6 +1006,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("utils.scrollableSvg", chart)
         self.assertIn("left: PADDING.left", chart)
         self.assertIn("right: PADDING.right", chart)
+        self.assertIn("right: 52", chart)
         self.assertIn("utils.scrollToLatest", chart)
         self.assertIn("중소기업 경기전망 SBHI(역)", chart)
         self.assertIn("value - headlineDomain.min", chart)

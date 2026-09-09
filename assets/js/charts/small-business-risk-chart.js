@@ -9,7 +9,7 @@
   };
   const BASE_WIDTH = 920;
   const HEIGHT = 300;
-  const PADDING = { left: utils.axisGutter + 6, right: utils.axisGutter + 6, top: 24, bottom: 42 };
+  const PADDING = { left: utils.axisGutter + 6, right: 52, top: 24, bottom: 42 };
   const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
   const monthLabel = value => String(value).slice(0, 7).replace('-', '.');
 
