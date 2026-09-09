@@ -260,6 +260,8 @@
     // Y축은 SVG 내부에 있으면 최신 구간으로 스크롤할 때 함께 화면 밖으로 나간다.
     // 축의 라벨과 세로선만 별도 SVG에 복제해 양쪽에 고정한다.
     const [,, viewWidth, viewHeight] = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    const leftGutter = Number.isFinite(Number(axes?.left)) ? Number(axes.left) : axisGutter;
+    const rightGutter = Number.isFinite(Number(axes?.right)) ? Number(axes.right) : axisGutter;
     const axisCandidates = [...svg.querySelectorAll('text,line')].filter((node) => {
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       return true;
@@ -273,13 +275,14 @@
         || (node.tagName === 'line' && Number.isFinite(x1) && x1 === x2 && x1 <= 65);
     });
     const rightAxisNodes = axisCandidates.filter(node => node.matches('[data-chart-right-axis]'));
-    const appendFixedAxis = (nodes, side) => {
+    const appendFixedAxis = (nodes, side, gutter) => {
       if (!nodes.length || !Number.isFinite(viewWidth) || !Number.isFinite(viewHeight)) return;
       const fixedAxis = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - axisGutter} 0 ${axisGutter} ${viewHeight}` : `0 0 ${axisGutter} ${viewHeight}`);
+      fixedAxis.dataset.fixedAxisGutter = String(gutter);
+      fixedAxis.setAttribute('viewBox', side === 'right' ? `${viewWidth - gutter} 0 ${gutter} ${viewHeight}` : `0 0 ${gutter} ${viewHeight}`);
       fixedAxis.setAttribute('preserveAspectRatio', 'none');
       fixedAxis.setAttribute('aria-hidden', 'true');
-      fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:${axisGutter}px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
+      fixedAxis.style.cssText = `position:absolute;z-index:2;${side}:0;top:0;width:${gutter}px;height:${viewHeight}px;background:#fff;pointer-events:none;`;
       nodes.forEach((node) => {
         fixedAxis.append(node.cloneNode(true));
         node.setAttribute('visibility', 'hidden');
@@ -287,11 +290,12 @@
       shell.append(fixedAxis);
       const scrollbarMask = document.createElement('span');
       scrollbarMask.setAttribute('aria-hidden', 'true');
-      scrollbarMask.style.cssText = `position:absolute;z-index:3;${side}:0;bottom:0;width:${axisGutter}px;height:18px;background:#fff;pointer-events:none;`;
+      scrollbarMask.dataset.scrollbarGutter = String(gutter);
+      scrollbarMask.style.cssText = `position:absolute;z-index:3;${side}:0;bottom:0;width:${gutter}px;height:18px;background:#fff;pointer-events:none;`;
       shell.append(scrollbarMask);
     };
-    appendFixedAxis(leftAxisNodes, 'left');
-    appendFixedAxis(rightAxisNodes, 'right');
+    appendFixedAxis(leftAxisNodes, 'left', leftGutter);
+    appendFixedAxis(rightAxisNodes, 'right', rightGutter);
 
     if (axes) bindVisibleAxes(svg, frame, shell, width, axes);
 
@@ -307,9 +311,12 @@
       const renderedHeight = viewHeight * (mobile ? Math.min(1, scale) : 1);
       svg.style.width = `${width * scale}px`;
       svg.style.height = `${renderedHeight}px`;
-      shell.querySelectorAll(':scope > svg').forEach(axis => {
-        axis.style.width = `${axisGutter * scale}px`;
+      shell.querySelectorAll(':scope > svg[data-fixed-axis-gutter]').forEach(axis => {
+        axis.style.width = `${Number(axis.dataset.fixedAxisGutter) * scale}px`;
         axis.style.height = `${renderedHeight}px`;
+      });
+      shell.querySelectorAll(':scope > [data-scrollbar-gutter]').forEach(mask => {
+        mask.style.width = `${Number(mask.dataset.scrollbarGutter) * scale}px`;
       });
       frame.scrollLeft = ratio * Math.max(0, frame.scrollWidth - frame.clientWidth);
     });
