@@ -16,14 +16,6 @@
     return Date.parse(`${String(value)}T00:00:00Z`);
   }
 
-  function selectedRows(rows, key) {
-    if (state.years === 'max' || !rows.length) return rows;
-    const latest = Math.max(...rows.map(row => timestamp(row[key])).filter(Number.isFinite));
-    const cutoff = new Date(latest);
-    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - Number(state.years));
-    return rows.filter(row => timestamp(row[key]) >= cutoff.getTime());
-  }
-
   function stepPath(rows, x, y, key) {
     const points = rows.filter(row => Number.isFinite(Number(row[key])));
     if (!points.length) return '';
@@ -32,11 +24,6 @@
       path += ` H ${x(row).toFixed(2)} V ${y(Number(row[key])).toFixed(2)}`;
     });
     return path;
-  }
-
-  function formatMonth(value) {
-    const parsed = new Date(`${value}T00:00:00Z`);
-    return `${parsed.getUTCFullYear()}.${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
   }
 
   function renderLegend() {
@@ -54,8 +41,8 @@
   function render() {
     const host = document.getElementById('inflation-model-chart');
     if (!host) return;
-    const monthly = selectedRows(state.monthly, 'month');
-    const daily = selectedRows(state.daily, 'observed_on');
+    const monthly = state.monthly;
+    const daily = state.daily;
     if (!monthly.length || !daily.length) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">저장된 통합물가 데이터가 없습니다.</div>';
       return;
@@ -70,7 +57,8 @@
     ].filter(Number.isFinite);
     const first = Math.min(...allDates), last = Math.max(...allDates);
     const baseWidth = 920, height = 360, padding = { left: 58, right: 24, top: 24, bottom: 42 };
-    const width = state.years === 'max' ? baseWidth : Math.max(baseWidth, baseWidth * (last - first) / (Number(state.years) * 365.25 * 86400000));
+    const historyYears = (last - first) / (365.25 * 86400000);
+    const width = state.years === 'max' ? baseWidth : Math.max(baseWidth, baseWidth * historyYears / Number(state.years));
     const x = row => {
       const value = timestamp(row.observed_on || row.month);
       return padding.left + (value - first) / Math.max(1, last - first) * (width - padding.left - padding.right);
@@ -99,14 +87,7 @@
       if (!point) return '';
       return `<line x1="${x(point)}" x2="${x(point)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#edf0f4"/><text x="${x(point) + 4}" y="${height - 14}" fill="#64748b" font-size="10">${year}</text>`;
     }).join('');
-    const dots = monthly.map(row => {
-      const value = Number(row[actualKey]);
-      if (!Number.isFinite(value)) return '';
-      const status = row.status === 'provisional' ? '잠정치' : '확정치';
-      return `<circle cx="${x(row)}" cy="${y(value)}" r="3" fill="${row.status === 'provisional' ? COLORS.provisional : COLORS.actual}" tabindex="0"><title>${formatMonth(row.month)} ${state.kind === 'headline' ? 'Headline' : 'Core'} 통합물가 ${value.toFixed(2)}% (${status})</title></circle>`;
-    }).join('');
-
-    host.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="통합물가, 시장 선행지표, 기준금리와 실질금리 추이">${grid}${guides}<path d="${actualPath}" fill="none" stroke="${COLORS.actual}" stroke-width="3" stroke-linecap="round"/><path d="${provisionalPath}" fill="none" stroke="${COLORS.provisional}" stroke-width="3" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${leadPath}" fill="none" stroke="${COLORS.leading}" stroke-width="2.5" stroke-linecap="round"/><path d="${policyPath}" fill="none" stroke="${COLORS.policy}" stroke-width="2.25"/><path d="${realPath}" fill="none" stroke="${COLORS.real}" stroke-width="2.25" stroke-linecap="round"/>${dots}</svg>`;
+    host.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="통합물가, 시장 선행지표, 기준금리와 실질금리 추이">${grid}${guides}<path d="${actualPath}" fill="none" stroke="${COLORS.actual}" stroke-width="3" stroke-linecap="round"/><path d="${provisionalPath}" fill="none" stroke="${COLORS.provisional}" stroke-width="3" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${leadPath}" fill="none" stroke="${COLORS.leading}" stroke-width="2.5" stroke-linecap="round"/><path d="${policyPath}" fill="none" stroke="${COLORS.policy}" stroke-width="2.25"/><path d="${realPath}" fill="none" stroke="${COLORS.real}" stroke-width="2.25" stroke-linecap="round"/><rect data-inflation-hit x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}" fill="transparent"/><line data-inflation-cursor x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" class="policy-expectation-cursor"/><text data-inflation-value x="0" y="16" text-anchor="middle" fill="#334155" font-size="11" font-weight="700" visibility="hidden"></text><text data-inflation-date x="0" y="${height - padding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail"></text></svg>`;
     chartUtils.scrollableSvg(host.querySelector('svg'), width, baseWidth, {
       top: padding.top,
       bottom: height - padding.bottom,
@@ -122,11 +103,35 @@
             { x: x(row), value: Number(row.policy_rate_upper_pct) },
           ]),
         ],
-        selector: `path[stroke="${COLORS.actual}"],path[stroke="${COLORS.provisional}"],path[stroke="${COLORS.leading}"],path[stroke="${COLORS.policy}"],path[stroke="${COLORS.real}"],circle`,
+        selector: `path[stroke="${COLORS.actual}"],path[stroke="${COLORS.provisional}"],path[stroke="${COLORS.leading}"],path[stroke="${COLORS.policy}"],path[stroke="${COLORS.real}"]`,
         format: value => `${value.toFixed(1)}%`,
       }],
     });
-    chartUtils.scrollToLatest(host.querySelector('[data-history-scroll]'));
+    const frame = host.querySelector('[data-history-scroll]');
+    const svg = frame?.querySelector('svg');
+    const cursor = host.querySelector('[data-inflation-cursor]');
+    const valueLabel = host.querySelector('[data-inflation-value]');
+    const dateLabel = host.querySelector('[data-inflation-date]');
+    const formatValue = value => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)}%` : '미발표';
+    chartUtils.scrollToLatest(frame);
+    frame?.addEventListener('pointermove', event => {
+      const bounds = svg.getBoundingClientRect();
+      const pointerX = (event.clientX - bounds.left) / bounds.width * width;
+      const nearest = daily.reduce((closest, row) => Math.abs(x(row) - pointerX) < Math.abs(x(closest) - pointerX) ? row : closest);
+      const monthlyAtDate = monthly.filter(row => timestamp(row.month) <= timestamp(nearest.observed_on)).at(-1) || monthly[0];
+      const cursorX = x(nearest);
+      const labelX = Math.max(170, Math.min(width - 170, cursorX));
+      cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX);
+      valueLabel.setAttribute('x', labelX); dateLabel.setAttribute('x', cursorX);
+      valueLabel.textContent = `통합 ${formatValue(monthlyAtDate[actualKey])} · 선행 ${formatValue(nearest[leadKey])} · 기준 ${formatValue(nearest.policy_rate_upper_pct)} · 실질 ${formatValue(monthlyAtDate[realMonthlyKey])}`;
+      dateLabel.textContent = String(nearest.observed_on);
+      cursor.classList.add('is-visible'); dateLabel.classList.add('is-visible');
+      valueLabel.setAttribute('visibility', 'visible');
+    });
+    frame?.addEventListener('pointerleave', () => {
+      cursor.classList.remove('is-visible'); dateLabel.classList.remove('is-visible');
+      valueLabel.setAttribute('visibility', 'hidden');
+    });
   }
 
   async function load() {

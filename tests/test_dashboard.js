@@ -123,12 +123,16 @@ test('미국 스트레스 화면 아래에 통합물가 카드와 전용 차트�
   assert.match(html, /credit-stress-components-dashboard[\s\S]*inflation-model-dashboard[\s\S]*data-liquidity-country="US"/);
   assert.match(html, /PCE 60%·조정 CPI 30%·소비연관 PPI 10%/);
   assert.match(html, /data-inflation-kind="headline"[\s\S]*data-inflation-kind="core"/);
+  assert.match(html, /data-inflation-range="1"[\s\S]*data-inflation-range="2"/);
   assert.match(chart, /us_inflation_monthly/);
   assert.match(chart, /us_inflation_leading_daily/);
   assert.match(chart, /통합물가/);
   assert.match(chart, /시장 선행/);
   assert.match(chart, /기준금리/);
   assert.match(chart, /실질금리/);
+  assert.match(chart, /data-inflation-cursor/);
+  assert.match(chart, /historyYears \/ Number\(state\.years\)/);
+  assert.doesNotMatch(chart, /<circle/);
   assert.doesNotMatch(chart, /기준이나 의미|높을수록/);
 });
 
