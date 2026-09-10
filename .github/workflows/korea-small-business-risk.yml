@@ -5,12 +5,12 @@ on:
     workflows: ["Deploy Supabase changes"]
     types: [completed]
   schedule:
-    # 06:40 KST: KOSIS와 ECOS 신규 월을 매일 확인한다.
-    - cron: "40 21 * * *"
+    # 06:40 KST: KOSISì ECOS ì ê· ìì ë§¤ì¼ íì¸íë¤.
+    - cron: "50 4 * * *"
   workflow_dispatch:
     inputs:
       replace:
-        description: "외부 원자료로 10년 구간 전체 교체"
+        description: "ì¸ë¶ ììë£ë¡ 10ë êµ¬ê° ì ì²´ êµì²´"
         required: false
         default: false
         type: boolean
