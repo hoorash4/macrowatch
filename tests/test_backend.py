@@ -419,8 +419,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('body.stage === "open"', pipeline)
         self.assertIn('body.stage === "intraday"', pipeline)
         self.assertIn('body.stage === "close"', pipeline)
-        for schedule in ('10 0', '30 0', '30 3', '40 6', '0 7'):
+        for schedule in ('10 0', '30 3', '40 6'):
             self.assertIn(f'cron: "{schedule} * * 1-5"', workflow)
+        self.assertNotIn('cron: "30 0 * * 1-5"', workflow)
+        self.assertNotIn('cron: "0 7 * * 1-5"', workflow)
         self.assertIn("github.event.schedule == '30 3 * * 1-5'", workflow)
         self.assertIn("DATABASE_PAGE_SIZE = 1000", pipeline)
         self.assertIn("PRICE_RETENTION_WEEKS = 10", pipeline)
@@ -538,7 +540,7 @@ class SourceContractTests(unittest.TestCase):
         order_js = (ROOT / "assets/js/admin/admin-card-order.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
 
-        self.assertEqual(admin_html.count('data-admin-card-id='), 10)
+        self.assertEqual(admin_html.count('data-admin-card-id='), 9)
         self.assertIn('assets/js/admin/admin-card-order.js?v=2', admin_html)
         self.assertIn("initializeAdminCardOrder", admin_js)
         self.assertIn("get_admin_card_order", admin_js)
@@ -852,8 +854,9 @@ class SourceContractTests(unittest.TestCase):
 
     def test_news_schedule_avoids_hour_boundary_and_logs_failed_response(self) -> None:
         workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")
-        for cron in ('cron: "30 15 * * *"', 'cron: "50 15 * * *"', 'cron: "10 16 * * *"'):
-            self.assertIn(cron, workflow)
+        self.assertIn('cron: "30 15 * * *"', workflow)
+        self.assertNotIn('cron: "50 15 * * *"', workflow)
+        self.assertNotIn('cron: "10 16 * * *"', workflow)
         self.assertIn('cat "$response" >&2', workflow)
         self.assertLess(workflow.index('cat "$response" >&2'), workflow.index('news-pipeline request failed with HTTP'))
 
