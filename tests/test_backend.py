@@ -898,7 +898,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("push:", workflow)
         self.assertIn("signals.small_business_risk_pipeline --years 1", workflow)
         self.assertNotIn("--replace", workflow)
-        self.assertIn('cron: "20 21 * * *"', workflow)
+        self.assertIn('cron: "30 21 * * *"', workflow)
 
     def test_small_business_risk_uses_available_component_weights(self) -> None:
         sales = {"2023-08-01": -15.0, "2023-09-01": -15.0}
