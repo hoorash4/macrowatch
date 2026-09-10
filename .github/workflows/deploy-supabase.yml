@@ -105,8 +105,8 @@ jobs:
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260910043000_add_decisive_news_event_keys.sql
           # Automatic earnings jobs use dedicated DB writers that can mutate only
-          # the latest completed market quarter. Historical repair/backfill paths
-          # remain explicit and separate.
+          # the latest completed market quarter. Historical repair paths remain
+          # explicit and separate.
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260910133000_guard_earnings_automatic_writes.sql
 
