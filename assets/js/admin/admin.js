@@ -2,26 +2,11 @@
   const db = window.MacroWatchFrontend.createSupabaseClient();
   const { escapeHtml } = window.MacroWatchFrontend;
   const functionClient = window.MacroWatchFrontend.createFunctionClient(db);
-  const DEFAULT_SCHEDULE = ['08:00', '18:00'];
   const WORKFLOW_CONTROLS = {
-    check: { button: 'run-check-button', badge: 'check-badge', action: 'run_check', idleLabel: '지금 지표 확인', success: '지표 확인이 완료되었습니다.' },
     backup: { button: 'run-backup-button', badge: 'backup-badge', action: 'run_backup', idleLabel: '지금 수동 백업', success: '수동 백업이 완료되었습니다.' },
     news: { button: 'run-news-button', badge: 'news-badge', action: 'run_news', idleLabel: '뉴스 분석 테스트', success: '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.' },
   };
-  let scheduleTimes = [...DEFAULT_SCHEDULE];
   let adminCardOrder = null;
-
-  function defaultScheduleTime(index) {
-    return ['08:00', '12:00', '16:00', '20:00'][index] || '08:00';
-  }
-
-  function renderScheduleTimeInputs(times = scheduleTimes) {
-    const count = Math.min(4, Math.max(1, Number(document.getElementById('schedule-count').value) || 1));
-    const container = document.getElementById('schedule-times');
-    container.innerHTML = Array.from({ length: count }, (_, index) => `
-      <input data-schedule-time type="time" value="${escapeHtml(times[index] || defaultScheduleTime(index))}" aria-label="${index + 1}회차 확인 시간" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm text-white outline-none focus:border-blue-500">
-    `).join('');
-  }
 
   function formatTime(value) {
     if (!value) return '기록 없음';
@@ -32,37 +17,6 @@
     }).format(new Date(value));
   }
 
-  function formatDuration(start, end) {
-    if (!start || !end) return '소요 시간 확인 불가';
-    const seconds = Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));
-    return `약 ${seconds}초 소요`;
-  }
-
-  function nextScheduledCheck(times) {
-    const now = new Date();
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Seoul',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23'
-    }).formatToParts(now).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
-    const current = `${parts.hour}:${parts.minute}`;
-    const sorted = [...times].sort();
-    const todayTime = sorted.find((time) => time > current);
-    if (todayTime) return formatTime(new Date(`${parts.year}-${parts.month}-${parts.day}T${todayTime}:00+09:00`));
-    const tomorrow = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00+09:00`);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const nextDay = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Seoul',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(tomorrow);
-    return formatTime(new Date(`${nextDay}T${sorted[0]}:00+09:00`));
-  }
 
   function showNotice(title, message, isError = false) {
     document.getElementById('operation-title').textContent = title;
@@ -247,16 +201,10 @@
   }
 
   function applyStatus(data) {
-    const checkLabel = setBadge(document.getElementById('check-badge'), data.check);
+    const checkLabel = badgeState(data.check)[0];
     document.getElementById('backend-summary').textContent = checkLabel;
     document.getElementById('backend-summary').className =
       `mt-2 text-lg font-extrabold ${data.check?.conclusion === 'success' ? 'text-emerald-400' : data.check?.status !== 'completed' ? 'text-blue-400' : 'text-amber-400'}`;
-    document.getElementById('check-time').textContent = formatTime(data.check?.updated_at || data.check?.created_at);
-    document.getElementById('check-duration').textContent = formatDuration(
-      data.check?.run_started_at || data.check?.created_at,
-      data.check?.updated_at
-    );
-
     const backupLabel = setBadge(document.getElementById('backup-badge'), data.backup);
     document.getElementById('backup-summary').textContent = backupLabel;
     document.getElementById('backup-summary').className =
@@ -265,11 +213,6 @@
     setBadge(document.getElementById('news-badge'), data.news);
     document.getElementById('news-time').textContent = formatTime(data.news?.updated_at || data.news?.created_at);
 
-    scheduleTimes = Array.isArray(data.schedule?.times) && data.schedule.times.length ? data.schedule.times : [...DEFAULT_SCHEDULE];
-    document.getElementById('schedule-count').value = String(scheduleTimes.length);
-    renderScheduleTimeInputs(scheduleTimes);
-    document.getElementById('schedule-label').textContent = `매일 ${scheduleTimes.join(' · ')}`;
-    document.getElementById('next-check-time').textContent = nextScheduledCheck(scheduleTimes);
     applyDatabaseStatus(data.database);
   }
 
@@ -440,6 +383,67 @@
     }
   }
 
+  function confirmAutomationDeletion(message) {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4';
+      modal.innerHTML = `<section class="w-full max-w-sm rounded-2xl border border-red-800 bg-slate-900 p-6 text-center shadow-2xl"><i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i><h2 class="mt-4 text-lg font-bold text-white">자동수집 삭제 확인</h2><p class="mt-2 text-sm leading-relaxed text-slate-400">${escapeHtml(message)}</p><div class="mt-5 grid grid-cols-2 gap-2"><button type="button" data-cancel class="rounded-lg border border-slate-700 py-2.5 text-sm font-bold text-slate-300">취소</button><button type="button" data-confirm class="rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-500">삭제</button></div></section>`;
+      const close = (confirmed) => { modal.remove(); resolve(confirmed); };
+      modal.querySelector('[data-cancel]').addEventListener('click', () => close(false));
+      modal.querySelector('[data-confirm]').addEventListener('click', () => close(true));
+      modal.addEventListener('click', (event) => { if (event.target === modal) close(false); });
+      document.body.append(modal);
+    });
+  }
+
+  function cronLabel(cron) {
+    const fields = String(cron).trim().split(/\s+/);
+    if (fields[4] === '1-5') return '평일';
+    if (fields[4] === '6') return '토요일';
+    if (fields[2] !== '*') return `매월 ${fields[2]}일`;
+    return '매일';
+  }
+
+  function renderAutomationSchedules(items) {
+    const list = document.getElementById('automation-schedule-list');
+    if (!items.length) { list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 정기 자동수집이 없습니다.</p>'; return; }
+    list.innerHTML = items.map((item) => {
+      const paused = item.state !== 'active';
+      const times = (item.crons || []).map((cron, index) => `<label class="flex items-center gap-1 text-xs text-slate-400"><span class="whitespace-nowrap">${escapeHtml(cronLabel(cron))}</span><input data-automation-time="${index}" data-automation-cron="${escapeHtml(cron)}" type="time" value="${escapeHtml(item.kst_times?.[index] || '')}" class="w-24 rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-xs text-white"><button type="button" data-delete-automation-time="${index}" class="rounded border border-red-900/70 px-1.5 py-1 text-red-300 hover:bg-red-950/50" aria-label="${index + 1}회차 삭제"><i class="fa-solid fa-trash"></i></button></label>`).join('');
+      return `<article data-automation-id="${escapeHtml(item.id)}" data-automation-name="${escapeHtml(item.name)}" class="border-b border-slate-800 p-4 last:border-0"><div class="grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(250px,2fr)_150px_auto]"><div><h3 class="font-bold text-slate-200">${escapeHtml(item.name)}</h3><p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p></div><div class="flex flex-wrap gap-2">${times}</div><span class="w-fit self-start rounded-full border px-2.5 py-1 text-xs font-bold ${paused ? 'border-amber-800 bg-amber-950/40 text-amber-300' : 'border-emerald-800 bg-emerald-950/40 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</span><div class="flex flex-wrap gap-1"><button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">시간 저장</button><button type="button" data-toggle-automation class="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-bold text-slate-300">${paused ? '재시작' : '중지'}</button><button type="button" data-delete-automation class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300">전체 삭제</button></div></div></article>`;
+    }).join('');
+    list.querySelectorAll('[data-automation-id]').forEach((row) => {
+      const id = row.dataset.automationId, name = row.dataset.automationName;
+      row.querySelector('[data-save-automation]').addEventListener('click', async (event) => {
+        const button = event.currentTarget; button.disabled = true;
+        try { await invokeAdmin('update_automation_schedule', { workflow_id: id, times: Array.from(row.querySelectorAll('[data-automation-time]'), input => input.value) }); await loadAutomationSchedules(); }
+        catch (error) { showNotice('일정 저장 실패', error.message || '시간을 저장하지 못했습니다.', true); button.disabled = false; }
+      });
+      row.querySelector('[data-toggle-automation]').addEventListener('click', async (event) => {
+        const button = event.currentTarget; button.disabled = true;
+        try { await invokeAdmin('set_automation_enabled', { workflow_id: id, enabled: button.textContent === '재시작' }); await loadAutomationSchedules(); }
+        catch (error) { showNotice('상태 변경 실패', error.message || '상태를 바꾸지 못했습니다.', true); button.disabled = false; }
+      });
+      row.querySelector('[data-delete-automation]').addEventListener('click', async () => {
+        if (!await confirmAutomationDeletion(`${name} 자동수집 전체와 실패 알림 연동을 삭제합니다.`)) return;
+        try { await invokeAdmin('delete_automation_schedule', { workflow_id: id }); await loadAutomationSchedules(); showNotice('자동수집 삭제 완료', `${name} 자동수집을 삭제했습니다.`); }
+        catch (error) { showNotice('자동수집 삭제 실패', error.message || '삭제하지 못했습니다.', true); }
+      });
+      row.querySelectorAll('[data-delete-automation-time]').forEach((button) => button.addEventListener('click', async () => {
+        const input = row.querySelector(`[data-automation-time="${button.dataset.deleteAutomationTime}"]`);
+        if (!await confirmAutomationDeletion(`${name}의 ${input.value} 실행을 삭제합니다.`)) return;
+        try { await invokeAdmin('delete_automation_time', { workflow_id: id, cron: input.dataset.automationCron }); await loadAutomationSchedules(); }
+        catch (error) { showNotice('실행 시간 삭제 실패', error.message || '삭제하지 못했습니다.', true); }
+      }));
+    });
+  }
+
+  async function loadAutomationSchedules() {
+    const list = document.getElementById('automation-schedule-list');
+    try { renderAutomationSchedules((await invokeAdmin('list_automation_schedules')).items || []); }
+    catch (error) { list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '자동 수집 목록을 불러오지 못했습니다.')}</p>`; }
+  }
+
   async function loadAll() {
     const button = document.getElementById('refresh-button');
     button.disabled = true;
@@ -451,6 +455,7 @@
       await loadSectorEtfs();
       await loadExtremeNewsRules();
       await loadMembers();
+      await loadAutomationSchedules();
     } catch (error) {
       showNotice('불러오기 실패', error.message || '상태를 확인하지 못했습니다.', true);
     } finally {
@@ -499,25 +504,6 @@
     }
   }
 
-  async function saveSchedule() {
-    const button = document.getElementById('save-schedule-button');
-    const times = Array.from(document.querySelectorAll('[data-schedule-time]'), (input) => input.value);
-    button.disabled = true;
-    button.textContent = '저장 중';
-    try {
-      const result = await invokeAdmin('update_schedule', { times });
-      scheduleTimes = result.schedule.times;
-      document.getElementById('schedule-label').textContent = `매일 ${scheduleTimes.join(' · ')}`;
-      document.getElementById('next-check-time').textContent = nextScheduledCheck(scheduleTimes);
-      showNotice('일정 저장 완료', `지표 확인 시간을 ${scheduleTimes.join(', ')}로 변경했습니다.`);
-    } catch (error) {
-      showNotice('일정 저장 실패', error.message || '일정을 변경하지 못했습니다.', true);
-    } finally {
-      button.disabled = false;
-      button.textContent = '시간 저장';
-    }
-  }
-
   async function authorizeAdmin() {
     const accessScreen = document.getElementById('admin-access-screen');
     const accessMessage = document.getElementById('admin-access-message');
@@ -563,12 +549,8 @@
     Object.entries(WORKFLOW_CONTROLS).forEach(([kind, control]) => {
       document.getElementById(control.button).addEventListener('click', () => runWorkflow(kind));
     });
-    document.getElementById('save-schedule-button').addEventListener('click', saveSchedule);
-    document.getElementById('schedule-count').addEventListener('change', () => {
-      const current = Array.from(document.querySelectorAll('[data-schedule-time]'), (input) => input.value);
-      renderScheduleTimeInputs(current);
-    });
     document.getElementById('refresh-earnings-pending-button').addEventListener('click', loadEarningsV2Pending);
+    document.getElementById('refresh-automation-schedules-button').addEventListener('click', loadAutomationSchedules);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
     document.getElementById('member-form').addEventListener('submit', createMember);

@@ -1,13 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateTimes, validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
-import { kstTimeToCron, latestRun, githubRequest } from "../supabase/functions/admin-control/github.ts";
+import { validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
+import { kstTimeFromCron, updateCronTime, latestRun, githubRequest } from "../supabase/functions/admin-control/github.ts";
 import { issuerFromEtfName } from "../supabase/functions/admin-control/sector-registry.ts";
 
 test("admin validation preserves normalization, bounds and rejection messages", () => {
-  assert.deepEqual(validateTimes(["20:30", "07:30"]), ["07:30", "20:30"]);
-  assert.throws(() => validateTimes(["07:30", "07:30"]), /서로 다른 시간/);
-  assert.throws(() => validateTimes(["24:00"]), /시간 형식/);
   assert.equal(validateUsername(" Test.ID "), "test.id");
   assert.throws(() => validateUsername("bad"), /4~32자/);
   assert.equal(validatePassword(" secret "), " secret ");
@@ -19,9 +16,11 @@ test("admin validation preserves normalization, bounds and rejection messages", 
   assert.throws(() => issuerFromEtfName("UNKNOWN ETF"), /자동 확인하지 못했습니다/);
 });
 
-test("KST schedule translation keeps midnight boundary behavior", () => {
-  assert.equal(kstTimeToCron("07:30"), "30 22 * * *");
-  assert.equal(kstTimeToCron("19:30"), "30 10 * * *");
+test("KST schedule translation preserves the Korean recurrence date", () => {
+  assert.equal(kstTimeFromCron("0 18 * * 6"), "03:00");
+  assert.equal(updateCronTime("0 18 * * 6", "10:00"), "0 1 * * 0");
+  assert.equal(updateCronTime("0 8 * * 1-5", "01:00"), "0 16 * * 0-4");
+  assert.throws(() => updateCronTime("30 1 2 * *", "02:00"), /한국 날짜/);
 });
 
 test("GitHub adapter retains skipped-run filtering and error status behavior", async () => {

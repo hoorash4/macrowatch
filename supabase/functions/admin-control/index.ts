@@ -1,5 +1,5 @@
-import { ADMIN_CARD_IDS, validateTimes, validateUsername, validatePassword, internalEmail, validateSectorEtf, validateNewSectorEtf, validateAdminCardOrder, validateExtremeNewsRule } from "./validation.ts";
-import { BRANCH, githubRequest, latestRun, updateWorkflowSchedule } from "./github.ts";
+import { ADMIN_CARD_IDS, validateUsername, validatePassword, internalEmail, validateSectorEtf, validateNewSectorEtf, validateAdminCardOrder, validateExtremeNewsRule } from "./validation.ts";
+import { BRANCH, deleteAutomationTime, deleteScheduledWorkflow, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationSchedule } from "./github.ts";
 import { refreshArticleSentiment, excludeUncertainArticle } from "./news-review.ts";
 import { issuerFromEtfName, rebuildSectorRankings } from "./sector-registry.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -156,7 +156,6 @@ export default {
 
       if (action === "status") {
         const [
-          { data: settings },
           check,
           backup,
           news,
@@ -165,7 +164,6 @@ export default {
           { count: errorCount, error: errorCountError },
           { data: errors, error: errorsError },
         ] = await Promise.all([
-          admin.from("app_settings").select("value, updated_at").eq("key", "target_check_schedule").maybeSingle(),
           latestRun(CHECK_WORKFLOW, githubToken),
           latestRun(BACKUP_WORKFLOW, githubToken),
           latestRun(NEWS_WORKFLOW, githubToken),
@@ -182,8 +180,6 @@ export default {
         const databaseError = totalError || activeError || errorCountError || errorsError;
         if (databaseError) throw databaseError;
         return json({
-          schedule: settings?.value || { times: ["08:00", "18:00"], timezone: "Asia/Seoul" },
-          schedule_updated_at: settings?.updated_at || null,
           check,
           backup,
           news,
@@ -194,6 +190,45 @@ export default {
             errors: errors || [],
           },
         }, 200, origin);
+      }
+
+      if (action === "list_automation_schedules") {
+        return json({ items: await scheduledWorkflows(githubToken) }, 200, origin);
+      }
+
+      if (action === "update_automation_schedule") {
+        const workflowId = String(body?.workflow_id || "");
+        const times = Array.isArray(body?.times) ? body.times.map(String) : [];
+        if (!/^[\w.-]+\.yml$/.test(workflowId) || !times.length || times.some((time) => !/^\d{2}:\d{2}$/.test(time)) || new Set(times).size !== times.length) {
+          return json({ error: "자동수집 일정 입력이 올바르지 않습니다." }, 400, origin);
+        }
+        await updateAutomationSchedule(workflowId, times, githubToken);
+        return json({ updated: true }, 200, origin);
+      }
+
+      if (action === "set_automation_enabled") {
+        const workflowId = String(body?.workflow_id || "");
+        if (!/^[\w.-]+\.yml$/.test(workflowId) || typeof body?.enabled !== "boolean") {
+          return json({ error: "자동수집 상태 입력이 올바르지 않습니다." }, 400, origin);
+        }
+        await setWorkflowEnabled(workflowId, body.enabled, githubToken);
+        return json({ enabled: body.enabled }, 200, origin);
+      }
+
+      if (action === "delete_automation_schedule") {
+        const workflowId = String(body?.workflow_id || "");
+        if (!/^[\w.-]+\.yml$/.test(workflowId)) return json({ error: "삭제할 자동수집 항목이 올바르지 않습니다." }, 400, origin);
+        await deleteScheduledWorkflow(workflowId, githubToken);
+        return json({ deleted: true }, 200, origin);
+      }
+
+      if (action === "delete_automation_time") {
+        const workflowId = String(body?.workflow_id || ""), cron = String(body?.cron || "");
+        if (!/^[\w.-]+\.yml$/.test(workflowId) || cron.trim().split(/\s+/).length !== 5) {
+          return json({ error: "삭제할 실행 시간이 올바르지 않습니다." }, 400, origin);
+        }
+        await deleteAutomationTime(workflowId, cron, githubToken);
+        return json({ deleted: true }, 200, origin);
       }
 
       if (action === "run_check" || action === "run_backup" || action === "run_news") {
@@ -207,19 +242,6 @@ export default {
           }),
         });
         return json({ requested_at: requestedAt }, 202, origin);
-      }
-
-      if (action === "update_schedule") {
-        const times = validateTimes(body?.times);
-        await updateWorkflowSchedule(times, githubToken);
-        const { error } = await admin.from("app_settings").upsert({
-          key: "target_check_schedule",
-          value: { times, timezone: "Asia/Seoul" },
-          updated_at: new Date().toISOString(),
-          updated_by: user.id,
-        });
-        if (error) throw error;
-        return json({ schedule: { times, timezone: "Asia/Seoul" } }, 200, origin);
       }
 
       if (action === "get_admin_card_order") {

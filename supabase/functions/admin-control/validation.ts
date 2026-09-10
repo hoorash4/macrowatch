@@ -1,22 +1,8 @@
 export const ADMIN_CARD_IDS = new Set([
   "member-management", "index-registry", "sector-registry", "news-analysis",
-  "decisive-news", "uncertain-news", "policy-review", "target-collection",
+  "decisive-news", "uncertain-news", "policy-review", "automation-schedules",
   "earnings-v2-pending", "collection-errors", "integrations-backup",
 ]);
-
-export function validateTimes(value: unknown) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 4) {
-    throw new Error("확인 시간은 하루 1회부터 4회까지 설정할 수 있습니다.");
-  }
-  const times = value.map((item) => String(item));
-  if (times.some((item) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(item))) {
-    throw new Error("시간 형식이 올바르지 않습니다.");
-  }
-  if (new Set(times).size !== times.length) {
-    throw new Error("서로 다른 시간을 입력해 주세요.");
-  }
-  return times.sort();
-}
 
 export function requiredText(value: unknown, label: string, maxLength: number) {
   const text = String(value || "").trim();
