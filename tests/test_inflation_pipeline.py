@@ -8,9 +8,18 @@ from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcast
 class FakeSupabase:
     def __init__(self):
         self.upserts = []
+        self.patches = []
 
-    def request(self, method, table, **_kwargs):
+    def request(self, method, table, **kwargs):
         self.assert_request = (method, table)
+        if method == "PATCH":
+            self.patches.append((table, kwargs))
+            return None
+        if table == "us_policy_rate_daily":
+            return [
+                {"observed_on": "2026-09-09", "treasury_10y_pct": 4.1},
+                {"observed_on": "2026-09-10", "treasury_10y_pct": None},
+            ]
         return [
             {"month": "2026-06-01", "status": "final"},
             {"month": "2026-07-01", "status": "provisional"},
@@ -92,11 +101,30 @@ class InflationPipelineTests(unittest.TestCase):
         self.assertEqual(stored_months, ["2026-07-01", "2026-08-01"])
         self.assertEqual(len(client.upserts), 1)
 
-    def test_policy_automatic_refreshes_delayed_ten_year_observations(self):
+    def test_policy_automatic_inserts_missing_and_only_fills_null_treasury(self):
         client = FakeSupabase()
-        rows = [{"observed_on": f"2026-09-{day:02d}"} for day in range(1, 13)]
+        rows = [
+            {
+                "observed_on": f"2026-09-{day:02d}",
+                "target_upper_pct": 5.5,
+                "treasury_10y_pct": 4.0 + day / 100,
+                "source": "FRED:DFEDTARU,DGS10",
+                "updated_at": "2026-09-12T00:00:00Z",
+            }
+            for day in range(1, 13)
+        ]
         save_policy_automatic(client, rows)
-        self.assertEqual(client.upserts[0], ("us_policy_rate_daily", rows[-10:], "observed_on"))
+        inserted_days = [row["observed_on"] for row in client.upserts[0][1]]
+        self.assertEqual(inserted_days, [
+            "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06",
+            "2026-09-07", "2026-09-08", "2026-09-11", "2026-09-12",
+        ])
+        self.assertEqual(len(client.patches), 1)
+        table, kwargs = client.patches[0]
+        self.assertEqual(table, "us_policy_rate_daily")
+        self.assertEqual(kwargs["params"]["observed_on"], "eq.2026-09-10")
+        self.assertEqual(kwargs["params"]["treasury_10y_pct"], "is.null")
+        self.assertEqual(set(kwargs["body"]), {"treasury_10y_pct", "updated_at"})
 
 
 if __name__ == "__main__":
