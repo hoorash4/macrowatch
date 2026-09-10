@@ -91,9 +91,11 @@ class KoreaEarningsV2AutomaticPipeline:
 
     def __init__(self, *, krx: KrxClient, dart: OpenDartClient, repository: EarningsV2Repository,
                  kis: KisClient | None = None, fx: EcosFxClient | None = None,
-                 financial_company: FinancialCompanyClient | None = None) -> None:
+                 financial_company: FinancialCompanyClient | None = None,
+                 recalculation: StoredQuarterRecalculation | None = None) -> None:
         self.krx, self.dart, self.repository, self.kis, self.fx = krx, dart, repository, kis, fx
         self.financial_company = financial_company
+        self.recalculation = recalculation or StoredQuarterRecalculation(repository)
 
     @staticmethod
     def _progress(stage: str, **details: Any) -> None:
@@ -1335,7 +1337,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 for fact in changed.values()
             )
             for year, quarter in sorted(recalculation_periods):
-                StoredQuarterRecalculation(self.repository).recalculate_quarter(year, quarter, write=True)
+                self.recalculation.recalculate_quarter(year, quarter, write=True)
 
         unresolved = sum(
             1
