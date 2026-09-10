@@ -78,11 +78,12 @@
     }, { passive: true });
   }
 
-  function createChartShell(profile = chartProfiles.main, ariaLabel = '시계열 그래프') {
+  function createChartShell(profile = chartProfiles.main, ariaLabel = '시계열 그래프', showScrollbar = true) {
     const shell = document.createElement('div');
     shell.className = `analysis-chart-shell analysis-chart-shell--${profile.axisMode}`;
     const frame = document.createElement('div');
     frame.className = 'analysis-chart-frame';
+    frame.classList.toggle('analysis-chart-frame--scrollbar-hidden', !showScrollbar);
     frame.dataset.historyScroll = 'true';
     frame.tabIndex = 0;
     frame.setAttribute('aria-label', `${ariaLabel} 전체 이력 가로 스크롤`);
@@ -130,8 +131,8 @@
     svg.append(bottomAxis);
   }
 
-  function mountChartFrame({ container, profile = chartProfiles.main, height, axisViewWidth = axisGutter, top = chartLayout.plot.top, bottom = chartLayout.plot.bottom, xAxisMode = profile.xAxisMode, leftAxisMarkup = '', rightAxisMarkup = '', plotMarkup, ariaLabel = '시계열 그래프' }) {
-    const { shell, frame } = createChartShell(profile, ariaLabel);
+  function mountChartFrame({ container, profile = chartProfiles.main, height, axisViewWidth = axisGutter, top = chartLayout.plot.top, bottom = chartLayout.plot.bottom, xAxisMode = profile.xAxisMode, showScrollbar = true, leftAxisMarkup = '', rightAxisMarkup = '', plotMarkup, ariaLabel = '시계열 그래프' }) {
+    const { shell, frame } = createChartShell(profile, ariaLabel, showScrollbar);
     const axis = (side, markup) => {
       const viewWidth = side === 'right' && profile.axisMode !== 'dual' ? 1 : axisViewWidth;
       const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -478,7 +479,7 @@
   function scrollableSvg(svg, width, baseWidth = 920, axes = null) {
     if (!svg) return;
     const profile = chartProfile({ axisMode: axes?.axisMode || 'single' });
-    const { shell, frame } = createChartShell(profile);
+    const { shell, frame } = createChartShell(profile, '시계열 그래프', axes?.showScrollbar !== false);
     const track = document.createElement('div');
     svg.before(shell);
     shell.append(frame);

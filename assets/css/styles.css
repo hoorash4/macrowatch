@@ -995,6 +995,8 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
 .analysis-chart-shell { position:relative; display:flex; width:100%; min-width:0; align-items:stretch; overflow:hidden; background:#fff; }
 .analysis-chart-frame { position:relative; min-width:0; flex:1 1 auto; overflow-x:auto; overflow-y:hidden; background:#fff; }
+.analysis-chart-frame.analysis-chart-frame--scrollbar-hidden { scrollbar-width:none; }
+.analysis-chart-frame.analysis-chart-frame--scrollbar-hidden::-webkit-scrollbar { display:none; height:0; }
 .analysis-chart-fixed-axis { z-index:2; width:52px; flex:0 0 52px; align-self:stretch; background:#fff; pointer-events:none; }
 .analysis-chart-fixed-axis[data-axis-side="right"] { width:58px; flex-basis:58px; }
 .analysis-chart-shell--single .analysis-chart-fixed-axis[data-axis-side="right"] { width:1px; flex-basis:1px; }

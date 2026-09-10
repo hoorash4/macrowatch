@@ -448,6 +448,7 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
     right: padding.right,
     axisMode: padding.axisMode,
     xAxisMode: 'zero',
+    showScrollbar: false,
     top: padding.top,
     bottom: height - padding.bottom,
     axes: [],
@@ -655,7 +656,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
     .join('');
   const fsiLine = `<path d="${monotoneSeriesPath(fsiRows, (row) => x(row.month), (row) => fsiY(Number(row.bok_fsi)))}" fill="none" stroke="#6d4b91" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/>`;
   fsiChart.innerHTML = `<svg class="w-full" style="height:${fsiHeight}px" viewBox="0 0 ${width} ${fsiHeight}" role="img" aria-label="한국은행 금융불안지수 보조지표"><line x1="${fsiPadding.left}" x2="${fsiPadding.left}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/><line x1="${width - fsiPadding.right}" x2="${width - fsiPadding.right}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#b6a8d0"/>${fsiGrid}${fsiYearGuides}${fsiLine}</svg>`;
-  window.MacroWatchAnalysisChart.scrollableSvg(fsiChart.querySelector('svg'), width, 920, { left: fsiPadding.left, right: fsiPadding.right, axisMode: fsiPadding.axisMode, xAxisMode: 'none', top: fsiPadding.top, bottom: fsiHeight - fsiPadding.bottom, axes: [
+  window.MacroWatchAnalysisChart.scrollableSvg(fsiChart.querySelector('svg'), width, 920, { left: fsiPadding.left, right: fsiPadding.right, axisMode: fsiPadding.axisMode, xAxisMode: 'none', showScrollbar: false, top: fsiPadding.top, bottom: fsiHeight - fsiPadding.bottom, axes: [
     { points: fsiRows.map(row => ({ x: x(row.month), value: toCreditStressNumber(row.bok_fsi) })), y: fsiY, selector: 'path[stroke="#6d4b91"]' },
   ] });
   window.MacroWatchAnalysisChart.attachChartCursor({

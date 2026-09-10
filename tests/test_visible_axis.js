@@ -68,8 +68,8 @@ test('every dashboard chart declares the common profile or common default', () =
 test('MSI and legacy charts are mounted into the same canonical shell', () => {
   assert.match(source, /function createChartShell\(/);
   assert.match(source, /shell\.className = `analysis-chart-shell analysis-chart-shell--\$\{profile\.axisMode\}`/);
-  assert.match(source, /function mountChartFrame[\s\S]*createChartShell\(profile, ariaLabel\)/);
-  assert.match(source, /function scrollableSvg[\s\S]*createChartShell\(profile\)/);
+  assert.match(source, /function mountChartFrame[\s\S]*createChartShell\(profile, ariaLabel, showScrollbar\)/);
+  assert.match(source, /function scrollableSvg[\s\S]*createChartShell\(profile, '시계열 그래프', axes\?\.showScrollbar !== false\)/);
   assert.match(source, /shell\.append\(axis\('right', profile\.axisMode === 'dual' \? rightAxisMarkup : ''\)\)/);
   assert.match(source, /if \(xAxisMode === 'bottom'\)/);
   assert.match(source, /function appendBottomAxis\([\s\S]*line\.setAttribute\('visibility', 'hidden'\)[\s\S]*bottomAxis\.setAttribute\('class', 'analysis-chart-axis-line'\)/);
@@ -90,6 +90,21 @@ test('MSI cursor and axis boundaries use the common chart component', () => {
   assert.match(source, /frame\.addEventListener\('pointermove'/);
   assert.match(source, /appendFixedAxis\(dualAxis \? rightAxisNodes : \[\], 'right', dualAxis \? rightGutter : 1\)/);
   assert.match(dashboard, /xAxisMode: 'none'/);
+});
+
+test('auxiliary charts hide duplicate scrollbars while retaining synchronized scroll frames', () => {
+  const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const inflation = fs.readFileSync(path.join(__dirname, '../assets/js/charts/inflation-chart.js'), 'utf8');
+  const earnings = fs.readFileSync(path.join(__dirname, '../assets/js/charts/korea-earnings-chart.js'), 'utf8');
+  assert.match(source, /createChartShell\(profile = chartProfiles\.main, ariaLabel = '시계열 그래프', showScrollbar = true\)/);
+  assert.match(source, /analysis-chart-frame--scrollbar-hidden/);
+  assert.match(source, /axes\?\.showScrollbar !== false/);
+  assert.match(styles, /\.analysis-chart-frame\.analysis-chart-frame--scrollbar-hidden \{ scrollbar-width:none; \}/);
+  assert.match(styles, /\.analysis-chart-frame\.analysis-chart-frame--scrollbar-hidden::\-webkit-scrollbar \{ display:none; height:0; \}/);
+  assert.ok((dashboard.match(/showScrollbar: false/g) || []).length >= 2);
+  assert.match(inflation, /xAxisMode: 'zero',[\s\S]*?showScrollbar: false/);
+  assert.match(earnings, /showScrollbar: spec\.kind === 'amount'/);
+  assert.match(source, /card\.querySelectorAll\('\[data-history-scroll\]'\)/);
 });
 
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
