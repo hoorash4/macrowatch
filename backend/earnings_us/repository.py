@@ -10,6 +10,7 @@ from .models import USCompany
 
 class USEarningsRepository(EarningsV2Repository):
     SOURCE = "us_automatic"
+    _AUTOMATIC_OPERATIONS = {"snapshot", "daily_edgar"}
 
     def us_universe(self, market_id: str, year: int, quarter: int) -> list[USCompany]:
         rows = self.rpc("earnings_v2_us_get_universe", {
@@ -40,15 +41,21 @@ class USEarningsRepository(EarningsV2Repository):
         return [row for row in rows if isinstance(row, dict)]
 
     def save_us_state(self, operation: str, status: str, cursor: dict[str, Any], error: str | None = None) -> None:
+        if self.write_mode == "automatic" and operation not in self._AUTOMATIC_OPERATIONS:
+            raise self.error_type(
+                f"Automatic U.S. earnings state write blocked for non-automatic operation: {operation}",
+            )
+        source = self.SOURCE if self.write_mode == "automatic" else f"us_{self.write_mode}"
         self.rpc("earnings_v2_save_pipeline_state", {
-            "p_source": self.SOURCE, "p_operation": operation, "p_cursor": cursor,
+            "p_source": source, "p_operation": operation, "p_cursor": cursor,
             "p_status": status,
             "p_last_success_at": datetime.now(timezone.utc) if status in {"ready", "incomplete"} else None,
             "p_last_error": error,
         })
 
     def us_state(self, operation: str) -> dict[str, Any] | None:
-        result = self.rpc("earnings_v2_get_pipeline_state", {"p_source": self.SOURCE, "p_operation": operation})
+        source = self.SOURCE if self.write_mode == "automatic" else f"us_{self.write_mode}"
+        result = self.rpc("earnings_v2_get_pipeline_state", {"p_source": source, "p_operation": operation})
         if isinstance(result, list):
             return result[0] if result and isinstance(result[0], dict) else None
         return result if isinstance(result, dict) else None
