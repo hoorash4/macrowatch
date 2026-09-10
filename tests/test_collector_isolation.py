@@ -62,7 +62,7 @@ class CollectorIsolationTests(unittest.TestCase):
         self.assertIn("StoredQuarterRecalculation.from_env()", cli)
         self.assertNotIn("KoreaEarningsV2AutomaticPipeline", cli)
         self.assertNotIn("def recalculate_quarter(", automatic)
-        self.assertIn("StoredQuarterRecalculation(self.repository).recalculate_quarter", automatic)
+        self.assertIn("self.recalculation.recalculate_quarter", automatic)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertNotIn("schedule:", workflow)
         self.assertIn("earnings_v2.recalculate_cli", workflow)

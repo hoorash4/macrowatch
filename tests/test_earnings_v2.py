@@ -1673,7 +1673,7 @@ class IncrementalLifecycleSimulationTests(unittest.TestCase):
             krx=SimulatedKrx(), dart=SimulatedDart(), repository=repository, kis=kis,
         )
         recalculated = []
-        pipeline.recalculate_quarter = lambda year, quarter, **_kwargs: recalculated.append((year, quarter)) or {"status": "ready"}
+        pipeline.recalculation.recalculate_quarter = lambda year, quarter, **_kwargs: recalculated.append((year, quarter)) or {"status": "ready"}
 
         result = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
         second = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
