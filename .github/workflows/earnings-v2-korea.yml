@@ -25,6 +25,8 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      EARNINGS_WRITE_MODE: manual
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -53,5 +55,3 @@ jobs:
           set -euo pipefail
           [[ "$YEAR" =~ ^[0-9]{4}$ ]]
           python -m earnings_v2.recalculate_cli --year "$YEAR" --quarter "$QUARTER" --write
-
-
