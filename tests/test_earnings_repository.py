@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from earnings_common.repository import EarningsRepository, _json
 from earnings_v2.repository import EarningsV2Repository, StoreError
+from earnings_v2.automatic import TARGETS
 from earnings_us.repository import USEarningsRepository
 
 
@@ -30,17 +31,26 @@ class RepositoryContractTests(unittest.TestCase):
                     headers={'apikey': 'key', 'Authorization': 'Bearer key', 'Content-Type': 'application/json'},
                     json={'value': '1.25'}, timeout=(5, 20))
 
+    def test_market_target_contract(self):
+        self.assertEqual(TARGETS, {'kr_largecap': 100, 'kr_kosdaq': 50})
+
     def test_source_identity_and_state_success_policy(self):
-        for cls, source in ((EarningsV2Repository, 'korea_v2'),):
-            repository = cls('https://example.invalid', 'key', session=Mock())
-            repository.rpc = Mock(return_value=[])
-            for status in ('ready', 'incomplete', 'failed'):
-                repository.save_state('daily', status, {'quarter': 2})
-                params = repository.rpc.call_args.args[1]
-                self.assertEqual(params['p_source'], source)
-                self.assertEqual(params['p_last_success_at'] is not None, status != 'failed')
-            self.assertIsNone(repository.pipeline_state('daily'))
-            self.assertEqual(repository.rpc.call_args.args[1]['p_source'], source)
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
+            repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
+        repository.rpc = Mock(return_value=[])
+        for status in ('ready', 'incomplete', 'failed'):
+            repository.save_state('daily', status, {'quarter': 2})
+            params = repository.rpc.call_args.args[1]
+            self.assertEqual(params['p_source'], 'korea_v2')
+            self.assertEqual(params['p_last_success_at'] is not None, status != 'failed')
+        self.assertIsNone(repository.pipeline_state('daily'))
+        self.assertEqual(repository.rpc.call_args.args[1]['p_source'], 'korea_v2')
+
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'manual'}, clear=False):
+            manual = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
+        manual.rpc = Mock(return_value=[])
+        manual.save_state('2026Q2', 'ready', {})
+        self.assertEqual(manual.rpc.call_args.args[1]['p_source'], 'korea_v2_manual')
 
     def test_period_deduplication_and_response_filtering(self):
         repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
@@ -69,6 +79,7 @@ class RepositoryContractTests(unittest.TestCase):
             {'company_id': 'current', 'market_year': 2026, 'market_quarter': 2},
         ]
         self.assertEqual(repository.upsert_company_quarters(company_rows), 1)
+        self.assertEqual(repository.rpc.call_args.args[0], 'earnings_v2_auto_v6_upsert_company_quarters')
         self.assertEqual(repository.rpc.call_args.args[1]['p_rows'], [company_rows[1]])
 
         market_rows = [
@@ -76,6 +87,7 @@ class RepositoryContractTests(unittest.TestCase):
             {'market_id': 'current', 'market_year': 2026, 'market_quarter': 2},
         ]
         self.assertEqual(repository.upsert_market_quarters(market_rows), 1)
+        self.assertEqual(repository.rpc.call_args.args[0], 'earnings_v2_auto_v6_upsert_market_quarters')
         self.assertEqual(repository.rpc.call_args.args[1]['p_rows'], [market_rows[1]])
 
     def test_automatic_mode_blocks_historical_universe_and_period_state(self):
@@ -91,6 +103,9 @@ class RepositoryContractTests(unittest.TestCase):
         repository.save_state('2026Q2', 'ready', {})
         self.assertEqual(repository.rpc.call_args.args[1]['p_operation'], '2026Q2')
 
+        repository.replace_universe('kr_largecap', 2026, 2, [])
+        self.assertEqual(repository.rpc.call_args.args[0], 'earnings_v2_auto_replace_universe')
+
     def test_automatic_mode_blocks_old_seasonal_window_updates(self):
         with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
             repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
@@ -104,6 +119,15 @@ class RepositoryContractTests(unittest.TestCase):
         ]
         self.assertEqual(repository.upsert_seasonal_windows(rows), 1)
         self.assertEqual(repository.rpc.call_args.args[1]['p_rows'], [rows[1]])
+
+    def test_automatic_mode_uses_protected_fx_rpc(self):
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
+            repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
+        repository._automatic_period = Mock(return_value=(2026, 2))
+        repository.rpc = Mock(return_value=1)
+        row = {'fiscal_year': 2026, 'fiscal_quarter': 2, 'base_currency': 'USD', 'quote_currency': 'KRW'}
+        self.assertEqual(repository.upsert_quarter_fx_rate(row), 1)
+        self.assertEqual(repository.rpc.call_args.args[0], 'earnings_v2_auto_upsert_quarter_fx_rate')
 
     def test_us_automatic_state_cannot_impersonate_repair_or_backfill(self):
         with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
