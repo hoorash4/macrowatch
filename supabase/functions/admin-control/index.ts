@@ -1,5 +1,5 @@
 import { ADMIN_CARD_IDS, validateUsername, validatePassword, internalEmail, validateSectorEtf, validateNewSectorEtf, validateAdminCardOrder, validateExtremeNewsRule } from "./validation.ts";
-import { BRANCH, deleteAutomationTime, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationTime } from "./github.ts";
+import { BRANCH, deleteAutomationTime, deleteScheduledWorkflow, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationTime } from "./github.ts";
 import { refreshArticleSentiment, excludeUncertainArticle } from "./news-review.ts";
 import { issuerFromEtfName, rebuildSectorRankings } from "./sector-registry.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -225,6 +225,15 @@ export default {
         return json({ deleted: true }, 200, origin);
       }
 
+      if (action === "delete_automation_workflow") {
+        const workflowId = String(body?.workflow_id || "");
+        if (!/^[\w.-]+\.yml$/.test(workflowId)) {
+          return json({ error: "삭제할 자동수집이 올바르지 않습니다." }, 400, origin);
+        }
+        await deleteScheduledWorkflow(workflowId, githubToken);
+        return json({ deleted: true }, 200, origin);
+      }
+
       if (action === "run_check" || action === "run_backup" || action === "run_news") {
         const workflow = action === "run_check" ? CHECK_WORKFLOW : action === "run_backup" ? BACKUP_WORKFLOW : NEWS_WORKFLOW;
         const requestedAt = new Date().toISOString();
@@ -301,6 +310,7 @@ export default {
           p_net_income: amount(body?.net_income, "순이익"),
         });
         let recalculationDispatched = false;
+        let recalculationError = "";
         try {
           await githubRequest(`/actions/workflows/${EARNINGS_V2_WORKFLOW}/dispatches`, githubToken, {
             method: "POST",
@@ -312,11 +322,12 @@ export default {
             }),
           });
           recalculationDispatched = true;
-        } catch (_) {
-          // The manual fact is already durable. A dispatch failure must not make
-          // the administrator repeat the same write or see a false save error.
+        } catch (error) {
+          // The manual fact is durable, so do not ask the administrator to
+          // re-enter it.  But surface the failed recomputation explicitly.
+          recalculationError = error instanceof Error ? error.message : "분기 재계산 시작 요청에 실패했습니다.";
         }
-        return json({ item: data, recalculation_dispatched: recalculationDispatched }, 200, origin);
+        return json({ item: data, recalculation_dispatched: recalculationDispatched, recalculation_error: recalculationError || null }, 200, origin);
       }
 
       if (action === "list_policy_reviews") {

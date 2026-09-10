@@ -140,6 +140,7 @@ export async function scheduledWorkflows(token: string) {
       kst_time: kstTimeFromCron(cron),
       name: automationDisplayName(workflow, scheduleIndex),
       state,
+      schedule_count: workflow.crons.length,
       latest_success: latestSuccess,
     }));
   }));
@@ -228,15 +229,49 @@ export async function deleteScheduledWorkflow(workflowId: string, token: string)
   const entry = new RegExp(`^\\s+- "${parsed.name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}"\\r?\\n`, "m");
   const nextNotifier = notifier.content.replace(entry, "");
   if (nextNotifier === notifier.content) throw new Error("실패 알림 목록에서 자동수집 항목을 찾지 못했습니다.");
-  await saveWorkflowSource(notifier, nextNotifier, `Remove ${parsed.name} from scheduled failure alerts`, token);
-  await githubRequest(`/contents/${file.path}`, token, { method: "DELETE", body: JSON.stringify({ message: `Delete ${parsed.name} automation from MacroWatch admin`, sha: file.sha, branch: BRANCH }) });
+  // Contents API updates one file per commit.  Updating the alert list first
+  // and deleting this workflow second can leave monitoring inconsistent when
+  // either request fails.  Write both tree changes in one non-force ref update.
+  const ref = await githubRequest(`/git/ref/heads/${BRANCH}`, token);
+  const parent = String(ref?.object?.sha || "");
+  if (!parent) throw new Error("현재 기본 브랜치 커밋을 찾지 못했습니다.");
+  const parentCommit = await githubRequest(`/git/commits/${parent}`, token);
+  const baseTree = String(parentCommit?.tree?.sha || "");
+  if (!baseTree) throw new Error("현재 기본 브랜치 트리를 찾지 못했습니다.");
+  const tree = await githubRequest("/git/trees", token, {
+    method: "POST",
+    body: JSON.stringify({
+      base_tree: baseTree,
+      tree: [
+        { path: notifier.path, mode: "100644", type: "blob", content: nextNotifier },
+        { path: file.path, mode: "100644", type: "blob", sha: null },
+      ],
+    }),
+  });
+  const treeSha = String(tree?.sha || "");
+  if (!treeSha) throw new Error("삭제용 Git 트리를 만들지 못했습니다.");
+  const commit = await githubRequest("/git/commits", token, {
+    method: "POST",
+    body: JSON.stringify({
+      message: `Delete ${parsed.name} automation from MacroWatch admin`,
+      tree: treeSha,
+      parents: [parent],
+    }),
+  });
+  const commitSha = String(commit?.sha || "");
+  if (!commitSha) throw new Error("삭제용 Git 커밋을 만들지 못했습니다.");
+  await githubRequest(`/git/refs/heads/${BRANCH}`, token, {
+    method: "PATCH", body: JSON.stringify({ sha: commitSha, force: false }),
+  });
 }
 
 export async function deleteAutomationTime(workflowId: string, cron: string, token: string) {
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
   const parsed = parseScheduledWorkflow(file);
   if (!parsed || !parsed.crons.includes(cron)) throw new Error("삭제할 실행 시간을 찾지 못했습니다.");
-  if (parsed.crons.length === 1) return deleteScheduledWorkflow(workflowId, token);
+  if (parsed.crons.length === 1) {
+    throw new Error("마지막 일정입니다. 자동수집 전체 삭제를 별도로 확인하세요.");
+  }
   const block = SCHEDULE_BLOCK.exec(file.content)?.[1];
   if (!block) throw new Error("자동수집 일정 블록을 찾지 못했습니다.");
   let removed = false;

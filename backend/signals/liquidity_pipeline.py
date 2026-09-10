@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import SupabaseRest, fetch_fred_observations, require_env
+from common import SupabaseRest, fetch_fred_observations, require_env, request_with_retry
 
 VERSION = "liquidity-monthly-v2"
 US_VERSION = "us-equity-environment-weekly-v2"
@@ -49,6 +49,19 @@ ECOS = {
 }
 SNAPSHOTS = {849: {"기준금리": "base", "콜금리(익일물)": "call"},
              875: {"M2(평잔, 좌축)": "m2"}, 876: {"Lf(평잔, 좌축)": "lf"}}
+# Publication calendars are source-specific.  In particular BOK Lf is a
+# monthly release that normally trails the reference month longer than M2;
+# checking it with a daily-market threshold turns a valid release lag into a
+# false collection failure.  These are maximum ages, not imputed values.
+FRESHNESS_DAYS = {
+    "m2": 55,
+    "lf": 85,
+    "equity_flow": 55,
+    "bond_flow": 55,
+    "fed_assets": 21,
+    "tga": 21,
+    "credit_conditions": 21,
+}
 
 
 def shift_month(day: date, delta: int) -> date:
@@ -58,18 +71,13 @@ def shift_month(day: date, delta: int) -> date:
 
 def get_json(session, url, *, params=None):
     """Retry transport/rate-limit/server failures only; never accept an empty success."""
-    for attempt in range(3):
-        try:
-            response = session.get(url, params=params, timeout=(12, 45))
-            if response.status_code not in (429, 500, 502, 503, 504):
-                response.raise_for_status()
-                return response.json()
-        except (requests.ConnectionError, requests.Timeout):
-            pass
-        if attempt < 2:
-            time.sleep(2 ** attempt)
-    # Do not print ECOS request URLs, which contain a key.
-    raise RuntimeError("Official source unavailable after three transport/server attempts")
+    response = request_with_retry(lambda: session.get(url, params=params, timeout=(12, 45)))
+    try:
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        # Do not print ECOS request URLs, which contain a key.
+        raise RuntimeError("Official source unavailable after three retries") from exc
 
 
 def finite(value):
@@ -164,12 +172,10 @@ def collect(country, existing, end):
     if any(not result.get(name) for name in expected):
         raise RuntimeError("A required source has no observations; no results will be saved")
     # Source calendars differ. Do not pretend stale observations are today's data.
-    monthly = {"m2", "lf", "equity_flow", "bond_flow"}
-    weekly = {"fed_assets", "tga", "credit_conditions"}
     for name in expected:
         if name == "ioer":
             continue
-        allowance = 100 if name in monthly else 21 if name in weekly else 10
+        allowance = FRESHNESS_DAYS.get(name, 10)
         if (end - max(result[name])).days > allowance:
             raise RuntimeError(f"Stale source: {name}, latest={max(result[name])}")
     return result

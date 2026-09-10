@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
-import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows, updateAutomationTime, decodeBase64Utf8 } from "../supabase/functions/admin-control/github.ts";
+import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows, updateAutomationTime, decodeBase64Utf8, deleteAutomationTime, deleteScheduledWorkflow } from "../supabase/functions/admin-control/github.ts";
 import { issuerFromEtfName } from "../supabase/functions/admin-control/sector-registry.ts";
 
 test("admin validation preserves normalization, bounds and rejection messages", () => {
@@ -118,5 +118,41 @@ test("schedule editing rejects workflows that can run from the resulting commit"
       updateAutomationTime("unsafe.yml", "0 2 * * *", "12:00", "test-token"),
       /다른 실행이 시작될 수 있는/,
     );
+  } finally { globalThis.fetch = original; }
+});
+
+test("last schedule cannot silently become a workflow deletion", async () => {
+  const original = globalThis.fetch;
+  const workflow = ["name: Safe collector", "on:", "  schedule:", '    - cron: "0 2 * * *"', "jobs: {}"].join("\n");
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ name: "safe.yml", path: ".github/workflows/safe.yml", sha: "sha", content: btoa(workflow) }));
+    await assert.rejects(deleteAutomationTime("safe.yml", "0 2 * * *", "test-token"), /마지막 일정/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("workflow deletion commits notifier update and file deletion atomically", async () => {
+  const original = globalThis.fetch;
+  const calls: Array<{url:string; method:string; body:string}> = [];
+  const workflow = ["name: Safe collector", "on:", "  schedule:", '    - cron: "0 2 * * *"', "jobs: {}"].join("\n");
+  const notifier = ["name: notifier", "on:", "  workflow_run:", "    workflows:", '      - "Safe collector"', "    types: [completed]"].join("\n");
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      const path = String(url), method = String(init.method || "GET"), body = String(init.body || "");
+      calls.push({url:path, method, body});
+      if (path.includes("/contents/.github/workflows/safe.yml")) return new Response(JSON.stringify({ name: "safe.yml", path: ".github/workflows/safe.yml", sha: "safe-sha", content: btoa(workflow) }));
+      if (path.includes("/contents/.github/workflows/scheduled-failure-email.yml")) return new Response(JSON.stringify({ name: "scheduled-failure-email.yml", path: ".github/workflows/scheduled-failure-email.yml", sha: "notify-sha", content: btoa(notifier) }));
+      if (path.endsWith("/git/ref/heads/main")) return new Response(JSON.stringify({object:{sha:"parent"}}));
+      if (path.endsWith("/git/commits/parent")) return new Response(JSON.stringify({tree:{sha:"base-tree"}}));
+      if (path.endsWith("/git/trees")) return new Response(JSON.stringify({sha:"next-tree"}));
+      if (path.endsWith("/git/commits")) return new Response(JSON.stringify({sha:"next-commit"}));
+      if (path.endsWith("/git/refs/heads/main")) return new Response(JSON.stringify({object:{sha:"next-commit"}}));
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    await deleteScheduledWorkflow("safe.yml", "test-token");
+    assert.equal(calls.filter((call) => call.url.includes("/contents/") && call.method !== "GET").length, 0);
+    const tree = calls.find((call) => call.url.endsWith("/git/trees"));
+    assert.match(tree!.body, /scheduled-failure-email\.yml/);
+    assert.match(tree!.body, /"path":"\.github\/workflows\/safe\.yml"[^}]*"sha":null/);
+    assert.equal(calls.at(-1)!.method, "PATCH");
   } finally { globalThis.fetch = original; }
 });

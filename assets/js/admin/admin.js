@@ -368,7 +368,9 @@
           net_income: values.get('net_income'),
         });
         await loadEarningsV2Pending();
-        showNotice('기업 실적 확정 완료', result.recalculation_dispatched ? '수동 값을 저장했고 해당 분기 재계산을 시작했습니다.' : '수동 값은 저장했습니다. 분기 재계산은 다음 수집 때 반영됩니다.');
+        showNotice('기업 실적 확정 완료', result.recalculation_dispatched
+          ? '수동 값을 저장했고 해당 분기 재계산을 시작했습니다.'
+          : `수동 값은 저장했습니다. 분기 재계산 시작에는 실패했습니다${result.recalculation_error ? `: ${result.recalculation_error}` : ''}`, !result.recalculation_dispatched);
       } catch (error) {
         showNotice('기업 실적 확정 실패', error.message || '수동 값을 저장하지 못했습니다.', true);
       } finally { submit.disabled = false; }
@@ -401,7 +403,8 @@
     if (!items.length) { list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 정기 자동수집이 없습니다.</p>'; return; }
     list.innerHTML = items.map((item) => {
       const paused = item.state !== 'active';
-      return `<article data-automation-workflow-id="${escapeHtml(item.workflow_id)}" data-automation-cron="${escapeHtml(item.cron)}" data-automation-name="${escapeHtml(item.name)}" data-automation-paused="${paused}" class="border-b border-slate-800 p-4 last:border-0"><div class="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_8rem_auto]"><div class="min-w-0"><h3 class="truncate font-bold text-slate-200">${escapeHtml(item.name)}</h3><p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p></div><input data-automation-time type="time" value="${escapeHtml(item.kst_time || '')}" class="w-32 min-w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"><div class="flex flex-wrap gap-1"><button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">저장</button><button type="button" data-toggle-automation title="${paused ? '클릭하여 재시작' : '클릭하여 중지'}" class="rounded-lg border px-2.5 py-1.5 text-xs font-bold ${paused ? 'border-amber-800 text-amber-300' : 'border-emerald-800 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</button><button type="button" data-delete-automation-time title="이 실행 삭제" class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`;
+      const isLastSchedule = Number(item.schedule_count) === 1;
+      return `<article data-automation-workflow-id="${escapeHtml(item.workflow_id)}" data-automation-cron="${escapeHtml(item.cron)}" data-automation-name="${escapeHtml(item.name)}" data-automation-last-schedule="${isLastSchedule}" data-automation-paused="${paused}" class="border-b border-slate-800 p-4 last:border-0"><div class="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_8rem_auto]"><div class="min-w-0"><h3 class="truncate font-bold text-slate-200">${escapeHtml(item.name)}</h3><p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p></div><input data-automation-time type="time" value="${escapeHtml(item.kst_time || '')}" class="w-32 min-w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"><div class="flex flex-wrap gap-1"><button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">저장</button><button type="button" data-toggle-automation title="${paused ? '클릭하여 재시작' : '클릭하여 중지'}" class="rounded-lg border px-2.5 py-1.5 text-xs font-bold ${paused ? 'border-amber-800 text-amber-300' : 'border-emerald-800 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</button><button type="button" data-delete-automation-time title="${isLastSchedule ? '자동수집 전체 삭제' : '이 실행만 삭제'}" class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">${isLastSchedule ? '전체 삭제' : '삭제'}</button></div></div></article>`;
     }).join('');
     list.querySelectorAll('[data-automation-workflow-id]').forEach((row) => {
       const id = row.dataset.automationWorkflowId, cron = row.dataset.automationCron, name = row.dataset.automationName;
@@ -422,8 +425,12 @@
       });
       row.querySelector('[data-delete-automation-time]').addEventListener('click', async () => {
         const input = row.querySelector('[data-automation-time]');
-        if (!await confirmAutomationDeletion(`${name}의 ${input.value} 실행을 삭제합니다. 마지막 실행이면 해당 자동수집 전체가 삭제됩니다.`)) return;
-        try { await invokeAdmin('delete_automation_time', { workflow_id: id, cron }); await loadAutomationSchedules(); }
+        const isLastSchedule = row.dataset.automationLastSchedule === 'true';
+        const message = isLastSchedule
+          ? `${name} 자동수집과 실패 알림 대상을 함께 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
+          : `${name}의 ${input.value} 실행만 삭제합니다. 다른 실행과 자동수집은 유지됩니다.`;
+        if (!await confirmAutomationDeletion(message)) return;
+        try { await invokeAdmin(isLastSchedule ? 'delete_automation_workflow' : 'delete_automation_time', { workflow_id: id, ...(isLastSchedule ? {} : { cron }) }); await loadAutomationSchedules(); }
         catch (error) { showNotice('실행 시간 삭제 실패', error.message || '삭제하지 못했습니다.', true); }
       });
     });

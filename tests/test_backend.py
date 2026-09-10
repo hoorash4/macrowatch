@@ -40,9 +40,58 @@ import signals.korea_stress_pipeline as kr  # noqa: E402
 import signals.policy_expectation_pipeline as policy_expectation  # noqa: E402
 import signals.equity_bond_model as equity_bond  # noqa: E402
 import signals.equity_bond_pipeline as equity_bond_pipeline  # noqa: E402
+import operations.collection_health as collection_health  # noqa: E402
 
 
 class AutomationIsolationTests(unittest.TestCase):
+    def test_common_retry_makes_one_initial_attempt_and_three_retries(self) -> None:
+        class Response:
+            status_code = 503
+            headers = {}
+
+        send = Mock(return_value=Response())
+        with patch.object(common.time, "sleep"):
+            result = common.request_with_retry(send)
+        self.assertIsInstance(result, Response)
+        self.assertEqual(send.call_count, 4)
+
+    def test_supabase_retries_reads_but_not_unknown_post_writes(self) -> None:
+        class Response:
+            ok = False
+            status_code = 503
+            text = "temporary"
+            content = b""
+            headers = {}
+
+        database = object.__new__(common.SupabaseRest)
+        database.url = "https://example.invalid"
+        database.timeout = 1
+        database.headers = {}
+        database.session = Mock()
+        database.session.request.return_value = Response()
+        with patch.object(common.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "Supabase example"):
+                database.request("GET", "example")
+        self.assertEqual(database.session.request.call_count, 4)
+        database.session.request.reset_mock()
+        with self.assertRaisesRegex(RuntimeError, "Supabase example"):
+            database.request("POST", "example", body={"value": 1})
+        self.assertEqual(database.session.request.call_count, 1)
+
+    def test_collection_health_reports_missed_runs_and_stale_database_values(self) -> None:
+        with patch.object(collection_health, "WORKFLOWS", {"example.yml": 2}), \
+             patch.object(collection_health, "require_env", return_value="token"), \
+             patch.object(collection_health, "github_latest_run", return_value={"conclusion": "success", "updated_at": "2026-09-01T00:00:00Z"}):
+            self.assertEqual(collection_health.check_workflows(date(2026, 9, 10)), ["예약 실행 누락: example.yml, latest=2026-09-01"])
+
+        class Database:
+            def request(self, *_args, **_kwargs):
+                return [{"observed": "2026-08-01"}]
+
+        with patch.object(collection_health, "DATABASE_SERIES", {"example": ("table", "observed", 5)}), \
+             patch.object(collection_health, "SupabaseRest", return_value=Database()):
+            self.assertEqual(collection_health.check_database(date(2026, 9, 10)), ["DB 최신값 지연: example, latest=2026-08-01"])
+
     def test_automatic_storage_keeps_confirmed_history_untouched(self) -> None:
         database = object.__new__(common.SupabaseRest)
         database.request = Mock(return_value=[

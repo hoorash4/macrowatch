@@ -24,6 +24,42 @@ MACROWATCH_URL = "https://hoorash4.github.io/macrowatch/"
 
 FRED_HTTP_SESSION: requests.Session | None = None
 TRANSIENT_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+HTTP_RETRY_COUNT = 3
+
+
+def request_with_retry(
+    send: Any,
+    *,
+    retry_count: int = HTTP_RETRY_COUNT,
+    sleep: Any = time.sleep,
+) -> requests.Response:
+    """Run one idempotent HTTP request with one initial try and bounded retries.
+
+    A write whose outcome cannot be known safely must not be passed here.  The
+    caller chooses this helper only for reads, idempotent upserts/deletes, or
+    an endpoint whose server-side operation is explicitly idempotent.
+    """
+    last_error: requests.RequestException | None = None
+    response: requests.Response | None = None
+    for attempt in range(retry_count + 1):
+        try:
+            response = send()
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == retry_count:
+                raise
+        else:
+            if getattr(response, "status_code", None) not in TRANSIENT_HTTP_STATUSES or attempt == retry_count:
+                return response
+            retry_after = getattr(response, "headers", {}).get("Retry-After")
+            try:
+                delay = max(float(retry_after), 0.0) if retry_after else float(2 ** attempt)
+            except (TypeError, ValueError):
+                delay = float(2 ** attempt)
+        sleep(min(delay, 30.0))
+    if response is not None:
+        return response
+    raise RuntimeError("HTTP request did not produce a response") from last_error
 
 
 def default_fred_session() -> requests.Session:
@@ -70,20 +106,9 @@ def fetch_fred_observations(
     # 기본 호출은 연결 풀을 공유해 여러 FRED 시계열 수집의 TLS 연결 비용을 줄인다.
     # 테스트나 특수 호출은 기존처럼 주입된 session을 우선한다.
     client = session or default_fred_session()
-    response = None
-    for attempt in range(4):
-        response = client.get(FRED_OBSERVATIONS_URL, params=params, headers=headers, timeout=timeout)
-        status_code = getattr(response, "status_code", None)
-        if status_code not in TRANSIENT_HTTP_STATUSES or attempt == 3:
-            break
-        retry_after = getattr(response, "headers", {}).get("Retry-After")
-        try:
-            delay = max(float(retry_after), 0.0) if retry_after else float(2 ** attempt)
-        except (TypeError, ValueError):
-            delay = float(2 ** attempt)
-        time.sleep(min(delay, 30.0))
-    if response is None:
-        raise RuntimeError("FRED request did not produce a response")
+    response = request_with_retry(
+        lambda: client.get(FRED_OBSERVATIONS_URL, params=params, headers=headers, timeout=timeout),
+    )
     response.raise_for_status()
     observations = response.json().get("observations", [])
     return observations if isinstance(observations, list) else []
@@ -142,18 +167,20 @@ class SupabaseRest:
         params: dict[str, str] | None = None,
         body: Any = None,
         prefer: str | None = None,
+        retry_safe: bool | None = None,
     ) -> Any:
         headers = dict(self.headers)
         if prefer:
             headers["Prefer"] = prefer
-        response = self.session.request(
-            method,
-            f"{self.url}/rest/v1/{table}",
-            headers=headers,
-            params=params,
-            json=body,
-            timeout=self.timeout,
+        send = lambda: self.session.request(
+            method, f"{self.url}/rest/v1/{table}", headers=headers,
+            params=params, json=body, timeout=self.timeout,
         )
+        # GET and DELETE are naturally repeatable.  POST/PATCH callers must
+        # opt in only when their endpoint has a conflict key or transaction
+        # semantics that make repeated delivery safe.
+        is_safe = retry_safe if retry_safe is not None else method.upper() in {"GET", "DELETE"}
+        response = request_with_retry(send) if is_safe else send()
         if not response.ok:
             raise RuntimeError(f"Supabase {table}: {response.status_code} {response.text[:500]}")
         return response.json() if response.content else None
@@ -165,6 +192,7 @@ class SupabaseRest:
             params={"on_conflict": conflict},
             body=rows,
             prefer="resolution=merge-duplicates,return=minimal",
+            retry_safe=True,
         )
 
     def automatic_rows(
