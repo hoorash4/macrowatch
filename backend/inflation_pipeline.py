@@ -651,10 +651,47 @@ def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str
 
 
 def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
-    if rows:
-        # DGS10 can arrive one or more days after the policy-rate calendar row.
-        # Refresh a short tail so late business-day observations replace nulls.
-        client.upsert("us_policy_rate_daily", rows[-10:], conflict="observed_on")
+    tail = rows[-10:]
+    if not tail:
+        return
+    first_day = str(tail[0]["observed_on"])
+    existing = client.request(
+        "GET",
+        "us_policy_rate_daily",
+        params={
+            "select": "observed_on,treasury_10y_pct",
+            "observed_on": f"gte.{first_day}",
+            "limit": "20",
+        },
+    ) or []
+    treasury_by_day = {
+        str(row["observed_on"]): row.get("treasury_10y_pct")
+        for row in existing
+    }
+    missing = [row for row in tail if str(row["observed_on"]) not in treasury_by_day]
+    if missing:
+        client.upsert("us_policy_rate_daily", missing, conflict="observed_on")
+
+    # A recent policy row can legitimately arrive before DGS10. In that one
+    # case automatic collection may fill only the missing treasury field; it
+    # never rewrites the stored policy rate, source, or a non-null history row.
+    for row in tail:
+        observed_on = str(row["observed_on"])
+        if (
+            observed_on in treasury_by_day
+            and treasury_by_day[observed_on] is None
+            and row.get("treasury_10y_pct") is not None
+        ):
+            client.request(
+                "PATCH",
+                "us_policy_rate_daily",
+                params={"observed_on": f"eq.{observed_on}", "treasury_10y_pct": "is.null"},
+                body={
+                    "treasury_10y_pct": row["treasury_10y_pct"],
+                    "updated_at": row["updated_at"],
+                },
+                prefer="return=minimal",
+            )
 
 
 def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> None:

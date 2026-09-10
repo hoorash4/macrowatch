@@ -65,7 +65,7 @@ def build_rows(series_values: dict[str, dict[str, float]]) -> list[dict]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=21, help="Recent calendar-day refresh window")
+    parser.add_argument("--days", type=int, default=21, help="Recent calendar-day collection window")
     return parser.parse_args()
 
 
@@ -88,13 +88,23 @@ def main() -> None:
         print(f"No complete policy expectation observations from {start} through {today}.")
         return
     database = SupabaseRest()
-    for offset in range(0, len(rows), UPSERT_BATCH_SIZE):
+    # The lookback window is for source-release lag tolerance only. Automatic
+    # collection never rewrites an observation that has already been stored.
+    writable = database.automatic_rows(
+        "policy_expectation_spreads",
+        rows,
+        key="observation_date",
+    )
+    for offset in range(0, len(writable), UPSERT_BATCH_SIZE):
         database.upsert(
             "policy_expectation_spreads",
-            rows[offset:offset + UPSERT_BATCH_SIZE],
+            writable[offset:offset + UPSERT_BATCH_SIZE],
             conflict="observation_date",
         )
-    print(f"Upserted {len(rows)} policy expectation observations from {rows[0]['observation_date']} through {rows[-1]['observation_date']}.")
+    print(
+        f"Calculated {len(rows)} and stored {len(writable)} new policy expectation observations "
+        f"from {rows[0]['observation_date']} through {rows[-1]['observation_date']}."
+    )
 
 
 if __name__ == "__main__":

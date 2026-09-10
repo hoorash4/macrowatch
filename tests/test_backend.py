@@ -146,8 +146,10 @@ class AutomationIsolationTests(unittest.TestCase):
 
     def test_schedule_only_commits_do_not_deploy_pages(self) -> None:
         workflow = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")
-        self.assertIn('paths-ignore:', workflow)
-        self.assertIn('".github/workflows/**"', workflow)
+        self.assertIn('paths:', workflow)
+        self.assertNotIn('paths-ignore:', workflow)
+        self.assertNotIn('- "backend/**"', workflow)
+        self.assertNotIn('- "supabase/**"', workflow)
 
 
 class TargetConditionTests(unittest.TestCase):
@@ -537,8 +539,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("missingHistoryIds.has(item.id)", pipeline)
         self.assertIn("initialized_history_count", pipeline)
         self.assertIn('fetchKisEtfTopHoldings(credentials, token, item.etf_ticker, 3)', pipeline)
-        self.assertIn('.delete().lt("market_date", retentionStart)', pipeline)
-        self.assertIn('if (stage === "close" && !rebuildOnly)', pipeline)
+        self.assertNotIn('.delete().lt("market_date", retentionStart)', pipeline)
+        self.assertNotIn('.delete().lt("week_start", rankingRetentionStart)', pipeline)
         self.assertIn("body.rebuild_only === true", pipeline)
         self.assertIn("stitchRebuiltRankings", pipeline)
         self.assertIn('.eq("week_start", rankingRetentionStart)', pipeline)
@@ -557,11 +559,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('leadership_score: row.leadershipScore', pipeline)
         self.assertIn("latest_price", intraday_migration)
         self.assertIn("price_stage in ('open', 'intraday', 'close')", intraday_migration)
-        self.assertIn("--file supabase/migrations/20260828_add_sector_intraday_prices.sql", (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8"))
+        deploy = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
+        self.assertIn("--diff-filter=A", deploy)
+        self.assertTrue((ROOT / "supabase/migrations/20260828_add_sector_intraday_prices.sql").exists())
         leadership_migration = (ROOT / "supabase/migrations/20260907214752_add_sector_leadership_score.sql").read_text(encoding="utf-8")
         self.assertIn("leadership_score numeric(5, 2)", leadership_migration)
         self.assertIn("check (leadership_score between 0 and 100)", leadership_migration)
-        self.assertIn("--file supabase/migrations/20260907214752_add_sector_leadership_score.sql", (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8"))
+        self.assertTrue((ROOT / "supabase/migrations/20260907214752_add_sector_leadership_score.sql").exists())
 
     def test_sector_flow_has_database_cron_with_idempotent_retry_dispatcher(self):
         scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
@@ -580,7 +584,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('create extension if not exists pg_net', migration)
         for schedule in ('10,25 0 * * 1-5', '30,45 3 * * 1-5', '40,55 6 * * 1-5'):
             self.assertIn(schedule, migration)
-        self.assertIn('--file supabase/migrations/20260828_schedule_sector_flow.sql', deploy)
+        self.assertTrue((ROOT / "supabase/migrations/20260828_schedule_sector_flow.sql").exists())
+        self.assertIn("--diff-filter=A", deploy)
 
     def test_new_sector_etf_registration_resolves_metadata_and_backfills_prices(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
@@ -1107,7 +1112,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("--replace", workflow)
         self.assertNotIn("workflow_run:", workflow)
         deploy_workflow = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
-        self.assertIn("20260909141525_add_kr_small_business_risk.sql", deploy_workflow)
+        self.assertTrue((ROOT / "supabase/migrations/20260909141525_add_kr_small_business_risk.sql").exists())
+        self.assertIn("--diff-filter=A", deploy_workflow)
     def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
         initial = (ROOT / "supabase/migrations/20260824_article_sentiment_pipeline.sql").read_text(encoding="utf-8")
         upgrade = (ROOT / "supabase/migrations/20260827_allow_financial_news_source.sql").read_text(encoding="utf-8")
@@ -1156,7 +1162,9 @@ class KoreaForeignFlowTests(unittest.TestCase):
         self.assertIn("foreignNetBuyAmount / row.kospiTradingValue", scoring)
         self.assertIn("-(row.usdkrwRate / previousRate - 1)", scoring)
         self.assertIn("(flowZ + wonZ) / 2", scoring)
-        self.assertIn("RETENTION_YEARS = 5", pipeline)
+        self.assertNotIn('.upsert(calculated.filter', pipeline)
+        self.assertNotIn('.from("korea_foreign_flow_daily").delete()', pipeline)
+        self.assertNotIn('.from("korea_foreign_flow_raw").delete()', pipeline)
         self.assertIn('cron: "20 7 * * 1-5"', workflow)
 
 

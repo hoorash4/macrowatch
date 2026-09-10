@@ -7,9 +7,17 @@ on:
       - ".github/workflows/deploy-supabase.yml"
       - "supabase/functions/**"
       - "supabase/migrations/**"
-      - "supabase/prompts/**"
-      - "supabase/config.toml"
   workflow_dispatch:
+    inputs:
+      operation:
+        description: "Deploy exactly one Supabase resource"
+        required: true
+        type: choice
+        options: [function, migration]
+      target:
+        description: "Function slug or migration filename"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -26,103 +34,96 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: xhghpywvthjuvespzdul
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: supabase/setup-cli@v1
         with:
           version: latest
 
-      - name: Apply policy peak scoring schema
+      - name: Resolve changed Supabase resources
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          OPERATION: ${{ inputs.operation }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          : > /tmp/migrations
+          : > /tmp/functions
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$OPERATION" == "migration" ]]; then
+              file="supabase/migrations/$TARGET"
+              [[ "$TARGET" == *.sql && -f "$file" ]] || { echo "Invalid migration target: $TARGET" >&2; exit 1; }
+              printf '%s\n' "$file" > /tmp/migrations
+            else
+              dir="supabase/functions/$TARGET"
+              [[ "$TARGET" != "_shared" && -f "$dir/index.ts" ]] || { echo "Invalid function target: $TARGET" >&2; exit 1; }
+              printf '%s\n' "$TARGET" > /tmp/functions
+            fi
+          else
+            before="$BEFORE_SHA"
+            if [[ -z "$before" || "$before" =~ ^0+$ ]]; then
+              before="${GITHUB_SHA}^"
+            fi
+
+            # Migration history is immutable. A schema change must be a new
+            # migration, never an edit/replay of an old one.
+            changed_old="$(git diff --name-only --diff-filter=MD "$before" "$GITHUB_SHA" -- 'supabase/migrations/*.sql')"
+            if [[ -n "$changed_old" ]]; then
+              echo "Existing migrations must not be modified or deleted:" >&2
+              echo "$changed_old" >&2
+              echo "Create a new migration instead." >&2
+              exit 1
+            fi
+            git diff --name-only --diff-filter=A "$before" "$GITHUB_SHA" -- 'supabase/migrations/*.sql' | sort -u > /tmp/migrations
+
+            changed_functions="$(git diff --name-only --diff-filter=ACMRT "$before" "$GITHUB_SHA" -- 'supabase/functions/**')"
+            if grep -q '^supabase/functions/_shared/' <<<"$changed_functions"; then
+              find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name _shared -printf '%f\n' | sort > /tmp/functions
+            else
+              awk -F/ '/^supabase\/functions\/[^/]+\// && $3 != "_shared" {print $3}' <<<"$changed_functions" | sort -u > /tmp/functions
+            fi
+          fi
+
+          echo "migrations<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/migrations >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "functions<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/functions >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Apply only new or explicitly selected migrations
+        if: steps.changes.outputs.migrations != ''
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          MIGRATIONS: ${{ steps.changes.outputs.migrations }}
+        shell: bash
         run: |
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260826_add_policy_previous_peak_scoring.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260826_allow_uncertain_policy_admin_resolution.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260826_add_policy_normalization_reasons.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260826_allow_admin_policy_reason_override.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260826_remove_admin_activation_state.sql
-          # The domestic ETF catalog was a one-time bootstrap. Never replay its
-          # data seed here: the admin-managed registry is authoritative after
-          # bootstrap, including deletions and newly registered ETFs.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_sector_flow_prices.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_sector_etf_holdings.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_allow_raw_sector_etf_holdings.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_closed_membership_accounts.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_fomc_briefings.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_policy_expectation_spreads.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_em_capital_capacity.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260827_add_korea_foreign_flow.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_sector_intraday_prices.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_schedule_sector_flow.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260828_add_equity_bond_relative_value.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260829_expand_market_index_prices.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260829_make_target_alerts_retryable.sql
-          # This cleanup is harmless when the short-lived margin-delta schema
-          # was never applied and removes it when an earlier deploy reached it.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260902014500_remove_earnings_v2_margin_deltas.sql
-          # Incremental seasonal windows keep only the ten same-season samples
-          # needed by the active V2 calculation path.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260903001000_add_earnings_v2_seasonal_windows.sql
-          # Keep the retired V1 schema absent even when the deployment is replayed.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260904000000_remove_earnings_v1.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260907214752_add_sector_leadership_score.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260908083000_allow_korea_equity_environment.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260908123000_add_equity_bond_attractiveness.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260908150000_add_stock_attractiveness_v2.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260909061156_add_us_inflation_model.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260909090000_add_us_policy_rate_daily.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260909141525_add_kr_small_business_risk.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260910011500_use_ecos_sme_delinquency.sql
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260910043000_add_decisive_news_event_keys.sql
-          # Automatic earnings jobs use dedicated DB writers that can mutate only
-          # the latest completed market quarter. Historical repair paths remain
-          # explicit and separate.
-          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
-            --file supabase/migrations/20260910133000_guard_earnings_automatic_writes.sql
+          set -euo pipefail
+          while IFS= read -r migration; do
+            [[ -z "$migration" ]] && continue
+            echo "Applying $migration"
+            psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 --file "$migration"
+          done <<< "$MIGRATIONS"
 
-      - name: Deploy Edge Functions
+      - name: Deploy only changed or explicitly selected Edge Functions
+        if: steps.changes.outputs.functions != ''
+        env:
+          FUNCTIONS: ${{ steps.changes.outputs.functions }}
+        shell: bash
         run: |
-          # Retire only the three V1 functions. Shared tables and every V2/automatic
-          # function remain untouched. Re-running this cleanup is harmless.
-          deployed_functions="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json)"
-          for fn in earnings-company-prices earnings-index-prices earnings-universe; do
-            if jq -e --arg fn "$fn" 'any(.[]; .slug == $fn)' <<<"$deployed_functions" >/dev/null; then
-              supabase --agent yes functions delete "$fn" --project-ref "$SUPABASE_PROJECT_REF"
-            fi
-          done
+          set -euo pipefail
+          while IFS= read -r fn; do
+            [[ -z "$fn" ]] && continue
+            echo "Deploying function: $fn"
+            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+          done <<< "$FUNCTIONS"
 
-          for fn in supabase/functions/*; do
-            name="$(basename "$fn")"
-            [ "$name" = "_shared" ] && continue
-            supabase functions deploy "$name" --project-ref "$SUPABASE_PROJECT_REF"
-          done
+      - name: Report no-op deployment
+        if: steps.changes.outputs.migrations == '' && steps.changes.outputs.functions == ''
+        run: echo "No Supabase database or Edge Function deployment is required for this change."

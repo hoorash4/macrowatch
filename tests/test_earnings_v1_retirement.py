@@ -35,7 +35,8 @@ class EarningsV1RetirementTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertNotIn("20260828_add_earnings_foundation.sql", workflow)
-        self.assertIn("20260904000000_remove_earnings_v1.sql", workflow)
+        self.assertNotIn("20260904000000_remove_earnings_v1.sql", workflow)
+        self.assertIn("--diff-filter=A", workflow)
 
 
 if __name__ == "__main__":
