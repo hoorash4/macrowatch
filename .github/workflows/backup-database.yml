@@ -3,7 +3,7 @@ name: Backup database to Google Drive
 on:
   schedule:
     # GitHub Actions cron uses UTC: Saturday 18:00 = Sunday 03:00 KST.
-    - cron: "0 18 * * 6"
+    - cron: "0 15 * * 6"
   workflow_dispatch:
 
 permissions:
