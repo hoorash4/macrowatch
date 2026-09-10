@@ -106,25 +106,21 @@ const AUTOMATION_CARD_NAMES: Record<string, string> = {
   "small-business-risk.yml": "미국 중소기업 위험지수",
 };
 
-const AUTOMATION_STEP_NAMES: Record<string, Record<string, string>> = {
-  "earnings-us-automatic.yml": {
-    "0 2 * * *": "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷",
-    "30 2 * * *": "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시",
-    "0 3 * * *": "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완",
-  },
-  "earnings-v2-korea-automatic.yml": {
-    "30 10 * * 1-5": "시총 상위 100 이익 모멘텀 · 한국 DART 공시",
-    "30 11 * * 1-5": "시총 상위 100 이익 모멘텀 · 한국 KIS 가격",
-  },
-  "sector-flow.yml": {
-    "10 0 * * 1-5": "주도섹터 흐름 · 장초반",
-    "30 3 * * 1-5": "주도섹터 흐름 · 장중",
-    "40 6 * * 1-5": "주도섹터 흐름 · 종가",
-  },
+const AUTOMATION_STEP_NAMES: Record<string, string[]> = {
+  "earnings-us-automatic.yml": [
+    "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷",
+    "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시",
+    "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완",
+  ],
+  "earnings-v2-korea-automatic.yml": [
+    "시총 상위 100 이익 모멘텀 · 한국 DART 공시",
+    "시총 상위 100 이익 모멘텀 · 한국 KIS 가격",
+  ],
+  "sector-flow.yml": ["주도섹터 흐름 · 장초반", "주도섹터 흐름 · 장중", "주도섹터 흐름 · 종가"],
 };
 
-function automationDisplayName(workflow: { id: string; name: string }, cron: string) {
-  return AUTOMATION_STEP_NAMES[workflow.id]?.[cron] || AUTOMATION_CARD_NAMES[workflow.id] || workflow.name;
+function automationDisplayName(workflow: { id: string; name: string }, scheduleIndex: number) {
+  return AUTOMATION_STEP_NAMES[workflow.id]?.[scheduleIndex] || AUTOMATION_CARD_NAMES[workflow.id] || workflow.name;
 }
 
 export async function scheduledWorkflows(token: string) {
@@ -138,11 +134,11 @@ export async function scheduledWorkflows(token: string) {
   const entries = await Promise.all(workflows.map(async (workflow) => {
     const latestSuccess = await latestSuccessfulRun(workflow.id, token);
     const state = stateByPath.get(workflow.path) || "active";
-    return workflow.crons.map((cron) => ({
+    return workflow.crons.map((cron, scheduleIndex) => ({
       workflow_id: workflow.id,
       cron,
       kst_time: kstTimeFromCron(cron),
-      name: automationDisplayName(workflow, cron),
+      name: automationDisplayName(workflow, scheduleIndex),
       state,
       latest_success: latestSuccess,
     }));

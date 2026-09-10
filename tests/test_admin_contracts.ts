@@ -82,6 +82,23 @@ test("automation schedules use card steps and are sorted by Korean time", async 
   } finally { globalThis.fetch = original; }
 });
 
+test("automation step names remain stable when their cron time changes", async () => {
+  const original = globalThis.fetch;
+  const workflow = ["name: Sector flow", "on:", "  schedule:", '    - cron: "10 0 * * 1-5"', '    - cron: "30 3 * * 1-5"', '    - cron: "40 6 * * 1-5"', "jobs: {}"].join("\n");
+  try {
+    globalThis.fetch = async (url) => {
+      const path = String(url);
+      if (path.includes("/contents/.github/workflows?")) return new Response(JSON.stringify([{ name: "sector-flow.yml", path: ".github/workflows/sector-flow.yml" }]));
+      if (path.includes("/contents/.github/workflows/sector-flow.yml")) return new Response(JSON.stringify({ name: "sector-flow.yml", path: ".github/workflows/sector-flow.yml", sha: "sha", content: btoa(workflow) }));
+      if (path.includes("/actions/workflows?")) return new Response(JSON.stringify({ workflows: [{ path: ".github/workflows/sector-flow.yml", state: "active" }] }));
+      if (path.includes("/runs?")) return new Response(JSON.stringify({ workflow_runs: [{ id: 1, event: "schedule", conclusion: "success", updated_at: "2026-09-10T00:00:00Z" }] }));
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const items = await scheduledWorkflows("test-token");
+    assert.deepEqual(items.map((item) => item.name), ["주도섹터 흐름 · 장초반", "주도섹터 흐름 · 장중", "주도섹터 흐름 · 종가"]);
+  } finally { globalThis.fetch = original; }
+});
+
 test("schedule editing rejects workflows that can run from the resulting commit", async () => {
   const original = globalThis.fetch;
   const unsafe = [
