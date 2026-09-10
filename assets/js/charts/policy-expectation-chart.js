@@ -83,10 +83,10 @@
     const yTickValues = [-2, -1, 0, 1, 2].map((multiple) => {
       const value = multiple * initialVerticalScale.tickStep;
       const y = scale(value, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
-      const label = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
+      const label = chartUtils.formatChartNumber(value, { showPlus: true });
       return { multiple, value, y, label };
     });
-    const yGridLines = yTickValues.map(({ value, y }) => `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' policy-expectation-y-grid--zero' : ''}"/>`).join('');
+    const yGridLines = yTickValues.map(({ value, y }) => `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' analysis-chart-zero-line' : ''}"/>`).join('');
     const yAxisLabels = yTickValues.map(({ multiple, y, label }) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"/><text data-policy-expectation-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
@@ -119,7 +119,7 @@
       averageLine.setAttribute('d', pathFor(points, 'fiveDayAverage', currentScale.maximumAbsoluteValue));
       yLabels.forEach((label) => {
         const value = Number(label.dataset.policyExpectationYMultiple) * currentScale.tickStep;
-        label.textContent = `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
+        label.textContent = chartUtils.formatChartNumber(value, { showPlus: true });
       });
     };
     frame.addEventListener('scroll', () => {
@@ -136,7 +136,7 @@
       cursor.setAttribute('x2', nearest.x);
       cursorDetail.setAttribute('x', nearest.x);
       cursorDetail.textContent = formatMonthDay(nearest.observation_date);
-      cursorValue.textContent = chartUtils.cursorValueText(nearest, [{ key: 'fiveDayAverage', label: '내재금리', format: value => value.toFixed(2) }]);
+      cursorValue.textContent = chartUtils.cursorValueText(nearest, [{ key: 'fiveDayAverage', label: '내재금리', format: chartUtils.formatChartNumber }]);
       cursorValue.setAttribute('visibility', 'visible');
       chartUtils.positionCursorText(cursorValue, nearest.x, frame);
       for (const element of [cursor, cursorDetail]) element.classList.add('is-visible');

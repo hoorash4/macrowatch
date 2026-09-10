@@ -47,25 +47,25 @@
   function formatSigned(value, unit) {
     if (!Number.isFinite(value)) return '—';
     const rounded = Math.abs(value) < .05 ? 0 : value;
-    return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}${unit}`;
+    return `${chartUtils.formatChartNumber(rounded, { maximumFractionDigits: 1, showPlus: true })}${unit}`;
   }
   function formatAmount(value, currency = 'KRW') {
     if (!Number.isFinite(value)) return '—';
     const absolute = Math.abs(value);
     if (currency === 'USD') {
-      if (absolute >= 1e12) return `$${(value / 1e12).toFixed(absolute >= 1e13 ? 0 : 1)}T`;
-      if (absolute >= 1e9) return `$${(value / 1e9).toFixed(absolute >= 1e10 ? 0 : 1)}B`;
-      if (absolute >= 1e6) return `$${(value / 1e6).toFixed(absolute >= 1e8 ? 0 : 1)}M`;
-      return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+      if (absolute >= 1e12) return `$${chartUtils.formatChartNumber(value / 1e12, { maximumFractionDigits: absolute >= 1e13 ? 0 : 1 })}T`;
+      if (absolute >= 1e9) return `$${chartUtils.formatChartNumber(value / 1e9, { maximumFractionDigits: absolute >= 1e10 ? 0 : 1 })}B`;
+      if (absolute >= 1e6) return `$${chartUtils.formatChartNumber(value / 1e6, { maximumFractionDigits: absolute >= 1e8 ? 0 : 1 })}M`;
+      return `$${chartUtils.formatChartNumber(value, { maximumFractionDigits: 0 })}`;
     }
-    if (absolute >= 1e12) return `${(value / 1e12).toFixed(absolute >= 1e13 ? 0 : 1)}조`;
-    if (absolute >= 1e8) return `${(value / 1e8).toFixed(absolute >= 1e10 ? 0 : 1)}억`;
-    if (absolute >= 1e4) return `${(value / 1e4).toFixed(absolute >= 1e6 ? 0 : 1)}만`;
-    return value.toLocaleString('ko-KR', { maximumFractionDigits: 0 });
+    if (absolute >= 1e12) return `${chartUtils.formatChartNumber(value / 1e12, { maximumFractionDigits: absolute >= 1e13 ? 0 : 1, locale: 'ko-KR' })}조`;
+    if (absolute >= 1e8) return `${chartUtils.formatChartNumber(value / 1e8, { maximumFractionDigits: absolute >= 1e10 ? 0 : 1, locale: 'ko-KR' })}억`;
+    if (absolute >= 1e4) return `${chartUtils.formatChartNumber(value / 1e4, { maximumFractionDigits: absolute >= 1e6 ? 0 : 1, locale: 'ko-KR' })}만`;
+    return chartUtils.formatChartNumber(value, { maximumFractionDigits: 0, locale: 'ko-KR' });
   }
   function formatAxis(value, kind, currency) {
     if (kind === 'amount') return formatAmount(value, currency);
-    return `${Math.abs(value) < Number.EPSILON ? 0 : Number(value.toFixed(2))}`;
+    return chartUtils.formatChartNumber(Math.abs(value) < Number.EPSILON ? 0 : value);
   }
 
   // V2 공개 RPC의 분기 총합 행을 차트 전용 구조로만 변환합니다.
@@ -209,7 +209,7 @@
     const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), padding.left, chartWidth - padding.right);
     const y = (value, sourceDomain = domain) => scale(value, sourceDomain.min, sourceDomain.max, spec.height - padding.bottom, padding.top);
     const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind, market.currency)}</text>`).join('');
-    const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' korea-earnings-grid--zero' : ''}"/>`).join('');
+    const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid${Math.abs(value) < Number.EPSILON ? ' analysis-chart-zero-line' : ''}"/>`).join('');
     const labels = spec.showPeriodLabels
       ? points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
         ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>`
@@ -294,7 +294,7 @@
       yGrids.forEach((grid, index) => {
         const value = visibleDomain.ticks[index], gridY = y(value, visibleDomain);
         grid.setAttribute('y1', gridY); grid.setAttribute('y2', gridY);
-        grid.classList.toggle('korea-earnings-grid--zero', Math.abs(value) < Number.EPSILON);
+        grid.classList.toggle('analysis-chart-zero-line', Math.abs(value) < Number.EPSILON);
       });
       metricSeries.forEach((metric) => {
         const segments = lineSegments(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding);

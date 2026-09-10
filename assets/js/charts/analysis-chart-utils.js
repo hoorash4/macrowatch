@@ -56,6 +56,17 @@
     }).join(' · ');
   }
 
+  function formatChartNumber(value, { maximumFractionDigits = 2, showPlus = false, locale = 'en-US' } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '—';
+    const digits = Math.max(0, Math.min(2, Number(maximumFractionDigits) || 0));
+    const factor = 10 ** digits;
+    const rounded = Math.round((number + Math.sign(number) * Number.EPSILON) * factor) / factor;
+    const normalized = Object.is(rounded, -0) ? 0 : rounded;
+    const formatted = normalized.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: digits });
+    return `${showPlus && normalized > 0 ? '+' : ''}${formatted}`;
+  }
+
   function bindPanelScroll(frame) {
     frame.addEventListener('scroll', () => {
       const card = frame.closest('[data-dashboard-panel]');
@@ -100,6 +111,25 @@
     node.append(boundary);
   }
 
+  function appendBottomAxis(svg, x1, x2, y) {
+    // 렌더러가 이미 만든 최하단 격자선과 공통 X축이 겹치면 1px보다 두껍게 보인다.
+    // 같은 경계에 놓인 기존 수평선을 숨기고 공통 축선 하나만 남긴다.
+    [...svg.querySelectorAll('line')].forEach((line) => {
+      const lineX1 = Number(line.getAttribute('x1')), lineX2 = Number(line.getAttribute('x2'));
+      const lineY1 = Number(line.getAttribute('y1')), lineY2 = Number(line.getAttribute('y2'));
+      if (Math.abs(lineY1 - y) > .5 || Math.abs(lineY2 - y) > .5) return;
+      if (lineX1 <= x1 + .5 && lineX2 >= x2 - .5) line.setAttribute('visibility', 'hidden');
+    });
+    const bottomAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    bottomAxis.setAttribute('x1', x1);
+    bottomAxis.setAttribute('x2', x2);
+    bottomAxis.setAttribute('y1', y);
+    bottomAxis.setAttribute('y2', y);
+    bottomAxis.setAttribute('class', 'analysis-chart-axis-line');
+    bottomAxis.setAttribute('pointer-events', 'none');
+    svg.append(bottomAxis);
+  }
+
   function mountChartFrame({ container, profile = chartProfiles.main, height, axisViewWidth = axisGutter, top = chartLayout.plot.top, bottom = chartLayout.plot.bottom, xAxisMode = profile.xAxisMode, leftAxisMarkup = '', rightAxisMarkup = '', plotMarkup, ariaLabel = '시계열 그래프' }) {
     const { shell, frame } = createChartShell(profile, ariaLabel);
     const axis = (side, markup) => {
@@ -123,16 +153,9 @@
       svg.style.height = `${height}px`;
       svg.style.maxWidth = 'none';
       svg.setAttribute('preserveAspectRatio', 'none');
-      if (xAxisMode !== 'zero') {
+      if (xAxisMode === 'bottom') {
         const viewWidth = Number(svg.getAttribute('viewBox').trim().split(/\s+/)[2]);
-        const bottomAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        bottomAxis.setAttribute('x1', chartLayout.plot.left);
-        bottomAxis.setAttribute('x2', viewWidth - chartLayout.plot.right);
-        bottomAxis.setAttribute('y1', height - bottom);
-        bottomAxis.setAttribute('y2', height - bottom);
-        bottomAxis.setAttribute('class', 'analysis-chart-axis-line');
-        bottomAxis.setAttribute('pointer-events', 'none');
-        svg.append(bottomAxis);
+        appendBottomAxis(svg, chartLayout.plot.left, viewWidth - chartLayout.plot.right, height - bottom);
       }
     }
     shell.append(axis('left', leftAxisMarkup), frame);
@@ -442,7 +465,7 @@
         axis.labels.forEach(({ node, pixel }) => {
           const ratio = (pixel - top) / (bottom - top);
           const value = inverted ? domain.min + ratio * (domain.max - domain.min) : domain.max - ratio * (domain.max - domain.min);
-          node.textContent = axis.format ? axis.format(value) : value.toLocaleString('en-US', { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 });
+          node.textContent = axis.format ? axis.format(value) : formatChartNumber(value, { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 });
         });
       });
     };
@@ -479,16 +502,7 @@
     const dualAxis = axes?.axisMode === 'dual' || rightGutter >= axisLayouts.dual.right;
     // 날짜 라벨이 놓이는 플롯 하단은 공통 X축이다. 최하단 점선 눈금이 있더라도
     // 이 실선이 같은 위치를 덮어 Y축과 동일한 경계를 만든다.
-    if (axes?.xAxisMode !== 'zero') {
-      const bottomAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      bottomAxis.setAttribute('x1', leftGutter);
-      bottomAxis.setAttribute('x2', viewWidth - rightGutter);
-      bottomAxis.setAttribute('y1', axisBottom);
-      bottomAxis.setAttribute('y2', axisBottom);
-      bottomAxis.setAttribute('class', 'analysis-chart-axis-line');
-      bottomAxis.setAttribute('pointer-events', 'none');
-      svg.append(bottomAxis);
-    }
+    if ((axes?.xAxisMode || 'bottom') === 'bottom') appendBottomAxis(svg, leftGutter, viewWidth - rightGutter, axisBottom);
     const axisCandidates = [...svg.querySelectorAll('text,line')].filter((node) => {
       if (node.matches('.policy-expectation-cursor, .policy-expectation-cursor-detail, [data-inflation-value], [data-inflation-real-value]')) return false;
       return true;
@@ -646,5 +660,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

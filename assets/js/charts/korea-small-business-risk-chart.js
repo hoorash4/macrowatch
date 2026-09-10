@@ -4,7 +4,7 @@
   const supabaseClient = window.macroWatchSupabase || window.MacroWatchFrontend?.createSupabaseClient();
   const PROFILE = utils.chartProfile({
     axisMode: 'dual',
-    cursorSeries: Object.freeze([{ key: 'risk_index', label: '위험', format: value => value.toFixed(1) }]),
+    cursorSeries: Object.freeze([{ key: 'risk_index', label: '위험', format: value => utils.formatChartNumber(value, { maximumFractionDigits: 1 }) }]),
   });
   const state = { years: String(PROFILE.defaultYears), rows: [] };
   const COLORS = {
@@ -44,8 +44,8 @@
     const headlineY = value => PADDING.top + (value - headlineDomain.min) / (headlineDomain.max - headlineDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
     const riskTicks = Array.from({ length: 5 }, (_, index) => riskDomain.max - (riskDomain.max - riskDomain.min) * index / 4);
     const headlineTicks = Array.from({ length: 5 }, (_, index) => headlineDomain.max - (headlineDomain.max - headlineDomain.min) * index / 4);
-    const grid = riskTicks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${value.toFixed(0)}</text>`).join('');
-    const rightAxis = headlineTicks.map(value => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${headlineY(value) + 4}" text-anchor="start" fill="#64748b" font-size="10">${value.toFixed(0)}</text>`).join('');
+    const grid = riskTicks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatChartNumber(value, { maximumFractionDigits: 0 })}</text>`).join('');
+    const rightAxis = headlineTicks.map(value => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${headlineY(value) + 4}" text-anchor="start" fill="#64748b" font-size="10">${utils.formatChartNumber(value, { maximumFractionDigits: 0 })}</text>`).join('');
     const years = [...new Set(rows.map(row => String(row.month).slice(0, 4)))];
     const guides = years.map(year => {
       const point = rows.find(row => String(row.month).startsWith(year));
@@ -74,13 +74,13 @@
         y: riskY,
         points: rows.map(row => ({ x: x(row), value: Number(row.risk_index) })),
         selector: '[data-korea-small-business-risk-line]',
-        format: value => value.toFixed(0),
+        format: value => utils.formatChartNumber(value, { maximumFractionDigits: 0 }),
       }, {
         side: 'right',
         y: headlineY,
         points: headlineRows.map(row => ({ x: x(row), value: Number(row.headline_outlook_sbhi) })),
         selector: '[data-small-business-headline-line]',
-        format: value => value.toFixed(0),
+        format: value => utils.formatChartNumber(value, { maximumFractionDigits: 0 }),
       }],
     });
     const frame = host.querySelector('[data-history-scroll]');

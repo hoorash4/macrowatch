@@ -10,7 +10,7 @@ test('주식투자 매력 카드는 국가별 0~100 독립 점수를 한 그래�
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(html, /id="equity-bond-attractiveness-title"[^>]*>주식투자 매력 흐름/);
   assert.match(html, /data-equity-bond-ranges/);
-  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=12/);
+  assert.match(html, /equity-bond-attractiveness-chart\.js\?v=13/);
   assert.match(html, /<\/section>\s*<\/div>\s*<\/div>\s*<div class="dashboard-view-card sector-flow-view-card">/);
   assert.doesNotMatch(chart, /국가별 독립 점수|높을수록 주식투자 환경 우호적/);
   assert.match(chart, /const domain = \{ min: 0, max: 100 \}/);
@@ -69,9 +69,8 @@ test('공통 스크롤 그래프는 Y축을 스크롤 영역 밖의 실제 좌�
   assert.match(source, /const boundaryX = side === 'right' \? viewWidth - gutter \+ \.5 : gutter - \.5/);
   assert.match(source, /boundary\.setAttribute\('class', 'analysis-chart-axis-line'\)/);
   assert.match(source, /bottomAxis\.setAttribute\('class', 'analysis-chart-axis-line'\)/);
-  assert.match(source, /if \(axes\?\.xAxisMode !== 'zero'\)/);
-  assert.match(source, /bottomAxis\.setAttribute\('y1', axisBottom\)/);
-  assert.match(source, /bottomAxis\.setAttribute\('y2', axisBottom\)/);
+  assert.match(source, /if \(\(axes\?\.xAxisMode \|\| 'bottom'\) === 'bottom'\) appendBottomAxis/);
+  assert.match(source, /appendBottomAxis\(svg, leftGutter, viewWidth - rightGutter, axisBottom\)/);
   assert.match(source, /공통 고정축이 그래프와 축 숫자의 경계에 세로선을 한 번만 그립니다/);
   assert.match(source, /if \(side === 'left'\) shell\.prepend\(fixedAxis\)/);
   assert.match(source, /axis\.style\.flexBasis = `\$\{axisWidth\}px`/);
@@ -95,6 +94,7 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-year-label \{ fill:#64748b; font-size:12px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-axis-line,[\s\S]*?\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:1; vector-effect:non-scaling-stroke; shape-rendering:crispEdges;/);
+  assert.doesNotMatch(styles, /(?:policy-chart|policy-expectation|korea-earnings)[^{]*--zero/);
   assert.match(dashboardCharts, /xAxisMode: 'zero'/);
   assert.match(chartUtils, /analysis-chart-cursor-text analysis-chart-cursor-value/);
   assert.match(chartUtils, /analysis-chart-cursor-text analysis-chart-cursor-date/);
@@ -565,7 +565,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.match(chart, /selectedYears === 'max' \? String\(year\)\.slice\(-2\)/);
   assert.match(chart, /chartUtils\.axisDomain\(values/);
   assert.match(chart, /policy-expectation-y-label/);
-  assert.match(chart, /policy-expectation-y-grid--zero/);
+  assert.match(chart, /analysis-chart-zero-line/);
   assert.match(chart, /mountChartFrame/);
   assert.match(chart, /chartLayout\.axisWidth/);
   assert.match(chart, /function verticalScale/);
@@ -741,7 +741,7 @@ test('모바일 최근 뉴스 막대는 화면 폭을 사용하고 날짜를 막
 
 test('이머징 그래프의 커서 상단에는 EM-MSI 숫자만 표시한다', () => {
   const charts = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
-  assert.match(charts, /valueText: \(row\) => Number\(row\.stress_index\)\.toFixed\(2\)/);
+  assert.match(charts, /valueText: \(row\) => formatChartNumber\(row\.stress_index\)/);
   assert.doesNotMatch(charts, /valueText:[^\n]*EM-MSI/);
   assert.doesNotMatch(charts, /valueText:[^\n]*EEM/);
 });

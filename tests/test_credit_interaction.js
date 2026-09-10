@@ -21,6 +21,7 @@ function harness(rows) {
     requestAnimationFrame:fn=>{fn();return 1;},CREDIT_STRESS_HISTORY_MONTHS:37,CREDIT_STRESS_CHART_HEIGHT:280,
     monotoneSeriesPath:(rows,x,y)=>rows.map(r=>x(r)+','+y(r)).join(' ')};
   vm.createContext(context); vm.runInContext(utilities,context); context.window.MacroWatchAnalysisChart.scrollToLatest=()=>{};
+  context.formatChartNumber = context.window.MacroWatchAnalysisChart.formatChartNumber;
   context.window.MacroWatchAnalysisChart.mountChartFrame=({container,plotMarkup})=>{
     container.innerHTML=plotMarkup;
     const frame=node('[data-history-scroll]'), svg=node('svg');
@@ -41,7 +42,7 @@ test('credit chart reuses canonical frame and exposes three values without inven
   assert.match(h.chart.innerHTML,/clip-path="url\(#credit-risk-plot-clip\)"/);
   h.resize();
   h.node('[data-history-scroll]').events.pointermove({clientX:1776});
-  assert.match(h.node('[data-credit-cursor-label]').innerHTML,/하이일드 스프레드: 5.00%p/);
+  assert.match(h.node('[data-credit-cursor-label]').innerHTML,/하이일드 스프레드: 5%p/);
   assert.match(h.node('[data-credit-cursor-label]').innerHTML,/기업 파산보호 신청\(3개월 평균\): 미발표/);
   assert.equal(h.node('[data-credit-cursor-date]').textContent,'2026-09-03 (잠정치)');
   assert.doesNotMatch(h.chart.innerHTML,/NaN|Infinity/);

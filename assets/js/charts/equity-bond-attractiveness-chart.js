@@ -60,7 +60,7 @@
       const x = scale(Date.parse(nearestDate), first, last, LEFT, width - RIGHT);
       const rows = ['KR', 'US'].map(country => state.rows.find(row => row.country === country && row.observation_date === nearestDate)).filter(Boolean);
       cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); cursor.classList.add('is-visible');
-      value.setAttribute('x', x); value.textContent = rows.map(row => `${LABELS[row.country]} ${Number(row.score).toFixed(1)}`).join(' · '); value.setAttribute('visibility', 'visible');
+      value.setAttribute('x', x); value.textContent = rows.map(row => `${LABELS[row.country]} ${utils.formatChartNumber(row.score, { maximumFractionDigits: 1 })}`).join(' · '); value.setAttribute('visibility', 'visible');
       dateLabel.setAttribute('x', x); dateLabel.textContent = nearestDate; dateLabel.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); value.setAttribute('visibility', 'hidden'); dateLabel.classList.remove('is-visible'); });

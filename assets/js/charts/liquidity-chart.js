@@ -44,7 +44,7 @@
     const pathFor = (key, domain) => utils.monotonePath(points.filter(p=>Number.isFinite(p[key])).map(p=>({x:p.x,y:scale(p[key],domain.min,domain.max,HEIGHT-PADDING.bottom,PADDING.top)})));
     const initial = domainFor(points, metrics, isUS);
     const y = (value, domain) => scale(value,domain.min,domain.max,HEIGHT-PADDING.bottom,PADDING.top);
-    const axis = Array.from({length:5},(_,i)=>initial.min+(initial.max-initial.min)*i/4).map((value,index)=>`<text data-liquidity-y-label="${index}" x="${Y_AXIS_WIDTH-8}" y="${y(value,initial)+3}" text-anchor="end" fill="#64748b" font-size="11">${value.toFixed(0)}</text>`).join('');
+    const axis = Array.from({length:5},(_,i)=>initial.min+(initial.max-initial.min)*i/4).map((value,index)=>`<text data-liquidity-y-label="${index}" x="${Y_AXIS_WIDTH-8}" y="${y(value,initial)+3}" text-anchor="end" fill="#64748b" font-size="11">${utils.formatChartNumber(value, { maximumFractionDigits: 0 })}</text>`).join('');
     const grids = Array.from({length:5},(_,i)=>initial.min+(initial.max-initial.min)*i/4).map((value,index)=>`<line data-liquidity-y-grid="${index}" x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(value,initial)}" y2="${y(value,initial)}" stroke="#e2e8f0"/>`).join('');
     const years = Array.from({length:new Date(last).getUTCFullYear()-new Date(first).getUTCFullYear()+1},(_,i)=>new Date(first).getUTCFullYear()+i).map(year=>{
       const timestamp=Date.UTC(year,0,1); if(timestamp<first||timestamp>last) return '';
@@ -65,7 +65,7 @@
       metrics.forEach(key=>lines[key].setAttribute('d',pathFor(key,domain)));
       axisLabels.forEach((label,index)=>{
         const value=domain.min+(domain.max-domain.min)*index/4;
-        label.textContent=value.toFixed(0); label.setAttribute('y',y(value,domain)+3);
+        label.textContent=utils.formatChartNumber(value, { maximumFractionDigits: 0 }); label.setAttribute('y',y(value,domain)+3);
       });
       axisGrids.forEach((grid,index)=>{
         const value=domain.min+(domain.max-domain.min)*index/4, py=y(value,domain);
@@ -94,7 +94,7 @@
       const nearest=points.reduce((closest,point)=>Math.abs(point.x-pointerX)<Math.abs(closest.x-pointerX)?point:closest);
       cursor.setAttribute('x1',nearest.x);cursor.setAttribute('x2',nearest.x);cursor.classList.add('is-visible');
       value.setAttribute('x',nearest.x);dateLabel.setAttribute('x',nearest.x);
-      value.textContent=metrics.map(metric=>`${names[metric]} ${Number.isFinite(nearest[metric])?nearest[metric].toFixed(1):'미발표'}`).join(' · ');
+      value.textContent=metrics.map(metric=>`${names[metric]} ${Number.isFinite(nearest[metric])?utils.formatChartNumber(nearest[metric], { maximumFractionDigits: 1 }):'미발표'}`).join(' · ');
       dateLabel.textContent=nearest.observation_date; value.setAttribute('visibility','visible'); dateLabel.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave',()=>{cursor.classList.remove('is-visible');value.setAttribute('visibility','hidden');dateLabel.classList.remove('is-visible');});

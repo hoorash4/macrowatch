@@ -28,6 +28,17 @@ test('chart profiles centralize the two-year default and structural options', ()
   assert.equal(utils.cursorValueText({ main: 12.345, comparison: 99 }, [{ key: 'main', label: '메인', format: value => value.toFixed(1) }]), '메인 12.3');
 });
 
+test('chart numbers share a two-decimal maximum without trailing zeroes', () => {
+  const format = context.window.MacroWatchAnalysisChart.formatChartNumber;
+  assert.equal(format(12.345), '12.35');
+  assert.equal(format(12), '12');
+  assert.equal(format(12.5), '12.5');
+  assert.equal(format(-0.004), '0');
+  assert.equal(format(3.2, { showPlus: true }), '+3.2');
+  assert.equal(format(1234.56), '1,234.56');
+  assert.equal(format(1.99, { maximumFractionDigits: 0 }), '2');
+});
+
 test('every dashboard chart declares the common profile or common default', () => {
   const modules = [
     '../assets/js/charts/policy-chart.js',
@@ -60,7 +71,8 @@ test('MSI and legacy charts are mounted into the same canonical shell', () => {
   assert.match(source, /function mountChartFrame[\s\S]*createChartShell\(profile, ariaLabel\)/);
   assert.match(source, /function scrollableSvg[\s\S]*createChartShell\(profile\)/);
   assert.match(source, /shell\.append\(axis\('right', profile\.axisMode === 'dual' \? rightAxisMarkup : ''\)\)/);
-  assert.match(source, /if \(xAxisMode !== 'zero'\)/);
+  assert.match(source, /if \(xAxisMode === 'bottom'\)/);
+  assert.match(source, /function appendBottomAxis\([\s\S]*line\.setAttribute\('visibility', 'hidden'\)[\s\S]*bottomAxis\.setAttribute\('class', 'analysis-chart-axis-line'\)/);
   assert.match(source, /function attachChartCursor\(/);
   assert.doesNotMatch(source, /standardizeChartFrame/);
   const allChartSources = fs.readdirSync(path.join(__dirname, '../assets/js/charts')).filter(file => file.endsWith('-chart.js'))
@@ -77,6 +89,7 @@ test('MSI cursor and axis boundaries use the common chart component', () => {
   assert.doesNotMatch(dashboard, /createSvgElement|attachVerticalGuide|const attachHover|hoverGuide/);
   assert.match(source, /frame\.addEventListener\('pointermove'/);
   assert.match(source, /appendFixedAxis\(dualAxis \? rightAxisNodes : \[\], 'right', dualAxis \? rightGutter : 1\)/);
+  assert.match(dashboard, /xAxisMode: 'none'/);
 });
 
 test('scrollable SVG fills the same vertical plot area as its fixed Y axis', () => {
