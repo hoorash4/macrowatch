@@ -76,6 +76,30 @@
     return `${formatChartNumber(normalized, { maximumFractionDigits, showPlus, locale })}${suffix}`;
   }
 
+  function roundAxisTick(value, step) {
+    const safeStep = Math.abs(Number(step));
+    const digits = !Number.isFinite(safeStep) || safeStep >= 1 ? 0 : safeStep >= .1 ? 1 : 2;
+    const factor = 10 ** digits;
+    const rounded = Math.round(Number(value) * factor) / factor;
+    return Object.is(rounded, -0) ? 0 : rounded;
+  }
+
+  // 이중 Y축의 오른쪽 눈금은 독립적인 눈금 위치를 만들지 않는다. 왼쪽 눈금의
+  // 픽셀 위치를 오른쪽 척도의 값으로 환산해 같은 가로 격자를 함께 읽게 한다.
+  function alignedSecondaryTicks(primaryTicks, primaryY, secondaryDomain, top, bottom, inverted = false) {
+    if (!secondaryDomain || !Number.isFinite(secondaryDomain.min) || !Number.isFinite(secondaryDomain.max)) return [];
+    const span = secondaryDomain.max - secondaryDomain.min || 1;
+    const height = bottom - top || 1;
+    return (primaryTicks || []).map((primaryValue) => {
+      const y = primaryY(primaryValue);
+      const ratio = Math.max(0, Math.min(1, (y - top) / height));
+      const rawValue = inverted
+        ? secondaryDomain.min + ratio * span
+        : secondaryDomain.max - ratio * span;
+      return { y, value: roundAxisTick(rawValue, secondaryDomain.step ?? span / Math.max(1, primaryTicks.length - 1)) };
+    });
+  }
+
   function bindPanelScroll(frame) {
     frame.addEventListener('scroll', () => {
       const card = frame.closest('[data-dashboard-panel]');
@@ -411,22 +435,21 @@
     }
     const step = (max - min) / count;
     const roundingQuantum = 10 ** Math.floor(Math.log10(Math.max(Math.abs(step), Number.EPSILON)));
-    const firstReadableTick = Math.ceil((min - roundingQuantum * 1e-10) / roundingQuantum) * roundingQuantum;
-    const lastReadableTick = Math.floor((max + roundingQuantum * 1e-10) / roundingQuantum) * roundingQuantum;
-    const ticks = Array.from({ length: count + 1 }, (_, index) => {
+    let ticks = Array.from({ length: count + 1 }, (_, index) => {
       const raw = min + step * index;
       // Domain bounds retain the exact 10% plot padding. Only displayed tick
-      // values are rounded inward, so an endpoint never exposes a lone extra
-      // decimal merely because it is the calculated plot boundary.
+      // values are rounded. A rounded endpoint outside the domain is omitted
+      // instead of being forced inward and duplicating a neighbouring tick.
       const rounded = Math.round(raw / roundingQuantum) * roundingQuantum;
-      const visible = Math.max(firstReadableTick, Math.min(lastReadableTick, rounded));
-      return Math.abs(visible) < roundingQuantum / 2 ? 0 : Number(visible.toPrecision(12));
-    });
+      if (rounded < min - roundingQuantum * 1e-10 || rounded > max + roundingQuantum * 1e-10) return null;
+      return Math.abs(rounded) < roundingQuantum / 2 ? 0 : Number(rounded.toPrecision(12));
+    }).filter((value, index, values) => value != null && values.indexOf(value) === index);
     if (min < 0 && max > 0 && !ticks.includes(0)) {
-      const closest = ticks.reduce((best, value, index) => (
-        Math.abs(value) < Math.abs(ticks[best]) ? index : best
-      ), 0);
-      ticks[closest] = 0;
+      if (ticks.length >= count + 1) {
+        const closest = ticks.reduce((best, value, index) => Math.abs(value) < Math.abs(ticks[best]) ? index : best, 0);
+        ticks[closest] = 0;
+      } else ticks.push(0);
+      ticks.sort((left, right) => left - right);
     }
     return { min, max, ticks, step };
   }
@@ -476,7 +499,7 @@
     clip.append(rectangle);
     const defs = document.createElementNS(ns, 'defs');
     defs.append(clip); svg.append(defs);
-    const bindings = axes.map(axis => ({
+    const bindings = [...axes].sort((leftAxis, rightAxis) => (leftAxis.side === 'right') - (rightAxis.side === 'right')).map(axis => ({
       ...axis,
       paths: [...svg.querySelectorAll(axis.selector)].filter(node => node.tagName === 'path').map(node => {
         node.setAttribute('clip-path', `url(#${clip.id})`);
@@ -510,6 +533,7 @@
       const unitsPerPixel = width / svg.getBoundingClientRect().width;
       const left = plotLeft + frame.scrollLeft * unitsPerPixel;
       const right = plotLeft + (frame.scrollLeft + frame.clientWidth) * unitsPerPixel;
+      let primaryTickPixels = [];
       bindings.forEach(axis => {
         const domain = visibleAxisDomain(axis.points, left, right, axis.symmetric, Math.max(2, axis.labels.length - 1), axis.includeZero === true);
         if (!domain) return;
@@ -528,18 +552,32 @@
           node.setAttribute('y2', pixel);
         });
         const displayedTicks = inverted ? domain.ticks : [...domain.ticks].reverse();
+        const alignedTicks = axis.side === 'right' && primaryTickPixels.length
+          ? primaryTickPixels.map((pixel) => {
+            const ratio = Math.max(0, Math.min(1, (pixel - top) / (bottom - top || 1)));
+            const rawValue = inverted
+              ? domain.min + ratio * (domain.max - domain.min)
+              : domain.max - ratio * (domain.max - domain.min);
+            return { pixel, value: roundAxisTick(rawValue, domain.step) };
+          })
+          : displayedTicks.map(value => ({ pixel: map(value), value }));
         axis.labels.forEach(({ node }, index) => {
-          const value = displayedTicks[index];
-          node.setAttribute('y', map(value) + 3);
-          node.textContent = axis.format ? axis.format(value) : formatAxisNumber(value);
+          const tick = alignedTicks[index];
+          if (!tick) { node.setAttribute('visibility', 'hidden'); return; }
+          node.removeAttribute('visibility');
+          node.setAttribute('y', tick.pixel + 3);
+          node.textContent = axis.format ? axis.format(tick.value) : formatAxisNumber(tick.value);
         });
         axis.gridLines.forEach((line, index) => {
           const value = displayedTicks[index];
+          if (!Number.isFinite(value)) { line.setAttribute('visibility', 'hidden'); return; }
+          line.removeAttribute('visibility');
           const pixel = map(value);
           line.setAttribute('y1', pixel);
           line.setAttribute('y2', pixel);
           line.classList.toggle('analysis-chart-zero-line', axis.zeroLine === true && value === 0);
         });
+        if (axis.side !== 'right') primaryTickPixels = alignedTicks.map(tick => tick.pixel);
       });
     };
     const schedule = () => { if (pending === null) pending = window.requestAnimationFrame(update); };
@@ -741,5 +779,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, formatAxisNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, setChartLegend, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, niceAxisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, formatAxisNumber, roundAxisTick, alignedSecondaryTicks, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, setChartLegend, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, niceAxisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

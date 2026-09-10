@@ -224,7 +224,35 @@ test('common axis domain keeps the data range primary and preserves zero for req
   assert.ok(largeRightAxis.ticks.every(value => value >= largeRightAxis.min && value <= largeRightAxis.max));
 });
 
+test('secondary-axis labels share the left-axis grid heights and use consistent precision', () => {
+  const utils = context.window.MacroWatchAnalysisChart;
+  const primaryTicks = [12, 10, 8];
+  const primaryY = value => 20 + (12 - value) * 40;
+  const secondary = { min: 4735.1, max: 8125.4, step: 678.06 };
+  const aligned = utils.alignedSecondaryTicks(primaryTicks, primaryY, secondary, 20, 180);
+  assert.deepEqual(aligned.map(tick => tick.y), [20, 100, 180]);
+  assert.ok(aligned.every(tick => Number.isInteger(tick.value)));
+  assert.deepEqual(aligned.map(tick => tick.value), [8125, 6430, 4735]);
+  const inverted = utils.alignedSecondaryTicks(primaryTicks, primaryY, { min: 65, max: 87, step: 4.4 }, 20, 180, true);
+  assert.deepEqual(inverted.map(tick => tick.value), [65, 76, 87]);
+});
+
+test('every dual-axis chart builds its right labels from the shared left-grid alignment', () => {
+  const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const usSmallBusiness = fs.readFileSync(path.join(__dirname, '../assets/js/charts/small-business-risk-chart.js'), 'utf8');
+  const koreaSmallBusiness = fs.readFileSync(path.join(__dirname, '../assets/js/charts/korea-small-business-risk-chart.js'), 'utf8');
+  assert.ok((dashboard.match(/alignedSecondaryTicks\(/g) || []).length >= 5);
+  assert.match(usSmallBusiness, /alignedSecondaryTicks\(riskTicks, riskY, optimismDomain/);
+  assert.match(koreaSmallBusiness, /alignedSecondaryTicks\(riskTicks, riskY, headlineDomain/);
+  assert.doesNotMatch([dashboard, usSmallBusiness, koreaSmallBusiness].join('\n'), /Domain\.ticks\.map\(\(value\) => `<text data-chart-right-axis/);
+});
+
 test('visible scaling updates only pinned axis labels so left and right slots are never doubled', () => {
   assert.match(source, /querySelectorAll\(':scope > svg\.analysis-chart-fixed-axis text'\)/);
   assert.doesNotMatch(source, /const labelTicks = displayedAxisTicks/);
+  assert.match(source, /gridLines: axis\.side === 'right' \? \[\] :/);
+  assert.match(source, /axis\.side === 'right' && primaryTickPixels\.length/);
+  assert.match(source, /if \(axis\.side !== 'right'\) primaryTickPixels = alignedTicks\.map/);
+  assert.match(source, /const displayedTicks = inverted \? domain\.ticks : \[\.\.\.domain\.ticks\]\.reverse\(\)/);
+  assert.match(source, /axis\.gridLines\.forEach\(\(line, index\)/);
 });

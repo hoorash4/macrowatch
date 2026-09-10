@@ -53,3 +53,11 @@ test('all-null series and a single observation retain finite chart coordinates',
   assert.doesNotMatch(h.chart.innerHTML,/NaN|Infinity/);
   assert.doesNotMatch(h.node('[data-axis-side="left"]').innerHTML,/NaN|Infinity/);
 });
+test('credit chart grid always follows the left axis and ignores right-axis ticks',()=>{
+  assert.match(source, /initialLeftTicks = \[\.\.\.highYieldScale\.ticks\]\.reverse\(\)/);
+  assert.match(source, /data-credit-y-grid/);
+  assert.match(source, /\[\.\.\.scales\[0\]\.ticks\]\.reverse\(\)\.forEach/);
+  assert.match(source, /yGridLines\.forEach\(\(line\) => line\.setAttribute\('visibility', 'hidden'\)\)/);
+  assert.match(source, /alignedRightTicksFor\(scales\[0\],scales\[2\]/);
+  assert.doesNotMatch(source, /const grids = Array\.from\(\{length:5\}/);
+});
