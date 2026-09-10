@@ -411,12 +411,15 @@
     }
     const step = (max - min) / count;
     const roundingQuantum = 10 ** Math.floor(Math.log10(Math.max(Math.abs(step), Number.EPSILON)));
+    const firstReadableTick = Math.ceil((min - roundingQuantum * 1e-10) / roundingQuantum) * roundingQuantum;
+    const lastReadableTick = Math.floor((max + roundingQuantum * 1e-10) / roundingQuantum) * roundingQuantum;
     const ticks = Array.from({ length: count + 1 }, (_, index) => {
       const raw = min + step * index;
       // Domain bounds retain the exact 10% plot padding. Only displayed tick
-      // values are rounded, so readable labels can never flatten the graph.
+      // values are rounded inward, so an endpoint never exposes a lone extra
+      // decimal merely because it is the calculated plot boundary.
       const rounded = Math.round(raw / roundingQuantum) * roundingQuantum;
-      const visible = rounded >= min && rounded <= max ? rounded : raw;
+      const visible = Math.max(firstReadableTick, Math.min(lastReadableTick, rounded));
       return Math.abs(visible) < roundingQuantum / 2 ? 0 : Number(visible.toPrecision(12));
     });
     if (min < 0 && max > 0 && !ticks.includes(0)) {

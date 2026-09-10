@@ -218,6 +218,10 @@ test('common axis domain keeps the data range primary and preserves zero for req
   assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(2), '2');
   const positive = axisDomain([5, 8]);
   assert.ok(!positive.ticks.includes(0), 'positive-only data does not force zero into the range');
+  assert.ok(positive.ticks.every(value => Number.isInteger(value * 10)), 'endpoint labels use the same decimal precision as interior ticks');
+  const largeRightAxis = axisDomain([5300, 8100]);
+  assert.ok(largeRightAxis.ticks.every(Number.isInteger), 'large-value endpoints do not expose a lone decimal place');
+  assert.ok(largeRightAxis.ticks.every(value => value >= largeRightAxis.min && value <= largeRightAxis.max));
 });
 
 test('visible scaling updates only pinned axis labels so left and right slots are never doubled', () => {
