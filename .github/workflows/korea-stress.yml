@@ -9,7 +9,7 @@ on:
       - supabase/migrations/20260825_add_korea_market_stress.sql
       - .github/workflows/korea-stress.yml
   schedule:
-    - cron: "20 21 * * *"
+    - cron: "10 4 * * *"
   workflow_dispatch:
     inputs:
       years:

@@ -9,7 +9,7 @@ on:
       - "supabase/functions/_shared/market/korea-foreign-flow.ts"
       - "supabase/functions/_shared/market/kis-client.ts"
   schedule:
-    - cron: "0 8 * * 1-5"
+    - cron: "20 7 * * 1-5"
   workflow_dispatch:
     inputs:
       backfill:
@@ -22,7 +22,7 @@ permissions:
   contents: read
 concurrency:
   group: macrowatch-korea-foreign-flow
-  # 코드 변경 직후의 백필은 이전 실행을 이어받으므로 중복 장기 실행을 남기지 않습니다.
+  # ì½ë ë³ê²½ ì§íì ë°±íì ì´ì  ì¤íì ì´ì´ë°ì¼ë¯ë¡ ì¤ë³µ ì¥ê¸° ì¤íì ë¨ê¸°ì§ ììµëë¤.
   cancel-in-progress: true
 
 jobs:
@@ -37,9 +37,9 @@ jobs:
           BACKFILL: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.backfill) || false }}
         run: |
           if [ "$BACKFILL" = "true" ]; then
-            # 같은 커밋의 Edge Function 배포가 끝난 뒤 이어받기 백필을 시작합니다.
+            # ê°ì ì»¤ë°ì Edge Function ë°°í¬ê° ëë ë¤ ì´ì´ë°ê¸° ë°±íì ììí©ëë¤.
             sleep 90
-            # 표시 구간은 5년이지만 첫 화면 시점의 3년 이동 Z점수 계산을 위해 원자료는 8년을 확보합니다.
+            # íì êµ¬ê°ì 5ëì´ì§ë§ ì²« íë©´ ìì ì 3ë ì´ë Zì ì ê³ì°ì ìí´ ììë£ë 8ëì íë³´í©ëë¤.
             start="$(date -u -d '8 years ago - 1 month' +%Y-%m-01)"
             final="$(date -u +%Y-%m-%d)"
             while [ "$start" \< "$final" ]; do
