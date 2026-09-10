@@ -128,6 +128,12 @@
       if (scaleFrame === null) scaleFrame = window.requestAnimationFrame(updateVisibleScale);
     }, { passive: true });
     chartUtils.scrollToLatest(frame);
+    // The policy panel can be rendered while its dashboard view is hidden.
+    // Mounting then sees the provisional frame width, so settle once more
+    // after the SVG and the panel have both received their final dimensions.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      chartUtils.scrollToLatest(frame);
+    }));
     window.requestAnimationFrame(updateVisibleScale);
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
