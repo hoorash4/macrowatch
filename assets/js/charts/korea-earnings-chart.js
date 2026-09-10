@@ -239,14 +239,6 @@
     const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
     const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
     const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, xAxisMode: spec.includeZero ? 'zero' : 'bottom', showScrollbar: spec.kind === 'amount', leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${zeroLine}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg>` });
-    const { legendItem, seriesStyles } = window.MacroWatchAnalysisChart;
-    const legend = metricSeries.map(metric => {
-      const base = seriesStyles[metric.key === 'operating_income' ? 'operatingIncome' : 'netIncome'];
-      const style = { ...base, dash: spec.kind === 'qoq' ? '6 4' : '' };
-      return legendItem(metric.label, style) + (metric.segments.some(segment => segment.key === 'provisional')
-        ? legendItem(`${metric.label} 잠정치`, { ...style, dash: '6 4', opacity: .82 }) : '');
-    }).join('');
-    container.insertAdjacentHTML('beforeend', `<div class="policy-expectation-legend" aria-label="${spec.key} 범례">${legend}</div>`);
     const hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
@@ -358,6 +350,19 @@
       const container = market.root?.querySelector(`[data-earnings-chart="${chart.key}"]`);
       if (container) container.innerHTML = `<div class="analysis-empty-state-light flex min-h-40 items-center justify-center border border-dashed p-5 text-sm text-slate-500">${message}</div>`;
     });
+    chartUtils.setChartLegend(market.root?.querySelector('[data-earnings-legend]'), []);
+  }
+
+  function renderSharedLegend(market, points) {
+    const provisional = points.some((point) => point.lifecycleStatus !== 'complete');
+    const items = METRICS.flatMap((metric) => {
+      const style = chartUtils.seriesStyles[metric.key === 'operating_income' ? 'operatingIncome' : 'netIncome'];
+      return [
+        { label: metric.label, style },
+        ...(provisional ? [{ label: `${metric.label} 잠정치`, style: { ...style, dash: '6 4', opacity: .82 } }] : []),
+      ];
+    });
+    chartUtils.setChartLegend(market.root?.querySelector('[data-earnings-legend]'), items, '영업이익·순이익 공통 범례');
   }
 
   function render(market) {
@@ -367,6 +372,7 @@
     const points = visiblePoints(market);
     if (!points.length) { setStatus(market, `비교 가능한 ${market.label} 시총 상위기업 실적이 아직 없습니다.`); return; }
     updateSummary(market, points);
+    renderSharedLegend(market, points);
     const charts = CHARTS.map((chart) => renderChart(market, chart, points)).filter(Boolean);
     synchronizeFrames(charts.map((chart) => chart.frame));
     synchronizeCursors(charts, market.root);

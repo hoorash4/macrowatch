@@ -669,6 +669,14 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     return `<span class="chart-legend-item"><svg class="chart-legend-swatch" width="32" height="10" viewBox="0 0 32 10" aria-hidden="true">${swatch}</svg>${safeLabel}</span>`;
   }
 
+  function setChartLegend(container, items, ariaLabel = '그래프 범례') {
+    if (!container) return;
+    container.classList.add('analysis-chart-legend');
+    container.setAttribute('aria-label', ariaLabel);
+    container.innerHTML = (items || []).map((item) => legendItem(item.label, item.style)).join('');
+    container.hidden = !items?.length;
+  }
+
   function initializeLegends() {
     document.querySelectorAll('[data-chart-legend]').forEach(item => {
       const style = seriesStyles[item.dataset.chartLegend];
@@ -676,5 +684,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, setChartLegend, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

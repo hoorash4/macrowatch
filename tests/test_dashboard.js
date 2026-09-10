@@ -380,6 +380,9 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /chartUtils\.chartFrameWidth\(containerWidth, PROFILE\.axisMode\)/);
   assert.match(source, /chartUtils\.historyWidth\(points, 'periodDate', market\.state\.years, frameWidth\)/);
   assert.match(source, /data-korea-earnings-zero-line/);
+  assert.equal((html.match(/data-earnings-legend/g) || []).length, 2, '기업이익 카드마다 전체 그래프 공통 범례를 한 곳만 둔다');
+  assert.match(source, /setChartLegend\(market\.root\?\.querySelector\('\[data-earnings-legend\]'\), items, '영업이익·순이익 공통 범례'\)/);
+  assert.doesNotMatch(source, /aria-label="\$\{spec\.key\} 범례"/);
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /data-market-earnings-select/);
   assert.match(html, /<option value="kr_largecap">KOSPI 100<\/option>/);

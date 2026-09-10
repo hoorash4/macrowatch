@@ -1033,7 +1033,9 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-year-label { fill:#64748b; font-size:12px; font-weight:400; }
 .analysis-chart-axis-line,
 .analysis-chart-zero-line { stroke:#94a3b8; stroke-width:1; vector-effect:non-scaling-stroke; shape-rendering:crispEdges; }
+.analysis-chart-legend,
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
+.analysis-chart-legend span,
 .policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
 
 /* 합산 금액 본차트와 이익률·증가율 보조차트는 하나의 분석 배경 안에서 같은 시점을 공유합니다. */

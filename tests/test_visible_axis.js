@@ -40,6 +40,25 @@ test('common chart frame width includes the fixed boundary axes', () => {
   assert.equal(utils.timelineWidth(867, start, end, 'max'), 867);
 });
 
+test('common legend renderer owns legend markup and visibility', () => {
+  const utils = context.window.MacroWatchAnalysisChart;
+  const classes = new Set();
+  const attributes = {};
+  const container = {
+    classList: { add: (value) => classes.add(value) },
+    setAttribute: (key, value) => { attributes[key] = value; },
+    innerHTML: '',
+    hidden: true,
+  };
+  utils.setChartLegend(container, [{ label: '영업이익', style: utils.seriesStyles.operatingIncome }], '공통 범례');
+  assert.ok(classes.has('analysis-chart-legend'));
+  assert.equal(attributes['aria-label'], '공통 범례');
+  assert.match(container.innerHTML, /영업이익/);
+  assert.equal(container.hidden, false);
+  utils.setChartLegend(container, []);
+  assert.equal(container.hidden, true);
+});
+
 test('chart numbers share a two-decimal maximum without trailing zeroes', () => {
   const format = context.window.MacroWatchAnalysisChart.formatChartNumber;
   assert.equal(format(12.345), '12.35');
