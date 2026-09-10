@@ -507,6 +507,14 @@ test('결정적 뉴스는 같은 주의 동일 사건 키를 기사 수와 무�
   assert.equal(result.count, 3);
 });
 
+test('사건 키 마이그레이션 전 결정적 뉴스 건수는 기존 집계를 유지한다', () => {
+  const aggregate = dashboard.window.MacroWatchChartUtils.aggregateWeeklyDecisiveNews;
+  const result = aggregate([
+    { article_date: '2026-08-24', decisive_news_count: 2, decisive_news_event_keys: [], decisive_news_legacy_count: 0 },
+  ], new Date('2026-08-24T03:00:00Z'));
+  assert.equal(result.count, 2);
+});
+
 test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나란히 배치한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');

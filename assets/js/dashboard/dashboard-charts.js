@@ -111,12 +111,13 @@ function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
     const keys = Array.isArray(row.decisive_news_event_keys)
       ? row.decisive_news_event_keys.map((key) => String(key).trim()).filter(Boolean)
       : [];
-    if (keys.length || Object.prototype.hasOwnProperty.call(row, 'decisive_news_legacy_count')) {
+    const storedLegacyCount = Number(row.decisive_news_legacy_count || 0);
+    if (keys.length || storedLegacyCount > 0) {
       keys.forEach((key) => eventKeys.add(key));
-      legacyCount += Number(row.decisive_news_legacy_count || 0);
+      legacyCount += storedLegacyCount;
       return;
     }
-    // 사건 키 도입 전 저장된 날짜는 원문을 보관하지 않아 의미 기준 재분류가 불가능하다.
+    // 마이그레이션 전 행은 새 열의 기본값만 가진다. 원문을 보관하지 않아 의미 기준 재분류는 하지 않는다.
     legacyCount += Number(row.decisive_news_count || 0);
   });
   return {
