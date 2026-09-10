@@ -23,6 +23,7 @@ const ARTICLE_SCHEMA = {
           uncertain_summary: { anyOf: [{ type: "string" }, { type: "null" }] },
           extreme_signal: { anyOf: [{ type: "string", enum: ["decisive"] }, { type: "null" }] },
           extreme_keywords: { type: "array", items: { type: "string" }, maxItems: 3 },
+          extreme_event_key: { anyOf: [{ type: "string", maxLength: 96 }, { type: "null" }] },
         },
         required: [
           "item_hash",
@@ -32,6 +33,7 @@ const ARTICLE_SCHEMA = {
           "uncertain_summary",
           "extreme_signal",
           "extreme_keywords",
+          "extreme_event_key",
         ],
       },
     },
@@ -54,17 +56,19 @@ function systemPrompt(extremeRules: ExtremeNewsRule[]) {
 
   const criteria = criteriaText(extremeRules);
   const withoutLegacyCandidates = prompt.replace(/\{\{news_candidates\}\}/gi, "").trim();
+  const eventKeyRule = `\n\n## [결정적 뉴스 사건 키]\n결정적 뉴스(extreme_signal=decisive)에는 같은 사건을 여러 기사에서 하나로 묶기 위한 extreme_event_key를 반드시 작성한다. 기사 제목을 복사하지 말고, 핵심 주체·사건·현재 상태를 짧고 일관된 한국어 명사구로 정리한다. 입력의 existing_decisive_event_keys 중 같은 실제 사건이 있으면 그 키를 정확히 재사용한다. 단순히 같은 주제·업종·위험 유형이라는 이유만으로 다른 사건을 같은 키로 묶지 않는다. 결정적 뉴스가 아니면 extreme_event_key는 null이다.`;
   if (withoutLegacyCandidates.includes("{{EXTREME_SIGNAL_CRITERIA}}")) {
-    return withoutLegacyCandidates.replace(/\{\{EXTREME_SIGNAL_CRITERIA\}\}/g, criteria);
+    return withoutLegacyCandidates.replace(/\{\{EXTREME_SIGNAL_CRITERIA\}\}/g, criteria) + eventKeyRule;
   }
 
   // 구버전 프롬프트도 동작하게 하되 판단 규칙을 중복해서 덧붙이지 않는다.
-  return `${withoutLegacyCandidates}\n\n## [관리자 등록 기준]\n${criteria}`;
+  return `${withoutLegacyCandidates}\n\n## [관리자 등록 기준]\n${criteria}${eventKeyRule}`;
 }
 
-function candidatePrompt(candidates: Candidate[], marketContext: MarketContext | null) {
+function candidatePrompt(candidates: Candidate[], marketContext: MarketContext | null, existingDecisiveEventKeys: string[]) {
   return JSON.stringify({
     market_context: marketContext,
+    existing_decisive_event_keys: existingDecisiveEventKeys,
     news_candidates: candidates.map(({ source, itemHash, publishedAt, text }) => ({
       source,
       item_hash: itemHash,
@@ -98,6 +102,12 @@ function cleanKeywords(value: unknown) {
     : [];
 }
 
+function cleanEventKey(value: unknown) {
+  if (typeof value !== "string") return null;
+  const key = value.replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+  return key ? key.slice(0, 96) : null;
+}
+
 function parseOutput(item: Record<string, unknown>): ArticleSentiment {
   const sentiment = SENTIMENTS.includes(item.sentiment as typeof SENTIMENTS[number])
     ? item.sentiment as ArticleSentiment["sentiment"]
@@ -111,6 +121,7 @@ function parseOutput(item: Record<string, unknown>): ArticleSentiment {
     uncertainSummary: item.uncertain_summary === null ? null : String(item.uncertain_summary).trim() || null,
     extremeSignal,
     extremeKeywords: extremeSignal ? cleanKeywords(item.extreme_keywords) : [],
+    extremeEventKey: extremeSignal ? cleanEventKey(item.extreme_event_key) : null,
   };
 }
 
@@ -120,6 +131,7 @@ function normalizeOutput(output: ArticleSentiment): ArticleSentiment {
   const normalized = {
     ...output,
     extremeKeywords: output.extremeSignal ? output.extremeKeywords : [],
+    extremeEventKey: output.extremeSignal ? output.extremeEventKey : null,
   };
   if (normalized.excludeFromIndex) {
     return { ...normalized, sentiment: "neutral", keywords: [], uncertainSummary: null };
@@ -135,6 +147,7 @@ async function requestAnalysis(
   candidates: Candidate[],
   marketContext: MarketContext | null,
   extremeRules: ExtremeNewsRule[],
+  existingDecisiveEventKeys: string[],
 ) {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
@@ -148,7 +161,7 @@ async function requestAnalysis(
       prompt_cache_key: "macrowatch-article-sentiment-v10",
       input: [
         { role: "system", content: [{ type: "input_text", text: systemPrompt(extremeRules) }] },
-        { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext) }] },
+        { role: "user", content: [{ type: "input_text", text: candidatePrompt(candidates, marketContext, existingDecisiveEventKeys) }] },
       ],
       text: { format: { type: "json_schema", name: "article_sentiment", strict: true, schema: ARTICLE_SCHEMA } },
     }),
@@ -168,8 +181,8 @@ async function requestAnalysis(
   }
 }
 
-async function analyzeOne(candidate: Candidate, marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[]) {
-  const output = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext, extremeRules);
+async function analyzeOne(candidate: Candidate, marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[], existingDecisiveEventKeys: string[]) {
+  const output = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext, extremeRules, existingDecisiveEventKeys);
   if (output.length !== 1) throw new AnalysisFormatError("기사별 분석 결과가 하나가 아닙니다.");
   return normalizeOutput({ ...output[0], itemHash: candidate.itemHash });
 }
@@ -178,17 +191,18 @@ export async function analyzeCandidates(
   candidates: Candidate[],
   marketContext: MarketContext | null,
   extremeRules: ExtremeNewsRule[],
+  existingDecisiveEventKeys: string[] = [],
 ) {
   if (!candidates.length) return [];
 
   let outputs: ArticleSentiment[];
   try {
-    outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext, extremeRules);
+    outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext, extremeRules, existingDecisiveEventKeys);
   } catch (error) {
     // 네트워크·인증 오류에는 무의미한 반복 호출을 하지 않는다.
     // 구조화 출력 형식만 깨진 경우에 한해 기사별로 한 번씩 복구한다.
     if (!(error instanceof AnalysisFormatError) || candidates.length === 1) throw error;
-    return Promise.all(candidates.map((candidate) => analyzeOne(candidate, marketContext, extremeRules)));
+    return Promise.all(candidates.map((candidate) => analyzeOne(candidate, marketContext, extremeRules, existingDecisiveEventKeys)));
   }
 
   const expectedHashes = new Set(candidates.map((candidate) => candidate.itemHash));
@@ -199,7 +213,7 @@ export async function analyzeCandidates(
 
   // 잘못된 해시나 중복 응답 때문에 정상 기사까지 다시 호출하지 않고 누락 기사만 복구한다.
   const missing = candidates.filter((candidate) => !byHash.has(candidate.itemHash));
-  const recovered = await Promise.all(missing.map((candidate) => analyzeOne(candidate, marketContext, extremeRules)));
+  const recovered = await Promise.all(missing.map((candidate) => analyzeOne(candidate, marketContext, extremeRules, existingDecisiveEventKeys)));
   recovered.forEach((output) => byHash.set(output.itemHash, output));
 
   return candidates.map((candidate) => {

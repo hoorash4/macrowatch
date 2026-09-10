@@ -497,6 +497,16 @@ test('결정적 뉴스는 수집일 기준 한국시간 월요일부터 일요�
   assert.deepEqual([...result.keywords], ['신용경색', '환율']);
 });
 
+test('결정적 뉴스는 같은 주의 동일 사건 키를 기사 수와 무관하게 한 건으로 센다', () => {
+  const aggregate = dashboard.window.MacroWatchChartUtils.aggregateWeeklyDecisiveNews;
+  const result = aggregate([
+    { article_date: '2026-08-24', decisive_news_count: 2, decisive_news_event_keys: ['은행 유동성 지원'], decisive_news_legacy_count: 1 },
+    { article_date: '2026-08-26', decisive_news_count: 1, decisive_news_event_keys: ['은행 유동성 지원'], decisive_news_legacy_count: 0 },
+    { article_date: '2026-08-27', decisive_news_count: 1, decisive_news_event_keys: ['원유 공급 차질'], decisive_news_legacy_count: 0 },
+  ], new Date('2026-08-27T03:00:00Z'));
+  assert.equal(result.count, 3);
+});
+
 test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나란히 배치한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');

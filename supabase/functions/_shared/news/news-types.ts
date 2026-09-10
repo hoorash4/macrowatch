@@ -23,4 +23,5 @@ export type ArticleSentiment = {
   uncertainSummary: string | null;
   extremeSignal: ExtremeSignal;
   extremeKeywords: string[];
+  extremeEventKey: string | null;
 };

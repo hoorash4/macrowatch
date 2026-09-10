@@ -102,6 +102,8 @@ jobs:
             --file supabase/migrations/20260909141525_add_kr_small_business_risk.sql
           psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
             --file supabase/migrations/20260910011500_use_ecos_sme_delinquency.sql
+          psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 \
+            --file supabase/migrations/20260910043000_add_decisive_news_event_keys.sql
 
       - name: Deploy Edge Functions
         run: |

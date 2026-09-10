@@ -188,6 +188,25 @@ async function loadExtremeRules(supabase: ServerClient): Promise<ExtremeNewsRule
   return (data || []).filter((item) => item.signal === "decisive")
     .map((item) => ({ id: String(item.id), signal: item.signal, phrase: String(item.phrase) }));
 }
+
+function weekStart(articleDate: string) {
+  const date = new Date(`${articleDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) throw new Error("뉴스 집계일 형식이 올바르지 않습니다.");
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+async function loadWeeklyDecisiveEventKeys(supabase: ServerClient, articleDate: string) {
+  const { data, error } = await supabase.from("news_extreme_matches")
+    .select("event_key")
+    .eq("extreme_signal", "decisive")
+    .gte("article_date", weekStart(articleDate))
+    .lte("article_date", articleDate)
+    .not("event_key", "is", null);
+  if (error) throw error;
+  return [...new Set((data || []).map((row) => String(row.event_key || "").trim()).filter(Boolean))].slice(0, 100);
+}
+
 async function refreshDailySentiment(supabase: ServerClient, articleDate: string, excludedIncrement = 0) {
   const { data, error } = await supabase.from("news_article_sentiments")
     .select("ai_sentiment,admin_sentiment")
@@ -198,11 +217,13 @@ async function refreshDailySentiment(supabase: ServerClient, articleDate: string
     counts[(row.admin_sentiment || row.ai_sentiment) as keyof typeof counts] += 1;
   }
   const { data: extremeRows, error: extremeError } = await supabase.from("news_extreme_matches")
-    .select("extreme_signal,keywords")
+    .select("extreme_signal,keywords,event_key")
     .eq("article_date", articleDate);
   if (extremeError) throw extremeError;
   const decisiveRows = (extremeRows || []).filter((row) => row.extreme_signal === "decisive");
-  const decisiveCount = decisiveRows.length;
+  const decisiveEventKeys = [...new Set(decisiveRows.map((row) => String(row.event_key || "").trim()).filter(Boolean))];
+  const decisiveLegacyCount = decisiveRows.filter((row) => !String(row.event_key || "").trim()).length;
+  const decisiveCount = decisiveEventKeys.length + decisiveLegacyCount;
   const decisiveKeywords = [...new Set(decisiveRows.flatMap((row) => Array.isArray(row.keywords)
     ? row.keywords.map(String).map((keyword) => keyword.trim()).filter(Boolean)
     : []))].slice(0, 8);
@@ -219,6 +240,8 @@ async function refreshDailySentiment(supabase: ServerClient, articleDate: string
     uncertain_count: counts.uncertain,
     decisive_news_count: decisiveCount,
     decisive_news_keywords: decisiveKeywords,
+    decisive_news_event_keys: decisiveEventKeys,
+    decisive_news_legacy_count: decisiveLegacyCount,
     excluded_count: (existing?.excluded_count || 0) + excludedIncrement,
     analyzed_article_count: (data || []).length,
     generated_at: new Date().toISOString(),
@@ -278,6 +301,7 @@ function buildExtremeMatches(outputs: ArticleSentiment[], articleDate: string, n
       article_hash: output.itemHash,
       extreme_signal: output.extremeSignal,
       keywords: output.extremeKeywords,
+      event_key: output.extremeEventKey,
       created_at: now,
     }));
 }
@@ -373,8 +397,10 @@ Deno.serve(async (request) => {
     const extremeRules = await loadExtremeRules(serverClient());
     stage = "시장 맥락 조회";
     const { context: marketContext, warning: marketContextWarning } = await loadMarketContext();
+    stage = "기존 결정적 뉴스 사건 조회";
+    const existingDecisiveEventKeys = dryRun ? [] : await loadWeeklyDecisiveEventKeys(serverClient(), runDate);
     stage = "AI 분석";
-    const outputs = await analyzeCandidates(batch, marketContext, extremeRules);
+    const outputs = await analyzeCandidates(batch, marketContext, extremeRules, existingDecisiveEventKeys);
     stage = "결과 저장";
     const hasMore = offset + batch.length < candidates.length;
     const persisted = dryRun

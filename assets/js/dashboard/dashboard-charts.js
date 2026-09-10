@@ -105,8 +105,22 @@ function aggregateWeeklyDecisiveNews(rows, now = new Date()) {
     if (!Number.isFinite(storedDate)) return false;
     return storedDate >= weekStart && storedDate < weekEnd;
   });
+  const eventKeys = new Set();
+  let legacyCount = 0;
+  weeklyRows.forEach((row) => {
+    const keys = Array.isArray(row.decisive_news_event_keys)
+      ? row.decisive_news_event_keys.map((key) => String(key).trim()).filter(Boolean)
+      : [];
+    if (keys.length || Object.prototype.hasOwnProperty.call(row, 'decisive_news_legacy_count')) {
+      keys.forEach((key) => eventKeys.add(key));
+      legacyCount += Number(row.decisive_news_legacy_count || 0);
+      return;
+    }
+    // 사건 키 도입 전 저장된 날짜는 원문을 보관하지 않아 의미 기준 재분류가 불가능하다.
+    legacyCount += Number(row.decisive_news_count || 0);
+  });
   return {
-    count: weeklyRows.reduce((sum, row) => sum + Number(row.decisive_news_count || 0), 0),
+    count: eventKeys.size + legacyCount,
     keywords: normalizeDecisiveNewsKeywords(weeklyRows.flatMap((row) => row.decisive_news_keywords || [])),
   };
 }
@@ -220,7 +234,7 @@ async function loadNewsSentimentDashboard() {
   if (!chart || !supabaseClient) return;
   try {
     const { data, error } = await supabaseClient.from('news_daily_article_sentiment')
-      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count,decisive_news_count,decisive_news_keywords')
+      .select('article_date,positive_count,negative_count,neutral_count,uncertain_count,decisive_news_count,decisive_news_keywords,decisive_news_event_keys,decisive_news_legacy_count')
       .order('article_date', { ascending: false })
       .limit(NEWS_SENTIMENT_HISTORY_DAYS);
     if (error) throw error;
