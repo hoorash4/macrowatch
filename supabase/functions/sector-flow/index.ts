@@ -18,13 +18,10 @@ type StoredSectorPrice = {
 type StoredRankingAnchor = { etf_id: string; rank: number | string; previous_rank: number | string | null; top10_streak: number | string };
 type StoredMarketPrice = { market_date: string; close: number | string };
 
-
-
 function kstDate() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
-// Supabase Data API의 기본 행 제한을 넘는 가격 이력도 빠짐없이 읽습니다.
 async function loadSectorPriceHistory(admin: SupabaseClient, historyStart: string) {
   const allRows: StoredSectorPrice[] = [];
   for (let from = 0;; from += DATABASE_PAGE_SIZE) {
@@ -42,7 +39,6 @@ async function loadSectorPriceHistory(admin: SupabaseClient, historyStart: strin
   return allRows;
 }
 
-// 6주 재계산 전부터 이어진 TOP 10 기록과 직전 순위를 보관 구간의 첫 주에 연결합니다.
 function stitchRebuiltRankings(rankings: SectorRanking[], anchors: StoredRankingAnchor[]) {
   const anchorByEtf = new Map(anchors.map((row) => [row.etf_id, row]));
   const weeks = [...new Set(rankings.map((row) => row.weekStart))].sort();
@@ -73,7 +69,6 @@ function stitchRebuiltRankings(rankings: SectorRanking[], anchors: StoredRanking
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
   try {
-    // 배포 기본값인 Supabase 게이트웨이 JWT 검증을 통과한 서버 요청만 여기까지 도달한다.
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stage = body.stage === "open" ? "open" : body.stage === "intraday" ? "intraday" : body.stage === "close" ? "close" : null;
     const rebuildOnly = body.rebuild_only === true;
@@ -97,8 +92,6 @@ Deno.serve(async (request) => {
     const holdings: Record<string, unknown>[] = [], holdingRefreshIds: string[] = [];
     const holdingFailures: Array<{ ticker: string; error: string }> = [];
     let benchmarkRefreshFailure: string | null = null;
-    // 등록 도중 KIS가 일부 일봉만 반환해도 다음 정기 수집에서 자동 복구합니다.
-    // 보관 구간의 국내 거래일 달력은 정상 수집된 다른 ETF들의 합집합을 사용합니다.
     const existingPrices = await loadSectorPriceHistory(admin, retentionStart);
     const missingHistoryIds = incompletePriceHistoryIds(
       registry.map((item) => item.id),
@@ -110,7 +103,6 @@ Deno.serve(async (request) => {
       const runKisRequest = createKisRequestRunner();
       for (const item of registry) {
         try {
-          // 정상 종목은 당일만 조회하고, 새로 등록되어 이력이 부족한 종목만 보관 구간을 초기화합니다.
           const needsHistoryInitialization = missingHistoryIds.has(item.id);
           const priceStart = needsHistoryInitialization ? new Date(`${retentionStart}T00:00:00Z`) : end;
           const candles = await runKisRequest(() => fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end));
@@ -119,7 +111,6 @@ Deno.serve(async (request) => {
             : null;
           for (const candle of candles) {
             const isToday = candle.marketDate === today;
-            // 장중 수집은 일봉으로 거래일을 확인한 뒤 ETF 현재가 API 값을 사용한다.
             const latestPrice = isToday && intradayQuote ? intradayQuote.current
               : isToday && stage === "open" ? candle.open : candle.close;
             collected.push({
@@ -163,7 +154,6 @@ Deno.serve(async (request) => {
           })), { onConflict: "index_code,market_date" });
           if (benchmarkError) throw benchmarkError;
         } catch (error) {
-          // 기존 KOSPI 공용 시계열로 계산을 계속하되, 응답에는 최신화 실패를 명시합니다.
           benchmarkRefreshFailure = error instanceof Error ? error.message : String(error);
         }
       }
@@ -183,13 +173,8 @@ Deno.serve(async (request) => {
       }
     }
 
-    // 종가가 정상 반영된 뒤에만 10주 범위를 벗어난 원본 가격을 정리합니다.
-    if (stage === "close" && !rebuildOnly) {
-      const { error: retentionError } = await admin.from("market_sector_etf_prices")
-        .delete().lt("market_date", retentionStart);
-      if (retentionError) throw retentionError;
-    }
-
+    // Retention cleanup is intentionally excluded from automatic collection.
+    // Historical deletion belongs to an explicit maintenance operation.
     const prices = await loadSectorPriceHistory(admin, retentionStart);
     const normalized: SectorPrice[] = prices.map((row) => ({
       etfId: row.etf_id, marketDate: row.market_date, openPrice: Number(row.open_price),
@@ -243,10 +228,6 @@ Deno.serve(async (request) => {
         calculated_at: new Date().toISOString(),
       })));
       if (rankingError) throw rankingError;
-    }
-    if (stage === "close" && !rebuildOnly) {
-      const { error: oldRankingError } = await admin.from("market_sector_weekly_rankings").delete().lt("week_start", rankingRetentionStart);
-      if (oldRankingError) throw oldRankingError;
     }
     return json({
       ok: true, stage, rebuild_only: rebuildOnly,
