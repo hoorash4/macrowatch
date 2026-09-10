@@ -65,7 +65,7 @@
   }
   function formatAxis(value, kind, currency) {
     if (kind === 'amount') return formatAmount(value, currency);
-    return chartUtils.formatChartNumber(Math.abs(value) < Number.EPSILON ? 0 : value);
+    return chartUtils.formatAxisNumber(value);
   }
   function quarterDate(year, quarter) {
     return `${year}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}-01`;
@@ -126,9 +126,8 @@
 
   // 각 차트가 자기 단위와 현재 표시 구간에 맞는 Y축을 독립적으로 사용합니다.
   function axisDomain(values, { includeZero = false, targetIntervals = 4 } = {}) {
-    const base = window.MacroWatchAnalysisChart.axisDomain(values, { includeZero });
-    if (!base) return { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1] };
-    return { ...base, ticks: chartUtils.axisTicks(base, targetIntervals) };
+    return chartUtils.niceAxisDomain(values, { includeZero, targetIntervals })
+      || { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1], step: .5 };
   }
 
   function provisionalEdgeStates(points) {
@@ -206,7 +205,7 @@
       .flatMap((point) => chartMetrics.map((metric) => chartValue(point, metric.key, spec)))
       .filter(Number.isFinite), { includeZero: spec.includeZero });
     const domain = domainFor(points);
-    const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 16 };
+    const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 0 };
     const containerWidth = container.clientWidth || MIN_WIDTH;
     const frameWidth = chartUtils.chartFrameWidth(containerWidth, PROFILE.axisMode);
     const chartWidth = chartUtils.historyWidth(points, 'periodDate', market.state.years, frameWidth);

@@ -41,10 +41,10 @@
     const optimismDomain = utils.axisDomain(optimismValues, { minimumSpan: 5 });
     const riskY = value => PADDING.top + (riskDomain.max - value) / (riskDomain.max - riskDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
     const optimismY = value => PADDING.top + (value - optimismDomain.min) / (optimismDomain.max - optimismDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
-    const riskTicks = Array.from({ length: 5 }, (_, index) => riskDomain.max - (riskDomain.max - riskDomain.min) * index / 4);
-    const optimismTicks = Array.from({ length: 5 }, (_, index) => optimismDomain.max - (optimismDomain.max - optimismDomain.min) * index / 4);
-    const grid = riskTicks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatChartNumber(value, { maximumFractionDigits: 0 })}</text>`).join('');
-    const rightAxis = optimismTicks.map(value => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${optimismY(value) + 4}" text-anchor="start" fill="#64748b" font-size="10">${utils.formatChartNumber(value, { maximumFractionDigits: 0 })}</text>`).join('');
+    const riskTicks = [...riskDomain.ticks].reverse();
+    const optimismTicks = [...optimismDomain.ticks].reverse();
+    const grid = riskTicks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`).join('');
+    const rightAxis = optimismTicks.map(value => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${optimismY(value) + 4}" text-anchor="start" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`).join('');
     const years = [...new Set(rows.map(row => String(row.month).slice(0, 4)))];
     const guides = years.map(year => {
       const point = rows.find(row => String(row.month).startsWith(year));
@@ -68,13 +68,13 @@
         y: riskY,
         points: rows.map(row => ({ x: x(row), value: Number(row.risk_index) })),
         selector: '[data-small-business-risk-line]',
-        format: value => utils.formatChartNumber(value, { maximumFractionDigits: 0 }),
+        format: value => utils.formatAxisNumber(value),
       }, {
         side: 'right',
         y: optimismY,
         points: optimismRows.map(row => ({ x: x(row), value: Number(row.optimism_index) })),
         selector: '[data-small-business-optimism-line]',
-        format: value => utils.formatChartNumber(value, { maximumFractionDigits: 0 }),
+        format: value => utils.formatAxisNumber(value),
       }],
     });
     const frame = host.querySelector('[data-history-scroll]');

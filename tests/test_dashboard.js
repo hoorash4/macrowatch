@@ -367,7 +367,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.ok(rateDomain.min > 0, '증가율축은 0에 고정하지 않고 현재 자료 범위에 맞춘다');
   assert.ok(rateDomain.min < 20, '증가율축 하단에는 최소한의 시각 여백만 둔다');
   assert.ok(rateDomain.max > 30, '증가율축 상단은 표시 자료에 맞춰 자동 조정한다');
-  assert.equal((30 - 20) / (rateDomain.max - rateDomain.min), 0.8, '표시 자료가 상하 10% 여백을 제외한 높이를 사용한다');
+  assert.ok(rateDomain.ticks.every(value => Number.isInteger(value / rateDomain.step)), '증가율축은 공통 라운드 눈금을 사용한다');
   const qoqDomain = context.window.MacroWatchKoreaEarnings.axisDomain([-8, 20], { includeZero: true });
   const qoqTickGaps = qoqDomain.ticks.slice(1).map((tick, index) => Number((tick - qoqDomain.ticks[index]).toPrecision(10)));
   assert.equal(new Set(qoqTickGaps).size, 1, '계절조정 QoQ 눈금은 0 부근에 몰리지 않고 같은 간격을 사용한다');
@@ -379,6 +379,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.equal(context.window.MacroWatchKoreaEarnings.pointsForRange(quarterlyHistory, 'max').length, quarterlyHistory.length);
   assert.match(source, /chartUtils\.chartFrameWidth\(containerWidth, PROFILE\.axisMode\)/);
   assert.match(source, /chartUtils\.historyWidth\(points, 'periodDate', market\.state\.years, frameWidth\)/);
+  assert.match(source, /bottom: spec\.showPeriodLabels \? 42 : 0/, '보조지표 Y축은 그래프 하단까지 이어진다');
   assert.match(source, /data-korea-earnings-zero-line/);
   assert.equal((html.match(/data-earnings-legend/g) || []).length, 2, '기업이익 카드마다 전체 그래프 공통 범례를 한 곳만 둔다');
   assert.match(source, /setChartLegend\(market\.root\?\.querySelector\('\[data-earnings-legend\]'\), items, '영업이익·순이익 공통 범례'\)/);

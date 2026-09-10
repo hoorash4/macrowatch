@@ -200,14 +200,29 @@ test('missing values are not zero and flat data retains a finite span', () => {
   assert.equal(domain([{ x: 0, value: null }], 0, 1), null);
 });
 
-test('common axis domain reserves ten percent at both plot edges', () => {
+test('common axis domain expands to round ticks and preserves zero when visible', () => {
   const linear = axisDomain([20, 100]);
-  assert.ok(Math.abs((100 - 20) / (linear.max - linear.min) - .8) < 1e-12);
-  assert.ok(Math.abs((20 - linear.min) / (linear.max - linear.min) - .1) < 1e-12);
-  assert.ok(Math.abs((linear.max - 100) / (linear.max - linear.min) - .1) < 1e-12);
+  assert.ok(linear.min < 20 && linear.max > 100);
+  assert.ok(linear.ticks.every(value => Number.isInteger(value / linear.step)));
   const zeroAxis = axisDomain([10, 40], { includeZero: true });
   assert.ok(zeroAxis.min < 0);
+  assert.ok(zeroAxis.ticks.includes(0));
   const symmetric = axisDomain([-20, 100], { symmetric: true });
   assert.equal(symmetric.min, -symmetric.max);
+  assert.ok(symmetric.ticks.includes(0));
+  const decimal = axisDomain([-.31, .44], { includeZero: true });
+  assert.ok(decimal.ticks.includes(0));
+  assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(.24), '0.2');
+  assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(2), '2');
+});
+
+test('limited fixed-axis slots retain the zero tick', () => {
+  const ticks = context.window.MacroWatchAnalysisChart.displayedAxisTicks(
+    { ticks: [-30, -20, -10, 0, 10, 20, 30] },
+    5,
+  );
+  assert.ok(ticks.includes(0));
+  assert.equal(ticks[0], -30);
+  assert.equal(ticks.at(-1), 30);
 });
 

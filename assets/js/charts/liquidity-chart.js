@@ -19,10 +19,12 @@
   function domainFor(points, metrics, includeNeutral = false) {
     const values = points.flatMap(point => metrics.map(metric => point[metric])).filter(Number.isFinite);
     if (includeNeutral) values.push(50);
-    const min = Math.min(...values), max = Math.max(...values), padding = Math.max(4, (max - min) * .125);
-    const lower = Math.max(0, min - padding), upper = Math.min(100, max + padding);
-    const step = Math.max(1, utils.niceStep(Math.max(upper - lower, 4) / 4));
-    return { min: Math.floor(lower / step) * step, max: Math.ceil(upper / step) * step, step };
+    const source = utils.axisDomain(values, { minimumSpan: 4, targetIntervals: 4 });
+    const min = Math.max(0, source.min), max = Math.min(100, source.max);
+    const ticks = source.ticks.filter(value => value >= min && value <= max);
+    if (!ticks.includes(min)) ticks.unshift(min);
+    if (!ticks.includes(max)) ticks.push(max);
+    return { min, max, ticks };
   }
 
   function render(card, state) {
@@ -44,8 +46,9 @@
     const pathFor = (key, domain) => utils.monotonePath(points.filter(p=>Number.isFinite(p[key])).map(p=>({x:p.x,y:scale(p[key],domain.min,domain.max,HEIGHT-PADDING.bottom,PADDING.top)})));
     const initial = domainFor(points, metrics, isUS);
     const y = (value, domain) => scale(value,domain.min,domain.max,HEIGHT-PADDING.bottom,PADDING.top);
-    const axis = Array.from({length:5},(_,i)=>initial.min+(initial.max-initial.min)*i/4).map((value,index)=>`<text data-liquidity-y-label="${index}" x="${Y_AXIS_WIDTH-8}" y="${y(value,initial)+3}" text-anchor="end" fill="#64748b" font-size="11">${utils.formatChartNumber(value, { maximumFractionDigits: 0 })}</text>`).join('');
-    const grids = Array.from({length:5},(_,i)=>initial.min+(initial.max-initial.min)*i/4).map((value,index)=>`<line data-liquidity-y-grid="${index}" x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(value,initial)}" y2="${y(value,initial)}" stroke="#e2e8f0"/>`).join('');
+    const tickSlots = Array.from({length:7},(_,index)=>index);
+    const axis = tickSlots.map((index)=>{ const value=initial.ticks[index]; return `<text data-liquidity-y-label="${index}" x="${Y_AXIS_WIDTH-8}" y="${Number.isFinite(value)?y(value,initial)+3:PADDING.top}" text-anchor="end" fill="#64748b" font-size="11"${Number.isFinite(value)?'':' visibility="hidden"'}>${Number.isFinite(value)?utils.formatAxisNumber(value):''}</text>`; }).join('');
+    const grids = tickSlots.map((index)=>{ const value=initial.ticks[index]; return `<line data-liquidity-y-grid="${index}" x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${Number.isFinite(value)?y(value,initial):PADDING.top}" y2="${Number.isFinite(value)?y(value,initial):PADDING.top}" stroke="#e2e8f0"${Number.isFinite(value)?'':' visibility="hidden"'}/>`; }).join('');
     const years = Array.from({length:new Date(last).getUTCFullYear()-new Date(first).getUTCFullYear()+1},(_,i)=>new Date(first).getUTCFullYear()+i).map(year=>{
       const timestamp=Date.UTC(year,0,1); if(timestamp<first||timestamp>last) return '';
       return `<line x1="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" x2="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y="${HEIGHT-8}" text-anchor="middle" fill="#64748b" font-size="11">${year}</text>`;
@@ -64,11 +67,14 @@
       if(neutral) { neutral.setAttribute('y1',y(50,domain)); neutral.setAttribute('y2',y(50,domain)); }
       metrics.forEach(key=>lines[key].setAttribute('d',pathFor(key,domain)));
       axisLabels.forEach((label,index)=>{
-        const value=domain.min+(domain.max-domain.min)*index/4;
-        label.textContent=utils.formatChartNumber(value, { maximumFractionDigits: 0 }); label.setAttribute('y',y(value,domain)+3);
+        const value=domain.ticks[index];
+        if(!Number.isFinite(value)){ label.setAttribute('visibility','hidden'); return; }
+        label.removeAttribute('visibility'); label.textContent=utils.formatAxisNumber(value); label.setAttribute('y',y(value,domain)+3);
       });
       axisGrids.forEach((grid,index)=>{
-        const value=domain.min+(domain.max-domain.min)*index/4, py=y(value,domain);
+        const value=domain.ticks[index];
+        if(!Number.isFinite(value)){ grid.setAttribute('visibility','hidden'); return; }
+        grid.removeAttribute('visibility'); const py=y(value,domain);
         grid.setAttribute('y1',py);grid.setAttribute('y2',py);
       });
     };

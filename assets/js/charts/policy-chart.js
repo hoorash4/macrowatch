@@ -33,8 +33,7 @@
       symmetric: POLICY_CHART_MODE === 'oscillator',
       minimumSpan: 1,
     }) || { min: -1, max: 1 };
-    const tickStep = (domain.max - domain.min) / 4;
-    return { tickStep, yMin: domain.min, yMax: domain.max };
+    return { tickValues: chartUtils.displayedAxisTicks(domain, 5), yMin: domain.min, yMax: domain.max };
   }
 
   function render(container, rows, selectedYears) {
@@ -73,15 +72,16 @@
       const label = selectedYears === 'max' ? String(year).slice(-2) : String(year);
       return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-chart-year">${label}</text>`;
     }).join('');
-    const tickMultiples = [0, 1, 2, 3, 4];
-    const gridLines = tickMultiples.map((multiple) => {
-      const value = initialScale.yMin + initialScale.tickStep * multiple;
-      return `<line data-policy-y-grid="${multiple}" x1="${PADDING.left}" y1="${scale(multiple, 0, 4, HEIGHT - PADDING.bottom, PADDING.top)}" x2="${timelineWidth - PADDING.right}" y2="${scale(multiple, 0, 4, HEIGHT - PADDING.bottom, PADDING.top)}" class="policy-chart-y-grid${Math.abs(value) < 1e-9 ? ' analysis-chart-zero-line' : ''}"/>`;
+    const tickSlots = initialScale.tickValues.map((_, index) => index);
+    const gridLines = tickSlots.map((slot) => {
+      const value = initialScale.tickValues[slot];
+      const y = scale(value, initialScale.yMin, initialScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
+      return `<line data-policy-y-grid="${slot}" x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-chart-y-grid${Math.abs(value) < 1e-9 ? ' analysis-chart-zero-line' : ''}"/>`;
     }).join('');
-    const axisLabels = tickMultiples.map((multiple) => {
-      const y = scale(multiple, 0, 4, HEIGHT - PADDING.bottom, PADDING.top);
-      const value = initialScale.yMin + initialScale.tickStep * multiple;
-      return `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-chart-y-tick"/><text data-policy-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-chart-y-label">${chartUtils.formatChartNumber(value)}</text>`;
+    const axisLabels = tickSlots.map((slot) => {
+      const value = initialScale.tickValues[slot];
+      const y = scale(value, initialScale.yMin, initialScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
+      return `<line data-policy-y-tick="${slot}" x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-chart-y-tick"/><text data-policy-y-multiple="${slot}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-chart-y-label">${chartUtils.formatAxisNumber(value)}</text>`;
     }).join('');
     const { frame, svg } = chartUtils.mountChartFrame({ container: container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: axisLabels, ariaLabel: `FOMC 정책 스트레스 지수`, plotMarkup: `<svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수"><g>${yearTicks}</g><g>${gridLines}</g><path d="${pathFor(initialScale)}" class="policy-chart-line"/><g data-policy-points>${circlesFor(initialScale)}</g><line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/><text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 11}" class="policy-chart-cursor-action"></text><text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-chart-cursor-period"></text></svg>` });
     const line = container.querySelector('.policy-chart-line');
@@ -104,11 +104,23 @@
       line.setAttribute('d', pathFor(currentScale));
       pointGroup.innerHTML = circlesFor(currentScale);
       yLabels.forEach((label) => {
-        const value = currentScale.yMin + Number(label.dataset.policyYMultiple) * currentScale.tickStep;
-        label.textContent = chartUtils.formatChartNumber(value, { showPlus: POLICY_CHART_MODE === 'oscillator' });
+        const slot = Number(label.dataset.policyYMultiple);
+        const value = currentScale.tickValues[slot];
+        if (!Number.isFinite(value)) { label.setAttribute('visibility', 'hidden'); return; }
+        label.removeAttribute('visibility');
+        const y = scale(value, currentScale.yMin, currentScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
+        label.textContent = chartUtils.formatAxisNumber(value, { showPlus: POLICY_CHART_MODE === 'oscillator' });
+        label.setAttribute('y', y + 3);
+        container.querySelector(`[data-policy-y-tick="${slot}"]`)?.setAttribute('y1', y);
+        container.querySelector(`[data-policy-y-tick="${slot}"]`)?.setAttribute('y2', y);
       });
       yGridLines.forEach((gridLine) => {
-        const value = currentScale.yMin + Number(gridLine.dataset.policyYGrid) * currentScale.tickStep;
+        const value = currentScale.tickValues[Number(gridLine.dataset.policyYGrid)];
+        if (!Number.isFinite(value)) { gridLine.setAttribute('visibility', 'hidden'); return; }
+        gridLine.removeAttribute('visibility');
+        const y = scale(value, currentScale.yMin, currentScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
+        gridLine.setAttribute('y1', y);
+        gridLine.setAttribute('y2', y);
         gridLine.classList.toggle('analysis-chart-zero-line', Math.abs(value) < 1e-9);
       });
     };

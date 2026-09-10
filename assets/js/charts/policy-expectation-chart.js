@@ -83,7 +83,7 @@
     const yTickValues = [-2, -1, 0, 1, 2].map((multiple) => {
       const value = multiple * initialVerticalScale.tickStep;
       const y = scale(value, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
-      const label = chartUtils.formatChartNumber(value, { showPlus: true });
+      const label = chartUtils.formatAxisNumber(value, { showPlus: true });
       return { multiple, value, y, label };
     });
     const yGridLines = yTickValues.map(({ value, y }) => `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' analysis-chart-zero-line' : ''}"/>`).join('');
@@ -119,7 +119,7 @@
       averageLine.setAttribute('d', pathFor(points, 'fiveDayAverage', currentScale.maximumAbsoluteValue));
       yLabels.forEach((label) => {
         const value = Number(label.dataset.policyExpectationYMultiple) * currentScale.tickStep;
-        label.textContent = chartUtils.formatChartNumber(value, { showPlus: true });
+        label.textContent = chartUtils.formatAxisNumber(value, { showPlus: true });
       });
     };
     frame.addEventListener('scroll', () => {
