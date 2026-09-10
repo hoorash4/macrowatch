@@ -4,10 +4,9 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { fetchKisKospiForeignNetBuy, fetchKisKospiMarketDays, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 import { calculateKoreaForeignFlow, type KoreaFlowRaw } from "../_shared/market/korea-foreign-flow.ts";
 
-const WAIT_MS = 350, RETENTION_YEARS = 5, CALCULATION_YEARS = 8;
+const WAIT_MS = 350, CALCULATION_YEARS = 8;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const compact = (value: string) => value.replaceAll("-", "");
-
 
 async function fetchFx(start: string, end: string): Promise<Map<string, number>> {
   const key = Deno.env.get("ECOS_API_KEY")?.trim();
@@ -58,6 +57,7 @@ Deno.serve(async (request) => {
     if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
     const admin = createClient(supabaseUrl, serviceRole);
     const rawRows: KoreaFlowRaw[] = [], failures: Array<{ date: string; error: string }> = [];
+
     if (!finalizeOnly) {
       const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
       const marketDays = await fetchKisKospiMarketDays(credentials, token, new Date(`${start}T00:00:00Z`), new Date(`${end}T00:00:00Z`));
@@ -76,23 +76,35 @@ Deno.serve(async (request) => {
         await wait(WAIT_MS);
       }
       if (rawRows.length) {
-        const { error } = await admin.from("korea_foreign_flow_raw").upsert(rawRows.map((row) => ({
+        const { error } = await admin.from("korea_foreign_flow_raw").insert(rawRows.map((row) => ({
           observation_date: row.observationDate, foreign_net_buy_amount: row.foreignNetBuyAmount,
           kospi_trading_value: row.kospiTradingValue, usdkrw_rate: row.usdkrwRate, updated_at: new Date().toISOString(),
-        })), { onConflict: "observation_date" });
+        })));
         if (error) throw error;
       }
-      if (collectOnly) return json({ ok: true, start, end, collected: rawRows.length, failures });
+      if (collectOnly) return json({ ok: true, start, end, collected: rawRows.length, stored: 0, failures });
     }
+
+    // The long history is calculation context only. Automatic execution may
+    // publish new dates in the requested window, but it never rewrites older
+    // calculated rows merely because backend calculation code changed.
     const history = await loadRawHistory(admin, dateYearsAgo(CALCULATION_YEARS));
     const calculated = calculateKoreaForeignFlow(history.map((row) => ({ observationDate: String(row.observation_date),
       foreignNetBuyAmount: Number(row.foreign_net_buy_amount), kospiTradingValue: Number(row.kospi_trading_value), usdkrwRate: Number(row.usdkrw_rate) })));
-    if (calculated.length) {
-      const { error } = await admin.from("korea_foreign_flow_daily").upsert(calculated.filter((row) => row.observation_date >= dateYearsAgo(RETENTION_YEARS)), { onConflict: "observation_date" });
+    const { data: existingCalculated, error: existingCalculatedError } = await admin.from("korea_foreign_flow_daily")
+      .select("observation_date").gte("observation_date", start).lte("observation_date", end);
+    if (existingCalculatedError) throw existingCalculatedError;
+    const existingCalculatedDates = new Set((existingCalculated || []).map((row) => String(row.observation_date)));
+    const publishable = calculated.filter((row) =>
+      row.observation_date >= start && row.observation_date <= end && !existingCalculatedDates.has(row.observation_date)
+    );
+    if (publishable.length) {
+      const { error } = await admin.from("korea_foreign_flow_daily").insert(publishable);
       if (error) throw error;
     }
-    await admin.from("korea_foreign_flow_daily").delete().lt("observation_date", dateYearsAgo(RETENTION_YEARS));
-    await admin.from("korea_foreign_flow_raw").delete().lt("observation_date", dateYearsAgo(CALCULATION_YEARS));
-    return json({ ok: true, start, end, collected: rawRows.length, calculated: calculated.length, failures });
+
+    // Retention and historical rebuild are deliberately not part of automatic
+    // collection. Those are explicit maintenance operations, not side effects.
+    return json({ ok: true, start, end, collected: rawRows.length, calculated: calculated.length, stored: publishable.length, failures });
   } catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, 500); }
 });
