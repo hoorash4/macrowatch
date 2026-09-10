@@ -775,7 +775,7 @@ function renderCreditStressComponents(rows) {
     if (!Number.isFinite(previous) || !Number.isFinite(current)) return '';
     return `<line data-credit-latest="${item.key}" x1="${x(index - 1).toFixed(1)}" y1="${scale.y(previous).toFixed(1)}" x2="${x(index).toFixed(1)}" y2="${scale.y(current).toFixed(1)}" stroke="${item.color}" stroke-width="${widths.primary}" stroke-linecap="round" stroke-dasharray="5 4"/>`;
   };
-  const labels = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" fill="#64748b" font-size="10">${String(row.month).slice(0, 4)}</text>` : '').join('');
+  const labels = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" class="analysis-chart-year-label">${String(row.month).slice(0, 4)}</text>` : '').join('');
   const yearGuides = data.map((row, index) => String(row.month || '').endsWith('-01-01') ? `<line x1="${x(index)}" x2="${x(index)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>` : '').join('');
   const dotsFor = (item, scale) => data.map((row, index) => {
     const value = toCreditStressNumber(row[item.key]);
@@ -797,18 +797,18 @@ function renderCreditStressComponents(rows) {
   }).join('');
   const grids = Array.from({length:5}, (_, i) => {
     const py = padding.top + (height - padding.top - padding.bottom) * i / 4;
-    return `<line x1="${padding.left}" x2="${width-padding.right}" y1="${py}" y2="${py}" class="korea-earnings-grid"/>`;
+    return `<line data-chart-grid x1="${padding.left}" x2="${width-padding.right}" y1="${py}" y2="${py}"/>`;
   }).join('');
   // 곡선 보간과 스크롤 구간별 축 재조정으로 좌표가 플롯 바깥에 생길 수 있으므로,
   // 데이터 선·점만 플롯 사각형 안에서 자릅니다. 축·연도 표기·커서는 그대로 유지합니다.
   const plotClip = `<defs><clipPath id="credit-risk-plot-clip"><rect x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}"/></clipPath></defs>`;
   const plottedSeries = `<g clip-path="url(#credit-risk-plot-clip)"><path data-credit-series="${highYield.key}" d="${pathFor(highYield,highYieldScale,false)}" fill="none" stroke="${highYield.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${conditions.key}" d="${pathFor(conditions,conditionsScale,false)}" fill="none" stroke="${conditions.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${bankruptcy.key}" d="${pathFor(bankruptcy,bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="${widths.primary}" stroke-linecap="round"/>${latestSegmentFor(highYield,highYieldScale)}${latestSegmentFor(conditions,conditionsScale)}${dotsFor(highYield,highYieldScale)}${dotsFor(bankruptcy,bankruptcyScale)}</g>`;
-  const { frame, svg } = window.MacroWatchAnalysisChart.mountChartFrame({ container: chart, profile, height, axisViewWidth: 64, top: padding.top, bottom: padding.bottom, leftAxisMarkup: '', rightAxisMarkup: '', ariaLabel: '미국 신용 위험 장기 추이', plotMarkup: `<svg class="korea-earnings-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${plotClip}${grids}${yearGuides}${plottedSeries}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="korea-earnings-cursor"/><text data-credit-cursor-label class="korea-earnings-cursor-label" text-anchor="middle"></text><text data-credit-cursor-date y="${height-8}" class="korea-earnings-cursor-period" text-anchor="middle"></text></svg>` });
+  const { frame, svg } = window.MacroWatchAnalysisChart.mountChartFrame({ container: chart, profile, height, axisViewWidth: 64, top: padding.top, bottom: padding.bottom, leftAxisMarkup: '', rightAxisMarkup: '', ariaLabel: '미국 신용 위험 장기 추이', plotMarkup: `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${plotClip}${grids}${yearGuides}${plottedSeries}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="analysis-chart-cursor-line" visibility="hidden"/><text data-credit-cursor-label class="analysis-chart-cursor-text analysis-chart-cursor-value" text-anchor="middle" visibility="hidden"></text><text data-credit-cursor-date y="${height-8}" class="analysis-chart-cursor-text analysis-chart-cursor-date" text-anchor="middle" visibility="hidden"></text></svg>` });
   chart.insertAdjacentHTML('beforeend', `<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`);
   const cursor = chart.querySelector('[data-credit-cursor]');
   const cursorLabel = chart.querySelector('[data-credit-cursor-label]');
   const cursorDate = chart.querySelector('[data-credit-cursor-date]');
-  const hideCursor = () => [cursor,cursorLabel,cursorDate].forEach(node=>node.classList.remove('is-visible'));
+  const hideCursor = () => [cursor,cursorLabel,cursorDate].forEach(node=>node.setAttribute('visibility','hidden'));
   frame.addEventListener('pointermove', event => {
     const bounds = svg.getBoundingClientRect();
     const pointerX = (event.clientX - bounds.left) / bounds.width * width;
@@ -822,7 +822,7 @@ function renderCreditStressComponents(rows) {
     }).join('');
     cursorDate.setAttribute('x', Math.max(frame.scrollLeft+40,Math.min(frame.scrollLeft+frame.clientWidth-40,px)));
     cursorDate.textContent = row.month + (row.is_latest ? ' (잠정치)' : '');
-    [cursor,cursorLabel,cursorDate].forEach(node=>node.classList.add('is-visible'));
+    [cursor,cursorLabel,cursorDate].forEach(node=>node.setAttribute('visibility','visible'));
   });
   frame.addEventListener('pointerleave',hideCursor);
   const updateVisibleScale = () => {

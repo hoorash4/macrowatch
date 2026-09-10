@@ -21,6 +21,7 @@
     mobileMinWidth: 680,
     mainHeight: 375,
     auxiliaryHeight: 148,
+    auxiliaryBottom: 16,
     axisWidth: axisGutter,
     plot: Object.freeze({ top: 20, right: 0, bottom: 38, left: 0 }),
   });
@@ -534,7 +535,7 @@
           const pixel = map(value);
           line.setAttribute('y1', pixel);
           line.setAttribute('y2', pixel);
-          line.classList.toggle('analysis-chart-zero-line', value === 0);
+          line.classList.toggle('analysis-chart-zero-line', axis.zeroLine === true && value === 0);
         });
       });
     };

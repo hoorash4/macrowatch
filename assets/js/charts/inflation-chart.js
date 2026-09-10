@@ -124,6 +124,7 @@
       axes: [{
         side: 'left',
         includeZero: true,
+        zeroLine: true,
         y: realY,
         points: monthly.flatMap(row => [{ x: xInflation(row), value: Number(row.headline_real_rate_pct) }, { x: xInflation(row), value: Number(row.core_real_rate_pct) }]),
         selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"]`,

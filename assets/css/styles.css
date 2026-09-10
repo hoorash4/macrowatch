@@ -1010,7 +1010,6 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-plot { display:block; min-width:100%; background:#fff; }
 .analysis-chart-shell .policy-chart-cursor,
 .analysis-chart-shell .policy-expectation-cursor,
-.analysis-chart-shell .korea-earnings-cursor,
 .analysis-chart-cursor-line { stroke:#94a3b8; stroke-width:.75; stroke-dasharray:3 4; pointer-events:none; }
 .analysis-chart-shell .policy-expectation-year,
 .analysis-chart-shell .analysis-chart-year-label { fill:#64748b; font-size:12px; font-weight:400; }
@@ -1033,6 +1032,7 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-year-label { fill:#64748b; font-size:12px; font-weight:400; }
 .analysis-chart-axis-line,
 .analysis-chart-zero-line { stroke:#94a3b8; stroke-width:1; stroke-dasharray:none; vector-effect:non-scaling-stroke; shape-rendering:crispEdges; }
+[data-chart-grid]:not(.analysis-chart-zero-line) { stroke:#e2e8f0; stroke-width:1; stroke-dasharray:3 4; vector-effect:non-scaling-stroke; }
 .analysis-chart-legend,
 .policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
 .analysis-chart-legend span,
@@ -1073,9 +1073,6 @@ body:has(#app-shell:not(.hidden)) {
 [data-history-scroll]::-webkit-scrollbar-thumb,
 #news-sentiment-history-scroll::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:#94a3b8; background-clip:padding-box; }
 .korea-earnings-chart-svg { display:block; min-width:100%; }
-.korea-earnings-grid { stroke:#e2e8f0; stroke-width:1; stroke-dasharray:3 4; vector-effect:non-scaling-stroke; }
-.korea-earnings-axis-label { fill:#64748b; font-size:9px; font-weight:650; }
-.korea-earnings-period-label { fill:#64748b; font-size:10px; font-weight:650; }
 .korea-earnings-line { fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .korea-earnings-line--amount,
 .korea-earnings-line--margin,
@@ -1088,10 +1085,6 @@ body:has(#app-shell:not(.hidden)) {
 .korea-earnings-point { stroke:#fff; stroke-width:1.25; }
 .korea-earnings-point--operating-income { fill:#2563a8; }
 .korea-earnings-point--net-income { fill:#b7791f; }
-.korea-earnings-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
-.korea-earnings-cursor-label,.korea-earnings-cursor-period { opacity:0; fill:#334155; font-size:10px; font-weight:750; paint-order:stroke; stroke:#f8fafc; stroke-width:4; pointer-events:none; }
-.korea-earnings-cursor-period { fill:#64748b; font-size:9px; }
-.korea-earnings-cursor.is-visible,.korea-earnings-cursor-label.is-visible,.korea-earnings-cursor-period.is-visible { opacity:1; }
 @media (max-width:640px) {
   .market-earnings-heading-control { align-items:flex-start; flex-direction:column; gap:.45rem; }
   .korea-earnings-toolbar .analysis-chart-range-controls { align-self:flex-end; }

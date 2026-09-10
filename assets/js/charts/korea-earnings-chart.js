@@ -205,17 +205,17 @@
       .flatMap((point) => chartMetrics.map((metric) => chartValue(point, metric.key, spec)))
       .filter(Number.isFinite), { includeZero: spec.includeZero });
     const domain = domainFor(points);
-    const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : 0 };
+    const padding = { ...BASE_PADDING, bottom: spec.showPeriodLabels ? 42 : chartUtils.chartLayout.auxiliaryBottom };
     const containerWidth = container.clientWidth || MIN_WIDTH;
     const frameWidth = chartUtils.chartFrameWidth(containerWidth, PROFILE.axisMode);
     const chartWidth = chartUtils.historyWidth(points, 'periodDate', market.state.years, frameWidth);
     const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), padding.left, chartWidth - padding.right);
     const y = (value, sourceDomain = domain) => scale(value, sourceDomain.min, sourceDomain.max, spec.height - padding.bottom, padding.top);
-    const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind, market.currency)}</text>`).join('');
-    const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="${value === 0 ? 'analysis-chart-zero-line' : 'korea-earnings-grid'}"/>`).join('');
+    const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end">${formatAxis(value, spec.kind, market.currency)}</text>`).join('');
+    const grids = domain.ticks.map((value, index) => `<line data-chart-grid data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}"/>`).join('');
     const labels = spec.showPeriodLabels
-      ? points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
-        ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>`
+      ? points.map((point, index) => point.fiscalQuarter === 1
+        ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="analysis-chart-year-label">${point.fiscalYear}</text>`
         : '').join('')
       : '';
     const metricSeries = chartMetrics.map((metric) => {
@@ -229,43 +229,28 @@
     ))).join('');
     const dots = metricSeries.flatMap((metric) => metric.points.map((point, index) => Number.isFinite(point.value)
       ? `<circle data-korea-earnings-point="${metric.key}" data-point-index="${index}" cx="${x(index)}" cy="${y(point.value)}" r="${spec.kind === 'amount' ? 2.8 : 2.4}" class="korea-earnings-point korea-earnings-point--${metric.className}"/>` : '')).join('');
-    const periodCursor = spec.showPeriodLabels
-      ? `<text data-korea-earnings-cursor-period x="0" y="${spec.height - 8}" text-anchor="middle" class="korea-earnings-cursor-period"></text>`
-      : '';
     const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
     const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
-    const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, top: padding.top, bottom: padding.bottom, xAxisMode: spec.kind === 'amount' ? 'bottom' : 'none', showScrollbar: spec.kind === 'amount', leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg>` });
-    const hit = container.querySelector('[data-korea-earnings-hit]');
-    const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
-    const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
+    const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, top: padding.top, bottom: padding.bottom, xAxisMode: spec.kind === 'amount' ? 'bottom' : 'none', showScrollbar: spec.kind === 'amount', leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent"/></svg>` });
     const yLabels = [...container.querySelectorAll('[data-korea-earnings-y-label]')];
     const yGrids = [...container.querySelectorAll('[data-korea-earnings-y-grid]')];
     const lineElements = new Map(METRICS.map((metric) => [metric.key, [...container.querySelectorAll(`[data-korea-earnings-line="${metric.key}"]`)]]));
     const pointElements = [...container.querySelectorAll('[data-korea-earnings-point]')];
-    const indexFromEvent = (event) => {
-      const rect = hit.getBoundingClientRect(), localX = (event.clientX - rect.left) * (chartWidth / rect.width);
-      return Math.max(0, Math.min(points.length - 1, Math.round(scale(localX, padding.left, chartWidth - padding.right, 0, Math.max(points.length - 1, 1)))));
-    };
-    const showCursor = (index) => {
-      const point = points[index], cursorX = x(index);
-      const details = chartMetrics.map((metric) => {
-        return `${metric.label} ${formatChartValue(point, metric, spec, market)}`;
-      }).join(' · ');
-      const labelX = Math.max(170, Math.min(chartWidth - 170, cursorX));
-      cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursorLabel.setAttribute('x', labelX);
-      cursorLabel.textContent = details;
-      cursor.classList.add('is-visible');
-      cursorLabel.classList.toggle('is-visible', spec.kind === 'amount');
-      if (cursorPeriod) {
-        cursorPeriod.setAttribute('x', Math.max(32, Math.min(chartWidth - 32, cursorX)));
-        cursorPeriod.textContent = periodLabel(point);
-        cursorPeriod.classList.add('is-visible');
-      }
-    };
-    const hideCursor = () => {
-      cursor.classList.remove('is-visible'); cursorLabel.classList.remove('is-visible');
-      cursorPeriod?.classList.remove('is-visible');
-    };
+    chartUtils.attachChartCursor({
+      host: container,
+      rows: points,
+      xFor: (point) => x(points.indexOf(point)),
+      width: chartWidth,
+      height: spec.height,
+      top: padding.top,
+      bottom: padding.bottom,
+      valueText: spec.kind === 'amount' ? (point) => chartMetrics.map((metric) => `${metric.label} ${formatChartValue(point, metric, spec, market)}`).join(' · ') : null,
+      dateText: spec.kind === 'amount' ? periodLabel : null,
+      eventName: `macrowatch:earnings-hover:${market.type || market.marketId}`,
+      source: spec.key,
+      eventDetail: (point) => ({ periodDate: point.periodDate }),
+      rowFromDetail: (detail) => points.find((point) => point.periodDate === detail.periodDate),
+    });
     // 스크롤로 실제 보이는 분기만 기준으로 Y축을 다시 잡습니다. 과거의
     // 큰 이상치가 현재 화면의 정상적인 진폭을 눌러버리지 않게 합니다.
     let scaleFrame = null;
@@ -289,7 +274,7 @@
       yGrids.forEach((grid, index) => {
         const value = visibleDomain.ticks[index], gridY = y(value, visibleDomain);
         grid.setAttribute('y1', gridY); grid.setAttribute('y2', gridY);
-        grid.setAttribute('class', value === 0 ? 'analysis-chart-zero-line' : 'korea-earnings-grid');
+        grid.removeAttribute('class');
       });
       metricSeries.forEach((metric) => {
         const segments = lineSegments(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding);
@@ -310,7 +295,7 @@
     }, { passive: true });
     window.MacroWatchAnalysisChart.scrollToLatest(frame);
     window.requestAnimationFrame(updateVisibleScale);
-    return { frame, hit, indexFromEvent, showCursor, hideCursor, updateVisibleScale };
+    return { frame, updateVisibleScale };
   }
 
   function synchronizeFrames(frames) {
@@ -325,16 +310,6 @@
       });
       synchronizing = false;
     }, { passive: true }));
-  }
-
-  // 어느 보조차트에 마우스를 두더라도 같은 분기의 세로선과 각 차트 값을 함께 표시합니다.
-  function synchronizeCursors(charts, root) {
-    charts.forEach((chart) => chart.hit.addEventListener('pointermove', (event) => {
-      const index = chart.indexFromEvent(event);
-      charts.forEach((target) => target.showCursor(index));
-    }));
-    const stack = root?.querySelector('.korea-earnings-chart-stack');
-    if (stack) stack.onpointerleave = () => charts.forEach((chart) => chart.hideCursor());
   }
 
   function setStatus(market, message) {
@@ -367,7 +342,6 @@
     renderSharedLegend(market, points);
     const charts = CHARTS.map((chart) => renderChart(market, chart, points)).filter(Boolean);
     synchronizeFrames(charts.map((chart) => chart.frame));
-    synchronizeCursors(charts, market.root);
   }
 
   function escapeHtml(value) {
