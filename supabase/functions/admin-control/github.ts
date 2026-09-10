@@ -74,18 +74,18 @@ async function workflowSource(path: string, token: string): Promise<WorkflowSour
 const AUTOMATION_CARD_NAMES: Record<string, string> = {
   "backup-database.yml": "데이터베이스 백업",
   "central-bank-policy.yml": "통화정책 시그널",
-  "check-targets.yml": "지표 추적",
+  "check-targets.yml": "지표 추적 알림",
   "em-capital-capacity.yml": "이머징 자금 유입 여건",
   "em-stress.yml": "이머징 시장 스트레스 지수",
   "equity-bond-attractiveness.yml": "주식투자 매력 흐름",
-  "equity-bond-relative-value.yml": "주식·채권 상대가치",
+  "equity-bond-relative-value.yml": "주식투자 매력 흐름 · 상대가치",
   "financial-stress.yml": "미국 신용위험 추이",
   "inflation-model.yml": "통합물가지수와 금리",
   "korea-foreign-flow.yml": "외국인 자금 유출입 강도",
   "korea-small-business-risk.yml": "한국 중소기업 위험지수",
   "korea-stress.yml": "한국 시장 스트레스 지수",
-  "liquidity.yml": "주식시장 자금환경",
-  "market-context.yml": "KOSPI 시장 맥락",
+  "liquidity.yml": "미국·한국 주식시장 자금환경",
+  "market-context.yml": "뉴스 흐름 · KOSPI 지수",
   "news-pipeline.yml": "뉴스 흐름",
   "policy-expectation.yml": "시장 내재 정책금리 기대",
   "small-business-risk.yml": "미국 중소기업 위험지수",
@@ -93,18 +93,18 @@ const AUTOMATION_CARD_NAMES: Record<string, string> = {
 
 const AUTOMATION_STEP_NAMES: Record<string, Record<string, string>> = {
   "earnings-us-automatic.yml": {
-    "0 2 * * *": "미국 이익 모멘텀 · 분기 실적 스냅샷",
-    "30 2 * * *": "미국 이익 모멘텀 · SEC 신규 공시",
-    "0 3 * * *": "미국 이익 모멘텀 · 미확보 항목 보완",
+    "0 2 * * *": "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷",
+    "30 2 * * *": "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시",
+    "0 3 * * *": "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완",
   },
   "earnings-v2-korea-automatic.yml": {
-    "30 10 * * 1-5": "한국 이익 모멘텀 · DART 공시",
-    "30 11 * * 1-5": "한국 이익 모멘텀 · KIS 가격",
+    "30 10 * * 1-5": "시총 상위 100 이익 모멘텀 · 한국 DART 공시",
+    "30 11 * * 1-5": "시총 상위 100 이익 모멘텀 · 한국 KIS 가격",
   },
   "sector-flow.yml": {
-    "10 0 * * 1-5": "시장 주도 섹터 · 장초반",
-    "30 3 * * 1-5": "시장 주도 섹터 · 장중",
-    "40 6 * * 1-5": "시장 주도 섹터 · 종가",
+    "10 0 * * 1-5": "주도섹터 흐름 · 장초반",
+    "30 3 * * 1-5": "주도섹터 흐름 · 장중",
+    "40 6 * * 1-5": "주도섹터 흐름 · 종가",
   },
 };
 

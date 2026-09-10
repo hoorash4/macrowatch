@@ -71,9 +71,9 @@ test("automation schedules use card steps and are sorted by Korean time", async 
     };
     const items = await scheduledWorkflows("test-token");
     assert.deepEqual(items.map((item) => [item.kst_time, item.name]), [
-      ["11:00", "미국 이익 모멘텀 · 분기 실적 스냅샷"],
-      ["11:30", "미국 이익 모멘텀 · SEC 신규 공시"],
-      ["12:00", "미국 이익 모멘텀 · 미확보 항목 보완"],
+      ["11:00", "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷"],
+      ["11:30", "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시"],
+      ["12:00", "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완"],
     ]);
   } finally { globalThis.fetch = original; }
 });

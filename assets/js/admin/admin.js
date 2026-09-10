@@ -407,7 +407,12 @@
       const id = row.dataset.automationWorkflowId, cron = row.dataset.automationCron, name = row.dataset.automationName;
       row.querySelector('[data-save-automation]').addEventListener('click', async (event) => {
         const button = event.currentTarget; button.disabled = true;
-        try { await invokeAdmin('update_automation_time', { workflow_id: id, cron, time: row.querySelector('[data-automation-time]').value }); await loadAutomationSchedules(); }
+        const time = row.querySelector('[data-automation-time]').value;
+        try {
+          await invokeAdmin('update_automation_time', { workflow_id: id, cron, time });
+          await loadAutomationSchedules();
+          showNotice('일정 저장 완료', `${name} 실행 시간을 ${time}으로 저장했습니다.`);
+        }
         catch (error) { showNotice('일정 저장 실패', error.message || '시간을 저장하지 못했습니다.', true); button.disabled = false; }
       });
       row.querySelector('[data-toggle-automation]').addEventListener('click', async (event) => {
