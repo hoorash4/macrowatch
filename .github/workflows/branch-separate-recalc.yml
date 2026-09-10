@@ -1,0 +1,85 @@
+name: Apply stored recalculation separation
+
+on:
+  push:
+    branches: [fix/separate-stored-recalculation]
+    paths:
+      - ".github/workflows/branch-separate-recalc.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/separate-stored-recalculation
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Separate recalculation service
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          automatic_path = Path('backend/earnings_v2/automatic.py')
+          text = automatic_path.read_text(encoding='utf-8')
+          text = text.replace(
+              'from .repository import EarningsV2Repository\n',
+              'from .repository import EarningsV2Repository\nfrom .contract import TARGETS, EXCHANGES, CALCULATION_VERSION\nfrom .recalculation import StoredQuarterRecalculation\n',
+              1,
+          )
+          constants = '''\n\nTARGETS = {"kr_largecap": 100, "kr_kosdaq": 100}\nEXCHANGES = {"kr_largecap": "KOSPI", "kr_kosdaq": "KOSDAQ"}\n# V6부터 부분 기업행을 보존하고 잠정 바구니와 확정 총합을 분리한다.\nCALCULATION_VERSION = 6\n'''
+          if constants not in text:
+              raise SystemExit('automatic constants block not found')
+          text = text.replace(constants, '', 1)
+          start = text.find('    def recalculate_quarter(self, year: int, quarter: int, *, write: bool = True) -> dict[str, Any]:\n')
+          end = text.find('    @staticmethod\n    def _merge_kis_cumulative_only(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('recalculate_quarter block not found')
+          text = text[:start] + text[end:]
+          old_call = '                self.recalculate_quarter(year, quarter, write=True)'
+          new_call = '                StoredQuarterRecalculation(self.repository).recalculate_quarter(year, quarter, write=True)'
+          if old_call not in text:
+              raise SystemExit('automatic recalculation call not found')
+          text = text.replace(old_call, new_call, 1)
+          automatic_path.write_text(text, encoding='utf-8')
+
+          cli_path = Path('backend/earnings_v2/recalculate_cli.py')
+          cli = cli_path.read_text(encoding='utf-8')
+          cli = cli.replace(
+              'from .automatic import KoreaEarningsV2AutomaticPipeline',
+              'from .recalculation import StoredQuarterRecalculation',
+          )
+          cli = cli.replace(
+              'pipeline = KoreaEarningsV2AutomaticPipeline.from_env()\n    result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)',
+              'recalculation = StoredQuarterRecalculation.from_env()\n    result = recalculation.recalculate_quarter(args.year, args.quarter, write=args.write)',
+          )
+          cli_path.write_text(cli, encoding='utf-8')
+
+          isolation = Path('tests/test_collector_isolation.py')
+          test_text = isolation.read_text(encoding='utf-8')
+          insertion = '''\n    def test_manual_earnings_recalculation_is_provider_free_and_separate(self):\n        service = (ROOT / "backend/earnings_v2/recalculation.py").read_text(encoding="utf-8")\n        cli = (ROOT / "backend/earnings_v2/recalculate_cli.py").read_text(encoding="utf-8")\n        automatic = (ROOT / "backend/earnings_v2/automatic.py").read_text(encoding="utf-8")\n        workflow = (ROOT / ".github/workflows/earnings-v2-korea.yml").read_text(encoding="utf-8")\n        self.assertNotIn(".providers import", service)\n        self.assertNotIn("automatic import", service)\n        self.assertIn("StoredQuarterRecalculation.from_env()", cli)\n        self.assertNotIn("KoreaEarningsV2AutomaticPipeline", cli)\n        self.assertNotIn("def recalculate_quarter(", automatic)\n        self.assertIn("StoredQuarterRecalculation(self.repository).recalculate_quarter", automatic)\n        self.assertIn("workflow_dispatch:", workflow)\n        self.assertNotIn("schedule:", workflow)\n        self.assertIn("earnings_v2.recalculate_cli", workflow)\n'''
+          marker = '\n\nif __name__ == "__main__":\n'
+          if 'test_manual_earnings_recalculation_is_provider_free_and_separate' not in test_text:
+              if marker not in test_text:
+                  raise SystemExit('collector isolation insertion marker not found')
+              test_text = test_text.replace(marker, insertion + marker, 1)
+              isolation.write_text(test_text, encoding='utf-8')
+
+          Path('.github/workflows/branch-separate-recalc.yml').unlink()
+          PY
+      - name: Verify targeted contracts
+        run: |
+          PYTHONPATH=backend python -m unittest tests.test_collector_isolation tests.test_earnings_repository -v
+          python -m compileall -q backend
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Separate stored earnings recalculation from collection"
+          git push origin HEAD:fix/separate-stored-recalculation
