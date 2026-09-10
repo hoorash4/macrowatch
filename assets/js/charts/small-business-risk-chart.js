@@ -18,10 +18,10 @@
 
   function renderLegend() {
     const legend = document.getElementById('small-business-risk-legend');
-    if (legend) legend.innerHTML = [
-      utils.legendItem('중소기업 위험지수', { stroke: COLORS.risk, width: utils.lineWidths.primary }),
-      utils.legendItem('NFIB 소기업낙관지수(역)', { stroke: COLORS.optimism, width: utils.lineWidths.comparison }),
-    ].join('');
+    utils.setChartLegend(legend, [
+      { label: '중소기업 위험지수', style: { stroke: COLORS.risk, width: utils.lineWidths.primary } },
+      { label: 'NFIB 소기업낙관지수(역)', style: { stroke: COLORS.optimism, width: utils.lineWidths.comparison } },
+    ], '미국 중소기업 위험지수 범례');
   }
 
   function render() {

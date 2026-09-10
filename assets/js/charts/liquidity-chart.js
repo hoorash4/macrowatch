@@ -24,6 +24,7 @@
 
   function render(card, state) {
     const host = card.querySelector('[data-liquidity-charts]');
+    const legend = card.querySelector('[data-liquidity-legend]');
     const isUS = card.dataset.liquidityCountry === 'US';
     const metrics = ['environment', 'momentum'];
     const [firstMetric, secondMetric] = metrics;
@@ -49,7 +50,10 @@
       return `<line x1="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" x2="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text x="${scale(timestamp,first,last,PADDING.left,width-PADDING.right)}" y="${HEIGHT-8}" text-anchor="middle" fill="#64748b" font-size="11">${year}</text>`;
     }).join('');
     const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: axis, ariaLabel: `${isUS ? '미국' : '한국'} 주식시장 자금환경`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="${isUS ? '미국' : '한국'} 주식시장 자금환경 주별 추이">${years}${grids}<line data-liquidity-neutral x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${y(50,initial)}" y2="${y(50,initial)}" stroke="#94a3b8" stroke-dasharray="4 4"/><path data-liquidity-pressure d="${pathFor(firstMetric,initial)}" fill="none" stroke="${colors[firstMetric]}" stroke-width="${lineWidths.primary}"/><path data-liquidity-capacity d="${pathFor(secondMetric,initial)}" fill="none" stroke="${colors[secondMetric]}" stroke-width="${lineWidths.primary}"/><line data-liquidity-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT-PADDING.bottom}" class="policy-expectation-cursor"/><text data-liquidity-value text-anchor="middle" y="16" fill="#334155" font-size="12"></text><text data-liquidity-date text-anchor="middle" y="${HEIGHT-PADDING.bottom+14}" class="policy-expectation-cursor-detail"></text></svg>` });
-    host.insertAdjacentHTML('beforeend', `<div class="policy-expectation-legend">${utils.legendItem(names[firstMetric], { stroke: colors[firstMetric], width: lineWidths.primary })}${utils.legendItem(names[secondMetric], { stroke: colors[secondMetric], width: lineWidths.primary })}</div>`);
+    utils.setChartLegend(legend, [
+      { label: names[firstMetric], style: { stroke: colors[firstMetric], width: lineWidths.primary } },
+      { label: names[secondMetric], style: { stroke: colors[secondMetric], width: lineWidths.primary } },
+    ], `${isUS ? '미국' : '한국'} 주식시장 자금환경 범례`);
     const lines={[firstMetric]:host.querySelector('[data-liquidity-pressure]'),[secondMetric]:host.querySelector('[data-liquidity-capacity]')};
     const axisLabels=[...host.querySelectorAll('[data-liquidity-y-label]')], axisGrids=[...host.querySelectorAll('[data-liquidity-y-grid]')];
     let animationFrame=null;

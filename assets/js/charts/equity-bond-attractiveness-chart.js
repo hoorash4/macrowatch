@@ -5,6 +5,7 @@
   const card = document.querySelector('#equity-bond-attractiveness-dashboard');
   if (!card || !utils) return;
   const host = card.querySelector('[data-equity-bond-chart]');
+  const legend = card.querySelector('[data-equity-bond-legend]');
   const PROFILE = utils.chartProfile({
     cursorSeries: Object.freeze([
       { key: 'kr_score', label: '한국' },
@@ -50,7 +51,10 @@
     const paths = ['KR', 'US'].map(country => `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="${lineWidths.primary}"/>`).join('');
     const guides = timelineGuides(dates, first, last, width);
     const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: AXIS, leftAxisMarkup: axis, ariaLabel: `한미 주식투자 매력 흐름`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg>` });
-    host.insertAdjacentHTML('beforeend', `<div class="equity-bond-legend">${utils.legendItem(LABELS.KR, { stroke: COLORS.KR, width: lineWidths.primary })}${utils.legendItem(LABELS.US, { stroke: COLORS.US, width: lineWidths.primary })}</div>`);
+    utils.setChartLegend(legend, [
+      { label: LABELS.KR, style: { stroke: COLORS.KR, width: lineWidths.primary } },
+      { label: LABELS.US, style: { stroke: COLORS.US, width: lineWidths.primary } },
+    ], '한미 주식투자 매력 흐름 범례');
     const cursor = host.querySelector('[data-cursor]'), value = host.querySelector('[data-value]'), dateLabel = host.querySelector('[data-date]');
     utils.scrollToLatest(frame);
     frame.addEventListener('pointermove', event => {

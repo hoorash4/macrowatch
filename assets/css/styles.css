@@ -1038,10 +1038,9 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-axis-line,
 .analysis-chart-zero-line { stroke:#94a3b8; stroke-width:1; stroke-dasharray:none; vector-effect:non-scaling-stroke; shape-rendering:crispEdges; }
 [data-chart-grid]:not(.analysis-chart-zero-line) { stroke:#e2e8f0; stroke-width:1; stroke-dasharray:3 4; vector-effect:non-scaling-stroke; }
-.analysis-chart-legend,
-.policy-expectation-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
-.analysis-chart-legend span,
-.policy-expectation-legend span { display:inline-flex; align-items:center; gap:.45rem; }
+.analysis-chart-legend { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; padding:.75rem .25rem 0; color:#64748b; font-size:.75rem; }
+.analysis-chart-legend span { display:inline-flex; align-items:center; gap:.45rem; }
+.analysis-chart-legend[hidden] { display:none; }
 
 /* 합산 금액 본차트와 이익률·증가율 보조차트는 하나의 분석 배경 안에서 같은 시점을 공유합니다. */
 .korea-earnings-toolbar { display:flex; justify-content:flex-end; padding:.1rem .15rem .45rem; }
@@ -2547,5 +2546,3 @@ body.is-pointer-dragging {
 .equity-bond-attractiveness-view-card,
 #equity-bond-attractiveness-dashboard,
 [data-equity-bond-chart] { min-width:0; max-width:100%; overflow:hidden; }
-.equity-bond-legend { display:flex; flex-wrap:wrap; gap:.35rem 1rem; margin-top:.55rem; color:#64748b; font-size:.72rem; }
-.equity-bond-legend span:nth-child(-n+2) { font-weight:700; }

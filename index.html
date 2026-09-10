@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=185">
+  <link rel="stylesheet" href="assets/css/styles.css?v=186">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -262,6 +262,7 @@
           </div>
           <div data-equity-bond-chart class="mt-3" aria-live="polite">상대매력 자료를 불러오는 중입니다.</div>
         </div>
+        <div data-equity-bond-legend class="analysis-chart-legend" aria-label="한미 주식투자 매력 흐름 범례" hidden></div>
       </div>
     </section>
     </div>
@@ -280,7 +281,7 @@
         <p class="analysis-card-description">MSI(Market Stress Index)는 시장이 받을 수 있는 스트레스를 지수화 하였습니다. 정치, 언론 등을 제외한 금융적 스트레스 만을 의미합니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
-      <div class="px-5 pb-2 pt-5">
+      <div class="px-5 pb-5 pt-5">
         <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-us-stress-ranges aria-label="미국 시장 스트레스 지수 그래프 조회 기간">
             <button type="button" data-us-stress-range="1">1년</button><button type="button" data-us-stress-range="2" class="is-active">2년</button><button type="button" data-us-stress-range="5">5년</button><button type="button" data-us-stress-range="max">MAX</button>
@@ -288,13 +289,11 @@
           <div id="credit-stress-chart" class="min-h-72">
             <div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
           </div>
-          <div id="credit-stress-momentum-chart" class="mt-2 min-h-52">
+          <div id="credit-stress-momentum-chart" class="mt-2">
             <div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">선행 긴장 시그널을 불러오는 중입니다.</div>
           </div>
         </div>
-      </div>
-      <div class="px-5 pb-5 pt-0">
-        <div data-us-stress-legend class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
+        <div data-us-stress-legend class="analysis-chart-legend" aria-label="미국 시장 스트레스 지수 범례">
           <span data-chart-legend="stress">US-MSI</span>
           <span data-chart-legend="stressProvisional">US-MSI 잠정치</span>
           <span data-chart-legend="benchmark">S&amp;P 500 주간 종가</span>
@@ -322,6 +321,7 @@
             <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
           </div>
         </div>
+        <div id="credit-stress-components-legend" class="analysis-chart-legend" aria-label="미국 신용위험 추이 범례" hidden></div>
       </div>
     </section>
 
@@ -344,7 +344,7 @@
           </div>
           <div id="small-business-risk-chart" class="mt-3 min-h-72" aria-live="polite"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">중소기업 위험지수를 불러오는 중입니다.</div></div>
         </div>
-        <div id="small-business-risk-legend" class="policy-expectation-legend" aria-label="미국 중소기업 위험지수 범례"></div>
+        <div id="small-business-risk-legend" class="analysis-chart-legend" aria-label="미국 중소기업 위험지수 범례"></div>
       </div>
     </section>
 
@@ -362,6 +362,7 @@
           </div>
           <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
         </div>
+        <div data-liquidity-legend class="analysis-chart-legend" aria-label="미국 주식시장 자금환경 범례" hidden></div>
         <!--<details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">실질금리(10년), 신용여건(시카고연은 신용 하위지수), 순자금공급 대용치의 13주 변화율, SOFR−IORB를 각각 25% 반영합니다. 순자금공급 대용치는 연준 자산−TGA−역레포이며 실제 주식 유입액은 아닙니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 이를 해당 시점까지 최대 5년의 상대 백분위로 변환하고, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 방향 점수 50은 변화 없음, 우호도 50은 상대적 중간 수준입니다. 출처: 연준·뉴욕연준·시카고연은/FRED. 완료된 주까지만 표시합니다. 현재 공개된 수정계열을 사용한 설명지표이며 주가 상승 확률이나 당시 정보만을 사용한 투자 백테스트가 아닙니다.</p></details>-->
       </div>
     </section>
@@ -378,7 +379,7 @@
         <p class="analysis-card-description">MSI(Market Stress Index)는 시장이 받을 수 있는 스트레스를 지수화 하였습니다. 정치, 지정학, 언론 등을 제외한 금융적 스트레스 만을 의미합니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
-      <div class="px-5 pb-2 pt-5">
+      <div class="px-5 pb-5 pt-5">
         <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-korea-stress-ranges aria-label="한국 시장 스트레스 지수 그래프 조회 기간">
             <button type="button" data-korea-stress-range="1">1년</button><button type="button" data-korea-stress-range="2" class="is-active">2년</button><button type="button" data-korea-stress-range="5">5년</button><button type="button" data-korea-stress-range="max">MAX</button>
@@ -386,13 +387,11 @@
           <div id="korea-stress-chart" class="min-h-80">
             <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오는 중입니다.</div>
           </div>
-          <div id="korea-fsi-chart" class="mt-2 min-h-52">
+          <div id="korea-fsi-chart" class="mt-2">
             <div class="analysis-empty-state-light flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국은행 FSI를 불러오는 중입니다.</div>
           </div>
         </div>
-      </div>
-      <div class="px-5 pb-5 pt-0">
-        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
+        <div class="analysis-chart-legend" aria-label="한국 시장 스트레스 지수 범례">
           <span data-chart-legend="stress">K-MSI</span>
           <span data-chart-legend="stressProvisional">K-MSI 잠정치</span>
           <span data-chart-legend="benchmark">코스피 주간 종가</span>
@@ -420,7 +419,7 @@
           </div>
           <div id="korea-small-business-risk-chart" class="mt-3 min-h-72" aria-live="polite"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 중소기업 위험지수를 불러오는 중입니다.</div></div>
         </div>
-        <div id="korea-small-business-risk-legend" class="policy-expectation-legend" aria-label="한국 중소기업 위험지수 범례"></div>
+        <div id="korea-small-business-risk-legend" class="analysis-chart-legend" aria-label="한국 중소기업 위험지수 범례"></div>
       </div>
     </section>
     <section id="korea-foreign-flow-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-foreign-flow-title">
@@ -439,7 +438,7 @@
           </div>
           <div id="korea-foreign-flow-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">외국인 자금 유출입 강도를 불러오는 중입니다.</div></div>
         </div>
-        <div class="policy-expectation-legend" aria-label="외국인 자금 유출입 강도 범례"><span data-chart-legend="raw">일별 합성지표</span><span data-chart-legend="average">10영업일 누적 합성지표</span></div>
+        <div class="analysis-chart-legend" aria-label="외국인 자금 유출입 강도 범례"><span data-chart-legend="raw">일별 합성지표</span><span data-chart-legend="average">10영업일 누적 합성지표</span></div>
       </div>
     </section>
 
@@ -457,6 +456,7 @@
           </div>
           <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
         </div>
+        <div data-liquidity-legend class="analysis-chart-legend" aria-label="한국 주식시장 자금환경 범례" hidden></div>
         <!--<details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">단기 조달환경(콜금리·KOFR와 기준금리의 평균 스프레드), 국내 유동성(M2·Lf의 3개월 증가율 평균), 외국인 주식 순매수 비율, 원화 강도를 각각 25% 반영합니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 해당 시점까지 최대 5년 상대 백분위이며, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 50은 중립입니다. 출처: 한국은행 ECOS·금융경제 스냅샷, KIS. 완료된 주까지만 표시합니다. 수정계열 기반 설명지표로 투자 백테스트가 아닙니다.</p></details>-->
       </div>
     </section>
@@ -496,8 +496,8 @@
               <div id="korea-earnings-qoq-chart" data-earnings-chart="qoq" class="korea-earnings-chart"></div>
             </section>
           </div>
-          <div class="analysis-chart-legend" data-earnings-legend aria-label="영업이익·순이익 공통 범례" hidden></div>
         </div>
+        <div class="analysis-chart-legend" data-earnings-legend aria-label="영업이익·순이익 공통 범례" hidden></div>
       </div>
     </section>
 
@@ -541,8 +541,8 @@
               <div id="company-earnings-qoq-chart" data-earnings-chart="qoq" class="korea-earnings-chart"></div>
             </section>
           </div>
-          <div class="analysis-chart-legend" data-earnings-legend aria-label="영업이익·순이익 공통 범례" hidden></div>
         </div>
+        <div class="analysis-chart-legend" data-earnings-legend aria-label="영업이익·순이익 공통 범례" hidden></div>
       </div>
     </section>
 
@@ -558,7 +558,7 @@
         <p class="analysis-card-description">MSI(Market Stress Index)는 시장이 받을 수 있는 스트레스를 지수화 하였습니다. 정치, 언론 등을 제외한 금융적 스트레스 만을 의미합니다. * 독자 개발 지표</p>
         <p class="analysis-card-description">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
-      <div class="px-5 pb-2 pt-5">
+      <div class="px-5 pb-5 pt-5">
         <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-em-stress-ranges aria-label="이머징 시장 스트레스 지수 그래프 조회 기간">
             <button type="button" data-em-stress-range="1">1년</button><button type="button" data-em-stress-range="2" class="is-active">2년</button><button type="button" data-em-stress-range="5">5년</button><button type="button" data-em-stress-range="max">MAX</button>
@@ -567,9 +567,7 @@
             <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 데이터를 불러오는 중입니다.</div>
           </div>
         </div>
-      </div>
-      <div class="px-5 pb-5 pt-0">
-        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
+        <div class="analysis-chart-legend" aria-label="이머징 시장 스트레스 지수 범례">
           <span data-chart-legend="stress">EM-MSI</span>
           <span data-chart-legend="stressProvisional">EM-MSI 잠정치</span>
           <span data-chart-legend="benchmark">EEM 주간 종가</span>
@@ -599,7 +597,7 @@
           </div>
           <div id="em-capacity-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">이머징 자금 유입 여건을 불러오는 중입니다.</div></div>
         </div>
-        <div class="policy-expectation-legend" aria-label="이머징 자금 유입 여건 범례">
+        <div class="analysis-chart-legend" aria-label="이머징 자금 유입 여건 범례">
           <span data-chart-legend="raw">일간값</span>
           <span data-chart-legend="average">5영업일 평균</span>
           <span data-chart-legend="capacityProvisional">5영업일 평균 잠정치</span>
@@ -654,7 +652,7 @@
           </div>
           <div id="policy-expectation-chart" class="min-h-80"><div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">시장 내재 정책금리 기대를 불러오는 중입니다.</div></div>
         </div>
-        <div class="policy-expectation-legend" aria-label="정책금리 기대 스프레드 범례">
+        <div class="analysis-chart-legend" aria-label="정책금리 기대 스프레드 범례">
           <span data-chart-legend="raw">일간값</span>
           <span data-chart-legend="average">5영업일 평균</span>
         </div>
@@ -693,7 +691,7 @@
             </div>
           </div>
         </div>
-        <div id="inflation-model-legend" class="policy-expectation-legend" aria-label="통합물가 그래프 범례"></div>
+        <div id="inflation-model-legend" class="analysis-chart-legend" aria-label="통합물가 그래프 범례"></div>
       </div>
     </section>
 
@@ -1104,16 +1102,16 @@
   <script src="assets/js/core/indicator-terms.js?v=3"></script>
   <script src="assets/js/dashboard/script.js?v=165"></script>
   <script src="assets/js/charts/analysis-chart-utils.js?v=40"></script>
-  <script src="assets/js/dashboard/dashboard-charts.js?v=72"></script>
-  <script src="assets/js/charts/inflation-chart.js?v=22"></script>
-  <script src="assets/js/charts/small-business-risk-chart.js?v=16"></script>
-  <script src="assets/js/charts/korea-small-business-risk-chart.js?v=12"></script>
+  <script src="assets/js/dashboard/dashboard-charts.js?v=73"></script>
+  <script src="assets/js/charts/inflation-chart.js?v=23"></script>
+  <script src="assets/js/charts/small-business-risk-chart.js?v=17"></script>
+  <script src="assets/js/charts/korea-small-business-risk-chart.js?v=13"></script>
   <script src="assets/js/charts/policy-chart.js?v=24"></script>
   <script src="assets/js/charts/policy-expectation-chart.js?v=21"></script>
   <script src="assets/js/charts/em-capacity-chart.js?v=13"></script>
   <script src="assets/js/charts/korea-foreign-flow-chart.js?v=19"></script>
-  <script src="assets/js/charts/liquidity-chart.js?v=20"></script>
-  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=13"></script>
+  <script src="assets/js/charts/liquidity-chart.js?v=21"></script>
+  <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=14"></script>
   <script src="assets/js/charts/korea-earnings-chart.js?v=40"></script>
   <script src="assets/js/policy/policy-briefing.js?v=5"></script>
 </body>

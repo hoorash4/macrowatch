@@ -88,6 +88,51 @@ test('common legend renderer owns legend markup and visibility', () => {
   assert.equal(container.hidden, true);
 });
 
+test('every line-chart legend uses the common slot outside the chart region', () => {
+  const stack = [];
+  const legends = [];
+  for (const match of dashboardMarkup.matchAll(/<\/?div\b[^>]*>/gi)) {
+    const tag = match[0];
+    if (/^<\/div/i.test(tag)) {
+      stack.pop();
+      continue;
+    }
+    const classes = tag.match(/\bclass="([^"]*)"/i)?.[1] || '';
+    const node = { classes, parent: stack.at(-1), children: [] };
+    if (node.parent) node.parent.children.push(node);
+    if (/\banalysis-chart-legend\b/.test(classes)) {
+      legends.push({
+        tag,
+        node,
+        insideRegion: stack.some(parent => /\banalysis-chart-region\b/.test(parent.classes)),
+      });
+    }
+    stack.push(node);
+  }
+  assert.ok(legends.length >= 14, 'the audit covers every shared line-chart legend slot');
+  assert.deepEqual(legends.filter(legend => legend.insideRegion), []);
+  assert.deepEqual(legends.filter(({ node }) => {
+    const siblings = node.parent?.children || [];
+    return !/\banalysis-chart-region\b/.test(siblings[siblings.indexOf(node) - 1]?.classes || '');
+  }), [], 'every legend is the immediate sibling below its chart region');
+  assert.doesNotMatch(dashboardMarkup, /class="[^"]*(?:policy-expectation-legend|equity-bond-legend)/);
+  assert.doesNotMatch(styles, /\.policy-expectation-legend|\.equity-bond-legend/);
+  assert.doesNotMatch(dashboardMarkup, /id="(?:credit-stress-momentum-chart|korea-fsi-chart)"[^>]*\bmin-h-52\b/);
+
+  const liquidity = fs.readFileSync(path.join(__dirname, '../assets/js/charts/liquidity-chart.js'), 'utf8');
+  const attractiveness = fs.readFileSync(path.join(__dirname, '../assets/js/charts/equity-bond-attractiveness-chart.js'), 'utf8');
+  const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
+  const chartModules = fs.readdirSync(path.join(__dirname, '../assets/js/charts'))
+    .filter(file => file.endsWith('-chart.js'))
+    .map(file => fs.readFileSync(path.join(__dirname, '../assets/js/charts', file), 'utf8'))
+    .join('\n');
+  assert.match(liquidity, /setChartLegend\(legend,/);
+  assert.match(attractiveness, /setChartLegend\(legend,/);
+  assert.match(dashboard, /setChartLegend\(document\.getElementById\('credit-stress-components-legend'\), legend/);
+  assert.doesNotMatch(chartModules, /\.legendItem\(/, 'chart modules must use the shared legend renderer');
+  assert.doesNotMatch(`${liquidity}\n${attractiveness}\n${dashboard}`, /insertAdjacentHTML\('beforeend', `[^`]*legend/);
+});
+
 test('chart numbers share a two-decimal maximum without trailing zeroes', () => {
   const format = context.window.MacroWatchAnalysisChart.formatChartNumber;
   assert.equal(format(12.345), '12.35');

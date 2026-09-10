@@ -5,7 +5,7 @@
 // 서버에서 저장된 데이터를 읽고 차트 DOM을 만드는 책임만 가지며,
 // 추적 항목 CRUD와 드래그 상태에는 접근하지 않습니다.
 const { escapeHtml } = window.MacroWatchFrontend;
-const { DEFAULT_RANGE_YEARS, chartLayout, chartProfile, monotoneSeriesPath, monotoneStyledSegments, chartPadding, primarySeriesWindow, formatChartNumber, lineWidths, seriesStyles, legendItem } = window.MacroWatchAnalysisChart;
+const { DEFAULT_RANGE_YEARS, chartLayout, chartProfile, monotoneSeriesPath, monotoneStyledSegments, chartPadding, primarySeriesWindow, formatChartNumber, lineWidths, seriesStyles, setChartLegend } = window.MacroWatchAnalysisChart;
 const supabaseClient = window.macroWatchSupabase
   || window.MacroWatchFrontend.createSupabaseClient();
 
@@ -250,11 +250,20 @@ function calculateCorrelation(pairs) {
 
 function renderMarketStressDashboard(rows, weeklyRows = []) {
   const weeklyLegend = document.querySelector('[data-us-stress-legend]');
-  if (weeklyLegend) weeklyLegend.style.display = weeklyRows.length ? '' : 'none';
-  if (weeklyRows.length) return renderMarketStressAndTensionChart(weeklyRows);
+  if (weeklyRows.length) {
+    setChartLegend(weeklyLegend, [
+      { label: 'US-MSI', style: seriesStyles.stress },
+      { label: 'US-MSI 잠정치', style: seriesStyles.stressProvisional },
+      { label: 'S&P 500 주간 종가', style: seriesStyles.benchmark },
+      { label: '선행 긴장 시그널', style: seriesStyles.tension },
+      { label: '신용·위험 합성 시그널', style: seriesStyles.tensionSecondary },
+    ], '미국 시장 스트레스 지수 범례');
+    return renderMarketStressAndTensionChart(weeklyRows);
+  }
   const chart = document.getElementById('credit-stress-chart');
   if (!chart) return;
   if (!rows.length) {
+    setChartLegend(weeklyLegend, []);
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">첫 산출 후 미국 시장 스트레스 지수가 표시됩니다.</div>';
     return;
   }
@@ -263,6 +272,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     .filter((row) => Number.isFinite(Number(row.stress_index)))
     .sort((a, b) => String(a.month).localeCompare(String(b.month)));
   if (!data.length) {
+    setChartLegend(weeklyLegend, []);
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">표시할 지수 데이터가 없습니다.</div>';
     return;
   }
@@ -272,6 +282,11 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
   const scores = data.map((row) => Number(row.stress_index));
   const sp500Values = data.map((row) => toCreditStressNumber(row.sp500_month_end_close)).filter(Number.isFinite);
   const hasSp500 = sp500Values.length > 1;
+  setChartLegend(weeklyLegend, [
+    { label: 'US-MSI', style: seriesStyles.stress },
+    { label: 'US-MSI 잠정치', style: seriesStyles.stressProvisional },
+    ...(hasSp500 ? [{ label: 'S&P 500 월말 종가', style: seriesStyles.benchmark }] : []),
+  ], '미국 시장 스트레스 지수 범례');
   const scoreDomain = window.MacroWatchAnalysisChart.axisDomain(scores, { minimumSpan: 1 });
   const { min: axisMinimum, max: axisMaximum } = scoreDomain;
   const axisRange = axisMaximum - axisMinimum || 1;
@@ -310,7 +325,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     .filter(([stress, sp500]) => Number.isFinite(stress) && Number.isFinite(sp500));
   const correlation = calculateCorrelation(correlationPairs);
   const grid = scoreDomain.ticks.map((score) => `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(score)}</text>`).join('');
-  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2">${legendItem('US-MSI', { stroke: '#b7791f', width: lineWidths.primary })}${legendItem('US-MSI 잠정치', { stroke: '#b7791f', width: lineWidths.primary, dash: '5 5' })}${hasSp500 ? legendItem('S&P 500 월말 종가', { stroke: '#6b7280', width: lineWidths.comparison }) : ''}</div></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${formatChartNumber(correlation)}</p>`}`;
+  chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${formatChartNumber(correlation)}</p>`}`;
   // US-MSI는 선택 기간 전체의 고정 축으로 해석합니다. 스크롤은 범위 탐색만 담당하며,
   // 현재 보이는 구간마다 선 좌표를 다시 축척하지 않습니다.
   window.MacroWatchAnalysisChart.scrollableSvg(chart.querySelector('svg'), width, 920, {
@@ -727,7 +742,7 @@ function addBankruptcyTrailingAverage(rows) {
 // ===== 미국 신용위험 구성지표 모듈 =====
 // 단위가 다른 원천지표를 각자의 축으로 그려 장기 방향을 비교한다.
 function renderCreditStressComponents(rows) {
-  const { chartProfile: createProfile, legendItem: renderLegendItem, lineWidths: widths } = window.MacroWatchAnalysisChart;
+  const { chartProfile: createProfile, lineWidths: widths, setChartLegend } = window.MacroWatchAnalysisChart;
   const chart = document.getElementById('credit-stress-components-chart');
   if (!chart) return;
   if (!rows.length) {
@@ -806,13 +821,15 @@ function renderCreditStressComponents(rows) {
     )
     .map((tick) => `<text x="8" y="${tick.y + 3}" text-anchor="start" fill="${color}" font-size="10">${formatter(tick.value)}</text>`)
     .join('');
-  const legend = series.map(item => {
+  const legend = series.flatMap(item => {
     const latestIndex = data.findIndex(row => row.is_latest);
     const hasLatestSegment = item.key !== 'business_bankruptcy_filings_3m_average' && latestIndex > 0
       && [data[latestIndex - 1], data[latestIndex]].every(row => Number.isFinite(toCreditStressNumber(row[item.key])));
-    return renderLegendItem(item.label, { stroke: item.color, width: widths.primary })
-      + (hasLatestSegment ? renderLegendItem(`${item.label} 최신값`, { stroke: item.color, width: widths.primary, dash: '5 4' }) : '');
-  }).join('');
+    return [
+      { label: item.label, style: { stroke: item.color, width: widths.primary } },
+      ...(hasLatestSegment ? [{ label: `${item.label} 최신값`, style: { stroke: item.color, width: widths.primary, dash: '5 4' } }] : []),
+    ];
+  });
   // 가로 격자는 언제나 왼쪽 Y축(하이일드 스프레드)의 실제 눈금과
   // 같은 값·좌표를 사용합니다. 오른쪽 축은 표시만 하고 격자에 관여하지 않습니다.
   const initialLeftTicks = [...highYieldScale.ticks].reverse();
@@ -826,7 +843,7 @@ function renderCreditStressComponents(rows) {
   const plotClip = `<defs><clipPath id="credit-risk-plot-clip"><rect x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}"/></clipPath></defs>`;
   const plottedSeries = `<g clip-path="url(#credit-risk-plot-clip)"><path data-credit-series="${highYield.key}" d="${pathFor(highYield,highYieldScale,false)}" fill="none" stroke="${highYield.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${conditions.key}" d="${pathFor(conditions,conditionsScale,false)}" fill="none" stroke="${conditions.color}" stroke-width="${widths.primary}" stroke-linecap="round"/><path data-credit-series="${bankruptcy.key}" d="${pathFor(bankruptcy,bankruptcyScale)}" fill="none" stroke="${bankruptcy.color}" stroke-width="${widths.primary}" stroke-linecap="round"/>${latestSegmentFor(highYield,highYieldScale)}${latestSegmentFor(conditions,conditionsScale)}${dotsFor(highYield,highYieldScale)}${dotsFor(bankruptcy,bankruptcyScale)}</g>`;
   const { frame, svg } = window.MacroWatchAnalysisChart.mountChartFrame({ container: chart, profile, height, axisViewWidth: 64, top: padding.top, bottom: padding.bottom, leftAxisMarkup: '', rightAxisMarkup: '', ariaLabel: '미국 신용 위험 장기 추이', plotMarkup: `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 신용 위험 장기 추이">${plotClip}${grids}${yearGuides}${plottedSeries}${labels}<line data-credit-cursor y1="${padding.top}" y2="${height-padding.bottom}" class="analysis-chart-cursor-line" visibility="hidden"/><text data-credit-cursor-label class="analysis-chart-cursor-text analysis-chart-cursor-value" text-anchor="middle" visibility="hidden"></text><text data-credit-cursor-date y="${height-8}" class="analysis-chart-cursor-text analysis-chart-cursor-date" text-anchor="middle" visibility="hidden"></text></svg>` });
-  chart.insertAdjacentHTML('beforeend', `<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">${legend}</div>`);
+  setChartLegend(document.getElementById('credit-stress-components-legend'), legend, '미국 신용위험 추이 범례');
   const cursor = chart.querySelector('[data-credit-cursor]');
   const cursorLabel = chart.querySelector('[data-credit-cursor-label]');
   const cursorDate = chart.querySelector('[data-credit-cursor-date]');

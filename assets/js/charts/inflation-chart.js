@@ -43,17 +43,16 @@
 
   function renderLegend() {
     const legend = document.getElementById('inflation-model-legend');
-    if (!legend) return;
-    legend.innerHTML = [
-      chartUtils.legendItem('헤드라인', { stroke: COLORS.headline, width: lineWidths.primary }),
-      chartUtils.legendItem('헤드라인 잠정치', { stroke: COLORS.headline, width: lineWidths.primary, dash: '5 4' }),
-      chartUtils.legendItem('코어', { stroke: COLORS.core, width: lineWidths.primary }),
-      chartUtils.legendItem('코어 잠정치', { stroke: COLORS.core, width: lineWidths.primary, dash: '5 4' }),
-      chartUtils.legendItem('기준금리', { stroke: COLORS.policy, width: lineWidths.auxiliary }),
-      chartUtils.legendItem('미국 10년물 금리(5일 평균)', { stroke: COLORS.treasury, width: lineWidths.comparison }),
-      chartUtils.legendItem('헤드라인 실질금리', { stroke: COLORS.headline, width: lineWidths.auxiliary }),
-      chartUtils.legendItem('코어 실질금리', { stroke: COLORS.core, width: lineWidths.auxiliary }),
-    ].join('');
+    chartUtils.setChartLegend(legend, [
+      { label: '헤드라인', style: { stroke: COLORS.headline, width: lineWidths.primary } },
+      { label: '헤드라인 잠정치', style: { stroke: COLORS.headline, width: lineWidths.primary, dash: '5 4' } },
+      { label: '코어', style: { stroke: COLORS.core, width: lineWidths.primary } },
+      { label: '코어 잠정치', style: { stroke: COLORS.core, width: lineWidths.primary, dash: '5 4' } },
+      { label: '기준금리', style: { stroke: COLORS.policy, width: lineWidths.auxiliary } },
+      { label: '미국 10년물 금리(5일 평균)', style: { stroke: COLORS.treasury, width: lineWidths.comparison } },
+      { label: '헤드라인 실질금리', style: { stroke: COLORS.headline, width: lineWidths.auxiliary } },
+      { label: '코어 실질금리', style: { stroke: COLORS.core, width: lineWidths.auxiliary } },
+    ], '통합물가 그래프 범례');
   }
 
   function render() {

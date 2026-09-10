@@ -16,7 +16,7 @@ function harness(rows) {
   };
   const chart=node('chart'); chart.clientWidth=808;
   let resize;
-  const context={document:{getElementById:()=>chart},window:{},
+  const context={document:{getElementById:id=>id === 'credit-stress-components-legend' ? node('legend') : chart},window:{},
     ResizeObserver:class{constructor(fn){resize=fn;} observe(){} disconnect(){}},
     requestAnimationFrame:fn=>{fn();return 1;},CREDIT_STRESS_HISTORY_MONTHS:37,CREDIT_STRESS_CHART_HEIGHT:280,
     monotoneSeriesPath:(rows,x,y)=>rows.map(r=>x(r)+','+y(r)).join(' ')};

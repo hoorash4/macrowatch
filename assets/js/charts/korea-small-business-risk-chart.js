@@ -18,11 +18,11 @@
 
   function renderLegend() {
     const legend = document.getElementById('korea-small-business-risk-legend');
-    if (legend) legend.innerHTML = [
-      utils.legendItem('중소기업 위험지수', { stroke: COLORS.risk, width: utils.lineWidths.primary }),
-      utils.legendItem('중소기업 위험지수 잠정치', { stroke: COLORS.risk, width: utils.lineWidths.primary, dash: '5 4' }),
-      utils.legendItem('중소기업 경기전망 SBHI(역)', { stroke: COLORS.headline, width: utils.lineWidths.comparison }),
-    ].join('');
+    utils.setChartLegend(legend, [
+      { label: '중소기업 위험지수', style: { stroke: COLORS.risk, width: utils.lineWidths.primary } },
+      { label: '중소기업 위험지수 잠정치', style: { stroke: COLORS.risk, width: utils.lineWidths.primary, dash: '5 4' } },
+      { label: '중소기업 경기전망 SBHI(역)', style: { stroke: COLORS.headline, width: utils.lineWidths.comparison } },
+    ], '한국 중소기업 위험지수 범례');
   }
 
   function render() {
