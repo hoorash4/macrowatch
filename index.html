@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=186">
+  <link rel="stylesheet" href="assets/css/styles.css?v=187">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -141,9 +141,7 @@
           <button type="button" class="dashboard-nav-item is-active" data-dashboard-view="overview" aria-current="page"><i class="fa-solid fa-grid-2"></i><span>플로우 분석</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="policy"><i class="fa-solid fa-landmark"></i><span>통화정책 시그널</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="earnings"><i class="fa-solid fa-chart-column"></i><span>기업 이익 시그널</span></button>
-          <button type="button" class="dashboard-nav-item" data-dashboard-view="credit"><i class="fa-solid fa-wave-square"></i><span>미국 스트레스 지수</span></button>
-          <button type="button" class="dashboard-nav-item" data-dashboard-view="korea"><i class="fa-solid fa-chart-line"></i><span>한국 스트레스 지수</span></button>
-          <button type="button" class="dashboard-nav-item" data-dashboard-view="em"><i class="fa-solid fa-earth-americas"></i><span>이머징 스트레스 지수</span></button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-view="stress"><i class="fa-solid fa-wave-square"></i><span>스트레스 지수</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적 알림</span></button>
           <div class="dashboard-nav-actions">
             <div id="db-status" class="hidden">DB 연결 확인 중...</div>
@@ -158,10 +156,10 @@
       <div class="dashboard-main">
     <!-- 04-1. 플로우 분석: 뉴스 흐름과 주도섹터 카드 -->
     <div class="dashboard-panels">
-    <div class="mobile-stress-switcher" role="tablist" aria-label="스트레스 지수 시장 선택" hidden>
-      <button type="button" data-mobile-stress-view="credit" role="tab" aria-selected="true">미국</button>
-      <button type="button" data-mobile-stress-view="korea" role="tab" aria-selected="false">한국</button>
-      <button type="button" data-mobile-stress-view="em" role="tab" aria-selected="false">이머징</button>
+    <div class="stress-market-switcher" role="tablist" aria-label="스트레스 지수 시장 선택" hidden>
+      <button type="button" data-stress-market="credit" role="tab" aria-selected="true">미국</button>
+      <button type="button" data-stress-market="korea" role="tab" aria-selected="false">한국</button>
+      <button type="button" data-stress-market="em" role="tab" aria-selected="false">이머징</button>
     </div>
     <div class="market-overview" data-dashboard-panel="overview">
     <div class="dashboard-view-card">
@@ -269,7 +267,7 @@
     </div>
 
     <!-- 04-2. 스트레스·통화정책 분석 카드 -->
-    <section id="credit-stress-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-title">
+    <section id="credit-stress-dashboard" data-dashboard-panel="stress" data-stress-market="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
@@ -303,7 +301,7 @@
     </section>
 
 
-    <section id="credit-stress-components-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-components-title">
+    <section id="credit-stress-components-dashboard" data-dashboard-panel="stress" data-stress-market="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="credit-stress-components-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-chart-line text-sm"></i></span>
@@ -326,7 +324,7 @@
     </section>
 
 
-    <section id="small-business-risk-dashboard" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="small-business-risk-title">
+    <section id="small-business-risk-dashboard" data-dashboard-panel="stress" data-stress-market="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="small-business-risk-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-store text-sm"></i></span>
@@ -349,7 +347,7 @@
     </section>
 
 
-    <section data-liquidity-country="US" data-dashboard-panel="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-label="미국 주식시장 자금환경">
+    <section data-liquidity-country="US" data-dashboard-panel="stress" data-stress-market="credit" class="analysis-card dashboard-view-card overflow-hidden" aria-label="미국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-money-bill-transfer text-sm"></i></span>
@@ -367,7 +365,7 @@
       </div>
     </section>
 
-    <section id="korea-stress-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-stress-title">
+    <section id="korea-stress-dashboard" data-dashboard-panel="stress" data-stress-market="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-stress-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-wave-square text-sm"></i></span>
@@ -400,7 +398,7 @@
       </div>
     </section>
 
-    <section id="korea-small-business-risk-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-small-business-risk-title">
+    <section id="korea-small-business-risk-dashboard" data-dashboard-panel="stress" data-stress-market="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-small-business-risk-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-building-shield text-sm"></i></span>
@@ -422,7 +420,7 @@
         </div>
       </div>
     </section>
-    <section id="korea-foreign-flow-dashboard" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-foreign-flow-title">
+    <section id="korea-foreign-flow-dashboard" data-dashboard-panel="stress" data-stress-market="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="korea-foreign-flow-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-arrow-right-arrow-left text-sm"></i></span>
@@ -443,7 +441,7 @@
     </section>
 
     <!-- 기업 이익 관련 분석은 국가 스트레스 지수와 분리된 전용 작업공간에 모읍니다. -->
-    <section data-liquidity-country="KR" data-dashboard-panel="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-label="한국 주식시장 자금환경">
+    <section data-liquidity-country="KR" data-dashboard-panel="stress" data-stress-market="korea" class="analysis-card dashboard-view-card overflow-hidden" aria-label="한국 주식시장 자금환경">
       <div class="p-5 sm:p-6">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-money-bill-transfer text-sm"></i></span>
@@ -546,7 +544,7 @@
       </div>
     </section>
 
-    <section id="em-stress-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
+    <section id="em-stress-dashboard" data-dashboard-panel="stress" data-stress-market="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-stress-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-earth-americas text-sm"></i></span>
@@ -575,7 +573,7 @@
       </div>
     </section>
 
-    <section id="em-capacity-dashboard" data-dashboard-panel="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-capacity-title">
+    <section id="em-capacity-dashboard" data-dashboard-panel="stress" data-stress-market="em" class="analysis-card dashboard-view-card overflow-hidden" aria-labelledby="em-capacity-title">
       <div class="analysis-card-header">
         <div class="analysis-card-heading-row">
           <span class="analysis-card-icon"><i class="fa-solid fa-money-bill-transfer text-sm"></i></span>
@@ -1100,7 +1098,7 @@
 
   <!-- 페이지 셸·지표 추적과 읽기 전용 차트를 책임별로 분리해 순서대로 연결합니다. -->
   <script src="assets/js/core/indicator-terms.js?v=3"></script>
-  <script src="assets/js/dashboard/script.js?v=165"></script>
+  <script src="assets/js/dashboard/script.js?v=166"></script>
   <script src="assets/js/charts/analysis-chart-utils.js?v=40"></script>
   <script src="assets/js/dashboard/dashboard-charts.js?v=73"></script>
   <script src="assets/js/charts/inflation-chart.js?v=23"></script>

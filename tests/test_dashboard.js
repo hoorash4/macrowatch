@@ -196,13 +196,17 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
   for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker']) {
     assert.match(html, new RegExp(`data-mobile-dashboard-view="${view}"`));
   }
-  for (const view of ['credit', 'korea', 'em']) {
-    assert.match(html, new RegExp(`data-mobile-stress-view="${view}"`));
+  for (const market of ['credit', 'korea', 'em']) {
+    assert.match(html, new RegExp(`data-stress-market="${market}"`));
   }
-  assert.match(script, /stressViews\.has\(selectedView\) \? 'stress' : selectedView/);
+  assert.match(html, /data-dashboard-view="stress"[\s\S]*?스트레스 지수/);
+  assert.doesNotMatch(html, /data-mobile-stress-view=/);
+  assert.match(script, /selectedView = 'stress';/);
+  assert.match(script, /selectedStressMarket = 'credit';/);
+  assert.match(script, /panel\.dataset\.stressMarket !== selectedStressMarket/);
+  assert.match(styles, /\.stress-market-switcher\s*\{/);
   assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
   assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?\.mobile-bottom-nav/);
-  assert.match(script, /matchMedia\('\(max-width: 1023px\)'\)/);
   assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
 });
 

@@ -141,7 +141,7 @@
   }
 
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
-    if (detail?.view === 'korea') chartUtils.scrollToLatest(document.querySelector('#korea-foreign-flow-chart [data-history-scroll]'));
+    if (detail?.view === 'stress' && detail?.stressMarket === 'korea') chartUtils.scrollToLatest(document.querySelector('#korea-foreign-flow-chart [data-history-scroll]'));
   });
   window.MacroWatchDashboard?.registerLoader(load);
 })();

@@ -594,6 +594,33 @@ body:has(#app-shell:not(.hidden)) {
 .dashboard-panel-hidden {
   display:none;
 }
+.stress-market-switcher {
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
+  gap:.4rem;
+  margin:0 0 var(--dashboard-card-gap);
+  padding:.55rem;
+  border:1px solid rgba(64,83,97,.14);
+  border-radius:var(--radius-card);
+  background:var(--color-surface-card);
+  box-shadow:var(--shadow-card);
+}
+.stress-market-switcher[hidden] { display:none; }
+.stress-market-switcher button {
+  min-height:40px;
+  padding:.55rem .75rem;
+  border:1px solid rgba(64,83,97,.16);
+  border-radius:.65rem;
+  background:#f4f6f8;
+  color:#667788;
+  font-size:.82rem;
+  font-weight:700;
+}
+.stress-market-switcher button.is-active {
+  border-color:var(--color-brand-gold);
+  background:var(--color-brand-gold-soft);
+  color:var(--color-brand-navy);
+}
 .market-overview-grid {
   display:grid;
   grid-template-columns:minmax(0, 1fr);
@@ -2262,32 +2289,6 @@ body.is-pointer-dragging {
     margin-top: .75rem;
     border-top: 1px solid rgba(64,83,97,.1);
   }
-  .mobile-stress-switcher {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0,1fr));
-    gap: .35rem;
-    padding: .75rem 1rem;
-    background: #fff;
-    border-bottom: 1px solid rgba(64,83,97,.12);
-  }
-  .mobile-stress-switcher[hidden] {
-    display: none;
-  }
-  .mobile-stress-switcher button {
-    min-height: 42px;
-    padding: .55rem .35rem;
-    border: 1px solid rgba(64,83,97,.16);
-    border-radius: .65rem;
-    background: #f4f6f8;
-    color: #667788;
-    font-size: .82rem;
-    font-weight: 700;
-  }
-  .mobile-stress-switcher button.is-active {
-    border-color: var(--color-brand-gold);
-    background: var(--color-brand-gold-soft);
-    color: var(--color-brand-navy);
-  }
   .mobile-bottom-nav {
     position: fixed;
     z-index: 45;
@@ -2531,8 +2532,7 @@ body.is-pointer-dragging {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .mobile-bottom-nav,
-  .mobile-stress-switcher {
+  .mobile-bottom-nav {
     display: none !important;
   }
 }

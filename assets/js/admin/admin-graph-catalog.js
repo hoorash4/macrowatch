@@ -113,6 +113,13 @@
       ],
     },
   ]);
+  const DISPLAY_MENUS = Object.freeze([
+    ...MENUS.filter((menu) => !['credit', 'korea', 'em'].includes(menu.id)),
+    {
+      id: 'stress', label: '스트레스 지수', icon: 'fa-wave-square', accent: 'text-rose-400',
+      charts: MENUS.filter((menu) => ['credit', 'korea', 'em'].includes(menu.id)).flatMap((menu) => menu.charts),
+    },
+  ]);
 
   function escapeHtml(value) {
     return String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -142,14 +149,14 @@
   function render(documentRef = document) {
     const container = documentRef.getElementById('graph-component-catalog');
     if (!container) return false;
-    container.innerHTML = MENUS.map(menuMarkup).join('');
-    const graphCount = MENUS.reduce((sum, menu) => sum + menu.charts.length, 0);
+    container.innerHTML = DISPLAY_MENUS.map(menuMarkup).join('');
+    const graphCount = DISPLAY_MENUS.reduce((sum, menu) => sum + menu.charts.length, 0);
     const summary = documentRef.getElementById('graph-catalog-summary');
-    if (summary) summary.textContent = `${MENUS.length}개 메뉴 · ${graphCount}개 그래프`;
+    if (summary) summary.textContent = `${DISPLAY_MENUS.length}개 메뉴 · ${graphCount}개 그래프`;
     return true;
   }
 
-  const api = Object.freeze({ MENUS, render });
+  const api = Object.freeze({ MENUS: DISPLAY_MENUS, render });
   window.MacroWatchAdminGraphCatalog = api;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => render());
   else render();

@@ -139,7 +139,7 @@
   }
 
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
-    if (detail?.view !== 'em') return;
+    if (detail?.view !== 'stress' || detail?.stressMarket !== 'em') return;
     chartUtils.scrollToLatest(document.querySelector('#em-capacity-chart [data-history-scroll]'));
   });
   window.MacroWatchDashboard?.registerLoader(load);
