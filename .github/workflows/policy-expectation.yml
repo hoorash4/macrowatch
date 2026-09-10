@@ -1,13 +1,13 @@
 name: Refresh market-implied policy expectations
 
 on:
-  # ì ì¤í¤ë§ê° ë¨¼ì  ì ì©ë ë¤ ìµì´ ì´ë ¥ì ì±ì ë°°í¬ ììê³¼ì ê²½ìì ë§ìµëë¤.
+  # Ã¬ÂÂ Ã¬ÂÂ¤Ã­ÂÂ¤Ã«Â§ÂÃªÂ°Â Ã«Â¨Â¼Ã¬Â Â Ã¬Â ÂÃ¬ÂÂ©Ã«ÂÂ Ã«ÂÂ¤ Ã¬ÂµÂÃ¬Â´Â Ã¬ÂÂ´Ã«Â Â¥Ã¬ÂÂ Ã¬Â±ÂÃ¬ÂÂ Ã«Â°Â°Ã­ÂÂ¬ Ã¬ÂÂÃ¬ÂÂÃªÂ³Â¼Ã¬ÂÂ ÃªÂ²Â½Ã¬ÂÂÃ¬ÂÂ Ã«Â§ÂÃ¬ÂÂµÃ«ÂÂÃ«ÂÂ¤.
   workflow_run:
     workflows: ["Deploy Supabase changes"]
     types: [completed]
   schedule:
     # 07:30 KST: after U.S. daily rate releases and 30 minutes after the 07:00 job.
-    - cron: "50 20 * * *"
+    - cron: "50 21 * * *"
   workflow_dispatch:
     inputs:
       start_year:
