@@ -6,7 +6,7 @@ Production automatic collection has one responsibility: collect and publish data
 
 - Existing confirmed historical rows are immutable during automatic collection.
 - A lookback window may be used to calculate a current value, but it does not authorize rewriting that lookback history.
-- Provisional/current rows may be completed only where the collector explicitly models that state.
+- Provisional/current rows may be completed or replaced only where the collector explicitly models the active cycle as mutable.
 - Historical rebuild, repair, and destructive retention are explicit maintenance operations and are never side effects of a scheduled collector.
 - Backend-only changes do not deploy GitHub Pages.
 - A Supabase change deploys only newly added migrations and the Edge Functions actually affected by the change. Existing migrations are immutable and are not replayed on every deployment.
