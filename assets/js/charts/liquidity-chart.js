@@ -20,10 +20,11 @@
     const values = points.flatMap(point => metrics.map(metric => point[metric])).filter(Number.isFinite);
     if (includeNeutral) values.push(50);
     const source = utils.axisDomain(values, { minimumSpan: 4, targetIntervals: 4 });
-    const min = Math.max(0, source.min), max = Math.min(100, source.max);
-    const ticks = source.ticks.filter(value => value >= min && value <= max);
-    if (!ticks.includes(min)) ticks.unshift(min);
-    if (!ticks.includes(max)) ticks.push(max);
+    let min = source.min, max = source.max;
+    if (min < 0) { max -= min; min = 0; }
+    if (max > 100) { min -= max - 100; max = 100; }
+    min = Math.max(0, min);
+    const ticks = Array.from({ length: 5 }, (_, index) => Number((min + source.step * index).toPrecision(12)));
     return { min, max, ticks };
   }
 
@@ -46,7 +47,7 @@
     const pathFor = (key, domain) => utils.monotonePath(points.filter(p=>Number.isFinite(p[key])).map(p=>({x:p.x,y:scale(p[key],domain.min,domain.max,HEIGHT-PADDING.bottom,PADDING.top)})));
     const initial = domainFor(points, metrics, isUS);
     const y = (value, domain) => scale(value,domain.min,domain.max,HEIGHT-PADDING.bottom,PADDING.top);
-    const tickSlots = Array.from({length:7},(_,index)=>index);
+    const tickSlots = Array.from({length:5},(_,index)=>index);
     const axis = tickSlots.map((index)=>{ const value=initial.ticks[index]; return `<text data-liquidity-y-label="${index}" x="${Y_AXIS_WIDTH-8}" y="${Number.isFinite(value)?y(value,initial)+3:PADDING.top}" text-anchor="end" fill="#64748b" font-size="11"${Number.isFinite(value)?'':' visibility="hidden"'}>${Number.isFinite(value)?utils.formatAxisNumber(value):''}</text>`; }).join('');
     const grids = tickSlots.map((index)=>{ const value=initial.ticks[index]; return `<line data-liquidity-y-grid="${index}" x1="${PADDING.left}" x2="${width-PADDING.right}" y1="${Number.isFinite(value)?y(value,initial):PADDING.top}" y2="${Number.isFinite(value)?y(value,initial):PADDING.top}" stroke="#e2e8f0"${Number.isFinite(value)?'':' visibility="hidden"'}/>`; }).join('');
     const years = Array.from({length:new Date(last).getUTCFullYear()-new Date(first).getUTCFullYear()+1},(_,i)=>new Date(first).getUTCFullYear()+i).map(year=>{

@@ -44,7 +44,7 @@
     const headlineY = value => PADDING.top + (value - headlineDomain.min) / (headlineDomain.max - headlineDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
     const riskTicks = [...riskDomain.ticks].reverse();
     const headlineTicks = [...headlineDomain.ticks].reverse();
-    const grid = riskTicks.map(value => `<line x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`).join('');
+    const grid = riskTicks.map(value => `<line data-chart-grid x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`).join('');
     const rightAxis = headlineTicks.map(value => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${headlineY(value) + 4}" text-anchor="start" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`).join('');
     const years = [...new Set(rows.map(row => String(row.month).slice(0, 4)))];
     const guides = years.map(year => {

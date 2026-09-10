@@ -15,9 +15,9 @@
   ];
   const CHARTS = [
     { key: 'amount', valueKey: 'amount', kind: 'amount', height: chartUtils.chartLayout.mainHeight, includeZero: false, showPeriodLabels: true },
-    { key: 'margin', valueKey: 'marginPct', kind: 'margin', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: true, unit: '%', showPeriodLabels: false },
-    { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: true, unit: '%', showPeriodLabels: false },
-    { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: true, unit: '%', showPeriodLabels: false },
+    { key: 'margin', valueKey: 'marginPct', kind: 'margin', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: false, unit: '%', showPeriodLabels: false },
+    { key: 'growth', valueKey: 'yoyPct', kind: 'growth', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: false, unit: '%', showPeriodLabels: false },
+    { key: 'qoq', valueKey: 'qoqPct', kind: 'qoq', height: chartUtils.chartLayout.auxiliaryHeight, includeZero: false, unit: '%', showPeriodLabels: false },
   ];
   // 시장별 데이터와 기간 상태는 분리하되, 하나의 카드에서 선택한 시장만 렌더링합니다.
   const MARKET_CONFIGS = [
@@ -125,7 +125,7 @@
   }
 
   // 각 차트가 자기 단위와 현재 표시 구간에 맞는 Y축을 독립적으로 사용합니다.
-  function axisDomain(values, { includeZero = false, targetIntervals = 4 } = {}) {
+  function axisDomain(values, { includeZero = false, targetIntervals = 5 } = {}) {
     return chartUtils.niceAxisDomain(values, { includeZero, targetIntervals })
       || { min: -1, max: 1, ticks: [-1, -0.5, 0, 0.5, 1], step: .5 };
   }
@@ -212,10 +212,7 @@
     const x = (index) => scale(index, 0, Math.max(points.length - 1, 1), padding.left, chartWidth - padding.right);
     const y = (value, sourceDomain = domain) => scale(value, sourceDomain.min, sourceDomain.max, spec.height - padding.bottom, padding.top);
     const axis = domain.ticks.map((value, index) => `<text data-korea-earnings-y-label="${index}" x="58" y="${y(value) + 3}" text-anchor="end" class="korea-earnings-axis-label">${formatAxis(value, spec.kind, market.currency)}</text>`).join('');
-    const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="korea-earnings-grid"/>`).join('');
-    const zeroLine = spec.includeZero
-      ? `<line data-korea-earnings-zero-line x1="${padding.left}" y1="${y(0)}" x2="${chartWidth - padding.right}" y2="${y(0)}" class="analysis-chart-zero-line"/>`
-      : '';
+    const grids = domain.ticks.map((value, index) => `<line data-korea-earnings-y-grid="${index}" x1="${padding.left}" y1="${y(value)}" x2="${chartWidth - padding.right}" y2="${y(value)}" class="${value === 0 ? 'analysis-chart-zero-line' : 'korea-earnings-grid'}"/>`).join('');
     const labels = spec.showPeriodLabels
       ? points.map((point, index) => point.fiscalQuarter === 1 || index === points.length - 1
         ? `<text x="${x(index)}" y="${spec.height - 12}" text-anchor="middle" class="korea-earnings-period-label">${point.fiscalQuarter === 1 ? point.fiscalYear : `Q${point.fiscalQuarter}`}</text>`
@@ -237,13 +234,12 @@
       : '';
     const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
     const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
-    const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, xAxisMode: spec.includeZero ? 'zero' : 'bottom', showScrollbar: spec.kind === 'amount', leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${zeroLine}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg>` });
+    const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, top: padding.top, bottom: padding.bottom, xAxisMode: spec.kind === 'amount' ? 'bottom' : 'none', showScrollbar: spec.kind === 'amount', leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><line data-korea-earnings-cursor x1="0" y1="${padding.top}" x2="0" y2="${spec.height - padding.bottom}" class="korea-earnings-cursor"/><text data-korea-earnings-cursor-label x="0" y="15" text-anchor="middle" class="korea-earnings-cursor-label"></text>${periodCursor}<rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent" data-korea-earnings-hit/></svg>` });
     const hit = container.querySelector('[data-korea-earnings-hit]');
     const cursor = container.querySelector('[data-korea-earnings-cursor]'), cursorLabel = container.querySelector('[data-korea-earnings-cursor-label]');
     const cursorPeriod = container.querySelector('[data-korea-earnings-cursor-period]');
     const yLabels = [...container.querySelectorAll('[data-korea-earnings-y-label]')];
     const yGrids = [...container.querySelectorAll('[data-korea-earnings-y-grid]')];
-    const zeroReference = container.querySelector('[data-korea-earnings-zero-line]');
     const lineElements = new Map(METRICS.map((metric) => [metric.key, [...container.querySelectorAll(`[data-korea-earnings-line="${metric.key}"]`)]]));
     const pointElements = [...container.querySelectorAll('[data-korea-earnings-point]')];
     const indexFromEvent = (event) => {
@@ -293,11 +289,8 @@
       yGrids.forEach((grid, index) => {
         const value = visibleDomain.ticks[index], gridY = y(value, visibleDomain);
         grid.setAttribute('y1', gridY); grid.setAttribute('y2', gridY);
+        grid.setAttribute('class', value === 0 ? 'analysis-chart-zero-line' : 'korea-earnings-grid');
       });
-      if (zeroReference) {
-        const zeroY = y(0, visibleDomain);
-        zeroReference.setAttribute('y1', zeroY); zeroReference.setAttribute('y2', zeroY);
-      }
       metricSeries.forEach((metric) => {
         const segments = lineSegments(metric.points, visibleDomain.min, visibleDomain.max, chartWidth, spec.height, padding);
         lineElements.get(metric.key)?.forEach((line) => {

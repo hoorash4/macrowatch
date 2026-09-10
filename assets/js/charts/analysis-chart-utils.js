@@ -71,7 +71,7 @@
     const number = Number(value);
     if (!Number.isFinite(number)) return '—';
     const normalized = Object.is(number, -0) || Math.abs(number) < Number.EPSILON ? 0 : number;
-    const maximumFractionDigits = Number.isInteger(normalized) ? 0 : 1;
+    const maximumFractionDigits = Number.isInteger(normalized) ? 0 : Math.abs(normalized) < 1 ? 2 : 1;
     return `${formatChartNumber(normalized, { maximumFractionDigits, showPlus, locale })}${suffix}`;
   }
 
@@ -384,7 +384,7 @@
     return dates.length ? timelineWidth(baseWidth, Math.min(...dates), Math.max(...dates), years) : baseWidth;
   }
 
-  function axisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null, targetIntervals = 4 } = {}) {
+  function axisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null, targetIntervals = 5 } = {}) {
     const finiteValues = values.filter(Number.isFinite);
     if (!finiteValues.length) return null;
     let min = Math.min(...finiteValues), max = Math.max(...finiteValues);
@@ -392,36 +392,37 @@
     const observedSpan = max - min;
     const fallbackSpan = Math.max(Math.abs(min), Math.abs(max)) * .1 || 1;
     const span = Math.max(observedSpan, minimumSpan ?? fallbackSpan);
+    if (observedSpan < span) {
+      const center = (min + max) / 2;
+      min = center - span / 2;
+      max = center + span / 2;
+    }
+    const requestedCount = Math.max(2, Math.trunc(Number(targetIntervals)) || 5);
+    const count = symmetric && requestedCount % 2 ? requestedCount - 1 : requestedCount;
     if (symmetric) {
-      const extent = Math.max(Math.abs(min), Math.abs(max), span / 2);
-      const paddedExtent = extent / (1 - VISIBLE_Y_PADDING * 2);
-      min = -paddedExtent;
-      max = paddedExtent;
+      const extent = Math.max(Math.abs(min), Math.abs(max), span / 2) / (1 - VISIBLE_Y_PADDING * 2);
+      min = -extent;
+      max = extent;
     } else {
       const padding = span * VISIBLE_Y_PADDING / (1 - VISIBLE_Y_PADDING * 2);
       min -= padding;
       max += padding;
     }
-    const count = Math.max(1, Math.trunc(Number(targetIntervals)) || 1);
-    const roughStep = Math.max((max - min) / count, Number.EPSILON);
-    const magnitude = 10 ** Math.floor(Math.log10(roughStep));
-    const normalized = roughStep / magnitude;
-    const factor = [1, 2, 5, 10].find((candidate) => normalized <= candidate) || 10;
-    const step = factor * magnitude;
-    min = Math.floor(min / step) * step;
-    max = Math.ceil(max / step) * step;
-    if (symmetric) {
-      const extent = Math.max(Math.abs(min), Math.abs(max));
-      min = -extent;
-      max = extent;
-    }
-    const ticks = [];
-    for (let value = min, index = 0; value <= max + step / 2 && index < 12; value += step, index += 1) {
-      ticks.push(Number(value.toPrecision(12)));
-    }
-    if (min <= 0 && max >= 0 && !ticks.some((value) => Math.abs(value) < step / 1000)) {
-      ticks.push(0);
-      ticks.sort((a, b) => a - b);
+    const step = (max - min) / count;
+    const roundingQuantum = 10 ** Math.floor(Math.log10(Math.max(Math.abs(step), Number.EPSILON)));
+    const ticks = Array.from({ length: count + 1 }, (_, index) => {
+      const raw = min + step * index;
+      // Domain bounds retain the exact 10% plot padding. Only displayed tick
+      // values are rounded, so readable labels can never flatten the graph.
+      const rounded = Math.round(raw / roundingQuantum) * roundingQuantum;
+      const visible = rounded >= min && rounded <= max ? rounded : raw;
+      return Math.abs(visible) < roundingQuantum / 2 ? 0 : Number(visible.toPrecision(12));
+    });
+    if (min < 0 && max > 0 && !ticks.includes(0)) {
+      const closest = ticks.reduce((best, value, index) => (
+        Math.abs(value) < Math.abs(ticks[best]) ? index : best
+      ), 0);
+      ticks[closest] = 0;
     }
     return { min, max, ticks, step };
   }
@@ -434,11 +435,11 @@
     ));
   }
 
-  function niceAxisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null, targetIntervals = 4 } = {}) {
+  function niceAxisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null, targetIntervals = 5 } = {}) {
     return axisDomain(values, { includeZero, symmetric, minimumSpan, targetIntervals });
   }
 
-  function visibleAxisDomain(points, left, right, symmetric = false) {
+  function visibleAxisDomain(points, left, right, symmetric = false, targetIntervals = 5, includeZero = false) {
     // Include the neighbouring samples at viewport edges so crossing curves fit too.
     const values = [];
     let before, after;
@@ -453,23 +454,11 @@
     });
     if (!values.length) return null;
     return axisDomain(values, {
+      includeZero,
       symmetric,
+      targetIntervals,
       minimumSpan: Math.max(Math.abs(Math.min(...values)), Math.abs(Math.max(...values))) * .02 || .0001,
     });
-  }
-
-  function displayedAxisTicks(domain, availableSlots) {
-    const ticks = Array.isArray(domain?.ticks) ? domain.ticks : [];
-    const count = Math.max(0, Math.trunc(Number(availableSlots)) || 0);
-    if (ticks.length <= count) return ticks;
-    if (count <= 1) return ticks.some(value => value === 0) ? [0] : [ticks[Math.floor(ticks.length / 2)]];
-    const selected = new Set([0, ticks.length - 1]);
-    const zeroIndex = ticks.findIndex(value => value === 0);
-    if (zeroIndex >= 0) selected.add(zeroIndex);
-    for (let slot = 1; selected.size < count && slot < count * 2; slot += 1) {
-      selected.add(Math.round(slot * (ticks.length - 1) / Math.max(1, count - 1)));
-    }
-    return [...selected].sort((a, b) => a - b).slice(0, count).map(index => ticks[index]);
   }
 
   let axisClipSequence = 0;
@@ -496,21 +485,18 @@
       referenceLines: (axis.referenceLines || []).flatMap(reference =>
         [...svg.querySelectorAll(reference.selector)].map(node => ({ node, value: Number(reference.value) })),
       ).filter(reference => Number.isFinite(reference.value)),
-      labels: [...shell.querySelectorAll('svg text')].filter(node => {
+      // Only the pinned clones are live axis labels. The original labels remain
+      // hidden inside the scrolling SVG and must not double the available slots.
+      labels: [...shell.querySelectorAll(':scope > svg.analysis-chart-fixed-axis text')].filter(node => {
         const pixel = Number(node.getAttribute('y')) - 3;
         if (pixel < top - 1 || pixel > bottom + 1) return false;
         return axis.side === 'right'
           ? node.matches('[data-chart-right-axis]')
           : node.matches('[data-chart-left-axis]');
-      }).map(node => {
-        const pixel = Number(node.getAttribute('y')) - 3;
-        const gridLines = axis.side === 'right' ? [] : [...svg.querySelectorAll('line')].filter(line => {
-          const y1 = Number(line.getAttribute('y1')), y2 = Number(line.getAttribute('y2'));
-          return !line.matches('.analysis-chart-axis-line,.analysis-chart-zero-line')
-            && Number.isFinite(y1) && Math.abs(y1 - y2) < .01 && Math.abs(y1 - pixel) < 1.51;
-        });
-        return { node, pixel, gridLines };
-      }),
+      }).map(node => ({ node, pixel: Number(node.getAttribute('y')) - 3 }))
+        .sort((leftLabel, rightLabel) => leftLabel.pixel - rightLabel.pixel),
+      gridLines: axis.side === 'right' ? [] : [...svg.querySelectorAll('[data-chart-grid]')]
+        .sort((leftLine, rightLine) => Number(leftLine.getAttribute('y1')) - Number(rightLine.getAttribute('y1'))),
     }));
     let pending = null;
     const update = () => {
@@ -521,7 +507,7 @@
       const left = plotLeft + frame.scrollLeft * unitsPerPixel;
       const right = plotLeft + (frame.scrollLeft + frame.clientWidth) * unitsPerPixel;
       bindings.forEach(axis => {
-        const domain = visibleAxisDomain(axis.points, left, right, axis.symmetric);
+        const domain = visibleAxisDomain(axis.points, left, right, axis.symmetric, Math.max(2, axis.labels.length - 1), axis.includeZero === true);
         if (!domain) return;
         const inverted = axis.y(1) > axis.y(0);
         const map = value => top + (inverted ? value - domain.min : domain.max - value) / (domain.max - domain.min) * (bottom - top);
@@ -537,20 +523,18 @@
           node.setAttribute('y1', pixel);
           node.setAttribute('y2', pixel);
         });
-        const labelTicks = displayedAxisTicks(domain, axis.labels.length);
-        axis.labels.forEach(({ node, gridLines }, index) => {
-          const value = labelTicks[index];
-          if (!Number.isFinite(value)) {
-            node.setAttribute('visibility', 'hidden');
-            gridLines.forEach(line => line.setAttribute('visibility', 'hidden'));
-            return;
-          }
-          node.removeAttribute('visibility');
-          gridLines.forEach(line => line.removeAttribute('visibility'));
-          const pixel = map(value);
-          node.setAttribute('y', pixel + 3);
-          gridLines.forEach(line => { line.setAttribute('y1', pixel); line.setAttribute('y2', pixel); });
+        const displayedTicks = inverted ? domain.ticks : [...domain.ticks].reverse();
+        axis.labels.forEach(({ node }, index) => {
+          const value = displayedTicks[index];
+          node.setAttribute('y', map(value) + 3);
           node.textContent = axis.format ? axis.format(value) : formatAxisNumber(value);
+        });
+        axis.gridLines.forEach((line, index) => {
+          const value = displayedTicks[index];
+          const pixel = map(value);
+          line.setAttribute('y1', pixel);
+          line.setAttribute('y2', pixel);
+          line.classList.toggle('analysis-chart-zero-line', value === 0);
         });
       });
     };
@@ -753,5 +737,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, formatAxisNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, setChartLegend, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, niceAxisDomain, displayedAxisTicks, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, formatAxisNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, setChartLegend, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, niceAxisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

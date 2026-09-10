@@ -200,10 +200,11 @@ test('missing values are not zero and flat data retains a finite span', () => {
   assert.equal(domain([{ x: 0, value: null }], 0, 1), null);
 });
 
-test('common axis domain expands to round ticks and preserves zero when visible', () => {
+test('common axis domain keeps the data range primary and preserves zero for requested reference charts', () => {
   const linear = axisDomain([20, 100]);
   assert.ok(linear.min < 20 && linear.max > 100);
-  assert.ok(linear.ticks.every(value => Number.isInteger(value / linear.step)));
+  assert.equal(linear.ticks.length, 6);
+  assert.ok(linear.min >= 10 && linear.max <= 110, 'rounding does not expand the 10% plot padding');
   const zeroAxis = axisDomain([10, 40], { includeZero: true });
   assert.ok(zeroAxis.min < 0);
   assert.ok(zeroAxis.ticks.includes(0));
@@ -212,17 +213,14 @@ test('common axis domain expands to round ticks and preserves zero when visible'
   assert.ok(symmetric.ticks.includes(0));
   const decimal = axisDomain([-.31, .44], { includeZero: true });
   assert.ok(decimal.ticks.includes(0));
-  assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(.24), '0.2');
+  assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(.24), '0.24');
+  assert.notEqual(context.window.MacroWatchAnalysisChart.formatAxisNumber(.01), context.window.MacroWatchAnalysisChart.formatAxisNumber(.02));
   assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(2), '2');
+  const positive = axisDomain([5, 8]);
+  assert.ok(!positive.ticks.includes(0), 'positive-only data does not force zero into the range');
 });
 
-test('limited fixed-axis slots retain the zero tick', () => {
-  const ticks = context.window.MacroWatchAnalysisChart.displayedAxisTicks(
-    { ticks: [-30, -20, -10, 0, 10, 20, 30] },
-    5,
-  );
-  assert.ok(ticks.includes(0));
-  assert.equal(ticks[0], -30);
-  assert.equal(ticks.at(-1), 30);
+test('visible scaling updates only pinned axis labels so left and right slots are never doubled', () => {
+  assert.match(source, /querySelectorAll\(':scope > svg\.analysis-chart-fixed-axis text'\)/);
+  assert.doesNotMatch(source, /const labelTicks = displayedAxisTicks/);
 });
-

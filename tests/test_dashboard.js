@@ -93,7 +93,7 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   const chartUtils = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(styles, /\.analysis-chart-cursor-text \{ font-size:10px; font-weight:400;/);
   assert.match(styles, /\.analysis-chart-year-label \{ fill:#64748b; font-size:12px; font-weight:400;/);
-  assert.match(styles, /\.analysis-chart-axis-line,[\s\S]*?\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:1; vector-effect:non-scaling-stroke; shape-rendering:crispEdges;/);
+  assert.match(styles, /\.analysis-chart-axis-line,[\s\S]*?\.analysis-chart-zero-line \{ stroke:#94a3b8; stroke-width:1; stroke-dasharray:none; vector-effect:non-scaling-stroke; shape-rendering:crispEdges;/);
   assert.doesNotMatch(styles, /(?:policy-chart|policy-expectation|korea-earnings)[^{]*--zero/);
   assert.match(dashboardCharts, /xAxisMode: 'zero'/);
   assert.match(chartUtils, /analysis-chart-cursor-text analysis-chart-cursor-value/);
@@ -230,8 +230,8 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(chart, /treasury_10y_5d_pct/);
   assert.match(chart, /withTreasuryAverage/);
   assert.match(chart, /addMonthsIso/);
-  assert.match(chart, /data-inflation-real-zero class="analysis-chart-zero-line"/);
-  assert.match(chart, /referenceLines: \[\{ selector: '\[data-inflation-real-zero\]', value: 0 \}\]/);
+  assert.match(chart, /data-chart-grid[\s\S]*?value === 0 \? 'analysis-chart-zero-line'/);
+  assert.doesNotMatch(chart, /data-inflation-real-zero|referenceLines:/);
   assert.match(chart, /lineWidths\.primary/);
   assert.match(chart, /lineWidths\.auxiliary/);
   assert.match(chart, /lineWidths\.comparison/);
@@ -380,7 +380,8 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /chartUtils\.chartFrameWidth\(containerWidth, PROFILE\.axisMode\)/);
   assert.match(source, /chartUtils\.historyWidth\(points, 'periodDate', market\.state\.years, frameWidth\)/);
   assert.match(source, /bottom: spec\.showPeriodLabels \? 42 : 0/, '보조지표 Y축은 그래프 하단까지 이어진다');
-  assert.match(source, /data-korea-earnings-zero-line/);
+  assert.match(source, /value === 0 \? 'analysis-chart-zero-line' : 'korea-earnings-grid'/);
+  assert.match(source, /top: padding\.top, bottom: padding\.bottom/);
   assert.equal((html.match(/data-earnings-legend/g) || []).length, 2, '기업이익 카드마다 전체 그래프 공통 범례를 한 곳만 둔다');
   assert.match(source, /setChartLegend\(market\.root\?\.querySelector\('\[data-earnings-legend\]'\), items, '영업이익·순이익 공통 범례'\)/);
   assert.doesNotMatch(source, /aria-label="\$\{spec\.key\} 범례"/);
@@ -430,9 +431,9 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.match(source, /const chartMetrics = METRICS/);
   assert.match(source, /operating_margin_pct/);
   assert.match(source, /net_margin_pct/);
-  assert.match(source, /kind: 'margin'[^\n]*includeZero: true/);
-  assert.match(source, /kind: 'growth'[^\n]*includeZero: true/);
-  assert.match(source, /kind: 'qoq'[^\n]*includeZero: true/);
+  assert.match(source, /kind: 'margin'[^\n]*includeZero: false/);
+  assert.match(source, /kind: 'growth'[^\n]*includeZero: false/);
+  assert.match(source, /kind: 'qoq'[^\n]*includeZero: false/);
   assert.match(source, /korea-earnings-line--\$\{spec\.kind\}/);
   assert.match(source, /function provisionalEdgeStates/);
   assert.match(source, /market\.type === 'company' \? '' : ' 합계'/);

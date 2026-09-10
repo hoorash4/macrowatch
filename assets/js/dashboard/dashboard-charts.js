@@ -307,7 +307,7 @@ function renderMarketStressDashboard(rows, weeklyRows = []) {
     .map((row) => [Number(row.stress_index), toCreditStressNumber(row.sp500_month_end_close)])
     .filter(([stress, sp500]) => Number.isFinite(stress) && Number.isFinite(sp500));
   const correlation = calculateCorrelation(correlationPairs);
-  const grid = scoreDomain.ticks.map((score) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(score)}</text>`).join('');
+  const grid = scoreDomain.ticks.map((score) => `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${y(score)}" y2="${y(score)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(score) + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(score)}</text>`).join('');
   chart.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="미국 시장 스트레스 지수와 S&P 500 월말 종가 추이"><line x1="${padding.left}" x2="${padding.left}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/><line x1="${width - padding.right}" x2="${width - padding.right}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#94a3b8"/>${grid}${sp500Axis}${lines}${sp500Lines}${dots}${sp500Dots}${labels}</svg></div><div class="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-slate-400"><div class="flex flex-wrap gap-x-5 gap-y-2">${legendItem('US-MSI', { stroke: '#b7791f', width: lineWidths.primary })}${legendItem('US-MSI 잠정치', { stroke: '#b7791f', width: lineWidths.primary, dash: '5 5' })}${hasSp500 ? legendItem('S&P 500 월말 종가', { stroke: '#6b7280', width: lineWidths.comparison }) : ''}</div></div>${correlation == null ? '' : `<p class="mt-2 text-right text-[11px] text-slate-500">US-MSI·S&P 500 동일 월 상관계수: r = ${formatChartNumber(correlation)}</p>`}`;
   // US-MSI는 선택 기간 전체의 고정 축으로 해석합니다. 스크롤은 범위 탐색만 담당하며,
   // 현재 보이는 구간마다 선 좌표를 다시 축척하지 않습니다.
@@ -343,7 +343,7 @@ function renderMarketStressAndTensionChart(weeklyRows) {
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${String(row.week).slice(0, 4)}</text>`).join('');
   const grid = [...tensionDomain.ticks].reverse().map((value) => {
     const py = y(value);
-    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`;
+    return `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`;
   }).join('');
   const sp500Axis = hasSp500 ? sp500Domain.ticks.map((value) => `<text data-chart-right-axis x="${width - padding.right + 9}" y="${sp500Y(value) + 3}" fill="#6b7280" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`).join('') : '';
   const sp500Lines = `<path d="${monotoneSeriesPath(weekly, (row) => x(row.week), (row) => sp500Y(toCreditStressNumber(row.sp500_friday_close)))}" fill="none" stroke="#6b7280" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/>`;
@@ -527,7 +527,7 @@ function renderEmStressDashboard(rows) {
   const yearGuides = yearRows.slice(1).map((row) => `<line x1="${x(row.week)}" x2="${x(row.week)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`).join('');
   const years = yearRows.slice(1).map((row) => `<text x="${x(row.week)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${String(row.week).slice(0, 4)}</text>`).join('');
   const grid = [...stressDomain.ticks].reverse().map((value) => {
-    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`;
+    return `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`;
   }).join('');
   const eem = hasEem ? `<path d="${monotoneSeriesPath(weekly, (row) => x(row.week), (row) => eemY(Number(row.eem_weekly_close)))}" fill="none" stroke="#6b7280" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/>` : '';
   const eemLabels = hasEem ? eemDomain.ticks.map((value) => `<text data-chart-right-axis x="${width - padding.right + 8}" y="${eemY(value) + 3}" fill="#6b7280" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`).join('') : '';
@@ -597,7 +597,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const kospiY = (value) => padding.top + (height - padding.top - padding.bottom) * (kospiUpper - value) / Math.max(1, kospiUpper - kospiLower);
   const grid = [...stressDomain.ticks].reverse().map((value) => {
     const py = y(value);
-    return `<line x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`;
+    return `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${py}" y2="${py}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${py + 3}" text-anchor="end" fill="#64748b" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(value)}</text>`;
   }).join('');
   const years = data.filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(data[index - 1].month).slice(0, 4));
   const yearGuides = years.map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/><text x="${x(row.month)}" y="${height - 12}" text-anchor="middle" class="analysis-chart-year-label">${String(row.month).slice(0, 4)}</text>`).join('');
@@ -633,7 +633,7 @@ function renderKoreaStressChart(rows, weeklyKospiRows = []) {
   const fsiDomain = window.MacroWatchAnalysisChart.axisDomain(fsiValues, { minimumSpan: 1, targetIntervals: 3 });
   const { min: fsiLower, max: fsiUpper } = fsiDomain;
   const fsiY = (value) => fsiPadding.top + (fsiHeight - fsiPadding.top - fsiPadding.bottom) * (fsiUpper - value) / Math.max(1, fsiUpper - fsiLower);
-  const fsiGrid = [...fsiDomain.ticks].reverse().map((chartValue) => `<line x1="${fsiPadding.left}" x2="${width - fsiPadding.right}" y1="${fsiY(chartValue)}" y2="${fsiY(chartValue)}" stroke="#e6e1f2" stroke-dasharray="3 4"/><text data-chart-left-axis x="${fsiPadding.left - 9}" y="${fsiY(chartValue) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(chartValue)}</text>`).join('');
+  const fsiGrid = [...fsiDomain.ticks].reverse().map((chartValue) => `<line data-chart-grid x1="${fsiPadding.left}" x2="${width - fsiPadding.right}" y1="${fsiY(chartValue)}" y2="${fsiY(chartValue)}" stroke="#e6e1f2" stroke-dasharray="3 4"/><text data-chart-left-axis x="${fsiPadding.left - 9}" y="${fsiY(chartValue) + 3}" text-anchor="end" fill="#7c6b9d" font-size="10">${window.MacroWatchAnalysisChart.formatAxisNumber(chartValue)}</text>`).join('');
   const fsiYearGuides = fsiRows
     .filter((row, index) => index > 0 && String(row.month).slice(0, 4) !== String(fsiRows[index - 1].month).slice(0, 4))
     .map((row) => `<line x1="${x(row.month)}" x2="${x(row.month)}" y1="${fsiPadding.top}" y2="${fsiHeight - fsiPadding.bottom}" stroke="#d4dde8" stroke-dasharray="3 4"/>`)

@@ -79,10 +79,10 @@
       ...monthly.flatMap(row => [Number(row.headline_yoy_pct), Number(row.core_yoy_pct)]),
       ...policy.flatMap(row => [Number(row.target_upper_pct), finiteNumber(row.treasury_10y_5d_pct)]),
     ].filter(Number.isFinite);
-    const domain = chartUtils.axisDomain(values, { includeZero: true, minimumSpan: 2 });
+    const domain = chartUtils.axisDomain(values, { minimumSpan: 2 });
     const y = value => padding.top + (domain.max - value) / (domain.max - domain.min) * (height - padding.top - padding.bottom);
     const ticks = [...domain.ticks].reverse();
-    const grid = ticks.map(value => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${chartUtils.formatAxisNumber(value, { suffix: '%' })}</text>`).join('');
+    const grid = ticks.map(value => `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}" stroke="#dbe3ed" stroke-dasharray="3 4"/><text data-chart-left-axis x="${padding.left - 9}" y="${y(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${chartUtils.formatAxisNumber(value, { suffix: '%' })}</text>`).join('');
     const finalRows = monthly.filter(row => row.status === 'final');
     const provisionalRows = monthly.filter(row => row.status === 'provisional');
     const bridgeRows = provisionalRows.length && finalRows.length ? [finalRows.at(-1), ...provisionalRows] : provisionalRows;
@@ -113,9 +113,8 @@
     const realDomain = chartUtils.axisDomain(realValues, { includeZero: true, minimumSpan: 2 });
     const realY = value => realPadding.top + (realDomain.max - value) / (realDomain.max - realDomain.min) * (realHeight - realPadding.top - realPadding.bottom);
     const realTicks = [...realDomain.ticks].reverse();
-    const realGrid = realTicks.map(value => `<line x1="${realPadding.left}" x2="${width - realPadding.right}" y1="${realY(value)}" y2="${realY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${realPadding.left - 9}" y="${realY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${chartUtils.formatAxisNumber(value, { suffix: '%' })}</text>`).join('');
-    const realZeroLine = `<line data-inflation-real-zero class="analysis-chart-zero-line" x1="${realPadding.left}" x2="${width - realPadding.right}" y1="${realY(0)}" y2="${realY(0)}"/>`;
-    realHost.innerHTML = `<svg class="w-full" style="height:${realHeight}px" viewBox="0 0 ${width} ${realHeight}" role="img" aria-label="헤드라인과 코어 실질금리 보조지표">${realGrid}${realZeroLine}<path d="${path(monthly, 'headline_real_rate_pct', realY)}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/><path d="${path(monthly, 'core_real_rate_pct', realY)}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/><line data-inflation-real-cursor x1="0" x2="0" y1="${realPadding.top}" y2="${realHeight - realPadding.bottom}" class="policy-expectation-cursor"/><text data-inflation-real-value x="0" y="14" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-inflation-real-date x="0" y="${realHeight - realPadding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text></svg>`;
+    const realGrid = realTicks.map(value => `<line data-chart-grid x1="${realPadding.left}" x2="${width - realPadding.right}" y1="${realY(value)}" y2="${realY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4" class="${value === 0 ? 'analysis-chart-zero-line' : ''}"/><text data-chart-left-axis x="${realPadding.left - 9}" y="${realY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${chartUtils.formatAxisNumber(value, { suffix: '%' })}</text>`).join('');
+    realHost.innerHTML = `<svg class="w-full" style="height:${realHeight}px" viewBox="0 0 ${width} ${realHeight}" role="img" aria-label="헤드라인과 코어 실질금리 보조지표">${realGrid}<path d="${path(monthly, 'headline_real_rate_pct', realY)}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/><path d="${path(monthly, 'core_real_rate_pct', realY)}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.auxiliary}" stroke-linecap="round"/><line data-inflation-real-cursor x1="0" x2="0" y1="${realPadding.top}" y2="${realHeight - realPadding.bottom}" class="policy-expectation-cursor"/><text data-inflation-real-value x="0" y="14" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-inflation-real-date x="0" y="${realHeight - realPadding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text></svg>`;
     chartUtils.scrollableSvg(realHost.querySelector('svg'), width, baseWidth, {
       left: realPadding.left, right: realPadding.right,
       axisMode: realPadding.axisMode,
@@ -124,10 +123,10 @@
       top: realPadding.top, bottom: realHeight - realPadding.bottom,
       axes: [{
         side: 'left',
+        includeZero: true,
         y: realY,
         points: monthly.flatMap(row => [{ x: xInflation(row), value: Number(row.headline_real_rate_pct) }, { x: xInflation(row), value: Number(row.core_real_rate_pct) }]),
         selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"]`,
-        referenceLines: [{ selector: '[data-inflation-real-zero]', value: 0 }],
         format: value => chartUtils.formatAxisNumber(value, { suffix: '%' }),
       }],
     });

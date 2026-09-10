@@ -33,7 +33,7 @@
       symmetric: POLICY_CHART_MODE === 'oscillator',
       minimumSpan: 1,
     }) || { min: -1, max: 1 };
-    return { tickValues: chartUtils.displayedAxisTicks(domain, 5), yMin: domain.min, yMax: domain.max };
+    return { tickValues: domain.ticks, yMin: domain.min, yMax: domain.max };
   }
 
   function render(container, rows, selectedYears) {
