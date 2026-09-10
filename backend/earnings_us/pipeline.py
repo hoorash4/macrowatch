@@ -55,8 +55,6 @@ def fact_from_row(row: dict[str, Any]) -> USFinancialFact:
 
 
 class USEarningsAutomaticPipeline:
-    six_k_backfill_mode = False
-
     def __init__(
         self, repository: USEarningsRepository, sec: SecEdgarClient,
         constituents: USIndexConstituentClient, fx: EcosFxClient | None = None,
@@ -90,7 +88,7 @@ class USEarningsAutomaticPipeline:
         for filing in filings:
             fact = extract_six_k_fact(
                 company_id, filing, self.sec.six_k_documents(cik, filing), year, quarter,
-                self._fx_to_usd, backfill_mode=self.six_k_backfill_mode,
+                self._fx_to_usd,
             )
             if fact is not None:
                 result.append(fact)

@@ -74,94 +74,39 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict[str, object]]:
     return rows
 
 
-def validate_replacement(raw: dict[str, dict[str, float]], rows: list[dict[str, object]], start: date) -> None:
-    """전체 교체 전에 월별 핵심 시계열이 중간에서 끊기지 않았는지 확인한다."""
-    funding_months = sorted(month for month in raw.get("funding_outlook", {}) if month >= start.isoformat())
-    headline = raw.get("headline_outlook", {})
-    if not funding_months or funding_months[0] != start.isoformat():
-        raise RuntimeError(f"백필 시작월 {start.isoformat()} 자금사정 자료가 없습니다.")
-    expected: list[str] = []
-    cursor = start
-    last = datetime.strptime(funding_months[-1], "%Y-%m-%d").date()
-    while cursor <= last:
-        expected.append(cursor.isoformat())
-        cursor = date(cursor.year + (cursor.month == 12), cursor.month % 12 + 1, 1)
-    missing_funding = sorted(set(expected) - set(funding_months))
-    missing_headline = sorted(set(funding_months) - set(headline))
-    row_months = {str(row["month"]) for row in rows}
-    missing_rows = sorted(set(funding_months) - row_months)
-    if missing_funding or missing_headline or missing_rows:
-        raise RuntimeError(
-            "백필 완전성 검증 실패: "
-            f"funding={missing_funding[:6]} headline={missing_headline[:6]} rows={missing_rows[:6]}"
-        )
-
-
-def should_preserve_existing_data(error: Exception, *, replace: bool, bootstrap: bool) -> bool:
-    """자동 수집 중 일시적인 원자료 연결 실패면 기존 확정값을 유지한다."""
-    return not replace and not bootstrap and isinstance(error, requests.RequestException)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=10)
-    parser.add_argument("--start", help="전체 교체 시작월(YYYY-MM)")
-    parser.add_argument("--replace", action="store_true", help="대상 기간을 외부 원자료로 전체 교체")
-    parser.add_argument("--bootstrap-if-empty", action="store_true", help="빈 테이블은 2020-01부터 최초 백필")
     args = parser.parse_args()
     if args.years < 1 or args.years > 15:
         raise SystemExit("--years 값은 1~15 사이여야 합니다.")
     today = date.today()
     database = SupabaseRest(timeout=TIMEOUT_SECONDS)
-    replace = args.replace
-    bootstrap = False
-    if args.bootstrap_if_empty and not replace:
-        existing = database.request(
-            "GET",
-            "kr_small_business_risk_monthly",
-            params={"select": "month", "order": "month.desc", "limit": 1},
-        ) or []
-        bootstrap = not existing
-        replace = bootstrap
-    if bootstrap:
-        start = date(2020, 1, 1)
-    elif args.start:
-        try:
-            start = datetime.strptime(args.start, "%Y-%m").date()
-        except ValueError as exc:
-            raise SystemExit("--start는 YYYY-MM 형식이어야 합니다.") from exc
-    else:
-        start = date(today.year - args.years, today.month, 1)
+    start = date(today.year - args.years, today.month, 1)
     end = today.replace(day=1)
     # 최초 표시월에도 발표가 느린 가동률·연체율의 직전 관측치가 필요하다.
     collection_start = month_start_months_ago(start, 3)
     try:
-        raw = fetch_all(collection_start, end, include_historical=replace)
+        raw = fetch_all(collection_start, end, include_historical=False)
     except requests.RequestException as error:
-        if should_preserve_existing_data(error, replace=replace, bootstrap=bootstrap):
-            print(
-                "source_unavailable=true "
-                f"source_error={type(error).__name__} "
-                "existing_confirmed_data_preserved=true"
-            )
-            return
-        raise
+        print(
+            "source_unavailable=true "
+            f"source_error={type(error).__name__} "
+            "existing_confirmed_data_preserved=true"
+        )
+        return
     rows = [row for row in build_rows(raw) if str(row["month"]) >= start.isoformat()]
     if not rows:
         raise RuntimeError("저장할 한국 중소기업 위험지수 데이터가 없습니다.")
-    if replace:
-        validate_replacement(raw, rows, start)
-    if replace:
-        database.request(
-            "DELETE",
-            "kr_small_business_risk_monthly",
-            params={"month": f"gte.{start.isoformat()}", "and": f"(month.lte.{end.isoformat()})"},
-            prefer="return=minimal",
-        )
-    database.upsert("kr_small_business_risk_monthly", rows, conflict="month")
+    writable = database.automatic_rows(
+        "kr_small_business_risk_monthly", rows, key="month", provisional="is_provisional"
+    )
+    if writable:
+        database.upsert("kr_small_business_risk_monthly", writable, conflict="month")
     print(
-        f"upserted_months={len(rows)} range={rows[0]['month']}..{rows[-1]['month']} "
-        f"provisional={sum(bool(row['is_provisional']) for row in rows)} replace={replace} bootstrap={bootstrap}"
+        f"calculated_months={len(rows)} stored_months={len(writable)} "
+        f"range={rows[0]['month']}..{rows[-1]['month']} "
+        f"provisional={sum(bool(row['is_provisional']) for row in rows)}"
     )
 
 

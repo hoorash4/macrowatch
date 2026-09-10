@@ -65,16 +65,14 @@ def build_rows(series_values: dict[str, dict[str, float]]) -> list[dict]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    window = parser.add_mutually_exclusive_group()
-    window.add_argument("--start-year", type=int, help="Backfill starting year")
-    window.add_argument("--days", type=int, default=21, help="Recent calendar-day refresh window")
+    parser.add_argument("--days", type=int, default=21, help="Recent calendar-day refresh window")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     today = date.today()
-    start = date(args.start_year, 1, 1) if args.start_year else today - timedelta(days=max(args.days, 7))
+    start = today - timedelta(days=max(args.days, 7))
     fred_api_key = require_env("FRED_API_KEY")
     series_values = {
         field: valid_daily_values(fetch_fred_observations(

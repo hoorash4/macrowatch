@@ -48,37 +48,9 @@ def build_rows(
     return rows
 
 
-def existing_legacy_oas(database: SupabaseRest, start: date) -> dict[str, float]:
-    """산식에서 제외한 기존 OAS 원자료를 백필 중에도 보존한다."""
-    rows = database.request(
-        "GET",
-        "us_credit_stress_monthly",
-        params={
-            "select": "month,high_yield_oas_pct",
-            "month": f"gte.{start.replace(day=1).isoformat()}",
-            "high_yield_oas_pct": "not.is.null",
-            "order": "month.asc",
-        },
-    ) or []
-    return {
-        str(row["month"]): float(row["high_yield_oas_pct"])
-        for row in rows
-        if row.get("month") and row.get("high_yield_oas_pct") is not None
-    }
-
-
-def attach_legacy_oas(rows: list[dict[str, object]], legacy_oas: dict[str, float]) -> None:
-    """일괄 upsert 열 구성을 통일하면서 기존 OAS 값만 보존한다."""
-    for row in rows:
-        month = str(row["month"])
-        row["high_yield_oas_pct"] = round(legacy_oas[month], 4) if month in legacy_oas else None
-        row["includes_oas"] = month in legacy_oas
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=10)
-    parser.add_argument("--replace", action="store_true", help="대상 기간을 외부 원자료로 전체 교체")
     args = parser.parse_args()
     if args.years < 1 or args.years > 10:
         raise SystemExit("--years 값은 1~10 사이여야 합니다.")
@@ -91,19 +63,14 @@ def main() -> None:
     rows = build_rows(sales, borrowing, optimism, today)
     if not rows:
         raise RuntimeError("저장할 미국 중소기업 위험지수 데이터가 없습니다.")
-    if args.replace:
-        legacy_oas = existing_legacy_oas(database, start)
-        attach_legacy_oas(rows, legacy_oas)
-        database.request(
-            "DELETE",
-            "us_small_business_risk_monthly",
-            params={"month": f"gte.{start.isoformat()}", "and": f"(month.lte.{end.isoformat()})"},
-            prefer="return=minimal",
-        )
-    database.upsert("us_small_business_risk_monthly", rows, conflict="month")
+    writable = database.automatic_rows(
+        "us_small_business_risk_monthly", rows, key="month", provisional="is_provisional"
+    )
+    if writable:
+        database.upsert("us_small_business_risk_monthly", writable, conflict="month")
     print(
-        f"upserted_months={len(rows)} range={rows[0]['month']}..{rows[-1]['month']} "
-        f"replace={args.replace}"
+        f"calculated_months={len(rows)} stored_months={len(writable)} "
+        f"range={rows[0]['month']}..{rows[-1]['month']}"
     )
 
 

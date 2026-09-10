@@ -42,6 +42,60 @@ import signals.equity_bond_model as equity_bond  # noqa: E402
 import signals.equity_bond_pipeline as equity_bond_pipeline  # noqa: E402
 
 
+class AutomationIsolationTests(unittest.TestCase):
+    def test_automatic_storage_keeps_confirmed_history_untouched(self) -> None:
+        database = object.__new__(common.SupabaseRest)
+        database.request = Mock(return_value=[
+            {"month": "2026-06-01", "is_provisional": False},
+            {"month": "2026-07-01", "is_provisional": True},
+        ])
+        rows = [
+            {"month": "2026-06-01", "value": 1},
+            {"month": "2026-07-01", "value": 2},
+            {"month": "2026-08-01", "value": 3},
+        ]
+        writable = database.automatic_rows(
+            "example", rows, key="month", provisional="is_provisional"
+        )
+        self.assertEqual([row["month"] for row in writable], ["2026-07-01", "2026-08-01"])
+
+    def test_scheduled_workflows_cannot_run_from_code_or_deploy_events(self) -> None:
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            workflow = path.read_text(encoding="utf-8")
+            if re.search(r"(?m)^  schedule:", workflow):
+                self.assertNotRegex(workflow, r"(?m)^  push:", path.name)
+                self.assertNotRegex(workflow, r"(?m)^  workflow_run:", path.name)
+                self.assertNotRegex(workflow, r"(?m)^  repository_dispatch:", path.name)
+
+    def test_backfill_entrypoints_are_removed(self) -> None:
+        removed = (
+            ".github/workflows/earnings-us-backfill.yml",
+            ".github/workflows/earnings-us-universe-backfill.yml",
+            ".github/workflows/earnings-v2-historical-batch.yml",
+            ".github/workflows/earnings-v25-backfill.yml",
+            "backend/earnings_us/backfill.py",
+            "backend/earnings_us/backfill_cli.py",
+            "backend/earnings_v2/pipeline.py",
+            "backend/earnings_v2/cli.py",
+        )
+        for relative in removed:
+            self.assertFalse((ROOT / relative).exists(), relative)
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            workflow = path.read_text(encoding="utf-8").lower()
+            self.assertNotIn("backfill", workflow, path.name)
+
+    def test_scheduled_earnings_runs_still_force_database_writes(self) -> None:
+        for name in ("earnings-us-automatic.yml", "earnings-v2-korea-automatic.yml"):
+            workflow = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            self.assertIn("github.event_name == 'schedule' && 'true'", workflow)
+            self.assertIn('args+=(--write)', workflow)
+
+    def test_schedule_only_commits_do_not_deploy_pages(self) -> None:
+        workflow = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")
+        self.assertIn('paths-ignore:', workflow)
+        self.assertIn('".github/workflows/**"', workflow)
+
+
 class TargetConditionTests(unittest.TestCase):
     def test_decimal_parser_handles_commas_and_parentheses(self) -> None:
         self.assertEqual(check_targets.parse_decimal("1,234.50"), Decimal("1234.50"))
@@ -163,15 +217,6 @@ class SharedCalculationTests(unittest.TestCase):
         self.assertFalse(rows[0]["is_provisional"])
         self.assertTrue(rows[1]["is_provisional"])
 
-    def test_korea_msi_cleanup_only_removes_pre_fsi_rows_without_fsi(self) -> None:
-        with patch.object(kr, "SupabaseRest") as rest:
-            kr.delete_invalid_leading_rows("https://example.supabase.co", "secret", "2023-02-01")
-        rest.return_value.request.assert_called_once_with(
-            "DELETE",
-            "korea_market_stress_monthly",
-            params={"month": "lt.2023-02-01", "bok_fsi": "is.null"},
-            prefer="return=minimal",
-        )
 
     def test_em_capacity_is_equal_weighted_and_reverses_adverse_inputs(self) -> None:
         periods = [f"2026-{month:02d}-{day:02d}" for month in (1, 2, 3) for day in range(1, 29)][:61]
@@ -314,21 +359,6 @@ class CommonClientTests(unittest.TestCase):
 
 
 class SourceContractTests(unittest.TestCase):
-    def test_us_earnings_schedule_runs_snapshot_before_edgar_and_pending_retry(self):
-        workflow = (ROOT / ".github/workflows/earnings-us-automatic.yml").read_text(encoding="utf-8")
-        backfill_workflow = (ROOT / ".github/workflows/earnings-us-backfill.yml").read_text(encoding="utf-8")
-        cli = (ROOT / "backend/earnings_us/automatic_cli.py").read_text(encoding="utf-8")
-
-        self.assertIn('cron: "0 2 * * *"', workflow)
-        self.assertIn('cron: "30 2 * * *"', workflow)
-        self.assertIn('cron: "0 3 * * *"', workflow)
-        self.assertNotIn('cron: "30 22 * * *"', workflow)
-        self.assertIn("options: [snapshot, edgar, incomplete, all]", workflow)
-        self.assertIn('choices=("snapshot", "edgar", "incomplete", "all")', cli)
-        self.assertIn("group: earnings-us-pipeline", workflow)
-        self.assertIn("group: earnings-us-pipeline", backfill_workflow)
-        universe_workflow = (ROOT / ".github/workflows/earnings-us-universe-backfill.yml").read_text(encoding="utf-8")
-        self.assertIn("group: earnings-us-pipeline", universe_workflow)
 
     def test_automation_schedule_save_reports_the_persisted_time(self):
         admin_ui = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
@@ -449,10 +479,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("fetchKisEtfCurrentPrice(credentials, token, item.etf_ticker)", pipeline)
         self.assertIn('github.event.schedule == \'30 3 * * 1-5\' && \'intraday\'', workflow)
         self.assertIn("getKisAccessToken(credentials, admin)", pipeline)
-        self.assertIn("backfill_history === true", pipeline)
         self.assertIn("incompletePriceHistoryIds", pipeline)
-        self.assertIn("autoBackfillIds.has(item.id)", pipeline)
-        self.assertIn("auto_backfill_count", pipeline)
+        self.assertIn("missingHistoryIds.has(item.id)", pipeline)
+        self.assertIn("initialized_history_count", pipeline)
         self.assertIn('fetchKisEtfTopHoldings(credentials, token, item.etf_ticker, 3)', pipeline)
         self.assertIn('.delete().lt("market_date", retentionStart)', pipeline)
         self.assertIn('if (stage === "close" && !rebuildOnly)', pipeline)
@@ -539,7 +568,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("runKisRequest(() => fetchKisDailyPriceBundle", control)
         self.assertIn("runKisRequest(() => fetchKisEtfTopHoldings", control)
         self.assertIn("incompletePriceHistoryIds", control)
-        self.assertIn("history_backfill_pending", control)
+        self.assertIn("history_initialization_pending", control)
         self.assertIn("showNotice('섹터 ETF 등록 완료'", admin_js)
         self.assertIn('latest_price: price.close, price_stage: "close"', control)
         self.assertIn("const normalizedTicker = normalizeEtfTicker(ticker)", kis)
@@ -570,7 +599,7 @@ class SourceContractTests(unittest.TestCase):
         admin_js = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902213000_add_earnings_v2_manual_resolution.sql").read_text(encoding="utf-8")
-        pipeline = (ROOT / "backend/earnings_v2/pipeline.py").read_text(encoding="utf-8")
+        pipeline = (ROOT / "backend/earnings_v2/automatic.py").read_text(encoding="utf-8")
 
         self.assertIn("대기 상태가 되면 즉시 표시합니다", admin_html)
         self.assertIn("earnings-v2-pending-form", admin_js)
@@ -580,7 +609,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("resolve_earnings_v2_pending", admin_js)
         self.assertIn('admin.rpc("earnings_v2_list_pending")', control)
         self.assertIn('admin.rpc("earnings_v2_resolve_pending"', control)
-        self.assertIn('recalculate_only: "true"', control)
+        self.assertNotIn('recalculate_only: "true"', control)
         self.assertIn("where q.is_pending and q.calculation_version >= 6", migration)
         self.assertNotIn("exists (\n    select 1\n    from earnings_v2.universe_members later", migration)
         self.assertIn("source = 'manual'", migration)
@@ -590,12 +619,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("def recalculate_quarter", pipeline)
         self.assertIn('"mode": "stored_recalculation"', pipeline)
         workflow = (ROOT / ".github/workflows/earnings-v2-korea.yml").read_text(encoding="utf-8")
-        self.assertIn("recalculate_only:", workflow)
-        self.assertIn("args+=(--recalculate-only)", workflow)
+        self.assertIn("python -m earnings_v2.recalculate_cli", workflow)
         self.assertNotIn("schedule:", workflow)
         self.assertNotIn("github.event_name == 'schedule'", workflow)
-        self.assertIn("WRITE: ${{ inputs.write }}", workflow)
-        self.assertIn('[[ "$WRITE" == "true" ]] && args+=(--write)', workflow)
+        self.assertIn("--write", workflow)
         self.assertNotIn("diagnose_kosdaq_51_100", workflow)
 
     def test_earnings_v2_daily_collection_is_receipt_checkpointed(self):
@@ -710,15 +737,6 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Promise.allSettled", pipeline)
         self.assertIn("errors: results.flatMap", pipeline)
 
-    def test_news_backfill_keeps_missing_collection_dates_separate(self) -> None:
-        pipeline = (ROOT / "supabase/functions/news-pipeline/index.ts").read_text(encoding="utf-8")
-        workflow = (ROOT / ".github/workflows/news-pipeline.yml").read_text(encoding="utf-8")
-        self.assertIn("targetDate: parseTargetDate(body.target_date)", pipeline)
-        self.assertIn("const runDate = targetDate || kstDate", pipeline)
-        self.assertIn("previousCalendarDate(targetDate)", pipeline)
-        self.assertIn("kstDate(candidate.publishedAt) === sourceDate", pipeline)
-        self.assertIn("backfill_date:", workflow)
-        self.assertIn('lookback_hours=360', workflow)
 
     def test_fomc_prompt_has_stability_boundaries(self) -> None:
         prompt = (ROOT / "supabase/prompts/fomc-policy-v1.2.txt").read_text(encoding="utf-8")
@@ -768,8 +786,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('POLICY_SCORE_PROFILE = "fed-policy-v5"', scoring)
         self.assertIn("Math.sign(value) * Math.round(Math.abs(value))", scoring)
         self.assertIn("Math.sign(score) * Math.round(Math.abs(score))", admin)
-        self.assertIn('workflows: ["Deploy Supabase changes"]', workflow)
-        self.assertIn("github.event_name == 'workflow_run' && 'score'", workflow)
+        self.assertNotIn("workflow_run:", workflow)
+        self.assertIn("options: [latest, score]", workflow)
 
     def test_fomc_v2_prompt_preserves_policy_rules_and_adds_briefing_contract(self) -> None:
         original = (ROOT / "supabase/prompts/fomc-policy-v1.2.txt").read_text(encoding="utf-8")
@@ -792,10 +810,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("primary key (central_bank, meeting_date, revision)", migration)
         self.assertIn("통화정책 시그널에 새로운 FOMC 브리핑이 등록되었습니다.", sender)
         self.assertIn("통화정책 시그널에 업데이트된 FOMC 브리핑이 등록되었습니다.", sender)
-        self.assertIn('body.mode === "recent"', pipeline)
-        self.assertIn('mode === "recent"', pipeline)
-        self.assertIn("recentCutoff.setUTCFullYear", pipeline)
-        self.assertIn('mode === "recent" && (!saved.briefing', pipeline)
+        self.assertIn("const selected = (await fedSources()).slice(-1)", pipeline)
+        self.assertNotIn('body.mode === "recent"', pipeline)
+        self.assertNotIn('body.mode === "backfill"', pipeline)
 
     def test_policy_admin_reviews_include_admin_selected_history(self) -> None:
         policy_admin = (ROOT / "supabase/functions/_shared/policy/policy-admin.ts").read_text(encoding="utf-8")
@@ -832,10 +849,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("weekly_smoothed_features", pipeline)
         self.assertIn("us-equity-environment-weekly-v2", chart)
         self.assertIn("kr-equity-environment-weekly-v1", chart)
-        self.assertIn("주별 점수", chart)
         self.assertIn("최근 4주 평균", html)
         self.assertIn("한국 주식시장 자금환경", html)
-        self.assertIn("assets/js/charts/liquidity-chart.js?v=10", html)
+        self.assertIn("assets/js/charts/liquidity-chart.js?v=21", html)
 
     def test_admin_payload_cannot_override_api_action(self) -> None:
         admin_client = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
@@ -874,12 +890,14 @@ class SourceContractTests(unittest.TestCase):
 
     def test_financial_stress_workflow_tracks_source_adapter(self) -> None:
         workflow = (ROOT / ".github/workflows/financial-stress.yml").read_text(encoding="utf-8")
-        self.assertIn("backend/sources/financial_stress.py", workflow)
+        self.assertNotIn("push:", workflow)
+        self.assertIn("signals.financial_stress_pipeline --years 3", workflow)
 
-    def test_small_business_workflow_is_independent_and_keeps_ten_years(self) -> None:
+    def test_small_business_workflow_is_schedule_only_and_incremental(self) -> None:
         workflow = (ROOT / ".github/workflows/small-business-risk.yml").read_text(encoding="utf-8")
-        self.assertIn("backend/sources/small_business_risk.py", workflow)
-        self.assertIn("signals.small_business_risk_pipeline --years 10", workflow)
+        self.assertNotIn("push:", workflow)
+        self.assertIn("signals.small_business_risk_pipeline --years 1", workflow)
+        self.assertNotIn("--replace", workflow)
         self.assertIn('cron: "20 21 * * *"', workflow)
 
     def test_small_business_risk_uses_available_component_weights(self) -> None:
@@ -909,20 +927,6 @@ class SourceContractTests(unittest.TestCase):
         self.assertEqual(borrowing["2026-01-01"], 7.5)
         self.assertEqual(optimism["2026-01-01"], 98.7)
 
-    def test_small_business_legacy_oas_is_preserved_for_replace(self) -> None:
-        database = Mock()
-        database.request.return_value = [
-            {"month": "2023-09-01", "high_yield_oas_pct": "3.9062"},
-            {"month": "2023-10-01", "high_yield_oas_pct": None},
-        ]
-        values = small_business.existing_legacy_oas(database, date(2023, 9, 1))
-        self.assertEqual(values, {"2023-09-01": 3.9062})
-        self.assertEqual(database.request.call_args.args[1], "us_credit_stress_monthly")
-        rows = [{"month": "2023-09-01"}, {"month": "2023-10-01"}]
-        small_business.attach_legacy_oas(rows, values)
-        self.assertEqual(set(rows[0]), set(rows[1]))
-        self.assertEqual(rows[0]["high_yield_oas_pct"], 3.9062)
-        self.assertIsNone(rows[1]["high_yield_oas_pct"])
 
     def test_small_business_card_uses_common_chart_widths_and_liquidity_icons(self) -> None:
         html = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -935,7 +939,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("utils.scrollableSvg", chart)
         self.assertIn("left: PADDING.left", chart)
         self.assertIn("right: PADDING.right", chart)
-        self.assertIn("right: 52", chart)
+        self.assertNotIn("right: 52", chart)
         for title in ("미국 주식시장 자금환경", "한국 주식시장 자금환경"):
             self.assertRegex(html, rf"fa-money-bill-transfer[^<]*</i></span>\s*<h2[^>]*>{title}</h2>")
 
@@ -1023,21 +1027,7 @@ class SourceContractTests(unittest.TestCase):
             [("bbsAttachFile", "64799")],
         )
 
-    def test_korea_small_business_replacement_rejects_month_gaps(self) -> None:
-        raw = {
-            "funding_outlook": {"2020-01-01": 80.0, "2020-03-01": 81.0},
-            "headline_outlook": {"2020-01-01": 82.0, "2020-03-01": 83.0},
-        }
-        rows = [{"month": "2020-01-01"}, {"month": "2020-03-01"}]
-        with self.assertRaisesRegex(RuntimeError, "백필 완전성 검증 실패"):
-            korea_small_business.validate_replacement(raw, rows, date(2020, 1, 1))
 
-    def test_korea_small_business_automatic_run_preserves_confirmed_data_when_kosis_times_out(self) -> None:
-        timeout = korea_small_business.requests.ConnectTimeout("KOSIS unavailable")
-        self.assertTrue(korea_small_business.should_preserve_existing_data(timeout, replace=False, bootstrap=False))
-        self.assertFalse(korea_small_business.should_preserve_existing_data(timeout, replace=True, bootstrap=False))
-        self.assertFalse(korea_small_business.should_preserve_existing_data(timeout, replace=False, bootstrap=True))
-        self.assertFalse(korea_small_business.should_preserve_existing_data(RuntimeError("invalid KOSIS response"), replace=False, bootstrap=False))
 
     def test_korea_small_business_card_reuses_common_graph_form(self) -> None:
         html = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -1049,7 +1039,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("utils.scrollableSvg", chart)
         self.assertIn("left: PADDING.left", chart)
         self.assertIn("right: PADDING.right", chart)
-        self.assertIn("right: 52", chart)
+        self.assertNotIn("right: 52", chart)
         self.assertIn("utils.scrollToLatest", chart)
         self.assertIn("중소기업 경기전망 SBHI(역)", chart)
         self.assertIn("value - headlineDomain.min", chart)
@@ -1059,9 +1049,9 @@ class SourceContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/korea-small-business-risk.yml").read_text(encoding="utf-8")
         self.assertIn("KOSIS_API_KEY", workflow)
         self.assertIn("ECOS_API_KEY", workflow)
-        self.assertIn("--start 2020-01 --replace", workflow)
-        self.assertIn("--bootstrap-if-empty", workflow)
-        self.assertIn('workflows: ["Deploy Supabase changes"]', workflow)
+        self.assertIn("--years 1", workflow)
+        self.assertNotIn("--replace", workflow)
+        self.assertNotIn("workflow_run:", workflow)
         deploy_workflow = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
         self.assertIn("20260909141525_add_kr_small_business_risk.sql", deploy_workflow)
     def test_financial_news_source_is_allowed_by_database_constraint(self) -> None:
@@ -1113,7 +1103,7 @@ class KoreaForeignFlowTests(unittest.TestCase):
         self.assertIn("-(row.usdkrwRate / previousRate - 1)", scoring)
         self.assertIn("(flowZ + wonZ) / 2", scoring)
         self.assertIn("RETENTION_YEARS = 5", pipeline)
-        self.assertIn('cron: "0 8 * * 1-5"', workflow)
+        self.assertIn('cron: "20 7 * * 1-5"', workflow)
 
 
 if __name__ == "__main__":

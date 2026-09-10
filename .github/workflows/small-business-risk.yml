@@ -1,24 +1,10 @@
 name: Refresh U.S. small business risk
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - backend/signals/small_business_risk_pipeline.py
-      - backend/sources/small_business_risk.py
-      - backend/common.py
-      - supabase/migrations/**
-      - .github/workflows/small-business-risk.yml
   schedule:
     # 06:20 KST: NFIB 신규 월을 매일 확인한다.
     - cron: "20 21 * * *"
   workflow_dispatch:
-    inputs:
-      replace:
-        description: "외부 원자료로 10년 구간 전체 교체"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -42,9 +28,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.replace }}" = "true" ]; then
-            PYTHONPATH=backend python -m signals.small_business_risk_pipeline --years 10 --replace
-          else
-            PYTHONPATH=backend python -m signals.small_business_risk_pipeline --years 10
-          fi
+        run: PYTHONPATH=backend python -m signals.small_business_risk_pipeline --years 1

@@ -1,9 +1,6 @@
 name: Refresh equity-bond attractiveness flow
 
 on:
-  workflow_run:
-    workflows: ["Deploy Supabase changes"]
-    types: [completed]
   schedule:
     # 매주 토요일 10:10 KST. 금요일까지 확정된 주간 가격·금리를 반영합니다.
     - cron: "10 1 * * 6"
@@ -18,7 +15,6 @@ concurrency:
 
 jobs:
   refresh:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

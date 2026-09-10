@@ -206,12 +206,13 @@ def upsert_batches(database: SupabaseRest, table: str, rows: list[dict[str, Any]
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start-year", type=int, default=2002)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     today = date.today()
     end = previous_completed_month(today)
-    start = date(max(args.start_year, 2002), 1, 1)
+    # The model still needs its fixed calibration history, but automatic storage
+    # below writes only missing sources and pending/new forecasts.
+    start = date(2002, 1, 1)
     fred_api_key = require_env("FRED_API_KEY")
     database = SupabaseRest()
 
@@ -237,6 +238,25 @@ def main() -> None:
     retained_sources = source_rows(raw, updated_at)
     retained_forecasts = forecast_rows(forecasts, updated_at)
     if not args.dry_run:
+        existing_sources = database.request(
+            "GET", "equity_bond_source_monthly",
+            params={"select": "series_code,month", "limit": "10000"},
+        ) or []
+        source_keys = {(str(row["series_code"]), str(row["month"])) for row in existing_sources}
+        retained_sources = [
+            row for row in retained_sources
+            if (str(row["series_code"]), str(row["month"])) not in source_keys
+        ]
+        existing_forecasts = database.request(
+            "GET", "equity_bond_relative_forecasts",
+            params={"select": "forecast_month,outcome_status", "limit": "10000"},
+        ) or []
+        forecast_state = {str(row["forecast_month"]): str(row.get("outcome_status") or "") for row in existing_forecasts}
+        retained_forecasts = [
+            row for row in retained_forecasts
+            if str(row["forecast_month"]) not in forecast_state
+            or forecast_state[str(row["forecast_month"])] == "pending"
+        ]
         upsert_batches(database, "equity_bond_source_monthly", retained_sources, "series_code,month")
         upsert_batches(database, "equity_bond_relative_forecasts", retained_forecasts, "forecast_month")
     print(

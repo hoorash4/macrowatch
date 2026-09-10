@@ -1,24 +1,10 @@
 name: Refresh U.S. credit stress
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - backend/signals/financial_stress_pipeline.py
-      - backend/sources/financial_stress.py
-      - backend/common.py
-      - supabase/migrations/**
-      - .github/workflows/financial-stress.yml
   schedule:
     # 06:10 KST: update the in-progress month's averages every day.
     - cron: "10 21 * * *"
   workflow_dispatch:
-    inputs:
-      years:
-        description: "Backfill window in years (1-10)"
-        required: false
-        default: "3"
-        type: string
 
 permissions:
   contents: read
@@ -43,9 +29,4 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            PYTHONPATH=backend python -m signals.financial_stress_pipeline --years 3
-          else
-            PYTHONPATH=backend python -m signals.financial_stress_pipeline --years "${{ inputs.years || '3' }}"
-          fi
+        run: PYTHONPATH=backend python -m signals.financial_stress_pipeline --years 3

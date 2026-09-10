@@ -77,7 +77,6 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stage = body.stage === "open" ? "open" : body.stage === "intraday" ? "intraday" : body.stage === "close" ? "close" : null;
     const rebuildOnly = body.rebuild_only === true;
-    const backfillHistory = body.backfill_history === true;
     if (!stage) return json({ error: "stage는 open, intraday 또는 close여야 합니다." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -101,7 +100,7 @@ Deno.serve(async (request) => {
     // 등록 도중 KIS가 일부 일봉만 반환해도 다음 정기 수집에서 자동 복구합니다.
     // 보관 구간의 국내 거래일 달력은 정상 수집된 다른 ETF들의 합집합을 사용합니다.
     const existingPrices = await loadSectorPriceHistory(admin, retentionStart);
-    const autoBackfillIds = incompletePriceHistoryIds(
+    const missingHistoryIds = incompletePriceHistoryIds(
       registry.map((item) => item.id),
       existingPrices.map((row) => ({ etfId: row.etf_id, marketDate: row.market_date })),
     );
@@ -111,9 +110,9 @@ Deno.serve(async (request) => {
       const runKisRequest = createKisRequestRunner();
       for (const item of registry) {
         try {
-          // 정상 종목은 당일만 조회하고, 수동 백필 또는 이력 누락 종목은 10주를 다시 채웁니다.
-          const needsHistoryBackfill = backfillHistory || autoBackfillIds.has(item.id);
-          const priceStart = needsHistoryBackfill ? new Date(`${retentionStart}T00:00:00Z`) : end;
+          // 정상 종목은 당일만 조회하고, 새로 등록되어 이력이 부족한 종목만 보관 구간을 초기화합니다.
+          const needsHistoryInitialization = missingHistoryIds.has(item.id);
+          const priceStart = needsHistoryInitialization ? new Date(`${retentionStart}T00:00:00Z`) : end;
           const candles = await runKisRequest(() => fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end));
           const intradayQuote = stage === "intraday" && candles.some((candle) => candle.marketDate === today)
             ? await runKisRequest(() => fetchKisEtfCurrentPrice(credentials, token, item.etf_ticker))
@@ -250,8 +249,8 @@ Deno.serve(async (request) => {
       if (oldRankingError) throw oldRankingError;
     }
     return json({
-      ok: true, stage, rebuild_only: rebuildOnly, backfill_history: backfillHistory,
-      auto_backfill_count: autoBackfillIds.size,
+      ok: true, stage, rebuild_only: rebuildOnly,
+      initialized_history_count: missingHistoryIds.size,
       registry_count: registry.length, price_rows: collected.length, holding_rows: holdings.length,
       ranking_rows: persistedRows.length,
       leadership_rows: persistedRows.filter((row) => row.leadershipScore !== null).length,

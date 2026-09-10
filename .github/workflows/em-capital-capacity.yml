@@ -1,9 +1,6 @@
 name: Refresh EM capital capacity
 
 on:
-  workflow_run:
-    workflows: ["Deploy Supabase changes"]
-    types: [completed]
   schedule:
     # 08:30 KST: 미국 일간 자료 갱신 이후, 07:30 정책금리 기대 작업과 분리합니다.
     - cron: "30 23 * * *"
@@ -18,7 +15,6 @@ concurrency:
 
 jobs:
   refresh:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

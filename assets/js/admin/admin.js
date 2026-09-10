@@ -333,7 +333,7 @@
       });
       form.reset();
       await loadSectorEtfs();
-      const historyMessage = result.history_backfill_pending
+      const historyMessage = result.history_initialization_pending
         ? '가격 이력은 다음 정기 수집에서 자동으로 보완됩니다.'
         : `최근 가격 ${Number(result.price_rows || 0).toLocaleString('ko-KR')}건도 함께 등록했습니다.`;
       showNotice('섹터 ETF 등록 완료', `${result.item?.etf_name || 'ETF'}을(를) 등록했습니다. ${historyMessage}`);

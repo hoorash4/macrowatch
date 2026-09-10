@@ -1,4 +1,4 @@
-"""Collect, calculate, backfill, and publish the MacroWatch U.S. inflation model."""
+"""Collect, calculate, and publish the current MacroWatch U.S. inflation model."""
 
 from __future__ import annotations
 
@@ -650,23 +650,11 @@ def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str
     ]
 
 
-def save_policy_backfill(client: SupabaseRest, start: date, rows: list[dict[str, object]]) -> None:
-    client.request("DELETE", "us_policy_rate_daily", params={"observed_on": f"gte.{start.isoformat()}"}, prefer="return=minimal")
-    for batch in batched(rows):
-        client.upsert("us_policy_rate_daily", batch, conflict="observed_on")
-
-
 def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
     if rows:
         # DGS10 can arrive one or more days after the policy-rate calendar row.
         # Refresh a short tail so late business-day observations replace nulls.
         client.upsert("us_policy_rate_daily", rows[-10:], conflict="observed_on")
-
-
-def save_backfill(client: SupabaseRest, start: date, monthly: list[dict[str, object]]) -> None:
-    client.request("DELETE", "us_inflation_monthly", params={"month": f"gte.{start.isoformat()}"}, prefer="return=minimal")
-    for rows in batched(monthly):
-        client.upsert("us_inflation_monthly", rows, conflict="month")
 
 
 def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> None:
@@ -711,11 +699,10 @@ def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("automatic", "backfill"), default="automatic")
     parser.add_argument("--start", type=date.fromisoformat, default=PUBLISH_START)
     args = parser.parse_args()
     if args.start < PUBLISH_START:
-        raise SystemExit("Backfill start cannot precede 2020-01-01")
+        raise SystemExit("Publish start cannot precede 2020-01-01")
 
     fred_key = require_env("FRED_API_KEY")
     today = date.today()
@@ -750,15 +737,11 @@ def main() -> None:
         service_key=require_env("SUPABASE_SERVICE_ROLE_KEY"),
         timeout=TIMEOUT_SECONDS,
     )
-    if args.mode == "backfill":
-        save_backfill(client, args.start, monthly)
-        save_policy_backfill(client, args.start, policies)
-    else:
-        save_automatic(client, monthly)
-        save_policy_automatic(client, policies)
+    save_automatic(client, monthly)
+    save_policy_automatic(client, policies)
     verify_saved(client, str(monthly[-1]["month"]), str(policies[-1]["observed_on"]))
     print(json.dumps({
-        "mode": args.mode,
+        "mode": "automatic",
         "model_version": MODEL_VERSION,
         "monthly_rows_calculated": len(monthly),
         "daily_rows_calculated": len(daily),

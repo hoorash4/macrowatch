@@ -167,6 +167,35 @@ class SupabaseRest:
             prefer="resolution=merge-duplicates,return=minimal",
         )
 
+    def automatic_rows(
+        self,
+        table: str,
+        rows: list[dict[str, Any]],
+        *,
+        key: str,
+        provisional: str | None = None,
+        refresh_keys: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """자동수집에서는 신규·잠정·명시한 현재 주기 행만 저장한다."""
+        if not rows:
+            return []
+        select = key + (f",{provisional}" if provisional else "")
+        existing = self.request(
+            "GET",
+            table,
+            params={
+                "select": select,
+                key: f"gte.{min(str(row[key]) for row in rows)}",
+                "limit": "10000",
+            },
+        ) or []
+        state = {str(row[key]): bool(row.get(provisional)) if provisional else False for row in existing}
+        forced = refresh_keys or set()
+        return [
+            row for row in rows
+            if str(row[key]) not in state or state[str(row[key])] or str(row[key]) in forced
+        ]
+
     def invoke_function(self, name: str, body: Any) -> Any:
         """서비스 역할 자격으로 내부 Supabase Edge Function을 호출한다."""
         response = self.session.post(

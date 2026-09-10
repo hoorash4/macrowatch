@@ -9,8 +9,6 @@ from unittest.mock import Mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from earnings_common.repository import EarningsRepository, _json
 from earnings_v2.repository import EarningsV2Repository, StoreError
-from earnings_v25.repository import EarningsV2Repository as HistoricalRepository
-from earnings_v25.repository import StoreError as HistoricalStoreError
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -19,7 +17,7 @@ class RepositoryContractTests(unittest.TestCase):
                          {'rows': ['0', None, '2026-06-30']})
 
     def test_rpc_request_and_empty_response(self):
-        for cls in (EarningsV2Repository, HistoricalRepository):
+        for cls in (EarningsV2Repository,):
             with self.subTest(repository=cls.__module__):
                 session = Mock()
                 session.post.return_value.content = b''
@@ -31,7 +29,7 @@ class RepositoryContractTests(unittest.TestCase):
                     json={'value': '1.25'}, timeout=(5, 20))
 
     def test_source_identity_and_state_success_policy(self):
-        for cls, source in ((EarningsV2Repository, 'korea_v2'), (HistoricalRepository, 'korea_v25')):
+        for cls, source in ((EarningsV2Repository, 'korea_v2'),):
             repository = cls('https://example.invalid', 'key', session=Mock())
             repository.rpc = Mock(return_value=[])
             for status in ('ready', 'incomplete', 'failed'):
@@ -50,11 +48,9 @@ class RepositoryContractTests(unittest.TestCase):
             'p_company_ids': ['b', 'a'], 'p_periods': [{'fiscal_year': 2026, 'fiscal_quarter': 2}]})
 
     def test_policy_boundaries_and_shared_implementation(self):
-        self.assertIs(EarningsV2Repository.company_history, HistoricalRepository.company_history)
         self.assertIs(EarningsV2Repository.rpc, EarningsRepository.rpc)
         self.assertTrue(hasattr(EarningsV2Repository, 'cached_kis_token'))
-        self.assertFalse(hasattr(HistoricalRepository, 'cached_kis_token'))
-        for cls, error_type in ((EarningsV2Repository, StoreError), (HistoricalRepository, HistoricalStoreError)):
+        for cls, error_type in ((EarningsV2Repository, StoreError),):
             session = Mock()
             session.post.side_effect = RuntimeError('transport failed')
             with self.assertRaises(error_type):

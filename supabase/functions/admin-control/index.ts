@@ -308,7 +308,6 @@ export default {
               ref: BRANCH,
               inputs: {
                 year: String(fiscalYear), quarter: String(fiscalQuarter),
-                write: "true", recalculate_only: "true",
               },
             }),
           });
@@ -450,7 +449,7 @@ export default {
           ];
           return json({
             item: data, price_rows: bundle.prices.length, holding_rows: topHoldings.length,
-            history_backfill_pending: incompletePriceHistoryIds([candidateId], finalCoverageRows).has(candidateId),
+            history_initialization_pending: incompletePriceHistoryIds([candidateId], finalCoverageRows).has(candidateId),
           }, 201, origin);
         } catch (registrationError) {
           await admin.from("market_sector_etfs").delete().eq("id", data.id);

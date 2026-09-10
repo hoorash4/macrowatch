@@ -86,7 +86,7 @@ Deno.serve(async (request) => {
         Authorization: `Bearer ${serviceRole}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ stage: slot.stage, backfill_history: false }),
+      body: JSON.stringify({ stage: slot.stage }),
     });
     const responseText = await response.text();
     if (!response.ok) throw new Error(`sector-flow ${response.status}: ${responseText.slice(0, 500)}`);

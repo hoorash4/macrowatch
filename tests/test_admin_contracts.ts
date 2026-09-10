@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
-import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows } from "../supabase/functions/admin-control/github.ts";
+import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows, updateAutomationTime } from "../supabase/functions/admin-control/github.ts";
 import { issuerFromEtfName } from "../supabase/functions/admin-control/sector-registry.ts";
 
 test("admin validation preserves normalization, bounds and rejection messages", () => {
@@ -75,5 +75,27 @@ test("automation schedules use card steps and are sorted by Korean time", async 
       ["11:30", "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시"],
       ["12:00", "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완"],
     ]);
+  } finally { globalThis.fetch = original; }
+});
+
+test("schedule editing rejects workflows that can run from the resulting commit", async () => {
+  const original = globalThis.fetch;
+  const unsafe = [
+    "name: Unsafe collector",
+    "on:",
+    "  push:",
+    "    branches: [main]",
+    "  schedule:",
+    '    - cron: "0 2 * * *"',
+    "jobs: {}",
+  ].join("\n");
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      name: "unsafe.yml", path: ".github/workflows/unsafe.yml", sha: "sha", content: btoa(unsafe),
+    }));
+    await assert.rejects(
+      updateAutomationTime("unsafe.yml", "0 2 * * *", "12:00", "test-token"),
+      /다른 실행이 시작될 수 있는/,
+    );
   } finally { globalThis.fetch = original; }
 });

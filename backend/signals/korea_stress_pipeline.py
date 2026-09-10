@@ -170,20 +170,15 @@ def score(value: float, low: float, high: float) -> float:
     return uncapped_score(value, low, high)
 
 
-def upsert(rows: list[dict], url: str, service_key: str, table: str, conflict: str) -> None:
-    SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT).upsert(
-        table, rows, conflict=conflict
-    )
-
-
-def delete_invalid_leading_rows(url: str, service_key: str, first_official_fsi_month: str) -> None:
-    """K-MSI가 성립하기 전 저장된 구성요소 단독 행만 제거한다."""
-    SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT).request(
-        "DELETE",
-        "korea_market_stress_monthly",
-        params={"month": f"lt.{first_official_fsi_month}", "bok_fsi": "is.null"},
-        prefer="return=minimal",
-    )
+def upsert_automatic(
+    rows: list[dict], url: str, service_key: str, table: str, conflict: str,
+    *, provisional: str | None = None,
+) -> int:
+    database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
+    writable = database.automatic_rows(table, rows, key=conflict, provisional=provisional)
+    if writable:
+        database.upsert(table, writable, conflict=conflict)
+    return len(writable)
 
 
 def fetch_existing_fsi(url: str, service_key: str, years: int) -> dict[str, float]:
@@ -311,12 +306,16 @@ def main() -> None:
     rows = build_monthly_rows(values, fsi, today)
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
-    upsert(rows, url, service_key, "korea_market_stress_monthly", "month")
-    first_official_fsi_month = min(fsi)
-    delete_invalid_leading_rows(url, service_key, first_official_fsi_month)
+    stored_months = upsert_automatic(
+        rows, url, service_key, "korea_market_stress_monthly", "month", provisional="is_provisional"
+    )
+    stored_weeks = 0
     if kospi_weekly:
-        upsert(kospi_weekly, url, service_key, "korea_market_stress_weekly", "week")
-    print(f"upserted_months={len(rows)} kospi_weeks={len(kospi_weekly)} fsi_months={len(fsi)} cleaned_before={first_official_fsi_month}")
+        stored_weeks = upsert_automatic(kospi_weekly, url, service_key, "korea_market_stress_weekly", "week")
+    print(
+        f"calculated_months={len(rows)} stored_months={stored_months} "
+        f"calculated_weeks={len(kospi_weekly)} stored_weeks={stored_weeks} fsi_months={len(fsi)}"
+    )
 
 
 if __name__ == "__main__":

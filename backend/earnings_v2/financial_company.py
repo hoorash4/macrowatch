@@ -1,7 +1,7 @@
-"""V2 backfill adapter for the existing seven-service FSC reader.
+"""V2 adapter for the existing seven-service FSC reader.
 
 V2.5 owns the verified sector/account mappings. This adapter keeps V2's
-deadline/error contract and merges only missing backfill metrics.
+deadline/error contract and merges only missing financial metrics.
 """
 from __future__ import annotations
 

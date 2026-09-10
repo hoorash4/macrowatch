@@ -1,8 +1,6 @@
 name: Analyze daily news
 
 on:
-  push:
-    branches: [main]
   schedule:
     # 00:30 KST. A failed run is investigated and retried by the collection
     # path rather than by overlapping scheduled workflow runs.
@@ -14,11 +12,6 @@ on:
         required: false
         default: false
         type: boolean
-      backfill_date:
-        description: "누락된 집계일(YYYY-MM-DD). 비우면 정기 24시간 수집"
-        required: false
-        default: ""
-        type: string
 
 permissions:
   contents: read
@@ -29,7 +22,6 @@ concurrency:
 
 jobs:
   analyze-news:
-    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[run-news]')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -47,7 +39,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEWS_PIPELINE_SECRET: ${{ secrets.NEWS_PIPELINE_TRIGGER_SECRET }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
-          BACKFILL_DATE: ${{ inputs.backfill_date || '' }}
         run: |
           request_batch() {
             local payload="$1" response status
@@ -70,14 +61,9 @@ jobs:
           offset=0
           limit=10
           lookback_hours=24
-          target_date_fragment=""
-          if [ -n "$BACKFILL_DATE" ]; then
-            lookback_hours=360
-            target_date_fragment=",\"target_date\":\"$BACKFILL_DATE\""
-          fi
           [ "$DRY_RUN" = "true" ] && limit=1
           while true; do
-            response=$(request_batch "{\"lookback_hours\":$lookback_hours,\"offset\":$offset,\"limit\":$limit,\"dry_run\":$DRY_RUN,\"mark_complete\":true$target_date_fragment}")
+            response=$(request_batch "{\"lookback_hours\":$lookback_hours,\"offset\":$offset,\"limit\":$limit,\"dry_run\":$DRY_RUN,\"mark_complete\":true}")
             echo "$response"
             if [ "$offset" -eq 0 ] && [ "$(jq '.errors | length' <<< "$response")" -gt 0 ]; then
               echo "::warning::일부 RSS 피드 수집에 실패했습니다: $(jq -c '.errors' <<< "$response")"

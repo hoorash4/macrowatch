@@ -465,7 +465,6 @@ class KoreaEarningsV2AutomaticPipeline:
         tolerate_provider_errors: bool = False,
         profile_updates: dict[str, dict[str, str]] | None = None,
         stage: str = "financial_fallback",
-        allow_backfill_zero_top_line: bool = False,
         use_kis: bool = True,
     ) -> tuple[FinancialFact, dict[str, str] | None]:
         if fact.fully_complete:
@@ -510,28 +509,6 @@ class KoreaEarningsV2AutomaticPipeline:
             )
             if kis_issue is not None:
                 return fact, kis_issue
-        # 이 추정은 사용자가 허용한 과거 백필 전용 규칙이다. 자동 수집은
-        # 원자료에 탑라인이 없으면 null/incomplete를 유지해 관리자 검토로 보낸다.
-        if (
-            allow_backfill_zero_top_line
-            and
-            fact.top_line is None
-            and fact.profit_complete
-            and entity_kind == "general"
-            and fact.operating_income is not None
-            and fact.operating_income < 0
-        ):
-            previous_top = (
-                previous_fact.source_top_line_cumulative
-                if previous_fact is not None else None
-            )
-            fact = fact.with_changes(
-                top_line=Decimal(0),
-                source_top_line_cumulative=(
-                    Decimal(0) if quarter == 1 or previous_top is None else previous_top
-                ),
-                source_filing_id=f"zero_top_line:{fact.source_filing_id}",
-            )
         return fact.with_changes(is_pending=not fact.fully_complete), None
 
     @staticmethod
@@ -557,7 +534,6 @@ class KoreaEarningsV2AutomaticPipeline:
                            tolerate_provider_errors: bool = False,
                            force_previous_cumulative: bool = False,
                             persist_profiles: bool = False,
-                            allow_backfill_zero_top_line: bool = False,
                             use_kis: bool = True,
                            ) -> tuple[dict[str, FinancialFact], list[dict[str, str]]]:
         identities = list(identities)
@@ -610,7 +586,6 @@ class KoreaEarningsV2AutomaticPipeline:
                     previous_rows=previous.get(identity.corp_code, []),
                     tolerate_provider_errors=tolerate_provider_errors,
                     profile_updates=profile_updates,
-                    allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                     use_kis=use_kis,
                 )
                 if fallback_issue is not None:
@@ -812,8 +787,6 @@ class KoreaEarningsV2AutomaticPipeline:
                     refresh_corp_codes: set[str] | None = None,
                     delisting_filings: Iterable[DelistingFiling] | None = None,
                     discover_delistings: bool = False,
-                    trust_previous_backfill: bool = False,
-                    allow_backfill_zero_top_line: bool = False,
                     use_kis_for_fresh: bool = True,
                     retry_pending: bool = True,
                     refresh_only: bool = False,
@@ -821,8 +794,6 @@ class KoreaEarningsV2AutomaticPipeline:
                     deadline_seconds: int | None = None) -> dict[str, Any]:
         if not incremental:
             raise ValueError("automatic collection requires incremental mode")
-        if trust_previous_backfill or allow_backfill_zero_top_line:
-            raise ValueError("backfill policy is not available in automatic collection")
         if deadline_seconds is not None:
             with execution_deadline(deadline_seconds):
                 return self.run_quarter(
@@ -830,8 +801,6 @@ class KoreaEarningsV2AutomaticPipeline:
                     incremental=incremental, refresh_corp_codes=refresh_corp_codes,
                     delisting_filings=delisting_filings,
                     discover_delistings=discover_delistings,
-                    trust_previous_backfill=trust_previous_backfill,
-                    allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                     use_kis_for_fresh=use_kis_for_fresh,
                     retry_pending=retry_pending,
                     refresh_only=refresh_only,
@@ -934,8 +903,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 )
             ]
             preserved = stored_current
-            # 저장된 직전 누적 원본을 재사용한다. 시간순 백필의 최초 경계에서
-            # 누적 원본이 없을 때만 collect_financials가 직전 분기를 추가 호출한다.
+            # 저장된 직전 누적 원본을 재사용한다.
             previous_facts = {
                 identity.company_id: stored[(identity.company_id, *previous_key)]
                 for identity in selected
@@ -948,7 +916,6 @@ class KoreaEarningsV2AutomaticPipeline:
                     tolerate_provider_errors=True,
                     force_previous_cumulative=False,
                     persist_profiles=write,
-                    allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                     use_kis=use_kis_for_fresh,
                 )
                 if selected else ({}, [])
@@ -1029,7 +996,6 @@ class KoreaEarningsV2AutomaticPipeline:
                         tolerate_provider_errors=True,
                         profile_updates=profile_updates,
                         stage="pending_retry",
-                        allow_backfill_zero_top_line=allow_backfill_zero_top_line,
                     )
                     pending_fallbacks[identity.company_id] = retried
                     if fallback_issue is not None:
@@ -1550,7 +1516,6 @@ class KoreaEarningsV2AutomaticPipeline:
             year, quarter, write=write, incremental=True,
             refresh_corp_codes=refresh_corp_codes,
             delisting_filings=new_delistings,
-            allow_backfill_zero_top_line=False,
             use_kis_for_fresh=False,
             retry_pending=False,
             refresh_only=True,

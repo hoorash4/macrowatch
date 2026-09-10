@@ -66,6 +66,12 @@ function parseScheduledWorkflow(file: WorkflowSource) {
   return crons.length ? { id: file.name, path: file.path, sha: file.sha, name, crons } : null;
 }
 
+function assertScheduleEditIsIsolated(file: WorkflowSource) {
+  if (/^  (?:push|workflow_run|repository_dispatch):/m.test(file.content)) {
+    throw new Error("시간 변경과 함께 다른 실행이 시작될 수 있는 워크플로는 수정할 수 없습니다.");
+  }
+}
+
 async function workflowSource(path: string, token: string): Promise<WorkflowSource> {
   const file = await githubRequest(`/contents/${path}?ref=${BRANCH}`, token);
   return { name: String(file.name), path: String(file.path), sha: String(file.sha), content: decodeContent(file.content) };
@@ -193,11 +199,14 @@ async function saveWorkflowSource(file: WorkflowSource, content: string, message
 
 export async function updateAutomationTime(workflowId: string, cron: string, time: string, token: string) {
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
+  assertScheduleEditIsIsolated(file);
   const parsed = parseScheduledWorkflow(file);
   if (!parsed || !parsed.crons.includes(cron)) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
   const updatedCron = updateCronTime(cron, time);
   if (updatedCron === cron) return;
-  const next = file.content.replace(cron, updatedCron);
+  const block = SCHEDULE_BLOCK.exec(file.content)?.[1];
+  if (!block) throw new Error("자동수집 일정 블록을 찾지 못했습니다.");
+  const next = file.content.replace(block, block.replace(cron, updatedCron));
   if (next === file.content) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
   await saveWorkflowSource(file, next, `Update ${parsed.name} schedule from MacroWatch admin`, token);
 }

@@ -5,7 +5,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from test_earnings_v2 import (
+from tests.test_earnings_v2 import (
     SimulatedKis,
     SimulatedRepository,
     fact,
@@ -14,7 +14,6 @@ from test_earnings_v2 import (
 from earnings_v2.automatic import KoreaEarningsV2AutomaticPipeline
 from earnings_v2.financial_company import FinancialCompanyClient, merge_financial_company
 from earnings_common.http import ExecutionDeadlineExceeded
-from earnings_v2.pipeline import KoreaEarningsV2Pipeline
 from earnings_v2.providers import ProviderError, OpenDartClient
 from earnings_v25.providers import FinancialCompanySnapshot, FINANCIAL_SECTOR_SPECS, REPORT_CODES
 
@@ -34,16 +33,6 @@ class FscBackfillTests(unittest.TestCase):
         self.assertEqual(result.source_net_income_cumulative, 10)
         self.assertFalse(result.is_pending)
 
-    def test_cumulative_subtraction_or_backfill_average_each_quarter(self):
-        for quarter in range(1, 5):
-            with self.subTest(quarter=quarter):
-                original = fact(2025, quarter, "3").with_changes(net_income=None)
-                prior = fact(2025, max(1, quarter-1), "3").with_changes(
-                    source_currency="KRW", source_net_income_cumulative=Decimal(4))
-                result = merge_financial_company(original, [self.snapshot(quarter)], 2025, quarter, prior)
-                self.assertEqual(result.net_income, 10 if quarter == 1 else 6)
-                result = merge_financial_company(original, [self.snapshot(quarter)], 2025, quarter, None)
-                self.assertEqual(result.net_income, Decimal(10) / quarter)
 
     def test_missing_and_incompatible_data_stay_pending(self):
         original = fact(2025, 2, "3").with_changes(net_income=None, is_pending=True)
@@ -52,23 +41,6 @@ class FscBackfillTests(unittest.TestCase):
                          self.snapshot(report_code=REPORT_CODES[3])):
             self.assertIs(merge_financial_company(original, [snapshot], 2025, 2, None), original)
 
-    def test_order_and_early_completion(self):
-        for complete_at in ("existing", "dart", "kis", "fsc"):
-            with self.subTest(complete_at=complete_at):
-                calls = []
-                original = fact(2025, 2, "3")
-                incomplete = original.with_changes(net_income=None, is_pending=True)
-                pipeline = KoreaEarningsV2Pipeline(
-                    krx=None, repository=None, kis=object(),
-                    dart=SimpleNamespace(company_registration_number=lambda _: "1234567890123"),
-                    financial_company=SimpleNamespace(quarter_financials=lambda *args: calls.append("fsc") or [self.snapshot()]))
-                pipeline._single_open_dart_missing_financials = lambda *args: calls.append("dart") or (original if complete_at == "dart" else incomplete)
-                pipeline._try_kis_missing_financials = lambda *args, **kwargs: (calls.append("kis") or (original if complete_at == "kis" else incomplete), None)
-                identity = replace(member("kr:1", 1), industry_code="64992")
-                resolved, issue = pipeline._resolve_missing_financials(identity, original if complete_at == "existing" else incomplete, 2025, 2)
-                self.assertEqual(calls, {"existing": [], "dart": ["dart"], "kis": ["dart", "kis"], "fsc": ["dart", "kis", "fsc"]}[complete_at])
-                self.assertTrue(resolved.fully_complete)
-                self.assertIsNone(issue)
 
     def test_six_sector_routes_and_common_seventh_service(self):
         client = FinancialCompanyClient("https://example.test", "service", "token", "key")

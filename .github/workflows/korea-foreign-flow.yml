@@ -1,22 +1,9 @@
 name: Refresh Korea foreign flow
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/korea-foreign-flow.yml"
-      - "supabase/functions/korea-foreign-flow/**"
-      - "supabase/functions/_shared/market/korea-foreign-flow.ts"
-      - "supabase/functions/_shared/market/kis-client.ts"
   schedule:
     - cron: "20 7 * * 1-5"
   workflow_dispatch:
-    inputs:
-      backfill:
-        description: Backfill the retained five-year history
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -28,33 +15,15 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
-      - name: Collect KOSPI foreign flow and recompute index
+      - name: Collect the latest KOSPI foreign flow and save the index
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BACKFILL: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.backfill) || false }}
         run: |
-          if [ "$BACKFILL" = "true" ]; then
-            # ê°ì ì»¤ë°ì Edge Function ë°°í¬ê° ëë ë¤ ì´ì´ë°ê¸° ë°±íì ììí©ëë¤.
-            sleep 90
-            # íì êµ¬ê°ì 5ëì´ì§ë§ ì²« íë©´ ìì ì 3ë ì´ë Zì ì ê³ì°ì ìí´ ììë£ë 8ëì íë³´í©ëë¤.
-            start="$(date -u -d '8 years ago - 1 month' +%Y-%m-01)"
-            final="$(date -u +%Y-%m-%d)"
-            while [ "$start" \< "$final" ]; do
-              end="$(date -u -d "$start + 1 month - 1 day" +%Y-%m-%d)"
-              curl --fail-with-body --retry 8 --retry-all-errors --retry-delay 10 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
-                --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-                --header "Content-Type: application/json" --data "{\"start\":\"$start\",\"end\":\"$end\",\"collect_only\":true}"
-              start="$(date -u -d "$start + 1 month" +%Y-%m-01)"
-              sleep 2
-            done
-            curl --fail-with-body --retry 8 --retry-all-errors --retry-delay 10 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
-              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-              --header "Content-Type: application/json" --data '{"finalize_only":true}'
-          else
-            curl --fail-with-body --retry 2 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
-              --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-              --header "Content-Type: application/json" --data '{}'
-          fi
+          curl --fail-with-body --retry 2 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{}'

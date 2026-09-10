@@ -96,17 +96,11 @@ function extractStatementLinks(html: string, assumeScheduled = false) {
   return output;
 }
 
-async function fedSources(mode: "latest" | "backfill") {
-  const thisYear = new Date().getUTCFullYear();
-  const pages = mode === "backfill"
-    ? Array.from({ length: Math.max(0, thisYear - 2000) }, (_, index) => `${FED_BASE}/monetarypolicy/fomchistorical${2000 + index}.htm`).concat(`${FED_BASE}/monetarypolicy/fomccalendars.htm`)
-    : [`${FED_BASE}/monetarypolicy/fomccalendars.htm`];
+async function fedSources() {
+  const pages = [`${FED_BASE}/monetarypolicy/fomccalendars.htm`];
   const discovered: Source[] = [];
   for (const page of pages) {
     const response = await fetch(page, { signal: AbortSignal.timeout(30_000) });
-    // Recent years are kept in the current calendar before the Fed publishes
-    // a separate historical-by-year page.  Those expected 404s are harmless.
-    if (!response.ok && page.includes("fomchistorical")) continue;
     if (!response.ok) throw new Error(`Fed FOMC 목록을 읽지 못했습니다 (${response.status}).`);
     discovered.push(...extractStatementLinks(await response.text(), page.includes("fomccalendars")));
   }
@@ -235,9 +229,7 @@ Deno.serve(async (request) => {
   try {
     const body = await request.json().catch(() => ({})) as { bank?: string; mode?: string; limit?: number; years?: number };
     if (body.bank && body.bank !== "fed") return json({ error: "현재는 Fed만 지원합니다." }, 400);
-    const mode = body.mode === "backfill" || body.mode === "reanalyze" || body.mode === "recent" ? body.mode : "latest";
     const limit = Math.min(Math.max(Number(body.limit) || 4, 1), 8);
-    const recentYears = Math.min(Math.max(Number(body.years) || 2, 1), 5);
     const url = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
     const supabase = createClient(url, serviceRole);
@@ -252,18 +244,8 @@ Deno.serve(async (request) => {
         aged_peak_reaches: scored.filter((row) => row.previous_peak_adjustment === 100).length,
       });
     }
-    const sources = await fedSources(mode === "latest" || mode === "recent" ? "latest" : "backfill");
-    // Daily runs only revisit the newest meeting. This is enough to discover the next
-    // statement and later transcript while preventing a v2 rollout from creating NEW
-    // notifications for every historical row at once. Historical briefing backfill is
-    // an explicit reanalyze operation.
-    const recentCutoff = new Date();
-    recentCutoff.setUTCFullYear(recentCutoff.getUTCFullYear() - recentYears);
-    const selected = mode === "latest"
-      ? sources.slice(-1)
-      : mode === "recent"
-        ? sources.filter((source) => source.meetingDate >= recentCutoff.toISOString().slice(0, 10))
-        : sources;
+    // Automatic collection only revisits the newest published meeting.
+    const selected = (await fedSources()).slice(-1);
     const { data: existing, error: existingError } = await supabase.from("central_bank_policy_events").select("meeting_date,statement_hash,analysis_status,source_url,is_emergency,analysis_prompt_version,briefing,briefing_revision,briefing_source_state").eq("central_bank", "fed");
     if (existingError) throw existingError;
     type SavedRow = { meeting_date: string; statement_hash: string; analysis_status: string; source_url: string | null; is_emergency: boolean | null; analysis_prompt_version: string | null; briefing: unknown; briefing_revision: number; briefing_source_state: Record<string, unknown> | null };
@@ -272,17 +254,6 @@ Deno.serve(async (request) => {
     for (const source of selected) {
       if (processed >= limit) break;
       const saved = known.get(source.meetingDate);
-      // A historical backfill fills gaps; it is not a re-analysis command.
-      // Trust completed rows so each small batch does not download and hash
-      // the entire archive again. Keep changed source metadata synchronized.
-      if (mode === "backfill" && saved?.analysis_status === "completed") {
-        if (saved.source_url !== source.sourceUrl || saved.is_emergency !== source.isEmergency) {
-          const { error: metadataError } = await supabase.from("central_bank_policy_events").update({ source_url: source.sourceUrl, is_emergency: source.isEmergency, updated_at: new Date().toISOString() }).eq("central_bank", "fed").eq("meeting_date", source.meetingDate);
-          if (metadataError) throw metadataError;
-        }
-        skipped += 1;
-        continue;
-      }
       const statement = await getStatement(source.sourceUrl);
       const statementHash = await sha256(statement);
       const noteUrl = implementationNoteUrl(source.sourceUrl);
@@ -300,29 +271,13 @@ Deno.serve(async (request) => {
       const sourceStateHash = await sha256(JSON.stringify(sourceState));
       const priorSourceStateHash = typeof priorSourceState.source_state_hash === "string" ? priorSourceState.source_state_hash : null;
       const briefingNeedsRefresh = !saved?.briefing || saved.analysis_prompt_version !== POLICY_PROMPT_VERSION || sourceStateHash !== priorSourceStateHash;
-      if (mode !== "reanalyze" && saved?.statement_hash === statementHash && saved.analysis_status === "completed" && !briefingNeedsRefresh) {
+      if (saved?.statement_hash === statementHash && saved.analysis_status === "completed" && !briefingNeedsRefresh) {
         const { error: metadataError } = await supabase.from("central_bank_policy_events").update({ source_url: source.sourceUrl, is_emergency: source.isEmergency, updated_at: new Date().toISOString() }).eq("central_bank", "fed").eq("meeting_date", source.meetingDate);
         if (metadataError) throw metadataError;
         skipped += 1; continue;
       }
-      if (mode === "reanalyze" && saved?.analysis_status === "completed" && !briefingNeedsRefresh) {
-        skipped += 1; continue;
-      }
       processed += 1;
       try {
-        if (mode === "reanalyze" && saved?.analysis_status === "completed") {
-          const { data: currentRow, error: currentError } = await supabase.from("central_bank_policy_events")
-            .select("*").eq("central_bank", "fed").eq("meeting_date", source.meetingDate).single();
-          if (currentError) throw currentError;
-          const { error: historyError } = await supabase.from("central_bank_policy_analysis_history").upsert({
-            central_bank: "fed",
-            meeting_date: source.meetingDate,
-            analysis_prompt_version: currentRow.analysis_prompt_version,
-            reanalyzed_to_version: POLICY_PROMPT_VERSION,
-            event_snapshot: currentRow,
-          }, { onConflict: "central_bank,meeting_date,reanalyzed_to_version", ignoreDuplicates: true });
-          if (historyError) throw historyError;
-        }
         const { data: previousRows, error: previousError } = await supabase.from("central_bank_policy_events").select("central_bank,meeting_date,action,target_range_lower,target_range_upper,primary_reason,analysis_status,policy_segment,segment_sequence,source_url").eq("central_bank", "fed").eq("analysis_status", "completed").lt("meeting_date", source.meetingDate).order("meeting_date", { ascending: false }).limit(1);
         if (previousError) throw previousError;
         const previous = previousRows?.[0] as EventRow || null;
@@ -334,11 +289,8 @@ Deno.serve(async (request) => {
         const row = { central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "completed", analysis_prompt_version: POLICY_PROMPT_VERSION, action: analysis.decision.action, target_range_lower: analysis.decision.target_range_lower, target_range_upper: analysis.decision.target_range_upper, change_bps: analysis.decision.change_bps, ai_primary_reason: analysis.analysis.primary_reason, primary_reason: analysis.analysis.primary_reason, reason_confidence: analysis.analysis.reason_confidence, transition_assessment: analysis.analysis.transition_assessment, financial_stress_mentioned: analysis.analysis.financial_stress_mentioned, growth_downside_mentioned: analysis.analysis.growth_downside_mentioned, inflation_pressure_mentioned: analysis.analysis.inflation_pressure_mentioned, reason_summary: analysis.analysis.summary, briefing: analysis.briefing, briefing_revision: briefingRevision, briefing_source_state: { ...sourceState, source_state_hash: sourceStateHash }, briefing_published_at: isNewBriefing ? now : undefined, briefing_updated_at: now, analyzed_at: now, last_error: null, updated_at: now };
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert(row, { onConflict: "central_bank,meeting_date" });
         if (saveError) throw saveError;
-        // Historical backfills do not notify; only the live latest-meeting flow does.
-        if (mode === "latest") {
-          const { error: alertError } = await supabase.from("policy_briefing_alerts").upsert({ central_bank: "fed", meeting_date: source.meetingDate, revision: briefingRevision, alert_kind: isNewBriefing ? "new" : "update", status: "pending", updated_at: now }, { onConflict: "central_bank,meeting_date,revision", ignoreDuplicates: true });
-          if (alertError) throw alertError;
-        }
+        const { error: alertError } = await supabase.from("policy_briefing_alerts").upsert({ central_bank: "fed", meeting_date: source.meetingDate, revision: briefingRevision, alert_kind: isNewBriefing ? "new" : "update", status: "pending", updated_at: now }, { onConflict: "central_bank,meeting_date,revision", ignoreDuplicates: true });
+        if (alertError) throw alertError;
       } catch (error) {
         failed += 1;
         const { error: saveError } = await supabase.from("central_bank_policy_events").upsert({ central_bank: "fed", meeting_date: source.meetingDate, source_url: source.sourceUrl, statement_hash: statementHash, is_emergency: source.isEmergency, analysis_status: "failed", last_error: errorMessage(error).slice(0, 900), updated_at: new Date().toISOString() }, { onConflict: "central_bank,meeting_date" });
@@ -349,12 +301,6 @@ Deno.serve(async (request) => {
       .select("meeting_date", { count: "exact", head: true }).eq("central_bank", "fed").not("policy_index", "is", null);
     if (scoredCountError) throw scoredCountError;
     if ((scoredCount || 0) > 0) await recomputePolicyScores(supabase, "fed");
-    const hasMore = selected.some((source) => {
-      const saved = known.get(source.meetingDate);
-      return !saved || saved.analysis_status !== "completed"
-        || (mode === "reanalyze" && saved.analysis_prompt_version !== POLICY_PROMPT_VERSION)
-        || (mode === "recent" && (!saved.briefing || saved.analysis_prompt_version !== POLICY_PROMPT_VERSION));
-    }) && processed >= limit;
-    return json({ bank: "fed", mode, discovered: selected.length, processed, skipped, failed, has_more: hasMore });
+    return json({ bank: "fed", mode: "latest", discovered: selected.length, processed, skipped, failed, has_more: false });
   } catch (error) { return json({ error: errorMessage(error) }, 500); }
 });

@@ -1,21 +1,9 @@
 name: Refresh Emerging Market Stress
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - backend/signals/em_stress_pipeline.py
-      - backend/common.py
-      - .github/workflows/em-stress.yml
   schedule:
     - cron: "30 21 * * *"
   workflow_dispatch:
-    inputs:
-      years:
-        description: "Backfill window in years"
-        required: false
-        default: "3"
-        type: string
 
 permissions:
   contents: read
@@ -39,4 +27,4 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.em_stress_pipeline --years "${{ inputs.years || '3' }}"
+        run: PYTHONPATH=backend python -m signals.em_stress_pipeline --years 3

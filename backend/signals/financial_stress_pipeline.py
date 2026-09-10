@@ -112,10 +112,14 @@ def build_weekly_market_tension(
     return rows
 
 
-def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
-    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
-        "us_credit_stress_monthly", rows, conflict="month"
+def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_key: str, current_month: str) -> int:
+    database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    writable = database.automatic_rows(
+        "us_credit_stress_monthly", rows, key="month", refresh_keys={current_month}
     )
+    if writable:
+        database.upsert("us_credit_stress_monthly", writable, conflict="month")
+    return len(writable)
 
 
 def fixed_stress_score(value: float, key: str) -> float:
@@ -193,18 +197,26 @@ def build_market_stress_index(
     return index_rows
 
 
-def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
+def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> int:
     if not rows:
-        return
-    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
-        "us_market_stress_index_monthly", rows, conflict="month"
+        return 0
+    database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    writable = database.automatic_rows(
+        "us_market_stress_index_monthly", rows, key="month", provisional="is_provisional"
     )
+    if writable:
+        database.upsert("us_market_stress_index_monthly", writable, conflict="month")
+    return len(writable)
 
 
-def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> None:
-    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
-        "us_market_tension_weekly", rows, conflict="week"
+def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> int:
+    database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    writable = database.automatic_rows(
+        "us_market_tension_weekly", rows, key="week", provisional="is_provisional"
     )
+    if writable:
+        database.upsert("us_market_tension_weekly", writable, conflict="week")
+    return len(writable)
 
 
 def upsert_latest_credit_stress(row: dict[str, object], supabase_url: str, service_role_key: str) -> None:
@@ -283,13 +295,13 @@ def main() -> None:
         else:
             matching_row.update(latest_values)
     index_rows_input = rows
-    upsert_rows(rows, supabase_url, service_role_key)
+    stored_months = upsert_rows(rows, supabase_url, service_role_key, end.isoformat())
     index_rows = build_market_stress_index(
         index_rows_input,
         today,
         sp500_month_end,
     )
-    upsert_market_stress_index(index_rows, supabase_url, service_role_key)
+    stored_index = upsert_market_stress_index(index_rows, supabase_url, service_role_key)
     weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
     weekly_credit_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
     weekly_risk_conditions = fetch_fred_week_end(FINANCIAL_RISK_SERIES, fred_api_key, start, today)
@@ -306,7 +318,7 @@ def main() -> None:
         weekly_leverage,
         weekly_sp500,
     )
-    upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
+    stored_weeks = upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
     if latest_dates:
         upsert_latest_credit_stress({
             "singleton": True,
@@ -315,7 +327,9 @@ def main() -> None:
             "financial_conditions_credit_index": latest_conditions[1] if latest_conditions else None,
         }, supabase_url, service_role_key)
     print(
-        f"upserted_months={len(rows)} market_stress_index={len(index_rows)} "
+        f"calculated_months={len(rows)} stored_months={stored_months} "
+        f"calculated_market_stress_index={len(index_rows)} stored_market_stress_index={stored_index} "
+        f"calculated_weeks={len(weekly_rows)} stored_weeks={stored_weeks} "
         f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
         f"nfci_credit={len(financial_conditions)} nfci_risk={len(financial_risk)} "
         f"ebp_months={len(excess_bond_premium)} cmdi_months={len(cmdi)} "

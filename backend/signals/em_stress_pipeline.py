@@ -146,10 +146,14 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
     return rows
 
 
-def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> None:
-    SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT).upsert(
-        "em_market_stress_weekly", rows, conflict="week"
+def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> int:
+    database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
+    writable = database.automatic_rows(
+        "em_market_stress_weekly", rows, key="week", provisional="is_provisional"
     )
+    if writable:
+        database.upsert("em_market_stress_weekly", writable, conflict="week")
+    return len(writable)
 
 
 def main() -> None:
@@ -166,8 +170,8 @@ def main() -> None:
     rows = build_rows(raw, today, eem_values)
     if not rows:
         raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
-    upsert(rows, supabase_url, service_key)
-    print("upserted_weeks={} eem={} ".format(len(rows), len(eem_values)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
+    stored = upsert(rows, supabase_url, service_key)
+    print("calculated_weeks={} stored_weeks={} eem={} ".format(len(rows), stored, len(eem_values)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
 
 
 if __name__ == "__main__":

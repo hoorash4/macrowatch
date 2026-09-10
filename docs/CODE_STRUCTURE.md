@@ -3,7 +3,7 @@
 ## 보존 경계
 
 HTML 진입점은 `index.html`과 `admin.html`이다. 함수 URL, DB 계약, 예약 실행,
-계산 정책은 내부 배치와 별개로 유지한다. 백필과 자동 정책은 합치지 않는다.
+계산 정책은 내부 배치와 별개로 유지한다. 운영 데이터 수집은 자동수집 경로만 사용한다.
 
 ## 브라우저 책임
 
@@ -26,8 +26,8 @@ HTML 진입점은 `index.html`과 `admin.html`이다. 함수 URL, DB 계약, 예
 | 위치 | 책임 |
 | --- | --- |
 | `backend/earnings_common` | 공통 실적 모델, 숫자·DB 행 변환, 통신·재시도·실행 제한 |
-| `backend/earnings_v2` | 한국 v2 백필과 별도 자동 수집 정책 |
-| `backend/earnings_v25` | 과거 한국 백필 정책과 금융위 상세 진단 |
+| `backend/earnings_v2` | 한국 기업실적 자동수집과 저장값 재계산 |
+| `backend/earnings_v25` | 자동수집이 재사용하는 금융위 공급자와 전송 정책 |
 | `backend/earnings_us` | 미국 구성종목·실적 정책 |
 | `backend/sources/market.py` | 월간 예측·주식투자 매력이 공유하는 Yahoo/FRED 관측값 처리 |
 | `backend/common.py` | 기존 환경변수·FRED·Supabase·알림 공통 처리 |

@@ -103,13 +103,13 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 이머징 자금 유입 여건 데이터가 없습니다.")
     database = SupabaseRest()
-    for offset in range(0, len(rows), UPSERT_BATCH_SIZE):
-        database.upsert("em_capital_capacity_daily", rows[offset:offset + UPSERT_BATCH_SIZE], conflict="observation_date")
-    database.request(
-        "DELETE", "em_capital_capacity_daily",
-        params={"observation_date": f"lt.{start.isoformat()}"}, prefer="return=minimal",
+    writable = database.automatic_rows(
+        "em_capital_capacity_daily", rows,
+        key="observation_date", provisional="is_provisional",
     )
-    print(f"Upserted {len(rows)} EM capital-capacity observations through {rows[-1]['observation_date']}.")
+    for offset in range(0, len(writable), UPSERT_BATCH_SIZE):
+        database.upsert("em_capital_capacity_daily", writable[offset:offset + UPSERT_BATCH_SIZE], conflict="observation_date")
+    print(f"Calculated {len(rows)} and stored {len(writable)} EM capital-capacity observations through {rows[-1]['observation_date']}.")
 
 
 if __name__ == "__main__":

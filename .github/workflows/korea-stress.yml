@@ -1,22 +1,9 @@
 name: Refresh Korean market stress
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - backend/signals/korea_stress_pipeline.py
-      - backend/common.py
-      - supabase/migrations/20260825_add_korea_market_stress.sql
-      - .github/workflows/korea-stress.yml
   schedule:
     - cron: "10 4 * * *"
   workflow_dispatch:
-    inputs:
-      years:
-        description: "Backfill window in years"
-        required: false
-        default: "3"
-        type: string
 
 permissions:
   contents: read
@@ -35,4 +22,4 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.korea_stress_pipeline --years "${{ inputs.years || '3' }}"
+        run: PYTHONPATH=backend python -m signals.korea_stress_pipeline --years 3

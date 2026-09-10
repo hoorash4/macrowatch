@@ -1,9 +1,6 @@
 name: Refresh liquidity pressure and capacity
 
 on:
-  push:
-    branches: [main]
-    paths: [backend/signals/liquidity_pipeline.py, .github/workflows/liquidity.yml]
   schedule:
     # 18:10 KST, after Korean daily source releases. US publishes completed weeks; KR stays monthly.
     - cron: '40 7 * * *'

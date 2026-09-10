@@ -61,9 +61,3 @@ class USEarningsRepository(EarningsV2Repository):
             "currency": "USD", "selection_method": "index_constituent",
         } for item in rows]
         return self.replace_universe(market_id, year, quarter, records)
-
-    def clear_us_backfill_period(self, year: int, quarter: int) -> dict[str, Any]:
-        result = self.rpc("earnings_v2_us_clear_backfill_period", {
-            "p_market_year": year, "p_market_quarter": quarter,
-        })
-        return result if isinstance(result, dict) else {}

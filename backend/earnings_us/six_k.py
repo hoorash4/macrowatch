@@ -320,7 +320,6 @@ def _prefer_usd_column(header: str, index: int, count: int) -> int:
 
 def _table_values(
     tables: Iterable[list[list[str]]], target: tuple[int, int], default_text: str = "",
-    *, backfill_mode: bool = False,
 ) -> tuple[dict[str, Decimal], dict[str, str], date | None]:
     candidates: list[tuple[tuple[int, int], dict[str, Decimal], dict[str, str], date | None]] = []
     for table in tables:
@@ -338,26 +337,24 @@ def _table_values(
         for row in table:
             label_index = next((
                 i for i, cell in enumerate(row)
-                if _metric_for_label(cell, relaxed=backfill_mode) or _auxiliary_metric(cell)
+                if _metric_for_label(cell) or _auxiliary_metric(cell)
             ), None)
             if label_index is None:
                 if not values:
                     header_rows.append(" ".join(row))
                 continue
-            metric = _metric_for_label(row[label_index], relaxed=backfill_mode)
+            metric = _metric_for_label(row[label_index])
             auxiliary_metric = _auxiliary_metric(row[label_index])
             header = " ".join(header_rows)
             numbers = _row_numbers(row[label_index + 1:])
             direct_count = _three_month_columns(header, len(numbers))
             direct_numbers = numbers[:direct_count]
-            index = _target_column(
-                header, len(direct_numbers), target, prefer_split_dates=backfill_mode,
-            )
+            index = _target_column(header, len(direct_numbers), target)
             if index is not None:
                 index = _prefer_usd_column(header, index, direct_count)
             priority = _metric_label_priority(metric, row[label_index]) if metric is not None else 0
             if index is not None and index < len(numbers) and (
-                metric not in values or (backfill_mode and priority > priorities.get(metric, 0))
+                metric not in values
             ):
                 local_scale = _scale(joined)
                 value = direct_numbers[index] * (local_scale if local_scale != 1 else _scale(default_text))
@@ -375,7 +372,7 @@ def _table_values(
                 currencies["operating_income"] = currencies["gross_profit"]
         header = " ".join(header_rows)
         dates = [
-            item for item in _loose_period_dates(header, prefer_split=backfill_mode)
+            item for item in _loose_period_dates(header)
             if _matches_target_period(item, target)
         ]
         represented_end = dates[-1] if dates else None
@@ -384,72 +381,9 @@ def _table_values(
     if not candidates:
         return {}, {}, None
     best = max(candidates, key=lambda item: item[0])
-    if not backfill_mode or best[3] is None:
-        return best[1], best[2], best[3]
-    values, currencies = dict(best[1]), dict(best[2])
-    for _, extra_values, extra_currencies, extra_end in candidates:
-        if extra_end != best[3]:
-            continue
-        for metric, value in extra_values.items():
-            if metric not in values:
-                values[metric] = value
-                currencies[metric] = extra_currencies.get(metric, "USD")
-    return values, currencies, best[3]
+    return best[1], best[2], best[3]
 
 
-def _half_year_values(
-    tables: Iterable[list[list[str]]], target: tuple[int, int], default_text: str = "",
-) -> tuple[dict[str, Decimal], dict[str, str], date | None]:
-    """Read an IFRS half-year statement for backfill-only Q2 completion.
-
-    Some foreign private issuers furnish an exact Q2 release for selected
-    metrics but disclose the remaining GAAP metrics only for the first half.
-    The historical backfill intentionally allocates that reported H1 total
-    equally between Q1 and Q2 when no exact Q2 metric is available.
-    """
-    candidates: list[tuple[int, dict[str, Decimal], dict[str, str], date | None]] = []
-    for table in tables:
-        joined = _clean(" ".join(cell for row in table for cell in row))
-        if "six months ended" not in joined.lower() and not re.search(r"\bh1\s+20\d{2}\b", joined, re.I):
-            continue
-        header_rows: list[str] = []
-        values: dict[str, Decimal] = {}
-        currencies: dict[str, str] = {}
-        priorities: dict[str, int] = {}
-        for row in table:
-            label_index = next((
-                i for i, cell in enumerate(row)
-                if _metric_for_label(cell, relaxed=True) is not None
-            ), None)
-            if label_index is None:
-                if not values:
-                    header_rows.append(" ".join(row))
-                continue
-            metric = _metric_for_label(row[label_index], relaxed=True)
-            if metric is None:
-                continue
-            header = " ".join(header_rows)
-            numbers = _row_numbers(row[label_index + 1:])
-            index = _target_column(header, len(numbers), target, prefer_split_dates=True)
-            priority = _metric_label_priority(metric, row[label_index])
-            if index is None or index >= len(numbers) or priority < priorities.get(metric, 0):
-                continue
-            local_scale = _scale(joined)
-            values[metric] = numbers[index] * (local_scale if local_scale != 1 else _scale(default_text))
-            currencies[metric] = _column_currency(header, index, len(numbers), _currency(joined))
-            priorities[metric] = priority
-            # A consolidated H1 summary commonly appends regional sections
-            # below the group total. Once the three consolidated measures are
-            # present, later segment rows must not replace that statement.
-            if set(values) == set(_METRIC_LABELS):
-                break
-        header = " ".join(header_rows)
-        dates = [item for item in _loose_period_dates(header, prefer_split=True) if _matches_target_period(item, target)]
-        candidates.append((len(values), values, currencies, dates[-1] if dates else None))
-    if not candidates:
-        return {}, {}, None
-    _, values, currencies, period_end = max(candidates, key=lambda item: item[0])
-    return values, currencies, period_end
 
 
 def _loose_period_dates(header: str, *, prefer_split: bool = False) -> list[date]:
@@ -570,23 +504,18 @@ def _narrative_value(text: str, labels: tuple[str, ...], year: int) -> tuple[Dec
     return value, currency
 
 
-def _has_results_context(text: str, *, backfill_mode: bool = False) -> bool:
+def _has_results_context(text: str) -> bool:
     lowered = text.lower()
     result = any(
         term in lowered for term in ("financial results", "quarterly results", "three months ended")
     ) or re.search(r"\b(?:first|second|third|fourth) quarter.{0,20}results\b", lowered[:700]) is not None
-    if backfill_mode:
-        result = result or "quarter ended" in lowered or "six months ended" in lowered \
-            or re.search(r"\bh1\s+20\d{2}\b", lowered) is not None
     return result
 
 
-def has_six_k_results_context(
-    documents: Iterable[SixKDocument], *, backfill_mode: bool = False,
-) -> bool:
+def has_six_k_results_context(documents: Iterable[SixKDocument]) -> bool:
     """Return whether a 6-K document set appears to contain financial results."""
     return any(
-        _has_results_context(parse_filing_html(document.text)[0], backfill_mode=backfill_mode)
+        _has_results_context(parse_filing_html(document.text)[0])
         for document in documents
     )
 
@@ -598,8 +527,6 @@ def extract_six_k_fact(
     year: int,
     quarter: int,
     fx_to_usd: Callable[[str, date], Decimal] | None = None,
-    *,
-    backfill_mode: bool = False,
 ) -> USFinancialFact | None:
     """Extract one exact quarter from a furnished 6-K earnings release."""
     target = (year, quarter)
@@ -609,18 +536,9 @@ def extract_six_k_fact(
     for document in documents:
         text, tables, _ = parse_filing_html(document.text)
         lowered = text.lower()
-        if not _has_results_context(text, backfill_mode=backfill_mode):
+        if not _has_results_context(text):
             continue
-        table_values, table_currencies, table_end = _table_values(
-            tables, target, text, backfill_mode=backfill_mode,
-        )
-        if backfill_mode and set(table_values) != set(_METRIC_LABELS):
-            half_values, half_currencies, half_end = _half_year_values(tables, target, text)
-            for metric, value in half_values.items():
-                if metric not in table_values:
-                    table_values[metric] = value / 2
-                    table_currencies[metric] = half_currencies.get(metric, "USD")
-            table_end = table_end or half_end
+        table_values, table_currencies, table_end = _table_values(tables, target, text)
         document_dates = _loose_period_dates(text)
         dates = [item for item in document_dates if _matches_target_period(item, target)]
         if not table_values:
@@ -635,17 +553,10 @@ def extract_six_k_fact(
         filing_name_has_quarter = re.search(
             rf"q{quarter}(?:results?|financial|[^a-z0-9]|$)", filing.primary_document.lower(),
         ) is not None
-        if backfill_mode and table_end is not None and _matches_target_period(table_end, target):
-            dates = [table_end]
-        elif not dates and (
+        if not dates and (
             target_label in lowered[:700] or written_target in lowered[:700]
             or (table_values and filing_name_has_quarter)
         ):
-            dates = [date(year, quarter * 3, 31 if quarter in {1, 4} else 30)]
-        elif backfill_mode and len(table_values) == 3:
-            # Foreign issuers often split a day-month heading from its years,
-            # leaving no globally parseable date even though the document has
-            # one complete, target-selected quarterly income statement.
             dates = [date(year, quarter * 3, 31 if quarter in {1, 4} else 30)]
         elif not document_dates and filing.report_date and market_period(filing.report_date) == target:
             dates = [filing.report_date]
@@ -691,78 +602,4 @@ def extract_six_k_fact(
         top_line=converted["top_line"], operating_income=converted["operating_income"],
         net_income=converted["net_income"], source_filing_id=filing.accession,
         filing_date=filing.filing_date, is_pending=any(value is None for value in converted.values()),
-    )
-
-
-def extract_q1_from_h1_six_k_fact(
-    company_id: str,
-    filing: SixKFiling,
-    documents: Iterable[SixKDocument],
-    year: int,
-    fx_to_usd: Callable[[str, date], Decimal] | None = None,
-) -> USFinancialFact | None:
-    """Derive calendar Q1 from a 6-K that reports both Q2 and H1.
-
-    This is deliberately a historical-backfill-only fallback.  Some foreign
-    issuers furnish Q1 releases without a net-income line, then disclose a
-    consolidated P&L with Q2 and H1 side by side.  The two reported columns
-    use the same accounting basis, so H1 minus Q2 is the issuer's Q1 result.
-    """
-    values: dict[str, Decimal] = {}
-    currencies: dict[str, str] = {}
-    number = r"\(?[-+]?\s*\d[\d,]*(?:\.\d+)?\)?"
-    labels = {
-        "top_line": r"(?:total\s+)?revenues?",
-        "operating_income": r"operating\s+profit(?:\s*/\s*\(?loss\)?)?",
-        "net_income": r"net\s+profit(?:\s*/\s*\(?loss\)?)?",
-    }
-    for document in documents:
-        text, _, _ = parse_filing_html(document.text)
-        match = re.search(r"\b(?:p\s*&\s*l\s+)?q2\s*&\s*h1\s+" + str(year) + r"\b", text, re.I)
-        if match is None:
-            continue
-        block = text[match.start():match.start() + 7000]
-        header = block[: min(len(block), 500)]
-        if not re.search(r"\bq2\s+" + str(year) + r"\b.*\bh1\s+" + str(year) + r"\b", header, re.I):
-            continue
-        scale = _scale(header)
-        currency = _currency(header)
-        for metric, label in labels.items():
-            row = re.search(
-                rf"\b{label}\s+(({number}\s+){{3}}{number})",
-                block,
-                re.I,
-            )
-            if row is None:
-                continue
-            # Attribute-to-parent and non-controlling-interest rows are
-            # different measures; the consolidated total row is the target.
-            label_text = row.group(0).split(row.group(1), 1)[0].lower()
-            if metric == "net_income" and ("attributed" in label_text or "non-controlling" in label_text):
-                continue
-            numbers = [
-                value for value in (_number(token) for token in re.findall(number, row.group(1)))
-                if value is not None
-            ]
-            if len(numbers) != 4:
-                continue
-            values[metric] = (numbers[2] - numbers[0]) * scale
-            currencies[metric] = currency
-    if set(values) != set(labels):
-        return None
-    end = date(year, 3, 31)
-    converted: dict[str, Decimal] = {}
-    for metric, value in values.items():
-        currency = currencies[metric]
-        if currency != "USD":
-            if fx_to_usd is None:
-                return None
-            value *= fx_to_usd(currency, end)
-        converted[metric] = value
-    return USFinancialFact(
-        company_id=company_id, fiscal_year=year, fiscal_quarter=1,
-        period_start=date(year, 1, 1), period_end=end,
-        top_line=converted["top_line"], operating_income=converted["operating_income"],
-        net_income=converted["net_income"], source_filing_id=f"{filing.accession}:h1-minus-q2",
-        filing_date=filing.filing_date, is_pending=False,
     )

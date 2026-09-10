@@ -122,8 +122,21 @@ def main() -> None:
         rows.extend(stored_rows(country, result, datetime.now(timezone.utc).isoformat()))
     if not rows:
         raise RuntimeError("No attractiveness rows were calculated")
-    database.upsert("equity_bond_attractiveness_weekly", rows, conflict="country,observation_date,method_version")
-    print(f"stored={len(rows)} kr={sum(row['country']=='KR' for row in rows)} us={sum(row['country']=='US' for row in rows)}")
+    existing = database.request(
+        "GET", "equity_bond_attractiveness_weekly",
+        params={"select": "country,observation_date,method_version", "limit": "10000"},
+    ) or []
+    existing_keys = {
+        (str(row["country"]), str(row["observation_date"]), str(row["method_version"]))
+        for row in existing
+    }
+    writable = [
+        row for row in rows
+        if (str(row["country"]), str(row["observation_date"]), str(row["method_version"])) not in existing_keys
+    ]
+    if writable:
+        database.upsert("equity_bond_attractiveness_weekly", writable, conflict="country,observation_date,method_version")
+    print(f"calculated={len(rows)} stored={len(writable)} kr={sum(row['country']=='KR' for row in writable)} us={sum(row['country']=='US' for row in writable)}")
 
 
 if __name__ == "__main__":

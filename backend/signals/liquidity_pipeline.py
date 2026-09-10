@@ -28,7 +28,7 @@ ENVIRONMENT_DIRECTIONS = {
 US_DIRECTIONS = ENVIRONMENT_DIRECTIONS["US"]
 START = date(2021, 9, 7)  # Initial five-year history; never move this retention boundary.
 KR_PRESSURE_START = date(2021, 11, 25)
-SOURCE_START = date(2016, 8, 1)  # Calibration only; not displayed as backfill.
+SOURCE_START = date(2016, 8, 1)  # Calibration source history; only current observations are published.
 WEIGHTS = {
     ("US", "environment"): {key: .25 for key in US_DIRECTIONS},
     ("US", "momentum"): {key: .25 for key in US_DIRECTIONS},
