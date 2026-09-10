@@ -420,14 +420,14 @@ function renderWeeklyMomentumChart({ chartId, rows, valueKey, source, emptyMessa
   const height = chartLayout.auxiliaryHeight;
   const padding = chartPadding('dual');
   const momentumValues = data.flatMap((row) => [row.value, row.average, row.secondaryAverage].filter(Number.isFinite));
-  const { max: axisMaximum } = window.MacroWatchAnalysisChart.axisDomain(momentumValues, { symmetric: true, minimumSpan: .01 });
+  const momentumDomain = window.MacroWatchAnalysisChart.axisDomain(momentumValues, { symmetric: true, minimumSpan: .01 });
   const formatAxisValue = (value) => window.MacroWatchAnalysisChart.formatAxisNumber(value, { showPlus: true });
   const dates = levels.map((row) => new Date(row.month).getTime());
   const start = domainStart ? new Date(domainStart).getTime() : Math.min(...dates);
   const end = domainEnd ? new Date(domainEnd).getTime() : Math.max(...dates);
   const x = (value) => padding.left + ((new Date(value).getTime() - start) / Math.max(1, end - start)) * (width - padding.left - padding.right);
-  const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value + axisMaximum : axisMaximum - value)) / (axisMaximum * 2);
-  const grid = [-axisMaximum, 0, axisMaximum].map((value) => `<line x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}"${value === 0 ? ' class="analysis-chart-zero-line"' : ' stroke="#dbe3ed" stroke-dasharray="3 4"'}/><text data-chart-left-axis x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
+  const y = (value) => padding.top + ((height - padding.top - padding.bottom) * (invertVertical ? value - momentumDomain.min : momentumDomain.max - value)) / (momentumDomain.max - momentumDomain.min);
+  const grid = momentumDomain.ticks.map((value) => `<line data-chart-grid x1="${padding.left}" x2="${width - padding.right}" y1="${y(value)}" y2="${y(value)}"${value === 0 ? ' class="analysis-chart-zero-line"' : ' stroke="#dbe3ed" stroke-dasharray="3 4"'}/><text data-chart-left-axis x="${padding.left - 8}" y="${y(value) + 3}" text-anchor="end" fill="#64748b" font-size="10">${formatAxisValue(value)}</text>`).join('');
   const lines = showChanges ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.value))}" fill="none" stroke="${lineColor}" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/>` : '';
   const averageLines = `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.average))}" fill="none" stroke="${averageColor}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/>`;
   const secondaryAverageLines = secondaryAverageColor ? `<path d="${monotoneSeriesPath(data, (row) => x(row.month), (row) => y(row.secondaryAverage))}" fill="none" stroke="${secondaryAverageColor}" stroke-width="${lineWidths.auxiliary}" stroke-opacity="0.48" stroke-linecap="round"/>` : '';

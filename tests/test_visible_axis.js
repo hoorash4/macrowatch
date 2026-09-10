@@ -203,8 +203,12 @@ test('missing values are not zero and flat data retains a finite span', () => {
 test('common axis domain keeps the data range primary and preserves zero for requested reference charts', () => {
   const linear = axisDomain([20, 100]);
   assert.ok(linear.min < 20 && linear.max > 100);
-  assert.equal(linear.ticks.length, 6);
+  assert.ok(linear.ticks.length >= 4 && linear.ticks.length <= 6);
+  assert.ok(linear.ticks.slice(1).every((value, index) => value - linear.ticks[index] === linear.step));
   assert.ok(linear.min >= 10 && linear.max <= 110, 'rounding does not expand the 10% plot padding');
+  const integerScale = axisDomain([17.7, 87.8], { targetIntervals: 4 });
+  assert.ok(integerScale.ticks.length >= 3, 'broad ranges retain useful grid references');
+  assert.ok(integerScale.ticks.every(Number.isInteger));
   const zeroAxis = axisDomain([10, 40], { includeZero: true });
   assert.ok(zeroAxis.min < 0);
   assert.ok(zeroAxis.ticks.includes(0));
@@ -218,7 +222,7 @@ test('common axis domain keeps the data range primary and preserves zero for req
   assert.equal(context.window.MacroWatchAnalysisChart.formatAxisNumber(2), '2');
   const positive = axisDomain([5, 8]);
   assert.ok(!positive.ticks.includes(0), 'positive-only data does not force zero into the range');
-  assert.ok(positive.ticks.every(value => Number.isInteger(value * 10)), 'endpoint labels use the same decimal precision as interior ticks');
+  assert.ok(positive.ticks.every(Number.isInteger), 'ranges wider than two units do not use needless decimal ticks');
   const largeRightAxis = axisDomain([5300, 8100]);
   assert.ok(largeRightAxis.ticks.every(Number.isInteger), 'large-value endpoints do not expose a lone decimal place');
   assert.ok(largeRightAxis.ticks.every(value => value >= largeRightAxis.min && value <= largeRightAxis.max));
@@ -232,9 +236,25 @@ test('secondary-axis labels share the left-axis grid heights and use consistent 
   const aligned = utils.alignedSecondaryTicks(primaryTicks, primaryY, secondary, 20, 180);
   assert.deepEqual(aligned.map(tick => tick.y), [20, 100, 180]);
   assert.ok(aligned.every(tick => Number.isInteger(tick.value)));
-  assert.deepEqual(aligned.map(tick => tick.value), [8125, 6430, 4735]);
+  assert.deepEqual(aligned.map(tick => tick.value), [8100, 6400, 4700]);
+  assert.equal(aligned[1].value - aligned[0].value, aligned[2].value - aligned[1].value);
   const inverted = utils.alignedSecondaryTicks(primaryTicks, primaryY, { min: 65, max: 87, step: 4.4 }, 20, 180, true);
   assert.deepEqual(inverted.map(tick => tick.value), [65, 76, 87]);
+});
+
+test('chart modules do not rebuild common Y-axis ticks with local fixed multiples', () => {
+  const files = [
+    '../assets/js/charts/policy-expectation-chart.js',
+    '../assets/js/charts/em-capacity-chart.js',
+    '../assets/js/charts/korea-foreign-flow-chart.js',
+    '../assets/js/charts/liquidity-chart.js',
+    '../assets/js/dashboard/dashboard-charts.js',
+  ];
+  const modules = files.map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+  assert.doesNotMatch(modules, /tickStep:\s*domain\.max\s*\/\s*2/);
+  assert.doesNotMatch(modules, /maximumAbsoluteValue/);
+  assert.doesNotMatch(modules, /min\s*\+\s*source\.step\s*\*/);
+  assert.doesNotMatch(modules, /\[-axisMaximum,\s*0,\s*axisMaximum\]/);
 });
 
 test('every dual-axis chart builds its right labels from the shared left-grid alignment', () => {

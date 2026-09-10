@@ -19,13 +19,7 @@
   function domainFor(points, metrics, includeNeutral = false) {
     const values = points.flatMap(point => metrics.map(metric => point[metric])).filter(Number.isFinite);
     if (includeNeutral) values.push(50);
-    const source = utils.axisDomain(values, { minimumSpan: 4, targetIntervals: 4 });
-    let min = source.min, max = source.max;
-    if (min < 0) { max -= min; min = 0; }
-    if (max > 100) { min -= max - 100; max = 100; }
-    min = Math.max(0, min);
-    const ticks = Array.from({ length: 5 }, (_, index) => Number((min + source.step * index).toPrecision(12)));
-    return { min, max, ticks };
+    return utils.axisDomain(values, { minimumSpan: 4, targetIntervals: 4, lowerBound: 0, upperBound: 100 });
   }
 
   function render(card, state) {

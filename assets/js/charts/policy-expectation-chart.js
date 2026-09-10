@@ -26,8 +26,9 @@
 
   function verticalScale(points) {
     const values = points.flatMap((point) => [point.value, point.fiveDayAverage]).filter(Number.isFinite);
-    const domain = chartUtils.axisDomain(values, { symmetric: true, minimumSpan: 10 }) || { min: -6.25, max: 6.25 };
-    return { tickStep: domain.max / 2, maximumAbsoluteValue: domain.max };
+    const domain = chartUtils.axisDomain(values, { symmetric: true, minimumSpan: 10 })
+      || { min: -6.25, max: 6.25, ticks: [-6, -3, 0, 3, 6], step: 3 };
+    return domain;
   }
 
   function withFiveDayAverage(rows) {
@@ -61,15 +62,15 @@
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right),
     }));
     const initialVerticalScale = verticalScale(points);
-    const zeroY = scale(0, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
-    const pathFor = (sourcePoints, valueKey, maximumAbsoluteValue) => window.MacroWatchAnalysisChart.monotonePath(sourcePoints
+    const zeroY = scale(0, initialVerticalScale.min, initialVerticalScale.max, HEIGHT - PADDING.bottom, PADDING.top);
+    const pathFor = (sourcePoints, valueKey, sourceDomain) => window.MacroWatchAnalysisChart.monotonePath(sourcePoints
       .filter((point) => Number.isFinite(point[valueKey]))
       .map((point) => ({
         x: point.x,
-        y: scale(point[valueKey], -maximumAbsoluteValue, maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top),
+        y: scale(point[valueKey], sourceDomain.min, sourceDomain.max, HEIGHT - PADDING.bottom, PADDING.top),
       })));
-    const rawPath = pathFor(points, 'value', initialVerticalScale.maximumAbsoluteValue);
-    const averagePath = pathFor(points, 'fiveDayAverage', initialVerticalScale.maximumAbsoluteValue);
+    const rawPath = pathFor(points, 'value', initialVerticalScale);
+    const averagePath = pathFor(points, 'fiveDayAverage', initialVerticalScale);
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
@@ -80,14 +81,15 @@
       const yearLabel = selectedYears === 'max' ? String(year).slice(-2) : String(year);
       return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${yearLabel}</text>`;
     }).join('');
-    const yTickValues = [-2, -1, 0, 1, 2].map((multiple) => {
-      const value = multiple * initialVerticalScale.tickStep;
-      const y = scale(value, -initialVerticalScale.maximumAbsoluteValue, initialVerticalScale.maximumAbsoluteValue, HEIGHT - PADDING.bottom, PADDING.top);
+    const tickSlots = Array.from({ length: 6 }, (_, index) => index);
+    const yTickValues = tickSlots.map((index) => {
+      const value = initialVerticalScale.ticks[index];
+      const y = Number.isFinite(value) ? scale(value, initialVerticalScale.min, initialVerticalScale.max, HEIGHT - PADDING.bottom, PADDING.top) : PADDING.top;
       const label = chartUtils.formatAxisNumber(value, { showPlus: true });
-      return { multiple, value, y, label };
+      return { index, value, y, label };
     });
-    const yGridLines = yTickValues.map(({ value, y }) => `<line x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' analysis-chart-zero-line' : ''}"/>`).join('');
-    const yAxisLabels = yTickValues.map(({ multiple, y, label }) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"/><text data-policy-expectation-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label">${label}</text>`).join('');
+    const yGridLines = yTickValues.map(({ index, value, y }) => `<line data-policy-expectation-y-grid="${index}" x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' analysis-chart-zero-line' : ''}"${Number.isFinite(value) ? '' : ' visibility="hidden"'}/>`).join('');
+    const yAxisLabels = yTickValues.map(({ index, value, y, label }) => `<line data-policy-expectation-y-tick="${index}" x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"${Number.isFinite(value) ? '' : ' visibility="hidden"'}/><text data-policy-expectation-y-index="${index}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label"${Number.isFinite(value) ? '' : ' visibility="hidden"'}>${Number.isFinite(value) ? label : ''}</text>`).join('');
     const gradientSplit = ((zeroY - PADDING.top) / (HEIGHT - PADDING.top - PADDING.bottom) * 100).toFixed(2);
 
     const { frame, svg } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: yAxisLabels, ariaLabel: '시장 내재 정책금리 기대', plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 시장 내재 정책금리 기대 스프레드">
@@ -106,7 +108,8 @@
     const cursorValue = container.querySelector('[data-policy-expectation-value]');
     const rawLine = container.querySelector('.policy-expectation-line--raw');
     const averageLine = container.querySelector('.policy-expectation-line--average');
-    const yLabels = [...container.querySelectorAll('[data-policy-expectation-y-multiple]')];
+    const yLabels = [...container.querySelectorAll('[data-policy-expectation-y-index]')];
+    const yGrids = [...container.querySelectorAll('[data-policy-expectation-y-grid]')];
     let scaleFrame = null;
     const updateVisibleScale = () => {
       scaleFrame = null;
@@ -115,11 +118,24 @@
       const visiblePoints = points.filter((point) => point.x >= visibleStart && point.x <= visibleEnd);
       if (!visiblePoints.length) return;
       const currentScale = verticalScale(visiblePoints);
-      rawLine.setAttribute('d', pathFor(points, 'value', currentScale.maximumAbsoluteValue));
-      averageLine.setAttribute('d', pathFor(points, 'fiveDayAverage', currentScale.maximumAbsoluteValue));
+      rawLine.setAttribute('d', pathFor(points, 'value', currentScale));
+      averageLine.setAttribute('d', pathFor(points, 'fiveDayAverage', currentScale));
       yLabels.forEach((label) => {
-        const value = Number(label.dataset.policyExpectationYMultiple) * currentScale.tickStep;
+        const index = Number(label.dataset.policyExpectationYIndex);
+        const value = currentScale.ticks[index];
+        const tick = container.querySelector(`[data-policy-expectation-y-tick="${index}"]`);
+        const grid = yGrids[index];
+        if (!Number.isFinite(value)) {
+          label.setAttribute('visibility', 'hidden'); tick?.setAttribute('visibility', 'hidden'); grid?.setAttribute('visibility', 'hidden');
+          return;
+        }
+        const y = scale(value, currentScale.min, currentScale.max, HEIGHT - PADDING.bottom, PADDING.top);
+        label.removeAttribute('visibility'); tick?.removeAttribute('visibility'); grid?.removeAttribute('visibility');
         label.textContent = chartUtils.formatAxisNumber(value, { showPlus: true });
+        label.setAttribute('y', y + 3);
+        tick?.setAttribute('y1', y); tick?.setAttribute('y2', y);
+        grid?.setAttribute('y1', y); grid?.setAttribute('y2', y);
+        grid?.classList.toggle('analysis-chart-zero-line', value === 0);
       });
     };
     frame.addEventListener('scroll', () => {

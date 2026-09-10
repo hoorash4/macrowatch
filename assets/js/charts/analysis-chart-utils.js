@@ -90,14 +90,24 @@
     if (!secondaryDomain || !Number.isFinite(secondaryDomain.min) || !Number.isFinite(secondaryDomain.max)) return [];
     const span = secondaryDomain.max - secondaryDomain.min || 1;
     const height = bottom - top || 1;
-    return (primaryTicks || []).map((primaryValue) => {
+    const rawTicks = (primaryTicks || []).map((primaryValue) => {
       const y = primaryY(primaryValue);
       const ratio = Math.max(0, Math.min(1, (y - top) / height));
       const rawValue = inverted
         ? secondaryDomain.min + ratio * span
         : secondaryDomain.max - ratio * span;
-      return { y, value: roundAxisTick(rawValue, secondaryDomain.step ?? span / Math.max(1, primaryTicks.length - 1)) };
+      return { y, rawValue };
     });
+    if (rawTicks.length < 2) return rawTicks.map(tick => ({ y: tick.y, value: roundAxisTick(tick.rawValue, secondaryDomain.step) }));
+    const rawStep = (rawTicks.at(-1).rawValue - rawTicks[0].rawValue) / (rawTicks.length - 1);
+    const magnitude = 10 ** Math.floor(Math.log10(Math.max(Math.abs(rawStep), Number.EPSILON)));
+    const quantum = Math.max(.01, Math.abs(rawStep) / magnitude >= 5 ? magnitude : magnitude / 10);
+    const readableStep = Math.round(rawStep / quantum) * quantum || Math.sign(rawStep || 1) * quantum;
+    const firstValue = Math.round(rawTicks[0].rawValue / quantum) * quantum;
+    return rawTicks.map((tick, index) => ({
+      y: tick.y,
+      value: roundAxisTick(firstValue + readableStep * index, quantum),
+    }));
   }
 
   function bindPanelScroll(frame) {
@@ -288,6 +298,17 @@
     return (factors.find((factor) => normalized <= factor) || 10) * magnitude;
   }
 
+  function niceIntegerStep(value) {
+    const safeValue = Math.max(1, Math.abs(value));
+    const magnitude = 10 ** Math.floor(Math.log10(safeValue));
+    const normalized = safeValue / magnitude;
+    const factors = [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10];
+    const candidate = factors
+      .map(factor => factor * magnitude)
+      .find(step => step + Number.EPSILON >= safeValue && Number.isInteger(step));
+    return candidate || Math.ceil(safeValue / magnitude) * magnitude;
+  }
+
   function timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears) {
     if (selectedYears === 'max') return viewportWidth;
     return Math.max(viewportWidth, viewportWidth * ((lastTimestamp - firstTimestamp) / (Number(selectedYears) * YEAR_MS)));
@@ -409,7 +430,7 @@
     return dates.length ? timelineWidth(baseWidth, Math.min(...dates), Math.max(...dates), years) : baseWidth;
   }
 
-  function axisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null, targetIntervals = 5 } = {}) {
+  function axisDomain(values, { includeZero = false, symmetric = false, minimumSpan = null, targetIntervals = 5, lowerBound = null, upperBound = null } = {}) {
     const finiteValues = values.filter(Number.isFinite);
     if (!finiteValues.length) return null;
     let min = Math.min(...finiteValues), max = Math.max(...finiteValues);
@@ -433,23 +454,30 @@
       min -= padding;
       max += padding;
     }
-    const step = (max - min) / count;
-    const roundingQuantum = 10 ** Math.floor(Math.log10(Math.max(Math.abs(step), Number.EPSILON)));
-    let ticks = Array.from({ length: count + 1 }, (_, index) => {
-      const raw = min + step * index;
-      // Domain bounds retain the exact 10% plot padding. Only displayed tick
-      // values are rounded. A rounded endpoint outside the domain is omitted
-      // instead of being forced inward and duplicating a neighbouring tick.
-      const rounded = Math.round(raw / roundingQuantum) * roundingQuantum;
-      if (rounded < min - roundingQuantum * 1e-10 || rounded > max + roundingQuantum * 1e-10) return null;
-      return Math.abs(rounded) < roundingQuantum / 2 ? 0 : Number(rounded.toPrecision(12));
-    }).filter((value, index, values) => value != null && values.indexOf(value) === index);
-    if (min < 0 && max > 0 && !ticks.includes(0)) {
-      if (ticks.length >= count + 1) {
-        const closest = ticks.reduce((best, value, index) => Math.abs(value) < Math.abs(ticks[best]) ? index : best, 0);
-        ticks[closest] = 0;
-      } else ticks.push(0);
-      ticks.sort((left, right) => left - right);
+    if (Number.isFinite(lowerBound) && min < lowerBound) {
+      max += lowerBound - min;
+      min = lowerBound;
+    }
+    if (Number.isFinite(upperBound) && max > upperBound) {
+      min -= max - upperBound;
+      max = upperBound;
+    }
+    if (Number.isFinite(lowerBound)) min = Math.max(lowerBound, min);
+    if (Number.isFinite(upperBound)) max = Math.min(upperBound, max);
+    // 눈금은 각 위치를 따로 반올림하지 않고 하나의 공통 간격으로 생성한다.
+    // 따라서 라벨과 가로 격자의 간격이 항상 일정하며, 범위 안에 자연스럽게
+    // 들어오는 최상단·최하단 눈금은 유지되고 억지 경계값은 추가되지 않는다.
+    const rawStep = (max - min) / count;
+    // 전체 범위가 2 이상이면 정수 간격으로 충분히 구분된다. 그보다 작은
+    // 진폭에서만 데이터 규모에 맞춰 소수 간격을 허용한다.
+    const step = rawStep >= 1 || max - min >= 2 ? niceIntegerStep(rawStep) : Math.max(.01, niceStep(rawStep));
+    const epsilon = step * 1e-10;
+    const firstTick = Math.ceil((min - epsilon) / step) * step;
+    const lastTick = Math.floor((max + epsilon) / step) * step;
+    const ticks = [];
+    for (let value = firstTick; value <= lastTick + epsilon && ticks.length <= count + 1; value += step) {
+      const normalized = Math.abs(value) < epsilon ? 0 : Number(value.toPrecision(12));
+      ticks.push(normalized);
     }
     return { min, max, ticks, step };
   }
@@ -553,13 +581,8 @@
         });
         const displayedTicks = inverted ? domain.ticks : [...domain.ticks].reverse();
         const alignedTicks = axis.side === 'right' && primaryTickPixels.length
-          ? primaryTickPixels.map((pixel) => {
-            const ratio = Math.max(0, Math.min(1, (pixel - top) / (bottom - top || 1)));
-            const rawValue = inverted
-              ? domain.min + ratio * (domain.max - domain.min)
-              : domain.max - ratio * (domain.max - domain.min);
-            return { pixel, value: roundAxisTick(rawValue, domain.step) };
-          })
+          ? alignedSecondaryTicks(primaryTickPixels, pixel => pixel, domain, top, bottom, inverted)
+            .map(tick => ({ pixel: tick.y, value: tick.value }))
           : displayedTicks.map(value => ({ pixel: map(value), value }));
         axis.labels.forEach(({ node }, index) => {
           const tick = alignedTicks[index];

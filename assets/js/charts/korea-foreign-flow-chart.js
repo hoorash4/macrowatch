@@ -55,8 +55,9 @@
 
   function verticalScale(points) {
     const values = points.flatMap((point) => [point.value, point.dailyValue]).filter(Number.isFinite);
-    const domain = chartUtils.axisDomain(values, { symmetric: true, minimumSpan: .2 }) || { min: -.125, max: .125 };
-    return { tickStep: domain.max / 2, maximumAbsoluteValue: domain.max };
+    const domain = chartUtils.axisDomain(values, { symmetric: true, minimumSpan: .2 })
+      || { min: -.125, max: .125, ticks: [-.1, -.05, 0, .05, .1], step: .05 };
+    return domain;
   }
 
   function render(container, rows, selectedYears) {
@@ -67,11 +68,11 @@
     const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
     points.forEach((point) => { point.x = scale(point.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right); });
     const initialScale = verticalScale(points);
-    const pathFor = (maximum, key = 'value') => window.MacroWatchAnalysisChart.monotonePath(points
+    const pathFor = (sourceDomain, key = 'value') => window.MacroWatchAnalysisChart.monotonePath(points
       .filter((point) => Number.isFinite(point[key]))
       .map((point) => ({
         x: point.x,
-        y: scale(point[key], -maximum, maximum, HEIGHT - PADDING.bottom, PADDING.top),
+        y: scale(point[key], sourceDomain.min, sourceDomain.max, HEIGHT - PADDING.bottom, PADDING.top),
       })));
     const firstYear = new Date(firstTimestamp).getUTCFullYear(), lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearGuides = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
@@ -80,11 +81,12 @@
       const x = scale(timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right);
       return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${selectedYears === 'max' ? String(year).slice(-2) : year}</text>`;
     }).join('');
-    const tickMultiples = [-2, -1, 0, 1, 2], yPosition = (multiple) => scale(multiple, -2, 2, HEIGHT - PADDING.bottom, PADDING.top);
-    const grids = tickMultiples.map((multiple) => `<line x1="${PADDING.left}" y1="${yPosition(multiple)}" x2="${timelineWidth - PADDING.right}" y2="${yPosition(multiple)}" class="policy-expectation-y-grid${multiple === 0 ? ' analysis-chart-zero-line' : ''}"/>`).join('');
-    const labels = tickMultiples.map((multiple) => `<line x1="${Y_AXIS_WIDTH - 5}" y1="${yPosition(multiple)}" x2="${Y_AXIS_WIDTH}" y2="${yPosition(multiple)}" class="policy-expectation-y-tick"/><text data-korea-foreign-flow-y-multiple="${multiple}" x="${Y_AXIS_WIDTH - 9}" y="${yPosition(multiple) + 3}" text-anchor="end" class="policy-expectation-y-label">${chartUtils.formatAxisNumber(multiple * initialScale.tickStep)}</text>`).join('');
-    const { frame, svg } = chartUtils.mountChartFrame({ container: container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: labels, ariaLabel: `한국 외국인 자금 유출입 강도`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 한국 외국인 자금 유출입 강도"><defs><linearGradient id="korea-foreign-flow-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path data-korea-daily-flow-line d="${pathFor(initialScale.maximumAbsoluteValue, 'dailyValue')}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#korea-foreign-flow-line-gradient)"/><path data-korea-flow-line d="${pathFor(initialScale.maximumAbsoluteValue)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#korea-foreign-flow-line-gradient)"/><line data-korea-foreign-flow-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-foreign-flow-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-korea-foreign-flow-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg>` });
-    const line = container.querySelector('[data-korea-flow-line]'), dailyLine = container.querySelector('[data-korea-daily-flow-line]'), yLabels = [...container.querySelectorAll('[data-korea-foreign-flow-y-multiple]')];
+    const yPosition = (value, sourceDomain = initialScale) => scale(value, sourceDomain.min, sourceDomain.max, HEIGHT - PADDING.bottom, PADDING.top);
+    const tickSlots = Array.from({ length: 6 }, (_, index) => index);
+    const grids = tickSlots.map((index) => { const value = initialScale.ticks[index], y = Number.isFinite(value) ? yPosition(value) : PADDING.top; return `<line data-korea-foreign-flow-y-grid="${index}" x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-expectation-y-grid${value === 0 ? ' analysis-chart-zero-line' : ''}"${Number.isFinite(value) ? '' : ' visibility="hidden"'}/>`; }).join('');
+    const labels = tickSlots.map((index) => { const value = initialScale.ticks[index], y = Number.isFinite(value) ? yPosition(value) : PADDING.top; return `<line data-korea-foreign-flow-y-tick="${index}" x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-expectation-y-tick"${Number.isFinite(value) ? '' : ' visibility="hidden"'}/><text data-korea-foreign-flow-y-index="${index}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-expectation-y-label"${Number.isFinite(value) ? '' : ' visibility="hidden"'}>${Number.isFinite(value) ? chartUtils.formatAxisNumber(value) : ''}</text>`; }).join('');
+    const { frame, svg } = chartUtils.mountChartFrame({ container: container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: labels, ariaLabel: `한국 외국인 자금 유출입 강도`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="0선을 중심으로 표시한 한국 외국인 자금 유출입 강도"><defs><linearGradient id="korea-foreign-flow-line-gradient" gradientUnits="userSpaceOnUse" x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}"><stop offset="0%" stop-color="#b4535d"/><stop offset="50%" stop-color="#b4535d"/><stop offset="50%" stop-color="#2563a8"/><stop offset="100%" stop-color="#2563a8"/></linearGradient></defs><g>${yearGuides}</g><g>${grids}</g><text x="${PADDING.left + 4}" y="${yPosition(0) - 7}" class="policy-expectation-zero-label">평균적 유입 여건</text><path data-korea-daily-flow-line d="${pathFor(initialScale, 'dailyValue')}" class="policy-expectation-line policy-expectation-line--raw" style="stroke:url(#korea-foreign-flow-line-gradient)"/><path data-korea-flow-line d="${pathFor(initialScale)}" class="policy-expectation-line policy-expectation-line--average" style="stroke:url(#korea-foreign-flow-line-gradient)"/><line data-korea-foreign-flow-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-foreign-flow-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-korea-foreign-flow-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text></svg>` });
+    const line = container.querySelector('[data-korea-flow-line]'), dailyLine = container.querySelector('[data-korea-daily-flow-line]'), yLabels = [...container.querySelectorAll('[data-korea-foreign-flow-y-index]')], yGrids = [...container.querySelectorAll('[data-korea-foreign-flow-y-grid]')];
     const cursor = container.querySelector('[data-korea-foreign-flow-cursor]'), detail = container.querySelector('[data-korea-foreign-flow-detail]');
     const cursorValue = container.querySelector('[data-korea-foreign-flow-value]');
     let animationFrame = null;
@@ -93,8 +95,16 @@
       const visiblePoints = points.filter((point) => point.x >= frame.scrollLeft && point.x <= frame.scrollLeft + frame.clientWidth);
       if (!visiblePoints.length) return;
       const current = verticalScale(visiblePoints);
-      line.setAttribute('d', pathFor(current.maximumAbsoluteValue)); dailyLine.setAttribute('d', pathFor(current.maximumAbsoluteValue, 'dailyValue'));
-      yLabels.forEach((label) => { const value = Number(label.dataset.koreaForeignFlowYMultiple) * current.tickStep; label.textContent = chartUtils.formatAxisNumber(value, { showPlus: true }); });
+      line.setAttribute('d', pathFor(current)); dailyLine.setAttribute('d', pathFor(current, 'dailyValue'));
+      yLabels.forEach((label) => {
+        const index = Number(label.dataset.koreaForeignFlowYIndex), value = current.ticks[index];
+        const tick = container.querySelector(`[data-korea-foreign-flow-y-tick="${index}"]`), grid = yGrids[index];
+        if (!Number.isFinite(value)) { label.setAttribute('visibility', 'hidden'); tick?.setAttribute('visibility', 'hidden'); grid?.setAttribute('visibility', 'hidden'); return; }
+        const y = yPosition(value, current);
+        label.removeAttribute('visibility'); tick?.removeAttribute('visibility'); grid?.removeAttribute('visibility');
+        label.textContent = chartUtils.formatAxisNumber(value, { showPlus: true }); label.setAttribute('y', y + 3);
+        tick?.setAttribute('y1', y); tick?.setAttribute('y2', y); grid?.setAttribute('y1', y); grid?.setAttribute('y2', y); grid?.classList.toggle('analysis-chart-zero-line', value === 0);
+      });
     };
     frame.addEventListener('scroll', () => { if (animationFrame === null) animationFrame = window.requestAnimationFrame(updateVisibleScale); }, { passive: true });
     chartUtils.scrollToLatest(frame); window.requestAnimationFrame(updateVisibleScale);
