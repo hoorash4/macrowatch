@@ -86,11 +86,38 @@
 
   function initializeAdminCardOrder() {
     adminCardOrder = window.MacroWatchAdminCardOrder.create({
-      container: document.getElementById('admin-shell'),
-      anchor: document.getElementById('admin-footer'),
+      container: document.getElementById('admin-management-panel'),
+      anchor: document.getElementById('admin-management-anchor'),
       saveOrder: (order) => invokeAdmin('save_admin_card_order', { order }),
       reportError: (error) => showNotice('카드 순서 저장 실패', error.message || '순서를 저장하지 못했습니다.', true),
     });
+  }
+
+  function selectAdminTab(selected) {
+    document.querySelectorAll('[data-admin-tab]').forEach((button) => {
+      const active = button.dataset.adminTab === selected;
+      button.setAttribute('aria-selected', String(active));
+      button.classList.toggle('bg-blue-600', active);
+      button.classList.toggle('text-white', active);
+      button.classList.toggle('text-slate-400', !active);
+    });
+    document.querySelectorAll('[data-admin-tab-panel]').forEach((panel) => {
+      panel.classList.toggle('hidden', panel.dataset.adminTabPanel !== selected);
+    });
+    try { sessionStorage.setItem('macrowatch-admin-tab', selected); } catch (_) {}
+  }
+
+  function initializeAdminTabs() {
+    const allowed = new Set(['management', 'information']);
+    let initial = 'management';
+    try {
+      const saved = sessionStorage.getItem('macrowatch-admin-tab');
+      if (allowed.has(saved)) initial = saved;
+    } catch (_) {}
+    document.querySelectorAll('[data-admin-tab]').forEach((button) => {
+      button.addEventListener('click', () => selectAdminTab(button.dataset.adminTab));
+    });
+    selectAdminTab(initial);
   }
 
   async function loadAdminCardOrder() {
@@ -528,6 +555,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    initializeAdminTabs();
     initializeAdminCardOrder();
     initializeCollapsibleLists();
     protectCredentialInputs();
