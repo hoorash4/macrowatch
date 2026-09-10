@@ -9,7 +9,7 @@ permissions:
   contents: read
 concurrency:
   group: macrowatch-korea-foreign-flow
-  # ì½ë ë³ê²½ ì§íì ë°±íì ì´ì  ì¤íì ì´ì´ë°ì¼ë¯ë¡ ì¤ë³µ ì¥ê¸° ì¤íì ë¨ê¸°ì§ ììµëë¤.
+  # Keep only the newest run to avoid duplicate collection.
   cancel-in-progress: true
 
 jobs:

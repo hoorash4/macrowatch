@@ -2,7 +2,7 @@ name: Refresh EM capital capacity
 
 on:
   schedule:
-    # 08:30 KST: ë¯¸êµ­ ì¼ê° ìë£ ê°±ì  ì´í, 07:30 ì ì±ê¸ë¦¬ ê¸°ë ììê³¼ ë¶ë¦¬í©ëë¤.
+    # 14:30 KST: refresh after U.S. daily data releases.
     - cron: "30 5 * * *"
   workflow_dispatch:
 

@@ -282,7 +282,7 @@ test('Korea foreign flow chart has scrollable short ranges over a five-year seri
   assert.match(chart, /chartUtils\.loadAllRows/);
   assert.match(chart, /\.range\(from, to\)/);
   assert.match(chart, /selectedYears === 'max'/);
-  assert.match(html, /최근 10영업일의 외국인 순매수액·거래대금/);
+  assert.match(html, /최근 10영업일의 외국인 움직임과 환율/);
   assert.match(chart, /function calculateTenDayCumulative/);
   assert.match(chart, /function applyHysteresis/);
   assert.match(chart, /korea-foreign-flow-state/);
@@ -527,7 +527,7 @@ test('결정적 뉴스 요약은 설명 아래에서 건수와 키워드를 나�
   assert.match(html, /decisive-news-description[\s\S]*decisive-news-summary-row[\s\S]*decisive-news-count-card[\s\S]*decisive-news-keyword-panel/);
   assert.match(styles, /\.decisive-news-summary-row\s*\{[\s\S]*?grid-template-columns:minmax\(13\.5rem,auto\) minmax\(0,1fr\)/);
   assert.match(html, /나열된 키워드가 포함된 뉴스를 지속적으로 관찰할 필요가 있습니다/);
-  assert.match(html, /class="decisive-news-ai-note">AI의 판단이므로 실제 중요도와 다를 수 있습니다\.<\/span>/);
+  assert.match(html, /class="decisive-news-ai-note">· AI의 판단이므로 실제 중요도와 다를 수 있습니다\.<\/span>/);
   assert.match(styles, /\.decisive-news-content\s*\{[\s\S]*?padding:1\.25rem 1\.5rem/);
   assert.match(styles, /\.decisive-news-count-card\s*\{[\s\S]*?align-items:center;[\s\S]*?text-align:center;/);
   assert.match(styles, /\.decisive-news-ai-note\s*\{[\s\S]*?display:block;/);
@@ -634,7 +634,7 @@ test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간
   assert.match(utils, /FULL_HISTORY_SCROLL_RANGES\.has\(selectedYears\)/);
 });
 
-test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX로 조회한다', () => {
+test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX로 조회하고 기존 일별 자료를 교체하지 않는다', () => {
   const chart = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/em-capacity-chart.js'), 'utf8');
   const pipeline = fs.readFileSync(path.join(__dirname, '..', 'backend', 'signals', 'em_capital_capacity_pipeline.py'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -646,20 +646,20 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
   assert.match(chart, /fiveDayAverage/);
   assert.match(chart, /em-capacity-line--provisional[^>]*style="stroke:#6b7280"/);
   assert.match(pipeline, /HISTORY_YEARS = 3/);
-  assert.match(pipeline, /"DELETE", "em_capital_capacity_daily"/);
+  assert.doesNotMatch(pipeline, /"DELETE", "em_capital_capacity_daily"/);
 });
 
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 15);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 32);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 18);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 31);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 15);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 15);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 20);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 18);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);
@@ -725,13 +725,14 @@ test('지표 순서 변경은 들어 올린 행의 중앙으로 판정하고 삽
 test('관리자 뉴스 일정은 실제 워크플로 예약 시각을 안내한다', () => {
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin.html'), 'utf8');
   assert.match(admin, /매일 00:30 KST/);
-  assert.match(admin, /00:50 · 01:10 자동 재시도/);
+  assert.match(admin, /실패 시 원인을 확인한 뒤 수집 경로에서 재시도합니다/);
+  assert.doesNotMatch(admin, /00:50 · 01:10 자동 재시도/);
   assert.doesNotMatch(admin, /매일 05:30 KST/);
 });
 
 test('뉴스 흐름 안내는 전일 집계와 예상 완료 시점을 표시한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(html, /전일 24시간 동안 기사화된 뉴스의 긍정·부정 흐름을 분석합니다/);
+  assert.match(html, /24시간 동안 기사화된 주요 뉴스의 긍정·부정 흐름을 AI가 분석합니다/);
   assert.match(html, /매일 오전 1시경\(KST\) 업데이트됩니다/);
   assert.doesNotMatch(html, /최근 24시간 동안 기사화된 뉴스/);
 });
@@ -846,12 +847,13 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   assert.match(styles, /sector-return-negative \{ color:#2870ba/);
   assert.match(styles, /sector-flow-returns > span:nth-child\(2\) em \{ font-weight:500; \}/);
   assert.match(charts, /sectorReturn\(row\.weekly_return_pct\).*sectorReturn\(row\.cumulative_return_pct\)/s);
-  assert.match(charts, /absolute < 10[\s\S]*number\.toFixed\(2\)[\s\S]*absolute < 100[\s\S]*number\.toFixed\(1\)[\s\S]*Math\.trunc\(number\)\.toString\(\)/);
+  assert.match(charts, /const digits = absolute < 10 \? 2 : absolute < 100 \? 1 : 0/);
+  assert.match(charts, /formatChartNumber\(number, \{ maximumFractionDigits: digits, showPlus: true \}\)/);
   assert.doesNotMatch(charts, /오늘 (시가|종가) 기준/);
   assert.match(charts, /<small>누적<\/small>/);
   assert.doesNotMatch(charts, /<small>4주 누적<\/small>/);
   assert.match(html, /id="sector-flow-update-note"[^>]*>매 영업일 시가·종가 반영/);
-  assert.match(html, /각 주를 끝점으로 한 최근 4주 수익률/);
+  assert.match(html, /주간 수익률 기준 상위 섹터의 변화를 최근 5주 흐름으로 보여줍니다/);
   assert.doesNotMatch(html, /오전 9시 10분 시가 · 오후 3시 40분 종가/);
   assert.doesNotMatch(charts, /오후 3시 40분/);
 });
