@@ -1,0 +1,46 @@
+name: Earnings U.S. manual repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      write:
+        description: Persist repairs to incomplete stored rows
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: earnings-us-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      EARNINGS_WRITE_MODE: repair
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Repair incomplete stored U.S. earnings rows
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONPATH: backend
+          WRITE: ${{ inputs.write }}
+          SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          [[ "$WRITE" == "true" ]] && args+=(--write)
+          timeout --signal=TERM --kill-after=10s 660s python -m earnings_us.repair_cli "${args[@]}"
