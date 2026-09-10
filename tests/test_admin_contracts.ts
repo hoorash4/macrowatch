@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
-import { kstTimeFromCron, updateCronTime, latestRun, githubRequest } from "../supabase/functions/admin-control/github.ts";
+import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows } from "../supabase/functions/admin-control/github.ts";
 import { issuerFromEtfName } from "../supabase/functions/admin-control/sector-registry.ts";
 
 test("admin validation preserves normalization, bounds and rejection messages", () => {
@@ -38,5 +38,42 @@ test("GitHub adapter retains skipped-run filtering and error status behavior", a
     assert.equal(await githubRequest("/dispatch", "test-token"), null);
     globalThis.fetch = async () => new Response(JSON.stringify({message:"denied"}), {status:403});
     await assert.rejects(githubRequest("/dispatch", "test-token"), /denied/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("automation schedules use card steps and are sorted by Korean time", async () => {
+  const original = globalThis.fetch;
+  const workflow = [
+    "name: Earnings U.S. automatic",
+    "on:",
+    "  schedule:",
+    '    - cron: "0 2 * * *"',
+    '    - cron: "30 2 * * *"',
+    '    - cron: "0 3 * * *"',
+    "jobs: {}",
+  ].join("\n");
+  try {
+    globalThis.fetch = async (url) => {
+      const path = String(url);
+      if (path.includes("/contents/.github/workflows?")) {
+        return new Response(JSON.stringify([{ name: "earnings-us-automatic.yml", path: ".github/workflows/earnings-us-automatic.yml" }]));
+      }
+      if (path.includes("/contents/.github/workflows/earnings-us-automatic.yml")) {
+        return new Response(JSON.stringify({ name: "earnings-us-automatic.yml", path: ".github/workflows/earnings-us-automatic.yml", sha: "sha", content: btoa(workflow) }));
+      }
+      if (path.includes("/actions/workflows?")) {
+        return new Response(JSON.stringify({ workflows: [{ path: ".github/workflows/earnings-us-automatic.yml", state: "active" }] }));
+      }
+      if (path.includes("/runs?")) {
+        return new Response(JSON.stringify({ workflow_runs: [{ id: 1, conclusion: "success", updated_at: "2026-09-10T00:00:00Z" }] }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const items = await scheduledWorkflows("test-token");
+    assert.deepEqual(items.map((item) => [item.kst_time, item.name]), [
+      ["11:00", "미국 이익 모멘텀 · 분기 실적 스냅샷"],
+      ["11:30", "미국 이익 모멘텀 · SEC 신규 공시"],
+      ["12:00", "미국 이익 모멘텀 · 미확보 항목 보완"],
+    ]);
   } finally { globalThis.fetch = original; }
 });

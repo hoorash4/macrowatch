@@ -71,6 +71,47 @@ async function workflowSource(path: string, token: string): Promise<WorkflowSour
   return { name: String(file.name), path: String(file.path), sha: String(file.sha), content: decodeContent(file.content) };
 }
 
+const AUTOMATION_CARD_NAMES: Record<string, string> = {
+  "backup-database.yml": "데이터베이스 백업",
+  "central-bank-policy.yml": "통화정책 시그널",
+  "check-targets.yml": "지표 추적",
+  "em-capital-capacity.yml": "이머징 자금 유입 여건",
+  "em-stress.yml": "이머징 시장 스트레스 지수",
+  "equity-bond-attractiveness.yml": "주식투자 매력 흐름",
+  "equity-bond-relative-value.yml": "주식·채권 상대가치",
+  "financial-stress.yml": "미국 신용위험 추이",
+  "inflation-model.yml": "통합물가지수와 금리",
+  "korea-foreign-flow.yml": "외국인 자금 유출입 강도",
+  "korea-small-business-risk.yml": "한국 중소기업 위험지수",
+  "korea-stress.yml": "한국 시장 스트레스 지수",
+  "liquidity.yml": "주식시장 자금환경",
+  "market-context.yml": "KOSPI 시장 맥락",
+  "news-pipeline.yml": "뉴스 흐름",
+  "policy-expectation.yml": "시장 내재 정책금리 기대",
+  "small-business-risk.yml": "미국 중소기업 위험지수",
+};
+
+const AUTOMATION_STEP_NAMES: Record<string, Record<string, string>> = {
+  "earnings-us-automatic.yml": {
+    "0 2 * * *": "미국 이익 모멘텀 · 분기 실적 스냅샷",
+    "30 2 * * *": "미국 이익 모멘텀 · SEC 신규 공시",
+    "0 3 * * *": "미국 이익 모멘텀 · 미확보 항목 보완",
+  },
+  "earnings-v2-korea-automatic.yml": {
+    "30 10 * * 1-5": "한국 이익 모멘텀 · DART 공시",
+    "30 11 * * 1-5": "한국 이익 모멘텀 · KIS 가격",
+  },
+  "sector-flow.yml": {
+    "10 0 * * 1-5": "시장 주도 섹터 · 장초반",
+    "30 3 * * 1-5": "시장 주도 섹터 · 장중",
+    "40 6 * * 1-5": "시장 주도 섹터 · 종가",
+  },
+};
+
+function automationDisplayName(workflow: { id: string; name: string }, cron: string) {
+  return AUTOMATION_STEP_NAMES[workflow.id]?.[cron] || AUTOMATION_CARD_NAMES[workflow.id] || workflow.name;
+}
+
 export async function scheduledWorkflows(token: string) {
   const files = await githubRequest(`/contents/.github/workflows?ref=${BRANCH}`, token);
   const candidates = await Promise.all((Array.isArray(files) ? files : [])
@@ -79,12 +120,19 @@ export async function scheduledWorkflows(token: string) {
   const workflows = candidates.map(parseScheduledWorkflow).filter(Boolean) as Array<{ id: string; path: string; sha: string; name: string; crons: string[] }>;
   const states = await githubRequest("/actions/workflows?per_page=100", token);
   const stateByPath = new Map((states?.workflows || []).map((item: { path?: string; state?: string }) => [String(item.path || "").replace(/^\.github\//, ".github/"), String(item.state || "active")]));
-  return Promise.all(workflows.map(async (workflow) => ({
-    ...workflow,
-    kst_times: workflow.crons.map(kstTimeFromCron),
-    state: stateByPath.get(workflow.path) || "active",
-    latest_success: await latestSuccessfulRun(workflow.id, token),
-  })));
+  const entries = await Promise.all(workflows.map(async (workflow) => {
+    const latestSuccess = await latestSuccessfulRun(workflow.id, token);
+    const state = stateByPath.get(workflow.path) || "active";
+    return workflow.crons.map((cron) => ({
+      workflow_id: workflow.id,
+      cron,
+      kst_time: kstTimeFromCron(cron),
+      name: automationDisplayName(workflow, cron),
+      state,
+      latest_success: latestSuccess,
+    }));
+  }));
+  return entries.flat().sort((left, right) => left.kst_time.localeCompare(right.kst_time) || left.name.localeCompare(right.name, "ko"));
 }
 
 export function kstTimeFromCron(cron: string) {
@@ -143,15 +191,15 @@ async function saveWorkflowSource(file: WorkflowSource, content: string, message
   await githubRequest(`/contents/${file.path}`, token, { method: "PUT", body: JSON.stringify({ message, content: encodeBase64(content), sha: file.sha, branch: BRANCH }) });
 }
 
-export async function updateAutomationSchedule(workflowId: string, times: string[], token: string) {
+export async function updateAutomationTime(workflowId: string, cron: string, time: string, token: string) {
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
   const parsed = parseScheduledWorkflow(file);
-  if (!parsed || parsed.crons.length !== times.length) throw new Error("현재 등록된 자동 수집 일정과 입력 시간이 일치하지 않습니다.");
-  const replacements = parsed.crons.map((cron, index) => [cron, updateCronTime(cron, times[index])] as const);
-  let next = file.content;
-  replacements.forEach(([before], index) => { next = next.replaceAll(before, `__MACROWATCH_CRON_${index}__`); });
-  replacements.forEach(([, after], index) => { next = next.replaceAll(`__MACROWATCH_CRON_${index}__`, after); });
-  if (next !== file.content) await saveWorkflowSource(file, next, `Update ${parsed.name} schedule from MacroWatch admin`, token);
+  if (!parsed || !parsed.crons.includes(cron)) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
+  const updatedCron = updateCronTime(cron, time);
+  if (updatedCron === cron) return;
+  const next = file.content.replace(cron, updatedCron);
+  if (next === file.content) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
+  await saveWorkflowSource(file, next, `Update ${parsed.name} schedule from MacroWatch admin`, token);
 }
 
 export async function setWorkflowEnabled(workflowId: string, enabled: boolean, token: string) {

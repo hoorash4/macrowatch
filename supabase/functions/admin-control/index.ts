@@ -1,5 +1,5 @@
 import { ADMIN_CARD_IDS, validateUsername, validatePassword, internalEmail, validateSectorEtf, validateNewSectorEtf, validateAdminCardOrder, validateExtremeNewsRule } from "./validation.ts";
-import { BRANCH, deleteAutomationTime, deleteScheduledWorkflow, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationSchedule } from "./github.ts";
+import { BRANCH, deleteAutomationTime, deleteScheduledWorkflow, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationTime } from "./github.ts";
 import { refreshArticleSentiment, excludeUncertainArticle } from "./news-review.ts";
 import { issuerFromEtfName, rebuildSectorRankings } from "./sector-registry.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -196,13 +196,14 @@ export default {
         return json({ items: await scheduledWorkflows(githubToken) }, 200, origin);
       }
 
-      if (action === "update_automation_schedule") {
+      if (action === "update_automation_time") {
         const workflowId = String(body?.workflow_id || "");
-        const times = Array.isArray(body?.times) ? body.times.map(String) : [];
-        if (!/^[\w.-]+\.yml$/.test(workflowId) || !times.length || times.some((time) => !/^\d{2}:\d{2}$/.test(time)) || new Set(times).size !== times.length) {
-          return json({ error: "자동수집 일정 입력이 올바르지 않습니다." }, 400, origin);
+        const cron = String(body?.cron || "");
+        const time = String(body?.time || "");
+        if (!/^[\w.-]+\.yml$/.test(workflowId) || cron.trim().split(/\s+/).length !== 5 || !/^\d{2}:\d{2}$/.test(time)) {
+          return json({ error: "자동수집 시간 입력이 올바르지 않습니다." }, 400, origin);
         }
-        await updateAutomationSchedule(workflowId, times, githubToken);
+        await updateAutomationTime(workflowId, cron, time, githubToken);
         return json({ updated: true }, 200, origin);
       }
 

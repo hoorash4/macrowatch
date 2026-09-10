@@ -396,32 +396,23 @@
     });
   }
 
-  function cronLabel(cron) {
-    const fields = String(cron).trim().split(/\s+/);
-    if (fields[4] === '1-5') return '평일';
-    if (fields[4] === '6') return '토요일';
-    if (fields[2] !== '*') return `매월 ${fields[2]}일`;
-    return '매일';
-  }
-
   function renderAutomationSchedules(items) {
     const list = document.getElementById('automation-schedule-list');
     if (!items.length) { list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 정기 자동수집이 없습니다.</p>'; return; }
     list.innerHTML = items.map((item) => {
       const paused = item.state !== 'active';
-      const times = (item.crons || []).map((cron, index) => `<label class="flex items-center gap-1 text-xs text-slate-400"><span class="whitespace-nowrap">${escapeHtml(cronLabel(cron))}</span><input data-automation-time="${index}" data-automation-cron="${escapeHtml(cron)}" type="time" value="${escapeHtml(item.kst_times?.[index] || '')}" class="w-24 rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-xs text-white"><button type="button" data-delete-automation-time="${index}" class="rounded border border-red-900/70 px-1.5 py-1 text-red-300 hover:bg-red-950/50" aria-label="${index + 1}회차 삭제"><i class="fa-solid fa-trash"></i></button></label>`).join('');
-      return `<article data-automation-id="${escapeHtml(item.id)}" data-automation-name="${escapeHtml(item.name)}" class="border-b border-slate-800 p-4 last:border-0"><div class="grid gap-3 lg:grid-cols-[minmax(180px,1fr)_minmax(250px,2fr)_150px_auto]"><div><h3 class="font-bold text-slate-200">${escapeHtml(item.name)}</h3><p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p></div><div class="flex flex-wrap gap-2">${times}</div><span class="w-fit self-start rounded-full border px-2.5 py-1 text-xs font-bold ${paused ? 'border-amber-800 bg-amber-950/40 text-amber-300' : 'border-emerald-800 bg-emerald-950/40 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</span><div class="flex flex-wrap gap-1"><button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">시간 저장</button><button type="button" data-toggle-automation class="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-bold text-slate-300">${paused ? '재시작' : '중지'}</button><button type="button" data-delete-automation class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300">전체 삭제</button></div></div></article>`;
+      return `<article data-automation-workflow-id="${escapeHtml(item.workflow_id)}" data-automation-cron="${escapeHtml(item.cron)}" data-automation-name="${escapeHtml(item.name)}" data-automation-paused="${paused}" class="border-b border-slate-800 p-4 last:border-0"><div class="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_8rem_auto]"><div class="min-w-0"><h3 class="truncate font-bold text-slate-200">${escapeHtml(item.name)}</h3><p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p></div><input data-automation-time type="time" value="${escapeHtml(item.kst_time || '')}" class="w-32 min-w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"><div class="flex flex-wrap gap-1"><button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">시간 저장</button><button type="button" data-toggle-automation title="${paused ? '클릭하여 재시작' : '클릭하여 중지'}" class="rounded-lg border px-2.5 py-1.5 text-xs font-bold ${paused ? 'border-amber-800 text-amber-300' : 'border-emerald-800 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</button><button type="button" data-delete-automation-time title="이 실행만 삭제" class="rounded-lg border border-red-900/70 px-2.5 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">이 시간 삭제</button><button type="button" data-delete-automation class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300">전체 삭제</button></div></div></article>`;
     }).join('');
-    list.querySelectorAll('[data-automation-id]').forEach((row) => {
-      const id = row.dataset.automationId, name = row.dataset.automationName;
+    list.querySelectorAll('[data-automation-workflow-id]').forEach((row) => {
+      const id = row.dataset.automationWorkflowId, cron = row.dataset.automationCron, name = row.dataset.automationName;
       row.querySelector('[data-save-automation]').addEventListener('click', async (event) => {
         const button = event.currentTarget; button.disabled = true;
-        try { await invokeAdmin('update_automation_schedule', { workflow_id: id, times: Array.from(row.querySelectorAll('[data-automation-time]'), input => input.value) }); await loadAutomationSchedules(); }
+        try { await invokeAdmin('update_automation_time', { workflow_id: id, cron, time: row.querySelector('[data-automation-time]').value }); await loadAutomationSchedules(); }
         catch (error) { showNotice('일정 저장 실패', error.message || '시간을 저장하지 못했습니다.', true); button.disabled = false; }
       });
       row.querySelector('[data-toggle-automation]').addEventListener('click', async (event) => {
         const button = event.currentTarget; button.disabled = true;
-        try { await invokeAdmin('set_automation_enabled', { workflow_id: id, enabled: button.textContent === '재시작' }); await loadAutomationSchedules(); }
+        try { await invokeAdmin('set_automation_enabled', { workflow_id: id, enabled: row.dataset.automationPaused === 'true' }); await loadAutomationSchedules(); }
         catch (error) { showNotice('상태 변경 실패', error.message || '상태를 바꾸지 못했습니다.', true); button.disabled = false; }
       });
       row.querySelector('[data-delete-automation]').addEventListener('click', async () => {
@@ -429,12 +420,12 @@
         try { await invokeAdmin('delete_automation_schedule', { workflow_id: id }); await loadAutomationSchedules(); showNotice('자동수집 삭제 완료', `${name} 자동수집을 삭제했습니다.`); }
         catch (error) { showNotice('자동수집 삭제 실패', error.message || '삭제하지 못했습니다.', true); }
       });
-      row.querySelectorAll('[data-delete-automation-time]').forEach((button) => button.addEventListener('click', async () => {
-        const input = row.querySelector(`[data-automation-time="${button.dataset.deleteAutomationTime}"]`);
-        if (!await confirmAutomationDeletion(`${name}의 ${input.value} 실행을 삭제합니다.`)) return;
-        try { await invokeAdmin('delete_automation_time', { workflow_id: id, cron: input.dataset.automationCron }); await loadAutomationSchedules(); }
+      row.querySelector('[data-delete-automation-time]').addEventListener('click', async () => {
+        const input = row.querySelector('[data-automation-time]');
+        if (!await confirmAutomationDeletion(`${name}의 ${input.value} 실행을 삭제합니다. 마지막 실행이면 해당 자동수집 전체가 삭제됩니다.`)) return;
+        try { await invokeAdmin('delete_automation_time', { workflow_id: id, cron }); await loadAutomationSchedules(); }
         catch (error) { showNotice('실행 시간 삭제 실패', error.message || '삭제하지 못했습니다.', true); }
-      }));
+      });
     });
   }
 
