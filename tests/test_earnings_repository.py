@@ -7,7 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'backend'))
 from earnings_common.repository import EarningsRepository, _json
 from earnings_v2.repository import EarningsV2Repository, StoreError
 from earnings_us.repository import USEarningsRepository
@@ -29,6 +30,17 @@ class RepositoryContractTests(unittest.TestCase):
                     'https://example.invalid/rest/v1/rpc/test',
                     headers={'apikey': 'key', 'Authorization': 'Bearer key', 'Content-Type': 'application/json'},
                     json={'value': '1.25'}, timeout=(5, 20))
+
+    def test_automatic_and_repair_workflows_are_separate(self):
+        automatic = (ROOT / '.github/workflows/earnings-us-automatic.yml').read_text(encoding='utf-8')
+        repair = (ROOT / '.github/workflows/earnings-us-repair.yml').read_text(encoding='utf-8')
+        self.assertIn('EARNINGS_WRITE_MODE: automatic', automatic)
+        self.assertNotIn('retry_incomplete', automatic)
+        self.assertNotIn('repair_cli', automatic)
+        self.assertIn('workflow_dispatch:', repair)
+        self.assertNotIn('schedule:', repair)
+        self.assertIn('EARNINGS_WRITE_MODE: repair', repair)
+        self.assertIn('earnings_us.repair_cli', repair)
 
     def test_source_identity_and_state_success_policy(self):
         with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
