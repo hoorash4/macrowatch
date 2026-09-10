@@ -1,13 +1,13 @@
 name: Refresh market-implied policy expectations
 
 on:
-  # 새 스키마가 먼저 적용된 뒤 최초 이력을 채워 배포 작업과의 경쟁을 막습니다.
+  # ì ì¤í¤ë§ê° ë¨¼ì  ì ì©ë ë¤ ìµì´ ì´ë ¥ì ì±ì ë°°í¬ ììê³¼ì ê²½ìì ë§ìµëë¤.
   workflow_run:
     workflows: ["Deploy Supabase changes"]
     types: [completed]
   schedule:
     # 07:30 KST: after U.S. daily rate releases and 30 minutes after the 07:00 job.
-    - cron: "30 22 * * *"
+    - cron: "50 20 * * *"
   workflow_dispatch:
     inputs:
       start_year:
