@@ -242,9 +242,6 @@ def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
             points = []
             for index, label in enumerate(labels):
                 observed_on = parse_chart_date(label.get("label", ""), target)
-                # A monthly nowcast remains live after month-end until the
-                # corresponding release. Keep those later business-day
-                # vintages so the current provisional value can still move.
                 if observed_on is None or observed_on < target:
                     continue
                 try:
@@ -398,7 +395,6 @@ def adjusted_cpi_nowcast_delta(
     adjusted = official * 0.90
     shelter_delta = yoy_delta_from_mom(fred["shelter"], target, shelter_estimate)
     ex_delta = yoy_delta_from_mom(fred[ex_name], target, ex_estimate)
-    # Ensure the total index history needed by the source definition exists.
     if add_months(target, -1) not in fred[total_name]:
         return float("nan")
     return adjusted * shelter_delta + (1.0 - adjusted) * ex_delta
@@ -570,10 +566,6 @@ def build_output_rows(
                 "model_version": MODEL_VERSION,
             })
     daily.sort(key=lambda row: str(row["observed_on"]))
-    # PCE is released after month-end. During that short gap the model still
-    # targets the just-completed month, so carry its final within-month estimate
-    # to the latest Cleveland business date instead of making the chart appear
-    # stale or jumping ahead without a usable PCE starting level.
     latest_source_day = max(
         point.observed_on
         for kind_rows in nowcasts.values()
@@ -651,10 +643,47 @@ def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str
 
 
 def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
-    if rows:
-        # DGS10 can arrive one or more days after the policy-rate calendar row.
-        # Refresh a short tail so late business-day observations replace nulls.
-        client.upsert("us_policy_rate_daily", rows[-10:], conflict="observed_on")
+    tail = rows[-10:]
+    if not tail:
+        return
+    first_day = str(tail[0]["observed_on"])
+    existing = client.request(
+        "GET",
+        "us_policy_rate_daily",
+        params={
+            "select": "observed_on,treasury_10y_pct",
+            "observed_on": f"gte.{first_day}",
+            "limit": "20",
+        },
+    ) or []
+    treasury_by_day = {
+        str(row["observed_on"]): row.get("treasury_10y_pct")
+        for row in existing
+    }
+    missing = [row for row in tail if str(row["observed_on"]) not in treasury_by_day]
+    if missing:
+        client.upsert("us_policy_rate_daily", missing, conflict="observed_on")
+
+    # A recent policy row can legitimately arrive before DGS10. In that one
+    # case automatic collection may fill only the missing treasury field; it
+    # never rewrites the stored policy rate, source, or a non-null history row.
+    for row in tail:
+        observed_on = str(row["observed_on"])
+        if (
+            observed_on in treasury_by_day
+            and treasury_by_day[observed_on] is None
+            and row.get("treasury_10y_pct") is not None
+        ):
+            client.request(
+                "PATCH",
+                "us_policy_rate_daily",
+                params={"observed_on": f"eq.{observed_on}", "treasury_10y_pct": "is.null"},
+                body={
+                    "treasury_10y_pct": row["treasury_10y_pct"],
+                    "updated_at": row["updated_at"],
+                },
+                prefer="return=minimal",
+            )
 
 
 def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> None:
