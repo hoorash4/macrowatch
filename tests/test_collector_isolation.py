@@ -40,13 +40,36 @@ class CollectorIsolationTests(unittest.TestCase):
         self.assertNotIn('.from("korea_foreign_flow_daily").delete()', function)
         self.assertNotIn('.from("korea_foreign_flow_raw").delete()', function)
 
-    def test_sector_collection_does_not_run_retention_deletes(self) -> None:
+    def test_market_context_automatic_is_missing_only_and_bootstrap_is_explicit(self) -> None:
+        function = text("supabase/functions/market-context/index.ts")
+        workflow = text(".github/workflows/market-context.yml")
+        self.assertIn('type CollectionMode = "automatic" | "bootstrap"', function)
+        self.assertIn('body.mode === "bootstrap" ? "bootstrap" : "automatic"', function)
+        self.assertIn('const publishable = rows.filter', function)
+        self.assertIn('.from("market_index_prices").insert(publishable)', function)
+        self.assertNotIn('(count || 0) >= 80 ? REFRESH_DAYS : BOOTSTRAP_DAYS', function)
+        self.assertIn("github.event_name == 'schedule' && 'automatic'", workflow)
+        self.assertIn('options: [automatic, bootstrap]', workflow)
+
+    def test_sector_collection_does_not_run_retention_deletes_or_initialize_history(self) -> None:
         function = text("supabase/functions/sector-flow/index.ts")
+        workflow = text(".github/workflows/sector-flow.yml")
         self.assertNotIn('.delete().lt("market_date", retentionStart)', function)
         self.assertNotIn('.delete().lt("week_start", rankingRetentionStart)', function)
+        self.assertIn('const initializeHistory = body.initialize_history === true', function)
+        self.assertIn('const needsHistoryInitialization = initializeHistory && missingHistoryIds.has(item.id)', function)
+        self.assertIn('const benchmarkStart = initializeHistory ? new Date(`${retentionStart}T00:00:00Z`) : end', function)
+        self.assertIn("github.event_name == 'schedule' && 'collect'", workflow)
+        self.assertIn('options: [collect, initialize_history, rebuild_rankings]', workflow)
         # Replacing the current week's calculated rows is part of the current
         # collection transaction, not historical retention cleanup.
         self.assertIn('.eq("week_start", currentWeek)', function)
+
+    def test_policy_score_recalculation_skips_unchanged_history_writes(self) -> None:
+        store = text("supabase/functions/_shared/policy/policy-score-store.ts")
+        self.assertIn("const SCORE_FIELDS", store)
+        self.assertIn("const unchanged = stored && SCORE_FIELDS.every", store)
+        self.assertIn("if (unchanged) continue", store)
 
     def test_inflation_policy_tail_is_not_broadly_rewritten(self) -> None:
         pipeline = text("backend/inflation_pipeline.py")
