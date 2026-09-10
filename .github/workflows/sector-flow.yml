@@ -3,7 +3,7 @@ name: Refresh sector flow
 on:
   schedule:
     # UTC 00:10/03:30/06:40 = 09:10/12:30/15:40 KST.
-    # Open, intraday, close are distinct collection stages.
+    # Open, intraday, close are distinct automatic collection stages.
     - cron: "10 0 * * 1-5"
     - cron: "30 3 * * 1-5"
     - cron: "40 6 * * 1-5"
@@ -15,6 +15,12 @@ on:
         type: choice
         default: close
         options: [open, intraday, close]
+      operation:
+        description: Explicit operation; scheduled runs always use collect
+        required: true
+        type: choice
+        default: collect
+        options: [collect, initialize_history, rebuild_rankings]
 
 permissions:
   contents: read
@@ -33,10 +39,16 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || (github.event.schedule == '10 0 * * 1-5' && 'open' || (github.event.schedule == '30 3 * * 1-5' && 'intraday' || 'close')) }}
+          OPERATION: ${{ github.event_name == 'schedule' && 'collect' || inputs.operation }}
         run: |
+          set -euo pipefail
+          initialize_history=false
+          rebuild_only=false
+          [[ "$OPERATION" == "initialize_history" ]] && initialize_history=true
+          [[ "$OPERATION" == "rebuild_rankings" ]] && rebuild_only=true
           curl --fail-with-body --retry 2 --max-time 480 \
             --request POST "$SUPABASE_URL/functions/v1/sector-flow" \
             --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Content-Type: application/json" \
-            --data "{\"stage\":\"$PRICE_STAGE\"}"
+            --data "{\"stage\":\"$PRICE_STAGE\",\"initialize_history\":$initialize_history,\"rebuild_only\":$rebuild_only}"
