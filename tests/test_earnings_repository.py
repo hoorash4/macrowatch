@@ -1,14 +1,16 @@
 """Offline contracts for the shared persistence boundary and version policies."""
+import os
 import sys
 import unittest
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from earnings_common.repository import EarningsRepository, _json
 from earnings_v2.repository import EarningsV2Repository, StoreError
+from earnings_us.repository import USEarningsRepository
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -55,3 +57,68 @@ class RepositoryContractTests(unittest.TestCase):
             session.post.side_effect = RuntimeError('transport failed')
             with self.assertRaises(error_type):
                 cls('https://example.invalid', 'key', session=session).rpc('test', {})
+
+    def test_automatic_mode_drops_historical_fact_and_market_writes(self):
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
+            repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
+        repository._automatic_period = Mock(return_value=(2026, 2))
+        repository.rpc = Mock(return_value=1)
+
+        company_rows = [
+            {'company_id': 'old', 'market_year': 2026, 'market_quarter': 1},
+            {'company_id': 'current', 'market_year': 2026, 'market_quarter': 2},
+        ]
+        self.assertEqual(repository.upsert_company_quarters(company_rows), 1)
+        self.assertEqual(repository.rpc.call_args.args[1]['p_rows'], [company_rows[1]])
+
+        market_rows = [
+            {'market_id': 'old', 'market_year': 2025, 'market_quarter': 4},
+            {'market_id': 'current', 'market_year': 2026, 'market_quarter': 2},
+        ]
+        self.assertEqual(repository.upsert_market_quarters(market_rows), 1)
+        self.assertEqual(repository.rpc.call_args.args[1]['p_rows'], [market_rows[1]])
+
+    def test_automatic_mode_blocks_historical_universe_and_period_state(self):
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
+            repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
+        repository._automatic_period = Mock(return_value=(2026, 2))
+        repository.rpc = Mock(return_value=1)
+
+        with self.assertRaises(StoreError):
+            repository.replace_universe('kr_largecap', 2026, 1, [])
+        with self.assertRaises(StoreError):
+            repository.save_state('2025Q4', 'ready', {})
+        repository.save_state('2026Q2', 'ready', {})
+        self.assertEqual(repository.rpc.call_args.args[1]['p_operation'], '2026Q2')
+
+    def test_automatic_mode_blocks_old_seasonal_window_updates(self):
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
+            repository = EarningsV2Repository('https://example.invalid', 'key', session=Mock())
+        repository._automatic_period = Mock(return_value=(2026, 2))
+        repository.rpc = Mock(return_value=1)
+        rows = [
+            {'entity_type': 'market', 'entity_id': 'kr_largecap', 'metric': 'operating_income',
+             'fiscal_quarter': 1, 'sample_years': [2022, 2023, 2024, 2025, 2026], 'sample_values': [1, 2, 3, 4, 5]},
+            {'entity_type': 'market', 'entity_id': 'kr_largecap', 'metric': 'operating_income',
+             'fiscal_quarter': 2, 'sample_years': [2022, 2023, 2024, 2025, 2026], 'sample_values': [1, 2, 3, 4, 5]},
+        ]
+        self.assertEqual(repository.upsert_seasonal_windows(rows), 1)
+        self.assertEqual(repository.rpc.call_args.args[1]['p_rows'], [rows[1]])
+
+    def test_us_automatic_state_cannot_impersonate_repair_or_backfill(self):
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
+            repository = USEarningsRepository('https://example.invalid', 'key', session=Mock())
+        repository.rpc = Mock(return_value=[])
+        for operation in ('retry_incomplete', 'backfill', 'backfill_range', 'universe_backfill'):
+            with self.subTest(operation=operation):
+                with self.assertRaises(StoreError):
+                    repository.save_us_state(operation, 'ready', {})
+        repository.save_us_state('daily_edgar', 'ready', {})
+        self.assertEqual(repository.rpc.call_args.args[1]['p_source'], 'us_automatic')
+
+    def test_us_repair_state_has_separate_source_identity(self):
+        with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'repair'}, clear=False):
+            repository = USEarningsRepository('https://example.invalid', 'key', session=Mock())
+        repository.rpc = Mock(return_value=[])
+        repository.save_us_state('retry_incomplete', 'ready', {})
+        self.assertEqual(repository.rpc.call_args.args[1]['p_source'], 'us_repair')
