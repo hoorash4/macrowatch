@@ -8,8 +8,8 @@ from .pipeline import USEarningsAutomaticPipeline
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="MacroWatch U.S. automatic earnings collection")
-    result.add_argument("--write", action="store_true", help="Persist the U.S. universe and SEC facts")
-    result.add_argument("--phase", choices=("snapshot", "edgar", "incomplete", "all"), default="all")
+    result.add_argument("--write", action="store_true", help="Persist the current U.S. universe and newly filed SEC facts")
+    result.add_argument("--phase", choices=("snapshot", "edgar", "all"), default="all")
     return result
 
 
@@ -20,14 +20,11 @@ def main() -> None:
         result = {
             "snapshot": pipeline.snapshot(write=args.write),
             "edgar": pipeline.daily_edgar(write=args.write),
-            "incomplete": pipeline.retry_incomplete(write=args.write),
         }
     elif args.phase == "snapshot":
         result = pipeline.snapshot(write=args.write)
-    elif args.phase == "edgar":
-        result = pipeline.daily_edgar(write=args.write)
     else:
-        result = pipeline.retry_incomplete(write=args.write)
+        result = pipeline.daily_edgar(write=args.write)
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
 
 
