@@ -37,7 +37,9 @@
   }
 
   function render(container, rows, selectedYears) {
-    const datedRows = chartUtils.rowsForRecentHistory(rows, 'meeting_date', selectedYears).map((row) => ({
+    // 1·2년 버튼은 한 화면의 시간 폭만 정한다. FOMC는 2000년 이후
+    // 전체 이력을 왼쪽으로 탐색할 수 있어야 하므로 여기서 자르지 않는다.
+    const datedRows = rows.map((row) => ({
       ...row, timestamp: Date.parse(`${row.meeting_date}T00:00:00Z`), value: Number(row.display_value),
     })).filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.value));
     if (!datedRows.length) {
@@ -128,12 +130,6 @@
       if (scaleFrame === null) scaleFrame = window.requestAnimationFrame(updateVisibleScale);
     }, { passive: true });
     chartUtils.scrollToLatest(frame);
-    // The policy panel can be rendered while its dashboard view is hidden.
-    // Mounting then sees the provisional frame width, so settle once more
-    // after the SVG and the panel have both received their final dimensions.
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      chartUtils.scrollToLatest(frame);
-    }));
     window.requestAnimationFrame(updateVisibleScale);
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
