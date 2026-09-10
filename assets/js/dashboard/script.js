@@ -128,6 +128,8 @@ function initializeDashboardScrollState() {
 
   const updateScrollState = () => {
     document.body.classList.toggle('dashboard-is-scrolled', sentinel.getBoundingClientRect().top < 0);
+    const height = Math.ceil(navigation.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty('--dashboard-nav-sticky-height', `${height}px`);
   };
 
   window.addEventListener('scroll', updateScrollState, { passive: true });

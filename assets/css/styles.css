@@ -60,6 +60,8 @@
   /* 분석 메뉴 레이아웃: 메뉴 첫 카드의 상단 공간과 카드 사이 간격을 여기서 관리합니다. */
   --dashboard-panel-top-space: 1.5rem;
   --dashboard-card-gap: 1.5rem;
+  /* 고정된 국가 탭은 실제 상단 메뉴 높이 바로 아래에서만 멈춥니다. */
+  --dashboard-nav-sticky-height: 0px;
   /* 모든 메뉴 뒤에 따라오는 공통 추적 영역을 본 메뉴 카드와 구분하는 값입니다. */
   --tracker-section-separation: 1.5rem;
   --tracker-card-accent: #8aa2b4;
@@ -595,10 +597,14 @@ body:has(#app-shell:not(.hidden)) {
   display:none;
 }
 .stress-market-switcher {
+  position:sticky;
+  top:var(--dashboard-nav-sticky-height);
+  z-index:19;
   display:grid;
   grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:.4rem;
-  margin:0 0 var(--dashboard-card-gap);
+  /* dashboard-panels의 공통 gap이 첫 카드와의 간격을 한 번만 만듭니다. */
+  margin:0;
   padding:.55rem;
   border:1px solid rgba(64,83,97,.14);
   border-radius:var(--radius-card);
@@ -2177,6 +2183,9 @@ body.is-pointer-dragging {
   .dashboard-panels {
     gap: 0;
     padding-top: 0;
+  }
+  .stress-market-switcher {
+    margin:0 0 .75rem;
   }
   .dashboard-view-card,
   .dashboard-tracker-card {

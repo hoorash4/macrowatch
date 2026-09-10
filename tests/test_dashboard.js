@@ -129,6 +129,7 @@ test('대시보드 메뉴 배경은 sticky 기준점이 화면 위로 지난 뒤
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   assert.match(source, /sentinel\.className = 'dashboard-nav-sentinel'/);
   assert.match(source, /sentinel\.getBoundingClientRect\(\)\.top < 0/);
+  assert.match(source, /style\.setProperty\('--dashboard-nav-sticky-height', `\$\{height\}px`\)/);
   assert.doesNotMatch(source, /navigation\.getBoundingClientRect\(\)\.top <= 0/);
   assert.match(source, /visibilityObserver\.observe\(appShell, \{ attributes: true, attributeFilter: \['class'\] \}\)/);
   assert.match(styles, /\.dashboard-nav-sentinel \{[\s\S]*?height:0;[\s\S]*?pointer-events:none;/);
@@ -205,6 +206,7 @@ test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로
   assert.match(script, /selectedStressMarket = 'credit';/);
   assert.match(script, /panel\.dataset\.stressMarket !== selectedStressMarket/);
   assert.match(styles, /\.stress-market-switcher\s*\{/);
+  assert.match(styles, /\.stress-market-switcher\s*\{[\s\S]*?position:sticky;[\s\S]*?top:var\(--dashboard-nav-sticky-height\);/);
   assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?\.mobile-bottom-nav\s*\{[\s\S]*?position: fixed;/);
   assert.match(styles, /@media \(min-width:1024px\)[\s\S]*?\.mobile-bottom-nav/);
   assert.match(styles, /padding-bottom: calc\(4\.75rem \+ env\(safe-area-inset-bottom\)\)/);
