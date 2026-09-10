@@ -1017,6 +1017,13 @@ class SourceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "백필 완전성 검증 실패"):
             korea_small_business.validate_replacement(raw, rows, date(2020, 1, 1))
 
+    def test_korea_small_business_automatic_run_preserves_confirmed_data_when_kosis_times_out(self) -> None:
+        timeout = korea_small_business.requests.ConnectTimeout("KOSIS unavailable")
+        self.assertTrue(korea_small_business.should_preserve_existing_data(timeout, replace=False, bootstrap=False))
+        self.assertFalse(korea_small_business.should_preserve_existing_data(timeout, replace=True, bootstrap=False))
+        self.assertFalse(korea_small_business.should_preserve_existing_data(timeout, replace=False, bootstrap=True))
+        self.assertFalse(korea_small_business.should_preserve_existing_data(RuntimeError("invalid KOSIS response"), replace=False, bootstrap=False))
+
     def test_korea_small_business_card_reuses_common_graph_form(self) -> None:
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         chart = (ROOT / "assets/js/charts/korea-small-business-risk-chart.js").read_text(encoding="utf-8")

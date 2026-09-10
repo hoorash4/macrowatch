@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from datetime import date, datetime
 
+import requests
+
 from common import SupabaseRest, month_start_months_ago, uncapped_score
 from sources.korea_small_business_risk import TIMEOUT_SECONDS, fetch_all
 
@@ -95,6 +97,11 @@ def validate_replacement(raw: dict[str, dict[str, float]], rows: list[dict[str, 
         )
 
 
+def should_preserve_existing_data(error: Exception, *, replace: bool, bootstrap: bool) -> bool:
+    """자동 수집 중 일시적인 원자료 연결 실패면 기존 확정값을 유지한다."""
+    return not replace and not bootstrap and isinstance(error, requests.RequestException)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=10)
@@ -128,7 +135,17 @@ def main() -> None:
     end = today.replace(day=1)
     # 최초 표시월에도 발표가 느린 가동률·연체율의 직전 관측치가 필요하다.
     collection_start = month_start_months_ago(start, 3)
-    raw = fetch_all(collection_start, end, include_historical=replace)
+    try:
+        raw = fetch_all(collection_start, end, include_historical=replace)
+    except requests.RequestException as error:
+        if should_preserve_existing_data(error, replace=replace, bootstrap=bootstrap):
+            print(
+                "source_unavailable=true "
+                f"source_error={type(error).__name__} "
+                "existing_confirmed_data_preserved=true"
+            )
+            return
+        raise
     rows = [row for row in build_rows(raw) if str(row["month"]) >= start.isoformat()]
     if not rows:
         raise RuntimeError("저장할 한국 중소기업 위험지수 데이터가 없습니다.")
