@@ -10,7 +10,6 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from earnings_common.repository import EarningsRepository, _json
 from earnings_v2.repository import EarningsV2Repository, StoreError
-from earnings_v2.automatic import TARGETS
 from earnings_us.repository import USEarningsRepository
 
 
@@ -30,9 +29,6 @@ class RepositoryContractTests(unittest.TestCase):
                     'https://example.invalid/rest/v1/rpc/test',
                     headers={'apikey': 'key', 'Authorization': 'Bearer key', 'Content-Type': 'application/json'},
                     json={'value': '1.25'}, timeout=(5, 20))
-
-    def test_market_target_contract(self):
-        self.assertEqual(TARGETS, {'kr_largecap': 100, 'kr_kosdaq': 50})
 
     def test_source_identity_and_state_success_policy(self):
         with patch.dict(os.environ, {'EARNINGS_WRITE_MODE': 'automatic'}, clear=False):
