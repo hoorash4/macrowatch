@@ -1,5 +1,5 @@
 import { ADMIN_CARD_IDS, validateUsername, validatePassword, internalEmail, validateSectorEtf, validateNewSectorEtf, validateAdminCardOrder, validateExtremeNewsRule } from "./validation.ts";
-import { BRANCH, deleteAutomationTime, deleteScheduledWorkflow, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationTime } from "./github.ts";
+import { BRANCH, deleteAutomationTime, githubRequest, latestRun, scheduledWorkflows, setWorkflowEnabled, updateAutomationTime } from "./github.ts";
 import { refreshArticleSentiment, excludeUncertainArticle } from "./news-review.ts";
 import { issuerFromEtfName, rebuildSectorRankings } from "./sector-registry.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -214,13 +214,6 @@ export default {
         }
         await setWorkflowEnabled(workflowId, body.enabled, githubToken);
         return json({ enabled: body.enabled }, 200, origin);
-      }
-
-      if (action === "delete_automation_schedule") {
-        const workflowId = String(body?.workflow_id || "");
-        if (!/^[\w.-]+\.yml$/.test(workflowId)) return json({ error: "삭제할 자동수집 항목이 올바르지 않습니다." }, 400, origin);
-        await deleteScheduledWorkflow(workflowId, githubToken);
-        return json({ deleted: true }, 200, origin);
       }
 
       if (action === "delete_automation_time") {
