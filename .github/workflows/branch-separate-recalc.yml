@@ -72,6 +72,8 @@ jobs:
 
           Path('.github/workflows/branch-separate-recalc.yml').unlink()
           PY
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
       - name: Verify targeted contracts
         run: |
           PYTHONPATH=backend python -m unittest tests.test_collector_isolation tests.test_earnings_repository -v
