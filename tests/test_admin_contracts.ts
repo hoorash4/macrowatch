@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
-import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows, updateAutomationTime } from "../supabase/functions/admin-control/github.ts";
+import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows, updateAutomationTime, decodeBase64Utf8 } from "../supabase/functions/admin-control/github.ts";
 import { issuerFromEtfName } from "../supabase/functions/admin-control/sector-registry.ts";
 
 test("admin validation preserves normalization, bounds and rejection messages", () => {
@@ -23,16 +23,20 @@ test("KST schedule translation preserves the Korean recurrence date", () => {
   assert.throws(() => updateCronTime("30 1 2 * *", "02:00"), /한국 날짜/);
 });
 
-test("GitHub adapter retains skipped-run filtering and error status behavior", async () => {
+test("GitHub adapter ignores historical push failures and decodes UTF-8 workflow sources", async () => {
   const original = globalThis.fetch;
   const calls: Array<string> = [];
   try {
     globalThis.fetch = async (url) => {
       calls.push(String(url));
-      return new Response(JSON.stringify({workflow_runs:[{id:1,conclusion:"skipped"},{id:2,conclusion:"success",status:"completed"}]}));
+      return new Response(JSON.stringify({workflow_runs:[
+        {id:1,event:"push",conclusion:"failure",status:"completed"},
+        {id:2,event:"schedule",conclusion:"success",status:"completed"},
+      ]}));
     };
     const run = await latestRun("news-pipeline.yml", "test-token");
     assert.equal(run.id, 2);
+    assert.equal(decodeBase64Utf8(btoa(String.fromCharCode(...new TextEncoder().encode("한국 외국인 수급")))), "한국 외국인 수급");
     assert.equal(calls[0], "https://api.github.com/repos/hoorash4/macrowatch/actions/workflows/news-pipeline.yml/runs?per_page=20");
     globalThis.fetch = async () => new Response(null, {status:204});
     assert.equal(await githubRequest("/dispatch", "test-token"), null);

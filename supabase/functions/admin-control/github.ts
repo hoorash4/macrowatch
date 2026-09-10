@@ -28,9 +28,13 @@ export async function latestRun(workflow: string, token: string) {
     `/actions/workflows/${workflow}/runs?per_page=20`,
     token,
   );
-  // Ordinary site pushes intentionally skip this workflow. They are not failed
-  // news runs and must not replace the latest dispatched or scheduled result.
-  const run = data?.workflow_runs?.find((item: { conclusion?: string | null }) => item.conclusion !== "skipped");
+  // A workflow source update can leave a failed `push` record behind even
+  // though collectors are schedule-only. The admin dashboard must show the
+  // most recent actual collection, not that historical validation record.
+  const run = data?.workflow_runs?.find((item: { event?: string; conclusion?: string | null }) => (
+    (item.event === "schedule" || item.event === "workflow_dispatch")
+    && item.conclusion !== "skipped"
+  ));
   if (!run) return null;
   return {
     id: run.id,
@@ -45,7 +49,10 @@ export async function latestRun(workflow: string, token: string) {
 
 export async function latestSuccessfulRun(workflow: string, token: string) {
   const data = await githubRequest(`/actions/workflows/${workflow}/runs?per_page=30`, token);
-  const run = data?.workflow_runs?.find((item: { conclusion?: string | null }) => item.conclusion === "success");
+  const run = data?.workflow_runs?.find((item: { event?: string; conclusion?: string | null }) => (
+    (item.event === "schedule" || item.event === "workflow_dispatch")
+    && item.conclusion === "success"
+  ));
   if (!run) return null;
   return { id: run.id, updated_at: run.updated_at, html_url: run.html_url };
 }
@@ -54,8 +61,10 @@ type WorkflowSource = { name: string; path: string; sha: string; content: string
 const SCHEDULE_BLOCK = /(^  schedule:\r?\n[\s\S]*?)(?=^  (?:[A-Za-z_][\w-]*):|^jobs:)/m;
 const CRON_LINE = /^(\s*- cron:\s*["']?)([^"'\r\n]+)(["']?\s*)$/gm;
 
-function decodeContent(value: unknown) {
-  return atob(String(value || "").replace(/\s/g, ""));
+export function decodeBase64Utf8(value: unknown) {
+  const binary = atob(String(value || "").replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
 function parseScheduledWorkflow(file: WorkflowSource) {
@@ -74,7 +83,7 @@ function assertScheduleEditIsIsolated(file: WorkflowSource) {
 
 async function workflowSource(path: string, token: string): Promise<WorkflowSource> {
   const file = await githubRequest(`/contents/${path}?ref=${BRANCH}`, token);
-  return { name: String(file.name), path: String(file.path), sha: String(file.sha), content: decodeContent(file.content) };
+  return { name: String(file.name), path: String(file.path), sha: String(file.sha), content: decodeBase64Utf8(file.content) };
 }
 
 const AUTOMATION_CARD_NAMES: Record<string, string> = {
