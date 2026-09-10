@@ -336,7 +336,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("update_automation_time", admin_ui)
         self.assertIn("showNotice('일정 저장 완료'", admin_ui)
         self.assertIn("실행 시간을 ${time}으로 저장했습니다.", admin_ui)
-        self.assertIn('"market-context.yml": "뉴스 흐름 · KOSPI 지수"', schedule_names)
+        self.assertIn('"market-context.yml": "뉴스 분석용 KOSPI 가격 수집"', schedule_names)
         self.assertIn('"check-targets.yml": "지표 추적 알림"', schedule_names)
 
     def test_scheduled_workflow_failure_email_is_centralized_and_complete(self):

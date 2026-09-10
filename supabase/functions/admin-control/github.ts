@@ -85,7 +85,7 @@ const AUTOMATION_CARD_NAMES: Record<string, string> = {
   "korea-small-business-risk.yml": "한국 중소기업 위험지수",
   "korea-stress.yml": "한국 시장 스트레스 지수",
   "liquidity.yml": "미국·한국 주식시장 자금환경",
-  "market-context.yml": "뉴스 흐름 · KOSPI 지수",
+  "market-context.yml": "뉴스 분석용 KOSPI 가격 수집",
   "news-pipeline.yml": "뉴스 흐름",
   "policy-expectation.yml": "시장 내재 정책금리 기대",
   "small-business-risk.yml": "미국 중소기업 위험지수",
