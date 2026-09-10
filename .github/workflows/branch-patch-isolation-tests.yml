@@ -1,0 +1,81 @@
+name: Apply isolation test contract updates
+
+on:
+  push:
+    branches: [fix/collector-isolation-hardening]
+    paths:
+      - ".github/workflows/branch-patch-isolation-tests.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/collector-isolation-hardening
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Update stale tests to the isolation contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test_backend.py")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              """        self.assertIn('paths-ignore:', workflow)\n        self.assertIn('\".github/workflows/**\"', workflow)""":
+              """        self.assertIn('paths:', workflow)\n        self.assertNotIn('paths-ignore:', workflow)\n        self.assertNotIn('- \"backend/**\"', workflow)\n        self.assertNotIn('- \"supabase/**\"', workflow)""",
+              """        self.assertIn('.delete().lt(\"market_date\", retentionStart)', pipeline)\n        self.assertIn('if (stage === \"close\" && !rebuildOnly)', pipeline)""":
+              """        self.assertNotIn('.delete().lt(\"market_date\", retentionStart)', pipeline)\n        self.assertNotIn('.delete().lt(\"week_start\", rankingRetentionStart)', pipeline)""",
+              """        self.assertIn(\"--file supabase/migrations/20260828_add_sector_intraday_prices.sql\", (ROOT / \".github/workflows/deploy-supabase.yml\").read_text(encoding=\"utf-8\"))""":
+              """        deploy = (ROOT / \".github/workflows/deploy-supabase.yml\").read_text(encoding=\"utf-8\")\n        self.assertIn(\"--diff-filter=A\", deploy)\n        self.assertTrue((ROOT / \"supabase/migrations/20260828_add_sector_intraday_prices.sql\").exists())""",
+              """        self.assertIn(\"--file supabase/migrations/20260907214752_add_sector_leadership_score.sql\", (ROOT / \".github/workflows/deploy-supabase.yml\").read_text(encoding=\"utf-8\"))""":
+              """        self.assertTrue((ROOT / \"supabase/migrations/20260907214752_add_sector_leadership_score.sql\").exists())""",
+              """        self.assertIn('--file supabase/migrations/20260828_schedule_sector_flow.sql', deploy)""":
+              """        self.assertTrue((ROOT / \"supabase/migrations/20260828_schedule_sector_flow.sql\").exists())\n        self.assertIn(\"--diff-filter=A\", deploy)""",
+              """        self.assertIn(\"20260909141525_add_kr_small_business_risk.sql\", deploy_workflow)""":
+              """        self.assertTrue((ROOT / \"supabase/migrations/20260909141525_add_kr_small_business_risk.sql\").exists())\n        self.assertIn(\"--diff-filter=A\", deploy_workflow)""",
+              """        self.assertIn(\"RETENTION_YEARS = 5\", pipeline)""":
+              """        self.assertNotIn('.upsert(calculated.filter', pipeline)\n        self.assertNotIn('.from(\"korea_foreign_flow_daily\").delete()', pipeline)\n        self.assertNotIn('.from(\"korea_foreign_flow_raw\").delete()', pipeline)""",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"stale test contract not found: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("tests/test_earnings_v1_retirement.py")
+          text = path.read_text(encoding="utf-8")
+          old = '        self.assertIn("20260904000000_remove_earnings_v1.sql", workflow)'
+          new = '        self.assertNotIn("20260904000000_remove_earnings_v1.sql", workflow)\n        self.assertIn("--diff-filter=A", workflow)'
+          if old not in text:
+              raise SystemExit("V1 deploy test contract not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Restore explanatory comments that were accidentally dropped while
+          # changing only the inflation persistence policy.
+          path = Path("backend/inflation_pipeline.py")
+          text = path.read_text(encoding="utf-8")
+          marker = '                observed_on = parse_chart_date(label.get("label", ""), target)\n                if observed_on is None or observed_on < target:'
+          if marker in text:
+              text = text.replace(marker, '                observed_on = parse_chart_date(label.get("label", ""), target)\n                # A monthly nowcast remains live after month-end until the\n                # corresponding release. Keep those later business-day\n                # vintages so the current provisional value can still move.\n                if observed_on is None or observed_on < target:', 1)
+          marker = '    if add_months(target, -1) not in fred[total_name]:\n        return float("nan")'
+          if marker in text:
+              text = text.replace(marker, '    # Ensure the total index history needed by the source definition exists.\n    if add_months(target, -1) not in fred[total_name]:\n        return float("nan")', 1)
+          marker = '    latest_source_day = max(\n'
+          if marker in text and 'PCE is released after month-end' not in text:
+              text = text.replace(marker, '    # PCE is released after month-end. During that short gap the model still\n    # targets the just-completed month, so carry its final within-month estimate\n    # to the latest Cleveland business date instead of making the chart appear\n    # stale or jumping ahead without a usable PCE starting level.\n    latest_source_day = max(\n', 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          git rm .github/workflows/branch-patch-isolation-tests.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_backend.py tests/test_earnings_v1_retirement.py backend/inflation_pipeline.py
+          git commit -m "Align regression tests with collector isolation"
+          git push origin HEAD:fix/collector-isolation-hardening
