@@ -3,8 +3,16 @@ name: Deploy Pages
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - ".github/workflows/**"
+    # Frontend deployment is intentionally isolated from backend, collector,
+    # database and Supabase Function changes.
+    paths:
+      - "*.html"
+      - "*.js"
+      - "assets/**"
+      - "images/**"
+      - "tools/build/**"
+      - ".github/workflows/pages-build.yml"
+      - ".github/workflows/pages-deploy.yml"
   workflow_dispatch:
 
 permissions:
