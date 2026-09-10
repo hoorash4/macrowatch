@@ -333,11 +333,14 @@ class SourceContractTests(unittest.TestCase):
     def test_automation_schedule_save_reports_the_persisted_time(self):
         admin_ui = (ROOT / "assets/js/admin/admin.js").read_text(encoding="utf-8")
         schedule_names = (ROOT / "supabase/functions/admin-control/github.ts").read_text(encoding="utf-8")
+        market_context = (ROOT / ".github/workflows/market-context.yml").read_text(encoding="utf-8")
         self.assertIn("update_automation_time", admin_ui)
         self.assertIn("showNotice('일정 저장 완료'", admin_ui)
         self.assertIn("실행 시간을 ${time}으로 저장했습니다.", admin_ui)
         self.assertIn('"market-context.yml": "뉴스 분석용 KOSPI 가격 수집"', schedule_names)
         self.assertIn('"check-targets.yml": "지표 추적 알림"', schedule_names)
+        self.assertIn('cron: "0 7 * * 1-5"', market_context)
+        self.assertNotIn('cron: "0 6 * * 1-5"', market_context)
 
     def test_scheduled_workflow_failure_email_is_centralized_and_complete(self):
         notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")

@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # 06:00 UTC = 15:00 KST, after the public API publishes the prior session.
-    - cron: "0 6 * * 1-5"
+    # 07:00 UTC = 16:00 KST, after the 15:30 regular-session close and before midnight news analysis.
+    - cron: "0 7 * * 1-5"
   workflow_dispatch:
 
 permissions:
