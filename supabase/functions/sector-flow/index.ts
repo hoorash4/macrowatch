@@ -72,7 +72,9 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stage = body.stage === "open" ? "open" : body.stage === "intraday" ? "intraday" : body.stage === "close" ? "close" : null;
     const rebuildOnly = body.rebuild_only === true;
+    const initializeHistory = body.initialize_history === true;
     if (!stage) return json({ error: "stage는 open, intraday 또는 close여야 합니다." }, 400);
+    if (rebuildOnly && initializeHistory) return json({ error: "rebuild_only와 initialize_history는 동시에 사용할 수 없습니다." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
@@ -103,7 +105,7 @@ Deno.serve(async (request) => {
       const runKisRequest = createKisRequestRunner();
       for (const item of registry) {
         try {
-          const needsHistoryInitialization = missingHistoryIds.has(item.id);
+          const needsHistoryInitialization = initializeHistory && missingHistoryIds.has(item.id);
           const priceStart = needsHistoryInitialization ? new Date(`${retentionStart}T00:00:00Z`) : end;
           const candles = await runKisRequest(() => fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end));
           const intradayQuote = stage === "intraday" && candles.some((candle) => candle.marketDate === today)
@@ -144,8 +146,9 @@ Deno.serve(async (request) => {
       }
       if (stage === "close") {
         try {
+          const benchmarkStart = initializeHistory ? new Date(`${retentionStart}T00:00:00Z`) : end;
           const benchmark = await fetchKisDomesticIndexPrices(
-            credentials, token, "0001", new Date(`${retentionStart}T00:00:00Z`), end, "D", runKisRequest,
+            credentials, token, "0001", benchmarkStart, end, "D", runKisRequest,
           );
           if (!benchmark.length) throw new Error("KIS 코스피 일봉 응답이 비어 있습니다.");
           const { error: benchmarkError } = await admin.from("market_index_prices").upsert(benchmark.map((row) => ({
@@ -230,8 +233,9 @@ Deno.serve(async (request) => {
       if (rankingError) throw rankingError;
     }
     return json({
-      ok: true, stage, rebuild_only: rebuildOnly,
-      initialized_history_count: missingHistoryIds.size,
+      ok: true, stage, rebuild_only: rebuildOnly, initialize_history: initializeHistory,
+      initialized_history_count: initializeHistory ? missingHistoryIds.size : 0,
+      history_initialization_required_count: initializeHistory ? 0 : missingHistoryIds.size,
       registry_count: registry.length, price_rows: collected.length, holding_rows: holdings.length,
       ranking_rows: persistedRows.length,
       leadership_rows: persistedRows.filter((row) => row.leadershipScore !== null).length,
