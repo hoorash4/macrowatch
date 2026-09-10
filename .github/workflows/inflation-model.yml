@@ -11,7 +11,7 @@ on:
       - "supabase/migrations/20260909090000_add_us_policy_rate_daily.sql"
   schedule:
     # 08:35 KST, after the latest U.S. market and Cleveland Fed inputs settle.
-    - cron: "35 23 * * *"
+    - cron: "50 22 * * *"
   workflow_dispatch:
     inputs:
       mode:
