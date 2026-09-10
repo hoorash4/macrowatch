@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from .automatic import KoreaEarningsV2AutomaticPipeline
+from .recalculation import StoredQuarterRecalculation
 
 
 def parser() -> argparse.ArgumentParser:
@@ -18,8 +18,8 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = parser().parse_args()
-    pipeline = KoreaEarningsV2AutomaticPipeline.from_env()
-    result = pipeline.recalculate_quarter(args.year, args.quarter, write=args.write)
+    recalculation = StoredQuarterRecalculation.from_env()
+    result = recalculation.recalculate_quarter(args.year, args.quarter, write=args.write)
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
 
 

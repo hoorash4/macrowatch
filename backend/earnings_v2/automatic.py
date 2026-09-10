@@ -40,18 +40,14 @@ from earnings_common.models import (
 )
 from .providers import EcosFxClient, KisClient, KrxClient, OpenDartClient, ProviderError
 from .repository import EarningsV2Repository
+from .contract import TARGETS, EXCHANGES, CALCULATION_VERSION
+from .recalculation import StoredQuarterRecalculation
 from earnings_common.runtime import execution_deadline
 from .transform import (
     calculate_financial_point,
     decimal_value,
     extract_company_fact,
 )
-
-
-TARGETS = {"kr_largecap": 100, "kr_kosdaq": 100}
-EXCHANGES = {"kr_largecap": "KOSPI", "kr_kosdaq": "KOSDAQ"}
-# V6부터 부분 기업행을 보존하고 잠정 바구니와 확정 총합을 분리한다.
-CALCULATION_VERSION = 6
 
 
 def filing_period(filing: PeriodicFiling) -> tuple[int, int] | None:
@@ -95,9 +91,11 @@ class KoreaEarningsV2AutomaticPipeline:
 
     def __init__(self, *, krx: KrxClient, dart: OpenDartClient, repository: EarningsV2Repository,
                  kis: KisClient | None = None, fx: EcosFxClient | None = None,
-                 financial_company: FinancialCompanyClient | None = None) -> None:
+                 financial_company: FinancialCompanyClient | None = None,
+                 recalculation: StoredQuarterRecalculation | None = None) -> None:
         self.krx, self.dart, self.repository, self.kis, self.fx = krx, dart, repository, kis, fx
         self.financial_company = financial_company
+        self.recalculation = recalculation or StoredQuarterRecalculation(repository)
 
     @staticmethod
     def _progress(stage: str, **details: Any) -> None:
@@ -1051,70 +1049,6 @@ class KoreaEarningsV2AutomaticPipeline:
                 self.repository.save_state(operation, "failed", {}, str(error)[:2000])
             raise
 
-    def recalculate_quarter(self, year: int, quarter: int, *, write: bool = True) -> dict[str, Any]:
-        """저장된 기업 실적만으로 시장 합계와 파생값을 다시 계산한다.
-
-        관리자 수동 확정 뒤에는 외부 공급자를 다시 호출할 이유가 없다.
-        이 경로는 확정된 기업군과 DB 실적만 읽고 시장 분기 행만 갱신한다.
-        """
-        universes: dict[str, list[CompanyIdentity]] = {}
-        for market_id, target in TARGETS.items():
-            frozen = self.repository.universe(market_id, year, quarter)
-            if len(frozen) != target:
-                raise ValueError(f"{market_id} universe is {len(frozen)}/{target}")
-            universes[market_id] = [_identity_from_universe(row) for row in frozen]
-
-        identities = list({row.company_id: row for rows in universes.values() for row in rows}.values())
-        previous_key = previous_period(year, quarter)
-        previous_universes = {
-            market_id: [
-                _identity_from_universe(row)
-                for row in self.repository.universe(market_id, *previous_key)
-            ]
-            for market_id in TARGETS
-        }
-        history_ids = {
-            row.company_id
-            for rows in [*universes.values(), *previous_universes.values()]
-            for row in rows
-        }
-        stored_rows = self.repository.company_periods(
-            history_ids,
-            [(year, quarter), previous_key, (year - 1, quarter)],
-        )
-        stored, _manual_ids = self._stored_facts(stored_rows, (year, quarter))
-        stored_current = {
-            identity.company_id: stored[(identity.company_id, year, quarter)]
-            for identity in identities
-            if (identity.company_id, year, quarter) in stored
-        }
-        current_by_company, company_window_rows = self._calculate_company_points(
-            stored_current, stored, set(stored_current), year, quarter,
-        )
-        current_markets, market_window_rows = self._market_rows(
-            universes, previous_universes, current_by_company, stored, year, quarter,
-        )
-        if write:
-            self.repository.upsert_company_quarters(
-                row.db_row(calculation_version=CALCULATION_VERSION)
-                for row in current_by_company.values()
-            )
-            if company_window_rows:
-                self.repository.upsert_seasonal_windows(company_window_rows)
-            self.repository.upsert_market_quarters(
-                row.db_row(calculation_version=CALCULATION_VERSION) for row in current_markets
-            )
-            if market_window_rows:
-                self.repository.upsert_seasonal_windows(market_window_rows)
-        return {
-            "period": f"{year}Q{quarter}",
-            "write": write,
-            "mode": "stored_recalculation",
-            "companies": len(identities),
-            "markets": {row.market_id: row.completion_status for row in current_markets},
-            "status": "ready",
-        }
-
     @staticmethod
     def _merge_kis_cumulative_only(
         fact: FinancialFact,
@@ -1403,7 +1337,7 @@ class KoreaEarningsV2AutomaticPipeline:
                 for fact in changed.values()
             )
             for year, quarter in sorted(recalculation_periods):
-                self.recalculate_quarter(year, quarter, write=True)
+                self.recalculation.recalculate_quarter(year, quarter, write=True)
 
         unresolved = sum(
             1

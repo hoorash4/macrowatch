@@ -139,7 +139,7 @@ class AutomaticFscPendingTests(unittest.TestCase):
             krx=object(), dart=dart, repository=repository, kis=kis,
             financial_company=financial_company,
         )
-        pipeline.recalculate_quarter = lambda *_args, **_kwargs: {"status": "ready"}
+        pipeline.recalculation.recalculate_quarter = lambda *_args, **_kwargs: {"status": "ready"}
 
         result = pipeline.run_kis_pending(write=True, today=date(2026, 9, 2))
 
@@ -176,7 +176,7 @@ class AutomaticFscPendingTests(unittest.TestCase):
             kis=SimulatedKis({"000099": history}),
             financial_company=FinancialCompany(),
         )
-        pipeline.recalculate_quarter = lambda *_args, **_kwargs: {"status": "ready"}
+        pipeline.recalculation.recalculate_quarter = lambda *_args, **_kwargs: {"status": "ready"}
 
         result = pipeline.run_kis_pending(write=True, today=date(2026, 6, 1))
 

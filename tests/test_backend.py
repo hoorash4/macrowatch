@@ -659,6 +659,7 @@ class SourceContractTests(unittest.TestCase):
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902213000_add_earnings_v2_manual_resolution.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "backend/earnings_v2/automatic.py").read_text(encoding="utf-8")
+        recalculation = (ROOT / "backend/earnings_v2/recalculation.py").read_text(encoding="utf-8")
 
         self.assertIn("대기 상태가 되면 즉시 표시합니다", admin_html)
         self.assertIn("earnings-v2-pending-form", admin_js)
@@ -675,8 +676,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("is_pending = false", migration)
         self.assertIn("old.source = 'manual' and new.source <> 'manual'", migration)
         self.assertIn('str(record.get("source") or "") == "manual"', pipeline)
-        self.assertIn("def recalculate_quarter", pipeline)
-        self.assertIn('"mode": "stored_recalculation"', pipeline)
+        self.assertIn("def recalculate_quarter", recalculation)
+        self.assertIn('"mode": "stored_recalculation"', recalculation)
         workflow = (ROOT / ".github/workflows/earnings-v2-korea.yml").read_text(encoding="utf-8")
         self.assertIn("python -m earnings_v2.recalculate_cli", workflow)
         self.assertNotIn("schedule:", workflow)
