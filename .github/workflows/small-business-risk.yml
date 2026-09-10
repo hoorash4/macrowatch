@@ -2,8 +2,8 @@ name: Refresh U.S. small business risk
 
 on:
   schedule:
-    # 06:20 KST: NFIB 신규 월을 매일 확인한다.
-    - cron: "20 21 * * *"
+    # 06:30 KST: check NFIB for newly released monthly data.
+    - cron: "30 21 * * *"
   workflow_dispatch:
 
 permissions:

@@ -2,7 +2,7 @@ name: Refresh Emerging Market Stress
 
 on:
   schedule:
-    - cron: "30 21 * * *"
+    - cron: "10 5 * * *"
   workflow_dispatch:
 
 permissions:

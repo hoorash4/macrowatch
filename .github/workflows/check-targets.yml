@@ -3,11 +3,11 @@ name: Check macro targets
 on:
   schedule:
     # GitHub Actions cron uses UTC. Managed from MacroWatch admin.
-    - cron: "0 22 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch:
 
-# check_targets.py와 common.py는 같은 실행 단위다. 공통 모듈 변경도 다음 예약 실행부터
-# 자동 반영되며, 수동 실행으로 즉시 검증할 수 있다.
+# check_targets.pyì common.pyë ê°ì ì¤í ë¨ìë¤. ê³µíµ ëª¨ë ë³ê²½ë ë¤ì ìì½ ì¤íë¶í°
+# ìë ë°ìëë©°, ìë ì¤íì¼ë¡ ì¦ì ê²ì¦í  ì ìë¤.
 
 permissions:
   contents: read

@@ -2,8 +2,8 @@ name: Refresh EM capital capacity
 
 on:
   schedule:
-    # 08:30 KST: 미국 일간 자료 갱신 이후, 07:30 정책금리 기대 작업과 분리합니다.
-    - cron: "30 23 * * *"
+    # 08:30 KST: ë¯¸êµ­ ì¼ê° ìë£ ê°±ì  ì´í, 07:30 ì ì±ê¸ë¦¬ ê¸°ë ììê³¼ ë¶ë¦¬í©ëë¤.
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 permissions:

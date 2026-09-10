@@ -2,8 +2,8 @@ name: Refresh Korea small business risk
 
 on:
   schedule:
-    # 06:40 KST: KOSIS와 ECOS 신규 월을 매일 확인한다.
-    - cron: "40 21 * * *"
+    # 13:50 KST: check KOSIS and ECOS for newly released monthly data.
+    - cron: "50 4 * * *"
   workflow_dispatch:
 
 permissions:

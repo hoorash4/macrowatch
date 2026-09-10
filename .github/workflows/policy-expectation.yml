@@ -3,7 +3,7 @@ name: Refresh market-implied policy expectations
 on:
   schedule:
     # 07:30 KST: after U.S. daily rate releases and 30 minutes after the 07:00 job.
-    - cron: "30 22 * * *"
+    - cron: "50 21 * * *"
   workflow_dispatch:
 
 permissions:
