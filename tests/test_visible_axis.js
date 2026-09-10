@@ -88,7 +88,7 @@ test('common legend renderer owns legend markup and visibility', () => {
   assert.equal(container.hidden, true);
 });
 
-test('every line-chart legend uses the common slot outside the chart region', () => {
+test('every line-chart legend uses the common slot at the bottom of the chart region', () => {
   const stack = [];
   const legends = [];
   for (const match of dashboardMarkup.matchAll(/<\/?div\b[^>]*>/gi)) {
@@ -110,11 +110,9 @@ test('every line-chart legend uses the common slot outside the chart region', ()
     stack.push(node);
   }
   assert.ok(legends.length >= 14, 'the audit covers every shared line-chart legend slot');
-  assert.deepEqual(legends.filter(legend => legend.insideRegion), []);
-  assert.deepEqual(legends.filter(({ node }) => {
-    const siblings = node.parent?.children || [];
-    return !/\banalysis-chart-region\b/.test(siblings[siblings.indexOf(node) - 1]?.classes || '');
-  }), [], 'every legend is the immediate sibling below its chart region');
+  assert.deepEqual(legends.filter(legend => !legend.insideRegion), []);
+  assert.deepEqual(legends.filter(({ node }) => !/\banalysis-chart-region\b/.test(node.parent?.classes || '')), []);
+  assert.deepEqual(legends.filter(({ node }) => node.parent.children.at(-1) !== node), [], 'every legend is the final row inside its chart region');
   assert.doesNotMatch(dashboardMarkup, /class="[^"]*(?:policy-expectation-legend|equity-bond-legend)/);
   assert.doesNotMatch(styles, /\.policy-expectation-legend|\.equity-bond-legend/);
   assert.doesNotMatch(dashboardMarkup, /id="(?:credit-stress-momentum-chart|korea-fsi-chart)"[^>]*\bmin-h-52\b/);
