@@ -9,6 +9,7 @@ const domain = context.window.MacroWatchAnalysisChart.visibleAxisDomain;
 const axisDomain = context.window.MacroWatchAnalysisChart.axisDomain;
 const source = fs.readFileSync(path.join(__dirname, '../assets/js/charts/analysis-chart-utils.js'), 'utf8');
 const styles = fs.readFileSync(path.join(__dirname, '../assets/css/styles.css'), 'utf8');
+const dashboardMarkup = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 
 test('chart profiles centralize the two-year default and structural options', () => {
   const utils = context.window.MacroWatchAnalysisChart;
@@ -38,6 +39,34 @@ test('common chart frame width includes the fixed boundary axes', () => {
   const tenYears = utils.timelineWidth(867, start, end, 10);
   assert.ok(twoYears > fiveYears && fiveYears > tenYears);
   assert.equal(utils.timelineWidth(867, start, end, 'max'), 867);
+});
+
+test('every line-chart host uses the same three-layer card, region and plot surfaces', () => {
+  const stack = [];
+  const chartHosts = [];
+  for (const match of dashboardMarkup.matchAll(/<\/?div\b[^>]*>/gi)) {
+    const tag = match[0];
+    if (/^<\/div/i.test(tag)) {
+      stack.pop();
+      continue;
+    }
+    const id = tag.match(/\bid="([^"]+)"/i)?.[1] || '';
+    const isLineChartHost = (/-chart$/.test(id) && id !== 'news-sentiment-chart')
+      || /\bdata-liquidity-charts\b/i.test(tag)
+      || /\bdata-earnings-chart=/i.test(tag)
+      || /\bdata-equity-bond-chart\b/i.test(tag);
+    if (isLineChartHost) {
+      chartHosts.push({
+        id: id || tag.match(/\b(data-[a-z-]+)(?:=|\s|>)/i)?.[1] || 'anonymous-chart',
+        hasRegion: stack.some(parent => /\banalysis-chart-region\b/.test(parent)),
+      });
+    }
+    stack.push(tag.match(/\bclass="([^"]*)"/i)?.[1] || '');
+  }
+  assert.ok(chartHosts.length >= 20, 'the audit covers every main and auxiliary line-chart host');
+  assert.deepEqual(chartHosts.filter(host => !host.hasRegion), []);
+  assert.match(styles, /\.analysis-chart-region\s*\{[^}]*background:var\(--analysis-chart-region-background\)/s);
+  assert.match(styles, /\.analysis-chart-plot\s*\{[^}]*background:var\(--analysis-chart-plot-background\)/s);
 });
 
 test('common legend renderer owns legend markup and visibility', () => {

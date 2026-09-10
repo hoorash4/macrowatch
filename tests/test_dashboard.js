@@ -576,7 +576,7 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /detail\?\.view !== 'policy'/);
   assert.match(main, /new CustomEvent\('macrowatch:dashboard-view-changed'/);
   assert.match(chart, /\.select\('meeting_date,action,change_bps,policy_index,final_event_score'\)/);
-  assert.match(html, /rounded-xl border border-slate-200 bg-slate-50 p-3[\s\S]*id="policy-signal-chart"/);
+  assert.match(html, /analysis-chart-region[\s\S]*id="policy-signal-chart"/);
 });
 
 test('시장 내재 정책금리 기대 그래프는 2년을 기본으로 기간별 조회를 제공한다', () => {

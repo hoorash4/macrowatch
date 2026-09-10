@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=184">
+  <link rel="stylesheet" href="assets/css/styles.css?v=185">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -256,7 +256,7 @@
         <p class="analysis-card-description">각 국가의 타 자산 대비 주식의 상대적인 매력도를 나타냅니다. 상대적인 매력도일 뿐 주식투자 매력도가 높다는 것이 주가 상승을 담보하지는 않습니다. * 독자 개발 지표</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-white p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-equity-bond-ranges aria-label="주식/채권 상대매력 조회 기간">
             <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">MAX</button>
           </div>
@@ -281,7 +281,7 @@
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-us-stress-ranges aria-label="미국 시장 스트레스 지수 그래프 조회 기간">
             <button type="button" data-us-stress-range="1">1년</button><button type="button" data-us-stress-range="2" class="is-active">2년</button><button type="button" data-us-stress-range="5">5년</button><button type="button" data-us-stress-range="max">MAX</button>
           </div>
@@ -317,8 +317,10 @@
         <p class="analysis-card-description">파산보호 신청 건수의 경우 분기 자료 발표 시 월별 자료가 함께 발표되므로, 최근 월 자료는 정확하지 않습니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div id="credit-stress-components-chart" class="min-h-72">
-          <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
+        <div class="analysis-chart-region">
+          <div id="credit-stress-components-chart" class="min-h-72">
+            <div class="analysis-empty-state-light flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">신용위험 데이터를 불러오는 중입니다.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -336,7 +338,7 @@
         <p class="analysis-card-description">NFIB 차입난이도 60%와 매출전망 40%를 위험 방향으로 합산합니다. NFIB 낙관지수는 산식에 넣지 않은 비교선입니다. * 독자 개발 지표</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-small-business-risk-ranges aria-label="미국 중소기업 위험지수 조회 기간">
             <button type="button" data-small-business-risk-range="1">1년</button><button type="button" data-small-business-risk-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-small-business-risk-range="5">5년</button><button type="button" data-small-business-risk-range="10">10년</button><button type="button" data-small-business-risk-range="max">MAX</button>
           </div>
@@ -354,10 +356,12 @@
           <h2 class="analysis-card-title">미국 주식시장 자금환경</h2>
         </div>
         <p class="mt-2 text-xs text-slate-500">자금시장 환경이 주식시장에 우호적인가를 나타냅니다. 유동성과는 다르며, 높을 수록 우호적 환경이라는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. * 독자 개발 지표</p>
-        <div class="analysis-chart-range-controls mt-4" data-liquidity-ranges aria-label="미국 유동성 조회 기간">
-          <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
+        <div class="analysis-chart-region mt-4">
+          <div class="analysis-chart-range-controls" data-liquidity-ranges aria-label="미국 유동성 조회 기간">
+            <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
+          </div>
+          <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
         </div>
-        <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
         <!--<details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">실질금리(10년), 신용여건(시카고연은 신용 하위지수), 순자금공급 대용치의 13주 변화율, SOFR−IORB를 각각 25% 반영합니다. 순자금공급 대용치는 연준 자산−TGA−역레포이며 실제 주식 유입액은 아닙니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 이를 해당 시점까지 최대 5년의 상대 백분위로 변환하고, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 방향 점수 50은 변화 없음, 우호도 50은 상대적 중간 수준입니다. 출처: 연준·뉴욕연준·시카고연은/FRED. 완료된 주까지만 표시합니다. 현재 공개된 수정계열을 사용한 설명지표이며 주가 상승 확률이나 당시 정보만을 사용한 투자 백테스트가 아닙니다.</p></details>-->
       </div>
     </section>
@@ -375,7 +379,7 @@
         <p class="analysis-card-description">잠정치는 지수를 구성하는 전체 지표가 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-korea-stress-ranges aria-label="한국 시장 스트레스 지수 그래프 조회 기간">
             <button type="button" data-korea-stress-range="1">1년</button><button type="button" data-korea-stress-range="2" class="is-active">2년</button><button type="button" data-korea-stress-range="5">5년</button><button type="button" data-korea-stress-range="max">MAX</button>
           </div>
@@ -410,7 +414,7 @@
         <p class="analysis-card-description">아직 발표되지 않은 구성값은 직전 월 값으로 계산하며, 해당 월 연체율과 가동률이 들어오면 확정치로 바뀝니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-korea-small-business-risk-ranges aria-label="한국 중소기업 위험지수 조회 기간">
             <button type="button" data-korea-small-business-risk-range="1">1년</button><button type="button" data-korea-small-business-risk-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-korea-small-business-risk-range="5">5년</button><button type="button" data-korea-small-business-risk-range="10">10년</button><button type="button" data-korea-small-business-risk-range="max">MAX</button>
           </div>
@@ -429,7 +433,7 @@
         <p class="analysis-card-description">히스테리시스 기준 현재 상태: <span id="korea-foreign-flow-state" class="font-semibold text-slate-600">계산 중</span></p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-korea-foreign-flow-ranges aria-label="외국인 자금 유출입 강도 그래프 조회 기간">
             <button type="button" data-korea-foreign-flow-range="0.5">6개월</button><button type="button" data-korea-foreign-flow-range="1">1년</button><button type="button" data-korea-foreign-flow-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-korea-foreign-flow-range="max">MAX</button>
           </div>
@@ -447,10 +451,12 @@
           <h2 class="analysis-card-title">한국 주식시장 자금환경</h2>
         </div>
         <p class="mt-2 text-xs text-slate-500">자금시장 환경이 주식시장에 우호적인가를 나타냅니다. 유동성과는 다르며, 높을 수록 우호적 환경이라는 의미입니다. 개선·악화 방향은 3개월 전보다 좋아졌는지 보여줍니다. * 독자 개발 지표</p>
-        <div class="analysis-chart-range-controls mt-4" data-liquidity-ranges aria-label="한국 유동성 조회 기간">
-          <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
+        <div class="analysis-chart-region mt-4">
+          <div class="analysis-chart-range-controls" data-liquidity-ranges aria-label="한국 유동성 조회 기간">
+            <button type="button" data-years="1">1년</button><button type="button" data-years="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-years="5">5년</button><button type="button" data-years="max">전체</button>
+          </div>
+          <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
         </div>
-        <div data-liquidity-charts class="mt-3" aria-live="polite">유동성 자료를 불러오는 중입니다.</div>
         <!--<details class="mt-3 text-xs text-slate-500"><summary class="cursor-pointer">산식·자료 안내</summary><p class="mt-2">단기 조달환경(콜금리·KOFR와 기준금리의 평균 스프레드), 국내 유동성(M2·Lf의 3개월 증가율 평균), 외국인 주식 순매수 비율, 원화 강도를 각각 25% 반영합니다. 각 구성값은 완료된 주의 주간 평균을 만든 뒤 최근 4주 평균으로 완화합니다. 현재 우호도는 해당 시점까지 최대 5년 상대 백분위이며, 개선·악화 방향은 13주 변화를 과거 변동 크기로 표준화합니다. 50은 중립입니다. 출처: 한국은행 ECOS·금융경제 스냅샷, KIS. 완료된 주까지만 표시합니다. 수정계열 기반 설명지표로 투자 백테스트가 아닙니다.</p></details>-->
       </div>
     </section>
@@ -465,7 +471,7 @@
         <p class="analysis-card-description">흑전·적전·계산 불가는 0 위치의 상태점으로 표시합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="korea-earnings-toolbar">
             <div class="analysis-chart-range-controls" data-earnings-ranges aria-label="합산 실적 그래프 조회 기간">
               <button type="button" data-earnings-range="2" class="is-active" aria-pressed="true">2년</button><button type="button" data-earnings-range="5">5년</button><button type="button" data-earnings-range="10">10년</button><button type="button" data-earnings-range="max">MAX</button>
@@ -505,7 +511,7 @@
         <p class="analysis-card-description">흑전·적전·계산 불가는 0 위치의 상태점으로 표시합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="company-earnings-toolbar">
             <div class="company-earnings-search">
               <label class="sr-only" for="company-earnings-search">기업명 검색</label>
@@ -553,7 +559,7 @@
         <p class="analysis-card-description">잠정치는 해당 주의 구성 지표가 모두 업데이트되면 확정치로 전환됩니다.</p>
       </div>
       <div class="px-5 pb-2 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-em-stress-ranges aria-label="이머징 시장 스트레스 지수 그래프 조회 기간">
             <button type="button" data-em-stress-range="1">1년</button><button type="button" data-em-stress-range="2" class="is-active">2년</button><button type="button" data-em-stress-range="5">5년</button><button type="button" data-em-stress-range="max">MAX</button>
           </div>
@@ -584,7 +590,7 @@
         <p class="analysis-card-description">지연 발표되는 원자료가 업데이트되기 전까지 최신 구간은 잠정치로 표시됩니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-em-capacity-ranges aria-label="이머징 자금 유입 여건 그래프 조회 기간">
             <button type="button" data-em-capacity-range="0.5">6개월</button>
             <button type="button" data-em-capacity-range="1">1년</button>
@@ -613,7 +619,7 @@
         <p class="analysis-card-description">FOMC 회의 결과를 AI가 분석하여 주식 시장에 우호적인지를 판단하여 지수화합니다. 높아지면 비우호적입니다. * 독자 개발 지표</p>
       </div>
       <div class="px-5 pb-2 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls" data-policy-chart-ranges aria-label="통화정책 시그널 그래프 조회 기간">
             <button type="button" data-policy-chart-range="1">1년</button>
             <button type="button" data-policy-chart-range="2" class="is-active" aria-pressed="true">2년</button>
@@ -638,7 +644,7 @@
         <p class="analysis-card-description">미국 채권시장을 기본으로 하여 정책금리 방향성 기대를 추적합니다. * 독자 개발 지표</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="analysis-chart-range-controls policy-expectation-range-controls" aria-label="정책금리 기대 그래프 조회 기간">
             <button type="button" data-policy-expectation-range="1">1년</button>
             <button type="button" data-policy-expectation-range="2" class="is-active">2년</button>
@@ -668,7 +674,7 @@
         <p class="analysis-card-description">최신월은 PCE 발표 전까지 원자재 가격과 CPI·PCE 나우캐스트를 반영해 영업일마다 갱신되는 잠정치입니다. 실질금리는 통합물가와 기준금리로 계산합니다.</p>
       </div>
       <div class="px-5 pb-5 pt-5">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="analysis-chart-region">
           <div class="inflation-chart-toolbar">
             <div class="analysis-chart-range-controls" data-inflation-ranges aria-label="통합물가 그래프 조회 기간">
               <button type="button" data-inflation-range="1">1년</button>
