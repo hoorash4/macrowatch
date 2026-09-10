@@ -52,14 +52,12 @@ def _row_period(row: dict[str, Any]) -> tuple[int, int] | None:
 
 
 class EarningsRepository:
-    """Shared RPC contract; concrete repositories own source and error policy.
+    """Shared RPC contract with a hard automatic/manual write boundary.
 
-    GitHub Actions default to the restrictive ``automatic`` write mode.  An
-    explicitly manual repair/backfill workflow must opt in with
-    ``EARNINGS_WRITE_MODE=manual|repair|backfill``.  In automatic mode the
-    repository is the final write barrier: only the latest completed market
-    quarter may be changed.  This protects frozen history even if a caller
-    accidentally discovers an old amendment or invokes a broad retry path.
+    GitHub Actions default to restrictive ``automatic`` mode. Explicit repair
+    and historical jobs must opt in with ``EARNINGS_WRITE_MODE=manual|repair|backfill``.
+    Automatic mode is protected twice: the client drops historical fact/market
+    rows before RPC calls, and dedicated DB RPCs reject any non-current quarter.
     """
 
     state_source = "korea_v2"
@@ -85,6 +83,9 @@ class EarningsRepository:
 
     def _automatic_period(self) -> tuple[int, int]:
         return _latest_completed_period()
+
+    def _state_source_name(self) -> str:
+        return self.state_source if self.write_mode == "automatic" else f"{self.state_source}_{self.write_mode}"
 
     def _guard_automatic_period(self, year: int, quarter: int, operation: str) -> None:
         if self.write_mode != "automatic":
@@ -177,15 +178,31 @@ class EarningsRepository:
 
     def replace_universe(self, market_id: str, year: int, quarter: int, rows: Iterable[dict[str, Any]]) -> int:
         self._guard_automatic_period(year, quarter, "replace_universe")
-        return int(self.rpc("earnings_v2_replace_universe", {"p_market_id": market_id, "p_market_year": year, "p_market_quarter": quarter, "p_rows": list(rows)}) or 0)
+        rpc_name = (
+            "earnings_v2_auto_replace_universe"
+            if self.write_mode == "automatic" else "earnings_v2_replace_universe"
+        )
+        return int(self.rpc(rpc_name, {"p_market_id": market_id, "p_market_year": year, "p_market_quarter": quarter, "p_rows": list(rows)}) or 0)
 
     def upsert_company_quarters(self, rows: Iterable[dict[str, Any]]) -> int:
         accepted = self._filter_automatic_rows(rows, "upsert_company_quarters")
-        return int(self.rpc("earnings_v2_v6_upsert_company_quarters", {"p_rows": accepted}) or 0) if accepted else 0
+        if not accepted:
+            return 0
+        rpc_name = (
+            "earnings_v2_auto_v6_upsert_company_quarters"
+            if self.write_mode == "automatic" else "earnings_v2_v6_upsert_company_quarters"
+        )
+        return int(self.rpc(rpc_name, {"p_rows": accepted}) or 0)
 
     def upsert_market_quarters(self, rows: Iterable[dict[str, Any]]) -> int:
         accepted = self._filter_automatic_rows(rows, "upsert_market_quarters")
-        return int(self.rpc("earnings_v2_v6_upsert_market_quarters", {"p_rows": accepted}) or 0) if accepted else 0
+        if not accepted:
+            return 0
+        rpc_name = (
+            "earnings_v2_auto_v6_upsert_market_quarters"
+            if self.write_mode == "automatic" else "earnings_v2_v6_upsert_market_quarters"
+        )
+        return int(self.rpc(rpc_name, {"p_rows": accepted}) or 0)
 
     def company_history(self, company_ids: Iterable[str]) -> list[dict[str, Any]]:
         result = self.rpc("earnings_v2_get_company_quarters_many", {"p_company_ids": list(dict.fromkeys(company_ids))})
@@ -250,7 +267,11 @@ class EarningsRepository:
         period = _row_period(row)
         if period is not None:
             self._guard_automatic_period(*period, "upsert_quarter_fx_rate")
-        return int(self.rpc("earnings_v2_upsert_quarter_fx_rate", {"p_row": row}) or 0)
+        rpc_name = (
+            "earnings_v2_auto_upsert_quarter_fx_rate"
+            if self.write_mode == "automatic" else "earnings_v2_upsert_quarter_fx_rate"
+        )
+        return int(self.rpc(rpc_name, {"p_row": row}) or 0)
 
     def upsert_delisting_events(self, rows: Iterable[dict[str, Any]]) -> int:
         return int(self.rpc(
@@ -276,14 +297,14 @@ class EarningsRepository:
             if match is not None:
                 self._guard_automatic_period(int(match.group(1)), int(match.group(2)), "save_state")
         self.rpc("earnings_v2_save_pipeline_state", {
-            "p_source": self.state_source, "p_operation": operation, "p_cursor": cursor,
+            "p_source": self._state_source_name(), "p_operation": operation, "p_cursor": cursor,
             "p_status": status, "p_last_success_at": datetime.now(timezone.utc) if status in {"ready", "incomplete"} else None,
             "p_last_error": error,
         })
 
     def pipeline_state(self, operation: str) -> dict[str, Any] | None:
         result = self.rpc("earnings_v2_get_pipeline_state", {
-            "p_source": self.state_source, "p_operation": operation,
+            "p_source": self._state_source_name(), "p_operation": operation,
         })
         if isinstance(result, list):
             return result[0] if result and isinstance(result[0], dict) else None
