@@ -10,12 +10,12 @@ on:
       - supabase/migrations/**
       - .github/workflows/small-business-risk.yml
   schedule:
-    # 06:20 KST: NFIB 신규 월을 매일 확인한다.
-    - cron: "20 21 * * *"
+    # 06:20 KST: NFIB ì ê· ìì ë§¤ì¼ íì¸íë¤.
+    - cron: "30 21 * * *"
   workflow_dispatch:
     inputs:
       replace:
-        description: "외부 원자료로 10년 구간 전체 교체"
+        description: "ì¸ë¶ ììë£ë¡ 10ë êµ¬ê° ì ì²´ êµì²´"
         required: false
         default: false
         type: boolean
