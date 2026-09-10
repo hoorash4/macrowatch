@@ -5,6 +5,13 @@ on:
     # 07:00 UTC = 16:00 KST, after the 15:30 regular-session close and before midnight news analysis.
     - cron: "0 7 * * 1-5"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Collection mode
+        required: true
+        default: automatic
+        type: choice
+        options: [automatic, bootstrap]
 
 permissions:
   contents: read
@@ -22,10 +29,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: ${{ github.event_name == 'schedule' && 'automatic' || inputs.mode }}
         run: |
           curl --fail-with-body --retry 2 --max-time 120 \
             --request POST "$SUPABASE_URL/functions/v1/market-context" \
             --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Content-Type: application/json" \
-            --data '{}'
+            --data "{\"mode\":\"$MODE\"}"
