@@ -55,7 +55,7 @@ class AutomationIsolationTests(unittest.TestCase):
         self.assertIsInstance(result, Response)
         self.assertEqual(send.call_count, 4)
 
-    def test_supabase_retries_reads_but_not_unknown_post_writes(self) -> None:
+    def test_supabase_retries_definite_write_failures_but_not_ambiguous_transport_writes(self) -> None:
         class Response:
             ok = False
             status_code = 503
@@ -75,6 +75,11 @@ class AutomationIsolationTests(unittest.TestCase):
         self.assertEqual(database.session.request.call_count, 4)
         database.session.request.reset_mock()
         with self.assertRaisesRegex(RuntimeError, "Supabase example"):
+            database.request("POST", "example", body={"value": 1})
+        self.assertEqual(database.session.request.call_count, 4)
+        database.session.request.reset_mock()
+        database.session.request.side_effect = common.requests.ConnectionError("lost response")
+        with self.assertRaises(common.requests.ConnectionError):
             database.request("POST", "example", body={"value": 1})
         self.assertEqual(database.session.request.call_count, 1)
 

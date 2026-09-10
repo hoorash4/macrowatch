@@ -31,6 +31,7 @@ def request_with_retry(
     send: Any,
     *,
     retry_count: int = HTTP_RETRY_COUNT,
+    retry_transport: bool = True,
     sleep: Any = time.sleep,
 ) -> requests.Response:
     """Run one idempotent HTTP request with one initial try and bounded retries.
@@ -46,7 +47,10 @@ def request_with_retry(
             response = send()
         except requests.RequestException as exc:
             last_error = exc
-            if attempt == retry_count:
+            # A dropped response after a write can leave its commit outcome
+            # unknown.  Read/idempotent callers opt into transport retries;
+            # ordinary writes still retry only definite 429/5xx responses.
+            if not retry_transport or attempt == retry_count:
                 raise
         else:
             if getattr(response, "status_code", None) not in TRANSIENT_HTTP_STATUSES or attempt == retry_count:
@@ -176,11 +180,12 @@ class SupabaseRest:
             method, f"{self.url}/rest/v1/{table}", headers=headers,
             params=params, json=body, timeout=self.timeout,
         )
-        # GET and DELETE are naturally repeatable.  POST/PATCH callers must
-        # opt in only when their endpoint has a conflict key or transaction
-        # semantics that make repeated delivery safe.
-        is_safe = retry_safe if retry_safe is not None else method.upper() in {"GET", "DELETE"}
-        response = request_with_retry(send) if is_safe else send()
+        # Every REST call retries definite server/rate-limit responses.  A
+        # transport retry is reserved for naturally idempotent operations or
+        # explicit conflict-key upserts, because an interrupted write may have
+        # committed after the client lost its response.
+        is_transport_safe = retry_safe if retry_safe is not None else method.upper() in {"GET", "DELETE"}
+        response = request_with_retry(send, retry_transport=is_transport_safe)
         if not response.ok:
             raise RuntimeError(f"Supabase {table}: {response.status_code} {response.text[:500]}")
         return response.json() if response.content else None
