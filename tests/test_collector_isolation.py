@@ -52,6 +52,21 @@ class CollectorIsolationTests(unittest.TestCase):
         pipeline = text("backend/inflation_pipeline.py")
         self.assertNotIn('client.upsert("us_policy_rate_daily", rows[-10:]', pipeline)
 
+    def test_manual_earnings_recalculation_is_provider_free_and_separate(self):
+        service = (ROOT / "backend/earnings_v2/recalculation.py").read_text(encoding="utf-8")
+        cli = (ROOT / "backend/earnings_v2/recalculate_cli.py").read_text(encoding="utf-8")
+        automatic = (ROOT / "backend/earnings_v2/automatic.py").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/earnings-v2-korea.yml").read_text(encoding="utf-8")
+        self.assertNotIn(".providers import", service)
+        self.assertNotIn("automatic import", service)
+        self.assertIn("StoredQuarterRecalculation.from_env()", cli)
+        self.assertNotIn("KoreaEarningsV2AutomaticPipeline", cli)
+        self.assertNotIn("def recalculate_quarter(", automatic)
+        self.assertIn("StoredQuarterRecalculation(self.repository).recalculate_quarter", automatic)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("schedule:", workflow)
+        self.assertIn("earnings_v2.recalculate_cli", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
