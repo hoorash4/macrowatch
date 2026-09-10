@@ -242,6 +242,9 @@ def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
             points = []
             for index, label in enumerate(labels):
                 observed_on = parse_chart_date(label.get("label", ""), target)
+                # A monthly nowcast remains live after month-end until the
+                # corresponding release. Keep those later business-day
+                # vintages so the current provisional value can still move.
                 if observed_on is None or observed_on < target:
                     continue
                 try:
@@ -395,6 +398,7 @@ def adjusted_cpi_nowcast_delta(
     adjusted = official * 0.90
     shelter_delta = yoy_delta_from_mom(fred["shelter"], target, shelter_estimate)
     ex_delta = yoy_delta_from_mom(fred[ex_name], target, ex_estimate)
+    # Ensure the total index history needed by the source definition exists.
     if add_months(target, -1) not in fred[total_name]:
         return float("nan")
     return adjusted * shelter_delta + (1.0 - adjusted) * ex_delta
@@ -566,6 +570,10 @@ def build_output_rows(
                 "model_version": MODEL_VERSION,
             })
     daily.sort(key=lambda row: str(row["observed_on"]))
+    # PCE is released after month-end. During that short gap the model still
+    # targets the just-completed month, so carry its final within-month estimate
+    # to the latest Cleveland business date instead of making the chart appear
+    # stale or jumping ahead without a usable PCE starting level.
     latest_source_day = max(
         point.observed_on
         for kind_rows in nowcasts.values()
