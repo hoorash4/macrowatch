@@ -28,6 +28,18 @@ test('chart profiles centralize the two-year default and structural options', ()
   assert.equal(utils.cursorValueText({ main: 12.345, comparison: 99 }, [{ key: 'main', label: '메인', format: value => value.toFixed(1) }]), '메인 12.3');
 });
 
+test('common chart frame width includes the fixed boundary axes', () => {
+  const utils = context.window.MacroWatchAnalysisChart;
+  assert.equal(utils.chartFrameWidth(920, 'single'), 867);
+  assert.equal(utils.chartFrameWidth(920, 'dual'), 810);
+  const start = Date.parse('2016-01-01'), end = Date.parse('2026-10-01');
+  const twoYears = utils.timelineWidth(867, start, end, 2);
+  const fiveYears = utils.timelineWidth(867, start, end, 5);
+  const tenYears = utils.timelineWidth(867, start, end, 10);
+  assert.ok(twoYears > fiveYears && fiveYears > tenYears);
+  assert.equal(utils.timelineWidth(867, start, end, 'max'), 867);
+});
+
 test('chart numbers share a two-decimal maximum without trailing zeroes', () => {
   const format = context.window.MacroWatchAnalysisChart.formatChartNumber;
   assert.equal(format(12.345), '12.35');

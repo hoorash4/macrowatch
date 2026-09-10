@@ -170,6 +170,13 @@
     return { ...horizontal, top: chartLayout.plot.top, bottom: chartLayout.plot.bottom, ...vertical, axisMode };
   }
 
+  function chartFrameWidth(containerWidth, axisMode = 'single') {
+    const axes = axisLayouts[axisMode] || axisLayouts.single;
+    // 단일축도 오른쪽 플롯 경계선 1px을 고정 영역으로 유지합니다.
+    const rightBoundary = axisMode === 'dual' ? axes.right : 1;
+    return Math.max(1, Number(containerWidth) - axes.left - rightBoundary);
+  }
+
   function scrollTrackWidth(viewportWidth, contentWidth, scale, leftGutter, rightGutter) {
     return Math.max(viewportWidth, contentWidth * scale - leftGutter - rightGutter);
   }
@@ -384,6 +391,14 @@
     }
     const padding = span * VISIBLE_Y_PADDING / (1 - VISIBLE_Y_PADDING * 2);
     return { min: min - padding, max: max + padding };
+  }
+
+  function axisTicks(domain, intervals = 4) {
+    if (!domain || !Number.isFinite(domain.min) || !Number.isFinite(domain.max)) return [];
+    const count = Math.max(1, Math.trunc(Number(intervals)) || 1);
+    return Array.from({ length: count + 1 }, (_, index) => (
+      Number((domain.min + ((domain.max - domain.min) * index / count)).toPrecision(12))
+    ));
   }
 
   function visibleAxisDomain(points, left, right, symmetric = false) {
@@ -661,5 +676,5 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
 })();

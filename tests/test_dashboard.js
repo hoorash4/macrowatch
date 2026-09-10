@@ -333,6 +333,7 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   const series = context.window.MacroWatchKoreaEarnings.seriesFromMarketRows(serverRows);
   assert.equal(series.length, 2, '화면에는 2016년 이후 실적만 표시한다');
   assert.equal(series[0].fiscalYear, 2016);
+  assert.equal(series[0].periodDate, '2016-01-01');
   const latest = series.at(-1).metrics.operating_income;
   assert.equal(series.at(-1).reportedCount, 98);
   assert.equal(latest.amount, 95);
@@ -368,7 +369,17 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
   assert.ok(rateDomain.max > 30, '증가율축 상단은 표시 자료에 맞춰 자동 조정한다');
   assert.equal((30 - 20) / (rateDomain.max - rateDomain.min), 0.8, '표시 자료가 상하 10% 여백을 제외한 높이를 사용한다');
   const qoqDomain = context.window.MacroWatchKoreaEarnings.axisDomain([-8, 20], { includeZero: true });
-  assert.ok(qoqDomain.ticks.includes(0), '계절조정 QoQ축은 0 눈금을 반드시 포함한다');
+  const qoqTickGaps = qoqDomain.ticks.slice(1).map((tick, index) => Number((tick - qoqDomain.ticks[index]).toPrecision(10)));
+  assert.equal(new Set(qoqTickGaps).size, 1, '계절조정 QoQ 눈금은 0 부근에 몰리지 않고 같은 간격을 사용한다');
+  const quarterlyHistory = Array.from({ length: 44 }, (_, index) => {
+    const year = 2016 + Math.floor(index / 4), quarter = index % 4 + 1;
+    return { fiscalYear: year, fiscalQuarter: quarter, periodDate: `${year}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}-01` };
+  });
+  assert.ok(context.window.MacroWatchKoreaEarnings.pointsForRange(quarterlyHistory, 2).length > 8, '2년은 자료를 8개 분기로 잘라내지 않고 공통 스크롤 이력을 유지한다');
+  assert.equal(context.window.MacroWatchKoreaEarnings.pointsForRange(quarterlyHistory, 'max').length, quarterlyHistory.length);
+  assert.match(source, /chartUtils\.chartFrameWidth\(containerWidth, PROFILE\.axisMode\)/);
+  assert.match(source, /chartUtils\.historyWidth\(points, 'periodDate', market\.state\.years, frameWidth\)/);
+  assert.match(source, /data-korea-earnings-zero-line/);
   assert.match(html, /id="korea-earnings-dashboard"/);
   assert.match(html, /data-market-earnings-select/);
   assert.match(html, /<option value="kr_largecap">KOSPI 100<\/option>/);
