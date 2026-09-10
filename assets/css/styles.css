@@ -400,6 +400,12 @@ body:has(#app-shell:not(.hidden)) {
   gap:0;
   align-items:start;
 }
+.dashboard-nav-sentinel {
+  display:block;
+  width:0;
+  height:0;
+  pointer-events:none;
+}
 /* ----- 03-2. 메인 헤더: 로고·메뉴·우측 동작 버튼 -----
  * 분석 카드 헤더와 공유하지 않는 독립 모듈입니다.
  * sticky 동작, 스크롤 배경, 중앙 폭은 이 구역에서만 관리합니다.

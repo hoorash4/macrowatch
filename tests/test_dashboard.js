@@ -124,6 +124,16 @@ test('공통 커서 글자는 보이는 플롯 폭 안으로 이동한다', () =
   assert.equal(context.window.MacroWatchAnalysisChart.positionCursorText(node, 950, frame), 794);
 });
 
+test('대시보드 메뉴 배경은 sticky 기준점이 화면 위로 지난 뒤에만 표시한다', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  assert.match(source, /sentinel\.className = 'dashboard-nav-sentinel'/);
+  assert.match(source, /sentinel\.getBoundingClientRect\(\)\.top < 0/);
+  assert.doesNotMatch(source, /navigation\.getBoundingClientRect\(\)\.top <= 0/);
+  assert.match(source, /visibilityObserver\.observe\(appShell, \{ attributes: true, attributeFilter: \['class'\] \}\)/);
+  assert.match(styles, /\.dashboard-nav-sentinel \{[\s\S]*?height:0;[\s\S]*?pointer-events:none;/);
+});
+
 // 브라우저 전역을 최소한으로 흉내 내어 assets/js/dashboard/script.js의 순수 보조 함수만 검증한다.
 // 실제 DOM 렌더링은 건드리지 않으며, 리팩터링 전후 계산 결과가 같은지 확인한다.
 function loadDashboardScript() {

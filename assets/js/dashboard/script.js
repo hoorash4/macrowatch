@@ -114,11 +114,27 @@ function initializeDashboardScrollState() {
   const navigation = document.querySelector('.dashboard-nav');
   if (!navigation) return;
 
+  // sticky 요소는 상단에 붙은 뒤에도 top이 0으로 고정되므로, 원래 자리의 기준점을 따로 추적합니다.
+  // 로그인 확인 중 app-shell이 숨겨져 top=0으로 측정되는 경우도 기준점의 엄격한 음수 판정으로 제외합니다.
+  const sentinel = document.createElement('span');
+  sentinel.className = 'dashboard-nav-sentinel';
+  sentinel.setAttribute('aria-hidden', 'true');
+  navigation.before(sentinel);
+
   const updateScrollState = () => {
-    document.body.classList.toggle('dashboard-is-scrolled', navigation.getBoundingClientRect().top <= 0);
+    document.body.classList.toggle('dashboard-is-scrolled', sentinel.getBoundingClientRect().top < 0);
   };
 
   window.addEventListener('scroll', updateScrollState, { passive: true });
+  window.addEventListener('resize', updateScrollState, { passive: true });
+  window.addEventListener('pageshow', updateScrollState);
+
+  const appShell = document.getElementById('app-shell');
+  if (appShell && typeof MutationObserver === 'function') {
+    const visibilityObserver = new MutationObserver(updateScrollState);
+    visibilityObserver.observe(appShell, { attributes: true, attributeFilter: ['class'] });
+  }
+
   updateScrollState();
 }
 
