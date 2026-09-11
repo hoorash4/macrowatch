@@ -82,12 +82,71 @@ jobs:
             fi
             git diff --name-only --diff-filter=A "$before" "$GITHUB_SHA" -- 'supabase/migrations/*.sql' | sort -u > /tmp/migrations
 
-            changed_functions="$(git diff --name-only --diff-filter=ACMRT "$before" "$GITHUB_SHA" -- 'supabase/functions/**')"
-            if grep -q '^supabase/functions/_shared/' <<<"$changed_functions"; then
-              find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name _shared -printf '%f\n' | sort > /tmp/functions
-            else
-              awk -F/ '/^supabase\/functions\/[^/]+\// && $3 != "_shared" {print $3}' <<<"$changed_functions" | sort -u > /tmp/functions
-            fi
+            git diff --name-only --diff-filter=ACMRT "$before" "$GITHUB_SHA" -- 'supabase/functions/**' | sort -u > /tmp/changed-function-files
+            python - <<'PY'
+          from __future__ import annotations
+
+          import re
+          from pathlib import Path
+
+          root = Path("supabase/functions").resolve()
+          changed = [Path(line.strip()).resolve() for line in Path("/tmp/changed-function-files").read_text().splitlines() if line.strip()]
+          changed_shared = {path for path in changed if root in path.parents and path.relative_to(root).parts[0] == "_shared"}
+          affected = {
+              path.relative_to(root).parts[0]
+              for path in changed
+              if root in path.parents and path.relative_to(root).parts[0] != "_shared"
+          }
+
+          import_pattern = re.compile(r"(?:from\s+|import\s*)[\"']([^\"']+)[\"']")
+
+          def resolve_import(source: Path, specifier: str) -> Path | None:
+              if not specifier.startswith("."):
+                  return None
+              candidate = (source.parent / specifier).resolve()
+              candidates = [candidate]
+              if candidate.suffix == "":
+                  candidates.extend([candidate.with_suffix(".ts"), candidate / "index.ts"])
+              for path in candidates:
+                  if path.is_file() and (path == root or root in path.parents):
+                      return path
+              return None
+
+          graph: dict[Path, set[Path]] = {}
+          for source in root.rglob("*.ts"):
+              dependencies: set[Path] = set()
+              try:
+                  content = source.read_text(encoding="utf-8")
+              except OSError:
+                  continue
+              for specifier in import_pattern.findall(content):
+                  dependency = resolve_import(source, specifier)
+                  if dependency is not None:
+                      dependencies.add(dependency)
+              graph[source.resolve()] = dependencies
+
+          def reaches_changed_shared(starts: list[Path]) -> bool:
+              stack = [path.resolve() for path in starts]
+              seen: set[Path] = set()
+              while stack:
+                  current = stack.pop()
+                  if current in seen:
+                      continue
+                  seen.add(current)
+                  if current in changed_shared:
+                      return True
+                  stack.extend(graph.get(current, ()))
+              return False
+
+          if changed_shared:
+              for directory in root.iterdir():
+                  if not directory.is_dir() or directory.name == "_shared" or not (directory / "index.ts").is_file():
+                      continue
+                  if reaches_changed_shared(list(directory.rglob("*.ts"))):
+                      affected.add(directory.name)
+
+          Path("/tmp/functions").write_text("".join(f"{name}\n" for name in sorted(affected)), encoding="utf-8")
+          PY
           fi
 
           echo "migrations<<EOF" >> "$GITHUB_OUTPUT"
