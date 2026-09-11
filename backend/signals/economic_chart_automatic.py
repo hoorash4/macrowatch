@@ -12,16 +12,15 @@ from common import SupabaseRest
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
     FRED_SERIES,
-    KRX_INDEX_FUNDAMENTALS,
     _derive_spread,
     _ecos_rows,
     _fred_rows,
     _insert_missing,
-    _krx_index_rows,
     check_collected_series_alerts,
 )
 from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
 from sources.korea_export_intramonth import fetch_snapshots
+from sources.krx_index_fundamentals import SERIES as KRX_INDEX_FUNDAMENTALS, fetch_krx_kospi_fundamental_rows
 from sources.redbook import fetch_recent_redbook_rows
 from sources.us_treasury_yields import fetch_treasury_yield_rows
 from sources.wti_futures import fetch_wti_futures_rows
@@ -52,9 +51,6 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
                 "error": errors[name],
             }, ensure_ascii=False))
 
-    # Keep FRED for ICE credit spreads, RRP, and slower weekly/monthly macro series.  The
-    # explicit backfill module still uses the complete FRED_SERIES mapping, so changing the
-    # live provider never rewrites or replaces already stored history.
     for code, (source_id, frequency) in FRED_SERIES.items():
         if code in LIVE_NON_FRED_SERIES:
             continue
@@ -62,8 +58,6 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
 
-    # U.S. Treasury publishes the official par curve daily.  Store only missing observations,
-    # then derive 10Y-2Y from the values actually stored for the two maturities.
     try:
         treasury_rows = fetch_treasury_yield_rows(start, today)
         for code in ("US2Y", "US10Y"):
@@ -74,8 +68,6 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             errors[code] = f"{error.__class__.__name__}: {error}"
     run("US10Y2Y", lambda: _derive_spread(db, "US10Y2Y", "US10Y", "US2Y", "D", start, today))
 
-    # Market-close series use Yahoo's daily chart feed. WTI keeps the existing continuous
-    # front-month CL=F contract; USD/KRW uses the provider's KRW=X close.
     run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
     run("USDKRW", lambda: _insert_missing(
         db, fetch_yahoo_daily_rows("USDKRW", "KRW=X", start, today), start
@@ -87,7 +79,7 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
         ))
 
     try:
-        rows_by_code = _krx_index_rows(start, today)
+        rows_by_code = fetch_krx_kospi_fundamental_rows(start, today)
         for code in KRX_INDEX_FUNDAMENTALS:
             run(code, lambda code=code: _insert_missing(db, rows_by_code.get(code, []), start))
     except Exception as error:
