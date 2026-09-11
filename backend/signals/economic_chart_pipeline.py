@@ -1,7 +1,10 @@
-"""Economic chart collector with isolated automatic, bootstrap, and alert responsibilities."""
+"""Shared source/storage helpers for the economic-chart read model.
+
+This module is deliberately not an executable collector. Scheduled automatic collection and
+explicit historical backfill have separate entrypoints and may only share pure/source helpers.
+"""
 from __future__ import annotations
 
-import argparse
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -13,9 +16,12 @@ from common import SupabaseRest, fetch_fred_observations, request_with_retry, re
 from tracking.check_targets import CheckResult, condition_met, enqueue_alerts, json_number, parse_decimal
 
 
+# Source contracts shared by automatic (short recent window) and explicit backfill
+# (up to ten years or the provider's maximum available range).
 FRED_SERIES = {
     "US2Y": ("DGS2", "D"),
     "US10Y": ("DGS10", "D"),
+    "US10Y2Y": ("T10Y2Y", "D"),
     "HY_OAS": ("BAMLH0A0HYM2", "D"),
     "EM_OAS": ("BAMLEMCBPIOAS", "D"),
     "WTI": ("DCOILWTICO", "D"),
@@ -30,13 +36,12 @@ ECOS_SERIES = {
     "KR10Y": ("817Y002", "010210000", "D"),
 }
 DERIVED_SERIES = {
-    "US10Y2Y": ("US10Y", "US2Y", "D"),
     "KR10Y3Y": ("KR10Y", "KR3Y", "D"),
 }
-# KRX OPEN API currently used by Earnings exposes trading/universe data, but
-# the index PER/PBR history is provided by KRX Data Marketplace.  This is the
-# same first-party KRX endpoint/contract used by the public market-statistics
-# screen.  Keep it isolated here so it cannot affect the Earnings collector.
+
+# KRX Data Marketplace > 기본통계 > 지수 > 주가지수 > PER/PBR/배당수익률.
+# pykrx uses the same first-party endpoint (MDCSTAT00702), KOSPI ticker 1001 =>
+# indTpCd=1 / indTpCd2=001. KRX itself is the source; this does not touch Earnings.
 KRX_INDEX_FUNDAMENTALS = {
     "KOSPI_PER": ("WT_PER", "D"),
     "KOSPI_PBR": ("WT_STKPRC_NETASST_RTO", "D"),
@@ -82,11 +87,9 @@ def _fred_rows(series_code: str, source_id: str, frequency: str, start: date, en
 
 def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str, start: date, end: date) -> list[dict[str, Any]]:
     key = require_env("ECOS_API_KEY")
-    start_text = start.strftime("%Y%m%d")
-    end_text = end.strftime("%Y%m%d")
     url = (
         f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/10000/"
-        f"{stat_code}/{frequency}/{start_text}/{end_text}/{item_code}"
+        f"{stat_code}/{frequency}/{start:%Y%m%d}/{end:%Y%m%d}/{item_code}"
     )
     response = request_with_retry(lambda: requests.get(url, timeout=45))
     response.raise_for_status()
@@ -95,15 +98,12 @@ def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str,
     rows: list[dict[str, Any]] = []
     for item in source_rows:
         raw_date = str(item.get("TIME") or "")
-        if len(raw_date) != 8:
-            continue
         value = _numeric(item.get("DATA_VALUE"))
-        if value is None:
+        if len(raw_date) != 8 or value is None:
             continue
-        observed = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
         rows.append({
             "series_code": series_code,
-            "observation_date": observed,
+            "observation_date": f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}",
             "value": value,
             "frequency": frequency,
             "source": f"ECOS:{stat_code}/{item_code}",
@@ -119,18 +119,18 @@ def _krx_date(value: object) -> str | None:
 
 
 def _krx_index_payload(start: date, end: date) -> list[dict[str, Any]]:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd",
-        "X-Requested-With": "XMLHttpRequest",
-    }
+    # Match the current KRX/pykrx request contract exactly.  The endpoint accepts
+    # <=730-day date ranges; callers chunk longer backfills.
     response = request_with_retry(lambda: requests.post(
         KRX_DATA_URL,
-        headers=headers,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://data.krx.co.kr/contents/MDC/MAIN/main/index.cmd?locale=ko_KR",
+        },
         data={
             "bld": KRX_INDEX_BLD,
             "indTpCd": "1",
-            "indTpCd2": "001",  # KOSPI = 1001
+            "indTpCd2": "001",  # KOSPI index code 1001
             "strtDd": start.strftime("%Y%m%d"),
             "endDd": end.strftime("%Y%m%d"),
         },
@@ -145,7 +145,6 @@ def _krx_index_payload(start: date, end: date) -> list[dict[str, Any]]:
 
 
 def _krx_index_rows(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
-    """Fetch KOSPI PER/PBR in bounded <=730-day KRX ranges."""
     result = {code: [] for code in KRX_INDEX_FUNDAMENTALS}
     cursor = start
     first = True
@@ -167,7 +166,7 @@ def _krx_index_rows(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
                     "observation_date": observed,
                     "value": value,
                     "frequency": frequency,
-                    "source": "KRX_DATA_MARKETPLACE:MDCSTAT00702/KOSPI",
+                    "source": "KRX_DATA_MARKETPLACE:MDCSTAT00702/KOSPI1001",
                 })
         cursor = chunk_end + timedelta(days=1)
     return result
@@ -209,16 +208,13 @@ def _read_values(db: SupabaseRest, series_code: str, start: date, end: date) -> 
 def _derive_spread(db: SupabaseRest, code: str, left: str, right: str, frequency: str, start: date, end: date) -> int:
     lhs = _read_values(db, left, start, end)
     rhs = _read_values(db, right, start, end)
-    rows = [
-        {
-            "series_code": code,
-            "observation_date": observed,
-            "value": round(lhs[observed] - rhs[observed], 6),
-            "frequency": frequency,
-            "source": f"DERIVED:{left}-{right}",
-        }
-        for observed in sorted(lhs.keys() & rhs.keys())
-    ]
+    rows = [{
+        "series_code": code,
+        "observation_date": observed,
+        "value": round(lhs[observed] - rhs[observed], 6),
+        "frequency": frequency,
+        "source": f"DERIVED:{left}-{right}",
+    } for observed in sorted(lhs.keys() & rhs.keys())]
     return _insert_missing(db, rows, start)
 
 
@@ -238,19 +234,14 @@ def _economic_chart_targets(db: SupabaseRest, changed_codes: set[str]) -> list[d
     if not changed_codes:
         return []
     targets = db.request("GET", "targets", params={
-        "select": "*",
-        "is_active": "eq.true",
-        "source_type": f"eq.{TARGET_SOURCE_TYPE}",
+        "select": "*", "is_active": "eq.true", "source_type": f"eq.{TARGET_SOURCE_TYPE}",
     }) or []
-    return [
-        target for target in targets
-        if isinstance(target.get("source_config"), dict)
-        and str(target["source_config"].get("series_code") or "") in changed_codes
-    ]
+    return [target for target in targets
+            if isinstance(target.get("source_config"), dict)
+            and str(target["source_config"].get("series_code") or "") in changed_codes]
 
 
 def check_collected_series_alerts(db: SupabaseRest, changed_codes: set[str]) -> int:
-    """Evaluate only chart targets whose series received a new automatic observation."""
     targets = _economic_chart_targets(db, changed_codes)
     if not targets:
         return 0
@@ -275,42 +266,3 @@ def check_collected_series_alerts(db: SupabaseRest, changed_codes: set[str]) -> 
             alerts.append(result)
     enqueue_alerts(db, alerts)
     return len(alerts)
-
-
-def collect(mode: str) -> dict[str, int]:
-    today = date.today()
-    start = today - (timedelta(days=3660) if mode == "bootstrap" else timedelta(days=45))
-    db = SupabaseRest()
-    counts: dict[str, int] = {}
-
-    for code, (source_id, frequency) in FRED_SERIES.items():
-        counts[code] = _insert_missing(db, _fred_rows(code, source_id, frequency, start, today), start)
-
-    for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
-        counts[code] = _insert_missing(db, _ecos_rows(code, stat_code, item_code, frequency, start, today), start)
-
-    krx_rows = _krx_index_rows(start, today)
-    for code, rows in krx_rows.items():
-        counts[code] = _insert_missing(db, rows, start)
-
-    for code, (left, right, frequency) in DERIVED_SERIES.items():
-        counts[code] = _derive_spread(db, code, left, right, frequency, start, today)
-
-    alert_count = 0
-    if mode == "automatic":
-        changed_codes = {code for code, inserted in counts.items() if inserted > 0}
-        alert_count = check_collected_series_alerts(db, changed_codes)
-
-    print({"mode": mode, "start": start.isoformat(), "end": today.isoformat(), "inserted": counts, "alerts": alert_count})
-    return counts
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("automatic", "bootstrap"), default="automatic")
-    args = parser.parse_args()
-    collect(args.mode)
-
-
-if __name__ == "__main__":
-    main()
