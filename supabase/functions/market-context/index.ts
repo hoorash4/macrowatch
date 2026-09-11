@@ -9,6 +9,7 @@ const BOOTSTRAP_DAYS = 140, AUTOMATIC_LOOKBACK_DAYS = 10, REQUEST_INTERVAL_MS = 
 type CollectionMode = "automatic" | "bootstrap";
 
 function dateKey(date: Date) { return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`; }
+function isoDate(date: Date) { return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`; }
 function toNumber(value: unknown) { const parsed = Number(String(value ?? "").replaceAll(",", "")); return Number.isFinite(parsed) ? parsed : null; }
 function readItems(payload: Record<string, unknown>) {
   const body = payload.response && typeof payload.response === "object"
@@ -54,6 +55,7 @@ Deno.serve(async (request) => {
     const supabase = createClient(url, serviceRole);
     const days = mode === "bootstrap" ? BOOTSTRAP_DAYS : AUTOMATIC_LOOKBACK_DAYS;
     const today = new Date();
+    const todayIso = isoDate(today);
     const dates = Array.from({ length: days }, (_, index) => new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - index)));
     const candles = (await collectCandles(key, dates)).filter((candle): candle is MarketCandle => candle !== null);
     if (!candles.length) throw new Error("수집된 KOSPI 일봉이 없습니다. API 활용신청과 키를 확인하세요.");
@@ -75,12 +77,13 @@ Deno.serve(async (request) => {
         .select("market_date").eq("index_code", "KOSPI").in("market_date", candleDates);
       if (existingError) throw existingError;
       const existingDates = new Set((existing || []).map((row) => String(row.market_date)));
-      const publishable = rows.filter((row) => !existingDates.has(row.market_date));
-      if (publishable.length) {
-        const { error: insertError } = await supabase.from("market_index_prices").insert(publishable);
-        if (insertError) throw insertError;
+      const automaticRows = rows.filter((row) => row.market_date === todayIso || !existingDates.has(row.market_date));
+      if (automaticRows.length) {
+        const { error: upsertError } = await supabase.from("market_index_prices")
+          .upsert(automaticRows, { onConflict: "index_code,market_date" });
+        if (upsertError) throw upsertError;
       }
-      stored = publishable.length;
+      stored = automaticRows.length;
     }
 
     const { data, error: historyError } = await supabase.from("market_index_prices").select("market_date,open,high,low,close,volume").eq("index_code", "KOSPI").order("market_date", { ascending: false }).limit(100);
