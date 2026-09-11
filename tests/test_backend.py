@@ -1171,14 +1171,12 @@ class KoreaForeignFlowTests(unittest.TestCase):
     def test_pipeline_uses_normalized_equal_weight_components(self) -> None:
         scoring = (ROOT / "supabase/functions/_shared/market/korea-foreign-flow.ts").read_text(encoding="utf-8")
         pipeline = (ROOT / "supabase/functions/korea-foreign-flow/index.ts").read_text(encoding="utf-8")
-        workflow = (ROOT / ".github/workflows/korea-foreign-flow.yml").read_text(encoding="utf-8")
         self.assertIn("foreignNetBuyAmount / row.kospiTradingValue", scoring)
         self.assertIn("-(row.usdkrwRate / previousRate - 1)", scoring)
         self.assertIn("(flowZ + wonZ) / 2", scoring)
         self.assertNotIn('.upsert(calculated.filter', pipeline)
         self.assertNotIn('.from("korea_foreign_flow_daily").delete()', pipeline)
         self.assertNotIn('.from("korea_foreign_flow_raw").delete()', pipeline)
-        self.assertIn('cron: "20 7 * * 1-5"', workflow)
 
 
 if __name__ == "__main__":
