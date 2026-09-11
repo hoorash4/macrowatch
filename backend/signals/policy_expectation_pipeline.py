@@ -1,8 +1,8 @@
 """무료 공식 일간 금리로 시장 내재 정책금리 기대 스프레드를 계산한다.
 
-원자료와 파생값을 함께 보존해 가중치 변경이나 데이터 수정 시 다시 계산할 수
-있게 한다. 세 시계열에 실제 관측값이 모두 있는 영업일만 저장하며 휴일 값을
-임의로 복제하지 않는다.
+미 국채 3개월·2년은 미국 재무부 원자료를 사용하고, 재무부가 제공하지 않는
+EFFR만 FRED를 사용한다. 세 시계열에 실제 관측값이 모두 있는 영업일만 저장하며
+휴일 값을 임의로 복제하지 않는다.
 """
 
 from __future__ import annotations
@@ -11,13 +11,10 @@ import argparse
 from datetime import date, datetime, timedelta, timezone
 
 from common import SupabaseRest, fetch_fred_observations, require_env
+from sources.us_treasury_yields import fetch_treasury_nominal_values
 
 
-SERIES = {
-    "treasury_3m_rate": "DGS3MO",
-    "treasury_2y_rate": "DGS2",
-    "effr_rate": "DFF",
-}
+EFFR_SERIES = "DFF"
 NEAR_TERM_WEIGHT = 0.7
 CYCLE_WEIGHT = 0.3
 UPSERT_BATCH_SIZE = 500
@@ -73,15 +70,17 @@ def main() -> None:
     args = parse_args()
     today = date.today()
     start = today - timedelta(days=max(args.days, 7))
-    fred_api_key = require_env("FRED_API_KEY")
+    treasury = fetch_treasury_nominal_values(start, today, ("3M", "2Y"))
+    effr = valid_daily_values(fetch_fred_observations(
+        EFFR_SERIES,
+        require_env("FRED_API_KEY"),
+        start=start.isoformat(),
+        end=today.isoformat(),
+    ))
     series_values = {
-        field: valid_daily_values(fetch_fred_observations(
-            series_id,
-            fred_api_key,
-            start=start.isoformat(),
-            end=today.isoformat(),
-        ))
-        for field, series_id in SERIES.items()
+        "treasury_3m_rate": {observed.isoformat(): value for observed, value in treasury["3M"].items()},
+        "treasury_2y_rate": {observed.isoformat(): value for observed, value in treasury["2Y"].items()},
+        "effr_rate": effr,
     }
     rows = build_rows(series_values)
     if not rows:
