@@ -16,7 +16,10 @@ class EconomicChartInteractionTests(unittest.TestCase):
         self.assertIn('DEFAULT_VISIBLE_BARS=300', script)
         self.assertIn('const count=Math.min(DEFAULT_VISIBLE_BARS,rows.length),last=rows.length-1', script)
         self.assertIn('from:last-count+1,to:last+rightGapBars()', script)
-        self.assertIn("host.addEventListener('dblclick',e=>{e.preventDefault();showInitialRange();})", script)
+        self.assertIn("host.ondblclick=e=>{e.preventDefault();showInitialRange();}", script)
+        self.assertIn('host.onwheel=wheel', script)
+        self.assertIn('function scheduleInitialRange()', script)
+        self.assertNotIn('pinLatestGap', script)
         self.assertIn('더블클릭 기본복귀', script)
 
 
