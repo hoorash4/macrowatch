@@ -166,8 +166,8 @@ class KospiValuationContractTests(unittest.TestCase):
         self.assertIn("inserted.update(collect_kospi_valuation(db=db))", automatic_source)
         self.assertIn("fetch_krx_kospi_fundamental_day(target)", automatic_source)
         self.assertIn("is_krx_business_day(target)", automatic_source)
-        self.assertNotIn("KRX_ID", workflow)
-        self.assertNotIn("KRX_PW", workflow)
+        self.assertIn("KRX_ID: ${{ secrets.KRX_ID }}", workflow)
+        self.assertIn("KRX_PW: ${{ secrets.KRX_PW }}", workflow)
 
     def test_frontend_per_pbr_and_existing_moving_averages_are_unchanged(self):
         chart = (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8")
@@ -189,8 +189,8 @@ class KospiValuationContractTests(unittest.TestCase):
         self.assertIn("default: kospi-valuation", workflow)
         self.assertIn('--only "${{ inputs.target }}"', workflow)
         self.assertIn("inputs.target == 'all'", workflow)
-        self.assertNotIn("KRX_ID", workflow)
-        self.assertNotIn("KRX_PW", workflow)
+        self.assertIn("KRX_ID: ${{ secrets.KRX_ID }}", workflow)
+        self.assertIn("KRX_PW: ${{ secrets.KRX_PW }}", workflow)
 
     def test_existing_failure_email_covers_economic_chart_schedule(self):
         notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")
