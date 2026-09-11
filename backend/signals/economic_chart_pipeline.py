@@ -19,7 +19,10 @@ FRED_SERIES = {
     "EM_OAS": ("BAMLEMCBPIOAS", "D"),
     "WTI": ("DCOILWTICO", "D"),
     "USDKRW": ("DEXKOUS", "D"),
+    "RRP": ("RRPONTSYD", "D"),
+    "TGA": ("WTREGEN", "W"),
     "WEI": ("WEI", "W"),
+    "EMRATIO": ("EMRATIO", "M"),
 }
 ECOS_SERIES = {
     "KR3Y": ("817Y002", "010200000", "D"),
