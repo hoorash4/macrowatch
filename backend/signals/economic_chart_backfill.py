@@ -21,7 +21,6 @@ from signals.economic_chart_pipeline import (
 )
 from sources.census_retail_sales import chart_rows as census_retail_chart_rows
 from sources.census_retail_sales import fetch_census_retail_sales
-from sources.krx_index_fundamentals import SERIES as KRX_INDEX_FUNDAMENTALS, fetch_krx_kospi_fundamental_rows
 from sources.redbook import fetch_recent_redbook_rows
 from sources.us_treasury_yields import fetch_treasury_real_yield_rows, fetch_treasury_yield_rows
 from sources.wti_futures import fetch_wti_futures_rows
@@ -47,7 +46,12 @@ def backfill_kospi_valuation(
     pause_seconds: float = KOSPI_BACKFILL_PAUSE_SECONDS,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Persist each successful pykrx chunk immediately and continue after failed chunks."""
-    inserted = {code: 0 for code in KRX_INDEX_FUNDAMENTALS}
+    # KRX is intentionally imported only inside the KOSPI-specific operation. A Census-only
+    # backfill must not initialize/login to an unrelated provider merely by importing this runner.
+    from sources.krx_index_fundamentals import SERIES as krx_series
+    from sources.krx_index_fundamentals import fetch_krx_kospi_fundamental_rows
+
+    inserted = {code: 0 for code in krx_series}
     errors: dict[str, str] = {}
     first = True
     for chunk_start, chunk_end in _chunks(start, end):
@@ -57,13 +61,13 @@ def backfill_kospi_valuation(
         key = f"KOSPI_PER_PBR:{chunk_start.isoformat()}:{chunk_end.isoformat()}"
         try:
             rows_by_code = fetch_krx_kospi_fundamental_rows(chunk_start, chunk_end)
-            for code in KRX_INDEX_FUNDAMENTALS:
+            for code in krx_series:
                 inserted[code] += _insert_missing(db, rows_by_code[code], chunk_start)
             print(json.dumps({
                 "stage": "kospi_valuation_backfill_chunk_done",
                 "start": chunk_start.isoformat(),
                 "end": chunk_end.isoformat(),
-                "rows": {code: len(rows_by_code[code]) for code in KRX_INDEX_FUNDAMENTALS},
+                "rows": {code: len(rows_by_code[code]) for code in krx_series},
             }, ensure_ascii=False))
         except Exception as error:
             errors[key] = f"{error.__class__.__name__}: {error}"
