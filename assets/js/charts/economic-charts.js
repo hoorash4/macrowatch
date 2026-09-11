@@ -20,10 +20,10 @@ const SERIES=[
  {code:'USDKRW',title:'원/달러 환율',frequency:'D',unit:'원',category:'시장가격',decimals:1},
  {code:'RRP',title:'미 연준 역레포 잔고',frequency:'D',unit:'십억달러',category:'유동성',decimals:2},
  {code:'TGA',title:'미 재무부 TGA 잔고',frequency:'W',unit:'백만달러',category:'유동성',decimals:0},
- {code:'REDBOOK',title:'Redbook Index',frequency:'W',unit:'% YoY',category:'고빈도 경기',decimals:1,pending:'무료 공식 장기 API가 없어 자체 주간 적재 경로를 준비 중입니다.'},
+ {code:'REDBOOK',title:'Redbook Index',frequency:'W',unit:'% YoY',category:'고빈도 경기',decimals:1,pending:'무료 장기 이력은 없어 최근 공개값부터 주간으로 자체 적재합니다.'},
  {code:'WEI',title:'미국 주간 경제 지수',frequency:'W',unit:'%',category:'고빈도 경기',decimals:2},
  {code:'EMRATIO',title:'미국 인구대비 고용률',frequency:'M',unit:'%',category:'고빈도 경기',decimals:1},
- {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'T',unit:'억달러/조업일',category:'고빈도 경기',decimals:2,pending:'관세청 누계 수출액과 조업일수를 구간값으로 변환하는 수집 경로를 준비 중입니다.'},
+ {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'T',unit:'억달러/조업일',category:'고빈도 경기',decimals:2,pending:'관세청 1~10일·1~20일·월말 누계와 조업일수로 독립 구간 일평균을 적재합니다.'},
  {code:'CASE_SHILLER_20',title:'미국 20개 도시 주택가격',frequency:'M',unit:'지수',category:'주택',decimals:2,pending:'FRED에 SPCS20RSA가 있으나 S&P 재배포 사전허가가 필요한 시계열이라 자동 적재는 보류했습니다.'}
 ];
 const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월']};
@@ -34,7 +34,7 @@ const fmt=(v,m=meta)=>!m||!Number.isFinite(Number(v))?'—':`${Number(v).toFixed
 function ma(data,n){const out=[],q=[];let sum=0;for(const row of data){q.push(row.value);sum+=row.value;if(q.length>n)sum-=q.shift();if(q.length===n)out.push({time:row.time,value:sum/n});}return out;}
 async function queryAll(table,select,dateKey,filters=[]){const out=[];for(let from=0;;from+=1000){let q=supabaseClient.from(table).select(select).order(dateKey,{ascending:true}).range(from,from+999);for(const [k,v] of filters)q=q.eq(k,v);const {data,error}=await q;if(error)throw error;out.push(...(data||[]));if(!data||data.length<1000)break;}return out;}
 const normalize=(data,dk,vk)=>data.map(r=>({time:String(r[dk]).slice(0,10),value:Number(r[vk])})).filter(r=>r.time.length===10&&Number.isFinite(r.value));
-async function fetchSeries(m){const primary=await queryAll('economic_chart_points','observation_date,value','observation_date',[['series_code',m.code]]);const p=normalize(primary,'observation_date','value');if(p.length)return p;if(!m.fallback)return[];const [t,s,d,v]=m.fallback;return normalize(await queryAll(t,s,d),d,v);}
+async function fetchSeries(m){const primary=await queryAll('economic_chart_points','observation_date,value','observation_date',[['series_code',m.code]]);const primaryRows=normalize(primary,'observation_date','value');if(!m.fallback)return primaryRows;const [t,s,d,v]=m.fallback;const fallbackRows=normalize(await queryAll(t,s,d),d,v);const merged=new Map([...fallbackRows,...primaryRows].map(row=>[row.time,row]));return [...merged.values()].sort((a,b)=>a.time.localeCompare(b.time));}
 function dateParts(time){if(typeof time==='string'){const [year,month,day]=time.split('-').map(Number);return{year,month,day};}if(time&&typeof time==='object'&&'year'in time)return{year:Number(time.year),month:Number(time.month),day:Number(time.day)};if(Number.isFinite(Number(time))){const d=new Date(Number(time)*1000);return{year:d.getUTCFullYear(),month:d.getUTCMonth()+1,day:d.getUTCDate()};}return null;}
 function timeKey(time){const p=dateParts(time);return p?`${p.year}-${String(p.month).padStart(2,'0')}-${String(p.day).padStart(2,'0')}`:'';}
 function rebuildMonthTickDates(data){monthTickDates=new Set();const seen=new Set();for(const row of data){const p=dateParts(row.time);if(!p)continue;const month=`${p.year}-${String(p.month).padStart(2,'0')}`;if(seen.has(month))continue;seen.add(month);monthTickDates.add(timeKey(row.time));}}

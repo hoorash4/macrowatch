@@ -121,7 +121,9 @@ class AutomationIsolationTests(unittest.TestCase):
                 self.assertNotRegex(workflow, r"(?m)^  workflow_run:", path.name)
                 self.assertNotRegex(workflow, r"(?m)^  repository_dispatch:", path.name)
 
-    def test_backfill_entrypoints_are_removed(self) -> None:
+    def test_backfill_entrypoints_are_explicit_and_unscheduled(self) -> None:
+        # Retired Earnings backfill paths stay gone; explicit one-off backfills for
+        # other domains are allowed only when they are physically separate and unscheduled.
         removed = (
             ".github/workflows/earnings-us-backfill.yml",
             ".github/workflows/earnings-us-universe-backfill.yml",
@@ -134,9 +136,19 @@ class AutomationIsolationTests(unittest.TestCase):
         )
         for relative in removed:
             self.assertFalse((ROOT / relative).exists(), relative)
-        for path in (ROOT / ".github/workflows").glob("*.yml"):
-            workflow = path.read_text(encoding="utf-8").lower()
-            self.assertNotIn("backfill", workflow, path.name)
+
+        backfill = (ROOT / ".github/workflows/economic-chart-backfill-once.yml").read_text(encoding="utf-8")
+        automatic = (ROOT / ".github/workflows/economic-chart-data.yml").read_text(encoding="utf-8")
+        automatic_code = (ROOT / "backend/signals/economic_chart_automatic.py").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", backfill)
+        self.assertNotRegex(backfill, r"(?m)^  schedule:")
+        self.assertNotRegex(backfill, r"(?m)^  push:")
+        self.assertNotRegex(backfill, r"(?m)^  workflow_run:")
+        self.assertIn("signals.economic_chart_backfill", backfill)
+        self.assertIn("signals.korea_export_backfill", backfill)
+        self.assertIn("signals.economic_chart_automatic", automatic)
+        self.assertNotIn("signals.economic_chart_backfill", automatic)
+        self.assertNotIn("economic_chart_backfill", automatic_code)
 
     def test_scheduled_earnings_runs_still_force_database_writes(self) -> None:
         for name in ("earnings-us-automatic.yml", "earnings-v2-korea-automatic.yml"):
