@@ -82,7 +82,10 @@ class EconomicChartFeatureTests(unittest.TestCase):
     def test_chart_footer_is_compact_and_date_axis_is_korean(self):
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
-        self.assertIn('flex:1 1 auto;height:auto;min-height:360px', css)
+        self.assertIn('height:min(64.8vw,calc(90dvh - 162px));min-height:324px', css)
+        self.assertIn('.economic-chart-panel{display:flex;min-width:0;min-height:0;height:100%', css)
+        self.assertIn('.economic-chart-host{position:relative;box-sizing:border-box;width:100%;min-width:0;min-height:0;flex:1 1 auto', css)
+        self.assertIn('height:min(423px,58.5dvh);min-height:270px', css)
         self.assertIn('min-height:24px', css)
         self.assertIn('padding:4px 12px 6px', css)
         self.assertIn("locale:'ko-KR'", script)
@@ -90,6 +93,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('tickMarkFormatter:koTick', script)
         self.assertIn('return`${p.year}년`', script)
         self.assertIn('return`${p.month}월`', script)
+        self.assertIn("if(!monthTickDates.has(timeKey(time)))return''", script)
 
     def test_moving_averages_do_not_add_current_value_axis_labels(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
