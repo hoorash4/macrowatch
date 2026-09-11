@@ -2,16 +2,9 @@ name: Refresh economic chart data
 
 on:
   schedule:
-    # 매일 07:40 KST. 정기 실행은 최근 구간의 신규 관측값만 추가합니다.
+    # 매일 07:30 KST. 최근 구간의 신규 관측값만 추가합니다.
     - cron: "30 22 * * *"
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "automatic=최근 신규값만, bootstrap=가능한 범위에서 최대 10년 초기 적재"
-        required: true
-        default: automatic
-        type: choice
-        options: [automatic, bootstrap]
 
 permissions:
   contents: read
@@ -37,5 +30,4 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MODE: ${{ github.event_name == 'schedule' && 'automatic' || inputs.mode }}
-        run: PYTHONPATH=backend python -m signals.economic_chart_pipeline --mode "$MODE"
+        run: PYTHONPATH=backend python -m signals.economic_chart_automatic
