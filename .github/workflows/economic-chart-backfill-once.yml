@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Inspect KCS trade release list items
+      - name: Probe KCS trade board search parameters
         env:
           PYTHONPATH: backend
         run: python -m signals.korea_export_kcs_diagnostic
