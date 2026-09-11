@@ -10,7 +10,7 @@ import json
 import time
 from datetime import date, timedelta
 
-from common import SupabaseRest
+from common import SupabaseRest, require_env
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
     FRED_SERIES,
@@ -19,6 +19,8 @@ from signals.economic_chart_pipeline import (
     _fred_rows,
     _insert_missing,
 )
+from sources.census_retail_sales import chart_rows as census_retail_chart_rows
+from sources.census_retail_sales import fetch_census_retail_sales
 from sources.krx_index_fundamentals import SERIES as KRX_INDEX_FUNDAMENTALS, fetch_krx_kospi_fundamental_rows
 from sources.redbook import fetch_recent_redbook_rows
 from sources.us_treasury_yields import fetch_treasury_real_yield_rows, fetch_treasury_yield_rows
@@ -74,26 +76,23 @@ def backfill_kospi_valuation(
     return inserted, errors
 
 
+def _summary(only: str, start: date, today: date, inserted: dict[str, int], errors: dict[str, str]) -> None:
+    print(json.dumps({
+        "mode": "backfill",
+        "target": only,
+        "start": start.isoformat(),
+        "end": today.isoformat(),
+        "inserted": inserted,
+        "errors": errors,
+    }, ensure_ascii=False, sort_keys=True))
+
+
 def backfill(*, only: str = "all") -> tuple[dict[str, int], dict[str, str]]:
     today = date.today()
     start = today - timedelta(days=3660)
     db = SupabaseRest()
     inserted: dict[str, int] = {}
     errors: dict[str, str] = {}
-
-    kospi_inserted, kospi_errors = backfill_kospi_valuation(db, start, today)
-    inserted.update(kospi_inserted)
-    errors.update(kospi_errors)
-    if only == "kospi-valuation":
-        print(json.dumps({
-            "mode": "backfill",
-            "target": only,
-            "start": start.isoformat(),
-            "end": today.isoformat(),
-            "inserted": inserted,
-            "errors": errors,
-        }, ensure_ascii=False, sort_keys=True))
-        return inserted, errors
 
     def run(name: str, action) -> None:
         try:
@@ -102,6 +101,30 @@ def backfill(*, only: str = "all") -> tuple[dict[str, int], dict[str, str]]:
             inserted.setdefault(name, 0)
             errors[name] = f"{error.__class__.__name__}: {error}"
             print(json.dumps({"stage": "economic_chart_backfill_error", "series": name, "error": errors[name]}, ensure_ascii=False))
+
+    # Explicit targets are physically bounded: selecting Census retail sales cannot invoke KOSPI
+    # valuation or any other historical source. "all" is the only multi-source backfill mode.
+    if only in {"all", "kospi-valuation"}:
+        kospi_inserted, kospi_errors = backfill_kospi_valuation(db, start, today)
+        inserted.update(kospi_inserted)
+        errors.update(kospi_errors)
+        if only == "kospi-valuation":
+            _summary(only, start, today, inserted, errors)
+            return inserted, errors
+
+    if only in {"all", "census-retail"}:
+        run("US_RETAIL_SALES", lambda: _insert_missing(
+            db,
+            census_retail_chart_rows(fetch_census_retail_sales(
+                start,
+                today,
+                api_key=require_env("CENSUS_API_KEY"),
+            )),
+            start,
+        ))
+        if only == "census-retail":
+            _summary(only, start, today, inserted, errors)
+            return inserted, errors
 
     for code, (source_id, frequency) in FRED_SERIES.items():
         if code == "WTI" or code in TREASURY_ECONOMIC_SERIES:
@@ -137,24 +160,17 @@ def backfill(*, only: str = "all") -> tuple[dict[str, int], dict[str, str]]:
     run("KR10Y3Y", lambda: _derive_spread(db, "KR10Y3Y", "KR10Y", "KR3Y", "D", start, today))
     run("REDBOOK", lambda: _insert_missing(db, fetch_recent_redbook_rows(), today - timedelta(days=35)))
 
-    print(json.dumps({
-        "mode": "backfill",
-        "target": only,
-        "start": start.isoformat(),
-        "end": today.isoformat(),
-        "inserted": inserted,
-        "errors": errors,
-    }, ensure_ascii=False, sort_keys=True))
+    _summary(only, start, today, inserted, errors)
     return inserted, errors
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", choices=("all", "kospi-valuation"), default="all")
+    parser.add_argument("--only", choices=("all", "kospi-valuation", "census-retail"), default="all")
     args = parser.parse_args()
     _, errors = backfill(only=args.only)
-    if args.only == "kospi-valuation" and errors:
-        raise RuntimeError("KOSPI PER/PBR 백필 실패 구간이 있습니다: " + "; ".join(sorted(errors)))
+    if args.only in {"kospi-valuation", "census-retail"} and errors:
+        raise RuntimeError(f"{args.only} 백필 실패: " + "; ".join(sorted(errors)))
 
 
 if __name__ == "__main__":
