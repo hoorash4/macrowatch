@@ -22,11 +22,12 @@ jobs:
           from pathlib import Path
           path = Path('tests/test_backend.py')
           text = path.read_text(encoding='utf-8')
-          old = '''        workflow = (ROOT / ".github/workflows/korea-foreign-flow.yml").read_text(encoding="utf-8")\n'''
-          old += '''        self.assertIn('cron: "20 7 * * 1-5"', workflow)\n'''
-          if old not in text:
-              raise SystemExit('stale schedule assertion not found exactly')
-          path.write_text(text.replace(old, '', 1), encoding='utf-8')
+          workflow_line = '        workflow = (ROOT / ".github/workflows/korea-foreign-flow.yml").read_text(encoding="utf-8")\n'
+          assertion_line = '        self.assertIn(\'cron: "20 7 * * 1-5"\', workflow)\n'
+          if workflow_line not in text or assertion_line not in text:
+              raise SystemExit('stale schedule assertion not found')
+          text = text.replace(workflow_line, '', 1).replace(assertion_line, '', 1)
+          path.write_text(text, encoding='utf-8')
           PY
           git config user.name "MacroWatch CI"
           git config user.email "actions@users.noreply.github.com"
