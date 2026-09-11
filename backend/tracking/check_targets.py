@@ -436,11 +436,18 @@ def main() -> int:
         "targets",
         params={"select": "*", "is_active": "eq.true", "order": "display_order.asc.nullslast"},
     )
+    # Economic-chart targets are evaluated only by the economic series collector
+    # immediately after that exact series receives a new automatic observation.
+    # They remain in this list so the common delivery queue can resolve titles.
+    source_targets = [
+        target for target in targets
+        if str(target.get("source_type") or "").lower() != "economic_chart"
+    ]
     now_iso = datetime.now(timezone.utc).isoformat()
     alerts: list[CheckResult] = []
     failures = 0
 
-    for target in targets:
+    for target in source_targets:
         target_id = target["id"]
         try:
             previous = (
@@ -481,7 +488,7 @@ def main() -> int:
     delivered, notification_failures = deliver_queued_alerts(db, targets)
 
     print(
-        f"Finished: {len(targets)} target(s), {len(alerts)} new alert(s), "
+        f"Finished: {len(source_targets)} checked target(s), {len(alerts)} new alert(s), "
         f"{delivered} delivered alert(s), {failures} source failure(s), "
         f"{notification_failures} notification failure(s)."
     )
@@ -492,4 +499,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
