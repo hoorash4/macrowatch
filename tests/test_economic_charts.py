@@ -12,18 +12,18 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('id="economic-series-list"', html)
         self.assertIn('id="economic-chart-host"', html)
         self.assertNotIn('id="economic-sections"', html)
-        self.assertIn('renderSeriesList()', script)
-        self.assertIn('selectSeries(meta)', script)
+        self.assertIn('function renderList()', script)
+        self.assertIn('selectSeries(m)', script)
         self.assertNotIn('function buildCard', script)
 
     def test_chart_controls_preserve_right_anchor_and_full_history(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
-        self.assertIn('const RIGHT_OFFSET = 7', script)
-        self.assertIn('const anchor=Math.min(range.to,(activeRows.length-1)+RIGHT_OFFSET)', script)
-        self.assertIn('if (to>maxTo)', script)
-        self.assertIn("$('economic-fit-max').addEventListener('click',fitMax)", script)
+        self.assertIn('const RIGHT_OFFSET=7', script)
+        self.assertIn('anchor=Math.min(r.to,rows.length-1+RIGHT_OFFSET)', script)
+        self.assertIn('if(to>maxTo)', script)
+        self.assertIn("$('economic-fit-max').onclick=fitMax", script)
         self.assertIn('handleScale:{axisPressedMouseMove:true,mouseWheel:false,pinch:true}', script)
-        self.assertIn("host.addEventListener('wheel',handleWheel,{passive:false})", script)
+        self.assertIn("host.addEventListener('wheel',wheel,{passive:false})", script)
         self.assertIn('attributionLogo:false', script)
 
     def test_horizontal_lines_support_individual_delete_and_alert_bells(self):
@@ -31,19 +31,20 @@ class EconomicChartFeatureTests(unittest.TestCase):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         self.assertIn('id="economic-delete-line"', html)
         self.assertIn('id="economic-alert-modal"', html)
-        self.assertIn('nearestLine(param.point.y)', script)
-        self.assertIn('deleteSelectedLine', script)
+        self.assertIn('nearest(p.point.y)', script)
+        self.assertIn('function deleteLine()', script)
         self.assertIn('economic-alert-bell', script)
         self.assertIn("source_type:'economic_chart'", script)
         self.assertIn("supabaseClient.from('targets').delete()", script)
-        self.assertNotIn('deleteSelectedLine() {\n  const line=findLine(selectedLineId); if(!line||!rawSeries)return;\n  if(line.target)', script)
+        delete_line_body = script.split('function deleteLine()', 1)[1].split('function clearLines()', 1)[0]
+        self.assertNotIn("from('targets')", delete_line_body)
 
     def test_moving_averages_do_not_add_current_value_axis_labels(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
-        self.assertIn("D: [5, 20, '5일', '20일']", script)
-        self.assertIn("W: [4, 26, '4주', '26주']", script)
-        self.assertIn("T: [6, 18, '6구간', '18구간']", script)
-        self.assertIn("M: [6, 24, '6개월', '24개월']", script)
+        self.assertIn("D:[5,20,'5일','20일']", script)
+        self.assertIn("W:[4,26,'4주','26주']", script)
+        self.assertIn("T:[6,18,'6구간','18구간']", script)
+        self.assertIn("M:[6,24,'6개월','24개월']", script)
         self.assertGreaterEqual(script.count('lastValueVisible:false,priceLineVisible:false'), 2)
         self.assertIn('lastValueVisible:true,priceLineVisible:true', script)
 
@@ -54,7 +55,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         for raw in ('US2Y', 'US10Y', 'HY_OAS', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI'):
             self.assertIn(raw, script)
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
-        self.assertIn("fallback:['us_policy_rate_daily','observation_date,treasury_10y_pct'", script)
+        self.assertIn("fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
 
     def test_economic_chart_collection_separates_automatic_bootstrap_and_alert_checking(self):
         workflow = (ROOT / '.github/workflows/economic-chart-data.yml').read_text(encoding='utf-8')
