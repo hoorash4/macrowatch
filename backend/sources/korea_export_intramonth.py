@@ -69,12 +69,10 @@ def release_identity(title: str) -> tuple[str, date, date] | None:
         return None
     ref = date(year, month, 1)
     tail = normalized[match.end():]
-    # KCS has used ~, ∼ and hyphen variants over time.
     if re.search(r"1일\s*[~∼～\-]\s*(?:\d{1,2}월\s*)?10일", tail):
         return "d10", ref, date(year, month, 10)
     if re.search(r"1일\s*[~∼～\-]\s*(?:\d{1,2}월\s*)?20일", tail):
         return "d20", ref, date(year, month, 20)
-    # Monthly releases do not contain a 1~10/20 range in the title.
     if "수출입" in tail and "현황" in tail and not re.search(r"1일\s*[~∼～\-]", tail):
         last_day = calendar.monthrange(year, month)[1]
         return "month_end", ref, date(year, month, last_day)
@@ -158,8 +156,6 @@ def fetch_release_links(start_month: date, *, max_pages: int = 80) -> tuple[list
             continue
         if pages is None:
             pages = _total_pages(markup)
-            # A failed search filter would expose the full ~6k-post board. Do not
-            # accidentally hammer it; fail this source while preserving all others.
             if pages is not None and pages > max_pages:
                 errors.append(f"KCS filtered board unexpectedly has {pages} pages")
                 break
@@ -185,19 +181,29 @@ def _get_detail(session: requests.Session, link: ReleaseLink) -> str:
     return response.text
 
 
+def _metric_tail(page_text: str, label: str, max_chars: int = 260) -> str:
+    match = re.search(rf"{label}.{{0,{max_chars}}}", page_text, flags=re.I)
+    return match.group(0) if match else ""
+
+
 def _workdays(page_text: str) -> float | None:
-    match = re.search(r"조업\s*일수\s*\[([^\]]]+)\]", page_text)
-    if not match:
+    # KCS markup has varied over time: spaces, brackets, spans and footnote markers
+    # have all changed. Parse the values from a bounded text window rather than
+    # requiring one exact '[...]' spelling.
+    tail = _metric_tail(page_text, r"조업\s*일수")
+    if not tail:
         return None
-    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)\s*일", match.group(1))
+    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)\s*일", tail)
+    if not values:
+        values = re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*일", tail)
     return float(values[-1]) if values else None
 
 
 def _reported_daily_average(page_text: str) -> float | None:
-    match = re.search(r"일평균\s*수출액\s*\[([^\]]]+)\]", page_text)
-    if not match:
+    tail = _metric_tail(page_text, r"일평균\s*수출액")
+    if not tail:
         return None
-    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)", match.group(1))
+    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)", tail)
     return float(values[-1]) if values else None
 
 
@@ -218,33 +224,48 @@ def _export_amount_candidates(markup: str) -> list[float]:
                 value = float(match.group(1).replace(",", ""))
             except ValueError:
                 continue
-            if value >= 100:  # export amounts are reported in million USD
+            if value >= 100:
                 values.append(value)
         if len(values) > len(best):
             best = values
     return best
 
 
+def _fallback_export_amount(candidates: list[float]) -> float:
+    if len(candidates) >= 5:
+        return candidates[3]
+    if len(candidates) >= 3:
+        return candidates[-2]
+    return candidates[-1]
+
+
 def parse_snapshot(markup: str, link: ReleaseLink) -> ExportSnapshot:
     page_text = _clean(markup)
-    workdays = _workdays(page_text)
-    if workdays is None or workdays <= 0:
-        raise ValueError("KCS working days not found")
     candidates = _export_amount_candidates(markup)
     if not candidates:
         raise ValueError("KCS export amount row not found")
     reported_avg = _reported_daily_average(page_text)
+    workdays = _workdays(page_text)
+
+    # Some older KCS HTML revisions expose the reported daily average but the
+    # working-day footnote is flattened differently. In that case infer the
+    # half-day working-day count from the same official amount/average pair.
+    fallback_amount = _fallback_export_amount(candidates)
+    if (workdays is None or workdays <= 0) and reported_avg is not None and reported_avg > 0:
+        inferred = fallback_amount / (reported_avg * 100.0)
+        rounded = round(inferred * 2.0) / 2.0
+        if rounded > 0 and abs(inferred - rounded) <= 0.15:
+            workdays = rounded
+    if workdays is None or workdays <= 0:
+        raise ValueError("KCS working days not found")
+
     if reported_avg is not None:
         expected = reported_avg * workdays * 100.0
         amount = min(candidates, key=lambda value: abs(value - expected))
         if expected > 0 and abs(amount - expected) / expected > 0.08:
             raise ValueError("KCS export amount does not match reported daily average")
-    elif len(candidates) >= 5:
-        amount = candidates[3]
-    elif len(candidates) >= 3:
-        amount = candidates[-2]
     else:
-        amount = candidates[-1]
+        amount = fallback_amount
     source_url = f"{DETAIL_URL}?bbsId={BBS_ID}&mi={MENU_ID}&nttSn={link.ntt_sn}"
     if link.ntt_url:
         source_url += f"&nttSnUrl={link.ntt_url}"
