@@ -18,6 +18,7 @@ on:
       - "Earnings U.S. automatic"
       - "Earnings V2 Korea automatic"
       - "Refresh central-bank policy signals"
+      - "Refresh economic chart data"
       - "Refresh EM capital capacity"
       - "Refresh Emerging Market Stress"
       - "Refresh equity-bond relative value"
