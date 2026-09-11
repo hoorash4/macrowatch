@@ -19,7 +19,10 @@ from signals.economic_chart_pipeline import (
 )
 from sources.krx_index_fundamentals import SERIES as KRX_INDEX_FUNDAMENTALS, fetch_krx_kospi_fundamental_rows
 from sources.redbook import fetch_recent_redbook_rows
+from sources.us_treasury_yields import fetch_treasury_yield_rows
 from sources.wti_futures import fetch_wti_futures_rows
+
+TREASURY_ECONOMIC_SERIES = {"US2Y", "US10Y", "US10Y2Y"}
 
 
 def backfill() -> tuple[dict[str, int], dict[str, str]]:
@@ -37,12 +40,24 @@ def backfill() -> tuple[dict[str, int], dict[str, str]]:
             errors[name] = f"{error.__class__.__name__}: {error}"
             print(json.dumps({"stage": "economic_chart_backfill_error", "series": name, "error": errors[name]}, ensure_ascii=False))
 
+    # Treasury yields use the first-party Treasury XML feed for both history and live collection.
+    # FRED is intentionally retained only for series without an equivalent first-party source.
     for code, (source_id, frequency) in FRED_SERIES.items():
-        if code == "WTI":
+        if code == "WTI" or code in TREASURY_ECONOMIC_SERIES:
             continue
         run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
+
+    try:
+        treasury_rows = fetch_treasury_yield_rows(start, today)
+        for code in ("US2Y", "US10Y"):
+            run(code, lambda code=code: _insert_missing(db, treasury_rows.get(code, []), start))
+    except Exception as error:
+        for code in ("US2Y", "US10Y"):
+            inserted.setdefault(code, 0)
+            errors.setdefault(code, f"{error.__class__.__name__}: {error}")
+    run("US10Y2Y", lambda: _derive_spread(db, "US10Y2Y", "US10Y", "US2Y", "D", start, today))
 
     run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
 
