@@ -24,6 +24,7 @@ const SERIES=[
  {code:'REDBOOK',title:'Redbook Index',frequency:'W',unit:'% YoY',category:'고빈도 경기',decimals:1,pending:'무료 장기 이력은 없어 최근 공개값부터 주간으로 자체 적재합니다.'},
  {code:'WEI',title:'미국 주간 경제 지수',frequency:'W',unit:'%',category:'고빈도 경기',decimals:2},
  {code:'EMRATIO',title:'미국 인구대비 고용률',frequency:'M',unit:'%',category:'고빈도 경기',decimals:1},
+ {code:'US_RETAIL_SALES',title:'미국 소매판매',frequency:'M',unit:'백만달러',category:'고빈도 경기',decimals:0},
  {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'T',unit:'억달러/조업일',category:'고빈도 경기',decimals:2,pending:'관세청 1~10일·1~20일·월말 누계와 조업일수로 독립 구간 일평균을 적재합니다.'},
  {code:'CASE_SHILLER_20',title:'미국 20개 도시 주택가격',frequency:'M',unit:'지수',category:'주택',decimals:2,pending:'FRED에 SPCS20RSA가 있으나 S&P 재배포 사전허가가 필요한 시계열이라 자동 적재는 보류했습니다.'}
 ];
