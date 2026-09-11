@@ -157,11 +157,15 @@ class KospiValuationStorageTests(unittest.TestCase):
 
 
 class KospiValuationContractTests(unittest.TestCase):
-    def test_schedule_is_exactly_1620_kst_and_reuses_existing_workflow(self):
+    def test_kospi_valuation_is_integrated_into_the_single_0730_refresh(self):
         workflow = (ROOT / ".github/workflows/economic-chart-data.yml").read_text(encoding="utf-8")
-        self.assertIn('cron: "20 7 * * 1-5"', workflow)
-        self.assertIn('github.event.schedule }}" = "20 7 * * 1-5"', workflow)
-        self.assertIn('phase="kospi-valuation"', workflow)
+        automatic_source = (ROOT / "backend/signals/economic_chart_automatic.py").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count('cron: "30 22 * * *"'), 1)
+        self.assertNotIn('cron: "20 7 * * 1-5"', workflow)
+        self.assertNotIn("--phase", workflow)
+        self.assertIn("inserted.update(collect_kospi_valuation(db=db))", automatic_source)
+        self.assertIn("fetch_krx_kospi_fundamental_day(target)", automatic_source)
+        self.assertIn("is_krx_business_day(target)", automatic_source)
         self.assertNotIn("KRX_ID", workflow)
         self.assertNotIn("KRX_PW", workflow)
 
