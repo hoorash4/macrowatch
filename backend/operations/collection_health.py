@@ -92,19 +92,31 @@ def check_workflows(today: date) -> list[str]:
 
     for workflow, max_age in WORKFLOWS.items():
         try:
-            info = github_workflow_info(workflow, token)
-            state = str(info.get("state") or "unknown")
-            # A deliberately disabled workflow is not expected to have fresh
-            # scheduled runs. Unknown/non-active states are reported because
-            # they may indicate a renamed/deleted/broken workflow.
-            if state.startswith("disabled_"):
-                continue
-            if state != "active":
-                failures.append(f"예약 workflow 상태 이상: {workflow} ({state})")
-                continue
+            info: dict | None = None
+            info_error: Exception | None = None
+            try:
+                info = github_workflow_info(workflow, token)
+            except Exception as error:
+                # Run history can still be sufficient to judge freshness. A
+                # metadata-only API failure must not erase usable run evidence.
+                info_error = error
+
+            if info is not None:
+                state = str(info.get("state") or "unknown")
+                # A deliberately disabled workflow is not expected to have
+                # fresh scheduled runs.
+                if state.startswith("disabled_"):
+                    continue
+                if state != "active":
+                    failures.append(f"예약 workflow 상태 이상: {workflow} ({state})")
+                    continue
 
             run = github_latest_run(workflow, token)
             if run is None:
+                if info is None:
+                    detail = _message(info_error) if info_error else "workflow metadata unavailable"
+                    failures.append(f"예약 실행 검사 오류: {workflow}: {detail}")
+                    continue
                 # Newly-created weekly/monthly workflows can legitimately have
                 # no scheduled run until their first cadence arrives. Reuse the
                 # same monitoring tolerance as a bounded first-run grace period.
@@ -121,7 +133,10 @@ def check_workflows(today: date) -> list[str]:
                 continue
             conclusion = run.get("conclusion")
             status = run.get("status")
-            if status != "completed" or conclusion != "success":
+            # Older mocked/legacy run payloads may omit status. A concrete
+            # non-completed status is unhealthy; absent status is judged by
+            # conclusion so existing monitoring contracts remain compatible.
+            if (status is not None and status != "completed") or conclusion != "success":
                 failures.append(f"예약 실행 실패 또는 미완료: {workflow} (status={status}, conclusion={conclusion})")
             elif (today - updated).days > max_age:
                 failures.append(f"예약 실행 누락: {workflow}, latest={updated.isoformat()}")
