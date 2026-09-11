@@ -1,6 +1,10 @@
-name: WTI front-month futures backfill
+name: WTI continuous front-month futures backfill
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wti-futures-backfill.yml"
   workflow_dispatch:
 
 permissions:
@@ -12,6 +16,7 @@ concurrency:
 
 jobs:
   backfill:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run CL=F WTI backfill once'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,7 +26,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Replace WTI chart history with EIA front-month futures
+      - name: Replace WTI chart history with continuous front-month futures
         env:
           PYTHONPATH: backend
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
