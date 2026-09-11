@@ -68,14 +68,29 @@ class CollectionHealthTests(unittest.TestCase):
         self.assertEqual([], failures)
         latest.assert_not_called()
 
-    def test_workflow_api_or_date_error_is_isolated_per_workflow(self):
+    def test_metadata_api_failure_can_fall_back_to_valid_run_history(self):
+        healthy_run = {
+            "updated_at": "2026-09-11T00:00:00Z",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        with (
+            patch.object(health, "WORKFLOWS", {"metadata-broken.yml": 3}),
+            patch.object(health, "require_env", return_value="token"),
+            patch.object(health, "github_workflow_info", side_effect=RuntimeError("metadata API down")),
+            patch.object(health, "github_latest_run", return_value=healthy_run),
+        ):
+            self.assertEqual([], health.check_workflows(date(2026, 9, 11)))
+
+    def test_workflow_api_and_bad_date_errors_are_isolated_per_workflow(self):
         workflows = {"broken.yml": 3, "bad-date.yml": 3, "healthy.yml": 3}
         infos = [
-            RuntimeError("API down"),
+            RuntimeError("metadata API down"),
             {"state": "active", "created_at": "2026-01-01T00:00:00Z"},
             {"state": "active", "created_at": "2026-01-01T00:00:00Z"},
         ]
         runs = [
+            RuntimeError("runs API down"),
             {"updated_at": "not-a-date", "status": "completed", "conclusion": "success"},
             {"updated_at": "2026-09-11T00:00:00Z", "status": "completed", "conclusion": "success"},
         ]
@@ -87,7 +102,7 @@ class CollectionHealthTests(unittest.TestCase):
         ):
             failures = health.check_workflows(date(2026, 9, 11))
         self.assertEqual(2, len(failures))
-        self.assertIn("예약 실행 검사 오류: broken.yml: API down", failures)
+        self.assertIn("예약 실행 검사 오류: broken.yml: runs API down", failures)
         self.assertTrue(any(item.startswith("예약 실행 검사 오류: bad-date.yml:") for item in failures))
 
     def test_incomplete_and_future_workflow_runs_are_reported(self):
