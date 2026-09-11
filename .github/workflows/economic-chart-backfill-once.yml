@@ -1,9 +1,6 @@
 name: Economic chart backfill once
 
 on:
-  push:
-    paths:
-      - ".github/workflows/economic-chart-backfill-once.yml"
   workflow_dispatch:
     inputs:
       target:
@@ -24,7 +21,6 @@ concurrency:
 
 jobs:
   backfill:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run KOSPI valuation backfill once' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -43,10 +39,9 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BACKFILL_TARGET: ${{ github.event_name == 'push' && 'kospi-valuation' || inputs.target }}
-        run: python -m signals.economic_chart_backfill --only "$BACKFILL_TARGET"
+        run: python -m signals.economic_chart_backfill --only "${{ inputs.target }}"
       - name: Backfill Korean export history
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'all' }}
+        if: ${{ inputs.target == 'all' }}
         env:
           PYTHONPATH: backend
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
