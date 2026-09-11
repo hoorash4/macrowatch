@@ -4,6 +4,8 @@ on:
   schedule:
     # 매일 07:30 KST. 최근 구간의 신규 관측값만 추가합니다.
     - cron: "30 22 * * *"
+    # 매 영업일 16:20 KST. KOSPI PER/PBR 최신값만 수집합니다.
+    - cron: "20 7 * * 1-5"
   workflow_dispatch:
 
 permissions:
@@ -28,8 +30,15 @@ jobs:
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-          KRX_ID: ${{ secrets.KRX_ID }}
-          KRX_PW: ${{ secrets.KRX_PW }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.economic_chart_automatic
+        run: |
+          phase="all"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "20 7 * * 1-5" ]; then
+              phase="kospi-valuation"
+            else
+              phase="core"
+            fi
+          fi
+          PYTHONPATH=backend python -m signals.economic_chart_automatic --phase "$phase"
