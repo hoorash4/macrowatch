@@ -5,7 +5,7 @@ source tables.  It lets the economic-chart page use one table without duplicatin
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from common import SupabaseRest
@@ -59,3 +59,13 @@ def mirror_existing_series(db: SupabaseRest, start: date) -> dict[str, int]:
     } for row in fx_rows if row.get("observation_date") and row.get("usdkrw_rate") is not None], start)
 
     return counts
+
+
+def main() -> None:
+    start = date.today() - timedelta(days=3660)
+    counts = mirror_existing_series(SupabaseRest(), start)
+    print({"mode": "existing_series_seed", "start": start.isoformat(), "inserted": counts})
+
+
+if __name__ == "__main__":
+    main()
