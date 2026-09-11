@@ -1,10 +1,6 @@
 name: WTI front-month futures backfill
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/wti-futures-backfill.yml"
   workflow_dispatch:
 
 permissions:
@@ -16,7 +12,6 @@ concurrency:
 
 jobs:
   backfill:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run WTI futures backfill once'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
