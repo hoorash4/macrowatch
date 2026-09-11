@@ -168,3 +168,17 @@ def fetch_treasury_yield_rows(start: date, end: date) -> dict[str, list[dict[str
             "source": NOMINAL_SOURCE,
         } for observed, value in sorted(values["10Y"].items())],
     }
+
+
+def fetch_treasury_real_yield_rows(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
+    """Economic-chart rows for the official 10Y real par yield."""
+    values = fetch_treasury_real_values(start, end, ("10Y",))
+    return {
+        "US10Y_REAL": [{
+            "series_code": "US10Y_REAL",
+            "observation_date": observed.isoformat(),
+            "value": value,
+            "frequency": "D",
+            "source": REAL_SOURCE,
+        } for observed, value in sorted(values["10Y"].items())],
+    }
