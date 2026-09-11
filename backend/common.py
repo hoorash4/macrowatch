@@ -52,6 +52,7 @@ def request_with_retry(
             # ordinary writes still retry only definite 429/5xx responses.
             if not retry_transport or attempt == retry_count:
                 raise
+            delay = float(2 ** attempt)
         else:
             if getattr(response, "status_code", None) not in TRANSIENT_HTTP_STATUSES or attempt == retry_count:
                 return response
