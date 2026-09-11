@@ -95,16 +95,14 @@ def fetch_census_retail_sales(
 
 
 def chart_rows(values: dict[date, float]) -> list[dict]:
+    """Map Census observations onto the existing economic_chart_points schema."""
     return [
         {
             "series_code": SERIES_CODE,
             "observation_date": observed.isoformat(),
             "value": value,
             "frequency": "M",
-            "unit": "million USD",
-            "source": "Census",
-            "source_series": SOURCE,
-            "is_provisional": False,
+            "source": SOURCE,
         }
         for observed, value in sorted(values.items())
     ]
