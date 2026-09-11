@@ -28,6 +28,10 @@ class FakeDb:
 class CollectionHealthTests(unittest.TestCase):
     def test_missing_schedule_run_is_reported_without_stopping_other_workflows(self):
         workflows = {"missing.yml": 3, "healthy.yml": 3}
+        infos = [
+            {"state": "active", "created_at": "2026-09-01T00:00:00Z"},
+            {"state": "active", "created_at": "2026-09-01T00:00:00Z"},
+        ]
         healthy_run = {
             "updated_at": "2026-09-11T00:00:00Z",
             "status": "completed",
@@ -36,18 +40,28 @@ class CollectionHealthTests(unittest.TestCase):
         with (
             patch.object(health, "WORKFLOWS", workflows),
             patch.object(health, "require_env", return_value="token"),
-            patch.object(health, "github_workflow_state", return_value="active"),
+            patch.object(health, "github_workflow_info", side_effect=infos),
             patch.object(health, "github_latest_run", side_effect=[None, healthy_run]) as latest,
         ):
             failures = health.check_workflows(date(2026, 9, 11))
-        self.assertEqual(["예약 실행 기록 없음: missing.yml"], failures)
+        self.assertEqual(["예약 실행 기록 없음: missing.yml, created=2026-09-01"], failures)
         self.assertEqual(2, latest.call_count)
+
+    def test_new_workflow_without_first_scheduled_run_gets_bounded_grace(self):
+        with (
+            patch.object(health, "WORKFLOWS", {"weekly.yml": 10}),
+            patch.object(health, "require_env", return_value="token"),
+            patch.object(health, "github_workflow_info", return_value={"state": "active", "created_at": "2026-09-08T00:00:00Z"}),
+            patch.object(health, "github_latest_run", return_value=None),
+        ):
+            failures = health.check_workflows(date(2026, 9, 11))
+        self.assertEqual([], failures)
 
     def test_disabled_workflow_is_intentionally_skipped(self):
         with (
             patch.object(health, "WORKFLOWS", {"disabled.yml": 3}),
             patch.object(health, "require_env", return_value="token"),
-            patch.object(health, "github_workflow_state", return_value="disabled_manually"),
+            patch.object(health, "github_workflow_info", return_value={"state": "disabled_manually", "created_at": "2026-01-01T00:00:00Z"}),
             patch.object(health, "github_latest_run") as latest,
         ):
             failures = health.check_workflows(date(2026, 9, 11))
@@ -56,6 +70,11 @@ class CollectionHealthTests(unittest.TestCase):
 
     def test_workflow_api_or_date_error_is_isolated_per_workflow(self):
         workflows = {"broken.yml": 3, "bad-date.yml": 3, "healthy.yml": 3}
+        infos = [
+            RuntimeError("API down"),
+            {"state": "active", "created_at": "2026-01-01T00:00:00Z"},
+            {"state": "active", "created_at": "2026-01-01T00:00:00Z"},
+        ]
         runs = [
             {"updated_at": "not-a-date", "status": "completed", "conclusion": "success"},
             {"updated_at": "2026-09-11T00:00:00Z", "status": "completed", "conclusion": "success"},
@@ -63,7 +82,7 @@ class CollectionHealthTests(unittest.TestCase):
         with (
             patch.object(health, "WORKFLOWS", workflows),
             patch.object(health, "require_env", return_value="token"),
-            patch.object(health, "github_workflow_state", side_effect=[RuntimeError("API down"), "active", "active"]),
+            patch.object(health, "github_workflow_info", side_effect=infos),
             patch.object(health, "github_latest_run", side_effect=runs),
         ):
             failures = health.check_workflows(date(2026, 9, 11))
@@ -80,7 +99,7 @@ class CollectionHealthTests(unittest.TestCase):
         with (
             patch.object(health, "WORKFLOWS", workflows),
             patch.object(health, "require_env", return_value="token"),
-            patch.object(health, "github_workflow_state", return_value="active"),
+            patch.object(health, "github_workflow_info", return_value={"state": "active", "created_at": "2026-01-01T00:00:00Z"}),
             patch.object(health, "github_latest_run", side_effect=runs),
         ):
             failures = health.check_workflows(date(2026, 9, 11))
