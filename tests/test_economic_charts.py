@@ -16,28 +16,47 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('selectSeries(m)', script)
         self.assertNotIn('function buildCard', script)
 
-    def test_chart_controls_preserve_right_anchor_and_full_history(self):
+    def test_chart_starts_with_latest_300_and_keeps_right_anchor(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
-        self.assertIn('const RIGHT_OFFSET=7', script)
-        self.assertIn('anchor=Math.min(r.to,rows.length-1+RIGHT_OFFSET)', script)
-        self.assertIn('if(to>maxTo)', script)
+        self.assertIn('DEFAULT_VISIBLE_BARS=300', script)
+        self.assertIn('return{from:to-DEFAULT_VISIBLE_BARS,to}', script)
+        self.assertIn('showInitialRange()', script)
         self.assertIn("$('economic-fit-max').onclick=fitMax", script)
-        self.assertIn('handleScale:{axisPressedMouseMove:true,mouseWheel:false,pinch:true}', script)
+        self.assertIn('handleScale:{axisPressedMouseMove:false,mouseWheel:false,pinch:true}', script)
+        self.assertIn('minimumWidth:92', script)
         self.assertIn("host.addEventListener('wheel',wheel,{passive:false})", script)
         self.assertIn('attributionLogo:false', script)
 
-    def test_horizontal_lines_support_individual_delete_and_alert_bells(self):
+    def test_series_list_reorders_only_inside_category_and_scrolls(self):
+        script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
+        css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
+        self.assertIn("ORDER_KEY='macrowatch-economic-chart-order-v1'", script)
+        self.assertIn('dragState.category!==name', script)
+        self.assertIn('saveOrder(name,codes)', script)
+        self.assertIn('overflow-y:auto', css)
+        self.assertIn('scrollbar-gutter:stable', css)
+
+    def test_horizontal_lines_use_stable_axis_marker_and_alert_bells(self):
         html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
+        css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
         self.assertIn('id="economic-delete-line"', html)
         self.assertIn('id="economic-alert-modal"', html)
-        self.assertIn('nearest(p.point.y)', script)
-        self.assertIn('function deleteLine()', script)
+        self.assertIn('economic-alert-marker', script)
+        self.assertIn('economic-alert-price', script)
         self.assertIn('economic-alert-bell', script)
         self.assertIn("source_type:'economic_chart'", script)
+        self.assertIn("url:'economic-charts.html'", script)
+        self.assertIn('css_selector:meta.code', script)
+        self.assertIn('background:#facc15', css)
         self.assertIn("supabaseClient.from('targets').delete()", script)
         delete_line_body = script.split('function deleteLine()', 1)[1].split('function clearLines()', 1)[0]
         self.assertNotIn("from('targets')", delete_line_body)
+
+    def test_chart_is_responsive_with_aspect_ratio(self):
+        css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
+        self.assertIn('aspect-ratio:16/9', css)
+        self.assertIn('aspect-ratio:4/3', css)
 
     def test_moving_averages_do_not_add_current_value_axis_labels(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
@@ -52,7 +71,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         for removed in ('POLICY_EXPECTATION', 'EM_CAPACITY', 'US_SME_RISK', 'KR_SME_RISK', 'US_INFLATION'):
             self.assertNotIn(removed, script)
-        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI'):
+        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO'):
             self.assertIn(raw, script)
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
         self.assertIn("fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
@@ -75,7 +94,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
 
     def test_core_series_include_fred_ecos_and_derived_spreads(self):
         pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
-        for token in ('DGS2', 'DGS10', 'BAMLH0A0HYM2', 'BAMLEMCBPIOAS', 'DCOILWTICO', 'DEXKOUS', 'WEI'):
+        for token in ('DGS2', 'DGS10', 'BAMLH0A0HYM2', 'BAMLEMCBPIOAS', 'DCOILWTICO', 'DEXKOUS', 'WEI', 'RRPONTSYD', 'WTREGEN', 'EMRATIO'):
             self.assertIn(token, pipeline)
         self.assertIn('010200000', pipeline)
         self.assertIn('010210000', pipeline)
