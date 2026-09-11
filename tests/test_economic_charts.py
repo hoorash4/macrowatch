@@ -1,6 +1,7 @@
 from pathlib import Path
 import unittest
 
+# Economic-chart tests protect the automatic/backfill boundary as well as UI behavior.
 ROOT = Path(__file__).resolve().parents[1]
 
 
