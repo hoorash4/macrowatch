@@ -5,8 +5,7 @@ explicit historical backfill have separate entrypoints and may only share pure/s
 """
 from __future__ import annotations
 
-import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -38,16 +37,6 @@ ECOS_SERIES = {
 DERIVED_SERIES = {
     "KR10Y3Y": ("KR10Y", "KR3Y", "D"),
 }
-
-# KRX Data Marketplace > 기본통계 > 지수 > 주가지수 > PER/PBR/배당수익률.
-# pykrx uses the same first-party endpoint (MDCSTAT00702), KOSPI ticker 1001 =>
-# indTpCd=1 / indTpCd2=001. KRX itself is the source; this does not touch Earnings.
-KRX_INDEX_FUNDAMENTALS = {
-    "KOSPI_PER": ("WT_PER", "D"),
-    "KOSPI_PBR": ("WT_STKPRC_NETASST_RTO", "D"),
-}
-KRX_DATA_URL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
-KRX_INDEX_BLD = "dbms/MDC/STAT/standard/MDCSTAT00702"
 TABLE = "economic_chart_points"
 TARGET_SOURCE_TYPE = "economic_chart"
 
@@ -109,69 +98,6 @@ def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str,
             "source": f"ECOS:{stat_code}/{item_code}",
         })
     return rows
-
-
-def _krx_date(value: object) -> str | None:
-    raw = str(value or "").strip().replace("/", "").replace("-", "")
-    if len(raw) != 8 or not raw.isdigit():
-        return None
-    return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
-
-
-def _krx_index_payload(start: date, end: date) -> list[dict[str, Any]]:
-    # Match pykrx's current first-party request headers as well as its payload.
-    # KRX rejects some Data Marketplace calls as HTTP 400 without the XMLHttpRequest
-    # header/referer pair even though the underlying index endpoint remains public.
-    response = request_with_retry(lambda: requests.post(
-        KRX_DATA_URL,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd",
-            "X-Requested-With": "XMLHttpRequest",
-        },
-        data={
-            "bld": KRX_INDEX_BLD,
-            "indTpCd": "1",
-            "indTpCd2": "001",  # KOSPI index code 1001
-            "strtDd": start.strftime("%Y%m%d"),
-            "endDd": end.strftime("%Y%m%d"),
-        },
-        timeout=45,
-    ))
-    response.raise_for_status()
-    payload = response.json()
-    output = payload.get("output") if isinstance(payload, dict) else None
-    if not isinstance(output, list):
-        raise RuntimeError("KRX KOSPI PER/PBR 응답 형식이 올바르지 않습니다.")
-    return [row for row in output if isinstance(row, dict)]
-
-
-def _krx_index_rows(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
-    result = {code: [] for code in KRX_INDEX_FUNDAMENTALS}
-    cursor = start
-    first = True
-    while cursor <= end:
-        chunk_end = min(cursor + timedelta(days=729), end)
-        if not first:
-            time.sleep(1)
-        first = False
-        for item in _krx_index_payload(cursor, chunk_end):
-            observed = _krx_date(item.get("TRD_DD"))
-            if observed is None:
-                continue
-            for code, (field, frequency) in KRX_INDEX_FUNDAMENTALS.items():
-                value = _numeric(item.get(field))
-                if value is None:
-                    continue
-                result[code].append({
-                    "series_code": code,
-                    "observation_date": observed,
-                    "value": value,
-                    "frequency": frequency,
-                    "source": "KRX_DATA_MARKETPLACE:MDCSTAT00702/KOSPI1001",
-                })
-        cursor = chunk_end + timedelta(days=1)
-    return result
 
 
 def _existing_dates(db: SupabaseRest, series_code: str, start: date) -> set[str]:
