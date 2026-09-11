@@ -2,6 +2,9 @@ name: Economic chart backfill once
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/economic-chart-backfill-once.yml"
 
 permissions:
   contents: read
