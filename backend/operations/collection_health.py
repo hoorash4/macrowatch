@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import date, datetime, timezone
 
 import requests
@@ -36,49 +35,137 @@ DATABASE_SERIES = {
 }
 
 
-def github_latest_run(workflow: str, token: str) -> dict:
+def _message(error: BaseException) -> str:
+    text = str(error).strip()
+    return text or error.__class__.__name__
+
+
+def _github_get(path: str, token: str, *, params: dict[str, object] | None = None) -> dict:
     response = request_with_retry(lambda: requests.get(
-        f"https://api.github.com/repos/hoorash4/macrowatch/actions/workflows/{workflow}/runs",
-        params={"event": "schedule", "per_page": 1},
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}, timeout=30,
+        f"https://api.github.com/repos/hoorash4/macrowatch/{path}",
+        params=params,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        timeout=30,
     ))
     response.raise_for_status()
-    runs = response.json().get("workflow_runs") or []
-    if not runs:
-        raise RuntimeError(f"예약 실행 기록 없음: {workflow}")
-    return runs[0]
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("GitHub API 응답 형식이 올바르지 않습니다.")
+    return payload
+
+
+def github_workflow_state(workflow: str, token: str) -> str:
+    state = _github_get(f"actions/workflows/{workflow}", token).get("state")
+    return str(state or "unknown")
+
+
+def github_latest_run(workflow: str, token: str) -> dict | None:
+    payload = _github_get(
+        f"actions/workflows/{workflow}/runs",
+        token,
+        params={"event": "schedule", "per_page": 1},
+    )
+    runs = payload.get("workflow_runs") or []
+    if not isinstance(runs, list):
+        raise RuntimeError("GitHub 실행 기록 형식이 올바르지 않습니다.")
+    return runs[0] if runs and isinstance(runs[0], dict) else None
+
+
+def _github_run_date(run: dict) -> date:
+    raw = run.get("updated_at") or run.get("run_started_at") or run.get("created_at")
+    if not raw:
+        raise ValueError("실행 시각이 없습니다.")
+    parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).date()
 
 
 def check_workflows(today: date) -> list[str]:
-    token = require_env("GITHUB_TOKEN")
     failures: list[str] = []
+    try:
+        token = require_env("GITHUB_TOKEN")
+    except Exception as error:
+        return [f"GitHub 예약 실행 검사 불가: {_message(error)}"]
+
     for workflow, max_age in WORKFLOWS.items():
-        run = github_latest_run(workflow, token)
-        updated = datetime.fromisoformat(str(run["updated_at"]).replace("Z", "+00:00")).date()
-        if run.get("conclusion") != "success":
-            failures.append(f"예약 실행 실패 또는 미완료: {workflow} ({run.get('conclusion')})")
-        elif (today - updated).days > max_age:
-            failures.append(f"예약 실행 누락: {workflow}, latest={updated.isoformat()}")
+        try:
+            state = github_workflow_state(workflow, token)
+            # A deliberately disabled workflow is not expected to have fresh
+            # scheduled runs.  Unknown/non-active states are reported because
+            # they may indicate a renamed/deleted/broken workflow.
+            if state.startswith("disabled_"):
+                continue
+            if state != "active":
+                failures.append(f"예약 workflow 상태 이상: {workflow} ({state})")
+                continue
+
+            run = github_latest_run(workflow, token)
+            if run is None:
+                failures.append(f"예약 실행 기록 없음: {workflow}")
+                continue
+
+            updated = _github_run_date(run)
+            if updated > today:
+                failures.append(f"예약 실행 시각 이상: {workflow}, latest={updated.isoformat()}")
+                continue
+            conclusion = run.get("conclusion")
+            status = run.get("status")
+            if status != "completed" or conclusion != "success":
+                failures.append(f"예약 실행 실패 또는 미완료: {workflow} (status={status}, conclusion={conclusion})")
+            elif (today - updated).days > max_age:
+                failures.append(f"예약 실행 누락: {workflow}, latest={updated.isoformat()}")
+        except Exception as error:
+            # One broken/missing workflow must never prevent every other
+            # collector and database series from being checked.
+            failures.append(f"예약 실행 검사 오류: {workflow}: {_message(error)}")
     return failures
 
 
+def _observation_date(value: object) -> date:
+    text = str(value).strip()
+    if not text:
+        raise ValueError("빈 날짜")
+    return date.fromisoformat(text[:10])
+
+
 def check_database(today: date) -> list[str]:
-    db = SupabaseRest()
     failures: list[str] = []
+    try:
+        db = SupabaseRest()
+    except Exception as error:
+        return [f"DB 최신값 검사 불가: {_message(error)}"]
+
     for label, (table, column, max_age) in DATABASE_SERIES.items():
-        rows = db.request("GET", table, params={"select": column, "order": f"{column}.desc", "limit": "1"}) or []
-        if not rows or not rows[0].get(column):
-            failures.append(f"DB 최신값 없음: {label}")
-            continue
-        observed = date.fromisoformat(str(rows[0][column])[:10])
-        if (today - observed).days > max_age:
-            failures.append(f"DB 최신값 지연: {label}, latest={observed.isoformat()}")
+        try:
+            rows = db.request("GET", table, params={"select": column, "order": f"{column}.desc", "limit": "1"}) or []
+            if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict) or not rows[0].get(column):
+                failures.append(f"DB 최신값 없음: {label}")
+                continue
+            observed = _observation_date(rows[0][column])
+            if observed > today:
+                failures.append(f"DB 최신값 날짜 이상: {label}, latest={observed.isoformat()}")
+            elif (today - observed).days > max_age:
+                failures.append(f"DB 최신값 지연: {label}, latest={observed.isoformat()}")
+        except Exception as error:
+            # A schema/API/value problem in one series is itself a health
+            # failure, but the rest of the database checks must still run.
+            failures.append(f"DB 최신값 검사 오류: {label}: {_message(error)}")
     return failures
 
 
 def main() -> None:
     today = datetime.now(timezone.utc).date()
-    failures = [*check_workflows(today), *check_database(today)]
+    failures: list[str] = []
+    # Keep the two domains independent as a final safety net.  Individual
+    # checks are already fault tolerant, but an unforeseen bug in one domain
+    # must not suppress the other domain's diagnostics.
+    for label, checker in (("workflow", check_workflows), ("database", check_database)):
+        try:
+            failures.extend(checker(today))
+        except Exception as error:  # pragma: no cover - last-resort containment
+            failures.append(f"{label} health 검사 자체 오류: {_message(error)}")
+
     print(json.dumps({"checked_at": today.isoformat(), "failures": failures}, ensure_ascii=False))
     if failures:
         raise RuntimeError("; ".join(failures))
