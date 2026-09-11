@@ -28,6 +28,8 @@ from sources.wti_futures import fetch_wti_futures_rows
 TREASURY_ECONOMIC_SERIES = {"US2Y", "US10Y", "US10Y2Y", "US10Y_REAL"}
 KOSPI_BACKFILL_CHUNK_DAYS = 90
 KOSPI_BACKFILL_PAUSE_SECONDS = 1.0
+CENSUS_BACKFILL_MONTHS = 120
+CENSUS_FETCH_OVERLAP_DAYS = 180
 
 
 def _chunks(start: date, end: date, days: int = KOSPI_BACKFILL_CHUNK_DAYS):
@@ -80,6 +82,21 @@ def backfill_kospi_valuation(
     return inserted, errors
 
 
+def backfill_census_retail(db: SupabaseRest, today: date, nominal_start: date) -> int:
+    """Store the latest 120 published monthly observations, i.e. ten full data years."""
+    values = fetch_census_retail_sales(
+        nominal_start - timedelta(days=CENSUS_FETCH_OVERLAP_DAYS),
+        today,
+        api_key=require_env("CENSUS_API_KEY"),
+    )
+    selected = dict(list(sorted(values.items()))[-CENSUS_BACKFILL_MONTHS:])
+    rows = census_retail_chart_rows(selected)
+    if not rows:
+        return 0
+    first_observation = date.fromisoformat(str(rows[0]["observation_date"]))
+    return _insert_missing(db, rows, first_observation)
+
+
 def _summary(only: str, start: date, today: date, inserted: dict[str, int], errors: dict[str, str]) -> None:
     print(json.dumps({
         "mode": "backfill",
@@ -117,15 +134,7 @@ def backfill(*, only: str = "all") -> tuple[dict[str, int], dict[str, str]]:
             return inserted, errors
 
     if only in {"all", "census-retail"}:
-        run("US_RETAIL_SALES", lambda: _insert_missing(
-            db,
-            census_retail_chart_rows(fetch_census_retail_sales(
-                start,
-                today,
-                api_key=require_env("CENSUS_API_KEY"),
-            )),
-            start,
-        ))
+        run("US_RETAIL_SALES", lambda: backfill_census_retail(db, today, start))
         if only == "census-retail":
             _summary(only, start, today, inserted, errors)
             return inserted, errors
