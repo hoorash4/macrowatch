@@ -1,0 +1,34 @@
+name: WTI front-month futures backfill
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wti-futures-backfill.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wti-front-month-futures-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run WTI futures backfill once'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Replace WTI chart history with EIA front-month futures
+        env:
+          PYTHONPATH: backend
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m signals.wti_futures_backfill
