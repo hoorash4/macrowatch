@@ -19,10 +19,10 @@ from signals.economic_chart_pipeline import (
 )
 from sources.krx_index_fundamentals import SERIES as KRX_INDEX_FUNDAMENTALS, fetch_krx_kospi_fundamental_rows
 from sources.redbook import fetch_recent_redbook_rows
-from sources.us_treasury_yields import fetch_treasury_yield_rows
+from sources.us_treasury_yields import fetch_treasury_real_yield_rows, fetch_treasury_yield_rows
 from sources.wti_futures import fetch_wti_futures_rows
 
-TREASURY_ECONOMIC_SERIES = {"US2Y", "US10Y", "US10Y2Y"}
+TREASURY_ECONOMIC_SERIES = {"US2Y", "US10Y", "US10Y2Y", "US10Y_REAL"}
 
 
 def backfill() -> tuple[dict[str, int], dict[str, str]]:
@@ -57,6 +57,14 @@ def backfill() -> tuple[dict[str, int], dict[str, str]]:
         for code in ("US2Y", "US10Y"):
             inserted.setdefault(code, 0)
             errors.setdefault(code, f"{error.__class__.__name__}: {error}")
+
+    try:
+        treasury_real_rows = fetch_treasury_real_yield_rows(start, today)
+        run("US10Y_REAL", lambda: _insert_missing(db, treasury_real_rows.get("US10Y_REAL", []), start))
+    except Exception as error:
+        inserted.setdefault("US10Y_REAL", 0)
+        errors.setdefault("US10Y_REAL", f"{error.__class__.__name__}: {error}")
+
     run("US10Y2Y", lambda: _derive_spread(db, "US10Y2Y", "US10Y", "US2Y", "D", start, today))
 
     run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
