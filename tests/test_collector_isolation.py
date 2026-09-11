@@ -25,6 +25,8 @@ class CollectorIsolationTests(unittest.TestCase):
         self.assertIn("Existing migrations must not be modified or deleted", workflow)
         self.assertNotIn("20260826_add_policy_previous_peak_scoring.sql", workflow)
         self.assertNotIn('for fn in supabase/functions/*', workflow)
+        self.assertNotIn('find supabase/functions -mindepth 1 -maxdepth 1', workflow)
+        self.assertIn("reaches_changed_shared", workflow)
         self.assertNotIn('functions delete', workflow)
 
     def test_policy_expectation_automatic_storage_is_missing_only(self) -> None:
@@ -40,13 +42,13 @@ class CollectorIsolationTests(unittest.TestCase):
         self.assertNotIn('.from("korea_foreign_flow_daily").delete()', function)
         self.assertNotIn('.from("korea_foreign_flow_raw").delete()', function)
 
-    def test_market_context_automatic_is_missing_only_and_bootstrap_is_explicit(self) -> None:
+    def test_market_context_automatic_only_refreshes_current_cycle_or_missing_rows(self) -> None:
         function = text("supabase/functions/market-context/index.ts")
         workflow = text(".github/workflows/market-context.yml")
         self.assertIn('type CollectionMode = "automatic" | "bootstrap"', function)
         self.assertIn('body.mode === "bootstrap" ? "bootstrap" : "automatic"', function)
-        self.assertIn('const publishable = rows.filter', function)
-        self.assertIn('.from("market_index_prices").insert(publishable)', function)
+        self.assertIn('const automaticRows = rows.filter((row) => row.market_date === todayIso || !existingDates.has(row.market_date))', function)
+        self.assertIn('.upsert(automaticRows, { onConflict: "index_code,market_date" })', function)
         self.assertNotIn('(count || 0) >= 80 ? REFRESH_DAYS : BOOTSTRAP_DAYS', function)
         self.assertIn("github.event_name == 'schedule' && 'automatic'", workflow)
         self.assertIn('options: [automatic, bootstrap]', workflow)
