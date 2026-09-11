@@ -2,7 +2,7 @@ name: Refresh Korea foreign flow
 
 on:
   schedule:
-    - cron: "0 8 * * 1-5"
+    - cron: "40 7 * * 1-5"
   workflow_dispatch:
 
 permissions:
