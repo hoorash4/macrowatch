@@ -16,29 +16,31 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('selectSeries(m)', script)
         self.assertNotIn('function buildCard', script)
 
-    def test_chart_starts_with_latest_300_and_uses_fixed_pixel_right_gap(self):
+    def test_chart_starts_with_latest_300_and_uses_real_chart_space_right_gap(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
         html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
         self.assertIn('DEFAULT_VISIBLE_BARS=300', script)
-        self.assertIn('RIGHT_GAP_PX=28', script)
+        self.assertIn('RIGHT_GAP_PX=18', script)
         self.assertIn('function rightGapBars()', script)
-        self.assertIn('function updateFixedGap()', script)
-        self.assertIn("chart.priceScale('right').width", script)
+        self.assertNotIn('function updateFixedGap()', script)
+        self.assertNotIn("chart.priceScale('right').width", script)
+        self.assertIn('to>=last&&to<maxTo', script)
         self.assertIn('showInitialRange()', script)
         self.assertIn("$('economic-fit-max').onclick=fitMax", script)
         self.assertIn('handleScale:{axisPressedMouseMove:false,mouseWheel:false,pinch:true}', script)
         self.assertIn("host.addEventListener('wheel',wheel,{passive:false})", script)
         self.assertIn('attributionLogo:false', script)
-        self.assertIn('id="economic-plot-gap"', html)
-        self.assertIn('.economic-plot-gap{', css)
-        self.assertIn('pointer-events:none', css)
+        self.assertNotIn('id="economic-plot-gap"', html)
+        self.assertNotIn('.economic-plot-gap{', css)
 
-    def test_series_list_reorders_and_supports_local_delete_restore(self):
+    def test_series_list_reorders_and_persists_per_user_delete_restore(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
-        self.assertIn("ORDER_KEY='macrowatch-economic-chart-order-v1'", script)
-        self.assertIn("HIDDEN_KEY='macrowatch-economic-chart-hidden-v1'", script)
+        self.assertNotIn('localStorage', script)
+        self.assertIn("from('economic_chart_preferences')", script)
+        self.assertIn('series_order', script)
+        self.assertIn('hidden_series', script)
         self.assertIn('dragState.category!==name', script)
         self.assertIn('saveOrder(name,codes)', script)
         self.assertIn('function hideSeries(m)', script)
@@ -73,11 +75,14 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn("supabaseClient.from('targets').delete()", script)
         delete_line_body = script.split('function deleteLine()', 1)[1].split('function clearLines()', 1)[0]
         self.assertNotIn("from('targets')", delete_line_body)
+        self.assertIn('horizontal_lines', script)
+        self.assertIn('savePlainLinesFromChart()', script)
+        self.assertIn('restorePlainLines()', script)
 
     def test_chart_footer_is_compact_and_date_axis_is_korean(self):
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
-        self.assertIn('height:min(560px,calc(100vh - 235px))', css)
+        self.assertIn('flex:1 1 auto;height:auto;min-height:360px', css)
         self.assertIn('min-height:24px', css)
         self.assertIn('padding:4px 12px 6px', css)
         self.assertIn("locale:'ko-KR'", script)
