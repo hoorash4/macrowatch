@@ -28,8 +28,16 @@ from sources.wti_futures import fetch_wti_futures_rows
 TREASURY_ECONOMIC_SERIES = {"US2Y", "US10Y", "US10Y2Y", "US10Y_REAL"}
 KOSPI_BACKFILL_CHUNK_DAYS = 90
 KOSPI_BACKFILL_PAUSE_SECONDS = 1.0
+KOSPI_BACKFILL_SERIES = ("KOSPI_PER", "KOSPI_PBR")
 CENSUS_BACKFILL_MONTHS = 120
 CENSUS_FETCH_OVERLAP_DAYS = 180
+
+
+def fetch_krx_kospi_fundamental_rows(start: date, end: date) -> dict[str, list[dict]]:
+    """Lazy KRX adapter so non-KRX backfills never initialize the KRX provider."""
+    from sources.krx_index_fundamentals import fetch_krx_kospi_fundamental_rows as fetch
+
+    return fetch(start, end)
 
 
 def _chunks(start: date, end: date, days: int = KOSPI_BACKFILL_CHUNK_DAYS):
@@ -48,12 +56,7 @@ def backfill_kospi_valuation(
     pause_seconds: float = KOSPI_BACKFILL_PAUSE_SECONDS,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Persist each successful pykrx chunk immediately and continue after failed chunks."""
-    # KRX is intentionally imported only inside the KOSPI-specific operation. A Census-only
-    # backfill must not initialize/login to an unrelated provider merely by importing this runner.
-    from sources.krx_index_fundamentals import SERIES as krx_series
-    from sources.krx_index_fundamentals import fetch_krx_kospi_fundamental_rows
-
-    inserted = {code: 0 for code in krx_series}
+    inserted = {code: 0 for code in KOSPI_BACKFILL_SERIES}
     errors: dict[str, str] = {}
     first = True
     for chunk_start, chunk_end in _chunks(start, end):
@@ -63,13 +66,13 @@ def backfill_kospi_valuation(
         key = f"KOSPI_PER_PBR:{chunk_start.isoformat()}:{chunk_end.isoformat()}"
         try:
             rows_by_code = fetch_krx_kospi_fundamental_rows(chunk_start, chunk_end)
-            for code in krx_series:
+            for code in KOSPI_BACKFILL_SERIES:
                 inserted[code] += _insert_missing(db, rows_by_code[code], chunk_start)
             print(json.dumps({
                 "stage": "kospi_valuation_backfill_chunk_done",
                 "start": chunk_start.isoformat(),
                 "end": chunk_end.isoformat(),
-                "rows": {code: len(rows_by_code[code]) for code in krx_series},
+                "rows": {code: len(rows_by_code[code]) for code in KOSPI_BACKFILL_SERIES},
             }, ensure_ascii=False))
         except Exception as error:
             errors[key] = f"{error.__class__.__name__}: {error}"
