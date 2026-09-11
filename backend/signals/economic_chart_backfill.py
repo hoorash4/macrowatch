@@ -19,6 +19,7 @@ from signals.economic_chart_pipeline import (
     _insert_missing,
     _krx_index_rows,
 )
+from sources.eia_wti_futures import fetch_wti_futures_rows
 from sources.redbook import fetch_recent_redbook_rows
 
 
@@ -41,19 +42,31 @@ def backfill() -> tuple[dict[str, int], dict[str, str]]:
                 "error": errors[name],
             }, ensure_ascii=False))
 
-    # Include US2Y/US10Y themselves in the chart read model.  A chart must read the
+    # Include US2Y/US10Y themselves in the chart read model. A chart must read the
     # actual ten-year daily backfill rather than a shorter legacy table fallback.
+    # WTI is intentionally excluded here: it is replaced below with EIA's official
+    # continuously rolled front-month futures series, not the old FRED spot series.
     for code, (source_id, frequency) in FRED_SERIES.items():
+        if code == "WTI":
+            continue
         run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
+
+    def replace_wti_with_front_month_futures() -> int:
+        rows = fetch_wti_futures_rows(start, today)
+        if rows:
+            db.upsert("economic_chart_points", rows, conflict="series_code,observation_date")
+        return len(rows)
+
+    run("WTI", replace_wti_with_front_month_futures)
 
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
         run(code, lambda code=code, stat_code=stat_code, item_code=item_code, frequency=frequency: _insert_missing(
             db, _ecos_rows(code, stat_code, item_code, frequency, start, today), start
         ))
 
-    # KRX Data Marketplace internally chunks at <=730 days.  If KRX exposes less than
+    # KRX Data Marketplace internally chunks at <=730 days. If KRX exposes less than
     # ten years, preserve the maximum range it returns; KRX failure cannot discard
     # successfully backfilled FRED/ECOS series.
     try:
