@@ -188,6 +188,13 @@ class KospiValuationContractTests(unittest.TestCase):
         self.assertNotIn("KRX_ID", workflow)
         self.assertNotIn("KRX_PW", workflow)
 
+    def test_existing_failure_email_covers_economic_chart_schedule(self):
+        notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")
+        self.assertIn('"Refresh economic chart data"', notifier)
+        self.assertIn("github.event.workflow_run.event == 'schedule'", notifier)
+        self.assertIn("github.event.workflow_run.conclusion == 'failure'", notifier)
+        self.assertFalse((ROOT / ".github/workflows/patch-stale-foreign-flow-test.yml").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
