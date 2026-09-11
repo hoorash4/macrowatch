@@ -61,6 +61,27 @@
     return Object.freeze({ invoke });
   }
 
+  function installConfiguredWorkspaceLinks() {
+    const links = Array.isArray(window.MACROWATCH_CONFIG?.workspaceLinks)
+      ? window.MACROWATCH_CONFIG.workspaceLinks
+      : [];
+    const actions = document.querySelector('.dashboard-nav-actions');
+    if (!actions || !links.length) return;
+    links.forEach((item) => {
+      if (!item?.href || actions.querySelector(`[data-workspace-link="${item.href}"]`)) return;
+      const link = document.createElement('a');
+      link.className = 'dashboard-nav-item';
+      link.dataset.workspaceLink = item.href;
+      link.href = item.href;
+      link.target = item.target || '_self';
+      if (link.target === '_blank') link.rel = 'noopener noreferrer';
+      link.innerHTML = `${item.iconClass ? `<i class="fa-solid ${escapeHtml(item.iconClass)}"></i>` : ''}<span>${escapeHtml(item.label || item.href)}</span>`;
+      actions.before(link);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', installConfiguredWorkspaceLinks);
+
   window.MacroWatchFrontend = Object.freeze({
     config: Object.freeze({ supabaseUrl, supabasePublishableKey }),
     createFunctionClient,
