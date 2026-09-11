@@ -1,166 +1,163 @@
-"""Official KRX KOSPI index PER/PBR reader.
-
-KRX Data Marketplace exposes the index fundamental endpoint MDCSTAT00702.  Recent KRX
-sessions may require the same warm-up/login cookie flow used by pykrx, so this adapter keeps
-that transport concern outside the economic-chart calculation/storage layer.
-"""
+"""Validated pykrx reader for KOSPI market-wide PER/PBR."""
 from __future__ import annotations
 
-import os
-import time
-from datetime import date, timedelta
+import math
+from datetime import date
 from typing import Any
 
 import requests
+from pykrx import stock
 
-from common import request_with_retry
-
-KRX_DATA_URL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
-KRX_LOGIN_PAGE = "https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001.cmd"
-KRX_LOGIN_JSP = "https://data.krx.co.kr/contents/MDC/COMS/client/view/login.jsp?site=mdc"
-KRX_LOGIN_URL = "https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001D1.cmd"
-KRX_INDEX_BLD = "dbms/MDC/STAT/standard/MDCSTAT00702"
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-)
+KOSPI_INDEX_TICKER = "1001"
+SOURCE = "PYKRX:KRX_INDEX_FUNDAMENTAL/KOSPI1001"
 SERIES = {
-    "KOSPI_PER": ("WT_PER", "D"),
-    "KOSPI_PBR": ("WT_STKPRC_NETASST_RTO", "D"),
+    "KOSPI_PER": ("PER", "D"),
+    "KOSPI_PBR": ("PBR", "D"),
 }
 
 
-def _numeric(value: object) -> float | None:
-    text = str(value or "").strip().replace(",", "")
-    if not text or text in {".", "-", "—"}:
-        return None
+class KrxIndexFundamentalError(RuntimeError):
+    """Base error for KOSPI valuation collection."""
+
+
+class KrxNetworkError(KrxIndexFundamentalError):
+    """Network/HTTP failure while pykrx talks to KRX."""
+
+
+class KrxResponseError(KrxIndexFundamentalError):
+    """Unexpected or invalid pykrx/KRX response."""
+
+
+def _getter():
+    getter = getattr(stock, "get_index_fundamental_by_date", None)
+    if getter is None:
+        getter = getattr(stock, "get_index_fundamental", None)
+    if getter is None:
+        raise KrxResponseError(
+            "pykrx KOSPI 지수 fundamental API를 찾을 수 없습니다. pykrx 구조 변경 가능성이 있습니다."
+        )
+    return getter
+
+
+def _call_frame(start: date, end: date):
     try:
-        return float(text)
-    except ValueError:
-        return None
+        return _getter()(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), KOSPI_INDEX_TICKER)
+    except (requests.Timeout, requests.ConnectionError, requests.HTTPError, TimeoutError, ConnectionError) as error:
+        raise KrxNetworkError(
+            f"pykrx/KRX 네트워크 오류 ({error.__class__.__name__}): {error}"
+        ) from error
+    except KrxIndexFundamentalError:
+        raise
+    except Exception as error:
+        raise KrxResponseError(
+            f"pykrx/KRX 응답 처리 오류 ({error.__class__.__name__}): {error}. 응답 구조 변경 가능성이 있습니다."
+        ) from error
 
 
-def _date_text(value: object) -> str | None:
-    raw = str(value or "").strip().replace("/", "").replace("-", "")
-    if len(raw) != 8 or not raw.isdigit():
-        return None
-    return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+def _index_date(value: object) -> date:
+    try:
+        if hasattr(value, "date"):
+            parsed = value.date()
+            if isinstance(parsed, date):
+                return parsed
+        raw = str(value).strip()[:10]
+        return date.fromisoformat(raw)
+    except Exception as error:
+        raise KrxResponseError(
+            f"pykrx/KRX 날짜 파싱 실패: {value!r}. 응답 구조 변경 가능성이 있습니다."
+        ) from error
 
 
-def _base_headers() -> dict[str, str]:
-    return {
-        "User-Agent": USER_AGENT,
-        "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd",
-        "X-Requested-With": "XMLHttpRequest",
-    }
+def _number(value: object, field: str, observed: date) -> float:
+    if value is None:
+        raise KrxResponseError(f"KOSPI {field} 값이 null입니다: {observed.isoformat()}")
+    text = str(value).strip().replace(",", "")
+    if not text or text.lower() in {"nan", "none", "null"}:
+        raise KrxResponseError(f"KOSPI {field} 값이 비어 있습니다: {observed.isoformat()}")
+    try:
+        numeric = float(text)
+    except (TypeError, ValueError) as error:
+        raise KrxResponseError(
+            f"KOSPI {field} 값 파싱 실패: {observed.isoformat()} value={value!r}. 응답 구조 변경 가능성이 있습니다."
+        ) from error
+    if not math.isfinite(numeric):
+        raise KrxResponseError(f"KOSPI {field} 값이 NaN/무한대입니다: {observed.isoformat()}")
+    if numeric <= 0:
+        raise KrxResponseError(f"KOSPI {field} 값이 비정상입니다: {observed.isoformat()} value={numeric}")
+    return numeric
 
 
-def _warm_session(session: requests.Session) -> None:
-    # Establish the JSESSIONID and the login iframe session before the data POST.
-    first = request_with_retry(lambda: session.get(
-        KRX_LOGIN_PAGE, headers={"User-Agent": USER_AGENT}, timeout=20
-    ))
-    first.raise_for_status()
-    second = request_with_retry(lambda: session.get(
-        KRX_LOGIN_JSP,
-        headers={"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_PAGE},
-        timeout=20,
-    ))
-    second.raise_for_status()
+def _parse_frame(frame, *, required_date: date | None = None) -> dict[str, list[dict[str, Any]]]:
+    if frame is None or bool(getattr(frame, "empty", True)):
+        raise KrxResponseError("pykrx KOSPI PER/PBR 응답이 비어 있습니다.")
+    columns = {str(column) for column in getattr(frame, "columns", [])}
+    missing = {field for field, _ in SERIES.values()} - columns
+    if missing:
+        raise KrxResponseError(
+            f"pykrx KOSPI PER/PBR 예상 컬럼 누락: {sorted(missing)}. 응답 구조 변경 가능성이 있습니다."
+        )
 
+    result = {code: [] for code in SERIES}
+    seen_dates: set[date] = set()
+    try:
+        iterator = frame.iterrows()
+    except Exception as error:
+        raise KrxResponseError("pykrx KOSPI PER/PBR 행 반복 실패. 응답 구조 변경 가능성이 있습니다.") from error
 
-def _optional_login(session: requests.Session) -> bool:
-    login_id = os.getenv("KRX_ID", "").strip()
-    login_pw = os.getenv("KRX_PW", "").strip()
-    if not login_id or not login_pw:
-        return False
-    payload = {"mbrNm": "", "telNo": "", "di": "", "certType": "", "mbrId": login_id, "pw": login_pw}
-    response = request_with_retry(lambda: session.post(
-        KRX_LOGIN_URL,
-        data=payload,
-        headers={"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_PAGE},
-        timeout=20,
-    ))
-    response.raise_for_status()
-    data = response.json()
-    code = str(data.get("_error_code") or "")
-    if code == "CD011":
-        payload["skipDup"] = "Y"
-        response = request_with_retry(lambda: session.post(
-            KRX_LOGIN_URL,
-            data=payload,
-            headers={"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_PAGE},
-            timeout=20,
-        ))
-        response.raise_for_status()
-        data = response.json()
-        code = str(data.get("_error_code") or "")
-    if code != "CD001":
-        message = str(data.get("_error_message") or code or "unknown login error")
-        raise RuntimeError(f"KRX 로그인 실패: {message}")
-    return True
+    for index, row in iterator:
+        observed = _index_date(index)
+        seen_dates.add(observed)
+        for code, (field, frequency) in SERIES.items():
+            try:
+                raw = row[field]
+            except Exception as error:
+                raise KrxResponseError(
+                    f"pykrx KOSPI {field} 컬럼 읽기 실패. 응답 구조 변경 가능성이 있습니다."
+                ) from error
+            value = _number(raw, field, observed)
+            result[code].append({
+                "series_code": code,
+                "observation_date": observed.isoformat(),
+                "value": value,
+                "frequency": frequency,
+                "source": SOURCE,
+            })
 
-
-def _payload(session: requests.Session, start: date, end: date) -> list[dict[str, Any]]:
-    response = request_with_retry(lambda: session.post(
-        KRX_DATA_URL,
-        headers=_base_headers(),
-        data={
-            "bld": KRX_INDEX_BLD,
-            "locale": "ko_KR",
-            "indTpCd": "1",
-            "indTpCd2": "001",  # KOSPI index ticker 1001
-            "strtDd": start.strftime("%Y%m%d"),
-            "endDd": end.strftime("%Y%m%d"),
-        },
-        timeout=45,
-    ))
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict):
-        raise RuntimeError("KRX KOSPI PER/PBR 응답 형식이 올바르지 않습니다.")
-    error_code = str(data.get("_error_code") or "")
-    if error_code and error_code != "CD001":
-        raise RuntimeError(f"KRX KOSPI PER/PBR 오류: {data.get('_error_message') or error_code}")
-    output = data.get("output")
-    if not isinstance(output, list):
-        raise RuntimeError("KRX KOSPI PER/PBR output이 없습니다.")
-    return [row for row in output if isinstance(row, dict)]
+    if required_date is not None and required_date not in seen_dates:
+        raise KrxResponseError(f"요청한 KOSPI PER/PBR 날짜가 응답에 없습니다: {required_date.isoformat()}")
+    return result
 
 
 def fetch_krx_kospi_fundamental_rows(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
-    """Read KOSPI market-wide PER/PBR from KRX, chunking the official 2-year query window."""
-    result = {code: [] for code in SERIES}
-    session = requests.Session()
-    _warm_session(session)
-    _optional_login(session)
-    cursor = start
-    first = True
-    total_source_rows = 0
-    while cursor <= end:
-        chunk_end = min(cursor + timedelta(days=729), end)
-        if not first:
-            time.sleep(1)
-        first = False
-        source_rows = _payload(session, cursor, chunk_end)
-        total_source_rows += len(source_rows)
-        for item in source_rows:
-            observed = _date_text(item.get("TRD_DD"))
-            if observed is None:
-                continue
-            for code, (field, frequency) in SERIES.items():
-                value = _numeric(item.get(field))
-                if value is None:
-                    continue
-                result[code].append({
-                    "series_code": code,
-                    "observation_date": observed,
-                    "value": value,
-                    "frequency": frequency,
-                    "source": "KRX_DATA_MARKETPLACE:MDCSTAT00702/KOSPI1001",
-                })
-        cursor = chunk_end + timedelta(days=1)
-    if total_source_rows == 0 and start < end:
-        auth_hint = " KRX_ID/KRX_PW secrets를 설정하면 인증 세션으로 재시도할 수 있습니다." if not (os.getenv("KRX_ID") and os.getenv("KRX_PW")) else ""
-        raise RuntimeError(f"KRX KOSPI PER/PBR 조회 결과가 비어 있습니다.{auth_hint}")
-    return result
+    if start > end:
+        raise ValueError("start must be on or before end")
+    return _parse_frame(_call_frame(start, end))
+
+
+def fetch_krx_kospi_fundamental_day(target: date) -> dict[str, list[dict[str, Any]]]:
+    return _parse_frame(_call_frame(target, target), required_date=target)
+
+
+def is_krx_business_day(target: date) -> bool:
+    if target.weekday() >= 5:
+        return False
+    helper = getattr(stock, "get_nearest_business_day_in_a_week", None)
+    if helper is None:
+        raise KrxResponseError(
+            "pykrx KRX 영업일 판정 API를 찾을 수 없습니다. pykrx 구조 변경 가능성이 있습니다."
+        )
+    try:
+        nearest = str(helper(target.strftime("%Y%m%d"), prev=True) or "").replace("-", "")
+    except (requests.Timeout, requests.ConnectionError, requests.HTTPError, TimeoutError, ConnectionError) as error:
+        raise KrxNetworkError(
+            f"pykrx/KRX 영업일 판정 네트워크 오류 ({error.__class__.__name__}): {error}"
+        ) from error
+    except Exception as error:
+        raise KrxResponseError(
+            f"pykrx/KRX 영업일 판정 오류 ({error.__class__.__name__}): {error}. 응답 구조 변경 가능성이 있습니다."
+        ) from error
+    if len(nearest) != 8 or not nearest.isdigit():
+        raise KrxResponseError(
+            f"pykrx/KRX 영업일 응답 형식이 올바르지 않습니다: {nearest!r}. 응답 구조 변경 가능성이 있습니다."
+        )
+    return nearest == target.strftime("%Y%m%d")
