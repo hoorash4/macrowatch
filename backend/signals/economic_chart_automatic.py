@@ -9,7 +9,7 @@ import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from common import SupabaseRest
+from common import SupabaseRest, require_env
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
     FRED_SERIES,
@@ -20,6 +20,8 @@ from signals.economic_chart_pipeline import (
     check_collected_series_alerts,
 )
 from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
+from sources.census_retail_sales import chart_rows as census_retail_chart_rows
+from sources.census_retail_sales import fetch_census_retail_sales
 from sources.korea_export_intramonth import fetch_snapshots
 from sources.krx_index_fundamentals import (
     SERIES as KRX_INDEX_FUNDAMENTALS,
@@ -121,6 +123,15 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
 
     run("KR10Y3Y", lambda: _derive_spread(db, "KR10Y3Y", "KR10Y", "KR3Y", "D", start, today))
     run("REDBOOK", lambda: _insert_missing(db, fetch_recent_redbook_rows(), start))
+    run("US_RETAIL_SALES", lambda: _insert_missing(
+        db,
+        census_retail_chart_rows(fetch_census_retail_sales(
+            start,
+            today,
+            api_key=require_env("CENSUS_API_KEY"),
+        )),
+        start,
+    ))
 
     export_start_month = (today - timedelta(days=65)).replace(day=1)
     try:
