@@ -21,9 +21,9 @@ from signals.economic_chart_pipeline import (
     check_collected_series_alerts,
 )
 from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
-from sources.eia_wti_futures import fetch_wti_futures_rows
 from sources.korea_export_intramonth import fetch_snapshots
 from sources.redbook import fetch_recent_redbook_rows
+from sources.wti_futures import fetch_wti_futures_rows
 
 
 def collect() -> tuple[dict[str, int], dict[str, str]]:
@@ -45,8 +45,8 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
                 "error": errors[name],
             }, ensure_ascii=False))
 
-    # WTI uses EIA's official continuously rolled front-month futures series
-    # (PET.RCLC1.D), not the FRED spot-price series previously used here.
+    # WTI uses the provider's continuous front-month CL=F series directly. MacroWatch
+    # never selects, stitches or back-adjusts individual contract months itself.
     for code, (source_id, frequency) in FRED_SERIES.items():
         if code == "WTI":
             continue
@@ -60,8 +60,6 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             db, _ecos_rows(code, stat_code, item_code, frequency, start, today), start
         ))
 
-    # KRX can independently reject an automated request. Isolate it so FRED/ECOS/KCS
-    # success is preserved and visible in the run diagnostics.
     try:
         rows_by_code = _krx_index_rows(start, today)
         for code in KRX_INDEX_FUNDAMENTALS:
@@ -74,9 +72,6 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
     run("KR10Y3Y", lambda: _derive_spread(db, "KR10Y3Y", "KR10Y", "KR3Y", "D", start, today))
     run("REDBOOK", lambda: _insert_missing(db, fetch_recent_redbook_rows(), start))
 
-    # KCS publishes 1-10, 1-20 and month-end cumulative snapshots. Inspect only the
-    # current/recent months, preserve raw snapshots, then derive missing independent
-    # workday-adjusted segments. This is normal collection, not historical backfill.
     export_start_month = (today - timedelta(days=65)).replace(day=1)
     try:
         snapshots, export_errors = fetch_snapshots(export_start_month, max_pages=6)
