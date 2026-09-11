@@ -14,7 +14,8 @@ test('economic chart uses real chart-space right gap instead of a white overlay'
   assert.doesNotMatch(css, /\.economic-plot-gap/);
   assert.doesNotMatch(chart, /economic-plot-gap|updateFixedGap/);
   assert.match(chart, /RIGHT_GAP_PX=18/);
-  assert.match(chart, /to>=last&&to<maxTo/);
+  assert.match(chart, /if\(to>maxTo\)/);
+  assert.doesNotMatch(chart, /to>=last&&to<maxTo/);
 });
 
 test('economic chart frame is linked and stays at ninety percent of the prior responsive height', () => {
@@ -29,8 +30,9 @@ test('economic chart starts with exactly the latest 300 observations and labels 
   assert.match(chart, /DEFAULT_VISIBLE_BARS=300/);
   assert.match(chart, /const count=Math\.min\(DEFAULT_VISIBLE_BARS,rows\.length\),last=rows\.length-1/);
   assert.match(chart, /from:last-count\+1,to:last\+rightGapBars\(\)/);
-  assert.match(chart, /initialRangePending=true;showInitialRange\(\)/);
-  assert.match(chart, /if\(initialRangePending\)\{initialRangePending=false;showInitialRange\(\);\}/);
+  assert.match(chart, /function scheduleInitialRange\(\)/);
+  assert.match(chart, /scheduleInitialRange\(\);/);
+  assert.doesNotMatch(chart, /pinLatestGap/);
   assert.match(chart, /rebuildMonthTickDates\(data\)/);
   assert.match(chart, /if\(!monthTickDates\.has\(timeKey\(time\)\)\)return''/);
 });
@@ -52,5 +54,5 @@ test('economic chart personal state is persisted per authenticated user', () => 
 
 test('economic chart assets are cache-busted for the changed script', () => {
   assert.match(html, /economic-charts\.css\?v=7/);
-  assert.match(html, /economic-charts\.js\?v=8/);
+  assert.match(html, /economic-charts\.js\?v=9/);
 });
