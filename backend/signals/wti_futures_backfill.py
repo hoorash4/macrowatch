@@ -1,7 +1,7 @@
-"""Explicit WTI front-month futures history replacement.
+"""Explicit WTI continuous front-month futures history replacement.
 
-Manual/one-off only. This replaces the WTI chart series with EIA PET.RCLC1.D for the
-requested ten-year window and does not collect or modify any other economic series.
+Manual/one-off only. It fetches the full replacement first, then replaces only the WTI rows
+inside the ten-year window. No other economic series is touched.
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import json
 from datetime import date, timedelta
 
 from common import SupabaseRest
-from sources.eia_wti_futures import SOURCE, fetch_wti_futures_rows
+from sources.wti_futures import SOURCE, fetch_wti_futures_rows
 
 TABLE = "economic_chart_points"
 
@@ -19,11 +19,23 @@ def backfill(days: int = 3660) -> int:
     start = today - timedelta(days=days)
     rows = fetch_wti_futures_rows(start, today)
     if not rows:
-        raise RuntimeError("No WTI front-month futures rows were returned.")
+        raise RuntimeError("No WTI continuous front-month futures rows were returned.")
+
+    # Fetch succeeded before any destructive write. Replace only WTI in the explicit
+    # requested window so the series cannot remain a spot/futures mixture.
     db = SupabaseRest()
+    db.request(
+        "DELETE",
+        TABLE,
+        params={
+            "series_code": "eq.WTI",
+            "observation_date": f"gte.{start.isoformat()}",
+        },
+        prefer="return=minimal",
+    )
     db.upsert(TABLE, rows, conflict="series_code,observation_date")
     print(json.dumps({
-        "mode": "wti_front_month_backfill",
+        "mode": "wti_continuous_front_month_backfill",
         "source": SOURCE,
         "start": start.isoformat(),
         "end": today.isoformat(),
