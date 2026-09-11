@@ -5,7 +5,6 @@ entrypoint and is never imported or invoked from this scheduled collector.
 """
 from __future__ import annotations
 
-import argparse
 import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -36,8 +35,40 @@ LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "US10Y2Y", "WTI", "USDKRW"}
 KST = ZoneInfo("Asia/Seoul")
 
 
+def collect_kospi_valuation(target: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
+    """Collect one completed KRX trading day's KOSPI PER/PBR with strict validation.
+
+    The regular 07:30 KST refresh runs before the Korean market opens, so its default target is
+    the previous Korean calendar day. Holidays/weekends are skipped; malformed or missing pykrx
+    responses still propagate and fail the workflow instead of being silently accepted.
+    """
+    target = target or (datetime.now(KST).date() - timedelta(days=1))
+    if not is_krx_business_day(target):
+        print(json.dumps({
+            "mode": "automatic",
+            "stage": "kospi-valuation",
+            "date": target.isoformat(),
+            "skipped": "krx_market_closed",
+        }, ensure_ascii=False))
+        return {code: 0 for code in KRX_INDEX_FUNDAMENTALS}
+
+    database = db or SupabaseRest()
+    rows_by_code = fetch_krx_kospi_fundamental_day(target)
+    inserted = {
+        code: _insert_missing(database, rows_by_code[code], target)
+        for code in KRX_INDEX_FUNDAMENTALS
+    }
+    print(json.dumps({
+        "mode": "automatic",
+        "stage": "kospi-valuation",
+        "date": target.isoformat(),
+        "inserted": inserted,
+    }, ensure_ascii=False, sort_keys=True))
+    return inserted
+
+
 def collect() -> tuple[dict[str, int], dict[str, str]]:
-    """Collect the regular economic-chart series except KOSPI valuation."""
+    """Collect every regular economic-chart series in one scheduled refresh."""
     today = date.today()
     start = today - timedelta(days=45)
     db = SupabaseRest()
@@ -102,11 +133,14 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
         inserted.setdefault("KR_EXPORT_DAILY_AVG", 0)
         errors["KR_EXPORT_DAILY_AVG"] = f"{error.__class__.__name__}: {error}"
 
+    # KOSPI valuation is part of the same regular refresh, but unlike tolerant source adapters its
+    # strict pykrx validation must fail the workflow when KRX returns malformed/missing data.
+    inserted.update(collect_kospi_valuation(db=db))
+
     changed = {code for code, count in inserted.items() if count > 0 and code != "KR_EXPORT_RAW"}
     alerts = check_collected_series_alerts(db, changed)
     print(json.dumps({
         "mode": "automatic",
-        "phase": "core",
         "start": start.isoformat(),
         "end": today.isoformat(),
         "inserted": inserted,
@@ -116,44 +150,8 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
     return inserted, errors
 
 
-def collect_kospi_valuation(target: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
-    """Collect exactly one KRX trading day's KOSPI PER/PBR; failures propagate to Actions."""
-    target = target or datetime.now(KST).date()
-    if not is_krx_business_day(target):
-        print(json.dumps({
-            "mode": "automatic",
-            "phase": "kospi-valuation",
-            "date": target.isoformat(),
-            "skipped": "krx_market_closed",
-        }, ensure_ascii=False))
-        return {code: 0 for code in KRX_INDEX_FUNDAMENTALS}
-
-    database = db or SupabaseRest()
-    rows_by_code = fetch_krx_kospi_fundamental_day(target)
-    inserted = {
-        code: _insert_missing(database, rows_by_code[code], target)
-        for code in KRX_INDEX_FUNDAMENTALS
-    }
-    changed = {code for code, count in inserted.items() if count > 0}
-    alerts = check_collected_series_alerts(database, changed)
-    print(json.dumps({
-        "mode": "automatic",
-        "phase": "kospi-valuation",
-        "date": target.isoformat(),
-        "inserted": inserted,
-        "alerts": alerts,
-    }, ensure_ascii=False, sort_keys=True))
-    return inserted
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--phase", choices=("core", "kospi-valuation", "all"), default="all")
-    args = parser.parse_args()
-    if args.phase in {"core", "all"}:
-        collect()
-    if args.phase in {"kospi-valuation", "all"}:
-        collect_kospi_valuation()
+    collect()
 
 
 if __name__ == "__main__":
