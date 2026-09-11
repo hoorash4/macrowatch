@@ -27,7 +27,8 @@ test('economic chart frame is linked and stays at ninety percent of the prior re
 
 test('economic chart starts with exactly the latest 300 observations and labels months once', () => {
   assert.match(chart, /DEFAULT_VISIBLE_BARS=300/);
-  assert.match(chart, /from:Math\.max\(0,rows\.length-DEFAULT_VISIBLE_BARS\)/);
+  assert.match(chart, /const count=Math\.min\(DEFAULT_VISIBLE_BARS,rows\.length\),last=rows\.length-1/);
+  assert.match(chart, /from:last-count\+1,to:last\+rightGapBars\(\)/);
   assert.match(chart, /initialRangePending=true;showInitialRange\(\)/);
   assert.match(chart, /if\(initialRangePending\)\{initialRangePending=false;showInitialRange\(\);\}/);
   assert.match(chart, /rebuildMonthTickDates\(data\)/);
@@ -49,7 +50,7 @@ test('economic chart personal state is persisted per authenticated user', () => 
   assert.match(migration, /grant select, insert, update, delete .* to authenticated/);
 });
 
-test('economic chart assets are cache-busted together', () => {
+test('economic chart assets are cache-busted for the changed script', () => {
   assert.match(html, /economic-charts\.css\?v=7/);
-  assert.match(html, /economic-charts\.js\?v=7/);
+  assert.match(html, /economic-charts\.js\?v=8/);
 });
