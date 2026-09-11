@@ -62,6 +62,7 @@
   }
 
   function installConfiguredWorkspaceLinks() {
+    if (typeof document === 'undefined') return;
     const links = Array.isArray(window.MACROWATCH_CONFIG?.workspaceLinks)
       ? window.MACROWATCH_CONFIG.workspaceLinks
       : [];
@@ -80,7 +81,9 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', installConfiguredWorkspaceLinks);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', installConfiguredWorkspaceLinks);
+  }
 
   window.MacroWatchFrontend = Object.freeze({
     config: Object.freeze({ supabaseUrl, supabasePublishableKey }),
