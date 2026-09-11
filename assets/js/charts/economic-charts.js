@@ -8,6 +8,7 @@ const DEFAULT_PREFERENCES={series_order:{},hidden_series:[],horizontal_lines:{}}
 const SERIES=[
  {code:'US2Y',title:'미국채 2년',frequency:'D',unit:'%',category:'금리 · 신용',decimals:2,fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate','observation_date','treasury_2y_rate']},
  {code:'US10Y',title:'미국채 10년',frequency:'D',unit:'%',category:'금리 · 신용',decimals:2,fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']},
+ {code:'US10Y_REAL',title:'미국채 10년 실질금리',frequency:'D',unit:'%',category:'금리 · 신용',decimals:2},
  {code:'US10Y2Y',title:'미국 10Y-2Y 스프레드',frequency:'D',unit:'%p',category:'금리 · 신용',decimals:2},
  {code:'HY_OAS',title:'미국 하이일드 OAS',frequency:'D',unit:'%p',category:'금리 · 신용',decimals:2},
  {code:'EM_OAS',title:'이머징 채권 OAS',frequency:'D',unit:'%p',category:'금리 · 신용',decimals:2},
@@ -42,32 +43,9 @@ function koTick(time,tickMarkType){const p=dateParts(time);if(!p)return'';if(tic
 function setTickMode(mode){if(tickMode===mode)return;tickMode=mode;chart?.timeScale().applyOptions({tickMarkFormatter:koTick});}
 function updateTickMode(range){if(!range||!rows.length)return;const from=Math.max(0,Math.min(rows.length-1,Math.floor(range.from)));const to=Math.max(0,Math.min(rows.length-1,Math.ceil(range.to)));const a=new Date(`${rows[from].time}T00:00:00Z`),b=new Date(`${rows[to].time}T00:00:00Z`);const span=Math.max(0,(b-a)/86400000);setTickMode(span>1460?'year':span<120?'detail':'month');}
 function options(){return{layout:{background:{color:'#fff'},textColor:C.text,fontFamily:'Pretendard, system-ui, sans-serif',fontSize:11,attributionLogo:false},localization:{locale:'ko-KR',dateFormat:'yyyy. MM. dd.'},grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},rightPriceScale:{borderColor:'#d1d5db',scaleMargins:{top:.10,bottom:.10},minimumWidth:92},timeScale:{borderColor:'#d1d5db',timeVisible:false,secondsVisible:false,rightOffset:0,barSpacing:7,minBarSpacing:.2,fixRightEdge:false,tickMarkFormatter:koTick},crosshair:{mode:window.LightweightCharts.CrosshairMode.Normal,vertLine:{color:C.cross,width:1,style:2},horzLine:{color:C.cross,width:1,style:2}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},handleScale:{axisPressedMouseMove:false,mouseWheel:false,pinch:true},kineticScroll:{mouse:true,touch:true}};}
-function normalizePreferences(row){
- const order=row?.series_order&&typeof row.series_order==='object'&&!Array.isArray(row.series_order)?row.series_order:{};
- const hidden=Array.isArray(row?.hidden_series)?row.hidden_series.filter(code=>typeof code==='string'):[];
- const horizontal=row?.horizontal_lines&&typeof row.horizontal_lines==='object'&&!Array.isArray(row.horizontal_lines)?row.horizontal_lines:{};
- return{series_order:order,hidden_series:hidden,horizontal_lines:horizontal};
-}
-async function loadPreferences(){
- const {data,error}=await supabaseClient.from('economic_chart_preferences').select('series_order,hidden_series,horizontal_lines').eq('user_id',user.id).maybeSingle();
- if(error){console.warn('economic chart preferences load failed',error);preferences=structuredClone(DEFAULT_PREFERENCES);return;}
- preferences=normalizePreferences(data);
-}
-function persistPreferences(){
- if(!user)return Promise.resolve();
- const payload={
-  user_id:user.id,
-  series_order:structuredClone(preferences.series_order),
-  hidden_series:[...(preferences.hidden_series||[])],
-  horizontal_lines:structuredClone(preferences.horizontal_lines||{}),
-  updated_at:new Date().toISOString()
- };
- preferenceSaveChain=preferenceSaveChain.catch(()=>{}).then(async()=>{
-  const {error}=await supabaseClient.from('economic_chart_preferences').upsert(payload,{onConflict:'user_id'});
-  if(error)throw error;
- });
- return preferenceSaveChain;
-}
+function normalizePreferences(row){const order=row?.series_order&&typeof row.series_order==='object'&&!Array.isArray(row.series_order)?row.series_order:{};const hidden=Array.isArray(row?.hidden_series)?row.hidden_series.filter(code=>typeof code==='string'):[];const horizontal=row?.horizontal_lines&&typeof row.horizontal_lines==='object'&&!Array.isArray(row.horizontal_lines)?row.horizontal_lines:{};return{series_order:order,hidden_series:hidden,horizontal_lines:horizontal};}
+async function loadPreferences(){const {data,error}=await supabaseClient.from('economic_chart_preferences').select('series_order,hidden_series,horizontal_lines').eq('user_id',user.id).maybeSingle();if(error){console.warn('economic chart preferences load failed',error);preferences=structuredClone(DEFAULT_PREFERENCES);return;}preferences=normalizePreferences(data);}
+function persistPreferences(){if(!user)return Promise.resolve();const payload={user_id:user.id,series_order:structuredClone(preferences.series_order),hidden_series:[...(preferences.hidden_series||[])],horizontal_lines:structuredClone(preferences.horizontal_lines||{}),updated_at:new Date().toISOString()};preferenceSaveChain=preferenceSaveChain.catch(()=>{}).then(async()=>{const {error}=await supabaseClient.from('economic_chart_preferences').upsert(payload,{onConflict:'user_id'});if(error)throw error;});return preferenceSaveChain;}
 function preferenceError(error){console.error(error);$('economic-note').textContent=`개인 설정 저장 오류: ${error?.message||'알 수 없는 오류'}`;}
 function savedOrder(){return preferences.series_order||{};}
 function saveOrder(category,codes){preferences.series_order={...savedOrder(),[category]:codes};persistPreferences().catch(preferenceError);}
