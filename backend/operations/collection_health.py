@@ -14,6 +14,7 @@ from common import SupabaseRest, require_env, request_with_retry
 # or replaces any data.
 WORKFLOWS = {
     "central-bank-policy.yml": 3, "check-targets.yml": 3,
+    "economic-chart-data.yml": 3,
     "em-capital-capacity.yml": 3, "em-stress.yml": 3,
     "equity-bond-attractiveness.yml": 10, "equity-bond-relative-value.yml": 40,
     "financial-stress.yml": 3, "inflation-model.yml": 3,
