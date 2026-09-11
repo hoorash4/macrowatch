@@ -186,24 +186,32 @@ def _metric_tail(page_text: str, label: str, max_chars: int = 260) -> str:
     return match.group(0) if match else ""
 
 
+def _bracketed_metric(page_text: str, label: str) -> str:
+    match = re.search(rf"{label}\s*[\[［]([^\]］]+)[\]］]", page_text, flags=re.I)
+    return match.group(1) if match else ""
+
+
 def _workdays(page_text: str) -> float | None:
-    # KCS markup has varied over time: spaces, brackets, spans and footnote markers
-    # have all changed. Parse the values from a bounded text window rather than
-    # requiring one exact '[...]' spelling.
-    tail = _metric_tail(page_text, r"조업\s*일수")
-    if not tail:
+    # Prefer the explicit KCS bracket because the following prose can contain
+    # unrelated day counts. Older pages without brackets fall back to a short tail.
+    scope = _bracketed_metric(page_text, r"조업\s*일수") or _metric_tail(page_text, r"조업\s*일수", 120)
+    if not scope:
         return None
-    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)\s*일", tail)
+    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)\s*일", scope)
     if not values:
-        values = re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*일", tail)
+        values = re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*일", scope)
     return float(values[-1]) if values else None
 
 
 def _reported_daily_average(page_text: str) -> float | None:
-    tail = _metric_tail(page_text, r"일평균\s*수출액")
-    if not tail:
+    # Keep parsing inside the '일평균 수출액[...]' payload. A broad tail can run
+    # into the next table label '수출(전년동기대비)' and misread its leading value.
+    scope = _bracketed_metric(page_text, r"일평균\s*수출액") or _metric_tail(page_text, r"일평균\s*수출액", 100)
+    if not scope:
         return None
-    values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)", tail)
+    values = re.findall(r"[’'‘]?\d{2}\)\s*([0-9]+(?:\.[0-9]+)?)", scope)
+    if not values:
+        values = re.findall(r"\)\s*([0-9]+(?:\.[0-9]+)?)", scope)
     return float(values[-1]) if values else None
 
 
