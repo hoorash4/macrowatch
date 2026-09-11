@@ -15,7 +15,7 @@ concurrency:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -23,17 +23,9 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Backfill economic chart series
-        env:
-          PYTHONPATH: backend
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -m signals.economic_chart_backfill
-      - name: Complete paginated derived spread
+      - name: Seed chart read model from existing MacroWatch data
         env:
           PYTHONPATH: backend
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -m signals.economic_chart_spread_backfill
+        run: python -m signals.economic_chart_existing_series
