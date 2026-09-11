@@ -54,9 +54,8 @@ def _github_get(path: str, token: str, *, params: dict[str, object] | None = Non
     return payload
 
 
-def github_workflow_state(workflow: str, token: str) -> str:
-    state = _github_get(f"actions/workflows/{workflow}", token).get("state")
-    return str(state or "unknown")
+def github_workflow_info(workflow: str, token: str) -> dict:
+    return _github_get(f"actions/workflows/{workflow}", token)
 
 
 def github_latest_run(workflow: str, token: str) -> dict | None:
@@ -71,14 +70,17 @@ def github_latest_run(workflow: str, token: str) -> dict | None:
     return runs[0] if runs and isinstance(runs[0], dict) else None
 
 
-def _github_run_date(run: dict) -> date:
-    raw = run.get("updated_at") or run.get("run_started_at") or run.get("created_at")
-    if not raw:
-        raise ValueError("실행 시각이 없습니다.")
-    parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+def _github_date(value: object, label: str) -> date:
+    if not value:
+        raise ValueError(f"{label}이 없습니다.")
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).date()
+
+
+def _github_run_date(run: dict) -> date:
+    return _github_date(run.get("updated_at") or run.get("run_started_at") or run.get("created_at"), "실행 시각")
 
 
 def check_workflows(today: date) -> list[str]:
@@ -90,9 +92,10 @@ def check_workflows(today: date) -> list[str]:
 
     for workflow, max_age in WORKFLOWS.items():
         try:
-            state = github_workflow_state(workflow, token)
+            info = github_workflow_info(workflow, token)
+            state = str(info.get("state") or "unknown")
             # A deliberately disabled workflow is not expected to have fresh
-            # scheduled runs.  Unknown/non-active states are reported because
+            # scheduled runs. Unknown/non-active states are reported because
             # they may indicate a renamed/deleted/broken workflow.
             if state.startswith("disabled_"):
                 continue
@@ -102,7 +105,14 @@ def check_workflows(today: date) -> list[str]:
 
             run = github_latest_run(workflow, token)
             if run is None:
-                failures.append(f"예약 실행 기록 없음: {workflow}")
+                # Newly-created weekly/monthly workflows can legitimately have
+                # no scheduled run until their first cadence arrives. Reuse the
+                # same monitoring tolerance as a bounded first-run grace period.
+                created = _github_date(info.get("created_at"), "workflow 생성 시각")
+                if created > today:
+                    failures.append(f"workflow 생성 시각 이상: {workflow}, created={created.isoformat()}")
+                elif (today - created).days > max_age:
+                    failures.append(f"예약 실행 기록 없음: {workflow}, created={created.isoformat()}")
                 continue
 
             updated = _github_run_date(run)
@@ -157,7 +167,7 @@ def check_database(today: date) -> list[str]:
 def main() -> None:
     today = datetime.now(timezone.utc).date()
     failures: list[str] = []
-    # Keep the two domains independent as a final safety net.  Individual
+    # Keep the two domains independent as a final safety net. Individual
     # checks are already fault tolerant, but an unforeseen bug in one domain
     # must not suppress the other domain's diagnostics.
     for label, checker in (("workflow", check_workflows), ("database", check_database)):
