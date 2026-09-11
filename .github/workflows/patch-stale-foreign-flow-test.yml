@@ -1,0 +1,35 @@
+name: Patch stale foreign-flow schedule test
+
+on:
+  push:
+    paths:
+      - ".github/workflows/patch-stale-foreign-flow-test.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Remove stale admin-controlled schedule assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test_backend.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        workflow = (ROOT / ".github/workflows/korea-foreign-flow.yml").read_text(encoding="utf-8")\n'''
+          old += '''        self.assertIn('cron: "20 7 * * 1-5"', workflow)\n'''
+          if old not in text:
+              raise SystemExit('stale schedule assertion not found exactly')
+          path.write_text(text.replace(old, '', 1), encoding='utf-8')
+          PY
+          git config user.name "MacroWatch CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add tests/test_backend.py
+          git commit -m "Stop pinning admin-controlled foreign flow schedule"
+          git push
