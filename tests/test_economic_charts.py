@@ -26,7 +26,6 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('function rightGapBars()', script)
         self.assertNotIn('function updateFixedGap()', script)
         self.assertNotIn("chart.priceScale('right').width", script)
-        # Protect behavior, not the obsolete spelling that implemented it before.
         self.assertIn('anchor=r.to>=last?maxTo:Math.min(r.to,maxTo)', script)
         self.assertIn('if(to>maxTo){to=maxTo;from=to-w;}', script)
         self.assertIn('showInitialRange()', script)
@@ -163,20 +162,20 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('cumulative_workdays - d20.cumulative_workdays', source)
         self.assertIn('timedelta(days=3660)', backfill)
 
-    def test_core_series_include_fred_ecos_krx_and_derived_spreads(self):
+    def test_core_series_include_fred_ecos_pykrx_and_derived_spreads(self):
         pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
+        krx_source = (ROOT / 'backend/sources/krx_index_fundamentals.py').read_text(encoding='utf-8')
         for token in ('DGS2', 'DGS10', 'BAMLH0A0HYM2', 'BAMLEMCBPIOAS', 'DCOILWTICO', 'DEXKOUS', 'WEI', 'RRPONTSYD', 'WTREGEN', 'EMRATIO'):
             self.assertIn(token, pipeline)
         self.assertIn('010200000', pipeline)
         self.assertIn('010210000', pipeline)
         self.assertIn('US10Y2Y', pipeline)
         self.assertIn('KR10Y3Y', pipeline)
-        self.assertIn('MDCSTAT00702', pipeline)
-        self.assertIn('WT_PER', pipeline)
-        self.assertIn('WT_STKPRC_NETASST_RTO', pipeline)
-        self.assertIn('"indTpCd": "1"', pipeline)
-        self.assertIn('"indTpCd2": "001"', pipeline)
-        self.assertIn('cursor + timedelta(days=729)', pipeline)
+        self.assertIn('from pykrx import stock', krx_source)
+        self.assertIn('KOSPI_INDEX_TICKER = "1001"', krx_source)
+        self.assertIn('"KOSPI_PER": ("PER", "D")', krx_source)
+        self.assertIn('"KOSPI_PBR": ("PBR", "D")', krx_source)
+        self.assertNotIn('MDCSTAT00702', pipeline)
         self.assertNotIn('earnings_v2.providers', pipeline)
         self.assertNotIn('SPCS20RSA', pipeline)
 
