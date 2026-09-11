@@ -21,6 +21,10 @@ DEFAULT_HTTP_TIMEOUT = 45
 FRED_OBSERVATIONS_URL = "https://api.stlouisfed.org/fred/series/observations"
 MACROWATCH_URL = "https://hoorash4.github.io/macrowatch/"
 
+# These FRED identifiers are aliases for first-party U.S. Treasury data.  Keep
+# accepting the identifiers at shared call sites for compatibility, but route
+# them to Treasury so active collectors are not held back by FRED publication lag.
+TREASURY_FRED_ALIASES = frozenset({"DGS3MO", "DGS2", "DGS10", "DFII10", "T10Y2Y"})
 
 FRED_HTTP_SESSION: requests.Session | None = None
 TRANSIENT_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -47,9 +51,6 @@ def request_with_retry(
             response = send()
         except requests.RequestException as exc:
             last_error = exc
-            # A dropped response after a write can leave its commit outcome
-            # unknown.  Read/idempotent callers opt into transport retries;
-            # ordinary writes still retry only definite 429/5xx responses.
             if not retry_transport or attempt == retry_count:
                 raise
             delay = float(2 ** attempt)
@@ -83,6 +84,44 @@ def require_env(name: str) -> str:
     return value
 
 
+def _treasury_alias_observations(
+    series_id: str,
+    *,
+    start: str | None,
+    end: str | None,
+    sort_order: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Return Treasury first-party data in FRED observation-compatible shape."""
+    from sources.us_treasury_yields import fetch_treasury_nominal_values, fetch_treasury_real_values
+
+    start_date = date.fromisoformat(start) if start else date(1990, 1, 1)
+    end_date = date.fromisoformat(end) if end else date.today()
+    if end_date < start_date:
+        return []
+
+    if series_id == "DFII10":
+        values = fetch_treasury_real_values(start_date, end_date, ("10Y",))["10Y"]
+    else:
+        maturities = {
+            "DGS3MO": ("3M",),
+            "DGS2": ("2Y",),
+            "DGS10": ("10Y",),
+            "T10Y2Y": ("2Y", "10Y"),
+        }[series_id]
+        nominal = fetch_treasury_nominal_values(start_date, end_date, maturities)
+        if series_id == "T10Y2Y":
+            common_dates = nominal["10Y"].keys() & nominal["2Y"].keys()
+            values = {observed: nominal["10Y"][observed] - nominal["2Y"][observed] for observed in common_dates}
+        else:
+            values = nominal[maturities[0]]
+
+    rows = [{"date": observed.isoformat(), "value": str(round(value, 8))} for observed, value in sorted(values.items())]
+    if str(sort_order or "").lower() == "desc":
+        rows.reverse()
+    return rows[:max(int(limit), 0)]
+
+
 def fetch_fred_observations(
     series_id: str,
     api_key: str,
@@ -95,7 +134,20 @@ def fetch_fred_observations(
     session: requests.Session | None = None,
     headers: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """FRED observations 응답을 동일한 검증 방식으로 가져온다."""
+    """Fetch observations, preferring first-party Treasury for Treasury series.
+
+    The legacy function name remains to avoid needless churn in callers.  DGS/DFII/T10Y2Y
+    aliases are sourced directly from Treasury; genuinely FRED-only series still use FRED.
+    """
+    if series_id in TREASURY_FRED_ALIASES and session is None:
+        return _treasury_alias_observations(
+            series_id,
+            start=start,
+            end=end,
+            sort_order=sort_order,
+            limit=limit,
+        )
+
     params: dict[str, str | int] = {
         "series_id": series_id,
         "api_key": api_key,
@@ -108,8 +160,6 @@ def fetch_fred_observations(
         params["observation_end"] = end
     if sort_order:
         params["sort_order"] = sort_order
-    # 기본 호출은 연결 풀을 공유해 여러 FRED 시계열 수집의 TLS 연결 비용을 줄인다.
-    # 테스트나 특수 호출은 기존처럼 주입된 session을 우선한다.
     client = session or default_fred_session()
     response = request_with_retry(
         lambda: client.get(FRED_OBSERVATIONS_URL, params=params, headers=headers, timeout=timeout),
@@ -181,10 +231,6 @@ class SupabaseRest:
             method, f"{self.url}/rest/v1/{table}", headers=headers,
             params=params, json=body, timeout=self.timeout,
         )
-        # Every REST call retries definite server/rate-limit responses.  A
-        # transport retry is reserved for naturally idempotent operations or
-        # explicit conflict-key upserts, because an interrupted write may have
-        # committed after the client lost its response.
         is_transport_safe = retry_safe if retry_safe is not None else method.upper() in {"GET", "DELETE"}
         response = request_with_retry(send, retry_transport=is_transport_safe)
         if not response.ok:
