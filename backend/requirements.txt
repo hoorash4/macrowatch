@@ -1,3 +1,4 @@
 requests==2.32.5
 numpy==2.3.5
 holidays==0.104
+pykrx==1.2.8
