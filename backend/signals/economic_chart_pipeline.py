@@ -119,13 +119,15 @@ def _krx_date(value: object) -> str | None:
 
 
 def _krx_index_payload(start: date, end: date) -> list[dict[str, Any]]:
-    # Match the current KRX/pykrx request contract exactly.  The endpoint accepts
-    # <=730-day date ranges; callers chunk longer backfills.
+    # Match pykrx's current first-party request headers as well as its payload.
+    # KRX rejects some Data Marketplace calls as HTTP 400 without the XMLHttpRequest
+    # header/referer pair even though the underlying index endpoint remains public.
     response = request_with_retry(lambda: requests.post(
         KRX_DATA_URL,
         headers={
             "User-Agent": "Mozilla/5.0",
-            "Referer": "https://data.krx.co.kr/contents/MDC/MAIN/main/index.cmd?locale=ko_KR",
+            "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd",
+            "X-Requested-With": "XMLHttpRequest",
         },
         data={
             "bld": KRX_INDEX_BLD,
