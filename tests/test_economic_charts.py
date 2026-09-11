@@ -26,11 +26,16 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('function rightGapBars()', script)
         self.assertNotIn('function updateFixedGap()', script)
         self.assertNotIn("chart.priceScale('right').width", script)
-        self.assertIn('to>=last&&to<maxTo', script)
+        # The current implementation anchors wheel zoom to the real right-gap boundary
+        # whenever the latest observation is already visible. Do not force an obsolete
+        # source-code spelling of the same behavior.
+        self.assertIn('anchor=r.to>=last?maxTo:Math.min(r.to,maxTo)', script)
+        self.assertIn('if(to>maxTo){to=maxTo;from=to-w;}', script)
         self.assertIn('showInitialRange()', script)
         self.assertIn("$('economic-fit-max').onclick=fitMax", script)
         self.assertIn('handleScale:{axisPressedMouseMove:false,mouseWheel:false,pinch:true}', script)
-        self.assertIn("host.addEventListener('wheel',wheel,{passive:false})", script)
+        self.assertIn('host.onwheel=wheel', script)
+        self.assertIn('host.onwheel=null', script)
         self.assertIn('attributionLogo:false', script)
         self.assertNotIn('id="economic-plot-gap"', html)
         self.assertNotIn('.economic-plot-gap{', css)
