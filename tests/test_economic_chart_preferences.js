@@ -54,5 +54,5 @@ test('economic chart personal state is persisted per authenticated user', () => 
 
 test('economic chart assets are cache-busted for the changed script', () => {
   assert.match(html, /economic-charts\.css\?v=7/);
-  assert.match(html, /economic-charts\.js\?v=10/);
+  assert.match(html, /economic-charts\.js\?v=11/);
 });
