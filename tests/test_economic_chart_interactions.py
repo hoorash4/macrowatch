@@ -18,6 +18,7 @@ class EconomicChartInteractionTests(unittest.TestCase):
         self.assertIn('from:last-count+1,to:last+rightGapBars()', script)
         self.assertIn("host.ondblclick=e=>{e.preventDefault();showInitialRange();}", script)
         self.assertIn('host.onwheel=wheel', script)
+        self.assertIn('host.onwheel=null;host.ondblclick=null', script)
         self.assertIn('function scheduleInitialRange()', script)
         self.assertNotIn('pinLatestGap', script)
         self.assertIn('더블클릭 기본복귀', script)
