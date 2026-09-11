@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>경제지표 차트 · MacroWatch</title>
+  <title>경제지표 챠트 · MacroWatch</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="assets/css/economic-charts.css?v=1">
+  <link rel="stylesheet" href="assets/css/economic-charts.css?v=2">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -16,26 +16,39 @@
     <header class="economic-topbar">
       <a class="economic-brand" href="index.html"><span>MacroWatch</span><small>EVOTIVE RESEARCH</small></a>
       <nav class="economic-nav" aria-label="MacroWatch 메뉴">
-        <a href="index.html#news">플로우 분석</a>
-        <a href="index.html#policy-signals">통화정책</a>
-        <a href="index.html#earnings-signals">기업이익</a>
-        <a href="index.html#stress">스트레스</a>
-        <a href="index.html#tracker">지표추적</a>
-        <a class="is-active" href="economic-charts.html" aria-current="page">경제지표 차트</a>
+        <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><a class="is-active" href="economic-charts.html" aria-current="page">경제지표 챠트</a>
       </nav>
     </header>
     <main class="economic-main">
       <div class="economic-hero">
-        <div>
-          <h1>경제지표 차트</h1>
-          <p>주요 금리·신용·원자재·환율·고빈도 경기지표를 한 화면에서 확인합니다. 기간 버튼 없이 휠로 확대·축소합니다.</p>
-        </div>
+        <div><h1>경제지표 챠트</h1><p>주요 단일 경제지표를 한 차트에서 전환해 확인합니다. 원자료와 주기별 이동평균만 표시합니다.</p></div>
         <div id="economic-status" class="economic-status">차트 불러오는 중</div>
       </div>
-      <div id="economic-sections"></div>
+      <section class="economic-workspace">
+        <aside class="economic-series-panel" aria-label="경제지표 목록"><div id="economic-series-list"></div></aside>
+        <div class="economic-chart-panel">
+          <header class="economic-chart-header">
+            <div><div id="economic-chart-title" class="economic-chart-title">—</div><div id="economic-chart-meta" class="economic-chart-meta">—</div></div>
+            <div class="economic-tools"><button type="button" id="economic-line-tool">수평선</button><button type="button" id="economic-delete-line" disabled>선 삭제</button><button type="button" id="economic-clear-lines">전체 삭제</button><button type="button" id="economic-fit-max">MAX</button></div>
+          </header>
+          <div id="economic-chart-host" class="economic-chart-host"><div class="economic-empty">지표를 선택하세요.</div><div id="economic-alert-layer" class="economic-alert-layer"></div></div>
+          <div class="economic-chart-footer"><div id="economic-legend" class="economic-legend"><span>원값</span><span>단기평균</span><span>장기평균</span></div><div id="economic-note" class="economic-note"></div></div>
+        </div>
+      </section>
     </main>
   </div>
+
+  <div id="economic-alert-modal" class="economic-modal" hidden>
+    <div class="economic-modal-backdrop" data-close-alert></div>
+    <form id="economic-alert-form" class="economic-modal-card">
+      <div class="economic-modal-head"><div><strong id="economic-alert-title">추적 알림</strong><small id="economic-alert-series"></small></div><button type="button" data-close-alert aria-label="닫기">×</button></div>
+      <label>조건<select id="economic-alert-condition"><option value="gte">설정값 상향 돌파</option><option value="lte">설정값 하향 돌파</option><option value="cross">설정값 상/하향 돌파</option></select></label>
+      <label>기준값<input id="economic-alert-value" type="number" step="any" required autocomplete="off"></label>
+      <p class="economic-modal-help">알림 수단은 지표추적에서 설정한 카카오톡/이메일 설정을 그대로 사용합니다. 선을 삭제해도 알림은 유지됩니다.</p>
+      <div class="economic-modal-actions"><button type="button" id="economic-alert-delete" class="danger" hidden>알림 삭제</button><span></span><button type="button" data-close-alert>취소</button><button type="submit" class="primary">저장</button></div>
+    </form>
+  </div>
   <script src="assets/js/core/config.js?v=1"></script>
-  <script src="assets/js/charts/economic-charts.js?v=1"></script>
+  <script src="assets/js/charts/economic-charts.js?v=2"></script>
 </body>
 </html>
