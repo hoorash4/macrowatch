@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="assets/css/economic-charts.css?v=3">
+  <link rel="stylesheet" href="assets/css/economic-charts.css?v=4">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -31,7 +31,7 @@
             <div><div id="economic-chart-title" class="economic-chart-title">—</div><div id="economic-chart-meta" class="economic-chart-meta">—</div></div>
             <div class="economic-tools"><button type="button" id="economic-line-tool">수평선</button><button type="button" id="economic-delete-line" disabled>선 삭제</button><button type="button" id="economic-clear-lines">전체 삭제</button><button type="button" id="economic-fit-max">MAX</button></div>
           </header>
-          <div id="economic-chart-host" class="economic-chart-host"><div class="economic-empty">지표를 선택하세요.</div><div id="economic-alert-layer" class="economic-alert-layer"></div></div>
+          <div id="economic-chart-host" class="economic-chart-host"><div class="economic-empty">지표를 선택하세요.</div><div id="economic-plot-gap" class="economic-plot-gap" aria-hidden="true"></div><div id="economic-alert-layer" class="economic-alert-layer"></div></div>
           <div class="economic-chart-footer"><div id="economic-legend" class="economic-legend"><span>원값</span><span>단기평균</span><span>장기평균</span></div><div id="economic-note" class="economic-note"></div></div>
         </div>
       </section>
@@ -49,6 +49,6 @@
     </form>
   </div>
   <script src="assets/js/core/config.js?v=1"></script>
-  <script src="assets/js/charts/economic-charts.js?v=3"></script>
+  <script src="assets/js/charts/economic-charts.js?v=4"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -32,6 +33,16 @@ DERIVED_SERIES = {
     "US10Y2Y": ("US10Y", "US2Y", "D"),
     "KR10Y3Y": ("KR10Y", "KR3Y", "D"),
 }
+# KRX OPEN API currently used by Earnings exposes trading/universe data, but
+# the index PER/PBR history is provided by KRX Data Marketplace.  This is the
+# same first-party KRX endpoint/contract used by the public market-statistics
+# screen.  Keep it isolated here so it cannot affect the Earnings collector.
+KRX_INDEX_FUNDAMENTALS = {
+    "KOSPI_PER": ("WT_PER", "D"),
+    "KOSPI_PBR": ("WT_STKPRC_NETASST_RTO", "D"),
+}
+KRX_DATA_URL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+KRX_INDEX_BLD = "dbms/MDC/STAT/standard/MDCSTAT00702"
 TABLE = "economic_chart_points"
 TARGET_SOURCE_TYPE = "economic_chart"
 
@@ -98,6 +109,68 @@ def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str,
             "source": f"ECOS:{stat_code}/{item_code}",
         })
     return rows
+
+
+def _krx_date(value: object) -> str | None:
+    raw = str(value or "").strip().replace("/", "").replace("-", "")
+    if len(raw) != 8 or not raw.isdigit():
+        return None
+    return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+
+
+def _krx_index_payload(start: date, end: date) -> list[dict[str, Any]]:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    response = request_with_retry(lambda: requests.post(
+        KRX_DATA_URL,
+        headers=headers,
+        data={
+            "bld": KRX_INDEX_BLD,
+            "indTpCd": "1",
+            "indTpCd2": "001",  # KOSPI = 1001
+            "strtDd": start.strftime("%Y%m%d"),
+            "endDd": end.strftime("%Y%m%d"),
+        },
+        timeout=45,
+    ))
+    response.raise_for_status()
+    payload = response.json()
+    output = payload.get("output") if isinstance(payload, dict) else None
+    if not isinstance(output, list):
+        raise RuntimeError("KRX KOSPI PER/PBR 응답 형식이 올바르지 않습니다.")
+    return [row for row in output if isinstance(row, dict)]
+
+
+def _krx_index_rows(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
+    """Fetch KOSPI PER/PBR in bounded <=730-day KRX ranges."""
+    result = {code: [] for code in KRX_INDEX_FUNDAMENTALS}
+    cursor = start
+    first = True
+    while cursor <= end:
+        chunk_end = min(cursor + timedelta(days=729), end)
+        if not first:
+            time.sleep(1)
+        first = False
+        for item in _krx_index_payload(cursor, chunk_end):
+            observed = _krx_date(item.get("TRD_DD"))
+            if observed is None:
+                continue
+            for code, (field, frequency) in KRX_INDEX_FUNDAMENTALS.items():
+                value = _numeric(item.get(field))
+                if value is None:
+                    continue
+                result[code].append({
+                    "series_code": code,
+                    "observation_date": observed,
+                    "value": value,
+                    "frequency": frequency,
+                    "source": "KRX_DATA_MARKETPLACE:MDCSTAT00702/KOSPI",
+                })
+        cursor = chunk_end + timedelta(days=1)
+    return result
 
 
 def _existing_dates(db: SupabaseRest, series_code: str, start: date) -> set[str]:
@@ -215,6 +288,10 @@ def collect(mode: str) -> dict[str, int]:
 
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
         counts[code] = _insert_missing(db, _ecos_rows(code, stat_code, item_code, frequency, start, today), start)
+
+    krx_rows = _krx_index_rows(start, today)
+    for code, rows in krx_rows.items():
+        counts[code] = _insert_missing(db, rows, start)
 
     for code, (left, right, frequency) in DERIVED_SERIES.items():
         counts[code] = _derive_spread(db, code, left, right, frequency, start, today)
