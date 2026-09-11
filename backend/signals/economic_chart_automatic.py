@@ -23,7 +23,14 @@ from signals.economic_chart_pipeline import (
 from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
 from sources.korea_export_intramonth import fetch_snapshots
 from sources.redbook import fetch_recent_redbook_rows
+from sources.us_treasury_yields import fetch_treasury_yield_rows
 from sources.wti_futures import fetch_wti_futures_rows
+from sources.yahoo_daily import fetch_yahoo_daily_rows
+
+# Daily market series should use a timely market/original source in scheduled collection.
+# FRED remains the explicit historical-backfill source and the live source for series that do
+# not have a like-for-like timely public alternative (ICE OAS, RRP) plus weekly/monthly data.
+LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "US10Y2Y", "WTI", "USDKRW"}
 
 
 def collect() -> tuple[dict[str, int], dict[str, str]]:
@@ -45,15 +52,34 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
                 "error": errors[name],
             }, ensure_ascii=False))
 
-    # WTI uses the provider's continuous front-month CL=F series directly. MacroWatch
-    # never selects, stitches or back-adjusts individual contract months itself.
+    # Keep FRED for ICE credit spreads, RRP, and slower weekly/monthly macro series.  The
+    # explicit backfill module still uses the complete FRED_SERIES mapping, so changing the
+    # live provider never rewrites or replaces already stored history.
     for code, (source_id, frequency) in FRED_SERIES.items():
-        if code == "WTI":
+        if code in LIVE_NON_FRED_SERIES:
             continue
         run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
+
+    # U.S. Treasury publishes the official par curve daily.  Store only missing observations,
+    # then derive 10Y-2Y from the values actually stored for the two maturities.
+    try:
+        treasury_rows = fetch_treasury_yield_rows(start, today)
+        for code in ("US2Y", "US10Y"):
+            run(code, lambda code=code: _insert_missing(db, treasury_rows.get(code, []), start))
+    except Exception as error:
+        for code in ("US2Y", "US10Y"):
+            inserted.setdefault(code, 0)
+            errors[code] = f"{error.__class__.__name__}: {error}"
+    run("US10Y2Y", lambda: _derive_spread(db, "US10Y2Y", "US10Y", "US2Y", "D", start, today))
+
+    # Market-close series use Yahoo's daily chart feed. WTI keeps the existing continuous
+    # front-month CL=F contract; USD/KRW uses the provider's KRW=X close.
     run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
+    run("USDKRW", lambda: _insert_missing(
+        db, fetch_yahoo_daily_rows("USDKRW", "KRW=X", start, today), start
+    ))
 
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
         run(code, lambda code=code, stat_code=stat_code, item_code=item_code, frequency=frequency: _insert_missing(
