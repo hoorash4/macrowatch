@@ -27,7 +27,7 @@ const SERIES=[
  {code:'CASE_SHILLER_20',title:'미국 20개 도시 주택가격',frequency:'M',unit:'지수',category:'주택',decimals:2,pending:'FRED에 SPCS20RSA가 있으나 S&P 재배포 사전허가가 필요한 시계열이라 자동 적재는 보류했습니다.'}
 ];
 const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월']};
-let user=null,meta=null,rows=[],chart=null,raw=null,fast=null,slow=null,resizeObserver=null,lineMode=false,lineCounter=0,lines=[],selected=null,alerts=[],changingRange=false,dragState=null,preferences=structuredClone(DEFAULT_PREFERENCES);
+let user=null,meta=null,rows=[],chart=null,raw=null,fast=null,slow=null,resizeObserver=null,lineMode=false,lineCounter=0,lines=[],selected=null,alerts=[],changingRange=false,dragState=null,preferences=structuredClone(DEFAULT_PREFERENCES),preferenceSaveChain=Promise.resolve();
 const $=id=>document.getElementById(id);
 const freq=f=>({D:'일별',W:'주별',T:'10일 구간',M:'월별'})[f]||f;
 const fmt=(v,m=meta)=>!m||!Number.isFinite(Number(v))?'—':`${Number(v).toFixed(m.decimals)}${m.unit?` ${m.unit}`:''}`;
@@ -49,11 +49,20 @@ async function loadPreferences(){
  if(error){console.warn('economic chart preferences load failed',error);preferences=structuredClone(DEFAULT_PREFERENCES);return;}
  preferences=normalizePreferences(data);
 }
-async function persistPreferences(){
- if(!user)return;
- const payload={user_id:user.id,series_order:preferences.series_order,hidden_series:preferences.hidden_series,horizontal_lines:preferences.horizontal_lines,updated_at:new Date().toISOString()};
- const {error}=await supabaseClient.from('economic_chart_preferences').upsert(payload,{onConflict:'user_id'});
- if(error)throw error;
+function persistPreferences(){
+ if(!user)return Promise.resolve();
+ const payload={
+  user_id:user.id,
+  series_order:structuredClone(preferences.series_order),
+  hidden_series:[...(preferences.hidden_series||[])],
+  horizontal_lines:structuredClone(preferences.horizontal_lines||{}),
+  updated_at:new Date().toISOString()
+ };
+ preferenceSaveChain=preferenceSaveChain.catch(()=>{}).then(async()=>{
+  const {error}=await supabaseClient.from('economic_chart_preferences').upsert(payload,{onConflict:'user_id'});
+  if(error)throw error;
+ });
+ return preferenceSaveChain;
 }
 function preferenceError(error){console.error(error);$('economic-note').textContent=`개인 설정 저장 오류: ${error?.message||'알 수 없는 오류'}`;}
 function savedOrder(){return preferences.series_order||{};}
