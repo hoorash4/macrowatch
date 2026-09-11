@@ -1,11 +1,7 @@
 name: Economic chart backfill once
 
-# Temporary push hook is only for this explicitly requested one-off retry.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/economic-chart-backfill-once.yml"
 
 permissions:
   contents: read
