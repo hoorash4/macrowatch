@@ -1,8 +1,7 @@
 """Incremental automatic collection for economic charts.
 
-Historical bootstrap/backfill is deliberately not exposed here.  Exact observations that
-already live in other MacroWatch tables are mirrored from those tables rather than fetched
-from their upstream providers again.
+Only a short recent source window is inspected. Historical backfill is a separate explicit
+entrypoint and is never imported or invoked from this scheduled collector.
 """
 from __future__ import annotations
 
@@ -10,10 +9,9 @@ import json
 from datetime import date, timedelta
 
 from common import SupabaseRest
-from signals.economic_chart_backfill import BACKFILL_FRED_SERIES, _redbook_rows
-from signals.economic_chart_existing_series import mirror_existing_series
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
+    FRED_SERIES,
     KRX_INDEX_FUNDAMENTALS,
     _derive_spread,
     _ecos_rows,
@@ -22,6 +20,9 @@ from signals.economic_chart_pipeline import (
     _krx_index_rows,
     check_collected_series_alerts,
 )
+from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
+from sources.korea_export_intramonth import fetch_snapshots
+from sources.redbook import fetch_recent_redbook_rows
 
 
 def collect() -> tuple[dict[str, int], dict[str, str]]:
@@ -37,17 +38,15 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
         except Exception as error:
             inserted.setdefault(name, 0)
             errors[name] = f"{error.__class__.__name__}: {error}"
-            print(json.dumps({"stage": "economic_chart_automatic_error", "series": name, "error": errors[name]}, ensure_ascii=False))
+            print(json.dumps({
+                "stage": "economic_chart_automatic_error",
+                "series": name,
+                "error": errors[name],
+            }, ensure_ascii=False))
 
-    # These are not upstream collection calls. They only copy newly stored points from
-    # existing MacroWatch source tables into the chart read model.
-    try:
-        for code, count in mirror_existing_series(db, start).items():
-            inserted[code] = count
-    except Exception as error:
-        errors["EXISTING_SERIES_MIRROR"] = f"{error.__class__.__name__}: {error}"
-
-    for code, (source_id, frequency) in BACKFILL_FRED_SERIES.items():
+    # Every chart series uses the same first-party/official source in automatic and
+    # backfill modes. The only difference is the bounded date window.
+    for code, (source_id, frequency) in FRED_SERIES.items():
         run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
@@ -57,8 +56,8 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             db, _ecos_rows(code, stat_code, item_code, frequency, start, today), start
         ))
 
-    # KRX is isolated because the public Data Marketplace endpoint may reject
-    # automated callers independently of every other source.
+    # KRX can independently reject an automated request. Isolate it so FRED/ECOS/KCS
+    # success is preserved and visible in the run diagnostics.
     try:
         rows_by_code = _krx_index_rows(start, today)
         for code in KRX_INDEX_FUNDAMENTALS:
@@ -69,9 +68,26 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             errors[code] = f"{error.__class__.__name__}: {error}"
 
     run("KR10Y3Y", lambda: _derive_spread(db, "KR10Y3Y", "KR10Y", "KR3Y", "D", start, today))
-    run("REDBOOK", lambda: _insert_missing(db, _redbook_rows(), start))
+    run("REDBOOK", lambda: _insert_missing(db, fetch_recent_redbook_rows(), start))
 
-    changed = {code for code, count in inserted.items() if count > 0}
+    # KCS publishes 1-10, 1-20 and month-end cumulative snapshots. Inspect only the
+    # current/recent months, preserve raw snapshots, then derive missing independent
+    # workday-adjusted segments. This is normal collection, not historical backfill.
+    export_start_month = (today - timedelta(days=65)).replace(day=1)
+    try:
+        snapshots, export_errors = fetch_snapshots(export_start_month, max_pages=6)
+        if export_errors:
+            errors["KR_EXPORT_SOURCE"] = " | ".join(export_errors[:5])
+        raw_count = insert_missing_snapshots(db, snapshots, export_start_month)
+        segment_count = derive_missing_segments(db, export_start_month)
+        inserted["KR_EXPORT_RAW"] = raw_count
+        inserted["KR_EXPORT_DAILY_AVG"] = segment_count
+    except Exception as error:
+        inserted.setdefault("KR_EXPORT_DAILY_AVG", 0)
+        errors["KR_EXPORT_DAILY_AVG"] = f"{error.__class__.__name__}: {error}"
+
+    changed = {code for code, count in inserted.items()
+               if count > 0 and code not in {"KR_EXPORT_RAW"}}
     alerts = check_collected_series_alerts(db, changed)
     print(json.dumps({
         "mode": "automatic",
