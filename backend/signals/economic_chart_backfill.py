@@ -12,13 +12,12 @@ from common import SupabaseRest
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
     FRED_SERIES,
-    KRX_INDEX_FUNDAMENTALS,
     _derive_spread,
     _ecos_rows,
     _fred_rows,
     _insert_missing,
-    _krx_index_rows,
 )
+from sources.krx_index_fundamentals import SERIES as KRX_INDEX_FUNDAMENTALS, fetch_krx_kospi_fundamental_rows
 from sources.redbook import fetch_recent_redbook_rows
 from sources.wti_futures import fetch_wti_futures_rows
 
@@ -45,8 +44,6 @@ def backfill() -> tuple[dict[str, int], dict[str, str]]:
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
 
-    # Generic backfill may fill WTI futures rows but does not delete existing WTI.
-    # Full source replacement is intentionally isolated in wti_futures_backfill.py.
     run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
 
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
@@ -55,7 +52,7 @@ def backfill() -> tuple[dict[str, int], dict[str, str]]:
         ))
 
     try:
-        rows_by_code = _krx_index_rows(start, today)
+        rows_by_code = fetch_krx_kospi_fundamental_rows(start, today)
         for code in KRX_INDEX_FUNDAMENTALS:
             run(code, lambda code=code: _insert_missing(db, rows_by_code.get(code, []), start))
     except Exception as error:
