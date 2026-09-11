@@ -26,9 +26,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('function rightGapBars()', script)
         self.assertNotIn('function updateFixedGap()', script)
         self.assertNotIn("chart.priceScale('right').width", script)
-        # The current implementation anchors wheel zoom to the real right-gap boundary
-        # whenever the latest observation is already visible. Do not force an obsolete
-        # source-code spelling of the same behavior.
+        # Protect behavior, not the obsolete spelling that implemented it before.
         self.assertIn('anchor=r.to>=last?maxTo:Math.min(r.to,maxTo)', script)
         self.assertIn('if(to>maxTo){to=maxTo;from=to-w;}', script)
         self.assertIn('showInitialRange()', script)
@@ -55,7 +53,6 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('economic-series-restore', script)
         self.assertIn('overflow-y:auto', css)
         self.assertIn('scrollbar-gutter:stable', css)
-        # 목록 삭제는 사용자 UI 설정일 뿐 수집 데이터나 DB 시계열을 삭제하지 않는다.
         hide_body = script.split('function hideSeries(m)', 1)[1].split('function restoreSeries()', 1)[0]
         self.assertNotIn("supabaseClient.from('economic_chart_points').delete", hide_body)
 
@@ -180,9 +177,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('"indTpCd": "1"', pipeline)
         self.assertIn('"indTpCd2": "001"', pipeline)
         self.assertIn('cursor + timedelta(days=729)', pipeline)
-        # KRX PER/PBR is isolated to this collector; Earnings KRX runtime is not imported.
         self.assertNotIn('earnings_v2.providers', pipeline)
-        # Case-Shiller exists on FRED but is not automatically redistributed until licensing is cleared.
         self.assertNotIn('SPCS20RSA', pipeline)
 
 
