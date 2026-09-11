@@ -21,6 +21,7 @@ from signals.economic_chart_pipeline import (
     check_collected_series_alerts,
 )
 from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
+from sources.eia_wti_futures import fetch_wti_futures_rows
 from sources.korea_export_intramonth import fetch_snapshots
 from sources.redbook import fetch_recent_redbook_rows
 
@@ -44,12 +45,15 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
                 "error": errors[name],
             }, ensure_ascii=False))
 
-    # Every chart series uses the same first-party/official source in automatic and
-    # backfill modes. The only difference is the bounded date window.
+    # WTI uses EIA's official continuously rolled front-month futures series
+    # (PET.RCLC1.D), not the FRED spot-price series previously used here.
     for code, (source_id, frequency) in FRED_SERIES.items():
+        if code == "WTI":
+            continue
         run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
             db, _fred_rows(code, source_id, frequency, start, today), start
         ))
+    run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
 
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
         run(code, lambda code=code, stat_code=stat_code, item_code=item_code, frequency=frequency: _insert_missing(
