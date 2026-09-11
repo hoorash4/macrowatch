@@ -17,10 +17,21 @@ test('economic chart uses real chart-space right gap instead of a white overlay'
   assert.match(chart, /to>=last&&to<maxTo/);
 });
 
-test('economic chart fills the workspace instead of leaving unused vertical space', () => {
-  assert.match(css, /\.economic-chart-panel\{[^}]*min-height:0/);
-  assert.match(css, /\.economic-chart-host\{[^}]*flex:1 1 auto[^}]*height:auto/);
-  assert.match(css, /@media\(max-width:850px\)[\s\S]*\.economic-chart-host\{flex:none;height:min\(470px,65vh\)/);
+test('economic chart frame is linked and stays at ninety percent of the prior responsive height', () => {
+  assert.match(css, /\.economic-workspace\{[^}]*height:min\(64\.8vw,calc\(90dvh - 162px\)\)[^}]*min-height:324px/);
+  assert.match(css, /\.economic-series-panel\{[^}]*height:100%/);
+  assert.match(css, /\.economic-chart-panel\{[^}]*height:100%/);
+  assert.match(css, /\.economic-chart-host\{[^}]*flex:1 1 auto/);
+  assert.match(css, /@media\(max-width:850px\)[\s\S]*\.economic-chart-host\{flex:none;height:min\(423px,58\.5dvh\);min-height:270px/);
+});
+
+test('economic chart starts with exactly the latest 300 observations and labels months once', () => {
+  assert.match(chart, /DEFAULT_VISIBLE_BARS=300/);
+  assert.match(chart, /from:Math\.max\(0,rows\.length-DEFAULT_VISIBLE_BARS\)/);
+  assert.match(chart, /initialRangePending=true;showInitialRange\(\)/);
+  assert.match(chart, /if\(initialRangePending\)\{initialRangePending=false;showInitialRange\(\);\}/);
+  assert.match(chart, /rebuildMonthTickDates\(data\)/);
+  assert.match(chart, /if\(!monthTickDates\.has\(timeKey\(time\)\)\)return''/);
 });
 
 test('economic chart personal state is persisted per authenticated user', () => {
@@ -39,6 +50,6 @@ test('economic chart personal state is persisted per authenticated user', () => 
 });
 
 test('economic chart assets are cache-busted together', () => {
-  assert.match(html, /economic-charts\.css\?v=5/);
-  assert.match(html, /economic-charts\.js\?v=5/);
+  assert.match(html, /economic-charts\.css\?v=7/);
+  assert.match(html, /economic-charts\.js\?v=7/);
 });
