@@ -1,8 +1,8 @@
 """Incremental automatic collection for economic charts.
 
 Historical bootstrap/backfill is deliberately not exposed here.  Exact observations that
-already live in other MacroWatch tables (US2Y, US10Y, USDKRW, RRP, TGA) are read by the
-frontend through fallbacks and are not duplicated by this collector.
+already live in other MacroWatch tables are mirrored from those tables rather than fetched
+from their upstream providers again.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from datetime import date, timedelta
 
 from common import SupabaseRest
 from signals.economic_chart_backfill import BACKFILL_FRED_SERIES, _redbook_rows
+from signals.economic_chart_existing_series import mirror_existing_series
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
     KRX_INDEX_FUNDAMENTALS,
@@ -37,6 +38,14 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             inserted.setdefault(name, 0)
             errors[name] = f"{error.__class__.__name__}: {error}"
             print(json.dumps({"stage": "economic_chart_automatic_error", "series": name, "error": errors[name]}, ensure_ascii=False))
+
+    # These are not upstream collection calls. They only copy newly stored points from
+    # existing MacroWatch source tables into the chart read model.
+    try:
+        for code, count in mirror_existing_series(db, start).items():
+            inserted[code] = count
+    except Exception as error:
+        errors["EXISTING_SERIES_MIRROR"] = f"{error.__class__.__name__}: {error}"
 
     for code, (source_id, frequency) in BACKFILL_FRED_SERIES.items():
         run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
