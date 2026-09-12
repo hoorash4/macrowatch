@@ -8,7 +8,6 @@ import os
 
 from common import SupabaseRest
 from sources.business_credit_monthly import (
-    fetch_equifax_rows,
     fetch_korea_business_delinquency_rows,
     fetch_korea_default_company_rows,
 )
@@ -27,8 +26,8 @@ def _validate_rows(code: str, rows: list[dict], start: date, end: date) -> list[
     """Validate and deduplicate source rows before an authoritative backfill upsert.
 
     Backfill must never preserve a stale value merely because the date already exists.
-    At the same time, sparse external archives (notably historical Equifax reports) must
-    not cause valid dates to be deleted when the public archive itself is incomplete.
+    At the same time, sparse external archives must not cause valid dates to be deleted
+    when the public archive itself is incomplete.
     """
     first = date(start.year, start.month, 1)
     last = date(end.year, end.month, 1)
@@ -58,8 +57,6 @@ def _validate_rows(code: str, rows: list[dict], start: date, end: date) -> list[
         if previous is not None and not math.isclose(previous, value, rel_tol=0.0, abs_tol=1e-12):
             raise RuntimeError(f"{code}: conflicting source values for {observed_s}: {previous} vs {value}")
         seen[observed_s] = value
-        # Equal overlapping first-party discoveries are the same observation. Keep one row
-        # so Postgres ON CONFLICT never sees the same key twice in a single statement.
         validated_by_date.setdefault(observed_s, raw)
     return [validated_by_date[key] for key in sorted(validated_by_date)]
 
@@ -84,12 +81,11 @@ def run() -> dict[str, int]:
     db = SupabaseRest()
     totals: dict[str, int] = {}
 
-    # Search both current and legacy first-party Equifax asset naming schemes. Overlap is
-    # deliberate: validation rejects any conflicting values for the same observation month.
-    equifax = fetch_equifax_rows(start, end)
-    equifax_archive = fetch_equifax_archive_rows(start, end)
-    for code, rows in equifax.items():
-        _store(db, code, rows + equifax_archive.get(code, []), start, end, totals)
+    # One first-party discovery path and one strict parser. Keeping a second Equifax parser
+    # here previously allowed the same PDF to produce contradictory values during backfill.
+    equifax = fetch_equifax_archive_rows(start, end)
+    for code in ("US_SBDI_31_90", "US_SBDI_91_180", "US_SBDFI"):
+        _store(db, code, equifax.get(code, []), start, end, totals)
 
     _store(
         db,
