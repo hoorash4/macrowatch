@@ -20,6 +20,7 @@ MONTHS = (
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
 )
+MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 BASES = (
     "https://assets.equifax.com/marketing/US/assets/",
     "https://assets.equifax.com/assets/usis/",
@@ -44,9 +45,15 @@ def _row(code: str, year: int, month: int, value: float, source: str) -> dict:
 def _report_urls(year: int, month: int) -> list[str]:
     full = MONTHS[month - 1]
     low = full.lower()
+    abbr = MONTH_ABBR[month - 1]
+    abbr_low = abbr.lower()
     names = [
         f"main-street-lending-report-{low}-{year}.pdf",
+        f"main-street-lending-report-{abbr}-{year}-report.pdf",
+        f"main-street-lending-report-{abbr_low}-{year}-report.pdf",
         f"equifax-main-street-lending-report-{low}-{year}.pdf",
+        f"Equifax-main-street-lending-report-{full}-{year}.pdf",
+        f"Equifax-main-street-lending-report-{abbr}-{year}-report.pdf",
         f"Equifax.MainStreetLendingReport.{full}{year}.pdf",
         f"Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
         f"Equifax.MonthlyStrategicInsights.{full}{year}.V101.pdf",
