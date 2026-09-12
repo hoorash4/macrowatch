@@ -1,3 +1,5 @@
+import { assertScheduleTime, publicSchedulePolicy, schedulePolicy, timeMinutes } from "../_shared/schedule-policy.ts";
+
 export const REPOSITORY = "hoorash4/macrowatch";
 export const BRANCH = "main";
 
@@ -20,7 +22,8 @@ export async function githubRequest(path: string, token: string, init: RequestIn
     throw new Error(error.message || `GitHub 요청 실패 (${response.status})`);
   }
   if (response.status === 204) return null;
-  return response.json();
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 export async function latestRun(workflow: string, token: string) {
@@ -106,21 +109,69 @@ const AUTOMATION_CARD_NAMES: Record<string, string> = {
   "small-business-risk.yml": "미국 중소기업 위험지수",
 };
 
-const AUTOMATION_STEP_NAMES: Record<string, string[]> = {
-  "earnings-us-automatic.yml": [
-    "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷",
-    "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시",
-    "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완",
-  ],
-  "earnings-v2-korea-automatic.yml": [
-    "시총 상위 100 이익 모멘텀 · 한국 DART 공시",
-    "시총 상위 100 이익 모멘텀 · 한국 KIS 가격",
-  ],
-  "sector-flow.yml": ["주도섹터 흐름 · 장초반", "주도섹터 흐름 · 장중", "주도섹터 흐름 · 종가"],
-};
+function automationDisplayName(workflow: { id: string; name: string }) {
+  return schedulePolicy(workflow.id)?.displayName || AUTOMATION_CARD_NAMES[workflow.id] || workflow.name;
+}
 
-function automationDisplayName(workflow: { id: string; name: string }, scheduleIndex: number) {
-  return AUTOMATION_STEP_NAMES[workflow.id]?.[scheduleIndex] || AUTOMATION_CARD_NAMES[workflow.id] || workflow.name;
+function sectorStage(workflowId: string) {
+  const match = /^sector-flow-(open|intraday|close)\.yml$/.exec(workflowId);
+  return match?.[1] || null;
+}
+
+function supabaseEnvironment() {
+  if (typeof Deno === "undefined") return null;
+  const url = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  return url && key ? { url, key } : null;
+}
+
+async function supabaseRpc(name: string, body: Record<string, unknown> = {}) {
+  const environment = supabaseEnvironment();
+  if (!environment) return [];
+  const response = await fetch(`${environment.url}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      apikey: environment.key,
+      Authorization: `Bearer ${environment.key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Supabase scheduler 요청 실패 (${response.status}): ${text.slice(0, 300)}`);
+  }
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function sectorScheduleRows() {
+  const rows = await supabaseRpc("macrowatch_sector_flow_schedules");
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function scheduledSectorFlows() {
+  const rows = await sectorScheduleRows();
+  const entries = [];
+  for (const stage of ["open", "intraday", "close"]) {
+    const primary = rows.find((row) => row?.jobname === `macrowatch-sector-flow-${stage}-primary`);
+    const retry = rows.find((row) => row?.jobname === `macrowatch-sector-flow-${stage}-retry`);
+    if (!primary || !retry) continue;
+    const workflowId = `sector-flow-${stage}.yml`;
+    const policy = schedulePolicy(workflowId);
+    entries.push({
+      workflow_id: workflowId,
+      cron: String(primary.schedule),
+      kst_time: kstTimeFromCron(String(primary.schedule)),
+      name: policy?.displayName || `sector-flow ${stage}`,
+      state: primary.active === true && retry.active === true ? "active" : "disabled_manually",
+      schedule_count: 1,
+      latest_success: null,
+      ...publicSchedulePolicy(policy),
+    });
+  }
+  return entries;
 }
 
 export async function scheduledWorkflows(token: string) {
@@ -134,17 +185,22 @@ export async function scheduledWorkflows(token: string) {
   const entries = await Promise.all(workflows.map(async (workflow) => {
     const latestSuccess = await latestSuccessfulRun(workflow.id, token);
     const state = stateByPath.get(workflow.path) || "active";
-    return workflow.crons.map((cron, scheduleIndex) => ({
+    const policy = schedulePolicy(workflow.id);
+    return workflow.crons.map((cron) => ({
       workflow_id: workflow.id,
       cron,
       kst_time: kstTimeFromCron(cron),
-      name: automationDisplayName(workflow, scheduleIndex),
+      name: automationDisplayName(workflow),
       state,
       schedule_count: workflow.crons.length,
       latest_success: latestSuccess,
+      scheduler: "github",
+      ...publicSchedulePolicy(policy),
     }));
   }));
-  return entries.flat().sort((left, right) => left.kst_time.localeCompare(right.kst_time) || left.name.localeCompare(right.name, "ko"));
+  const sectorEntries = await scheduledSectorFlows();
+  return [...entries.flat(), ...sectorEntries]
+    .sort((left, right) => left.kst_time.localeCompare(right.kst_time) || left.name.localeCompare(right.name, "ko"));
 }
 
 export function kstTimeFromCron(cron: string) {
@@ -199,11 +255,79 @@ export function updateCronTime(cron: string, time: string) {
   return fields.join(" ");
 }
 
+function weekdayCronForKst(time: string) {
+  const minutes = timeMinutes(time);
+  if (minutes < 9 * 60) throw new Error("Supabase 장중 스케줄은 09:00 KST 이전으로 변경할 수 없습니다.");
+  const utc = minutes - 9 * 60;
+  return `${utc % 60} ${Math.floor(utc / 60)} * * 1-5`;
+}
+
+function addMinutes(time: string, delta: number) {
+  const minutes = timeMinutes(time) + delta;
+  if (minutes >= 24 * 60) throw new Error("재시도 시각이 다음 한국 날짜로 넘어가므로 이 시간으로 변경할 수 없습니다.");
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+async function assertPhaseOrder(workflowId: string, time: string, token: string) {
+  const relation: Record<string, { other: string; position: "before" | "after"; label: string }> = {
+    "earnings-us-automatic.yml": { other: "earnings-us-edgar-automatic.yml", position: "before", label: "미국 SEC 신규 공시 단계" },
+    "earnings-us-edgar-automatic.yml": { other: "earnings-us-automatic.yml", position: "after", label: "미국 분기 실적 스냅샷 단계" },
+    "earnings-v2-korea-automatic.yml": { other: "earnings-v2-korea-kis-automatic.yml", position: "before", label: "한국 KIS 가격 단계" },
+    "earnings-v2-korea-kis-automatic.yml": { other: "earnings-v2-korea-automatic.yml", position: "after", label: "한국 DART 공시 단계" },
+  };
+  const rule = relation[workflowId];
+  if (!rule) return;
+  const other = parseScheduledWorkflow(await workflowSource(`.github/workflows/${rule.other}`, token));
+  if (!other || other.crons.length !== 1) throw new Error("연결된 phase 일정을 확인하지 못했습니다.");
+  const otherTime = kstTimeFromCron(other.crons[0]);
+  const currentMinutes = timeMinutes(time), otherMinutes = timeMinutes(otherTime);
+  const invalid = rule.position === "before" ? currentMinutes >= otherMinutes : currentMinutes <= otherMinutes;
+  if (invalid) {
+    const direction = rule.position === "before" ? "이전" : "이후";
+    throw new Error(`${rule.label}(${otherTime} KST) ${direction} 시간으로만 변경할 수 있습니다.`);
+  }
+}
+
+async function cancelQueuedScheduledRuns(workflowId: string, token: string) {
+  const data = await githubRequest(`/actions/workflows/${workflowId}/runs?event=schedule&status=queued&per_page=100`, token);
+  const runs = Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
+  for (const run of runs) {
+    const id = Number(run?.id);
+    if (Number.isInteger(id) && id > 0) {
+      await githubRequest(`/actions/runs/${id}/cancel`, token, { method: "POST" });
+    }
+  }
+  return runs.length;
+}
+
 async function saveWorkflowSource(file: WorkflowSource, content: string, message: string, token: string) {
   await githubRequest(`/contents/${file.path}`, token, { method: "PUT", body: JSON.stringify({ message, content: encodeBase64(content), sha: file.sha, branch: BRANCH }) });
 }
 
+async function updateSectorFlowTime(workflowId: string, cron: string, time: string) {
+  const stage = sectorStage(workflowId);
+  if (!stage) throw new Error("sector-flow stage가 올바르지 않습니다.");
+  const policy = schedulePolicy(workflowId);
+  assertScheduleTime(policy, time);
+  const rows = await sectorScheduleRows();
+  const primary = rows.find((row) => row?.jobname === `macrowatch-sector-flow-${stage}-primary`);
+  if (!primary || String(primary.schedule) !== cron) throw new Error("현재 등록된 Supabase 실행 시간을 찾지 못했습니다.");
+  const retryMinutes = policy?.retryMinutes || 15;
+  const retryTime = addMinutes(time, retryMinutes);
+  await supabaseRpc("macrowatch_set_sector_flow_schedule", {
+    p_stage: stage,
+    p_primary_schedule: weekdayCronForKst(time),
+    p_retry_schedule: weekdayCronForKst(retryTime),
+  });
+}
+
 export async function updateAutomationTime(workflowId: string, cron: string, time: string, token: string) {
+  if (sectorStage(workflowId)) {
+    await updateSectorFlowTime(workflowId, cron, time);
+    return;
+  }
+  assertScheduleTime(schedulePolicy(workflowId), time);
+  await assertPhaseOrder(workflowId, time, token);
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
   assertScheduleEditIsIsolated(file);
   const parsed = parseScheduledWorkflow(file);
@@ -214,14 +338,21 @@ export async function updateAutomationTime(workflowId: string, cron: string, tim
   if (!block) throw new Error("자동수집 일정 블록을 찾지 못했습니다.");
   const next = file.content.replace(block, block.replace(cron, updatedCron));
   if (next === file.content) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
+  await cancelQueuedScheduledRuns(workflowId, token);
   await saveWorkflowSource(file, next, `Update ${parsed.name} schedule from MacroWatch admin`, token);
 }
 
 export async function setWorkflowEnabled(workflowId: string, enabled: boolean, token: string) {
+  const stage = sectorStage(workflowId);
+  if (stage) {
+    await supabaseRpc("macrowatch_set_sector_flow_enabled", { p_stage: stage, p_enabled: enabled });
+    return;
+  }
   await githubRequest(`/actions/workflows/${workflowId}/${enabled ? "enable" : "disable"}`, token, { method: "PUT" });
 }
 
 export async function deleteScheduledWorkflow(workflowId: string, token: string) {
+  if (sectorStage(workflowId)) throw new Error("주도섹터 자동수집 단계는 관리자 화면에서 삭제할 수 없습니다.");
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
   const parsed = parseScheduledWorkflow(file);
   if (!parsed) throw new Error("삭제할 정기 자동수집 워크플로가 아닙니다.");
@@ -229,9 +360,9 @@ export async function deleteScheduledWorkflow(workflowId: string, token: string)
   const entry = new RegExp(`^\\s+- "${parsed.name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}"\\r?\\n`, "m");
   const nextNotifier = notifier.content.replace(entry, "");
   if (nextNotifier === notifier.content) throw new Error("실패 알림 목록에서 자동수집 항목을 찾지 못했습니다.");
-  // Contents API updates one file per commit.  Updating the alert list first
+  // Contents API updates one file per commit. Updating the alert list first
   // and deleting this workflow second can leave monitoring inconsistent when
-  // either request fails.  Write both tree changes in one non-force ref update.
+  // either request fails. Write both tree changes in one non-force ref update.
   const ref = await githubRequest(`/git/ref/heads/${BRANCH}`, token);
   const parent = String(ref?.object?.sha || "");
   if (!parent) throw new Error("현재 기본 브랜치 커밋을 찾지 못했습니다.");
@@ -266,6 +397,7 @@ export async function deleteScheduledWorkflow(workflowId: string, token: string)
 }
 
 export async function deleteAutomationTime(workflowId: string, cron: string, token: string) {
+  if (sectorStage(workflowId)) throw new Error("주도섹터 primary/retry 일정은 단계 단위로 유지되어야 하므로 개별 삭제할 수 없습니다.");
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
   const parsed = parseScheduledWorkflow(file);
   if (!parsed || !parsed.crons.includes(cron)) throw new Error("삭제할 실행 시간을 찾지 못했습니다.");
