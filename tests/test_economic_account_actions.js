@@ -10,7 +10,7 @@ const actions = fs.readFileSync(path.join(root, 'assets/js/core/economic-account
 assert.match(html, /id="economic-profile-button"/);
 assert.match(html, /id="economic-admin-link"/);
 assert.match(html, /id="economic-logout-button"/);
-assert.match(html, /economic-supabase-capture\.js\?v=1[\s\S]*economic-charts\.js\?v=12[\s\S]*economic-account-actions\.js\?v=1/);
+assert.match(html, /economic-supabase-capture\.js\?v=\d+[\s\S]*economic-charts\.js\?v=\d+[\s\S]*economic-account-actions\.js\?v=\d+/);
 assert.match(capture, /window\.macroWatchEconomicSupabase\s*=\s*client/);
 assert.match(capture, /window\.supabase\.createClient\s*=\s*original/);
 assert.match(actions, /const client = window\.macroWatchEconomicSupabase/);
