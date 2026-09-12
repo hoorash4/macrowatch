@@ -34,16 +34,17 @@ jobs:
           import requests
           from pypdf import PdfReader
           from common import SupabaseRest
-          from sources.business_credit_monthly import _extract_equifax_levels
           from signals.economic_chart_pipeline import _insert_missing
 
           UA={"User-Agent":"Mozilla/5.0 (compatible; MacroWatch/1.0)"}
-          MONTHS={m:i for i,m in enumerate("January February March April May June July August September October November December".split(),1)}
+          MONTH_NAMES="January February March April May June July August September October November December".split()
+          MONTHS={m:i for i,m in enumerate(MONTH_NAMES,1)}
+          MP="(?:"+"|".join(MONTH_NAMES)+")"
           DETAIL_RE=re.compile(r'href=["\']([^"\']*/industry-data/\d+/[^"\']+)["\']',re.I)
           PDF_RE=re.compile(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']',re.I)
 
           def get(url):
-              r=requests.get(url,headers=UA,timeout=25)
+              r=requests.get(url,headers=UA,timeout=20)
               r.raise_for_status(); return r
 
           roots=[
@@ -54,64 +55,76 @@ jobs:
           details=set(); pdfs=set()
           for root in roots:
               try: html=get(root).text
-              except Exception as e:
-                  print('root_error',root,type(e).__name__); continue
+              except Exception: continue
               details |= {urljoin(root,x) for x in DETAIL_RE.findall(html)}
               pdfs |= {urljoin(root,x) for x in PDF_RE.findall(html)}
           for u in sorted(details):
               try: html=get(u).text
               except Exception: continue
               pdfs |= {urljoin(u,x) for x in PDF_RE.findall(html)}
-          # Public mirrors/search-indexed files that are known to be exact PayNet monthly reports.
           pdfs |= {
               "https://cdn2.hubspot.net/hubfs/4211185/Vital-FS-April2018/Pdf/paynetmonthlycreditreportjan2018.pdf",
               "https://www.equipmentfa.com/Images/IndustryData/16-09-07-01-30-16-2016-09-01-PayNet-July-2016-Economic-Update-Small-Business-Report.pdf",
               "https://www.equipmentfa.com/Images/IndustryData/17-06-06-16-16-38-2017-06-01-PayNet-April-2017-Economic-Update-Small-Business-Report.pdf",
           }
 
-          def obs_month(text,url):
-              clean=re.sub(r'\s+',' ',text.replace('–','-').replace('—','-'))
-              # Prefer a month explicitly attached to the current national 31-90 level.
-              pats=[
-                  r'SBDI[^.]{0,80}31\s*-\s*90[^.]{0,220}?(?:to|at|stood\s+at|held\s+steady\s+at)\s*[0-9]+(?:\.[0-9]+)?%\s*(?:in|for)?\s*(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+(20\d{2}))?',
-                  r'Small Business Delinquency Index[^.]{0,220}?31\s*-\s*90[^.]{0,220}?from\s*[0-9]+(?:\.[0-9]+)?%\s+in\s+(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+(20\d{2}))?\s+to\s+[0-9]+(?:\.[0-9]+)?%\s+in\s+(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+(20\d{2}))?',
-              ]
-              m=re.search(pats[1],clean,re.I)
-              if m:
-                  month=m.group(3).capitalize(); explicit=m.group(4)
-              else:
-                  m=re.search(pats[0],clean,re.I)
-                  if not m: return None
-                  month=m.group(1).capitalize(); explicit=m.group(2)
-              if explicit: return int(explicit),MONTHS[month]
-              pub=re.search(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})\b',clean[:1200],re.I)
-              if pub:
-                  py=int(pub.group(2)); pm=MONTHS[pub.group(1).capitalize()]; om=MONTHS[month]
-                  return (py-1 if om>pm else py),om
-              fn=re.search(r'PayNet-([A-Za-z]+)-(20\d{2})-',url,re.I)
-              if fn and fn.group(1).capitalize() in MONTHS:
-                  return int(fn.group(2)),MONTHS[fn.group(1).capitalize()]
+          def publication(text,url):
+              clean=re.sub(r'\s+',' ',text)
+              m=re.search(rf'\b({MP})\s+(20\d{{2}})\b',clean[:1400],re.I)
+              if m: return int(m.group(2)),MONTHS[m.group(1).capitalize()]
+              m=re.search(r'/(\d{2})-(\d{2})-\d{2}[^/]*-(20\d{2})-',url)
+              if m: return int(m.group(3)),int(m.group(1))
               return None
 
-          found={c:{} for c in ('US_SBDI_31_90','US_SBDI_91_180','US_SBDFI')}
+          def resolve_year(month,explicit,pub):
+              if explicit: return int(explicit)
+              if not pub: return None
+              py,pm=pub
+              return py-1 if month>pm else py
+
+          def series_sentence_values(text,label,pub):
+              clean=re.sub(r'\s+',' ',text.replace('–','-').replace('—','-'))
+              out=[]
+              # Search bounded windows so another index cannot donate its number.
+              for lm in re.finditer(label,clean,re.I):
+                  window=clean[lm.start():lm.start()+420]
+                  # Exact value followed by an explicit observation month/year.
+                  for m in re.finditer(rf'([0-9]+(?:\.[0-9]+)?)\s*(?:%|percent)\b[^.;:]{{0,45}}?\b(?:in|for|during)?\s*({MP})(?:\s+(20\d{{2}}))?',window,re.I):
+                      val=float(m.group(1)); mon=MONTHS[m.group(2).capitalize()]; yr=resolve_year(mon,m.group(3),pub)
+                      if yr: out.append((yr,mon,val))
+                  # Table/new-report layout: month may precede the level token.
+                  for m in re.finditer(rf'\b({MP})(?:\s+(20\d{{2}}))?[^.;:]{{0,45}}?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)',window,re.I):
+                      mon=MONTHS[m.group(1).capitalize()]; yr=resolve_year(mon,m.group(2),pub)
+                      if yr: out.append((yr,mon,float(m.group(3))))
+              # When a sentence says 'from old in Feb to new in Mar', both are explicit raw observations.
+              return list(dict.fromkeys(out))
+
+          labels={
+              'US_SBDI_31_90':r'SBDI(?:\)|:)?\s*31\s*-\s*90(?:\s*Days(?:\s*Past\s*Due)?)?',
+              'US_SBDI_91_180':r'SBDI(?:\)|:)?\s*91\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?',
+              'US_SBDFI':r'(?:Small\s+Business\s+Default\s+Index\s*\(SBDFI\)|SBDFI\b)',
+          }
+          found={c:{} for c in labels}
+          parsed_pdfs=0
           for url in sorted(pdfs):
               try:
                   r=get(url)
                   if 'pdf' not in r.headers.get('content-type','').lower() and not url.lower().split('?')[0].endswith('.pdf'): continue
                   text='\n'.join(p.extract_text() or '' for p in PdfReader(BytesIO(r.content)).pages)
-                  levels=_extract_equifax_levels(text)
-                  ym=obs_month(text,url)
-                  if not levels or not ym: continue
-                  y,m=ym
-                  if not (date(2016,9,1) <= date(y,m,1) <= date.today()): continue
-                  for code,val in zip(found,levels):
-                      found[code].setdefault((y,m),(float(val),url))
-              except Exception as e:
+                  pub=publication(text,url)
+                  any_value=False
+                  for code,label in labels.items():
+                      for y,m,v in series_sentence_values(text,label,pub):
+                          obs=date(y,m,1)
+                          if date(2016,9,1)<=obs<=date.today():
+                              found[code].setdefault((y,m),(v,url)); any_value=True
+                  if any_value: parsed_pdfs+=1
+              except Exception:
                   continue
           db=SupabaseRest()
           for code,vals in found.items():
               rows=[{'series_code':code,'observation_date':f'{y:04d}-{m:02d}-01','value':v,'frequency':'M','source':f'PayNet-archive:{u}'} for (y,m),(v,u) in sorted(vals.items())]
               inserted=_insert_missing(db,rows,date(2016,9,1))
               print(code,'fetched',len(rows),'inserted',inserted,'first',rows[0]['observation_date'] if rows else None,'last',rows[-1]['observation_date'] if rows else None)
-          print('archive_pdfs',len(pdfs),'detail_pages',len(details))
+          print('archive_pdfs',len(pdfs),'detail_pages',len(details),'parsed_pdfs',parsed_pdfs)
           PY
