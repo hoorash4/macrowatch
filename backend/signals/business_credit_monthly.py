@@ -1,4 +1,4 @@
-"""Collect monthly business-credit series for the economic-chart dataset."""
+"""Collect non-PayNet monthly business-credit series for the economic-chart dataset."""
 from __future__ import annotations
 
 from datetime import date
@@ -11,11 +11,6 @@ from sources.business_credit_monthly import (
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
 from sources.epiq_ch11_source import fetch_epiq_ch11_rows
-from sources.paynet_loan_performance import (
-    SERIES_DEFAULT,
-    SERIES_DELINQUENCY,
-    fetch_paynet_rows,
-)
 from signals.economic_chart_pipeline import _insert_missing
 
 
@@ -30,12 +25,6 @@ def collect_recent() -> dict[str, int]:
     start = _months_ago(end, 18)
     db = SupabaseRest()
     counts: dict[str, int] = {}
-
-    # Direct PayNet national series only. 31-180 is read as its own published series;
-    # split 31-90 / 91-180 buckets are neither stored nor combined.
-    paynet = fetch_paynet_rows(start, end)
-    for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
-        counts[code] = _insert_missing(db, paynet[code], start)
 
     epiq = fetch_epiq_ch11_rows(start, end, max_pages=4)
     counts["US_COMMERCIAL_CH11"] = _insert_missing(db, epiq, start)
