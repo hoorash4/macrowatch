@@ -85,8 +85,8 @@ const POLICIES: Record<string, SchedulePolicy> = {
     dependencyType: "after_previous_phase",
     editable: true,
   },
-  "sector-flow-open": {
-    id: "sector-flow-open",
+  "sector-flow-open.yml": {
+    id: "sector-flow-open.yml",
     scheduler: "supabase",
     displayName: "주도섹터 흐름 · 장초반",
     phase: "open",
@@ -98,8 +98,8 @@ const POLICIES: Record<string, SchedulePolicy> = {
     retryMinutes: 15,
     editable: true,
   },
-  "sector-flow-intraday": {
-    id: "sector-flow-intraday",
+  "sector-flow-intraday.yml": {
+    id: "sector-flow-intraday.yml",
     scheduler: "supabase",
     displayName: "주도섹터 흐름 · 장중",
     phase: "intraday",
@@ -111,8 +111,8 @@ const POLICIES: Record<string, SchedulePolicy> = {
     retryMinutes: 15,
     editable: true,
   },
-  "sector-flow-close": {
-    id: "sector-flow-close",
+  "sector-flow-close.yml": {
+    id: "sector-flow-close.yml",
     scheduler: "supabase",
     displayName: "주도섹터 흐름 · 종가",
     phase: "close",
