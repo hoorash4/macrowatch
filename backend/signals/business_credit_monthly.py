@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import os
 
 from common import SupabaseRest
 from sources.business_credit_monthly import (
@@ -11,6 +12,7 @@ from sources.business_credit_monthly import (
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
 from sources.epiq_ch11_source import fetch_epiq_ch11_rows
+from sources.paynet_loan_performance import fetch_paynet_rows
 from signals.economic_chart_pipeline import _insert_missing
 
 
@@ -26,8 +28,16 @@ def collect_recent() -> dict[str, int]:
     db = SupabaseRest()
     counts: dict[str, int] = {}
 
-    # PayNet/Equifax collection is intentionally absent here until the direct national
-    # 31-180 SBDI + SBDFI source is connected. Do not reconstruct 31-180 from split buckets.
+    # Direct PayNet national series only: published 31-180 delinquency and SBDFI.
+    # Never reconstruct 31-180 from split delinquency buckets.
+    if os.getenv("PAYNET_USERNAME", "").strip() and os.getenv("PAYNET_PASSWORD", "").strip():
+        paynet = fetch_paynet_rows(start, end)
+        for code in ("US_SBDI_31_180", "US_SBDFI"):
+            counts[code] = _insert_missing(db, paynet[code], start)
+    else:
+        counts["US_SBDI_31_180"] = 0
+        counts["US_SBDFI"] = 0
+        print("PayNet collection skipped: PAYNET_USERNAME/PAYNET_PASSWORD are not configured")
 
     epiq = fetch_epiq_ch11_rows(start, end, max_pages=4)
     counts["US_COMMERCIAL_CH11"] = _insert_missing(db, epiq, start)
