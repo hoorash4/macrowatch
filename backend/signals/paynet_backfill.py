@@ -65,8 +65,8 @@ def run() -> dict[str, object]:
     required = _required_months(latest)
     start = required[-1]
 
-    # Validate all rows before changing the database. Replacement is all-or-nothing in intent:
-    # if source discovery is incomplete, nothing is deleted.
+    # Validate everything before changing the database. If source discovery is incomplete,
+    # the function raises above and leaves the database untouched.
     validated: dict[str, dict[str, dict]] = {}
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         ordered = [by_code[code][month.isoformat()] for month in required]
@@ -74,8 +74,12 @@ def run() -> dict[str, object]:
         validated[code] = {row["observation_date"]: row for row in clean}
 
     db = SupabaseRest()
-    # The two previous series are not authoritative and must never coexist with the new source.
-    db.delete(TABLE, filters={"series_code": f"in.({SERIES_DELINQUENCY},{SERIES_DEFAULT})"})
+    db.request(
+        "DELETE",
+        TABLE,
+        params={"series_code": f"in.({SERIES_DELINQUENCY},{SERIES_DEFAULT})"},
+        prefer="return=minimal",
+    )
 
     stored = 0
     # Explicitly write latest -> oldest one month at a time, as requested.
