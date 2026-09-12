@@ -69,7 +69,8 @@
     normalize();
   }
 
-  window.MacroWatchAccountModal = { ensure, normalize };
+  window.MacroWatchAccountModal = { ensure };
+  window.MacroWatchAccountModal.normalize = normalize;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true });
   else ensure();
 })();
