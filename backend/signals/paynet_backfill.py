@@ -5,6 +5,7 @@ from datetime import date
 import json
 
 from common import SupabaseRest
+from sources.paynet_derived_history import fetch_paynet_derived_month
 from sources.paynet_loan_performance import (
     SERIES_DEFAULT,
     SERIES_DELINQUENCY,
@@ -104,10 +105,16 @@ def run() -> dict[str, object]:
     oldest_stored: date | None = None
     for month in remaining:
         rows = fetch_paynet_month(month)
+        if any(rows[code] is None for code in (SERIES_DELINQUENCY, SERIES_DEFAULT)):
+            derived = fetch_paynet_derived_month(month)
+            for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
+                if rows[code] is None:
+                    rows[code] = derived[code]
+
         missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
         if missing:
             raise RuntimeError(
-                f"{month:%Y-%m}: Equifax source missing {','.join(missing)}; "
+                f"{month:%Y-%m}: Equifax source missing {','.join(missing)} after direct, YoY and MoM recovery; "
                 "no partial month will be stored"
             )
 
@@ -125,6 +132,7 @@ def run() -> dict[str, object]:
             "stored_month": f"{month:%Y-%m}",
             SERIES_DELINQUENCY: batch[0]["value"],
             SERIES_DEFAULT: batch[1]["value"],
+            "source": batch[0].get("source"),
         }, ensure_ascii=False))
 
     return {
