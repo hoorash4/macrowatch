@@ -84,6 +84,13 @@ assert.match(source, /\.select\('theme_preference'\)/);
 assert.match(source, /\.rpc\('set_theme_preference'/);
 assert.match(source, /macrowatch:themechange/);
 assert.doesNotMatch(source, /filter\s*:\s*invert/i);
+assert.match(source, /#app-shell \.analysis-card-icon/);
+assert.match(source, /\.analysis-chart-fixed-axis/);
+assert.match(source, /\.sector-flow-week/);
+assert.match(source, /\.sector-flow-holdings/);
+assert.match(source, /\.economic-chart-host/);
+assert.match(source, /--theme-chart-bg: #0b1322/);
+assert.match(source, /background-color: var\(--theme-chart-bg\) !important/);
 assert.ok(headChildren.some((node) => node.id === 'macrowatch-theme-styles'), 'theme tokens should be installed once');
 
 console.log('theme contracts ok');
