@@ -5,6 +5,7 @@ require('../assets/js/admin/admin-schedule-guard.js');
 
 const validate = globalThis.MacroWatchScheduleGuard.validateScheduleChange;
 
+// Keep fixtures aligned with the centrally verified production schedule policy.
 const items = [
   {
     workflow_id: 'liquidity.yml', cron: '30 4 * * *', kst_time: '13:30', name: '미국·한국 주식시장 자금환경',
