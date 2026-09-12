@@ -2,7 +2,7 @@
 'use strict';
 
 const cfg = window.MACROWATCH_CONFIG || {};
-const client = window.macroWatchSupabase || window.supabase?.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey);
+const client = window.supabase?.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey);
 
 // Keep this catalog aligned with SERIES in economic-charts.js. A contract test guards drift.
 const SERIES_CATALOG = [
@@ -37,8 +37,6 @@ const SERIES_CATALOG = [
 let user = null;
 let modal = null;
 let observer = null;
-let initialized = false;
-let initializing = false;
 
 const $ = id => document.getElementById(id);
 
@@ -196,28 +194,18 @@ function ensureAddButton() {
 }
 
 async function initialize() {
-  if (initialized || initializing || !client || !$('economic-series-list')) return;
-  initializing = true;
-  try {
-    buildModal();
-    const {data} = await client.auth.getSession();
-    user = data.session?.user || null;
-    if (!user) return;
-    ensureAddButton();
-    const root = $('economic-series-list');
-    if (root && !observer) {
-      observer = new MutationObserver(ensureAddButton);
-      observer.observe(root, {childList:true});
-    }
-    initialized = true;
-  } finally {
-    initializing = false;
+  if (!client) return;
+  buildModal();
+  const {data} = await client.auth.getSession();
+  user = data.session?.user || null;
+  if (!user) return;
+  ensureAddButton();
+  const root = $('economic-series-list');
+  if (root) {
+    observer = new MutationObserver(ensureAddButton);
+    observer.observe(root, {childList:true});
   }
 }
 
-function initializeForEconomicView(event) {
-  if (event?.detail?.view === 'economic' || location.hash === '#economic-charts') initialize().catch(console.error);
-}
-window.addEventListener('macrowatch:dashboard-view-changed', initializeForEconomicView);
-document.addEventListener('DOMContentLoaded', () => { if (location.hash === '#economic-charts') initializeForEconomicView(); });
+document.addEventListener('DOMContentLoaded', initialize);
 })();

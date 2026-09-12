@@ -7,7 +7,7 @@ const ROOT = path.resolve(__dirname, '..');
 const chart = fs.readFileSync(path.join(ROOT, 'assets/js/charts/economic-charts.js'), 'utf8');
 const manager = fs.readFileSync(path.join(ROOT, 'assets/js/charts/economic-series-manager.js'), 'utf8');
 const automatic = fs.readFileSync(path.join(ROOT, 'backend/signals/economic_chart_automatic.py'), 'utf8');
-const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(ROOT, 'economic-charts.html'), 'utf8');
 
 function codesFrom(source, marker) {
   const start = source.indexOf(marker);

@@ -217,12 +217,12 @@ function loadDashboardScript() {
 
 const dashboard = loadDashboardScript();
 
-test('모바일 대시보드는 기존 분석 결과를 여섯 개 앱 메뉴로 재구성한다', () => {
+test('모바일 대시보드는 기존 분석 결과를 다섯 개 앱 메뉴로 재구성한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
 
-  for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker', 'economic']) {
+  for (const view of ['overview', 'policy', 'earnings', 'stress', 'tracker']) {
     assert.match(html, new RegExp(`data-mobile-dashboard-view="${view}"`));
   }
   for (const market of ['credit', 'korea', 'em']) {

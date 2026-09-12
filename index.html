@@ -18,9 +18,6 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
   <link rel="stylesheet" href="assets/css/styles.css?v=188">
-  <link rel="stylesheet" href="assets/css/economic-charts.css?v=8">
-  <link rel="stylesheet" href="assets/css/economic-series-manager.css?v=1">
-  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -146,7 +143,6 @@
           <button type="button" class="dashboard-nav-item" data-dashboard-view="earnings"><i class="fa-solid fa-chart-column"></i><span>기업 이익 시그널</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="stress"><i class="fa-solid fa-wave-square"></i><span>스트레스 지수</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적 알림</span></button>
-          <button type="button" class="dashboard-nav-item" data-dashboard-view="economic"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></button>
           <div class="dashboard-nav-actions">
             <div id="db-status" class="hidden">DB 연결 확인 중...</div>
             <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
@@ -716,37 +712,6 @@
       </div>
     </section>
 
-    <section id="economic-dashboard-panel" class="economic-dashboard-panel dashboard-panel-hidden" data-dashboard-panel="economic">
-  <main class="economic-main">
-      <div class="economic-hero">
-        <div><h1>경제지표 챠트</h1><p>주요 단일 경제지표를 한 차트에서 전환해 확인합니다. 원자료와 주기별 이동평균만 표시합니다.</p></div>
-        <div id="economic-status" class="economic-status">차트 불러오는 중</div>
-      </div>
-      <section class="economic-workspace">
-        <aside class="economic-series-panel" aria-label="경제지표 목록"><div id="economic-series-list"></div></aside>
-        <div class="economic-chart-panel">
-          <header class="economic-chart-header">
-            <div><div id="economic-chart-title" class="economic-chart-title">—</div><div id="economic-chart-meta" class="economic-chart-meta">—</div></div>
-            <div class="economic-tools"><button type="button" id="economic-line-tool">수평선</button><button type="button" id="economic-delete-line" disabled>선 삭제</button><button type="button" id="economic-clear-lines">전체 삭제</button><button type="button" id="economic-fit-max">MAX</button></div>
-          </header>
-          <div id="economic-chart-host" class="economic-chart-host"><div class="economic-empty">지표를 선택하세요.</div><div id="economic-alert-layer" class="economic-alert-layer"></div></div>
-          <div class="economic-chart-footer"><div id="economic-legend" class="economic-legend"><span>원값</span><span>단기평균</span><span>장기평균</span></div><div id="economic-note" class="economic-note"></div></div>
-        </div>
-      </section>
-    </main>
-
-  <div id="economic-alert-modal" class="economic-modal" hidden>
-    <div class="economic-modal-backdrop" data-close-alert></div>
-    <form id="economic-alert-form" class="economic-modal-card">
-      <div class="economic-modal-head"><div><strong id="economic-alert-title">추적 알림</strong><small id="economic-alert-series"></small></div><button type="button" data-close-alert aria-label="닫기">×</button></div>
-      <label>조건<select id="economic-alert-condition"><option value="gte">설정값 상향 돌파</option><option value="lte">설정값 하향 돌파</option><option value="cross">설정값 상/하향 돌파</option></select></label>
-      <label>기준값<input id="economic-alert-value" type="number" step="any" required autocomplete="off"></label>
-      <p class="economic-modal-help">알림 수단은 지표추적에서 설정한 카카오톡/이메일 설정을 그대로 사용합니다. 선을 삭제해도 알림은 유지됩니다.</p>
-      <div class="economic-modal-actions"><button type="button" id="economic-alert-delete" class="danger" hidden>알림 삭제</button><span></span><button type="button" data-close-alert>취소</button><button type="submit" class="primary">저장</button></div>
-    </form>
-  </div>
-    </section>
-
     </div>
     <!-- 05. 별도 메뉴의 지표 추적 카드 -->
     <div class="dashboard-tracker-card dashboard-panel-hidden" data-dashboard-panel="tracker">
@@ -923,9 +888,6 @@
       </button>
       <button type="button" data-mobile-dashboard-view="tracker">
         <i class="fa-solid fa-bell" aria-hidden="true"></i><span>지표추적</span>
-      </button>
-      <button type="button" data-mobile-dashboard-view="economic">
-        <i class="fa-solid fa-chart-line" aria-hidden="true"></i><span>경제지표</span>
       </button>
     </nav>
 
@@ -1149,8 +1111,6 @@
   <script src="assets/js/charts/liquidity-chart.js?v=21"></script>
   <script src="assets/js/charts/equity-bond-attractiveness-chart.js?v=14"></script>
   <script src="assets/js/charts/korea-earnings-chart.js?v=40"></script>
-  <script src="assets/js/charts/economic-charts.js?v=13"></script>
-  <script src="assets/js/charts/economic-series-manager.js?v=4"></script>
   <script src="assets/js/policy/policy-briefing.js?v=5"></script>
 </body>
 </html>

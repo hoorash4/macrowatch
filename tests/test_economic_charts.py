@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class EconomicChartFeatureTests(unittest.TestCase):
     def test_economic_chart_uses_one_large_switchable_chart(self):
-        html = (ROOT / 'index.html').read_text(encoding='utf-8')
+        html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         self.assertIn('경제지표 챠트', html)
         self.assertIn('id="economic-series-list"', html)
@@ -19,7 +19,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
     def test_chart_starts_with_latest_300_and_uses_real_chart_space_right_gap(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
-        html = (ROOT / 'index.html').read_text(encoding='utf-8')
+        html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
         self.assertIn('DEFAULT_VISIBLE_BARS=300', script)
         self.assertIn('RIGHT_GAP_PX=18', script)
         self.assertIn('function rightGapBars()', script)
@@ -55,7 +55,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertNotIn("supabaseClient.from('economic_chart_points').delete", hide_body)
 
     def test_horizontal_line_has_one_combined_axis_marker_and_flat_bell(self):
-        html = (ROOT / 'index.html').read_text(encoding='utf-8')
+        html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
         self.assertIn('id="economic-delete-line"', html)
@@ -67,7 +67,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertNotIn('economic-alert-price', script)
         self.assertNotIn('🔔', script)
         self.assertIn("source_type:'economic_chart'", script)
-        self.assertIn("url:'index.html#economic-charts'", script)
+        self.assertIn("url:'economic-charts.html'", script)
         self.assertIn('css_selector:meta.code', script)
         self.assertIn('color:#d1d5db', css)
         self.assertIn('color:#facc15', css)

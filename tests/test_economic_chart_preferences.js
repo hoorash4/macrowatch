@@ -6,7 +6,7 @@ const test = require('node:test');
 
 const chart = fs.readFileSync('assets/js/charts/economic-charts.js', 'utf8');
 const css = fs.readFileSync('assets/css/economic-charts.css', 'utf8');
-const html = fs.readFileSync('index.html', 'utf8');
+const html = fs.readFileSync('economic-charts.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260911161000_add_economic_chart_preferences.sql', 'utf8');
 
 test('economic chart uses real chart-space right gap instead of a white overlay', () => {
