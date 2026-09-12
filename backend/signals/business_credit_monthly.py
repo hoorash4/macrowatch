@@ -6,12 +6,12 @@ import json
 
 from common import SupabaseRest
 from sources.business_credit_monthly import (
-    fetch_equifax_rows,
     fetch_korea_business_delinquency_rows,
     fetch_korea_default_company_rows,
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
 from sources.epiq_ch11_source import fetch_epiq_ch11_rows
+from sources.equifax_archive_source import fetch_equifax_archive_rows
 from signals.economic_chart_pipeline import _insert_missing
 
 
@@ -27,7 +27,10 @@ def collect_recent() -> dict[str, int]:
     db = SupabaseRest()
     counts: dict[str, int] = {}
 
-    equifax = fetch_equifax_rows(start, end)
+    # Use the broader first-party Equifax asset discovery and the strict order-independent
+    # level parser for the live collector as well as backfill. Automatic collection remains
+    # missing-only; authoritative historical repair belongs to the backfill path.
+    equifax = fetch_equifax_archive_rows(start, end)
     for code, rows in equifax.items():
         counts[code] = _insert_missing(db, rows, start)
 
