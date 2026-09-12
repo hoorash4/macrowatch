@@ -84,9 +84,9 @@ html[data-theme="dark"] {
   --theme-shadow: 0 18px 45px rgba(0,0,0,.28);
   --theme-chart-bg: #0b1322;
   --theme-chart-grid: #243247;
-  --theme-chart-text: #9eacbf;
-  --theme-chart-border: #3a4a60;
-  --theme-chart-crosshair: #708197;
+  --theme-chart-text: #aebbd0;
+  --theme-chart-border: #40536b;
+  --theme-chart-crosshair: #7f91aa;
   --theme-tooltip-bg: #111c2f;
   --theme-tooltip-text: #e7edf5;
   --color-surface-page: #090f1a;
@@ -104,11 +104,11 @@ html[data-theme="dark"] {
   --color-dark-deep: #090f1a;
   --color-dark-border: #334155;
   --color-dark-input-border: #3b4b61;
-  --color-chart-axis: #9eacbf;
+  --color-chart-axis: #aebbd0;
   --shadow-card: 0 18px 45px rgba(0,0,0,.28);
   --tracker-card-background: rgba(15,23,42,.9);
   --analysis-card-header-border: rgba(148,163,184,.18);
-  --analysis-card-description-color: #9eacbf;
+  --analysis-card-description-color: #a9b5c5;
   --analysis-chart-region-background: #0f172a;
   --analysis-chart-region-border: #334155;
   --analysis-chart-plot-background: #0b1322;
@@ -131,14 +131,95 @@ html[data-theme="dark"] .stress-market-switcher button { background: var(--theme
 html[data-theme="dark"] .stress-market-switcher button.is-active { background: #4a3820; border-color: var(--color-brand-gold); color: #f2d49c; }
 html[data-theme="dark"] .inflation-real-rate-panel { border-top-color: var(--theme-divider); }
 html[data-theme="dark"] .inflation-real-rate-panel > p { color: var(--theme-text-secondary); }
+html[data-theme="dark"] .analysis-card-title,
+html[data-theme="dark"] .korea-earnings-summary strong,
+html[data-theme="dark"] .korea-earnings-chart-heading strong { color: var(--theme-text); }
+html[data-theme="dark"] #app-shell .analysis-card-icon {
+  background: #1a2a3f;
+  border-color: #40536b;
+  color: #dbeafe;
+  box-shadow: inset 0 0 0 1px rgba(148,163,184,.06);
+}
+html[data-theme="dark"] .analysis-card-description,
+html[data-theme="dark"] .korea-earnings-summary,
+html[data-theme="dark"] .korea-earnings-chart-heading { color: var(--theme-text-secondary); }
 html[data-theme="dark"] .analysis-chart-shell,
 html[data-theme="dark"] .analysis-chart-frame,
+html[data-theme="dark"] .analysis-chart-fixed-axis,
 html[data-theme="dark"] .analysis-chart-region,
-html[data-theme="dark"] .analysis-chart-plot { background-color: var(--theme-chart-bg); }
+html[data-theme="dark"] .analysis-chart-plot,
+html[data-theme="dark"] .korea-earnings-chart-panel { background-color: var(--theme-chart-bg) !important; }
 html[data-theme="dark"] .analysis-chart-shell svg text { fill: var(--theme-chart-text) !important; }
 html[data-theme="dark"] .analysis-chart-axis-line { stroke: var(--theme-chart-border) !important; }
 html[data-theme="dark"] .analysis-chart-shell [class*="grid"] line,
 html[data-theme="dark"] .analysis-chart-shell line[class*="grid"] { stroke: var(--theme-chart-grid) !important; }
+html[data-theme="dark"] .analysis-chart-range-controls button,
+html[data-theme="dark"] .market-earnings-select,
+html[data-theme="dark"] .company-earnings-search input,
+html[data-theme="dark"] .company-earnings-suggestions,
+html[data-theme="dark"] .company-earnings-suggestions button {
+  background: var(--theme-surface-elevated);
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+}
+html[data-theme="dark"] .analysis-chart-range-controls button:hover,
+html[data-theme="dark"] .analysis-chart-range-controls button:focus-visible,
+html[data-theme="dark"] .company-earnings-suggestions button:hover,
+html[data-theme="dark"] .company-earnings-suggestions button[aria-selected="true"] { background: var(--theme-hover); color: var(--theme-text); }
+html[data-theme="dark"] .analysis-chart-range-controls button.is-active { background: #dbe5f0; border-color: #dbe5f0; color: #111827; }
+html[data-theme="dark"] .company-earnings-suggestions button strong { color: var(--theme-text); }
+html[data-theme="dark"] .company-earnings-suggestions button span { color: var(--theme-text-secondary); }
+html[data-theme="dark"] .korea-earnings-chart-panel + .korea-earnings-chart-panel { border-top-color: var(--theme-divider); }
+html[data-theme="dark"] .sector-flow-week {
+  background: #111c2f;
+  border-color: #40536b;
+  box-shadow: 0 5px 14px rgba(0,0,0,.24);
+  color: #e7edf5;
+}
+html[data-theme="dark"] .sector-flow-week:not(.sector-flow-week-current) header { background: linear-gradient(115deg,#0b6f8d,#235b94); }
+html[data-theme="dark"] .sector-flow-week-current { border-color: #d58a48; box-shadow: 0 5px 14px rgba(213,138,72,.16); }
+html[data-theme="dark"] .sector-flow-columns {
+  border-bottom-color: rgba(125,190,225,.28);
+  color: #9ed2ee;
+}
+html[data-theme="dark"] .sector-flow-week li { border-bottom-color: rgba(125,190,225,.18); }
+html[data-theme="dark"] .sector-flow-week li b {
+  background: #183854;
+  color: #b9e2fb;
+}
+html[data-theme="dark"] .sector-flow-week-current li b {
+  background: #4a301e;
+  color: #ffd3aa;
+}
+html[data-theme="dark"] .sector-flow-change,
+html[data-theme="dark"] .sector-flow-streak,
+html[data-theme="dark"] .sector-flow-returns small,
+html[data-theme="dark"] .sector-flow-leadership small,
+html[data-theme="dark"] .sector-flow-top-holding { color: #a9bdd0; }
+html[data-theme="dark"] .sector-flow-sector,
+html[data-theme="dark"] .sector-flow-week .sector-flow-week-body > ol > li > strong { color: #edf4fb; }
+html[data-theme="dark"] .sector-flow-returns em,
+html[data-theme="dark"] .sector-flow-leadership { color: #8cccf1; }
+html[data-theme="dark"] .sector-flow-returns em.sector-return-positive { color: #ff8178; }
+html[data-theme="dark"] .sector-flow-returns em.sector-return-negative { color: #72b7ff; }
+html[data-theme="dark"] .sector-flow-week:not(.sector-flow-week-current) .sector-flow-returns,
+html[data-theme="dark"] .sector-flow-week-current .sector-flow-returns,
+html[data-theme="dark"] .sector-flow-week-current .sector-flow-streak,
+html[data-theme="dark"] .sector-flow-week-current .sector-flow-returns > span:first-child em {
+  background: rgba(77,137,183,.12);
+  border-color: rgba(125,190,225,.2);
+}
+html[data-theme="dark"] .sector-flow-week-current .sector-flow-returns > span:first-child em.sector-return-positive { background: rgba(239,93,82,.12); border-color: rgba(255,129,120,.24); }
+html[data-theme="dark"] .sector-flow-week-current .sector-flow-returns > span:first-child em.sector-return-negative { background: rgba(70,132,204,.14); border-color: rgba(114,183,255,.24); }
+html[data-theme="dark"] .sector-flow-holdings {
+  background: #0b1322;
+  border-color: #40536b;
+  box-shadow: 0 10px 26px rgba(0,0,0,.38);
+  color: #d4dfeb;
+}
+html[data-theme="dark"] .sector-flow-holdings-empty { color: var(--theme-text-muted); }
+html[data-theme="dark"] .sector-flow-leadership > span { background: rgba(125,190,225,.2); }
+html[data-theme="dark"] .sector-flow-note { color: var(--theme-text-secondary); }
 html[data-theme="dark"] .modal-overlay section,
 html[data-theme="dark"] .profile-dialog { background-color: var(--theme-surface) !important; border-color: var(--theme-border) !important; color: var(--theme-text); }
 html[data-theme="dark"] input,
@@ -191,8 +272,12 @@ html[data-theme="dark"] .economic-series-restore:hover { background: var(--theme
 html[data-theme="dark"] .economic-series-restore,
 html[data-theme="dark"] .economic-tools button,
 html[data-theme="dark"] .economic-modal-actions button { background: var(--theme-surface-elevated); border-color: var(--theme-border); color: var(--theme-text-secondary); }
+html[data-theme="dark"] .economic-chart-panel,
+html[data-theme="dark"] .economic-chart-host,
+html[data-theme="dark"] .economic-chart-host > div:not(.economic-alert-layer) { background: var(--theme-chart-bg); }
 html[data-theme="dark"] .economic-chart-header,
-html[data-theme="dark"] .economic-chart-footer { border-color: var(--theme-divider); }
+html[data-theme="dark"] .economic-chart-footer { border-color: var(--theme-divider); background: var(--theme-surface); }
+html[data-theme="dark"] .economic-empty { color: var(--theme-text-muted); }
 html[data-theme="dark"] .economic-modal-card label { color: var(--theme-text-secondary); }
 html[data-theme="dark"] .economic-modal-card select,
 html[data-theme="dark"] .economic-modal-card input { background: var(--theme-input-bg); border-color: var(--theme-input-border); color: var(--theme-text); }
@@ -225,17 +310,17 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     return {
       layout: {
         background: { color: variable('--theme-chart-bg', dark ? '#0b1322' : '#fff') },
-        textColor: variable('--theme-chart-text', dark ? '#9eacbf' : '#6b7280'),
+        textColor: variable('--theme-chart-text', dark ? '#aebbd0' : '#6b7280'),
       },
       grid: {
         vertLines: { color: variable('--theme-chart-grid', dark ? '#243247' : '#e5e7eb') },
         horzLines: { color: variable('--theme-chart-grid', dark ? '#243247' : '#e5e7eb') },
       },
-      rightPriceScale: { borderColor: variable('--theme-chart-border', dark ? '#3a4a60' : '#d1d5db') },
-      timeScale: { borderColor: variable('--theme-chart-border', dark ? '#3a4a60' : '#d1d5db') },
+      rightPriceScale: { borderColor: variable('--theme-chart-border', dark ? '#40536b' : '#d1d5db') },
+      timeScale: { borderColor: variable('--theme-chart-border', dark ? '#40536b' : '#d1d5db') },
       crosshair: {
-        vertLine: { color: variable('--theme-chart-crosshair', dark ? '#708197' : '#9ca3af') },
-        horzLine: { color: variable('--theme-chart-crosshair', dark ? '#708197' : '#9ca3af') },
+        vertLine: { color: variable('--theme-chart-crosshair', dark ? '#7f91aa' : '#9ca3af') },
+        horzLine: { color: variable('--theme-chart-crosshair', dark ? '#7f91aa' : '#9ca3af') },
       },
     };
   }
