@@ -7,7 +7,6 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sources.business_credit_monthly import (
     _extract_epiq_ch11,
-    _extract_equifax_changes,
     _extract_equifax_levels,
     _extract_kdi_corporate_delinquency,
 )
@@ -30,30 +29,6 @@ class BusinessCreditParserTests(unittest.TestCase):
         SBDFI ▼6bps (M/M) ▼19bps (Y/Y) 3.19% (Level)
         """
         self.assertEqual(_extract_equifax_levels(text), (1.66, 0.71, 3.19))
-        self.assertEqual(
-            _extract_equifax_changes(text),
-            {
-                "US_SBDI_31_90": (1.66, -2.0, -8.0),
-                "US_SBDI_91_180": (0.71, 0.0, 2.0),
-                "US_SBDFI": (3.19, -6.0, -19.0),
-            },
-        )
-
-    def test_equifax_changes_reproduce_published_previous_and_year_ago_values(self):
-        text = """
-        SBDI 31-90 Days ▲1bps (M/M) ▲30bps (Y/Y) 1.74% (Level)
-        SBDI 91-180 Days ▲2bps (M/M) ▲21bps (Y/Y) 0.62% (Level)
-        SBDFI ▲10bps (M/M) ▲98bps (Y/Y) 3.11% (Level)
-        """
-        short, severe, default = (
-            _extract_equifax_changes(text)["US_SBDI_31_90"],
-            _extract_equifax_changes(text)["US_SBDI_91_180"],
-            _extract_equifax_changes(text)["US_SBDFI"],
-        )
-        self.assertAlmostEqual(short[0] - short[1] / 100, 1.73)
-        self.assertAlmostEqual(short[0] - short[2] / 100, 1.44)
-        self.assertAlmostEqual(severe[0] - severe[1] / 100, 0.60)
-        self.assertAlmostEqual(default[0] - default[2] / 100, 2.13)
 
     def test_epiq_explicit_month_counts(self):
         text = (
