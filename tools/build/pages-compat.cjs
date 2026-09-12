@@ -44,12 +44,12 @@ indexHtml = removeSection(indexHtml, '<!-- ===== 개인 설정창: 카카오톡 
 indexHtml = removeSection(indexHtml, '<!-- ===== 회원 탈퇴 최종 확인창 ===== -->', '<!-- ===== 카카오톡 알림 상태 변경 확인창 ===== -->');
 const authScriptPattern = /(<script src="assets\/js\/core\/auth\.js\?v=\d+"><\/script>)/;
 if (!authScriptPattern.test(indexHtml)) throw new Error('Main auth script tag not found in Pages output.');
-indexHtml = indexHtml.replace(authScriptPattern, '<script src="assets/js/core/account-modal.js?v=2"></script>\n  $1');
+indexHtml = indexHtml.replace(authScriptPattern, '<script src="assets/js/core/account-modal.js?v=3"></script>\n  $1');
 replaceBuiltFile(indexPath, indexHtml);
 
 const economicPath = path.join(site, 'economic-charts.html');
 if (fs.existsSync(economicPath)) {
-  const economicHtml = fs.readFileSync(economicPath, 'utf8').replace('assets/js/core/account-modal.js?v=1', 'assets/js/core/account-modal.js?v=2');
+  const economicHtml = fs.readFileSync(economicPath, 'utf8').replace(/assets\/js\/core\/account-modal\.js\?v=\d+/, 'assets/js/core/account-modal.js?v=3');
   replaceBuiltFile(economicPath, economicHtml);
 }
 
