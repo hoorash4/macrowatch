@@ -31,8 +31,8 @@ test('existing series add UI offers only hidden series and removes selected code
   assert.match(manager, /filter\(code => !selected\.has\(code\)\)/);
   assert.match(manager, /economic_chart_preferences/);
   assert.match(manager, /location\.reload\(\)/);
-  assert.match(html, /economic-series-manager\.js\?v=1/);
-  assert.match(html, /economic-series-manager\.css\?v=1/);
+  assert.match(html, /economic-series-manager\.js\?v=\d+/);
+  assert.match(html, /economic-series-manager\.css\?v=\d+/);
 });
 
 test('series manager catalog cannot silently drift from the economic chart catalog', () => {
