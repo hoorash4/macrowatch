@@ -4,7 +4,6 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from io import BytesIO
-import re
 
 import requests
 from pypdf import PdfReader
@@ -42,31 +41,6 @@ def _archive_urls(year: int, month: int) -> list[str]:
     return [base + name for base in BASES for name in names]
 
 
-def _fallback_levels(text: str) -> tuple[float, float, float] | None:
-    levels = _extract_equifax_levels(text)
-    if levels:
-        return levels
-    clean = re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
-
-    def find(label: str) -> float | None:
-        match = re.search(
-            rf"{label}.{{0,220}}?(?:fell|declined|decreased|edged|rose|increased|climbed|held\s+steady|remained|was|is|stands?|stood)?[^.;:]{{0,100}}?(?:to|at|is|was|of)?\s*([0-9]+(?:\.[0-9]+)?)%",
-            clean,
-            re.I,
-        )
-        if match:
-            return float(match.group(1))
-        match = re.search(rf"{label}.{{0,120}}?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\)", clean, re.I)
-        return float(match.group(1)) if match else None
-
-    short = find(r"SBDI(?:\)|:)?\s*31\s*-\s*90(?:\s*Days(?:\s*Past\s*Due)?)?")
-    severe = find(r"SBDI(?:\)|:)?\s*91\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?")
-    default = find(r"(?:Small\s+Business\s+Default\s+Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)")
-    if short is None or severe is None or default is None:
-        return None
-    return short, severe, default
-
-
 def _fetch_report(report_y: int, report_m: int) -> tuple[int, int, tuple[float, float, float], str] | None:
     for url in _archive_urls(report_y, report_m):
         try:
@@ -75,7 +49,7 @@ def _fetch_report(report_y: int, report_m: int) -> tuple[int, int, tuple[float, 
             if response.status_code != 200 or "pdf" not in content_type:
                 continue
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
-            levels = _fallback_levels(text)
+            levels = _extract_equifax_levels(text)
             if levels:
                 return report_y, report_m, levels, url
         except Exception:
@@ -84,7 +58,7 @@ def _fetch_report(report_y: int, report_m: int) -> tuple[int, int, tuple[float, 
 
 
 def fetch_equifax_archive_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Recover exact reported levels from known first-party PDF naming schemes."""
+    """Recover only levels accepted by the canonical strict Equifax parser."""
     result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
     report_y, report_m = _shift_month(start.year, start.month, 2)
     end_y, end_m = _shift_month(end.year, end.month, 2)
