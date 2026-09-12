@@ -51,7 +51,7 @@ class EquifaxLoanPerformanceTests(unittest.TestCase):
             return {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
 
         with (
-            patch.object(paynet_monthly, "date") as mocked_date,
+            patch.object(paynet_monthly, "date", wraps=date) as mocked_date,
             patch.object(paynet_monthly, "fetch_paynet_rows", side_effect=fetch),
             patch.object(paynet_monthly, "SupabaseRest", return_value=Database()),
             patch.object(paynet_monthly, "_insert_missing", return_value=0),
