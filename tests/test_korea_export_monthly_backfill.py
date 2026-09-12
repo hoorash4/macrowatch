@@ -127,7 +127,8 @@ class KoreaExportMonthlyBackfillTests(unittest.TestCase):
     def test_chart_keeps_sparse_points_connected_and_existing_ma_contract_unchanged(self):
         chart = (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8")
         self.assertIn("const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월']};", chart)
-        self.assertIn("const normalize=(data,dk,vk)=>data.map", chart)
+        self.assertIn("const normalize=(data,dk,vk)=>data.filter", chart)
+        self.assertIn(".map(r=>({time:String(r[dk]).slice(0,10),value:Number(r[vk])}))", chart)
         self.assertIn("return [...merged.values()].sort((a,b)=>a.time.localeCompare(b.time));", chart)
         self.assertNotIn("WhitespaceData", chart)
         self.assertNotIn("value:null", chart)
