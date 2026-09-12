@@ -1,0 +1,66 @@
+name: tmp probe Equifax May 2021
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/tmp-probe-equifax-may2021.yml"]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check requests pypdf
+      - name: Probe report candidates and self-remove
+        run: |
+          python - <<'PY'
+          from io import BytesIO
+          from pathlib import Path
+          import requests, re
+          from pypdf import PdfReader
+          month='may'; Month='May'; year=2021
+          bases=['https://assets.equifax.com/marketing/US/assets/','https://assets.equifax.com/assets/usis/']
+          names=[
+            f'monthly-small-business-indices-{month}-{year}.pdf',
+            f'equifax-monthly-small-business-indices-{month}-{year}.pdf',
+            f'small-business-indices-{month}-{year}.pdf',
+            f'equifax-small-business-indices-{month}-{year}.pdf',
+            f'equifax-monthly-strategic-insights-{month}{year}.pdf',
+            f'equifax-monthly-strategic-insights-{month}-{year}.pdf',
+            f'Equifax.MonthlyStrategicInsights.{Month}{year}.pdf',
+            f'Equifax.MonthlyStrategicInsights.{Month}{year}.V101.pdf',
+            f'EquifaxMonthlyStrategicInsights.{Month}{year}.pdf',
+            f'monthly-strategic-insights-{month}-{year}.pdf',
+            f'commercial-strategic-insights-{month}-{year}.pdf',
+            f'equifax-commercial-strategic-insights-{month}-{year}.pdf',
+            f'small-business-insights-{month}-{year}.pdf',
+            f'equifax-small-business-insights-{month}-{year}.pdf',
+          ]
+          for base in bases:
+            for name in names:
+              url=base+name
+              try:
+                r=requests.get(url,timeout=12,headers={'User-Agent':'Mozilla/5.0'})
+              except Exception as e:
+                continue
+              if r.status_code==200 and 'pdf' in r.headers.get('content-type','').lower():
+                print('FOUND',url,len(r.content))
+                try:
+                  text=' '.join((p.extract_text() or '') for p in PdfReader(BytesIO(r.content)).pages)
+                  text=re.sub(r'\s+',' ',text)
+                  for key in ['SBDI','SBDFI','31-90','31 – 90','91-180','91 – 180']:
+                    i=text.find(key)
+                    if i>=0: print('SNIP',key,text[max(0,i-200):i+1000])
+                except Exception as e: print('PDFERR',e)
+          Path('.github/workflows/tmp-probe-equifax-may2021.yml').unlink()
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove temporary Equifax May 2021 probe"
+          git push
