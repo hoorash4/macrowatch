@@ -10,5 +10,5 @@ window.MACROWATCH_CONFIG = Object.freeze({
   const page = window.location.pathname.split('/').pop() || 'index.html';
   if (!['index.html', 'economic-charts.html'].includes(page)) return;
   if (window.MacroWatchAccountModal) return;
-  document.write('<script src="assets/js/core/account-modal.js?v=2"><\\/script>');
+  document.write('<script src="assets/js/core/account-modal.js?v=2"><\/script>');
 })();
