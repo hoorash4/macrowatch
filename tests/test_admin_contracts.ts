@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { validateUsername, validatePassword, validateNewSectorEtf, validateAdminCardOrder } from "../supabase/functions/admin-control/validation.ts";
 import { kstTimeFromCron, updateCronTime, latestRun, githubRequest, scheduledWorkflows, updateAutomationTime, decodeBase64Utf8, deleteAutomationTime, deleteScheduledWorkflow } from "../supabase/functions/admin-control/github.ts";
+import { assertScheduleTime, schedulePolicy } from "../supabase/functions/_shared/schedule-policy.ts";
 import { issuerFromEtfName } from "../supabase/functions/admin-control/sector-registry.ts";
 
 test("admin validation preserves normalization, bounds and rejection messages", () => {
@@ -21,6 +22,14 @@ test("KST schedule translation preserves the Korean recurrence date", () => {
   assert.equal(updateCronTime("0 18 * * 6", "10:00"), "0 1 * * 0");
   assert.equal(updateCronTime("0 8 * * 1-5", "01:00"), "0 16 * * 0-4");
   assert.throws(() => updateCronTime("30 1 2 * *", "02:00"), /한국 날짜/);
+});
+
+test("central schedule policy rejects unsafe time and allows the boundary", () => {
+  const liquidity = schedulePolicy("liquidity.yml");
+  assert.throws(() => assertScheduleTime(liquidity, "13:29"), /13:30 KST 이후/);
+  assert.doesNotThrow(() => assertScheduleTime(liquidity, "13:30"));
+  const market = schedulePolicy("market-context.yml");
+  assert.throws(() => assertScheduleTime(market, "15:59"), /16:00 KST 이후/);
 });
 
 test("GitHub adapter ignores historical push failures and decodes UTF-8 workflow sources", async () => {
@@ -45,57 +54,120 @@ test("GitHub adapter ignores historical push failures and decodes UTF-8 workflow
   } finally { globalThis.fetch = original; }
 });
 
-test("automation schedules use card steps and are sorted by Korean time", async () => {
+test("split phase workflows keep stable names independent of clock time", async () => {
   const original = globalThis.fetch;
-  const workflow = [
-    "name: Earnings U.S. automatic",
-    "on:",
-    "  schedule:",
-    '    - cron: "0 2 * * *"',
-    '    - cron: "30 2 * * *"',
-    '    - cron: "0 3 * * *"',
-    "jobs: {}",
-  ].join("\n");
+  const snapshot = ["name: Earnings U.S. automatic", "on:", "  schedule:", '    - cron: "0 2 * * *"', "jobs: {}"].join("\n");
+  const edgar = ["name: Earnings U.S. SEC automatic", "on:", "  schedule:", '    - cron: "45 2 * * *"', "jobs: {}"].join("\n");
   try {
     globalThis.fetch = async (url) => {
       const path = String(url);
       if (path.includes("/contents/.github/workflows?")) {
-        return new Response(JSON.stringify([{ name: "earnings-us-automatic.yml", path: ".github/workflows/earnings-us-automatic.yml" }]));
+        return new Response(JSON.stringify([
+          { name: "earnings-us-automatic.yml", path: ".github/workflows/earnings-us-automatic.yml" },
+          { name: "earnings-us-edgar-automatic.yml", path: ".github/workflows/earnings-us-edgar-automatic.yml" },
+        ]));
+      }
+      if (path.includes("/contents/.github/workflows/earnings-us-edgar-automatic.yml")) {
+        return new Response(JSON.stringify({ name: "earnings-us-edgar-automatic.yml", path: ".github/workflows/earnings-us-edgar-automatic.yml", sha: "edgar", content: btoa(edgar) }));
       }
       if (path.includes("/contents/.github/workflows/earnings-us-automatic.yml")) {
-        return new Response(JSON.stringify({ name: "earnings-us-automatic.yml", path: ".github/workflows/earnings-us-automatic.yml", sha: "sha", content: btoa(workflow) }));
+        return new Response(JSON.stringify({ name: "earnings-us-automatic.yml", path: ".github/workflows/earnings-us-automatic.yml", sha: "snapshot", content: btoa(snapshot) }));
       }
       if (path.includes("/actions/workflows?")) {
-        return new Response(JSON.stringify({ workflows: [{ path: ".github/workflows/earnings-us-automatic.yml", state: "active" }] }));
+        return new Response(JSON.stringify({ workflows: [
+          { path: ".github/workflows/earnings-us-automatic.yml", state: "active" },
+          { path: ".github/workflows/earnings-us-edgar-automatic.yml", state: "active" },
+        ] }));
       }
       if (path.includes("/runs?")) {
-        return new Response(JSON.stringify({ workflow_runs: [{ id: 1, conclusion: "success", updated_at: "2026-09-10T00:00:00Z" }] }));
+        return new Response(JSON.stringify({ workflow_runs: [{ id: 1, event: "schedule", conclusion: "success", updated_at: "2026-09-10T00:00:00Z" }] }));
       }
       throw new Error(`Unexpected request: ${path}`);
     };
     const items = await scheduledWorkflows("test-token");
     assert.deepEqual(items.map((item) => [item.kst_time, item.name]), [
       ["11:00", "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷"],
-      ["11:30", "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시"],
-      ["12:00", "시총 상위 100 이익 모멘텀 · 미국 미확보 항목 보완"],
+      ["11:45", "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시"],
     ]);
   } finally { globalThis.fetch = original; }
 });
 
-test("automation step names remain stable when their cron time changes", async () => {
+test("unchanged legacy clock value is a no-op even if it predates a new safety boundary", async () => {
   const original = globalThis.fetch;
-  const workflow = ["name: Sector flow", "on:", "  schedule:", '    - cron: "10 0 * * 1-5"', '    - cron: "30 3 * * 1-5"', '    - cron: "40 6 * * 1-5"', "jobs: {}"].join("\n");
+  const workflow = ["name: Refresh liquidity pressure and capacity", "on:", "  schedule:", '    - cron: "30 4 * * *"', "jobs: {}"].join("\n");
+  const calls: string[] = [];
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push(`${String(init.method || "GET")} ${String(url)}`);
+      return new Response(JSON.stringify({ name: "liquidity.yml", path: ".github/workflows/liquidity.yml", sha: "sha", content: btoa(workflow) }));
+    };
+    await updateAutomationTime("liquidity.yml", "30 4 * * *", "13:30", "test-token");
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /^GET /);
+  } finally { globalThis.fetch = original; }
+});
+
+test("changed unsafe clock value is rejected before any workflow write", async () => {
+  const original = globalThis.fetch;
+  const workflow = ["name: Refresh liquidity pressure and capacity", "on:", "  schedule:", '    - cron: "30 4 * * *"', "jobs: {}"].join("\n");
+  const calls: Array<{url:string; method:string}> = [];
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push({url:String(url), method:String(init.method || "GET")});
+      return new Response(JSON.stringify({ name: "liquidity.yml", path: ".github/workflows/liquidity.yml", sha: "sha", content: btoa(workflow) }));
+    };
+    await assert.rejects(
+      updateAutomationTime("liquidity.yml", "30 4 * * *", "13:29", "test-token"),
+      /13:30 KST 이후/,
+    );
+    assert.equal(calls.filter((call) => call.method === "PUT").length, 0);
+  } finally { globalThis.fetch = original; }
+});
+
+test("allowed schedule edit writes the new cron then clears queued old scheduled runs", async () => {
+  const original = globalThis.fetch;
+  const workflow = ["name: Refresh liquidity pressure and capacity", "on:", "  schedule:", '    - cron: "30 4 * * *"', "jobs: {}"].join("\n");
+  const calls: Array<{url:string; method:string; body:string}> = [];
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      const path = String(url), method = String(init.method || "GET"), body = String(init.body || "");
+      calls.push({url:path, method, body});
+      if (path.includes("/contents/.github/workflows/liquidity.yml") && method === "GET") {
+        return new Response(JSON.stringify({ name: "liquidity.yml", path: ".github/workflows/liquidity.yml", sha: "sha", content: btoa(workflow) }));
+      }
+      if (path.includes("/contents/.github/workflows/liquidity.yml") && method === "PUT") {
+        return new Response(JSON.stringify({content:{sha:"next"}}));
+      }
+      if (path.includes("/actions/workflows/liquidity.yml/runs?")) {
+        return new Response(JSON.stringify({workflow_runs:[{id:123}]}));
+      }
+      if (path.includes("/actions/runs/123/cancel")) return new Response(null, {status:202});
+      throw new Error(`Unexpected request: ${method} ${path}`);
+    };
+    await updateAutomationTime("liquidity.yml", "30 4 * * *", "13:45", "test-token");
+    const writeIndex = calls.findIndex((call) => call.method === "PUT");
+    const cancelIndex = calls.findIndex((call) => call.url.includes("/cancel"));
+    assert.ok(writeIndex >= 0 && cancelIndex > writeIndex);
+    const payload = JSON.parse(calls[writeIndex].body);
+    assert.match(decodeBase64Utf8(payload.content), /45 4 \* \* \*/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("phase ordering rejects a snapshot time after its SEC phase", async () => {
+  const original = globalThis.fetch;
+  const snapshot = ["name: Earnings U.S. automatic", "on:", "  schedule:", '    - cron: "0 2 * * *"', "jobs: {}"].join("\n");
+  const edgar = ["name: Earnings U.S. SEC automatic", "on:", "  schedule:", '    - cron: "30 2 * * *"', "jobs: {}"].join("\n");
   try {
     globalThis.fetch = async (url) => {
       const path = String(url);
-      if (path.includes("/contents/.github/workflows?")) return new Response(JSON.stringify([{ name: "sector-flow.yml", path: ".github/workflows/sector-flow.yml" }]));
-      if (path.includes("/contents/.github/workflows/sector-flow.yml")) return new Response(JSON.stringify({ name: "sector-flow.yml", path: ".github/workflows/sector-flow.yml", sha: "sha", content: btoa(workflow) }));
-      if (path.includes("/actions/workflows?")) return new Response(JSON.stringify({ workflows: [{ path: ".github/workflows/sector-flow.yml", state: "active" }] }));
-      if (path.includes("/runs?")) return new Response(JSON.stringify({ workflow_runs: [{ id: 1, event: "schedule", conclusion: "success", updated_at: "2026-09-10T00:00:00Z" }] }));
+      if (path.includes("earnings-us-edgar-automatic.yml")) return new Response(JSON.stringify({name:"earnings-us-edgar-automatic.yml",path:".github/workflows/earnings-us-edgar-automatic.yml",sha:"e",content:btoa(edgar)}));
+      if (path.includes("earnings-us-automatic.yml")) return new Response(JSON.stringify({name:"earnings-us-automatic.yml",path:".github/workflows/earnings-us-automatic.yml",sha:"s",content:btoa(snapshot)}));
       throw new Error(`Unexpected request: ${path}`);
     };
-    const items = await scheduledWorkflows("test-token");
-    assert.deepEqual(items.map((item) => item.name), ["주도섹터 흐름 · 장초반", "주도섹터 흐름 · 장중", "주도섹터 흐름 · 종가"]);
+    await assert.rejects(
+      updateAutomationTime("earnings-us-automatic.yml", "0 2 * * *", "11:45", "test-token"),
+      /SEC 신규 공시 단계\(11:30 KST\) 이전/,
+    );
   } finally { globalThis.fetch = original; }
 });
 

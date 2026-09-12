@@ -1,23 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { jsonResponse as json } from "../_shared/http.ts";
+import { schedulePolicy, timeMinutes } from "../_shared/schedule-policy.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type PriceStage = "open" | "intraday" | "close";
 
-type ScheduleSlot = {
-  name: string;
-  stage: PriceStage;
-  startMinute: number;
-  endMinute: number;
-};
-
-const SLOTS: ScheduleSlot[] = [
-  { name: "market-open", stage: "open", startMinute: 9 * 60 + 10, endMinute: 9 * 60 + 40 },
-  { name: "midday", stage: "intraday", startMinute: 12 * 60 + 30, endMinute: 13 * 60 },
-  { name: "market-close", stage: "close", startMinute: 15 * 60 + 40, endMinute: 16 * 60 + 10 },
-];
-
-
+const STAGES = new Set<PriceStage>(["open", "intraday", "close"]);
 
 function kstParts(now = new Date()) {
   const shifted = new Date(now.getTime() + 9 * 3_600_000);
@@ -35,63 +23,74 @@ function mondayOf(value: string) {
   return date.toISOString().slice(0, 10);
 }
 
-function slotStartUtc(date: string, slot: ScheduleSlot) {
-  const hour = Math.floor(slot.startMinute / 60);
-  const minute = slot.startMinute % 60;
-  return new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+09:00`);
+function kstDayStartUtc(value: string) {
+  return new Date(`${value}T00:00:00+09:00`);
+}
+
+function cronMatchesNow(schedule: unknown, now: Date) {
+  const fields = String(schedule || "").trim().split(/\s+/);
+  if (fields.length !== 5 || fields[2] !== "*" || fields[3] !== "*") return false;
+  const minute = Number(fields[0]), hour = Number(fields[1]);
+  if (!Number.isInteger(minute) || !Number.isInteger(hour)) return false;
+  const weekday = now.getUTCDay();
+  const weekdayAllowed = fields[4] === "*" || fields[4] === String(weekday)
+    || (fields[4] === "1-5" && weekday >= 1 && weekday <= 5);
+  return weekdayAllowed && hour === now.getUTCHours() && minute === now.getUTCMinutes();
 }
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "POST 요청만 허용됩니다." }, 405);
 
   try {
+    const body = await request.json().catch(() => ({}));
+    const stage = String(body?.stage || "") as PriceStage;
+    if (!STAGES.has(stage)) return json({ error: "유효한 sector-flow stage가 필요합니다." }, 400);
+
     const now = new Date();
     const kst = kstParts(now);
-    if (kst.weekday === 0 || kst.weekday === 6) {
-      return json({ ok: true, skipped: "weekend" });
+    const policy = schedulePolicy(`sector-flow-${stage}.yml`);
+    if (policy?.allowedWeekdays && !policy.allowedWeekdays.includes(kst.weekday)) {
+      return json({ ok: true, skipped: "outside_allowed_weekday", stage });
+    }
+    if (policy?.earliestSafeTimeKst && kst.minute < timeMinutes(policy.earliestSafeTimeKst)) {
+      return json({ ok: true, skipped: "before_safe_time", stage, earliest_safe_time_kst: policy.earliestSafeTimeKst });
     }
 
-    // 공개 스케줄러 엔드포인트는 정해진 실행 창 밖에서는 어떤 작업도 하지 않는다.
-    // 각 창은 본 실행과 15분 뒤 재시도를 모두 수용한다.
-    const slot = SLOTS.find((candidate) => kst.minute >= candidate.startMinute && kst.minute < candidate.endMinute);
-    if (!slot) return json({ ok: true, skipped: "outside_schedule_window" });
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceRole) throw new Error("Supabase 서버 설정이 없습니다.");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceKey) throw new Error("Supabase 서버 설정이 없습니다.");
 
-    const admin = createClient(supabaseUrl, serviceRole);
+    const admin = createClient(supabaseUrl, serviceKey);
+    const { data: scheduleRows, error: scheduleError } = await admin.rpc("macrowatch_sector_flow_schedules");
+    if (scheduleError) throw scheduleError;
+    const configuredJobs = (Array.isArray(scheduleRows) ? scheduleRows : []).filter((row) => (
+      String(row?.jobname || "").startsWith(`macrowatch-sector-flow-${stage}-`) && row?.active === true
+    ));
+    if (!configuredJobs.some((row) => cronMatchesNow(row?.schedule, now))) {
+      return json({ ok: true, skipped: "outside_configured_schedule", stage });
+    }
+
     const currentWeek = mondayOf(kst.date);
-    const slotStartedAt = slotStartUtc(kst.date, slot);
     const { data: latest, error: latestError } = await admin
       .from("market_sector_weekly_rankings")
       .select("calculated_at,price_stage")
       .eq("week_start", currentWeek)
-      .eq("price_stage", slot.stage)
-      .gte("calculated_at", slotStartedAt.toISOString())
+      .eq("price_stage", stage)
+      .gte("calculated_at", kstDayStartUtc(kst.date).toISOString())
       .order("calculated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (latestError) throw latestError;
 
-    // GitHub 안전망 또는 앞선 Supabase 호출이 이미 끝났다면 중복 KIS 호출을 막는다.
+    // The primary and retry jobs carry the same explicit stage. Once either
+    // succeeds on the current Korean trading day, later retries are no-ops.
     if (latest) {
-      return json({ ok: true, skipped: "already_refreshed", slot: slot.name, calculated_at: latest.calculated_at });
+      return json({ ok: true, skipped: "already_refreshed", stage, calculated_at: latest.calculated_at });
     }
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/sector-flow`, {
-      method: "POST",
-      headers: {
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ stage: slot.stage }),
-    });
-    const responseText = await response.text();
-    if (!response.ok) throw new Error(`sector-flow ${response.status}: ${responseText.slice(0, 500)}`);
-
-    return json({ ok: true, slot: slot.name, stage: slot.stage, result: responseText ? JSON.parse(responseText) : null });
+    const { data: result, error: invokeError } = await admin.functions.invoke("sector-flow", { body: { stage } });
+    if (invokeError) throw invokeError;
+    return json({ ok: true, stage, result: result ?? null });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ ok: false, error: message }, 500);

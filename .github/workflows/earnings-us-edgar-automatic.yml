@@ -1,20 +1,13 @@
-name: Earnings U.S. automatic
+name: Earnings U.S. SEC automatic
 
 on:
   schedule:
-    # Scheduled runs are always the quarter-end snapshot phase; clock time is admin-managed.
-    # Run every day because the U.S. Friday close is Saturday morning in Korea.
-    - cron: "0 2 * * *"
+    # Scheduled runs are always the SEC filing phase; clock time is admin-managed.
+    - cron: "30 2 * * *"
   workflow_dispatch:
     inputs:
-      phase:
-        description: Automatic collection phase
-        required: true
-        default: all
-        type: choice
-        options: [snapshot, edgar, all]
       write:
-        description: Persist U.S. collection results
+        description: Persist U.S. SEC collection results
         required: true
         default: false
         type: boolean
@@ -39,12 +32,11 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Run selected U.S. automatic collection phase
+      - name: Run U.S. SEC automatic collection phase
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
-          PHASE: ${{ github.event_name == 'schedule' && 'snapshot' || inputs.phase }}
           SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -52,6 +44,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(--phase "$PHASE")
+          args=(--phase edgar)
           [[ "$WRITE" == "true" ]] && args+=(--write)
           timeout --signal=TERM --kill-after=10s 660s python -m earnings_us.automatic_cli "${args[@]}"

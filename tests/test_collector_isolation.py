@@ -56,13 +56,17 @@ class CollectorIsolationTests(unittest.TestCase):
     def test_sector_collection_does_not_run_retention_deletes_or_initialize_history(self) -> None:
         function = text("supabase/functions/sector-flow/index.ts")
         workflow = text(".github/workflows/sector-flow.yml")
+        scheduler = text("supabase/functions/sector-flow-scheduler/index.ts")
         self.assertNotIn('.delete().lt("market_date", retentionStart)', function)
         self.assertNotIn('.delete().lt("week_start", rankingRetentionStart)', function)
         self.assertIn('const initializeHistory = body.initialize_history === true', function)
         self.assertIn('const needsHistoryInitialization = initializeHistory && missingHistoryIds.has(item.id)', function)
         self.assertIn('const benchmarkStart = initializeHistory ? new Date(`${retentionStart}T00:00:00Z`) : end', function)
-        self.assertIn("github.event_name == 'schedule' && 'collect'", workflow)
+        self.assertNotIn('schedule:', workflow)
+        self.assertIn('workflow_dispatch:', workflow)
+        self.assertIn('default: collect', workflow)
         self.assertIn('options: [collect, initialize_history, rebuild_rankings]', workflow)
+        self.assertIn('body: { stage }', scheduler)
         # Replacing the current week's calculated rows is part of the current
         # collection transaction, not historical retention cleanup.
         self.assertIn('.eq("week_start", currentWeek)', function)

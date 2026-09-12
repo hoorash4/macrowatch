@@ -2,9 +2,8 @@ name: Earnings V2 Korea automatic
 
 on:
   schedule:
-    # GitHub Actions cron uses UTC: KST 19:30 / 20:30 on weekdays.
+    # Scheduled runs are always the DART disclosure phase; clock time is admin-managed.
     - cron: "30 10 * * 1-5"
-    - cron: "30 11 * * 1-5"
   workflow_dispatch:
     inputs:
       phase:
@@ -45,7 +44,7 @@ jobs:
           PYTHONPATH: backend
           EARNINGS_V2_AUTOMATIC_DEADLINE_SECONDS: "240"
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
-          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '30 10 * * 1-5' && 'dart' || 'kis') || inputs.phase }}
+          PHASE: ${{ github.event_name == 'schedule' && 'dart' || inputs.phase }}
           KRX_OPEN_API_KEY: ${{ secrets.KRX_OPEN_API_KEY }}
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
