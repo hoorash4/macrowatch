@@ -1,0 +1,84 @@
+name: tmp probe all Equifax 2021 reports
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/tmp-probe-equifax-2021-all.yml"]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check requests pypdf
+      - name: Probe all 2021 report variants and self-remove
+        run: |
+          python - <<'PY'
+          from io import BytesIO
+          from pathlib import Path
+          import requests,re,itertools
+          from pypdf import PdfReader
+          months=[('January','january','jan'),('February','february','feb'),('March','march','mar'),('April','april','apr'),('May','may','may'),('June','june','jun'),('July','july','jul'),('August','august','aug'),('September','september','sep'),('October','october','oct'),('November','november','nov'),('December','december','dec')]
+          bases=['https://assets.equifax.com/marketing/US/assets/','https://assets.equifax.com/assets/usis/']
+          def names(full,low,abbr,y):
+              vals=[
+                f'monthly-small-business-indices-{low}-{y}.pdf',
+                f'equifax-monthly-small-business-indices-{low}-{y}.pdf',
+                f'small-business-indices-{low}-{y}.pdf',
+                f'equifax-small-business-indices-{low}-{y}.pdf',
+                f'equifax-small-business-insights-{low}-{y}.pdf',
+                f'small-business-insights-{low}-{y}.pdf',
+                f'equifax-monthly-strategic-insights-{low}{y}.pdf',
+                f'equifax-monthly-strategic-insights-{low}-{y}.pdf',
+                f'equifax-monthly-strategic-insights-{abbr}{y}.pdf',
+                f'equifax-monthly-strategic-insights-{abbr}-{y}.pdf',
+                f'Equifax.MonthlyStrategicInsights.{full}{y}.pdf',
+                f'Equifax.MonthlyStrategicInsights.{full}{y}.V101.pdf',
+                f'Equifax.MonthlyStrategicInsights.{full}{y}.V201.pdf',
+                f'EquifaxMonthlyStrategicInsights.{full}{y}.pdf',
+                f'monthly-strategic-insights-{low}-{y}.pdf',
+                f'equifax-strategic-insights-{low}-{y}.pdf',
+                f'equifax-commercial-strategic-insights-{low}-{y}.pdf',
+                f'commercial-strategic-insights-{low}-{y}.pdf',
+                f'equifax-commercial-insights-{low}-{y}.pdf',
+                f'commercial-insights-{low}-{y}.pdf',
+              ]
+              return vals
+          sess=requests.Session(); sess.headers.update({'User-Agent':'Mozilla/5.0'})
+          for full,low,abbr in months:
+              found=[]
+              for base in bases:
+                for name in names(full,low,abbr,2021):
+                  u=base+name
+                  try:r=sess.get(u,timeout=8)
+                  except Exception:continue
+                  if r.status_code==200 and 'pdf' in r.headers.get('content-type','').lower() and len(r.content)>20000:
+                    found.append((u,r.content)); break
+                if found:break
+              if not found:
+                print('MISSING',full)
+                continue
+              u,data=found[0]
+              print('\nFOUND',full,u,len(data))
+              try:
+                t=' '.join((p.extract_text() or '') for p in PdfReader(BytesIO(data)).pages)
+                t=re.sub(r'\s+',' ',t).replace('–','-').replace('—','-').replace('−','-')
+                # Print compact relevant spans around national Index Analysis and chart labels.
+                for pat in [r'Equifax Small Business Delinquency Index',r'SBDI:\s*31',r'SBDI:\s*91']:
+                  m=re.search(pat,t,re.I)
+                  if m:
+                    print('SNIP',t[max(0,m.start()-250):m.start()+1800])
+                    break
+              except Exception as e: print('PDFERR',e)
+          Path('.github/workflows/tmp-probe-equifax-2021-all.yml').unlink()
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove temporary Equifax 2021 report probe"
+          git push
