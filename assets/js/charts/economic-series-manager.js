@@ -25,7 +25,14 @@ const SERIES_CATALOG = [
   {code:'WEI',title:'미국 주간 경제 지수',frequency:'주별',category:'고빈도 경기'},
   {code:'EMRATIO',title:'미국 인구대비 고용률',frequency:'월별',category:'고빈도 경기'},
   {code:'US_RETAIL_SALES',title:'미국 소매판매 YoY',frequency:'월별',category:'고빈도 경기'},
-  {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'10일 구간',category:'고빈도 경기'}
+  {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'10일 구간',category:'고빈도 경기'},
+  {code:'US_SBDI_31_90',title:'미국 단기 연체율',frequency:'월별',category:'기업신용'},
+  {code:'US_SBDI_91_180',title:'미국 장기 연체율',frequency:'월별',category:'기업신용'},
+  {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'월별',category:'기업신용'},
+  {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'월별',category:'기업신용'},
+  {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'월별',category:'기업신용'},
+  {code:'KR_DEFAULT_COMPANIES',title:'한국 부도업체수',frequency:'월별',category:'기업신용'},
+  {code:'KR_CORP_REHAB',title:'한국 법인회생 신청건수',frequency:'월별',category:'기업신용'}
 ];
 
 let user = null;
