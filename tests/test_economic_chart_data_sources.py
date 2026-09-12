@@ -11,42 +11,65 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sources import korea_export_monthly as export_monthly  # noqa: E402
 from sources import krx_index_fundamentals as krx  # noqa: E402
+from sources.korea_export_intramonth import ExportSnapshot, ReleaseLink  # noqa: E402
 
 
 class KoreaExportMonthlyTests(unittest.TestCase):
-    def test_workdays_use_weekday_one_saturday_half_and_holiday_zero(self):
-        fake_holidays = {date(2026, 9, 7)}
-        with patch.object(export_monthly.holidays, "KR", return_value=fake_holidays):
-            value = export_monthly.monthly_workdays(2026, 9)
-        expected = 0.0
-        for day in range(1, 31):
-            current = date(2026, 9, day)
-            if current in fake_holidays or current.weekday() == 6:
-                continue
-            expected += 0.5 if current.weekday() == 5 else 1.0
-        self.assertEqual(value, expected)
-
-    def test_monthly_export_fallback_uses_ecos_export_amount_and_workdays(self):
-        response = Mock()
-        response.raise_for_status = Mock()
-        response.json.return_value = {
-            "StatisticSearch": {"row": [{"TIME": "202608", "DATA_VALUE": "60000"}]}
-        }
-        with (
-            patch.object(export_monthly, "require_env", return_value="ecos-key"),
-            patch.object(export_monthly, "request_with_retry", side_effect=lambda fn: fn()),
-            patch.object(export_monthly.requests, "get", return_value=response) as get,
-            patch.object(export_monthly, "monthly_workdays", return_value=20.0),
-        ):
-            rows = export_monthly.fetch_monthly_export_rows(date(2026, 8, 1), date(2026, 8, 1))
-        self.assertEqual(rows, [{
+    def test_monthly_export_backfill_uses_official_kcs_month_end_amount_and_workdays(self):
+        snapshot = ExportSnapshot(
+            stage="month_end",
+            reference_month=date(2026, 8, 1),
+            period_end=date(2026, 8, 31),
+            cumulative_export_musd=60_000.0,
+            cumulative_workdays=20.0,
+            published_on=date(2026, 9, 1),
+            source_url="https://www.customs.go.kr/example",
+        )
+        self.assertEqual(export_monthly.monthly_row_from_snapshot(snapshot), {
             "series_code": "KR_EXPORT_DAILY_AVG",
             "observation_date": "2026-08-31",
             "value": 30.0,
             "frequency": "M",
-            "source": "ECOS:901Y118/T002+KR_WORKDAYS",
-        }])
-        self.assertIn("901Y118/M/202608/202608/T002", get.call_args.args[0])
+            "source": "KCS:MONTHLY_EXPORT/daily_avg",
+        })
+
+    def test_monthly_export_backfill_fetches_only_month_end_releases(self):
+        month_end = ReleaseLink(
+            title="2026년 8월 수출입 현황",
+            ntt_sn="1",
+            ntt_url="",
+            stage="month_end",
+            reference_month=date(2026, 8, 1),
+            period_end=date(2026, 8, 31),
+            published_on=date(2026, 9, 1),
+        )
+        d20 = ReleaseLink(
+            title="8월 1일~20일 수출입 현황",
+            ntt_sn="2",
+            ntt_url="",
+            stage="d20",
+            reference_month=date(2026, 8, 1),
+            period_end=date(2026, 8, 20),
+            published_on=date(2026, 8, 21),
+        )
+        snapshot = ExportSnapshot(
+            stage="month_end",
+            reference_month=date(2026, 8, 1),
+            period_end=date(2026, 8, 31),
+            cumulative_export_musd=60_000.0,
+            cumulative_workdays=20.0,
+            published_on=date(2026, 9, 1),
+            source_url="https://www.customs.go.kr/example",
+        )
+        with (
+            patch.object(export_monthly, "fetch_release_links", return_value=([d20, month_end], [])),
+            patch.object(export_monthly, "_detail_markup", return_value="<html></html>"),
+            patch.object(export_monthly, "parse_snapshot", return_value=snapshot) as parser,
+        ):
+            rows, errors = export_monthly.fetch_monthly_export_rows(date(2026, 8, 1), date(2026, 8, 1))
+        self.assertEqual(errors, [])
+        self.assertEqual([row["observation_date"] for row in rows], ["2026-08-31"])
+        parser.assert_called_once()
 
 
 class FakeFrame:
