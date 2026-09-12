@@ -33,11 +33,11 @@ class PayNetLoanPerformanceTests(unittest.TestCase):
         payload = [
             {"name": "SBDI 31-90 Days", "data": [[ms(2026, 7), 1.66]]},
             {"name": "SBDI 91-180 Days", "data": [[ms(2026, 7), 0.73]]},
-            {"name": "SBDI 31-180 Days", "data": [[ms(2026, 7), 2.39]]},
+            {"name": "SBDI 31-180 Days", "data": [[ms(2026, 7), 2.41]]},
             {"name": "SBDFI Annualized Default Index", "data": [[ms(2026, 7), 3.20]]},
         ]
         result = rows_from_highcharts_payload(payload, date(2026, 7, 1), date(2026, 7, 31))
-        self.assertEqual(result[SERIES_DELINQUENCY][0]["value"], 2.39)
+        self.assertEqual(result[SERIES_DELINQUENCY][0]["value"], 2.41)
         self.assertEqual(result[SERIES_DEFAULT][0]["value"], 3.20)
         self.assertNotEqual(result[SERIES_DELINQUENCY][0]["value"], 1.66 + 0.73)
 
@@ -62,6 +62,13 @@ class PayNetLoanPerformanceTests(unittest.TestCase):
         months = _required_months(date(2026, 7, 1))
         delinquency = [row(SERIES_DELINQUENCY, d.year, d.month, 2.0) for d in months]
         defaults = [row(SERIES_DEFAULT, d.year, d.month, 3.0) for d in months if d != date(2024, 5, 1)]
+        with self.assertRaises(RuntimeError):
+            _prepare({SERIES_DELINQUENCY: delinquency, SERIES_DEFAULT: defaults})
+
+    def test_prepare_rejects_wrong_latest_month(self):
+        months = _required_months(date(2026, 8, 1))
+        delinquency = [row(SERIES_DELINQUENCY, d.year, d.month, 2.0) for d in months]
+        defaults = [row(SERIES_DEFAULT, d.year, d.month, 3.0) for d in months]
         with self.assertRaises(RuntimeError):
             _prepare({SERIES_DELINQUENCY: delinquency, SERIES_DEFAULT: defaults})
 
