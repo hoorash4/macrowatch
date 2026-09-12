@@ -37,7 +37,7 @@ Deno.serve(async (request) => {
 
     const now = new Date();
     const kst = kstParts(now);
-    const policy = schedulePolicy(`sector-flow-${stage}`);
+    const policy = schedulePolicy(`sector-flow-${stage}.yml`);
     if (policy?.allowedWeekdays && !policy.allowedWeekdays.includes(kst.weekday)) {
       return json({ ok: true, skipped: "outside_allowed_weekday", stage });
     }
