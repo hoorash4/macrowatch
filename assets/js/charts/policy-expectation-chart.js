@@ -101,7 +101,7 @@
       <path d="${averagePath}" class="policy-expectation-line policy-expectation-line--average"/>
       <line data-policy-expectation-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
       <text data-policy-expectation-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text>
-      <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-expectation-cursor-detail"></text>
+      <text data-policy-expectation-detail text-anchor="middle" y="${HEIGHT - PADDING.bottom + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text>
     </svg>` });
     const cursor = container.querySelector('[data-policy-expectation-cursor]');
     const cursorDetail = container.querySelector('[data-policy-expectation-detail]');
@@ -150,15 +150,17 @@
       const nearest = points.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest);
       cursor.setAttribute('x1', nearest.x);
       cursor.setAttribute('x2', nearest.x);
-      cursorDetail.setAttribute('x', nearest.x);
       cursorDetail.textContent = formatMonthDay(nearest.observation_date);
+      cursorDetail.setAttribute('visibility', 'visible');
+      chartUtils.positionCursorText(cursorDetail, nearest.x, frame);
       cursorValue.textContent = chartUtils.cursorValueText(nearest, [{ key: 'fiveDayAverage', label: '내재금리', format: chartUtils.formatChartNumber }]);
       cursorValue.setAttribute('visibility', 'visible');
       chartUtils.positionCursorText(cursorValue, nearest.x, frame);
-      for (const element of [cursor, cursorDetail]) element.classList.add('is-visible');
+      cursor.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => {
-      for (const element of [cursor, cursorDetail]) element.classList.remove('is-visible');
+      cursor.classList.remove('is-visible');
+      cursorDetail.setAttribute('visibility', 'hidden');
       cursorValue.setAttribute('visibility', 'hidden');
     });
   }
