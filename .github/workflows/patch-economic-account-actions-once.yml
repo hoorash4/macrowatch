@@ -1,0 +1,31 @@
+name: Patch economic chart account actions once
+
+on:
+  push:
+    branches: [feat/economic-chart-account-actions-20260913]
+    paths:
+      - ".github/workflows/patch-economic-account-actions-once.yml"
+      - ".github/scripts/patch_economic_account_actions.py"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/economic-chart-account-actions-20260913
+          fetch-depth: 0
+      - name: Apply account actions patch
+        run: python .github/scripts/patch_economic_account_actions.py
+      - name: Commit patch and remove helpers
+        run: |
+          rm .github/scripts/patch_economic_account_actions.py .github/workflows/patch-economic-account-actions-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add economic-charts.html assets/css/economic-charts.css assets/js/charts/economic-page-actions.js assets/js/core/auth.js tests/test_dashboard.js .github/scripts/patch_economic_account_actions.py .github/workflows/patch-economic-account-actions-once.yml
+          git diff --cached --check
+          git commit -m "Add account actions to economic charts"
+          git push origin HEAD:feat/economic-chart-account-actions-20260913
