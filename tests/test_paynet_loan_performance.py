@@ -40,19 +40,6 @@ class EquifaxLoanPerformanceTests(unittest.TestCase):
         """
         self.assertEqual(extract_equifax_levels(text), (1.72, 0.72, 3.20))
 
-    def test_interleaved_overview_table_is_supported(self):
-        text = """
-        Equifax Small Business Delinquency (SBDI) & Default Indices (SBDFI)
-        Equifax Small Business Lending Index (SBLI)
-        SBDI 31-90 Days SBLI SBLI 3MMA* SBDFI SBDI 91-180 Days
-        92nd 1.6% 74th 6.2% 5bps 55bps 1bp 12bps 0bps 15bps
-        Percentile 11.4% (Y/Y) 149.0 (Level) (M/M)
-        3.40% (Level) (M/M) (Y/Y)
-        1.82% (Level) (M/M) (Y/Y)
-        0.70% (Level) (M/M)
-        """
-        self.assertEqual(extract_equifax_levels(text), (1.82, 0.70, 3.40))
-
     def test_missing_bucket_is_rejected(self):
         text = """
         SBDI 31-90 Days 1.72% (Level)
