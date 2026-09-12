@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/equifax-archive-backfill-once.yml"
+      - "backend/sources/business_credit_monthly.py"
+      - "backend/sources/equifax_archive_source.py"
   workflow_dispatch:
 
 permissions:
