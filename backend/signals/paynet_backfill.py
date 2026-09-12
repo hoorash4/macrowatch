@@ -1,4 +1,4 @@
-"""Authoritative reverse-month backfill for direct 31-180 delinquency and SBDFI."""
+"""Authoritative reverse-month backfill for unified Equifax delinquency and SBDFI."""
 from __future__ import annotations
 
 from datetime import date
@@ -32,11 +32,12 @@ def _required_months(latest: date, years: int = 10) -> list[date]:
 
 
 def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[str, dict]]]:
+    """Integrity helper retained for tests and complete-history validation."""
     by_code: dict[str, dict[str, dict]] = {}
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         rows = rows_by_code.get(code) or []
         if not rows:
-            raise RuntimeError(f"{code}: no direct public source rows")
+            raise RuntimeError(f"{code}: no Equifax source rows")
         by_code[code] = {row["observation_date"]: row for row in rows}
         latest = max(date.fromisoformat(key) for key in by_code[code])
         if latest != EXPECTED_LATEST:
@@ -46,60 +47,54 @@ def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         absent = [month.isoformat() for month in required if month.isoformat() not in by_code[code]]
         if absent:
-            raise RuntimeError(f"{code}: incomplete direct history; first missing={absent[0]}")
+            raise RuntimeError(f"{code}: incomplete Equifax history; first missing={absent[0]}")
     return EXPECTED_LATEST, by_code
 
 
 def run() -> dict[str, object]:
     required = _required_months(EXPECTED_LATEST)
-    collected = {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
+    db = SupabaseRest()
 
-    # Verify July 2026 first, then walk backwards exactly one month at a time.
-    # No database changes happen until every one of the 121 months is present.
+    # Old split series are no longer part of the product. Remove them once up front;
+    # the unified delinquency/default rows are then repaired newest -> oldest.
+    db.request(
+        "DELETE",
+        TABLE,
+        params={"series_code": "in.(US_SBDI_31_90,US_SBDI_91_180)"},
+        prefer="return=minimal",
+    )
+
+    stored = 0
+    oldest_stored: date | None = None
     for month in required:
         rows = fetch_paynet_month(month)
         missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
         if missing:
             raise RuntimeError(
-                f"{month:%Y-%m}: direct public source missing {','.join(missing)}; "
-                "split delinquency buckets will not be substituted"
+                f"{month:%Y-%m}: Equifax source missing {','.join(missing)}; "
+                "no partial month will be stored"
             )
+
+        batch = []
         for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
-            collected[code].append(rows[code])
-        print(json.dumps({"verified_month": f"{month:%Y-%m}"}, ensure_ascii=False))
+            validated = _validate_rows(code, [rows[code]], month, month)
+            if len(validated) != 1:
+                raise RuntimeError(f"{month:%Y-%m}: {code} failed validation")
+            batch.append(validated[0])
 
-    latest, by_code = _prepare(collected)
-    start = required[-1]
-    validated: dict[str, dict[str, dict]] = {}
-    for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
-        ordered = [by_code[code][month.isoformat()] for month in required]
-        clean = _validate_rows(code, ordered, start, latest)
-        validated[code] = {row["observation_date"]: row for row in clean}
-
-    db = SupabaseRest()
-    db.request(
-        "DELETE",
-        TABLE,
-        params={
-            "series_code": (
-                "in.(US_SBDI_31_90,US_SBDI_91_180,"
-                f"{SERIES_DELINQUENCY},{SERIES_DEFAULT})"
-            )
-        },
-        prefer="return=minimal",
-    )
-
-    stored = 0
-    for month in required:
-        key = month.isoformat()
-        batch = [validated[SERIES_DELINQUENCY][key], validated[SERIES_DEFAULT][key]]
         db.upsert(TABLE, batch, conflict="series_code,observation_date")
         stored += 2
+        oldest_stored = month
+        print(json.dumps({
+            "stored_month": f"{month:%Y-%m}",
+            SERIES_DELINQUENCY: batch[0]["value"],
+            SERIES_DEFAULT: batch[1]["value"],
+        }, ensure_ascii=False))
 
     return {
-        "latest": latest.isoformat(),
-        "oldest": start.isoformat(),
-        "months": len(required),
+        "latest": EXPECTED_LATEST.isoformat(),
+        "oldest": oldest_stored.isoformat() if oldest_stored else None,
+        "months": stored // 2,
         "rows": stored,
     }
 
