@@ -1,0 +1,61 @@
+name: tmp Equifax public inspect
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/tmp-equifax-public-inspect.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install --disable-pip-version-check playwright
+          playwright install chromium
+      - name: Inspect public selectors and network
+        run: |
+          python - <<'PY'
+          import re
+          from playwright.sync_api import sync_playwright
+          URL='https://sbinsights.paynetonline.com/loan-performance/'
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              page=browser.new_page(viewport={"width":1440,"height":1200})
+              events=[]
+              page.on('response', lambda r: events.append((r.status,r.url,r.headers.get('content-type',''))))
+              resp=page.goto(URL,wait_until='networkidle',timeout=120000)
+              print('PAGE', resp.status if resp else None, page.url)
+              print('BODY_START')
+              body=page.locator('body').inner_text()
+              print(body[:12000])
+              print('BODY_END')
+              for label in ['31-90 days','91-180 days','31-180 days','Annualized Default Index']:
+                  print('\n=== SELECT',label,'===')
+                  loc=page.get_by_text(label, exact=True)
+                  if not loc.count():
+                      loc=page.locator('label').filter(has_text=re.compile(re.escape(label),re.I))
+                  print('COUNT',loc.count())
+                  if loc.count():
+                      try:
+                          loc.first.click()
+                          apply=page.get_by_role('button',name=re.compile(r'^apply$',re.I))
+                          if apply.count(): apply.first.click()
+                          page.wait_for_timeout(1500)
+                          txt=page.locator('body').inner_text()
+                          for m in re.finditer(r'(?:SBDI|SBDFI)',txt,re.I):
+                              s=txt[max(0,m.start()-250):m.start()+900]
+                              if re.search(r'\d+\.\d+%',s): print(s.replace('\n',' | '))
+                      except Exception as e: print('CLICKERR',type(e).__name__,e)
+              print('\n=== NETWORK ===')
+              for status,url,ctype in events:
+                  if re.search(r'api|ajax|loan|delinq|default|sbdi|sbdfi|chart|index',url,re.I):
+                      print(status,ctype,url)
+              browser.close()
+          PY
