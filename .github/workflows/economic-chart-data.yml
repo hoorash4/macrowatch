@@ -23,7 +23,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install --disable-pip-version-check -r backend/requirements.txt
+        env:
+          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
+          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          if [ -n "$PAYNET_USERNAME" ] && [ -n "$PAYNET_PASSWORD" ]; then
+            pip install --disable-pip-version-check playwright
+            playwright install chromium
+          fi
       - name: Collect economic chart series
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -31,6 +39,8 @@ jobs:
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
           KRX_ID: ${{ secrets.KRX_ID }}
           KRX_PW: ${{ secrets.KRX_PW }}
+          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
+          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
