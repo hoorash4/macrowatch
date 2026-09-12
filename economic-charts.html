@@ -52,7 +52,36 @@
       <div class="economic-modal-actions"><button type="button" id="economic-alert-delete" class="danger" hidden>알림 삭제</button><span></span><button type="button" data-close-alert>취소</button><button type="submit" class="primary">저장</button></div>
     </form>
   </div>
-  <script src="assets/js/charts/economic-charts.js?v=13"></script>
-  <script src="assets/js/charts/economic-series-manager.js?v=3"></script>
+  <script src="assets/js/charts/economic-charts.js?v=12"></script>
+  <script src="assets/js/charts/economic-series-manager.js?v=2"></script>
+  <script>
+    (() => {
+      const before = '미국 기업 회생 신청건수';
+      const after = '미국 기업 파산보호 신청건수';
+      const rewrite = root => {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (const node of nodes) {
+          if (node.nodeValue?.includes(before)) node.nodeValue = node.nodeValue.replaceAll(before, after);
+        }
+      };
+      const observer = new MutationObserver(mutations => {
+        for (const mutation of mutations) {
+          if (mutation.type === 'characterData') {
+            if (mutation.target.nodeValue?.includes(before)) mutation.target.nodeValue = mutation.target.nodeValue.replaceAll(before, after);
+            continue;
+          }
+          for (const node of mutation.addedNodes) if (node.nodeType === Node.ELEMENT_NODE) rewrite(node);
+        }
+      });
+      const start = () => {
+        rewrite(document.body);
+        observer.observe(document.body, {subtree:true, childList:true, characterData:true});
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once:true});
+      else start();
+    })();
+  </script>
 </body>
 </html>
