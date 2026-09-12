@@ -1,0 +1,58 @@
+name: tmp probe Equifax Apr May 2022
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/tmp-probe-equifax-2022-apr-may.yml"]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check requests pypdf
+      - name: Probe official reports and self-remove
+        run: |
+          python - <<'PY'
+          from io import BytesIO
+          from pathlib import Path
+          import requests,re
+          from pypdf import PdfReader
+          bases=['https://assets.equifax.com/marketing/US/assets/','https://assets.equifax.com/assets/usis/']
+          for Month,low,abbr in [('April','april','apr'),('May','may','may')]:
+            y=2022
+            names=[
+              f'Equifax.MonthlyStrategicInsights.{Month}{y}.pdf',
+              f'EquifaxMonthlyStrategicInsights.{Month}{y}.pdf',
+              f'equifax-monthly-strategic-insights-{low}{y}.pdf',
+              f'equifax-monthly-strategic-insights-{low}-{y}.pdf',
+              f'monthly-small-business-indices-{low}-{y}.pdf',
+              f'equifax-small-business-indices-{low}-{y}.pdf',
+            ]
+            for base in bases:
+              for name in names:
+                u=base+name
+                try:r=requests.get(u,timeout=12,headers={'User-Agent':'Mozilla/5.0'})
+                except Exception:continue
+                if r.status_code==200 and 'pdf' in r.headers.get('content-type','').lower():
+                  print('FOUND',u,len(r.content))
+                  t=' '.join((p.extract_text() or '') for p in PdfReader(BytesIO(r.content)).pages)
+                  t=re.sub(r'\s+',' ',t).replace('–','-').replace('—','-')
+                  for pat in ['SBDI: 31','SBDI: 91','Index Analysis','Defaults','defaults']:
+                    i=t.find(pat)
+                    if i>=0:print('SNIP',Month,pat,t[max(0,i-300):i+1500])
+                  break
+              else: continue
+              break
+          Path('.github/workflows/tmp-probe-equifax-2022-apr-may.yml').unlink()
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove temporary 2022 Equifax probe"
+          git push
