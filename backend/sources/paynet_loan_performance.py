@@ -1,182 +1,150 @@
-"""Direct PayNet Risk Insight Suite collector for national 31-180 delinquency and default rates.
+"""Public Equifax/PayNet source for direct 31-180 delinquency and SBDFI levels.
 
-This module intentionally does not derive 31-180 from the 31-90 and 91-180 buckets.
-It logs into the free PayNet Risk Insight Suite, selects the published 31-180 SBDI
-and SBDFI series directly, and reads the chart's own data points.
+Only values explicitly labelled as 31-180 delinquency are accepted. The 31-90 and
+91-180 buckets are never added, combined, or used as a substitute.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-import os
+from datetime import date
+from io import BytesIO
 import re
-from typing import Any
+
+import requests
+from pypdf import PdfReader
 
 SERIES_DELINQUENCY = "US_SBDI_31_180"
 SERIES_DEFAULT = "US_SBDFI"
-LOGIN_URL = "https://sbinsights.paynetonline.com/loan-performance/"
+USER_AGENT = "Mozilla/5.0 (compatible; MacroWatch/1.0)"
+MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+BASES = (
+    "https://assets.equifax.com/marketing/US/assets/",
+    "https://assets.equifax.com/assets/usis/",
+)
 
 
-def _row(code: str, observed: date, value: float, source: str) -> dict:
+def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    serial = year * 12 + month - 1 + delta
+    return serial // 12, serial % 12 + 1
+
+
+def _row(code: str, year: int, month: int, value: float, source: str) -> dict:
     return {
         "series_code": code,
-        "observation_date": observed.isoformat(),
+        "observation_date": f"{year:04d}-{month:02d}-01",
         "value": float(value),
         "frequency": "M",
         "source": source,
     }
 
 
-def _month_start_from_ms(value: int | float) -> date:
-    dt = datetime.fromtimestamp(float(value) / 1000.0, tz=timezone.utc)
-    return date(dt.year, dt.month, 1)
+def _report_urls(year: int, month: int) -> list[str]:
+    full = MONTHS[month - 1]
+    low = full.lower()
+    names = [
+        f"main-street-lending-report-{low}-{year}.pdf",
+        f"equifax-main-street-lending-report-{low}-{year}.pdf",
+        f"Equifax.MainStreetLendingReport.{full}{year}.pdf",
+        f"Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
+        f"EquifaxMonthlyStrategicInsights.{full}{year}.pdf",
+        f"equifax-strategic-insights-{low}-{year}.pdf",
+        f"equifax-small-business-indices-{low}-{year}.pdf",
+        f"equifax-small-business-insights-{low}-{year}.pdf",
+    ]
+    return [base + name for base in BASES for name in names]
 
 
-def rows_from_highcharts_payload(payload: list[dict[str, Any]], start: date, end: date) -> dict[str, list[dict]]:
-    """Convert direct PayNet Highcharts series into the two stored MacroWatch series."""
+def _clean(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
+
+
+def _direct_31_180_level(text: str) -> float | None:
+    """Read only an explicitly reported 31-180 delinquency level."""
+    clean = _clean(text)
+    patterns = (
+        r"(?:SBDI|Small Business Delinquency Index)[^.%]{0,100}?31\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?[^.%]{0,120}?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)",
+        r"(?:SBDI|Small Business Delinquency Index)[^.!?]{0,140}?31\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?[^.!?]{0,140}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        r"31\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?[^.!?]{0,120}?(?:SBDI[^.!?]{0,80}?)?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)",
+    )
+    values: list[float] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, clean, re.I):
+            value = float(match.group(1))
+            if 0 <= value < 20:
+                values.append(value)
+    unique = sorted(set(values))
+    if len(unique) > 1:
+        raise RuntimeError(f"conflicting direct SBDI 31-180 levels in one report: {unique}")
+    return unique[0] if unique else None
+
+
+def _sbdfi_level(text: str) -> float | None:
+    clean = _clean(text)
+    patterns = (
+        r"SBDFI\b[^.%]{0,120}?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)",
+        r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.!?]{0,160}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+    )
+    values: list[float] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, clean, re.I):
+            value = float(match.group(1))
+            if 0 <= value < 20:
+                values.append(value)
+    unique = sorted(set(values))
+    if len(unique) > 1:
+        raise RuntimeError(f"conflicting SBDFI levels in one report: {unique}")
+    return unique[0] if unique else None
+
+
+def extract_direct_levels(text: str) -> tuple[float | None, float | None]:
+    """Return (direct 31-180 SBDI, SBDFI); never derive either value."""
+    return _direct_31_180_level(text), _sbdfi_level(text)
+
+
+def _fetch_report(report_year: int, report_month: int) -> tuple[float | None, float | None, str] | None:
+    for url in _report_urls(report_year, report_month):
+        try:
+            response = requests.get(url, timeout=15, headers={"User-Agent": USER_AGENT})
+            if response.status_code != 200 or "pdf" not in response.headers.get("content-type", "").lower():
+                continue
+            text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+            delinquency, default = extract_direct_levels(text)
+            if delinquency is not None or default is not None:
+                return delinquency, default, url
+        except RuntimeError:
+            raise
+        except Exception:
+            continue
+    return None
+
+
+def fetch_paynet_rows(start: date, end: date) -> dict[str, list[dict]]:
+    """Fetch direct public monthly levels, newest observation first.
+
+    Reports are normally published about two months after the observation month. A
+    month is included only when the report explicitly states the required level.
+    """
     first = date(start.year, start.month, 1)
     last = date(end.year, end.month, 1)
     result = {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
 
-    for series in payload:
-        name = re.sub(r"\s+", " ", str(series.get("name") or "")).strip()
-        normalized = name.lower().replace("–", "-").replace("—", "-")
-        code = None
-        if "31-180" in normalized and ("sbdi" in normalized or "delin" in normalized):
-            code = SERIES_DELINQUENCY
-        elif "sbdfi" in normalized or "default" in normalized:
-            code = SERIES_DEFAULT
-        if code is None:
-            continue
+    current = last
+    while current >= first:
+        report_y, report_m = _shift_month(current.year, current.month, 2)
+        found = _fetch_report(report_y, report_m)
+        if found is not None:
+            delinquency, default, url = found
+            if delinquency is not None:
+                result[SERIES_DELINQUENCY].append(
+                    _row(SERIES_DELINQUENCY, current.year, current.month, delinquency, f"Equifax-public:SBDI31-180:{url}")
+                )
+            if default is not None:
+                result[SERIES_DEFAULT].append(
+                    _row(SERIES_DEFAULT, current.year, current.month, default, f"Equifax-public:SBDFI:{url}")
+                )
+        prev_y, prev_m = _shift_month(current.year, current.month, -1)
+        current = date(prev_y, prev_m, 1)
 
-        for point in series.get("data") or []:
-            if isinstance(point, dict):
-                x, y = point.get("x"), point.get("y")
-            elif isinstance(point, (list, tuple)) and len(point) >= 2:
-                x, y = point[0], point[1]
-            else:
-                continue
-            try:
-                observed = _month_start_from_ms(x)
-                value = float(y)
-            except (TypeError, ValueError, OSError, OverflowError):
-                continue
-            if not (first <= observed <= last) or not (0 <= value < 20):
-                continue
-            result[code].append(_row(code, observed, value, f"PayNet-RIS:{name}"))
-
-    for code in result:
-        by_date: dict[str, dict] = {}
-        for row in result[code]:
-            observed = row["observation_date"]
-            previous = by_date.get(observed)
-            if previous is not None and abs(float(previous["value"]) - float(row["value"])) > 1e-12:
-                raise RuntimeError(f"{code}: conflicting PayNet values for {observed}")
-            by_date[observed] = row
-        result[code] = [by_date[key] for key in sorted(by_date, reverse=True)]
-    return result
-
-
-def _credentials() -> tuple[str, str]:
-    username = os.getenv("PAYNET_USERNAME", "").strip()
-    password = os.getenv("PAYNET_PASSWORD", "").strip()
-    if not username or not password:
-        raise RuntimeError("PAYNET_USERNAME/PAYNET_PASSWORD are required for direct PayNet historical data")
-    return username, password
-
-
-def fetch_paynet_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Fetch national 31-180 SBDI and SBDFI directly from PayNet's authenticated chart."""
-    username, password = _credentials()
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as error:
-        raise RuntimeError("playwright is required for PayNet collection") from error
-
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={"width": 1440, "height": 1200},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0 Safari/537.36"
-            ),
-        )
-        page = context.new_page()
-        response = page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120_000)
-        if response is not None and response.status >= 400:
-            raise RuntimeError(f"PayNet page returned HTTP {response.status}")
-
-        # The site presents login controls on the loan-performance page itself.
-        username_box = page.locator('input[type="text"], input[type="email"]').first
-        password_box = page.locator('input[type="password"]').first
-        username_box.fill(username)
-        password_box.fill(password)
-        page.get_by_role("button", name=re.compile(r"^login$", re.I)).first.click()
-        page.wait_for_load_state("networkidle", timeout=120_000)
-
-        body_text = page.locator("body").inner_text()
-        if re.search(r"please login or register to view details", body_text, re.I):
-            raise RuntimeError("PayNet login did not unlock historical loan-performance data")
-
-        # Select the published 31-180 delinquency measure directly. Never sum split buckets.
-        clicked = False
-        for locator in (
-            page.get_by_text("31-180 days", exact=True),
-            page.locator("label").filter(has_text=re.compile(r"31\s*-\s*180\s*days", re.I)),
-        ):
-            try:
-                if locator.count():
-                    locator.first.click()
-                    clicked = True
-                    break
-            except Exception:
-                continue
-        if not clicked:
-            raise RuntimeError("PayNet 31-180 Days selector not found")
-
-        # Enable the published default index on the same chart.
-        default_clicked = False
-        for locator in (
-            page.get_by_text("Annualized Default Index", exact=True),
-            page.locator("label").filter(has_text=re.compile(r"Annualized Default Index", re.I)),
-        ):
-            try:
-                if locator.count():
-                    locator.first.click()
-                    default_clicked = True
-                    break
-            except Exception:
-                continue
-        if not default_clicked:
-            raise RuntimeError("PayNet SBDFI selector not found")
-
-        page.get_by_role("button", name=re.compile(r"^apply$", re.I)).first.click()
-        page.wait_for_load_state("networkidle", timeout=120_000)
-        page.wait_for_timeout(1500)
-
-        payload = page.evaluate(
-            """
-            () => {
-              if (!window.Highcharts || !Array.isArray(window.Highcharts.charts)) return [];
-              const charts = window.Highcharts.charts.filter(Boolean);
-              const out = [];
-              for (const chart of charts) {
-                for (const s of (chart.series || [])) {
-                  if (!s || s.visible === false) continue;
-                  out.push({
-                    name: String(s.name || ''),
-                    data: (s.points || []).map(p => [p.x, p.y]),
-                  });
-                }
-              }
-              return out;
-            }
-            """
-        )
-        browser.close()
-
-    result = rows_from_highcharts_payload(payload, start, end)
-    if not result[SERIES_DELINQUENCY] or not result[SERIES_DEFAULT]:
-        names = [str(item.get("name") or "") for item in payload]
-        raise RuntimeError(f"PayNet chart did not expose both required direct series; found={names}")
     return result
