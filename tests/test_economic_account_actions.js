@@ -25,5 +25,7 @@ assert.match(auth, /id="theme-preference"/);
 assert.match(auth, /body\.insertBefore\(card, deleteSection\)/);
 assert.match(auth, /body\.insertBefore\(themeCard, deleteSection\)/);
 assert.match(auth, /colorScheme = 'dark'/);
+assert.match(auth, /getElementById\('logout-button'\)[\s\S]*?await authClient\.auth\.signOut\(\);\s*window\.location\.replace\('index\.html'\);/);
+assert.doesNotMatch(auth, /getElementById\('logout-button'\)[\s\S]*?if \(elements\.authScreen\) showLogin\(\)/);
 
 console.log('economic account controls keep the shared button contract and one modal source: ok');
