@@ -33,7 +33,7 @@ jobs:
             pip install --disable-pip-version-check playwright
             playwright install chromium
           fi
-      - name: Backfill PayNet direct national loan-performance series
+      - name: Backfill direct PayNet 31-180 delinquency and SBDFI
         env:
           PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
           PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
