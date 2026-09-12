@@ -208,16 +208,16 @@ def _fetch_report(report_year: int, report_month: int) -> tuple[float, float, fl
 
 def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
     month = date(observed.year, observed.month, 1)
-    report_y, report_m = _shift_month(month.year, month.month, 2)
-    found = _fetch_report(report_y, report_m)
     result: dict[str, dict | None] = {SERIES_DELINQUENCY: None, SERIES_DEFAULT: None}
 
-    if found is not None:
-        short, severe, default, source = found
-    elif month in VERIFIED_RECENT:
+    if month in VERIFIED_RECENT:
         short, severe, default, source = VERIFIED_RECENT[month]
     else:
-        return result
+        report_y, report_m = _shift_month(month.year, month.month, 2)
+        found = _fetch_report(report_y, report_m)
+        if found is None:
+            return result
+        short, severe, default, source = found
 
     result[SERIES_DELINQUENCY] = _row(
         SERIES_DELINQUENCY, month.year, month.month, short + severe,
