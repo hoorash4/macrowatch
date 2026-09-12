@@ -1,4 +1,4 @@
-name: Inspect PayNet loan-performance source
+name: Inspect PayNet browser network
 
 on:
   push:
@@ -17,51 +17,66 @@ concurrency:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install requests
-      - name: Inspect public PayNet page and scripts
+      - run: |
+          pip install playwright
+          playwright install chromium
+      - name: Inspect browser network
         run: |
-          python - <<'PY' > paynet-diagnostic.txt 2>&1
-          import re
-          from urllib.parse import urljoin
-          import requests
+          python - <<'PY' > paynet-browser-diagnostic.txt 2>&1
+          import json
+          from playwright.sync_api import sync_playwright
 
           url = "https://sbinsights.paynetonline.com/loan-performance/"
-          headers = {"User-Agent": "Mozilla/5.0 (compatible; MacroWatch/1.0)"}
-          r = requests.get(url, headers=headers, timeout=30)
-          print("PAGE", r.status_code, r.url, r.headers.get("content-type"))
-          r.raise_for_status()
-          html = r.text
-          print("HTML_LEN", len(html))
-          for pat in (r"31-180", r"ajax", r"api", r"loan-performance", r"SBDI", r"SBDFI"):
-              print("\nPATTERN", pat)
-              for m in list(re.finditer(pat, html, re.I))[:30]:
-                  print(html[max(0,m.start()-300):m.start()+900].replace("\n"," "))
-          scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', html, re.I)
-          print("\nSCRIPTS", len(scripts))
-          for src in scripts:
-              full = urljoin(url, src)
-              print("SCRIPT", full)
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page(viewport={"width": 1440, "height": 1200})
+              seen = []
+              def on_response(resp):
+                  u = resp.url
+                  ct = resp.headers.get("content-type", "")
+                  if any(k in u.lower() for k in ("api", "ajax", "loan", "performance", "sbdi", "sbdfi", "chart", "index")) or "json" in ct.lower():
+                      item = {"status": resp.status, "url": u, "content_type": ct}
+                      try:
+                          txt = resp.text()
+                          item["body"] = txt[:12000]
+                      except Exception as e:
+                          item["body_error"] = type(e).__name__
+                      seen.append(item)
+              page.on("response", on_response)
+              resp = page.goto(url, wait_until="networkidle", timeout=120000)
+              print("MAIN", resp.status if resp else None, page.url)
+              print("TITLE", page.title())
+              print("HTML_HAS_31_180", "31-180" in page.content())
+              # Click the visible 31-180 option if present, then Apply.
+              for locator in [
+                  page.get_by_text("31-180 days", exact=True),
+                  page.locator("label").filter(has_text="31-180 days"),
+                  page.locator("text=31-180 days"),
+              ]:
+                  try:
+                      if locator.count():
+                          locator.first.click(timeout=5000)
+                          print("CLICKED_31_180")
+                          break
+                  except Exception as e:
+                      print("CLICK_31_180_ERR", type(e).__name__, str(e))
               try:
-                  s = requests.get(full, headers=headers, timeout=30)
-                  print("STATUS", s.status_code, "LEN", len(s.text))
-                  if s.status_code != 200:
-                      continue
-                  text = s.text
-                  if re.search(r"31-180|SBDI|SBDFI|loan-performance|ajax|api|chart", text, re.I):
-                      print("MATCHING_SCRIPT", full)
-                      for pat in (r"31-180", r"SBDI", r"SBDFI", r"ajax", r"api", r"loan-performance"):
-                          for m in list(re.finditer(pat, text, re.I))[:30]:
-                              print("SNIP", text[max(0,m.start()-450):m.start()+1200].replace("\n"," "))
+                  page.get_by_role("button", name="APPLY").click(timeout=5000)
+                  page.wait_for_load_state("networkidle", timeout=60000)
+                  print("CLICKED_APPLY")
               except Exception as e:
-                  print("ERR", type(e).__name__, str(e))
+                  print("APPLY_ERR", type(e).__name__, str(e))
+              print("VISIBLE_TEXT", page.locator("body").inner_text()[:12000])
+              print("RESPONSES", json.dumps(seen, ensure_ascii=False, indent=2))
+              browser.close()
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: paynet-diagnostic
-          path: paynet-diagnostic.txt
+          name: paynet-browser-diagnostic
+          path: paynet-browser-diagnostic.txt
