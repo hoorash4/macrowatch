@@ -103,6 +103,34 @@ test('공통 분석 그래프의 커서 수치와 날짜는 같은 보통 굵기
   assert.doesNotMatch(chartUtils, /'font-size': 11, 'font-weight': 700/);
 });
 
+
+
+test('분석 차트의 위아래 커서 텍스트는 공통 위치 보정을 우회하지 않는다', () => {
+  const files = [
+    'assets/js/charts/equity-bond-attractiveness-chart.js',
+    'assets/js/charts/liquidity-chart.js',
+    'assets/js/charts/korea-foreign-flow-chart.js',
+    'assets/js/charts/em-capacity-chart.js',
+    'assets/js/charts/policy-chart.js',
+    'assets/js/charts/policy-expectation-chart.js',
+  ];
+  for (const filename of files) {
+    const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8');
+    assert.match(source, /analysis-chart-cursor-text analysis-chart-cursor-value/);
+    assert.match(source, /analysis-chart-cursor-text analysis-chart-cursor-date/);
+    const positioned = (source.match(/positionCursorText\(/g) || []).length;
+    assert.ok(positioned >= 2, `${filename} 위·아래 커서 모두 공통 위치 보정을 사용해야 한다`);
+  }
+  const attractiveness = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/equity-bond-attractiveness-chart.js'), 'utf8');
+  const liquidity = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/liquidity-chart.js'), 'utf8');
+  const foreignFlow = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/korea-foreign-flow-chart.js'), 'utf8');
+  const emCapacity = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/em-capacity-chart.js'), 'utf8');
+  assert.doesNotMatch(attractiveness, /(?:value|dateLabel)\.setAttribute\('x',\s*x\)/);
+  assert.doesNotMatch(liquidity, /(?:value|dateLabel)\.setAttribute\('x',\s*nearest\.x\)/);
+  assert.doesNotMatch(foreignFlow, /detail\.setAttribute\('x',\s*nearest\.x\)/);
+  assert.doesNotMatch(emCapacity, /detail\.setAttribute\('x',\s*nearest\.x\)/);
+});
+
 test('공통 커서 글자는 보이는 플롯 폭 안으로 이동한다', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
   assert.match(source, /function positionCursorText\(node, desiredX, frame, inset = 6\)/);
