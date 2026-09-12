@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import SupabaseRest, fetch_fred_observations, require_env
+from common import SupabaseRest, fetch_fred_observations, require_env, request_with_retry
 from signals.equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
@@ -16,6 +16,11 @@ OEF_PAGE = "https://www.ishares.com/us/products/239723/ishares-sp-100-etf"
 KOREA_10Y_STAT = "817Y002"
 KOREA_10Y_ITEM = "010210000"
 START = date(2015, 1, 1)
+# The score needs 260 weeks of percentile history plus 13-week change/return
+# lags, reporting-lag price anchors and four-week smoothing. Keep a bounded
+# cushion so incremental automatic runs reproduce the same new rows as a full
+# history calculation without redownloading the fixed 2015 history every week.
+AUTOMATIC_OVERLAP_WEEKS = 320
 
 
 def weekly_last(values: dict[date, float]) -> dict[date, float]:
@@ -41,6 +46,25 @@ def align_to_weeks(values: dict[date, float], weeks: list[date]) -> dict[date, f
     return result
 
 
+def automatic_source_start(existing: list[dict]) -> date:
+    latest: dict[str, date] = {}
+    for row in existing:
+        if str(row.get("method_version")) != METHOD_VERSION:
+            continue
+        country = str(row.get("country") or "")
+        if country not in ("KR", "US"):
+            continue
+        try:
+            observed = date.fromisoformat(str(row["observation_date"])[:10])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if country not in latest or observed > latest[country]:
+            latest[country] = observed
+    if set(latest) != {"KR", "US"}:
+        return START
+    return max(START, min(latest.values()) - timedelta(weeks=AUTOMATIC_OVERLAP_WEEKS))
+
+
 def fetch_ecos_10y(api_key: str, start: date, end: date) -> dict[date, float]:
     values: dict[date, float] = {}
     session = requests.Session()
@@ -49,7 +73,7 @@ def fetch_ecos_10y(api_key: str, start: date, end: date) -> dict[date, float]:
         last = min(end, date(year, 12, 31)).strftime("%Y%m%d")
         url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{api_key}/json/kr/1/1000/"
                f"{KOREA_10Y_STAT}/D/{first}/{last}/{KOREA_10Y_ITEM}")
-        response = session.get(url, timeout=45)
+        response = request_with_retry(lambda: session.get(url, timeout=45))
         response.raise_for_status()
         payload = response.json()
         rows = payload.get("StatisticSearch", {}).get("row", [])
@@ -66,7 +90,11 @@ def fetch_ecos_10y(api_key: str, start: date, end: date) -> dict[date, float]:
 
 
 def fetch_oef_pe() -> float:
-    response = requests.get(OEF_PAGE, headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"}, timeout=45)
+    response = request_with_retry(lambda: requests.get(
+        OEF_PAGE,
+        headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"},
+        timeout=45,
+    ))
     response.raise_for_status()
     match = re.search(r"P/E Ratio.{0,500}?([0-9]{1,3}\.[0-9]{1,2})", response.text, re.I | re.S)
     if not match:
@@ -108,24 +136,35 @@ def stored_rows(country: str, rows: list[dict], calculated_at: str) -> list[dict
 def main() -> None:
     today = date.today()
     database = SupabaseRest()
+    existing = database.request(
+        "GET", "equity_bond_attractiveness_weekly",
+        params={"select": "country,observation_date,method_version", "limit": "10000"},
+    ) or []
+    source_start = automatic_source_start(existing)
     quarters = load_quarters(database)
-    yahoo = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, START, today)) for symbol in ("^KS11", "OEF")}
-    fred = weekly_last(valid_fred_values(fetch_fred_observations("DGS10", require_env("FRED_API_KEY"), start=START.isoformat(), end=today.isoformat())))
-    ecos = weekly_last(fetch_ecos_10y(require_env("ECOS_API_KEY"), START, today))
+    yahoo = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, source_start, today)) for symbol in ("^KS11", "OEF")}
+    fred = weekly_last(valid_fred_values(fetch_fred_observations(
+        "DGS10", require_env("FRED_API_KEY"), start=source_start.isoformat(), end=today.isoformat()
+    )))
+    ecos = weekly_last(fetch_ecos_10y(require_env("ECOS_API_KEY"), source_start, today))
+    calculated_at = datetime.now(timezone.utc).isoformat()
     rows = []
     for country, equity_symbol, yields, anchor in (
         ("KR", "^KS11", ecos, None),
         ("US", "OEF", fred, 100.0 / fetch_oef_pe()),
     ):
         weeks = sorted(yahoo[equity_symbol])
-        result = build_weekly_rows(country, weeks, yahoo[equity_symbol], align_to_weeks(yields, weeks), quarters[country], us_anchor_earnings_yield=anchor)
-        rows.extend(stored_rows(country, result, datetime.now(timezone.utc).isoformat()))
+        result = build_weekly_rows(
+            country,
+            weeks,
+            yahoo[equity_symbol],
+            align_to_weeks(yields, weeks),
+            quarters[country],
+            us_anchor_earnings_yield=anchor,
+        )
+        rows.extend(stored_rows(country, result, calculated_at))
     if not rows:
         raise RuntimeError("No attractiveness rows were calculated")
-    existing = database.request(
-        "GET", "equity_bond_attractiveness_weekly",
-        params={"select": "country,observation_date,method_version", "limit": "10000"},
-    ) or []
     existing_keys = {
         (str(row["country"]), str(row["observation_date"]), str(row["method_version"]))
         for row in existing
@@ -136,7 +175,10 @@ def main() -> None:
     ]
     if writable:
         database.upsert("equity_bond_attractiveness_weekly", writable, conflict="country,observation_date,method_version")
-    print(f"calculated={len(rows)} stored={len(writable)} kr={sum(row['country']=='KR' for row in writable)} us={sum(row['country']=='US' for row in writable)}")
+    print(
+        f"source_start={source_start.isoformat()} calculated={len(rows)} stored={len(writable)} "
+        f"kr={sum(row['country']=='KR' for row in writable)} us={sum(row['country']=='US' for row in writable)}"
+    )
 
 
 if __name__ == "__main__":
