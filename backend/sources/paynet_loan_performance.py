@@ -46,6 +46,11 @@ VERIFIED_RECENT = {
     date(2023, 11, 1): (1.71, 0.57, 2.91, "Equifax-Jan-2024"),
     date(2021, 10, 1): (1.31, 0.43, 2.10, "Equifax-Jan-2022-derived-from-Nov-MoM"),
     date(2021, 9, 1): (1.26, 0.43, 2.21, "Equifax-Nov-2021"),
+    date(2021, 8, 1): (1.26, 0.44, 2.34, "Equifax-Nov-2021-derived-from-Sep-MoM"),
+    date(2021, 7, 1): (1.29, 0.44, 2.50, "Equifax-Sep-2021"),
+    date(2021, 6, 1): (1.29, 0.46, 2.64, "Equifax-Aug-2021"),
+    date(2021, 5, 1): (1.31, 0.50, 2.81, "Equifax-Jul-2021"),
+    date(2021, 4, 1): (1.40, 0.55, 2.97, "Equifax-Jul-2021-derived-from-May-MoM"),
 }
 
 
