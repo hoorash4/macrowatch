@@ -17,10 +17,23 @@ assert.ok(read(path.join(site, 'auth.js')).startsWith(read('assets/js/core/front
 for (const name of ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
   assert.equal(read(path.join(site, name)), read(path.join('docs', name)));
 }
-for(const name of ['index.html','admin.html']) {
+for(const name of ['index.html','admin.html','economic-charts.html']) {
   for(const [,url] of read(path.join(site,name)).matchAll(/<(?:script|link)\b[^>]*?(?:src|href)="([^"]+)"/g)) {
     if(/^(?:https?:|\/\/|#)/.test(url))continue;
     assert.ok(fs.statSync(path.join(site,url.split('?')[0])).isFile(),`${name}: ${url}`);
   }
 }
-console.log('Built Pages entries and all compatibility assets verified.');
+
+const builtIndex = read(path.join(site, 'index.html'));
+assert.doesNotMatch(builtIndex, /<!-- ===== 개인 설정창: 카카오톡 연결 \/ 회원 탈퇴 ===== -->/);
+assert.doesNotMatch(builtIndex, /<!-- ===== 회원 탈퇴 최종 확인창 ===== -->/);
+assert.doesNotMatch(builtIndex, /<!-- ===== 공용 안내창: 서비스 준비 중 \/ 등록 완료 ===== -->/);
+const accountModalIndex = builtIndex.indexOf('assets/js/core/account-modal.js?v=2');
+const mainAuthIndex = builtIndex.indexOf('assets/js/core/auth.js');
+assert.ok(accountModalIndex >= 0 && mainAuthIndex > accountModalIndex, 'main must load canonical account modal before auth.js');
+
+const builtEconomic = read(path.join(site, 'economic-charts.html'));
+assert.match(builtEconomic, /assets\/js\/core\/account-modal\.js\?v=2/);
+assert.match(builtEconomic, /assets\/js\/core\/auth-chart\.js\?v=1/);
+
+console.log('Built Pages entries, canonical account modal wiring and all compatibility assets verified.');
