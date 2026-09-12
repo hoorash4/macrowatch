@@ -30,15 +30,13 @@ class TreasuryRealYieldChartTests(unittest.TestCase):
             "source": "USTREASURY:daily_treasury_real_yield_curve",
         }])
 
-    def test_automatic_backfill_and_frontend_all_include_real_ten_year(self) -> None:
+    def test_automatic_and_frontend_include_real_ten_year(self) -> None:
         automatic = (ROOT / "backend/signals/economic_chart_automatic.py").read_text(encoding="utf-8")
-        backfill = (ROOT / "backend/signals/economic_chart_backfill.py").read_text(encoding="utf-8")
         chart = (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8")
 
         self.assertIn('run("US10Y_REAL"', automatic)
-        self.assertIn('run("US10Y_REAL"', backfill)
         self.assertIn("{code:'US10Y_REAL',title:'미국채 10년 실질금리'", chart)
-        self.assertNotIn("economic_chart_backfill", automatic)
+        self.assertFalse((ROOT / "backend/signals/economic_chart_backfill.py").exists())
 
 
 if __name__ == "__main__":
