@@ -17,7 +17,7 @@ class FakeDb:
         self.responses = responses
         self.calls = []
 
-    def request(self, method, table, params=None):
+    def request(self, method, table, params=None, **kwargs):
         self.calls.append(table)
         value = self.responses[table]
         if isinstance(value, BaseException):
@@ -178,34 +178,50 @@ class CollectionHealthTests(unittest.TestCase):
         self.assertIn("DB 최신값 날짜 이상: future, latest=2026-09-12", failures)
         self.assertFalse(any("healthy" in item for item in failures))
 
-    def test_sector_flow_health_checks_each_stage_with_its_own_filter(self):
+    def test_sector_flow_database_health_uses_only_durable_close_stage(self):
         series = {
-            "sector_flow_open": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.open"}),
-            "sector_flow_intraday": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.intraday"}),
-            "sector_flow_close": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}),
+            "sector_flow_rankings": (
+                "market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}
+            ),
         }
 
         class SectorDb:
             def __init__(self):
                 self.filters = []
 
-            def request(self, method, table, params=None):
+            def request(self, method, table, params=None, **kwargs):
                 self.filters.append(params["price_stage"])
-                latest = {
-                    "eq.open": "2026-09-11T00:10:00+00:00",
-                    "eq.intraday": "2026-09-11T03:30:00+00:00",
-                    "eq.close": "2026-09-01T06:40:00+00:00",
-                }[params["price_stage"]]
-                return [{"calculated_at": latest}]
+                return [{"calculated_at": "2026-09-11T06:40:00+00:00"}]
 
         db = SectorDb()
         with (
             patch.object(health, "DATABASE_SERIES", series),
             patch.object(health, "SupabaseRest", return_value=db),
         ):
-            failures = health.check_database(date(2026, 9, 11))
-        self.assertEqual(["eq.open", "eq.intraday", "eq.close"], db.filters)
-        self.assertEqual(["DB 최신값 지연: sector_flow_close, latest=2026-09-01"], failures)
+            self.assertEqual([], health.check_database(date(2026, 9, 11)))
+        self.assertEqual(["eq.close"], db.filters)
+
+    def test_sector_scheduler_requires_exact_six_active_primary_retry_jobs(self):
+        rows = [
+            {"jobname": name, "schedule": schedule, "active": True}
+            for name, schedule in health.SECTOR_FLOW_JOBS.items()
+        ]
+        db = FakeDb({"rpc/macrowatch_sector_flow_schedules": rows})
+        with patch.object(health, "SupabaseRest", return_value=db):
+            self.assertEqual([], health.check_sector_scheduler())
+
+        bad_rows = [dict(row) for row in rows]
+        bad_rows[0]["active"] = False
+        bad_rows[1]["schedule"] = "0 0 * * 1-5"
+        bad_rows.pop()
+        bad_rows.append({"jobname": "macrowatch-sector-flow-obsolete", "schedule": "0 0 * * *", "active": True})
+        db = FakeDb({"rpc/macrowatch_sector_flow_schedules": bad_rows})
+        with patch.object(health, "SupabaseRest", return_value=db):
+            failures = health.check_sector_scheduler()
+        self.assertTrue(any("scheduler 중지" in item for item in failures))
+        self.assertTrue(any("시간 불일치" in item for item in failures))
+        self.assertTrue(any("scheduler 누락" in item for item in failures))
+        self.assertTrue(any("obsolete scheduler" in item for item in failures))
 
     def test_missing_environment_is_reported_instead_of_raising(self):
         with patch.object(health, "require_env", side_effect=RuntimeError("GITHUB_TOKEN missing")):
@@ -217,6 +233,10 @@ class CollectionHealthTests(unittest.TestCase):
             self.assertEqual(
                 ["DB 최신값 검사 불가: SUPABASE_URL missing"],
                 health.check_database(date(2026, 9, 11)),
+            )
+            self.assertEqual(
+                ["주도섹터 scheduler 검사 불가: SUPABASE_URL missing"],
+                health.check_sector_scheduler(),
             )
 
 
