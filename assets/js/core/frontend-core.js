@@ -487,7 +487,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function isLoginScreen() {
-    return Boolean(document?.getElementById?.('auth-screen'));
+    return typeof document !== 'undefined' && Boolean(document.getElementById?.('auth-screen'));
   }
 
   // 브라우저에 표시하는 측정값은 이 함수만 거칩니다. 원자료와 계산값은

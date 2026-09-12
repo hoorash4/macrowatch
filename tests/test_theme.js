@@ -92,7 +92,7 @@ assert.match(source, /\.economic-chart-host/);
 assert.match(source, /--theme-chart-bg: #0b1322/);
 assert.match(source, /background-color: var\(--theme-chart-bg\) !important/);
 assert.ok(headChildren.some((node) => node.id === 'macrowatch-theme-styles'), 'theme tokens should be installed once');
-assert.match(source, /function isLoginScreen\(\)/);
+assert.match(source, /function isLoginScreen\(\) \{\s*return typeof document !== 'undefined'/);
 assert.match(source, /isLoginScreen\(\) \? 'light' : cachedThemePreference\(\)/);
 assert.match(source, /!isLoginScreen\(\) && themePreference === 'system'/);
 
