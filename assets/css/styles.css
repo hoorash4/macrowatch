@@ -915,6 +915,10 @@ body:has(#app-shell:not(.hidden)) {
   overscroll-behavior:contain;
   scrollbar-gutter:stable;
 }
+/* 개인 설정 모달은 호출 페이지와 화면 테마에 관계없이 어두운 입력 표면을 사용합니다. */
+#profile-modal input {
+  color:#f1f5f9;
+}
 #profile-close-button {
   flex:none;
 }
