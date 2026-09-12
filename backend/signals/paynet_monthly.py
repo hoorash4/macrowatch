@@ -1,15 +1,11 @@
-"""Collect only the two direct national PayNet loan-performance series used by MacroWatch."""
+"""Collect recent national PayNet loan-performance series."""
 from __future__ import annotations
 
 from datetime import date
 import json
 
 from common import SupabaseRest
-from sources.paynet_loan_performance import (
-    SERIES_DEFAULT,
-    SERIES_DELINQUENCY,
-    fetch_paynet_rows,
-)
+from sources.paynet_loan_performance import SERIES_DEFAULT, SERIES_DELINQUENCY, fetch_paynet_rows
 from signals.economic_chart_pipeline import _insert_missing
 
 
@@ -20,7 +16,7 @@ def _months_ago(d: date, months: int) -> date:
 
 def collect_recent() -> dict[str, int]:
     end = date.today()
-    start = _months_ago(end, 18)
+    start = _months_ago(end, 3)
     rows = fetch_paynet_rows(start, end)
     db = SupabaseRest()
     counts = {
