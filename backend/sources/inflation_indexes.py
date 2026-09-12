@@ -34,8 +34,8 @@ KOSIS_SERIES = {
     "KR_CORE_CPI": "식료품 및 에너지제외지수(2020=100)",
 }
 ECOS_SERIES = {
-    "KR_PPI": ("404Y014", "*AA"),
-    "KR_IMPORT_PRICE": ("402Y016", "*AA"),
+    "KR_PPI": ("404Y014", "*AA", None),
+    "KR_IMPORT_PRICE": ("401Y015", "*AA", "W"),
 }
 ALL_SERIES_CODES = (*BLS_SERIES, *BEA_SERIES, *KOSIS_SERIES, *ECOS_SERIES)
 
@@ -185,8 +185,10 @@ def fetch_kosis_indexes(start: date, end: date, api_key: str | None = None) -> d
 def fetch_ecos_indexes(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
     key = api_key or require_env("ECOS_API_KEY")
     output = {code: [] for code in ECOS_SERIES}
-    for code, (table_id, item_id) in ECOS_SERIES.items():
+    for code, (table_id, item_id, item_code2) in ECOS_SERIES.items():
         url = f"{ECOS_URL}/{key}/json/kr/1/10000/{table_id}/M/{start:%Y%m}/{end:%Y%m}/{item_id}"
+        if item_code2:
+            url += f"/{item_code2}"
         response = request_with_retry(lambda: requests.get(url, timeout=TIMEOUT_SECONDS))
         response.raise_for_status()
         payload = response.json()
@@ -199,7 +201,8 @@ def fetch_ecos_indexes(start: date, end: date, api_key: str | None = None) -> di
                 continue
             observed = date(int(period[:4]), int(period[4:]), 1)
             if start <= observed <= end:
-                output[code].append(_row(code, observed, value, f"ECOS:{table_id}/{item_id}"))
+                source_path = f"{table_id}/{item_id}" + (f"/{item_code2}" if item_code2 else "")
+                output[code].append(_row(code, observed, value, f"ECOS:{source_path}"))
     return output
 
 

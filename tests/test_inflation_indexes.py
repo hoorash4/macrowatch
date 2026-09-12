@@ -13,6 +13,7 @@ from inflation_pipeline import OFFICIAL_INDEX_SERIES, load_official_index_values
 from sources.inflation_indexes import (
     ALL_SERIES_CODES,
     BEA_TABLE,
+    ECOS_SERIES,
     fetch_bea_indexes,
     fetch_bls_indexes,
     fetch_ecos_indexes,
@@ -81,6 +82,8 @@ class InflationIndexSourceTests(unittest.TestCase):
         result = fetch_ecos_indexes(date(2026, 8, 1), date(2026, 8, 1), "key")
         self.assertEqual(result["KR_PPI"][0]["value"], 121.1)
         self.assertEqual(result["KR_IMPORT_PRICE"][0]["value"], 132.2)
+        self.assertEqual(ECOS_SERIES["KR_IMPORT_PRICE"], ("401Y015", "*AA", "W"))
+        self.assertEqual(result["KR_IMPORT_PRICE"][0]["source"], "ECOS:401Y015/*AA/W")
 
     def test_integrated_model_reads_six_official_indexes_from_chart_storage(self):
         class Database:
