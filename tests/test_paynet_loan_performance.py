@@ -4,6 +4,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
+# PayNet history is complete; runtime collection is incremental-only.
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
