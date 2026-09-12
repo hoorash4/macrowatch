@@ -67,10 +67,6 @@
     elements.appShell.classList.remove('hidden');
     await updateAdminLink();
     await window.MacroWatchDashboard?.loadAll();
-    if (window.sessionStorage.getItem('macrowatch.open-profile') === '1') {
-      window.sessionStorage.removeItem('macrowatch.open-profile');
-      window.requestAnimationFrame(() => document.getElementById('profile-button')?.click());
-    }
   }
 
   function showLogin(message = '') {

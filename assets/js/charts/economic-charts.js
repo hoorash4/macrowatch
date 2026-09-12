@@ -2,7 +2,6 @@
 'use strict';
 const cfg=window.MACROWATCH_CONFIG||{};
 const supabaseClient=window.supabase?.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey);
-window.macroWatchEconomicSupabase = supabaseClient;
 const C={raw:'#111827',fast:'#2563eb',slow:'#d97706',grid:'#e5e7eb',text:'#6b7280',cross:'#9ca3af',line:'#dc2626',selected:'#7c3aed'};
 const RIGHT_GAP_PX=18,DEFAULT_VISIBLE_BARS=300,MIN_VISIBLE_BARS=12;
 const DEFAULT_PREFERENCES={series_order:{},hidden_series:[],horizontal_lines:{}};
