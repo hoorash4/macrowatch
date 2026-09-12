@@ -1,31 +1,29 @@
+'use strict';
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
 
-const root = path.join(__dirname, '..');
-const economicHtml = fs.readFileSync(path.join(root, 'economic-charts.html'), 'utf8');
-const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const auth = fs.readFileSync(path.join(root, 'assets/js/core/auth.js'), 'utf8');
+const html = fs.readFileSync('economic-charts.html', 'utf8');
+const chartAuth = fs.readFileSync('assets/js/core/auth-chart.js', 'utf8');
+const accountModal = fs.readFileSync('assets/js/core/account-modal.js', 'utf8');
 
 for (const id of ['profile-button', 'admin-page-link', 'logout-button']) {
-  assert.match(economicHtml, new RegExp(`id="${id}"`));
+  assert.match(html, new RegExp(`id="${id}"`));
 }
 
-assert.doesNotMatch(economicHtml, /id="profile-modal"|id="account-delete-modal"|id="service-preparing-modal"/);
-assert.equal((indexHtml.match(/id="profile-modal"/g) || []).length, 1);
-assert.equal((indexHtml.match(/id="account-delete-modal"/g) || []).length, 1);
-assert.equal((indexHtml.match(/id="service-preparing-modal"/g) || []).length, 1);
-assert.doesNotMatch(economicHtml, /economic-profile-button|economic-admin-link|economic-logout-button|economic-account-actions|account-controls|macrowatch\.open-profile/);
+assert.doesNotMatch(html, /assets\/js\/core\/auth\.js/);
+assert.match(html, /assets\/js\/core\/account-modal\.js\?v=1/);
+assert.match(html, /assets\/js\/core\/auth-chart\.js\?v=1/);
+assert.doesNotMatch(html, /window\.macroWatchSupabase[\s\S]*is_admin/);
 
-assert.match(auth, /getElementById\('profile-button'\)/);
-assert.match(auth, /getElementById\('logout-button'\)/);
-assert.match(auth, /function bindProfileEvents/);
-assert.match(auth, /function bindAccountEvents/);
-assert.match(auth, /id="theme-preference"/);
-assert.match(auth, /body\.insertBefore\(card, deleteSection\)/);
-assert.match(auth, /body\.insertBefore\(themeCard, deleteSection\)/);
-assert.match(auth, /colorScheme = 'dark'/);
-assert.match(auth, /getElementById\('logout-button'\)[\s\S]*?await authClient\.auth\.signOut\(\);\s*window\.location\.replace\('index\.html'\);/);
-assert.doesNotMatch(auth, /getElementById\('logout-button'\)[\s\S]*?if \(elements\.authScreen\) showLogin\(\)/);
+assert.match(accountModal, /window\.MacroWatchAccountModal\s*=\s*\{ ensure \}/);
+for (const id of ['profile-modal', 'account-delete-modal', 'service-preparing-modal', 'profile-username', 'password-change-form', 'email-alert-address']) {
+  assert.match(accountModal, new RegExp(`id="${id}"`));
+}
 
-console.log('economic account controls keep the shared button contract and one modal source: ok');
+assert.match(chartAuth, /client\.auth\.getSession\(\)/);
+assert.match(chartAuth, /getElementById\('logout-button'\)[\s\S]*signOut\(\{ scope: 'local' \}\)[\s\S]*location\.replace\('index\.html'\)/);
+assert.match(chartAuth, /getElementById\('profile-button'\)[\s\S]*openProfile/);
+assert.match(chartAuth, /MacroWatchAccountModal\.ensure\(\)/);
+
+console.log('economic account controls use chart-specific auth and a reusable modal source: ok');
