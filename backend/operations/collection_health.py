@@ -34,12 +34,20 @@ DATABASE_SERIES = {
     "em_capital_capacity_daily": ("em_capital_capacity_daily", "observation_date", 14),
     "equity_bond_attractiveness_weekly": ("equity_bond_attractiveness_weekly", "observation_date", 21),
     "liquidity_indices": ("liquidity_indices", "observation_date", 21),
-    # Supabase owns sector-flow scheduling, so each phase is monitored from
-    # its own persisted result instead of treating any one phase as proof that
-    # the other two also ran.
-    "sector_flow_open": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.open"}),
-    "sector_flow_intraday": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.intraday"}),
-    "sector_flow_close": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}),
+    # The table primary key is (week_start, etf_id), so open -> intraday ->
+    # close intentionally replace the same weekly rows. Only the final close
+    # stage is durable evidence for freshness; scheduler phase coverage is
+    # checked separately from the pg_cron registry RPC.
+    "sector_flow_rankings": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}),
+}
+
+SECTOR_FLOW_JOBS = {
+    "macrowatch-sector-flow-open-primary": "10 0 * * 1-5",
+    "macrowatch-sector-flow-open-retry": "25 0 * * 1-5",
+    "macrowatch-sector-flow-intraday-primary": "30 3 * * 1-5",
+    "macrowatch-sector-flow-intraday-retry": "45 3 * * 1-5",
+    "macrowatch-sector-flow-close-primary": "40 6 * * 1-5",
+    "macrowatch-sector-flow-close-retry": "55 6 * * 1-5",
 }
 
 # A successful manual run resolves a failed scheduled run only when there is
@@ -240,6 +248,34 @@ def check_workflows(today: date) -> list[str]:
     return failures
 
 
+def check_sector_scheduler() -> list[str]:
+    """Validate the Supabase source-of-truth jobs without inventing phase rows."""
+    try:
+        db = SupabaseRest()
+        rows = db.request("POST", "rpc/macrowatch_sector_flow_schedules", body={}) or []
+    except Exception as error:
+        return [f"주도섹터 scheduler 검사 불가: {_message(error)}"]
+    if not isinstance(rows, list):
+        return ["주도섹터 scheduler 응답 형식이 올바르지 않습니다."]
+
+    by_name = {str(row.get("jobname")): row for row in rows if isinstance(row, dict) and row.get("jobname")}
+    failures: list[str] = []
+    for jobname, expected_schedule in SECTOR_FLOW_JOBS.items():
+        row = by_name.get(jobname)
+        if row is None:
+            failures.append(f"주도섹터 scheduler 누락: {jobname}")
+            continue
+        if row.get("active") is not True:
+            failures.append(f"주도섹터 scheduler 중지: {jobname}")
+        if str(row.get("schedule") or "") != expected_schedule:
+            failures.append(
+                f"주도섹터 scheduler 시간 불일치: {jobname}, actual={row.get('schedule')}, expected={expected_schedule}"
+            )
+    for jobname in sorted(set(by_name) - set(SECTOR_FLOW_JOBS)):
+        failures.append(f"주도섹터 obsolete scheduler 감지: {jobname}")
+    return failures
+
+
 def check_database(today: date) -> list[str]:
     failures: list[str] = []
     try:
@@ -265,10 +301,14 @@ def check_database(today: date) -> list[str]:
 def main() -> None:
     today = datetime.now(timezone.utc).date()
     failures: list[str] = []
-    # Keep the two domains independent as a final safety net. Individual
-    # checks are already fault tolerant, but an unforeseen bug in one domain
-    # must not suppress the other domain's diagnostics.
-    for label, checker in (("workflow", check_workflows), ("database", check_database)):
+    # Keep the domains independent as a final safety net. Individual checks
+    # are already fault tolerant, but one unforeseen bug must not suppress the
+    # other diagnostics.
+    for label, checker in (
+        ("workflow", lambda _today: check_workflows(_today)),
+        ("sector scheduler", lambda _today: check_sector_scheduler()),
+        ("database", lambda _today: check_database(_today)),
+    ):
         try:
             failures.extend(checker(today))
         except Exception as error:  # pragma: no cover - last-resort containment
