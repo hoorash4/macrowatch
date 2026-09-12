@@ -22,9 +22,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - run: pip install requests
       - name: Inspect public PayNet page and scripts
         run: |
-          python - <<'PY'
+          python - <<'PY' > paynet-diagnostic.txt 2>&1
           import re
           from urllib.parse import urljoin
           import requests
@@ -38,8 +39,8 @@ jobs:
           print("HTML_LEN", len(html))
           for pat in (r"31-180", r"ajax", r"api", r"loan-performance", r"SBDI", r"SBDFI"):
               print("\nPATTERN", pat)
-              for m in list(re.finditer(pat, html, re.I))[:20]:
-                  print(html[max(0,m.start()-240):m.start()+600].replace("\n"," "))
+              for m in list(re.finditer(pat, html, re.I))[:30]:
+                  print(html[max(0,m.start()-300):m.start()+900].replace("\n"," "))
           scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', html, re.I)
           print("\nSCRIPTS", len(scripts))
           for src in scripts:
@@ -51,11 +52,16 @@ jobs:
                   if s.status_code != 200:
                       continue
                   text = s.text
-                  if re.search(r"31-180|SBDI|SBDFI|loan-performance|ajax|api", text, re.I):
+                  if re.search(r"31-180|SBDI|SBDFI|loan-performance|ajax|api|chart", text, re.I):
                       print("MATCHING_SCRIPT", full)
-                      for pat in (r"31-180", r"SBDI", r"SBDFI", r"ajax", r"api"):
-                          for m in list(re.finditer(pat, text, re.I))[:25]:
-                              print("SNIP", text[max(0,m.start()-350):m.start()+900].replace("\n"," "))
+                      for pat in (r"31-180", r"SBDI", r"SBDFI", r"ajax", r"api", r"loan-performance"):
+                          for m in list(re.finditer(pat, text, re.I))[:30]:
+                              print("SNIP", text[max(0,m.start()-450):m.start()+1200].replace("\n"," "))
               except Exception as e:
                   print("ERR", type(e).__name__, str(e))
           PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paynet-diagnostic
+          path: paynet-diagnostic.txt
