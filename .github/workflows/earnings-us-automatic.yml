@@ -2,10 +2,9 @@ name: Earnings U.S. automatic
 
 on:
   schedule:
-    # KST 11:00 quarter-end snapshot, 11:30 new SEC filings.
+    # KST 11:00 quarter-end snapshot. SEC filing collection has its own workflow.
     # Run every day because the U.S. Friday close is Saturday morning in Korea.
     - cron: "0 2 * * *"
-    - cron: "30 2 * * *"
   workflow_dispatch:
     inputs:
       phase:
@@ -45,7 +44,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           PYTHONPATH: backend
           WRITE: ${{ github.event_name == 'schedule' && 'true' || inputs.write }}
-          PHASE: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 2 * * *' && 'snapshot' || 'edgar') || inputs.phase }}
+          PHASE: ${{ github.event_name == 'schedule' && 'snapshot' || inputs.phase }}
           SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
