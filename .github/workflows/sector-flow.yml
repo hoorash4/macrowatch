@@ -1,12 +1,6 @@
 name: Refresh sector flow
 
 on:
-  schedule:
-    # UTC 00:10/03:30/06:40 = 09:10/12:30/15:40 KST.
-    # Open, intraday, close are distinct automatic collection stages.
-    - cron: "10 0 * * 1-5"
-    - cron: "30 3 * * 1-5"
-    - cron: "40 6 * * 1-5"
   workflow_dispatch:
     inputs:
       stage:
@@ -16,7 +10,7 @@ on:
         default: close
         options: [open, intraday, close]
       operation:
-        description: Explicit operation; scheduled runs always use collect
+        description: Explicit operation
         required: true
         type: choice
         default: collect
@@ -38,8 +32,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          PRICE_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || (github.event.schedule == '10 0 * * 1-5' && 'open' || (github.event.schedule == '30 3 * * 1-5' && 'intraday' || 'close')) }}
-          OPERATION: ${{ github.event_name == 'schedule' && 'collect' || inputs.operation }}
+          PRICE_STAGE: ${{ inputs.stage }}
+          OPERATION: ${{ inputs.operation }}
         run: |
           set -euo pipefail
           initialize_history=false
