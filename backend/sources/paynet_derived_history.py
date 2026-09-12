@@ -1,9 +1,8 @@
 """Derived Equifax history fallback for gaps in direct monthly reports.
 
-Only values mathematically implied by an official Equifax report are emitted.
-Direct monthly levels remain authoritative; this module is used only when the
-normal source cannot fetch the target month. The unified delinquency series is
-the sum of the two non-overlapping published SBDI buckets.
+Only values mathematically implied by an official Equifax/PayNet report are emitted.
+For legacy reports, the published National - Overall table row is preferred because
+it contains current month, prior month, MoM change, year-ago month and YoY change.
 """
 from __future__ import annotations
 
@@ -33,22 +32,24 @@ _METRICS = (
 )
 
 
-def _fetch_one(url: str) -> tuple[tuple[float, float, float], str, str] | None:
+def _fetch_one(url: str) -> tuple[tuple[float, float, float] | None, str, str] | None:
     try:
         response = requests.get(url, timeout=4, headers={"User-Agent": USER_AGENT})
         if response.status_code != 200 or "pdf" not in response.headers.get("content-type", "").lower():
             return None
         text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+        clean = _clean(text)
         levels = extract_equifax_levels(text)
-        if levels is None:
+        # Legacy table reports may not be understood by the modern level parser,
+        # but their text is still useful for direct year-ago/previous-month rows.
+        if levels is None and "National" not in clean:
             return None
-        return levels, _clean(text), url
+        return levels, clean, url
     except Exception:
         return None
 
 
-def _fetch_report_text(report_year: int, report_month: int) -> tuple[tuple[float, float, float], str, str] | None:
-    """Return exact current levels and text, probing legacy filename variants in parallel."""
+def _fetch_report_text(report_year: int, report_month: int) -> tuple[tuple[float, float, float] | None, str, str] | None:
     urls = _report_urls(report_year, report_month)
     with ThreadPoolExecutor(max_workers=18) as pool:
         futures = [pool.submit(_fetch_one, url) for url in urls]
@@ -58,6 +59,60 @@ def _fetch_report_text(report_year: int, report_month: int) -> tuple[tuple[float
                 for pending in futures:
                     pending.cancel()
                 return found
+    return None
+
+
+def _pct_values(text: str) -> list[float]:
+    return [float(v) for v in re.findall(r"(-?[0-9]+(?:\.[0-9]+)?)\s*%", text)]
+
+
+def _legacy_overall_values(clean: str, heading: str, row_label: str) -> tuple[float, float] | None:
+    """Return (previous-month, year-ago) levels from a legacy Overall table row."""
+    h = re.search(heading, clean, re.I)
+    if not h:
+        return None
+    # Tables are compact in extracted text. Restrict the scan to this table area.
+    section = clean[h.end():h.end() + 9000]
+    row = re.search(row_label + r"\b([^\n]{0,700}|.{0,700})", section, re.I)
+    if not row:
+        return None
+    vals = _pct_values(row.group(0))
+    # Legacy columns: CURRENT, PREVIOUS, MoM CHANGE, YEAR-AGO, YoY CHANGE.
+    if len(vals) < 5:
+        # pypdf often collapses rows; take percentages immediately after row label.
+        pos = section.lower().find(re.sub(r"\\s\*", " ", row_label).lower())
+        if pos >= 0:
+            vals = _pct_values(section[pos:pos + 900])
+    if len(vals) >= 5:
+        previous, year_ago = vals[1], vals[3]
+        if 0 <= previous < 10 and 0 <= year_ago < 10:
+            return previous, year_ago
+    return None
+
+
+def _legacy_levels(clean: str, period: str) -> tuple[float, float, float] | None:
+    """Extract prior-period levels directly from old PayNet Overall tables."""
+    short = _legacy_overall_values(
+        clean,
+        r"SMALL\s+BUSINESS\s+DELINQUENCY\s+INDEX\s+31\s*-\s*90\s+DAYS\s+PAST\s+DUE",
+        r"SBDI\s+National\s*-\s*Overall",
+    )
+    severe = _legacy_overall_values(
+        clean,
+        r"SMALL\s+BUSINESS\s+DELINQUENCY\s+INDEX\s+91\s*-\s*180\s+DAYS\s+PAST\s+DUE",
+        r"SBDI\s+National\s*-\s*Overall",
+    )
+    default = _legacy_overall_values(
+        clean,
+        r"SMALL\s+BUSINESS\s+DEFAULT\s+INDEX|SBDFI",
+        r"(?:SBDFI|Default)\s+National\s*-\s*Overall",
+    )
+    if not (short and severe and default):
+        return None
+    idx = 1 if period.upper() == "Y/Y" else 0
+    values = (short[idx], severe[idx], default[idx])
+    if all(0 <= v < 10 for v in values):
+        return values
     return None
 
 
@@ -71,10 +126,10 @@ def _to_pp(symbol: str | None, number: str, unit: str) -> float:
 
 
 def _directional_delta(body: str, period: str) -> float | None:
-    p = re.escape(period)
+    aliases = r"(?:Y\s*/\s*Y|YoY|Y-O-Y|year[- ]over[- ]year)" if period.upper() == "Y/Y" else r"(?:M\s*/\s*M|MoM|M-O-M|month[- ]over[- ]month)"
     patterns = (
-        rf"([▲▼+\-])\s*([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?)\s*\(?\s*{p}\s*\)?",
-        rf"\(?\s*{p}\s*\)?\s*([▲▼+\-])\s*([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?)",
+        rf"([▲▼+\-])\s*([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?)\s*\(?\s*{aliases}\s*\)?",
+        rf"\(?\s*{aliases}\s*\)?\s*([▲▼+\-])\s*([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?)",
     )
     for pattern in patterns:
         match = re.search(pattern, body, re.I)
@@ -124,7 +179,26 @@ def _derive_from_report(target: date, *, lag_months: int, period: str) -> dict[s
     result: dict[str, dict | None] = {SERIES_DELINQUENCY: None, SERIES_DEFAULT: None}
     if fetched is None:
         return result
-    (short_now, severe_now, default_now), clean, url = fetched
+    levels, clean, url = fetched
+
+    # Old PayNet reports publish the comparison levels directly in Overall rows.
+    legacy = _legacy_levels(clean, period)
+    if legacy is not None:
+        short, severe, default = legacy
+        provenance = f"PayNet-public:legacy-table-{period.replace('/', '')}:{url}"
+        result[SERIES_DELINQUENCY] = _row(
+            SERIES_DELINQUENCY, target.year, target.month, short + severe,
+            f"{provenance}:SBDI31-90={short:.2f}+SBDI91-180={severe:.2f}",
+        )
+        result[SERIES_DEFAULT] = _row(
+            SERIES_DEFAULT, target.year, target.month, default,
+            f"{provenance}:SBDFI={default:.2f}",
+        )
+        return result
+
+    if levels is None:
+        return result
+    short_now, severe_now, default_now = levels
     deltas = _change_map(clean, period)
     if set(deltas) != {"short", "severe", "default"}:
         return result
