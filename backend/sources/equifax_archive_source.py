@@ -8,7 +8,8 @@ from io import BytesIO
 import requests
 from pypdf import PdfReader
 
-from sources.business_credit_monthly import MONTHS, USER_AGENT, _extract_equifax_levels, _row, _shift_month
+from sources.business_credit_monthly import MONTHS, USER_AGENT, _row, _shift_month
+from sources.equifax_level_parser import extract_equifax_levels
 
 BASES = (
     "https://assets.equifax.com/marketing/US/assets/",
@@ -49,7 +50,7 @@ def _fetch_report(report_y: int, report_m: int) -> tuple[int, int, tuple[float, 
             if response.status_code != 200 or "pdf" not in content_type:
                 continue
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
-            levels = _extract_equifax_levels(text)
+            levels = extract_equifax_levels(text)
             if levels:
                 return report_y, report_m, levels, url
         except Exception:
@@ -58,7 +59,7 @@ def _fetch_report(report_y: int, report_m: int) -> tuple[int, int, tuple[float, 
 
 
 def fetch_equifax_archive_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Recover only levels accepted by the canonical strict Equifax parser."""
+    """Recover exact first-party levels without deriving or guessing missing months."""
     result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
     report_y, report_m = _shift_month(start.year, start.month, 2)
     end_y, end_m = _shift_month(end.year, end.month, 2)
