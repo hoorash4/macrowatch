@@ -13,6 +13,7 @@ from signals.business_credit_backfill import _validate_rows
 TABLE = "economic_chart_points"
 EXPECTED_LATEST = date(2026, 7, 1)
 LEGACY_DERIVE_FIRST = date(2020, 4, 1)
+# Legacy months use the table-aware YoY/MoM parser in paynet_derived_history.
 
 
 def _shift_month(d: date, months: int) -> date:
