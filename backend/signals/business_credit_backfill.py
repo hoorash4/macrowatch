@@ -13,7 +13,6 @@ from sources.business_credit_monthly import (
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
 from sources.epiq_ch11_source import fetch_epiq_ch11_rows
-from sources.equifax_archive_source import fetch_equifax_archive_rows
 
 TABLE = "economic_chart_points"
 
@@ -23,12 +22,7 @@ def _ten_year_start(today: date) -> date:
 
 
 def _validate_rows(code: str, rows: list[dict], start: date, end: date) -> list[dict]:
-    """Validate and deduplicate source rows before an authoritative backfill upsert.
-
-    Backfill must never preserve a stale value merely because the date already exists.
-    At the same time, sparse external archives must not cause valid dates to be deleted
-    when the public archive itself is incomplete.
-    """
+    """Validate and deduplicate source rows before an authoritative backfill upsert."""
     first = date(start.year, start.month, 1)
     last = date(end.year, end.month, 1)
     validated_by_date: dict[str, dict] = {}
@@ -81,11 +75,8 @@ def run() -> dict[str, int]:
     db = SupabaseRest()
     totals: dict[str, int] = {}
 
-    # One first-party discovery path and one strict parser. Keeping a second Equifax parser
-    # here previously allowed the same PDF to produce contradictory values during backfill.
-    equifax = fetch_equifax_archive_rows(start, end)
-    for code in ("US_SBDI_31_90", "US_SBDI_91_180", "US_SBDFI"):
-        _store(db, code, equifax.get(code, []), start, end, totals)
+    # PayNet/Equifax has its own dedicated backfill path. Do not derive 31-180
+    # delinquency from the split 31-90 and 91-180 buckets here.
 
     _store(
         db,
