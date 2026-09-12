@@ -13,6 +13,63 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
   <script src="assets/js/core/frontend-core.js?v=4"></script>
+  <script>
+    (() => {
+      const library = window.LightweightCharts;
+      if (!library?.createChart || !library.ColorType) return;
+      const original = library.createChart.bind(library);
+      const css = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+      const themed = () => {
+        const dark = document.documentElement.dataset.theme === 'dark';
+        return {
+          layout: {
+            background: {
+              type: library.ColorType.Solid,
+              color: css('--theme-chart-bg', dark ? '#0b1322' : '#ffffff'),
+            },
+            textColor: css('--theme-chart-text', dark ? '#aebbd0' : '#6b7280'),
+          },
+          grid: {
+            vertLines: { color: css('--theme-chart-grid', dark ? '#243247' : '#e5e7eb') },
+            horzLines: { color: css('--theme-chart-grid', dark ? '#243247' : '#e5e7eb') },
+          },
+          rightPriceScale: { borderColor: css('--theme-chart-border', dark ? '#40536b' : '#d1d5db') },
+          timeScale: { borderColor: css('--theme-chart-border', dark ? '#40536b' : '#d1d5db') },
+          crosshair: {
+            vertLine: { color: css('--theme-chart-crosshair', dark ? '#7f91aa' : '#9ca3af') },
+            horzLine: { color: css('--theme-chart-crosshair', dark ? '#7f91aa' : '#9ca3af') },
+          },
+        };
+      };
+      library.createChart = (container, options = {}) => {
+        const theme = themed();
+        const chart = original(container, {
+          ...options,
+          layout: { ...(options.layout || {}), ...theme.layout },
+          grid: {
+            ...(options.grid || {}),
+            vertLines: { ...(options.grid?.vertLines || {}), ...theme.grid.vertLines },
+            horzLines: { ...(options.grid?.horzLines || {}), ...theme.grid.horzLines },
+          },
+          rightPriceScale: { ...(options.rightPriceScale || {}), ...theme.rightPriceScale },
+          timeScale: { ...(options.timeScale || {}), ...theme.timeScale },
+          crosshair: {
+            ...(options.crosshair || {}),
+            vertLine: { ...(options.crosshair?.vertLine || {}), ...theme.crosshair.vertLine },
+            horzLine: { ...(options.crosshair?.horzLine || {}), ...theme.crosshair.horzLine },
+          },
+        });
+        const refresh = () => chart.applyOptions(themed());
+        window.addEventListener('macrowatch:themechange', refresh);
+        const remove = chart.remove?.bind(chart);
+        if (remove) chart.remove = () => {
+          window.removeEventListener('macrowatch:themechange', refresh);
+          remove();
+        };
+        return chart;
+      };
+    })();
+  </script>
 </head>
 <body class="economic-chart-page">
   <div class="economic-shell">
