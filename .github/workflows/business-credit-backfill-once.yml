@@ -24,8 +24,23 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Recover and revalidate monthly business-credit charts in parallel
+        env:
+          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
+          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          if [ -n "$PAYNET_USERNAME" ] && [ -n "$PAYNET_PASSWORD" ]; then
+            pip install --disable-pip-version-check playwright
+            playwright install chromium
+          fi
+      - name: Backfill PayNet direct national loan-performance series
+        env:
+          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
+          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.paynet_backfill
+      - name: Recover and revalidate other monthly business-credit charts
         env:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
