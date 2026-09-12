@@ -822,10 +822,13 @@ test('주도섹터는 모든 주에 주간과 4주 누적 수익률을 표시한
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/sector-flow.yml'), 'utf8');
-  assert.match(workflow, /10 0 \* \* 1-5/);
-  assert.match(workflow, /30 3 \* \* 1-5/);
-  assert.match(workflow, /30 3 \* \* 1-5'[\s\S]*'intraday'/);
-  assert.match(workflow, /40 6 \* \* 1-5/);
+  const scheduleMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase/migrations/20260912133500_stabilize_sector_flow_schedule.sql'), 'utf8');
+  assert.doesNotMatch(workflow, /^  schedule:/m);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(scheduleMigration, /10 0 \* \* 1-5/);
+  assert.match(scheduleMigration, /30 3 \* \* 1-5/);
+  assert.match(scheduleMigration, /40 6 \* \* 1-5/);
+  assert.match(scheduleMigration, /"stage":"intraday"/);
   assert.match(charts, /<span>순위<\/span><span>변동<\/span><span>섹터<\/span><span>연속<\/span>/);
   assert.match(charts, /sector-flow-rank/);
   assert.match(charts, /sector-flow-change/);
@@ -958,5 +961,4 @@ test('개인설정 모달은 고정 헤더와 스크롤 본문에서 항상 닫�
   assert.match(auth, /event\.target === event\.currentTarget\) closeProfileModal\(\)/);
   assert.match(auth, /event\.key === 'Escape'[\s\S]*?closeProfileModal\(\)/);
 });
-
 
