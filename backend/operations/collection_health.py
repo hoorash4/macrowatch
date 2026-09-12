@@ -17,7 +17,7 @@ WORKFLOWS = {
     "economic-chart-data.yml": 3,
     "em-capital-capacity.yml": 3, "em-stress.yml": 3,
     "equity-bond-attractiveness.yml": 10, "equity-bond-relative-value.yml": 40,
-    "financial-stress.yml": 3, "inflation-model.yml": 3,
+    "financial-stress.yml": 3,
     "korea-foreign-flow.yml": 4, "korea-small-business-risk.yml": 3,
     "korea-stress.yml": 3, "liquidity.yml": 3, "market-context.yml": 4,
     "news-pipeline.yml": 3, "policy-expectation.yml": 3,

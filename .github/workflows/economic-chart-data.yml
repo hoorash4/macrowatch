@@ -27,6 +27,8 @@ jobs:
       - name: Collect economic chart series
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
+          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
           KRX_ID: ${{ secrets.KRX_ID }}
@@ -37,3 +39,5 @@ jobs:
           PYTHONPATH=backend python -m signals.economic_chart_automatic
           PYTHONPATH=backend python -m signals.business_credit_monthly
           PYTHONPATH=backend python -m signals.paynet_monthly
+          PYTHONPATH=backend python -m signals.inflation_index_automatic
+          PYTHONPATH=backend python -m inflation_pipeline

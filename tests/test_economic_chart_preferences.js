@@ -8,6 +8,7 @@ const chart = fs.readFileSync('assets/js/charts/economic-charts.js', 'utf8');
 const css = fs.readFileSync('assets/css/economic-charts.css', 'utf8');
 const html = fs.readFileSync('economic-charts.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260911161000_add_economic_chart_preferences.sql', 'utf8');
+const catalogMigration = fs.readFileSync('supabase/migrations/20260913153000_add_economic_chart_catalog_settings.sql', 'utf8');
 
 test('economic chart uses real chart-space right gap instead of a white overlay', () => {
   assert.doesNotMatch(html, /economic-plot-gap/);
@@ -55,4 +56,29 @@ test('economic chart personal state is persisted per authenticated user', () => 
 test('economic chart assets are cache-busted for the changed script', () => {
   assert.match(html, /economic-charts\.css\?v=\d+/);
   assert.match(html, /economic-charts\.js\?v=\d+/);
+});
+
+test('administrator category order is stored globally and category titles are the drag handles', () => {
+  assert.match(chart, /from\('economic_chart_catalog_settings'\)/);
+  assert.match(chart, /from\('user_accounts'\)\.select\('is_admin'\)/);
+  assert.match(chart, /if\(isAdmin\)\{title\.draggable=true/);
+  assert.match(chart, /function moveCategory\(source,target\)/);
+  assert.match(chart, /updated_by:user\.id/);
+  assert.match(catalogMigration, /for select to authenticated[\s\S]*using \(true\)/);
+  assert.match(catalogMigration, /is_admin = true/g);
+  assert.match(catalogMigration, /grant insert, update .* to authenticated/);
+});
+
+test('inflation cards pair headline and core indexes and default moving averages off', () => {
+  for (const code of ['US_CPI','US_PPI','US_PCE','KR_CPI','KR_PPI']) {
+    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+defaultMa:false`));
+  }
+  assert.match(chart, /compareCode:'US_CORE_CPI'/);
+  assert.match(chart, /compareCode:'US_CORE_PPI'/);
+  assert.match(chart, /compareCode:'US_CORE_PCE'/);
+  assert.match(chart, /compareCode:'KR_CORE_CPI'/);
+  assert.match(chart, /compareCode:'KR_IMPORT_PRICE'/);
+  assert.match(html, /id="economic-ma-toggle"/);
+  assert.match(chart, /function applyMaVisibility\(\)/);
+  assert.match(chart, /m\.defaultMa!==false/);
 });

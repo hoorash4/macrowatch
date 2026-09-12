@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import math
 import statistics
@@ -25,7 +24,7 @@ try:
         select_direction_ridge_alpha, select_ridge_alpha, shelter_adjusted_cpi_yoy,
     )
     from .signals.automatic_source_cache import is_initialized, load as load_source_cache
-    from .signals.automatic_source_cache import mark_initialized, store as store_source_cache
+    from .signals.automatic_source_cache import store as store_source_cache
 except ImportError:  # Direct script execution used by GitHub Actions.
     from common import (
         AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS, SupabaseRest,
@@ -37,7 +36,7 @@ except ImportError:  # Direct script execution used by GitHub Actions.
         select_direction_ridge_alpha, select_ridge_alpha, shelter_adjusted_cpi_yoy,
     )
     from signals.automatic_source_cache import is_initialized, load as load_source_cache
-    from signals.automatic_source_cache import mark_initialized, store as store_source_cache
+    from signals.automatic_source_cache import store as store_source_cache
 
 
 TIMEOUT_SECONDS = 60
@@ -55,17 +54,19 @@ YAHOO_CHART_URLS = (
 )
 
 FRED_SERIES = {
-    "cpi": "CPIAUCSL",
-    "core_cpi": "CPILFESL",
     "shelter": "CUSR0000SAH1",
     "cpi_ex_shelter": "CUSR0000SA0L2",
-    "pce": "PCEPI",
-    "core_pce": "PCEPILFE",
-    "headline_ppi": "WPSFD49501",
-    "core_ppi": "WPSFD49511",
     "dollar": "DTWEXBGS",
     "policy_rate": "DFEDTARU",
     "treasury_10y": "DGS10",
+}
+OFFICIAL_INDEX_SERIES = {
+    "cpi": "US_CPI",
+    "core_cpi": "US_CORE_CPI",
+    "pce": "US_PCE",
+    "core_pce": "US_CORE_PCE",
+    "headline_ppi": "US_PPI",
+    "core_ppi": "US_CORE_PPI",
 }
 COMMODITY_GROUPS = {
     "energy": ("CL=F", "RB=F", "HO=F", "NG=F"),
@@ -780,14 +781,33 @@ def inflation_cached_values(
     return fred, prices
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--start", type=date.fromisoformat, default=PUBLISH_START)
-    parser.add_argument("--initialize-sources", action="store_true")
-    args = parser.parse_args()
-    if args.start < PUBLISH_START:
-        raise SystemExit("Publish start cannot precede 2020-01-01")
+def load_official_index_values(
+    client: SupabaseRest,
+    start: date = SOURCE_START,
+) -> dict[str, dict[date, float]]:
+    """Read the six official U.S. index levels already stored for economic charts."""
+    result: dict[str, dict[date, float]] = {}
+    for name, series_code in OFFICIAL_INDEX_SERIES.items():
+        rows = client.request("GET", "economic_chart_points", params={
+            "select": "observation_date,value",
+            "series_code": f"eq.{series_code}",
+            "observation_date": f"gte.{start.isoformat()}",
+            "order": "observation_date.asc",
+            "limit": "10000",
+        }) or []
+        values: dict[date, float] = {}
+        for row in rows:
+            try:
+                values[date.fromisoformat(str(row["observation_date"]))] = float(row["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not values:
+            raise RuntimeError(f"Stored inflation index is empty: {series_code}")
+        result[name] = values
+    return result
 
+
+def run_automatic() -> None:
     fred_key = require_env("FRED_API_KEY")
     today = date.today()
     client = SupabaseRest(
@@ -796,58 +816,48 @@ def main() -> None:
         timeout=TIMEOUT_SECONDS,
     )
     cache = load_source_cache(client, CACHE_COLLECTOR)
-    if not args.initialize_sources and not is_initialized(cache):
-        raise RuntimeError("Inflation source cache is not initialized; run --initialize-sources explicitly")
+    if not is_initialized(cache):
+        raise RuntimeError("Inflation auxiliary source cache is not initialized; run the manual inflation backfill")
 
     daily_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
     monthly_start = month_start_months_ago(today, AUTOMATIC_MONTHLY_PERIODS - 1)
     starts = {
-        name: SOURCE_START if args.initialize_sources else (
-            daily_start if name in DAILY_FRED_NAMES else monthly_start
-        )
+        name: daily_start if name in DAILY_FRED_NAMES else monthly_start
         for name in FRED_SERIES
     }
     fred_recent = fetch_fred_series(fred_key, today, starts)
     fred_recent["core_cpi_ex_shelter"] = fetch_bls_series(
-        BLS_CORE_CPI_EX_SHELTER,
-        today,
-        SOURCE_START if args.initialize_sources else monthly_start,
+        BLS_CORE_CPI_EX_SHELTER, today, monthly_start,
     )
-    price_start = SOURCE_START if args.initialize_sources else daily_start
     prices_recent = {
-        symbol: fetch_yahoo_series(symbol, today, price_start)
+        symbol: fetch_yahoo_series(symbol, today, daily_start)
         for symbols in COMMODITY_GROUPS.values()
         for symbol in symbols
     }
     recent_cache = inflation_cache_points(fred_recent, prices_recent)
-    if args.initialize_sources and any(not points for points in recent_cache.values()):
-        raise RuntimeError("Inflation source initialization returned incomplete history")
     store_source_cache(client, CACHE_COLLECTOR, recent_cache)
-    if args.initialize_sources:
-        mark_initialized(client, CACHE_COLLECTOR, today)
-        cache = load_source_cache(client, CACHE_COLLECTOR)
-    else:
-        for series, values in recent_cache.items():
-            cache.setdefault(series, {}).update(values)
+    for series, values in recent_cache.items():
+        cache.setdefault(series, {}).update(values)
     fred, prices = inflation_cached_values(cache)
+    fred.update(load_official_index_values(client))
     if any(not values for values in (*fred.values(), *prices.values())):
-        raise RuntimeError("Inflation source cache is incomplete; run --initialize-sources explicitly")
+        raise RuntimeError("Inflation calculation inputs are incomplete; run the manual inflation backfill")
     nowcasts = fetch_cleveland_nowcasts()
     features = MarketFeatures(prices, fred["dollar"])
     headline_levels, headline_ppi, _ = integrated_levels(fred, "headline")
     core_levels, core_ppi, _ = integrated_levels(fred, "core")
     monthly, daily = build_output_rows(
-        fred, nowcasts, features, headline_levels, core_levels, headline_ppi, core_ppi, args.start
+        fred, nowcasts, features, headline_levels, core_levels, headline_ppi, core_ppi, PUBLISH_START
     )
-    monthly = [row for row in monthly if str(row["month"]) >= args.start.isoformat()]
-    daily = [row for row in daily if str(row["observed_on"]) >= args.start.isoformat()]
+    monthly = [row for row in monthly if str(row["month"]) >= PUBLISH_START.isoformat()]
+    daily = [row for row in daily if str(row["observed_on"]) >= PUBLISH_START.isoformat()]
     if not monthly or not daily:
         raise RuntimeError("Inflation calculation produced no publishable rows")
 
     updated_at = datetime.now(timezone.utc).isoformat()
     for row in monthly:
         row["updated_at"] = updated_at
-    policies = policy_rows(fred, args.start, updated_at)
+    policies = policy_rows(fred, PUBLISH_START, updated_at)
     if not policies:
         raise RuntimeError("Policy-rate calculation produced no publishable rows")
 
@@ -863,6 +873,10 @@ def main() -> None:
         "latest_month": monthly[-1]["month"],
         "latest_day": daily[-1]["observed_on"],
     }, ensure_ascii=False))
+
+
+def main() -> None:
+    run_automatic()
 
 
 if __name__ == "__main__":

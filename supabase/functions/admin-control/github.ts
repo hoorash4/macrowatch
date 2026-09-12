@@ -98,7 +98,6 @@ const AUTOMATION_CARD_NAMES: Record<string, string> = {
   "equity-bond-attractiveness.yml": "주식투자 매력 흐름",
   "equity-bond-relative-value.yml": "주식투자 매력 흐름 · 상대가치",
   "financial-stress.yml": "미국 시장 스트레스 지수",
-  "inflation-model.yml": "통합물가지수와 금리",
   "korea-foreign-flow.yml": "외국인 자금 유출입 강도",
   "korea-small-business-risk.yml": "한국 중소기업 위험지수",
   "korea-stress.yml": "한국 시장 스트레스 지수",

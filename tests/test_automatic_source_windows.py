@@ -82,13 +82,19 @@ class AutomaticSourceWindowTests(unittest.TestCase):
             "em-capital-capacity.yml",
             "equity-bond-attractiveness.yml",
             "equity-bond-relative-value.yml",
-            "inflation-model.yml",
         ):
             workflow = workflows[name]
             self.assertIn("initialize_sources", workflow)
             self.assertIn("workflow_dispatch:", workflow)
             self.assertIn("inputs.initialize_sources", workflow)
             self.assertNotIn("schedule' && 'true'", workflow)
+
+        inflation_backfill = workflows["inflation-index-backfill.yml"]
+        self.assertIn("workflow_dispatch:", inflation_backfill)
+        self.assertNotIn("schedule:", inflation_backfill)
+        self.assertIn("signals.inflation_index_backfill", inflation_backfill)
+        self.assertIn("signals.inflation_model_backfill", inflation_backfill)
+        self.assertFalse((ROOT / ".github/workflows/inflation-model.yml").exists())
 
 
 if __name__ == "__main__":
