@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date
 import pathlib
 import sys
 import unittest
@@ -10,12 +10,8 @@ from signals.paynet_backfill import _prepare, _required_months
 from sources.paynet_loan_performance import (
     SERIES_DEFAULT,
     SERIES_DELINQUENCY,
-    rows_from_highcharts_payload,
+    extract_direct_levels,
 )
-
-
-def ms(year: int, month: int) -> int:
-    return int(datetime(year, month, 1, tzinfo=timezone.utc).timestamp() * 1000)
 
 
 def row(code: str, year: int, month: int, value: float) -> dict:
@@ -24,33 +20,29 @@ def row(code: str, year: int, month: int, value: float) -> dict:
         "observation_date": f"{year:04d}-{month:02d}-01",
         "value": value,
         "frequency": "M",
-        "source": "PayNet-RIS:test",
+        "source": "Equifax-public:test",
     }
 
 
 class PayNetLoanPerformanceTests(unittest.TestCase):
-    def test_reads_direct_31_180_and_default_series_only(self):
-        payload = [
-            {"name": "SBDI 31-90 Days", "data": [[ms(2026, 7), 1.66]]},
-            {"name": "SBDI 91-180 Days", "data": [[ms(2026, 7), 0.73]]},
-            {"name": "SBDI 31-180 Days", "data": [[ms(2026, 7), 2.41]]},
-            {"name": "SBDFI Annualized Default Index", "data": [[ms(2026, 7), 3.20]]},
-        ]
-        result = rows_from_highcharts_payload(payload, date(2026, 7, 1), date(2026, 7, 31))
-        self.assertEqual(result[SERIES_DELINQUENCY][0]["value"], 2.41)
-        self.assertEqual(result[SERIES_DEFAULT][0]["value"], 3.20)
-        self.assertNotEqual(result[SERIES_DELINQUENCY][0]["value"], 1.66 + 0.73)
+    def test_reads_explicit_31_180_and_sbdfi(self):
+        text = """
+        PayNet Small Business Delinquency Index (SBDI) 31-180 Days Past Due was at 2.41%.
+        Small Business Default Index (SBDFI) was at 3.20%.
+        """
+        self.assertEqual(extract_direct_levels(text), (2.41, 3.20))
 
-    def test_direct_rows_are_sorted_latest_first(self):
-        payload = [
-            {"name": "SBDI 31-180 Days", "data": [[ms(2026, 6), 2.30], [ms(2026, 7), 2.39]]},
-            {"name": "SBDFI", "data": [[ms(2026, 6), 3.26], [ms(2026, 7), 3.20]]},
-        ]
-        result = rows_from_highcharts_payload(payload, date(2026, 6, 1), date(2026, 7, 31))
-        self.assertEqual(
-            [r["observation_date"] for r in result[SERIES_DELINQUENCY]],
-            ["2026-07-01", "2026-06-01"],
-        )
+    def test_split_buckets_are_never_used_as_31_180(self):
+        text = """
+        SBDI 31-90 Days 1.66% (Level)
+        SBDI 91-180 Days 0.73% (Level)
+        SBDFI 3.20% (Level)
+        """
+        self.assertEqual(extract_direct_levels(text), (None, 3.20))
+
+    def test_direct_31_180_level_label_is_accepted(self):
+        text = "SBDI 31-180 Days 2.41% (Level) SBDFI 3.20% (Level)"
+        self.assertEqual(extract_direct_levels(text), (2.41, 3.20))
 
     def test_required_months_run_latest_to_ten_years_back(self):
         months = _required_months(date(2026, 7, 1))
