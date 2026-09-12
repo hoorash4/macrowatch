@@ -28,7 +28,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Resume unified Equifax delinquency and SBDFI backfill from first missing month
+      - name: Resume Equifax delinquency and SBDFI backfill from the next missing month
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
