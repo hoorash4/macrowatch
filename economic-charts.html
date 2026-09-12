@@ -12,13 +12,6 @@
   <link rel="stylesheet" href="assets/css/styles.css?v=188">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=7">
   <link rel="stylesheet" href="assets/css/economic-series-manager.css?v=1">
-  <style>
-    .economic-account-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
-    .economic-account-actions button,.economic-account-actions a{box-sizing:border-box;display:grid;place-items:center;width:34px;height:34px;border:1px solid #d1d5db;border-radius:9px;background:#fff;color:#4b5563;text-decoration:none;cursor:pointer}
-    .economic-account-actions button:hover,.economic-account-actions a:hover{background:#f3f4f6;color:#111827}
-    .economic-account-actions [hidden]{display:none!important}
-    @media(max-width:850px){.economic-account-actions{position:absolute;right:10px;top:10px}}
-  </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -32,7 +25,7 @@
       <nav class="economic-nav" aria-label="MacroWatch 메뉴">
         <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><a class="is-active" href="economic-charts.html" aria-current="page">경제지표 챠트</a>
       </nav>
-      <div class="economic-account-actions" aria-label="계정 메뉴">
+      <div class="dashboard-nav-actions economic-account-actions" aria-label="계정 메뉴">
         <button id="economic-profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
         <a id="economic-admin-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" hidden><i class="fa-solid fa-gear"></i></a>
         <button id="economic-logout-button" type="button" aria-label="로그아웃" title="로그아웃"><i class="fa-solid fa-right-from-bracket"></i></button>
@@ -70,7 +63,7 @@
   <script src="assets/js/core/economic-supabase-capture.js?v=1"></script>
   <script src="assets/js/charts/economic-charts.js?v=12"></script>
   <script src="assets/js/charts/economic-series-manager.js?v=3"></script>
-  <script src="assets/js/core/economic-account-actions.js?v=1"></script>
+  <script src="assets/js/core/economic-account-actions.js?v=2"></script>
   <script>
     (() => {
       const before = '미국 기업 회생 신청건수';
