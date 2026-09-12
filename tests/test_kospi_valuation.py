@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from signals import economic_chart_automatic as automatic  # noqa: E402
-from signals import economic_chart_backfill as backfill  # noqa: E402
 from signals import economic_chart_pipeline as pipeline  # noqa: E402
 from sources import krx_index_fundamentals as krx  # noqa: E402
 
@@ -130,31 +129,6 @@ class KospiValuationStorageTests(unittest.TestCase):
                 automatic.collect_kospi_valuation(date(2026, 9, 11), db)
         self.assertEqual(db.upserts, [])
 
-    def test_partial_backfill_failure_preserves_successful_chunks(self):
-        db = FakeDb()
-        good_a = {
-            "KOSPI_PER": [{"series_code": "KOSPI_PER", "observation_date": "2026-01-02", "value": 10.0, "frequency": "D", "source": "x"}],
-            "KOSPI_PBR": [{"series_code": "KOSPI_PBR", "observation_date": "2026-01-02", "value": 0.8, "frequency": "D", "source": "x"}],
-        }
-        good_b = {
-            "KOSPI_PER": [{"series_code": "KOSPI_PER", "observation_date": "2026-07-02", "value": 11.0, "frequency": "D", "source": "x"}],
-            "KOSPI_PBR": [{"series_code": "KOSPI_PBR", "observation_date": "2026-07-02", "value": 0.9, "frequency": "D", "source": "x"}],
-        }
-        with patch.object(backfill, "fetch_krx_kospi_fundamental_rows", side_effect=[good_a, RuntimeError("middle failed"), good_b]):
-            inserted, errors = backfill.backfill_kospi_valuation(
-                db, date(2026, 1, 1), date(2026, 9, 27), pause_seconds=0
-            )
-        self.assertEqual(inserted, {"KOSPI_PER": 2, "KOSPI_PBR": 2})
-        self.assertEqual(len(errors), 1)
-        self.assertEqual(len(db.upserts), 4)
-
-    def test_ten_year_backfill_is_split_into_bounded_chunks(self):
-        chunks = list(backfill._chunks(date(2016, 9, 12), date(2026, 9, 12)))
-        self.assertGreater(len(chunks), 40)
-        self.assertTrue(all((end - start).days < 90 for start, end in chunks))
-        self.assertEqual(chunks[0][0], date(2016, 9, 12))
-        self.assertEqual(chunks[-1][1], date(2026, 9, 12))
-
 
 class KospiValuationContractTests(unittest.TestCase):
     def test_kospi_valuation_is_integrated_into_the_single_0730_refresh(self):
@@ -183,14 +157,9 @@ class KospiValuationContractTests(unittest.TestCase):
         self.assertNotIn("KOSDAQ", source)
         self.assertIn("pykrx==1.2.8", requirements)
 
-    def test_backfill_workflow_is_manual_and_kospi_scoped_by_default(self):
-        workflow = (ROOT / ".github/workflows/economic-chart-backfill-once.yml").read_text(encoding="utf-8")
-        self.assertNotIn("schedule:", workflow)
-        self.assertIn("default: kospi-valuation", workflow)
-        self.assertIn('--only "${{ inputs.target }}"', workflow)
-        self.assertIn("inputs.target == 'all'", workflow)
-        self.assertIn("KRX_ID: ${{ secrets.KRX_ID }}", workflow)
-        self.assertIn("KRX_PW: ${{ secrets.KRX_PW }}", workflow)
+    def test_backfill_runtime_is_retired(self):
+        self.assertFalse((ROOT / ".github/workflows/economic-chart-backfill-once.yml").exists())
+        self.assertFalse((ROOT / "backend/signals/economic_chart_backfill.py").exists())
 
     def test_existing_failure_email_covers_economic_chart_schedule(self):
         notifier = (ROOT / ".github/workflows/scheduled-failure-email.yml").read_text(encoding="utf-8")
