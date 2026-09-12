@@ -1,5 +1,5 @@
 -- Sector-flow automatic execution has one scheduler: Supabase pg_cron.
--- Each stage has an explicit primary and +15 minute retry job.  The stage is
+-- Each stage has an explicit primary and +15 minute retry job. The stage is
 -- carried in the request body, so changing a clock time can never change phase.
 
 do $$
@@ -72,12 +72,27 @@ select cron.schedule(
 );
 
 create or replace function public.macrowatch_sector_flow_schedules()
-returns table(jobname text, schedule text, active boolean)
+returns table(jobname text, schedule text, active boolean, latest_success_at timestamptz)
 language sql
 security definer
 set search_path = pg_catalog, public, cron
 as $$
-  select j.jobname::text, j.schedule::text, j.active
+  select
+    j.jobname::text,
+    j.schedule::text,
+    j.active,
+    case
+      when j.jobname like 'macrowatch-sector-flow-open-%' then (
+        select max(r.calculated_at) from public.market_sector_weekly_rankings r where r.price_stage = 'open'
+      )
+      when j.jobname like 'macrowatch-sector-flow-intraday-%' then (
+        select max(r.calculated_at) from public.market_sector_weekly_rankings r where r.price_stage = 'intraday'
+      )
+      when j.jobname like 'macrowatch-sector-flow-close-%' then (
+        select max(r.calculated_at) from public.market_sector_weekly_rankings r where r.price_stage = 'close'
+      )
+      else null
+    end as latest_success_at
   from cron.job as j
   where j.jobname like 'macrowatch-sector-flow-%'
   order by j.jobname;
