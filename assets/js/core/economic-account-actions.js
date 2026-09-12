@@ -14,21 +14,44 @@
     return data.session?.user || null;
   }
 
+  function pinProfileModalColors() {
+    const fixed = {
+      '--theme-surface': '#0f172a',
+      '--theme-surface-elevated': '#0f172a',
+      '--theme-text': '#e2e8f0',
+      '--theme-text-secondary': '#94a3b8',
+      '--theme-text-muted': '#64748b',
+      '--theme-border': '#334155',
+      '--theme-input-bg': '#0f172a',
+      '--theme-input-border': '#334155',
+    };
+    for (const id of ['profile-modal', 'account-delete-modal']) {
+      const modal = document.getElementById(id);
+      if (!modal) continue;
+      modal.style.colorScheme = 'dark';
+      for (const [name, value] of Object.entries(fixed)) modal.style.setProperty(name, value);
+    }
+  }
+
   function ensureThemePreferenceControl() {
     if (document.getElementById('theme-preference')) return;
     const body = document.querySelector('#profile-modal .profile-dialog-body');
     if (!body) return;
     const card = document.createElement('section');
     card.className = 'theme-preference-card';
+    card.style.background = 'rgba(2,6,23,.6)';
+    card.style.borderColor = '#1e293b';
     card.innerHTML = `
-      <label for="theme-preference">화면 테마</label>
-      <select id="theme-preference" aria-label="화면 테마">
+      <label for="theme-preference" style="color:#e2e8f0">화면 테마</label>
+      <select id="theme-preference" aria-label="화면 테마" style="background:#0f172a;border-color:#334155;color:#e2e8f0">
         <option value="system">시스템 설정</option>
         <option value="light">라이트 모드</option>
         <option value="dark">다크 모드</option>
       </select>
-      <p>시스템 설정은 기기의 라이트/다크 모드 변경을 실시간으로 따릅니다.</p>`;
-    body.prepend(card);
+      <p style="color:#64748b">시스템 설정은 기기의 라이트/다크 모드 변경을 실시간으로 따릅니다.</p>`;
+    const deleteSection = document.getElementById('account-delete-button')?.closest('.rounded-xl');
+    if (deleteSection?.parentElement === body) body.insertBefore(card, deleteSection);
+    else body.append(card);
     const select = card.querySelector('#theme-preference');
     select.value = window.MacroWatchTheme?.getPreference?.() || 'system';
     select.addEventListener('change', async () => {
@@ -41,6 +64,7 @@
 
   async function importExistingProfileModals() {
     if (document.getElementById('profile-modal')) {
+      pinProfileModalColors();
       ensureThemePreferenceControl();
       return;
     }
@@ -51,6 +75,7 @@
     const accountDelete = source.getElementById('account-delete-modal');
     if (!profile || !accountDelete) throw new Error('기존 개인 설정 화면을 찾지 못했습니다.');
     document.body.append(document.importNode(profile, true), document.importNode(accountDelete, true));
+    pinProfileModalColors();
     ensureThemePreferenceControl();
     window.MacroWatchTheme?.loadStoredPreference?.();
   }
