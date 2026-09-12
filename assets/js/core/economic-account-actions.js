@@ -14,8 +14,36 @@
     return data.session?.user || null;
   }
 
+  function ensureThemePreferenceControl() {
+    if (document.getElementById('theme-preference')) return;
+    const body = document.querySelector('#profile-modal .profile-dialog-body');
+    if (!body) return;
+    const card = document.createElement('section');
+    card.className = 'theme-preference-card';
+    card.innerHTML = `
+      <label for="theme-preference">화면 테마</label>
+      <select id="theme-preference" aria-label="화면 테마">
+        <option value="system">시스템 설정</option>
+        <option value="light">라이트 모드</option>
+        <option value="dark">다크 모드</option>
+      </select>
+      <p>시스템 설정은 기기의 라이트/다크 모드 변경을 실시간으로 따릅니다.</p>`;
+    body.prepend(card);
+    const select = card.querySelector('#theme-preference');
+    select.value = window.MacroWatchTheme?.getPreference?.() || 'system';
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try { await window.MacroWatchTheme?.savePreference?.(select.value); }
+      catch (error) { window.alert(error?.message || '테마 설정을 저장하지 못했습니다.'); }
+      finally { select.disabled = false; }
+    });
+  }
+
   async function importExistingProfileModals() {
-    if (document.getElementById('profile-modal')) return;
+    if (document.getElementById('profile-modal')) {
+      ensureThemePreferenceControl();
+      return;
+    }
     const response = await fetch('index.html', { cache: 'no-cache' });
     if (!response.ok) throw new Error(`개인 설정 화면을 불러오지 못했습니다. (${response.status})`);
     const source = new DOMParser().parseFromString(await response.text(), 'text/html');
@@ -23,6 +51,7 @@
     const accountDelete = source.getElementById('account-delete-modal');
     if (!profile || !accountDelete) throw new Error('기존 개인 설정 화면을 찾지 못했습니다.');
     document.body.append(document.importNode(profile, true), document.importNode(accountDelete, true));
+    ensureThemePreferenceControl();
     window.MacroWatchTheme?.loadStoredPreference?.();
   }
 
