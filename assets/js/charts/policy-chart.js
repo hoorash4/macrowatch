@@ -52,7 +52,7 @@
     const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
     const points = datedRows.map((row) => ({
       x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right), value: row.value,
-      period: `${String(row.meeting_date).slice(2, 4)}년 ${String(row.meeting_date).slice(5, 7)}월`,
+      period: `${String(row.meeting_date).slice(0, 4)}년 ${String(row.meeting_date).slice(5, 7)}월`,
       meetingDate: row.meeting_date,
       action: ({ hike: '인상', cut: '인하', hold: '동결' })[row.action] || row.action,
       changeBps: row.change_bps == null ? null : Math.abs(Number(row.change_bps)),
@@ -85,7 +85,7 @@
       const y = scale(value, initialScale.yMin, initialScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
       return `<line data-policy-y-tick="${slot}" x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-chart-y-tick"/><text data-policy-y-multiple="${slot}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-chart-y-label">${chartUtils.formatAxisNumber(value)}</text>`;
     }).join('');
-    const { frame, svg } = chartUtils.mountChartFrame({ container: container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: axisLabels, ariaLabel: `FOMC 정책 스트레스 지수`, plotMarkup: `<svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수"><g>${yearTicks}</g><g>${gridLines}</g><path d="${pathFor(initialScale)}" class="policy-chart-line"/><g data-policy-points>${circlesFor(initialScale)}</g><line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/><text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 11}" class="policy-chart-cursor-action"></text><text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 14}" class="policy-chart-cursor-period"></text></svg>` });
+    const { frame, svg } = chartUtils.mountChartFrame({ container: container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: axisLabels, ariaLabel: `FOMC 정책 스트레스 지수`, plotMarkup: `<svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수"><g>${yearTicks}</g><g>${gridLines}</g><path d="${pathFor(initialScale)}" class="policy-chart-line"/><g data-policy-points>${circlesFor(initialScale)}</g><line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/><text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text></svg>` });
     const line = container.querySelector('.policy-chart-line');
     const pointGroup = container.querySelector('[data-policy-points]');
     const yLabels = [...container.querySelectorAll('[data-policy-y-multiple]')];
@@ -137,13 +137,23 @@
       const nearest = points.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest);
       selectedPoint = nearest;
       cursor.setAttribute('x1', nearest.x); cursor.setAttribute('x2', nearest.x);
-      cursorPeriod.setAttribute('x', nearest.x); cursorPeriod.textContent = nearest.period;
-      cursorAction.setAttribute('x', nearest.x); cursorAction.textContent = `${nearest.action}${Number.isFinite(nearest.changeBps) ? `(${nearest.changeBps}bp)` : ''} · 점수 ${nearest.eventScore > 0 ? '+' : ''}${Math.round(nearest.eventScore)}`;
-      for (const element of [cursor, cursorPeriod, cursorAction]) element.classList.add('is-visible');
+      cursorPeriod.textContent = nearest.period;
+      const policyValue = chartUtils.cursorValueText(
+        { displayValue: nearest.value },
+        [{ key: 'displayValue', label: '정책 스트레스', format: (value) => chartUtils.formatChartNumber(value, { showPlus: true }) }],
+      );
+      cursorAction.textContent = `${policyValue}${nearest.action ? ` · ${nearest.action}${Number.isFinite(nearest.changeBps) ? ` ${chartUtils.formatChartNumber(nearest.changeBps)}bp` : ''}` : ''}`;
+      cursorPeriod.setAttribute('visibility', 'visible');
+      cursorAction.setAttribute('visibility', 'visible');
+      chartUtils.positionCursorText(cursorPeriod, nearest.x, frame);
+      chartUtils.positionCursorText(cursorAction, nearest.x, frame);
+      cursor.classList.add('is-visible');
     });
     frame.addEventListener('pointerleave', () => {
       selectedPoint = null;
-      for (const element of [cursor, cursorPeriod, cursorAction]) element.classList.remove('is-visible');
+      cursor.classList.remove('is-visible');
+      cursorPeriod.setAttribute('visibility', 'hidden');
+      cursorAction.setAttribute('visibility', 'hidden');
     });
     svg.addEventListener('click', () => {
       if (!selectedPoint || !adminLink || adminLink.hidden) return;
