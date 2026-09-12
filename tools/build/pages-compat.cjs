@@ -31,6 +31,12 @@ function removeSection(html, startMarker, nextMarker) {
   return html.slice(0, start) + html.slice(next);
 }
 
+function replaceBuiltFile(file, content) {
+  const temp = `${file}.macrowatch-tmp`;
+  fs.writeFileSync(temp, content);
+  fs.renameSync(temp, file);
+}
+
 const indexPath = path.join(site, 'index.html');
 let indexHtml = fs.readFileSync(indexPath, 'utf8');
 indexHtml = removeSection(indexHtml, '<!-- ===== 공용 안내창: 서비스 준비 중 / 등록 완료 ===== -->', '<!-- ===== 지표 후보 선택창 ===== -->');
@@ -39,12 +45,12 @@ indexHtml = removeSection(indexHtml, '<!-- ===== 회원 탈퇴 최종 확인창 
 const authScriptPattern = /(<script src="assets\/js\/core\/auth\.js\?v=\d+"><\/script>)/;
 if (!authScriptPattern.test(indexHtml)) throw new Error('Main auth script tag not found in Pages output.');
 indexHtml = indexHtml.replace(authScriptPattern, '<script src="assets/js/core/account-modal.js?v=2"></script>\n  $1');
-fs.writeFileSync(indexPath, indexHtml);
+replaceBuiltFile(indexPath, indexHtml);
 
 const economicPath = path.join(site, 'economic-charts.html');
 if (fs.existsSync(economicPath)) {
   const economicHtml = fs.readFileSync(economicPath, 'utf8').replace('assets/js/core/account-modal.js?v=1', 'assets/js/core/account-modal.js?v=2');
-  fs.writeFileSync(economicPath, economicHtml);
+  replaceBuiltFile(economicPath, economicHtml);
 }
 
 for (const name of ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
