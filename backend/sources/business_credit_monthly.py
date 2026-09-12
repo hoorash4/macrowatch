@@ -95,59 +95,17 @@ def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     return None
 
 
-def _signed_bps(symbol: str, number: str) -> float | None:
-    if symbol in ("▲", "+"):
-        return float(number)
-    if symbol in ("▼", "-"):
-        return -float(number)
-    return None
-
-
-def _extract_equifax_changes(text: str) -> dict[str, tuple[float, float, float]]:
-    """Return level, M/M bps and Y/Y bps when all three are explicit in a report block."""
-    clean = _clean_equifax(text)
-    labels = {
-        "US_SBDI_31_90": r"SBDI\s*31\s*-\s*90\s*Days",
-        "US_SBDI_91_180": r"SBDI\s*91\s*-\s*180\s*Days",
-        "US_SBDFI": r"SBDFI\b",
-    }
-    out: dict[str, tuple[float, float, float]] = {}
-    for code, label in labels.items():
-        match = re.search(
-            rf"{label}.{{0,120}}?([▲▼+-])\s*([0-9]+(?:\.[0-9]+)?)\s*bps?\s*\(M/M\)"
-            rf".{{0,120}}?([▲▼+-])\s*([0-9]+(?:\.[0-9]+)?)\s*bps?\s*\(Y/Y\)"
-            rf".{{0,120}}?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\)",
-            clean, re.I,
-        )
-        if not match:
-            continue
-        mom = _signed_bps(match.group(1), match.group(2))
-        yoy = _signed_bps(match.group(3), match.group(4))
-        if mom is None or yoy is None:
-            continue
-        out[code] = (float(match.group(5)), mom, yoy)
-    return out
-
-
-def _put_equifax(target: dict[tuple[int, int], tuple[int, dict]], row: dict, priority: int) -> None:
-    year, month = map(int, row["observation_date"][:7].split("-"))
-    current = target.get((year, month))
-    if current is None or priority > current[0]:
-        target[(year, month)] = (priority, row)
-
-
 def fetch_equifax_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Fetch exact Equifax levels and exact values implied by published M/M and Y/Y basis-point changes."""
-    start_month = date(start.year, start.month, 1)
-    stores: dict[str, dict[tuple[int, int], tuple[int, dict]]] = {
-        "US_SBDI_31_90": {}, "US_SBDI_91_180": {}, "US_SBDFI": {}
-    }
+    """Fetch only exact monthly levels stated in public Equifax reports.
+
+    Missing report months remain missing; no M/M or Y/Y-derived values are created.
+    """
+    result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
     report_y, report_m = _shift_month(start.year, start.month, 2)
     end_y, end_m = _shift_month(end.year, end.month, 2)
     while (report_y, report_m) <= (end_y, end_m):
-        text = None
-        used_url = None
         levels = None
+        used_url = None
         for url in _equifax_urls(report_y, report_m):
             try:
                 response = requests.get(url, timeout=15, headers={"User-Agent": USER_AGENT})
@@ -161,26 +119,16 @@ def fetch_equifax_rows(start: date, end: date) -> dict[str, list[dict]]:
                     break
             except Exception:
                 continue
-        if levels and used_url and text:
+        if levels and used_url:
             obs_y, obs_m = _shift_month(report_y, report_m, -2)
             observed = date(obs_y, obs_m, 1)
-            if start_month <= observed <= end:
-                for code, value, token in zip(
-                    ("US_SBDI_31_90", "US_SBDI_91_180", "US_SBDFI"), levels, ("SBDI31-90", "SBDI91-180", "SBDFI")
-                ):
-                    _put_equifax(stores[code], _row(code, obs_y, obs_m, value, f"Equifax:{token}:{used_url}"), 3)
-            for code, (level, mom_bps, yoy_bps) in _extract_equifax_changes(text).items():
-                py, pm = _shift_month(obs_y, obs_m, -1)
-                yy, ym = _shift_month(obs_y, obs_m, -12)
-                for y, m, value, kind in (
-                    (py, pm, round(level - mom_bps / 100.0, 4), "MOM"),
-                    (yy, ym, round(level - yoy_bps / 100.0, 4), "YOY"),
-                ):
-                    observed2 = date(y, m, 1)
-                    if start_month <= observed2 <= end:
-                        _put_equifax(stores[code], _row(code, y, m, value, f"Equifax:{code}:derived-{kind}:{used_url}"), 1)
+            if date(start.year, start.month, 1) <= observed <= end:
+                a, b, c = levels
+                result["US_SBDI_31_90"].append(_row("US_SBDI_31_90", obs_y, obs_m, a, f"Equifax:SBDI31-90:{used_url}"))
+                result["US_SBDI_91_180"].append(_row("US_SBDI_91_180", obs_y, obs_m, b, f"Equifax:SBDI91-180:{used_url}"))
+                result["US_SBDFI"].append(_row("US_SBDFI", obs_y, obs_m, c, f"Equifax:SBDFI:{used_url}"))
         report_y, report_m = _shift_month(report_y, report_m, 1)
-    return {code: [item[1] for _, item in sorted(store.items())] for code, store in stores.items()}
+    return result
 
 
 def _plain_html(html: str) -> str:
