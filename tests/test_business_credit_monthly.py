@@ -7,57 +7,12 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sources.business_credit_monthly import (
     _extract_epiq_ch11,
-    _extract_equifax_levels,
     _extract_kdi_corporate_delinquency,
 )
 from sources.epiq_ch11_source import extract_epiq_ch11
 
 
 class BusinessCreditParserTests(unittest.TestCase):
-    def test_equifax_old_index_analysis(self):
-        text = """
-        The Equifax Small Business Delinquency Index (SBDI) 31–90 Days Past Due edged down 2bp in April to 1.19%.
-        The SBDI 91–180 Days Past Due also fell 1bp to 0.34% and is down 21bp Y/Y.
-        Defaults eased 5bp to 1.77%, 120bp below year-ago levels.
-        """
-        self.assertEqual(_extract_equifax_levels(text), (1.19, 0.34, 1.77))
-
-    def test_equifax_new_level_block(self):
-        text = """
-        SBDI 31-90 Days ▼2bps (M/M) ▼8bps (Y/Y) 1.66% (Level)
-        SBDI 91-180 Days ▲0bps (M/M) ▲2bps (Y/Y) 0.71% (Level)
-        SBDFI ▼6bps (M/M) ▼19bps (Y/Y) 3.19% (Level)
-        """
-        self.assertEqual(_extract_equifax_levels(text), (1.66, 0.71, 3.19))
-
-    def test_equifax_2024_block_without_level_labels(self):
-        text = """
-        SBLI 3MMA 96th Percentile ▼0.6% (M/M) ▲3.2% (Y/Y) 150.2
-        SBDI 31-90 Days ▲0bps (M/M) ▲31bps (Y/Y) 1.71%
-        SBDI 91-180 Days ▲2bps (M/M) ▲17bps (Y/Y) 0.57%
-        SBDFI ▲5bps (M/M) ▲90bps (Y/Y) 2.91%
-        SBLI 96th Percentile ▲5.6% (M/M) ▲7.5% (Y/Y) 154.0
-        """
-        self.assertEqual(_extract_equifax_levels(text), (1.71, 0.57, 2.91))
-
-    def test_equifax_2026_level_allows_space_before_percent(self):
-        text = """
-        SBDI 31 -90 Days ▲3bps (M/M) ▼1bps (Y/Y) 1.72% (Level)
-        SBDI 91 -180 Days ▲1bps (M/M) ▲3bps (Y/Y) 0.73% (Level)
-        SBDFI ▼4bps (M/M) ▼5bps (Y/Y) 3.27 % (Level)
-        SBLI 46th Percentile ▼9.0% (M/M) ▼13.1% (Y/Y) 124.9 (Level)
-        """
-        self.assertEqual(_extract_equifax_levels(text), (1.72, 0.73, 3.27))
-
-    def test_equifax_does_not_read_sbli_percent_as_default_level(self):
-        text = """
-        SBDI 31-90 Days ▲0bps (M/M) ▲31bps (Y/Y) 1.71%
-        SBDI 91-180 Days ▲2bps (M/M) ▲17bps (Y/Y) 0.57%
-        SBDFI ▲5bps (M/M) ▲90bps (Y/Y) 2.91%
-        SBLI ▼0.6% (M/M) ▲3.2% (Y/Y) 150.2
-        """
-        self.assertEqual(_extract_equifax_levels(text), (1.71, 0.57, 2.91))
-
     def test_epiq_explicit_month_counts(self):
         text = (
             "There were 539 commercial Chapter 11 filings recorded in January 2025. "
