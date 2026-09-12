@@ -1,10 +1,6 @@
 name: Backfill monthly business-credit charts once
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/business-credit-backfill-once.yml"
   workflow_dispatch:
 
 permissions:
