@@ -44,6 +44,8 @@ VERIFIED_RECENT = {
     date(2024, 1, 1): (1.74, 0.62, 3.11, "Equifax-Mar-2024"),
     date(2023, 12, 1): (1.72, 0.59, 2.99, "Equifax-Feb-2024"),
     date(2023, 11, 1): (1.71, 0.57, 2.91, "Equifax-Jan-2024"),
+    date(2021, 10, 1): (1.31, 0.43, 2.10, "Equifax-Jan-2022-derived-from-Nov-MoM"),
+    date(2021, 9, 1): (1.26, 0.43, 2.21, "Equifax-Nov-2021"),
 }
 
 
