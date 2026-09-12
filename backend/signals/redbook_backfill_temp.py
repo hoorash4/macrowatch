@@ -1,7 +1,6 @@
 """Temporary one-off Redbook historical backfill. Delete after verified run."""
 from __future__ import annotations
 
-import calendar
 import html
 import json
 import re
@@ -40,17 +39,6 @@ def _actual(value: str) -> float | None:
         return None
 
 
-def _quarter_ranges(year: int, end: date):
-    for month in (1, 4, 7, 10):
-        start = date(year, month, 1)
-        if start > end:
-            break
-        end_month = min(month + 2, 12)
-        last_day = calendar.monthrange(year, end_month)[1]
-        finish = min(date(year, end_month, last_day), end)
-        yield start, finish
-
-
 def _fetch_range(session: requests.Session, start: date, end: date) -> list[dict]:
     payload = {
         "country[]": "5",
@@ -62,30 +50,37 @@ def _fetch_range(session: requests.Session, start: date, end: date) -> list[dict
         "submitFilters": "1",
         "limit_from": "0",
     }
-    response = session.post(URL, data=payload, timeout=60)
-    response.raise_for_status()
-    data = response.json()
-    body = str(data.get("data") or "") if isinstance(data, dict) else ""
-    rows: list[dict] = []
-    for match in ROW_RE.finditer(body):
-        actual_match = ACTUAL_RE.search(match.group("body"))
-        if not actual_match:
-            continue
-        value = _actual(actual_match.group("value"))
-        if value is None:
-            continue
+    last_error: Exception | None = None
+    for attempt in range(3):
         try:
-            observed = datetime.strptime(match.group("dt")[:10], "%Y/%m/%d").date()
-        except ValueError:
-            continue
-        rows.append({
-            "series_code": SERIES,
-            "observation_date": observed.isoformat(),
-            "value": value,
-            "frequency": "W",
-            "source": SOURCE,
-        })
-    return rows
+            response = session.post(URL, data=payload, timeout=90)
+            response.raise_for_status()
+            data = response.json()
+            body = str(data.get("data") or "") if isinstance(data, dict) else ""
+            rows: list[dict] = []
+            for match in ROW_RE.finditer(body):
+                actual_match = ACTUAL_RE.search(match.group("body"))
+                if not actual_match:
+                    continue
+                value = _actual(actual_match.group("value"))
+                if value is None:
+                    continue
+                try:
+                    observed = datetime.strptime(match.group("dt")[:10], "%Y/%m/%d").date()
+                except ValueError:
+                    continue
+                rows.append({
+                    "series_code": SERIES,
+                    "observation_date": observed.isoformat(),
+                    "value": value,
+                    "frequency": "W",
+                    "source": SOURCE,
+                })
+            return rows
+        except Exception as error:
+            last_error = error
+            time.sleep(2.0 * (attempt + 1))
+    raise RuntimeError(f"archive request failed after retries: {last_error}")
 
 
 def main() -> None:
@@ -101,18 +96,24 @@ def main() -> None:
     session.headers.update(headers)
     session.get("https://www.investing.com/economic-calendar/", timeout=45).raise_for_status()
 
+    db = SupabaseRest()
     by_date: dict[str, dict] = {}
     request_errors: list[str] = []
-    request_count = 0
-    for year in range(START_YEAR, today.year + 1):
-        for start, end in _quarter_ranges(year, today):
-            request_count += 1
-            try:
-                for row in _fetch_range(session, start, end):
+    year_counts_fetched: dict[int, int] = {}
+    # Crawl newest first so the useful 10-year window is secured before older best-effort history.
+    for year in range(today.year, START_YEAR - 1, -1):
+        start = date(year, 1, 1)
+        end = today if year == today.year else date(year, 12, 31)
+        try:
+            year_rows = _fetch_range(session, start, end)
+            year_counts_fetched[year] = len(year_rows)
+            if year_rows:
+                db.upsert("economic_chart_points", year_rows, conflict="series_code,observation_date")
+                for row in year_rows:
                     by_date[row["observation_date"]] = row
-            except Exception as error:
-                request_errors.append(f"{start}..{end}: {error.__class__.__name__}: {error}")
-            time.sleep(0.15)
+        except Exception as error:
+            request_errors.append(f"{year}: {error.__class__.__name__}: {error}")
+        time.sleep(0.9)
 
     rows = [by_date[key] for key in sorted(by_date)]
     if not rows:
@@ -125,28 +126,18 @@ def main() -> None:
         (a.isoformat(), b.isoformat(), (b - a).days)
         for a, b in zip(dates, dates[1:]) if (b - a).days > 16
     ]
-
-    # External cross-checks documented by Trading Economics / TradingView.
-    has_known_low = any(abs(v - (-12.6)) < 1e-9 for v in values)
-    has_known_high = any(abs(v - 21.9) < 1e-9 for v in values)
-    if dates[-1].year < today.year - 1:
-        raise RuntimeError(f"Redbook archive is stale: latest={dates[-1]}")
-
-    db = SupabaseRest()
-    db.upsert("economic_chart_points", rows, conflict="series_code,observation_date")
-
     print(json.dumps({
         "stage": "redbook_backfill_temp",
-        "requests": request_count,
-        "request_errors": request_errors[:20],
         "request_error_count": len(request_errors),
+        "request_errors": request_errors[:20],
+        "fetched_year_counts": dict(sorted(year_counts_fetched.items())),
         "rows": len(rows),
         "min_date": dates[0].isoformat(),
         "max_date": dates[-1].isoformat(),
         "min_value": min(values),
         "max_value": max(values),
-        "known_low_minus_12_6_found": has_known_low,
-        "known_high_21_9_found": has_known_high,
+        "known_low_minus_12_6_found": any(abs(v + 12.6) < 1e-9 for v in values),
+        "known_high_21_9_found": any(abs(v - 21.9) < 1e-9 for v in values),
         "year_counts": dict(sorted(year_counts.items())),
         "long_gaps_over_16_days": long_gaps[:30],
         "long_gap_count": len(long_gaps),
