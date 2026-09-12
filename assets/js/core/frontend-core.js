@@ -486,6 +486,10 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     })[character]);
   }
 
+  function isLoginScreen() {
+    return Boolean(document?.getElementById?.('auth-screen'));
+  }
+
   // 브라우저에 표시하는 측정값은 이 함수만 거칩니다. 원자료와 계산값은
   // 그대로 유지하고, 화면에서만 최대 소수 둘째 자리로 반올림합니다.
   function formatDisplayNumber(value, {
@@ -623,17 +627,17 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   });
 
   installThemeStyles();
-  applyThemePreference(cachedThemePreference(), { cache: false, announce: false });
+  applyThemePreference(isLoginScreen() ? 'light' : cachedThemePreference(), { cache: false, announce: false });
   installLightweightChartsAdapter();
   bindThemePersistence();
 
   if (darkMedia?.addEventListener) {
     darkMedia.addEventListener('change', () => {
-      if (themePreference === 'system') applyThemePreference('system', { cache: false });
+      if (!isLoginScreen() && themePreference === 'system') applyThemePreference('system', { cache: false });
     });
   } else if (darkMedia?.addListener) {
     darkMedia.addListener(() => {
-      if (themePreference === 'system') applyThemePreference('system', { cache: false });
+      if (!isLoginScreen() && themePreference === 'system') applyThemePreference('system', { cache: false });
     });
   }
 

@@ -49,6 +49,7 @@
   }
 
   async function showDashboard() {
+    await window.MacroWatchTheme?.loadStoredPreference?.();
     elements.authScreen.classList.add('hidden');
     elements.appShell.classList.remove('hidden');
     await updateAdminLink();
@@ -57,6 +58,7 @@
 
   function showLogin(message = '') {
     if (!elements.appShell || !elements.authScreen) return;
+    window.MacroWatchTheme?.applyPreference?.('light', { cache: false, announce: false });
     elements.appShell.classList.add('hidden');
     elements.authScreen.classList.remove('hidden');
     setBusy(false);
