@@ -1,34 +1,43 @@
 """Temporary one-off Redbook historical backfill. Delete after verified run."""
 from __future__ import annotations
 
-import html
 import json
-import re
-from datetime import datetime
+from urllib.parse import quote
 
 import requests
 
-URL = "https://fxverify.com/tools/economic-calendar/redbook-%28anual%29-6489d5b59a2596ec5c56dcb4"
+
+def probe(url: str) -> dict:
+    try:
+        response = requests.get(url, headers={"User-Agent": "MacroWatch/1.0"}, timeout=45)
+        item = {
+            "url": url,
+            "status": response.status_code,
+            "content_type": response.headers.get("content-type"),
+            "length": len(response.content),
+            "text_head": response.text[:500],
+        }
+        try:
+            payload = response.json()
+            item["json_type"] = type(payload).__name__
+            item["json_len"] = len(payload) if isinstance(payload, (list, dict)) else None
+            item["json_head"] = payload[:2] if isinstance(payload, list) else payload
+        except Exception:
+            pass
+        return item
+    except Exception as error:
+        return {"url": url, "error": f"{error.__class__.__name__}: {error}"}
 
 
 def main() -> None:
-    response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"}, timeout=45)
-    response.raise_for_status()
-    text = html.unescape(response.text)
-    probes = ["Jan 05, 2016", "Jan 04, 2017", "Jan 02, 2019", "Dec 29, 2015"]
-    out = {"status": response.status_code, "length": len(text), "probes": {p: text.find(p) for p in probes}}
-    snippets = {}
-    for p in probes:
-        idx = text.find(p)
-        if idx >= 0:
-            snippets[p] = re.sub(r"\s+", " ", text[max(0, idx-250):idx+500])
-    out["snippets"] = snippets
-    # Broad diagnostic: date strings near percent values.
-    patt = re.compile(r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+20\d{2}", re.I)
-    out["date_count"] = len(patt.findall(text))
-    out["first_dates"] = patt.findall(text)[:5]
-    out["last_dates"] = patt.findall(text)[-5:]
-    print(json.dumps(out, ensure_ascii=False))
+    country = quote("united states")
+    indicator = quote("redbook index")
+    urls = [
+        f"https://api.tradingeconomics.com/historical/country/{country}/indicator/{indicator}/2015-01-01/2026-09-12",
+        f"https://api.tradingeconomics.com/historical/country/{country}/indicator/{indicator}",
+        f"https://api.tradingeconomics.com/calendar/country/{country}/2015-01-01/2026-09-12",
+    ]
+    print(json.dumps([probe(url) for url in urls], ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":
