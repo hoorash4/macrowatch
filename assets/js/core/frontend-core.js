@@ -24,7 +24,7 @@
 
   function cachedThemePreference() {
     try {
-      return normalizeThemePreference(window.localStorage.getItem(THEME_CACHE_KEY));
+      return normalizeThemePreference(window.localStorage?.getItem(THEME_CACHE_KEY));
     } catch {
       return 'system';
     }
@@ -32,7 +32,7 @@
 
   function cacheThemePreference(preference) {
     try {
-      window.localStorage.setItem(THEME_CACHE_KEY, normalizeThemePreference(preference));
+      window.localStorage?.setItem(THEME_CACHE_KEY, normalizeThemePreference(preference));
     } catch {
       // 브라우저 저장소를 사용할 수 없어도 현재 탭의 테마는 정상 동작합니다.
     }
@@ -118,6 +118,19 @@ html[data-theme="dark"] body { background: var(--theme-page-bg) !important; colo
 html[data-theme="dark"] .dashboard-workspace,
 html[data-theme="dark"] .dashboard-main,
 html[data-theme="dark"] .dashboard-panels { color: var(--theme-text); }
+html[data-theme="dark"] .dashboard-nav::before { background: rgba(9,15,26,.78); box-shadow: 0 1px 0 rgba(148,163,184,.16); }
+html[data-theme="dark"] .dashboard-wordmark-copy small,
+html[data-theme="dark"] .dashboard-nav-item,
+html[data-theme="dark"] .dashboard-nav-item:hover,
+html[data-theme="dark"] .dashboard-nav-item.is-active,
+html[data-theme="dark"] .dashboard-nav-actions button,
+html[data-theme="dark"] .dashboard-nav-actions a:not([hidden]) { color: var(--theme-text-secondary); }
+html[data-theme="dark"] .dashboard-nav-actions button:hover,
+html[data-theme="dark"] .dashboard-nav-actions a:hover { background: #dbe5f0; color: #111827; }
+html[data-theme="dark"] .stress-market-switcher button { background: var(--theme-surface-elevated); border-color: var(--theme-border); color: var(--theme-text-secondary); }
+html[data-theme="dark"] .stress-market-switcher button.is-active { background: #4a3820; border-color: var(--color-brand-gold); color: #f2d49c; }
+html[data-theme="dark"] .inflation-real-rate-panel { border-top-color: var(--theme-divider); }
+html[data-theme="dark"] .inflation-real-rate-panel > p { color: var(--theme-text-secondary); }
 html[data-theme="dark"] .analysis-chart-shell,
 html[data-theme="dark"] .analysis-chart-frame,
 html[data-theme="dark"] .analysis-chart-region,
@@ -195,7 +208,8 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function installThemeStyles() {
-    if (document.getElementById('macrowatch-theme-styles')) return;
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function' || !document.head) return;
+    if (document.getElementById?.('macrowatch-theme-styles')) return;
     const style = document.createElement('style');
     style.id = 'macrowatch-theme-styles';
     style.textContent = themeCss();
@@ -203,8 +217,10 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function lightweightThemeOptions() {
-    const dark = document.documentElement.dataset.theme === 'dark';
-    const root = getComputedStyle(document.documentElement);
+    const dark = document?.documentElement?.dataset?.theme === 'dark';
+    const root = typeof getComputedStyle === 'function' && document?.documentElement
+      ? getComputedStyle(document.documentElement)
+      : { getPropertyValue: () => '' };
     const variable = (name, fallback) => root.getPropertyValue(name).trim() || fallback;
     return {
       layout: {
@@ -225,6 +241,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function refreshLightweightCharts() {
+    if (typeof document === 'undefined') return;
     const options = lightweightThemeOptions();
     lightweightCharts.forEach((chart) => {
       try { chart.applyOptions(options); } catch { /* chart may already be removed */ }
@@ -266,13 +283,15 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   function applyThemePreference(preference, { cache = true, announce = true } = {}) {
     themePreference = normalizeThemePreference(preference);
     const effective = resolveTheme(themePreference);
-    document.documentElement.dataset.themePreference = themePreference;
-    document.documentElement.dataset.theme = effective;
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.dataset.themePreference = themePreference;
+      document.documentElement.dataset.theme = effective;
+      const select = document.getElementById?.('theme-preference');
+      if (select && select.value !== themePreference) select.value = themePreference;
+    }
     if (cache) cacheThemePreference(themePreference);
-    const select = document.getElementById('theme-preference');
-    if (select && select.value !== themePreference) select.value = themePreference;
     refreshLightweightCharts();
-    if (announce) {
+    if (announce && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
       window.dispatchEvent(new CustomEvent('macrowatch:themechange', { detail: { preference: themePreference, theme: effective } }));
     }
     return effective;
@@ -319,8 +338,9 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function installThemePreferenceControl() {
-    if (document.getElementById('theme-preference')) return;
-    const body = document.querySelector('#profile-modal .profile-dialog-body');
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function') return;
+    if (document.getElementById?.('theme-preference')) return;
+    const body = document.querySelector?.('#profile-modal .profile-dialog-body');
     if (!body) return;
     const card = document.createElement('section');
     card.className = 'theme-preference-card';
@@ -340,7 +360,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
       try {
         await saveThemePreference(select.value);
       } catch (error) {
-        window.alert(error?.message || '테마 설정을 저장하지 못했습니다.');
+        window.alert?.(error?.message || '테마 설정을 저장하지 못했습니다.');
       } finally {
         select.disabled = false;
       }
@@ -348,6 +368,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function bindThemePersistence() {
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
     const start = async () => {
       installThemePreferenceControl();
       await loadStoredThemePreference();
@@ -422,7 +443,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   }
 
   function installConfiguredWorkspaceLinks() {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return;
     const links = Array.isArray(window.MACROWATCH_CONFIG?.workspaceLinks)
       ? window.MACROWATCH_CONFIG.workspaceLinks
       : [];
@@ -456,7 +477,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     });
   }
 
-  if (typeof document !== 'undefined') {
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
     document.addEventListener('DOMContentLoaded', installConfiguredWorkspaceLinks);
   }
 
