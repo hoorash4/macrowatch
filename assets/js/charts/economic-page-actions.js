@@ -73,3 +73,5 @@
   }
   updateAdminAccess().catch(error => console.warn('economic chart admin access check failed', error));
 })();
+
+// Deployment marker: ensure the current economic account actions reach GitHub Pages.
