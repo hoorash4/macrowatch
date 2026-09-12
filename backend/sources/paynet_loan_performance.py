@@ -1,7 +1,8 @@
-"""Public Equifax/PayNet source for direct 31-180 delinquency and SBDFI levels.
+"""Public Equifax source for unified small-business delinquency and SBDFI.
 
-Only values explicitly labelled as 31-180 delinquency are accepted. The 31-90 and
-91-180 buckets are never added, combined, or used as a substitute.
+The stored delinquency series is calculated from the two published, non-overlapping
+Equifax buckets for the same observation month: 31-90 Days Past Due + 91-180 Days
+Past Due. Only the summed result is emitted; the two component series are never stored.
 """
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ def _row(code: str, year: int, month: int, value: float, source: str) -> dict:
     return {
         "series_code": code,
         "observation_date": f"{year:04d}-{month:02d}-01",
-        "value": float(value),
+        "value": round(float(value), 6),
         "frequency": "M",
         "source": source,
     }
@@ -48,8 +49,10 @@ def _report_urls(year: int, month: int) -> list[str]:
         f"equifax-main-street-lending-report-{low}-{year}.pdf",
         f"Equifax.MainStreetLendingReport.{full}{year}.pdf",
         f"Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
+        f"Equifax.MonthlyStrategicInsights.{full}{year}.V101.pdf",
         f"EquifaxMonthlyStrategicInsights.{full}{year}.pdf",
-        f"equifax-strategic-insights-{low}-{year}.pdf",
+        f"commercial-lending-trends-{low}-{year}.pdf",
+        f"equifax-commercial-lending-trends-{low}-{year}.pdf",
         f"equifax-small-business-indices-{low}-{year}.pdf",
         f"equifax-small-business-insights-{low}-{year}.pdf",
     ]
@@ -60,59 +63,98 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
 
 
-def _direct_31_180_level(text: str) -> float | None:
-    """Read only an explicitly reported 31-180 delinquency level."""
-    clean = _clean(text)
-    patterns = (
-        r"(?:SBDI|Small Business Delinquency Index)[^.%]{0,100}?31\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?[^.%]{0,120}?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)",
-        r"(?:SBDI|Small Business Delinquency Index)[^.!?]{0,140}?31\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?[^.!?]{0,140}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        r"31\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?[^.!?]{0,120}?(?:SBDI[^.!?]{0,80}?)?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)",
+def _metric_token(label: str) -> str:
+    normalized = re.sub(r"\s+", " ", label.upper())
+    if normalized.startswith("SBDFI"):
+        return "default"
+    if re.search(r"SBDI\s*31\s*-\s*90", normalized):
+        return "short"
+    if re.search(r"SBDI\s*91\s*-\s*180", normalized):
+        return "severe"
+    raise ValueError(label)
+
+
+def _modern_table_levels(clean: str) -> tuple[float, float, float] | None:
+    header = re.compile(
+        r"(?P<label>SBDFI\b|SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?|SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?)",
+        re.I,
     )
-    values: list[float] = []
-    for pattern in patterns:
-        for match in re.finditer(pattern, clean, re.I):
-            value = float(match.group(1))
-            if 0 <= value < 20:
-                values.append(value)
-    unique = sorted(set(values))
-    if len(unique) > 1:
-        raise RuntimeError(f"conflicting direct SBDI 31-180 levels in one report: {unique}")
-    return unique[0] if unique else None
+    matches = list(header.finditer(clean))
+    for i in range(len(matches) - 2):
+        trio = matches[i:i + 3]
+        tokens = [_metric_token(m.group("label")) for m in trio]
+        if set(tokens) != {"short", "severe", "default"}:
+            continue
+        if trio[-1].end() - trio[0].start() > 320:
+            continue
+        tail = clean[trio[-1].end():trio[-1].end() + 900]
+        levels = [float(v) for v in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)", tail, re.I)[:3]]
+        if len(levels) != 3 or any(not (0 <= v < 10) for v in levels):
+            continue
+        mapped = dict(zip(tokens, levels))
+        return mapped["short"], mapped["severe"], mapped["default"]
+    return None
 
 
-def _sbdfi_level(text: str) -> float | None:
+def _local_level(clean: str, label_pattern: str) -> float | None:
+    for label in re.finditer(label_pattern, clean, re.I):
+        next_metric = re.search(
+            r"SBDFI\b|SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?|SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?|SBLI\b",
+            clean[label.end():], re.I,
+        )
+        end = label.end() + (next_metric.start() if next_metric else 240)
+        body = clean[label.end():min(len(clean), end)]
+        level = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)", body, re.I)
+        if level:
+            value = float(level.group(1))
+            if 0 <= value < 10:
+                return value
+        percentages = [float(v) for v in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%", body)]
+        if len(percentages) == 1 and 0 <= percentages[0] < 10:
+            return percentages[0]
+    return None
+
+
+def extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
+    """Return exact published (31-90, 91-180, SBDFI) levels from one report."""
     clean = _clean(text)
-    patterns = (
-        r"SBDFI\b[^.%]{0,120}?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)",
-        r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.!?]{0,160}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+    modern = _modern_table_levels(clean)
+    if modern is not None:
+        return modern
+
+    short = _local_level(clean, r"SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?")
+    severe = _local_level(clean, r"SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?")
+    default = _local_level(clean, r"SBDFI\b")
+    if short is not None and severe is not None and default is not None:
+        return short, severe, default
+
+    short_m = re.search(
+        r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean, re.I,
     )
-    values: list[float] = []
-    for pattern in patterns:
-        for match in re.finditer(pattern, clean, re.I):
-            value = float(match.group(1))
-            if 0 <= value < 20:
-                values.append(value)
-    unique = sorted(set(values))
-    if len(unique) > 1:
-        raise RuntimeError(f"conflicting SBDFI levels in one report: {unique}")
-    return unique[0] if unique else None
+    severe_m = re.search(
+        r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean, re.I,
+    )
+    default_m = re.search(
+        r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.]{0,180}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean, re.I,
+    )
+    if short_m and severe_m and default_m:
+        return float(short_m.group(1)), float(severe_m.group(1)), float(default_m.group(1))
+    return None
 
 
-def extract_direct_levels(text: str) -> tuple[float | None, float | None]:
-    """Return (direct 31-180 SBDI, SBDFI); never derive either value."""
-    return _direct_31_180_level(text), _sbdfi_level(text)
-
-
-def _fetch_report(report_year: int, report_month: int) -> tuple[float | None, float | None, str] | None:
+def _fetch_report(report_year: int, report_month: int) -> tuple[float, float, float, str] | None:
     for url in _report_urls(report_year, report_month):
         try:
             response = requests.get(url, timeout=12, headers={"User-Agent": USER_AGENT})
             if response.status_code != 200 or "pdf" not in response.headers.get("content-type", "").lower():
                 continue
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
-            delinquency, default = extract_direct_levels(text)
-            if delinquency is not None or default is not None:
-                return delinquency, default, url
+            levels = extract_equifax_levels(text)
+            if levels is not None:
+                return levels[0], levels[1], levels[2], url
         except RuntimeError:
             raise
         except Exception:
@@ -121,29 +163,26 @@ def _fetch_report(report_year: int, report_month: int) -> tuple[float | None, fl
 
 
 def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
-    """Fetch one observation month from its public report; no split-bucket fallback."""
+    """Fetch one month, sum the two published delinquency buckets, and emit only final rows."""
     month = date(observed.year, observed.month, 1)
     report_y, report_m = _shift_month(month.year, month.month, 2)
     found = _fetch_report(report_y, report_m)
     result: dict[str, dict | None] = {SERIES_DELINQUENCY: None, SERIES_DEFAULT: None}
     if found is None:
         return result
-    delinquency, default, url = found
-    if delinquency is not None:
-        result[SERIES_DELINQUENCY] = _row(
-            SERIES_DELINQUENCY, month.year, month.month, delinquency,
-            f"Equifax-public:SBDI31-180:{url}",
-        )
-    if default is not None:
-        result[SERIES_DEFAULT] = _row(
-            SERIES_DEFAULT, month.year, month.month, default,
-            f"Equifax-public:SBDFI:{url}",
-        )
+    short, severe, default, url = found
+    result[SERIES_DELINQUENCY] = _row(
+        SERIES_DELINQUENCY, month.year, month.month, short + severe,
+        f"Equifax-public:SBDI31-90+91-180:{url}",
+    )
+    result[SERIES_DEFAULT] = _row(
+        SERIES_DEFAULT, month.year, month.month, default,
+        f"Equifax-public:SBDFI:{url}",
+    )
     return result
 
 
 def fetch_paynet_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Fetch direct public monthly levels, newest observation first."""
     first = date(start.year, start.month, 1)
     current = date(end.year, end.month, 1)
     result = {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
