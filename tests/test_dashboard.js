@@ -585,6 +585,21 @@ test('알림 조건의 사용자 표시 문구를 보존한다', () => {
   assert.equal(getConditionText('custom'), 'custom');
 });
 
+test('경제지표 차트는 계정 액션과 관리자 권한 노출을 제공한다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'economic-charts.html'), 'utf8');
+  const actions = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/economic-page-actions.js'), 'utf8');
+  const auth = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');
+  assert.match(html, /id="economic-profile-button"/);
+  assert.match(html, /id="economic-admin-link"[^>]*hidden/);
+  assert.match(html, /id="economic-logout-button"/);
+  assert.match(actions, /select\('is_admin'\)/);
+  assert.match(actions, /data\?\.is_admin === true/);
+  assert.match(actions, /auth\.signOut\(\)/);
+  assert.match(actions, /macrowatch\.open-profile/);
+  assert.match(auth, /macrowatch\.open-profile/);
+  assert.match(auth, /getElementById\('profile-button'\)\?\.click\(\)/);
+});
+
 test('HTML inline 이벤트가 사용하는 핸들러만 명시적으로 공개한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const handlerNames = [...html.matchAll(/on(?:click|change|submit|input|keydown)="([A-Za-z_$][\w$]*)/g)]
