@@ -1,4 +1,4 @@
-"""Authoritative reverse-month backfill for PayNet 31-180 delinquency and SBDFI."""
+"""Authoritative reverse-month backfill for direct PayNet 31-180 delinquency and SBDFI."""
 from __future__ import annotations
 
 from datetime import date
@@ -13,7 +13,7 @@ from sources.paynet_loan_performance import (
 from signals.business_credit_backfill import _validate_rows
 
 TABLE = "economic_chart_points"
-EXPECTED_MIN_LATEST = date(2026, 7, 1)
+EXPECTED_LATEST = date(2026, 7, 1)
 
 
 def _shift_month(d: date, months: int) -> date:
@@ -33,7 +33,7 @@ def _required_months(latest: date, years: int = 10) -> list[date]:
 
 def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[str, dict]]]:
     by_code: dict[str, dict[str, dict]] = {}
-    latest_dates = []
+    latest_dates: list[date] = []
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         rows = rows_by_code.get(code) or []
         if not rows:
@@ -42,9 +42,11 @@ def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[
         by_code[code] = parsed
         latest_dates.append(max(date.fromisoformat(key) for key in parsed))
 
-    latest = min(latest_dates)
-    if latest < EXPECTED_MIN_LATEST:
-        raise RuntimeError(f"PayNet latest month is unexpectedly stale: {latest}")
+    if any(latest != EXPECTED_LATEST for latest in latest_dates):
+        raise RuntimeError(
+            f"PayNet latest month mismatch: expected {EXPECTED_LATEST}, got {latest_dates}"
+        )
+    latest = EXPECTED_LATEST
 
     required = _required_months(latest)
     missing: dict[str, list[str]] = {}
@@ -58,15 +60,13 @@ def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[
 
 
 def run() -> dict[str, object]:
-    today = date.today()
-    provisional_start = date(today.year - 11, today.month, 1)
-    direct = fetch_paynet_rows(provisional_start, today)
+    provisional_start = date(EXPECTED_LATEST.year - 10, EXPECTED_LATEST.month, 1)
+    direct = fetch_paynet_rows(provisional_start, EXPECTED_LATEST)
     latest, by_code = _prepare(direct)
     required = _required_months(latest)
     start = required[-1]
 
-    # Validate everything before changing the database. If source discovery is incomplete,
-    # the function raises above and leaves the database untouched.
+    # Validate the complete direct history before deleting or replacing anything.
     validated: dict[str, dict[str, dict]] = {}
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         ordered = [by_code[code][month.isoformat()] for month in required]
@@ -77,12 +77,17 @@ def run() -> dict[str, object]:
     db.request(
         "DELETE",
         TABLE,
-        params={"series_code": f"in.({SERIES_DELINQUENCY},{SERIES_DEFAULT})"},
+        params={
+            "series_code": (
+                "in.(US_SBDI_31_90,US_SBDI_91_180,"
+                f"{SERIES_DELINQUENCY},{SERIES_DEFAULT})"
+            )
+        },
         prefer="return=minimal",
     )
 
     stored = 0
-    # Explicitly write latest -> oldest one month at a time, as requested.
+    # Store exactly July 2026 backwards, one month at a time, through July 2016.
     for month in required:
         key = month.isoformat()
         batch = [validated[SERIES_DELINQUENCY][key], validated[SERIES_DEFAULT][key]]
