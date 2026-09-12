@@ -2,7 +2,7 @@ name: Earnings U.S. SEC automatic
 
 on:
   schedule:
-    # KST 11:30 new SEC filings. Snapshot collection has its own workflow.
+    # Scheduled runs are always the SEC filing phase; clock time is admin-managed.
     - cron: "30 2 * * *"
   workflow_dispatch:
     inputs:
