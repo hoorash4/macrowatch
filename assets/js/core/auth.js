@@ -362,6 +362,9 @@
         button.textContent = '탈퇴하기';
       }
     });
+  }
+
+  function bindLogoutEvent() {
     document.getElementById('logout-button')?.addEventListener('click', async () => {
       await authClient.auth.signOut();
       window.location.replace('index.html');
@@ -380,6 +383,7 @@
   async function initialize() {
     const hasMainLogin = Boolean(document.getElementById('auth-screen'));
     if (!authClient) return;
+    bindLogoutEvent();
     if (!hasMainLogin) {
       await bindAccountUi();
       initialized = true;
