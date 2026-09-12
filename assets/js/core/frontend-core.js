@@ -283,9 +283,10 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
   function applyThemePreference(preference, { cache = true, announce = true } = {}) {
     themePreference = normalizeThemePreference(preference);
     const effective = resolveTheme(themePreference);
-    if (typeof document !== 'undefined' && document.documentElement) {
-      document.documentElement.dataset.themePreference = themePreference;
-      document.documentElement.dataset.theme = effective;
+    const dataset = typeof document !== 'undefined' ? document.documentElement?.dataset : null;
+    if (dataset) {
+      dataset.themePreference = themePreference;
+      dataset.theme = effective;
       const select = document.getElementById?.('theme-preference');
       if (select && select.value !== themePreference) select.value = themePreference;
     }
