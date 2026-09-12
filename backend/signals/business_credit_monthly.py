@@ -6,12 +6,12 @@ import json
 
 from common import SupabaseRest
 from sources.business_credit_monthly import (
+    fetch_epiq_ch11_rows,
     fetch_equifax_rows,
     fetch_korea_business_delinquency_rows,
     fetch_korea_default_company_rows,
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
-from sources.epiq_ch11 import fetch_epiq_ch11_rows
 from signals.economic_chart_pipeline import _insert_missing
 
 
