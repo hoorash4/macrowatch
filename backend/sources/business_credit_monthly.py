@@ -58,7 +58,6 @@ def _equifax_urls(year: int, month: int) -> list[str]:
 
 def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     clean = re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
-    # New report layout exposes a compact 'Level' block for all three indices.
     new = re.search(
         r"SBDI\s*31\s*-\s*90\s*Days.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\).*?"
         r"SBDI\s*91\s*-\s*180\s*Days.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\).*?"
@@ -66,9 +65,6 @@ def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     )
     if new:
         return tuple(map(float, new.groups()))
-    # Older reports state exact levels in the Index Analysis paragraph. Some omit the severe
-    # delinquency level from the sentence; the chart header still prints it immediately after
-    # 'SBDI: 31-90 Days Past Due'.
     short = re.search(
         r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due.*?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)%", clean, re.I,
     )
@@ -77,15 +73,12 @@ def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     )
     default = re.search(r"Defaults?\b.{0,100}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)%", clean, re.I)
     if not severe:
-        # In the older chart text the latest severe level appears after both labels.
         severe = re.search(
             r"SBDI:\s*91\s*-\s*180\s*Days\s*Past\s*Due\s*SBDI:\s*31\s*-\s*90\s*Days\s*Past\s*Due\s*([0-9]+(?:\.[0-9]+)?)%",
             clean, re.I,
         )
     if short and severe and default:
         return float(short.group(1)), float(severe.group(1)), float(default.group(1))
-    # Final fallback for reports whose PDF text prints the latest 31-90 value immediately before
-    # the definitions and the 91-180 value immediately after the labels.
     header = re.search(
         r"([0-9]+(?:\.[0-9]+)?)%.*?Delinquent Percentage.*?SBDI:\s*91\s*-\s*180.*?SBDI:\s*31\s*-\s*90.*?([0-9]+(?:\.[0-9]+)?)%",
         clean, re.I,
@@ -98,7 +91,6 @@ def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
 def fetch_equifax_rows(start: date, end: date) -> dict[str, list[dict]]:
     """Fetch exact monthly public Equifax report levels. Missing report months are skipped."""
     result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
-    # Reports have consistently described the observation from two months earlier.
     report_y, report_m = _shift_month(start.year, start.month, 2)
     end_y, end_m = _shift_month(end.year, end.month, 2)
     while (report_y, report_m) <= (end_y, end_m):
@@ -118,7 +110,8 @@ def fetch_equifax_rows(start: date, end: date) -> dict[str, list[dict]]:
                 continue
         if parsed and used_url:
             obs_y, obs_m = _shift_month(report_y, report_m, -2)
-            if date(obs_y, obs_m, 1) >= date(start.year, start.month, 1) and date(obs_y, obs_m, 1) <= end:
+            observed = date(obs_y, obs_m, 1)
+            if date(start.year, start.month, 1) <= observed <= end:
                 a, b, c = parsed
                 result["US_SBDI_31_90"].append(_row("US_SBDI_31_90", obs_y, obs_m, a, f"Equifax:SBDI31-90:{used_url}"))
                 result["US_SBDI_91_180"].append(_row("US_SBDI_91_180", obs_y, obs_m, b, f"Equifax:SBDI91-180:{used_url}"))
@@ -133,26 +126,29 @@ def _plain_html(html: str) -> str:
 
 
 def _extract_epiq_ch11(text: str) -> list[tuple[int, int, int]]:
-    """Extract explicitly month-labelled commercial Chapter 11 counts from an Epiq article."""
+    """Extract explicit Commercial Chapter 11 month/count pairs without crossing sentences."""
     out: dict[tuple[int, int], int] = {}
     clean = text.replace("–", "-")
-    patterns = [
-        rf"([0-9][0-9,]*)\s+commercial\s+Chapter\s+11(?:\s+bankruptcy)?\s+filings\b.{{0,100}}?\b(?:in|during|for)\s+({MONTH_PATTERN})\s+(20\d{{2}})",
-        rf"commercial\s+Chapter\s+11(?:\s+bankruptcy)?\s+filings\b.{{0,120}}?(?:totaled|were|reached|increased[^.]*?to|decreased[^.]*?to)\s+([0-9][0-9,]*)\b.{{0,80}}?\b(?:in|during|for)\s+({MONTH_PATTERN})\s+(20\d{{2}})",
-        rf"\b({MONTH_PATTERN})\s+(20\d{{2}}).{{0,100}}?([0-9][0-9,]*)\s+commercial\s+Chapter\s+11(?:\s+bankruptcy)?\s+filings",
-    ]
-    for idx, pattern in enumerate(patterns):
-        for m in re.finditer(pattern, clean, re.I):
-            groups = m.groups()
-            if idx == 2:
-                month_name, year_s, count_s = groups
-            else:
-                count_s, month_name, year_s = groups
-            count = int(count_s.replace(",", ""))
-            year = int(year_s)
-            month = MONTHS[month_name.capitalize()]
-            if 0 < count < 100000:
-                out[(year, month)] = count
+    sentences = re.split(r"(?<=[.!?])\s+", clean)
+    patterns = (
+        (rf"([0-9][0-9,]*)\s+commercial\s+Chapter\s+11(?:\s+bankruptcy)?\s+filings\b[^.!?]*?\b(?:in|during|for|recorded\s+in)\s+({MONTH_PATTERN})\s+(20\d{{2}})", False),
+        (rf"commercial\s+Chapter\s+11(?:\s+bankruptcy)?\s+filings\b[^.!?]*?(?:totaled|were|reached|increased[^.!?]*?to|decreased[^.!?]*?to)\s+([0-9][0-9,]*)\b[^.!?]*?\b(?:in|during|for)\s+({MONTH_PATTERN})\s+(20\d{{2}})", False),
+        (rf"\b({MONTH_PATTERN})\s+(20\d{{2}})[^.!?]*?([0-9][0-9,]*)\s+commercial\s+Chapter\s+11(?:\s+bankruptcy)?\s+filings", True),
+    )
+    for sentence in sentences:
+        if not re.search(r"commercial\s+chapter\s+11", sentence, re.I):
+            continue
+        for pattern, month_first in patterns:
+            for match in re.finditer(pattern, sentence, re.I):
+                if month_first:
+                    month_name, year_s, count_s = match.groups()
+                else:
+                    count_s, month_name, year_s = match.groups()
+                count = int(count_s.replace(",", ""))
+                year = int(year_s)
+                month = MONTHS[month_name.capitalize()]
+                if 0 < count < 100000:
+                    out.setdefault((year, month), count)
     return [(year, month, out[(year, month)]) for year, month in sorted(out)]
 
 
@@ -185,7 +181,7 @@ def fetch_epiq_ch11_rows(start: date, end: date, *, max_pages: int = 20) -> list
         for year, month, count in _extract_epiq_ch11(text):
             observed = date(year, month, 1)
             if date(start.year, start.month, 1) <= observed <= end:
-                values[(year, month)] = (count, url)
+                values.setdefault((year, month), (count, url))
     return [_row("US_COMMERCIAL_CH11", y, m, count, f"EpiqAACER:{url}") for (y, m), (count, url) in sorted(values.items())]
 
 
