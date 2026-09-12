@@ -364,8 +364,7 @@
     });
     document.getElementById('logout-button')?.addEventListener('click', async () => {
       await authClient.auth.signOut();
-      if (elements.authScreen) showLogin();
-      else window.location.replace('index.html');
+      window.location.replace('index.html');
     });
   }
 
