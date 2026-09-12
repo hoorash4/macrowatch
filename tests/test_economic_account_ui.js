@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.join(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'economic-charts.html'), 'utf8');
+const frontend = fs.readFileSync(path.join(root, 'assets/js/core/frontend-core.js'), 'utf8');
+const actions = fs.readFileSync(path.join(root, 'assets/js/core/economic-account-actions.js'), 'utf8');
+assert.match(html, /class="dashboard-nav-actions economic-account-actions"/);
+assert.doesNotMatch(html, /width:34px;height:34px/);
+assert.match(frontend, /ensurePreferenceControl:\s*installThemePreferenceControl/);
+assert.match(actions, /MacroWatchTheme\?\.ensurePreferenceControl\?\.\(\)/);
+console.log('economic account ui contracts: ok');
