@@ -2,7 +2,7 @@ name: Backup database to Google Drive
 
 on:
   schedule:
-    # GitHub Actions cron uses UTC: Saturday 18:00 = Sunday 03:00 KST.
+    # GitHub Actions cron uses UTC: Saturday 15:00 = Sunday 00:00 KST.
     - cron: "0 15 * * 6"
   workflow_dispatch:
 
@@ -58,4 +58,3 @@ jobs:
           GOOGLE_DRIVE_LATEST_FILE_ID: ${{ secrets.GOOGLE_DRIVE_LATEST_FILE_ID }}
           GOOGLE_DRIVE_PREVIOUS_FILE_ID: ${{ secrets.GOOGLE_DRIVE_PREVIOUS_FILE_ID }}
         run: PYTHONPATH=backend python -m operations.upload_drive_backup macrowatch-backup.tar.gz.gpg
-
