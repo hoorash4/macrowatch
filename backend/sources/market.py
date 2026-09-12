@@ -4,6 +4,8 @@ from typing import Any
 
 import requests
 
+from common import request_with_retry
+
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 
@@ -22,7 +24,7 @@ def fetch_yahoo_adjusted(symbol: str, start: date, end: date) -> dict[date, floa
 
     period1 = int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp())
     period2 = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    response = requests.get(
+    response = request_with_retry(lambda: requests.get(
         YAHOO_CHART_URL.format(symbol=symbol),
         params={
             "period1": period1,
@@ -33,7 +35,7 @@ def fetch_yahoo_adjusted(symbol: str, start: date, end: date) -> dict[date, floa
         },
         headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"},
         timeout=45,
-    )
+    ))
     response.raise_for_status()
     result = response.json().get("chart", {}).get("result") or []
     if not result:
