@@ -13,6 +13,7 @@ from common import request_with_retry, require_env
 
 BLS_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 BEA_URL = "https://apps.bea.gov/api/data"
+BEA_TABLE = "T20804"
 KOSIS_SEARCH_URL = "https://kosis.kr/openapi/statisticsSearch.do"
 KOSIS_DATA_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
@@ -99,7 +100,7 @@ def fetch_bea_indexes(start: date, end: date, api_key: str | None = None) -> dic
         "UserID": api_key or require_env("BEA_API_KEY"),
         "method": "GetData",
         "datasetname": "NIPA",
-        "TableName": "T20304",
+        "TableName": BEA_TABLE,
         "Frequency": "M",
         "Year": years,
         "ResultFormat": "JSON",
@@ -119,7 +120,7 @@ def fetch_bea_indexes(start: date, end: date, api_key: str | None = None) -> dic
             continue
         observed = date(int(period[:4]), int(period[-2:]), 1)
         if start <= observed <= end:
-            output[code].append(_row(code, observed, value, "BEA:NIPA/T20304"))
+            output[code].append(_row(code, observed, value, "BEA:NIPA/T20804"))
     return output
 
 

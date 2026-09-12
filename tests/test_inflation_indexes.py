@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from inflation_pipeline import OFFICIAL_INDEX_SERIES, load_official_index_values
 from sources.inflation_indexes import (
     ALL_SERIES_CODES,
+    BEA_TABLE,
     fetch_bea_indexes,
     fetch_bls_indexes,
     fetch_ecos_indexes,
@@ -57,6 +58,7 @@ class InflationIndexSourceTests(unittest.TestCase):
         result = fetch_bea_indexes(date(2026, 8, 1), date(2026, 8, 1), "key")
         self.assertEqual(result["US_PCE"][0]["value"], 125.4)
         self.assertEqual(result["US_CORE_PCE"][0]["value"], 124.1)
+        self.assertEqual(BEA_TABLE, "T20804")
 
     @patch("sources.inflation_indexes.request_with_retry")
     def test_kosis_resolves_exact_tables_and_keeps_national_monthly_index(self, request):
