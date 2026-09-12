@@ -2,7 +2,7 @@ name: Earnings V2 Korea automatic
 
 on:
   schedule:
-    # GitHub Actions cron uses UTC: KST 19:30 on weekdays. KIS has its own workflow.
+    # Scheduled runs are always the DART disclosure phase; clock time is admin-managed.
     - cron: "30 10 * * 1-5"
   workflow_dispatch:
     inputs:
