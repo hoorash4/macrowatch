@@ -1,11 +1,12 @@
 """Temporary one-off Redbook historical backfill. Delete after verified run."""
 from __future__ import annotations
 
+import calendar
 import html
 import json
+import os
 import re
 import time
-from collections import Counter
 from datetime import date, datetime
 
 import requests
@@ -13,7 +14,6 @@ import requests
 from common import SupabaseRest
 
 URL = "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData"
-START_YEAR = 2005
 SERIES = "REDBOOK"
 SOURCE = "INVESTING_ARCHIVE:REDBOOK/REDBOOK_RESEARCH"
 
@@ -39,7 +39,7 @@ def _actual(value: str) -> float | None:
         return None
 
 
-def _fetch_range(session: requests.Session, start: date, end: date) -> list[dict]:
+def _fetch_month(session: requests.Session, start: date, end: date) -> list[dict]:
     payload = {
         "country[]": "5",
         "dateFrom": start.isoformat(),
@@ -84,7 +84,10 @@ def _fetch_range(session: requests.Session, start: date, end: date) -> list[dict
 
 
 def main() -> None:
+    year = int(os.environ["REDBOOK_YEAR"])
     today = date.today()
+    if year > today.year:
+        raise RuntimeError(f"Future year requested: {year}")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
@@ -96,52 +99,38 @@ def main() -> None:
     session.headers.update(headers)
     session.get("https://www.investing.com/economic-calendar/", timeout=45).raise_for_status()
 
-    db = SupabaseRest()
     by_date: dict[str, dict] = {}
-    request_errors: list[str] = []
-    year_counts_fetched: dict[int, int] = {}
-    # Crawl newest first so the useful 10-year window is secured before older best-effort history.
-    for year in range(today.year, START_YEAR - 1, -1):
-        start = date(year, 1, 1)
-        end = today if year == today.year else date(year, 12, 31)
+    errors: list[str] = []
+    monthly_counts: dict[int, int] = {}
+    last_month = today.month if year == today.year else 12
+    for month in range(1, last_month + 1):
+        start = date(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        end = min(date(year, month, last_day), today)
         try:
-            year_rows = _fetch_range(session, start, end)
-            year_counts_fetched[year] = len(year_rows)
-            if year_rows:
-                db.upsert("economic_chart_points", year_rows, conflict="series_code,observation_date")
-                for row in year_rows:
-                    by_date[row["observation_date"]] = row
+            month_rows = _fetch_month(session, start, end)
+            monthly_counts[month] = len(month_rows)
+            for row in month_rows:
+                by_date[row["observation_date"]] = row
         except Exception as error:
-            request_errors.append(f"{year}: {error.__class__.__name__}: {error}")
-        time.sleep(0.9)
+            errors.append(f"{year}-{month:02d}: {error.__class__.__name__}: {error}")
+        time.sleep(0.55)
 
     rows = [by_date[key] for key in sorted(by_date)]
-    if not rows:
-        raise RuntimeError(f"No Redbook history recovered; errors={request_errors[:10]}")
-
-    dates = [date.fromisoformat(row["observation_date"]) for row in rows]
-    values = [float(row["value"]) for row in rows]
-    year_counts = Counter(d.year for d in dates)
-    long_gaps = [
-        (a.isoformat(), b.isoformat(), (b - a).days)
-        for a, b in zip(dates, dates[1:]) if (b - a).days > 16
-    ]
+    if rows:
+        SupabaseRest().upsert("economic_chart_points", rows, conflict="series_code,observation_date")
     print(json.dumps({
-        "stage": "redbook_backfill_temp",
-        "request_error_count": len(request_errors),
-        "request_errors": request_errors[:20],
-        "fetched_year_counts": dict(sorted(year_counts_fetched.items())),
+        "stage": "redbook_backfill_year",
+        "year": year,
         "rows": len(rows),
-        "min_date": dates[0].isoformat(),
-        "max_date": dates[-1].isoformat(),
-        "min_value": min(values),
-        "max_value": max(values),
-        "known_low_minus_12_6_found": any(abs(v + 12.6) < 1e-9 for v in values),
-        "known_high_21_9_found": any(abs(v - 21.9) < 1e-9 for v in values),
-        "year_counts": dict(sorted(year_counts.items())),
-        "long_gaps_over_16_days": long_gaps[:30],
-        "long_gap_count": len(long_gaps),
+        "min_date": rows[0]["observation_date"] if rows else None,
+        "max_date": rows[-1]["observation_date"] if rows else None,
+        "monthly_counts": monthly_counts,
+        "error_count": len(errors),
+        "errors": errors[:12],
     }, ensure_ascii=False, sort_keys=True))
+    if year >= 2015 and len(rows) < 35:
+        raise RuntimeError(f"Too few Redbook observations for {year}: {len(rows)}")
 
 
 if __name__ == "__main__":
