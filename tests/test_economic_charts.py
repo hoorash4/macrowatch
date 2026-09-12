@@ -109,7 +109,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         for removed in ('POLICY_EXPECTATION', 'EM_CAPACITY', 'US_SME_RISK', 'KR_SME_RISK', 'US_INFLATION'):
             self.assertNotIn(removed, script)
-        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
+        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
             self.assertIn(raw, script)
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
         self.assertIn("fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
@@ -156,7 +156,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
     def test_core_series_include_fred_ecos_pykrx_and_derived_spreads(self):
         pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
         krx_source = (ROOT / 'backend/sources/krx_index_fundamentals.py').read_text(encoding='utf-8')
-        for token in ('DGS2', 'DGS10', 'BAMLH0A0HYM2', 'BAMLEMCBPIOAS', 'DCOILWTICO', 'DEXKOUS', 'WEI', 'RRPONTSYD', 'WTREGEN', 'EMRATIO'):
+        for token in ('DGS2', 'DGS10', 'BAMLH0A0HYM2', 'NFCICREDIT', 'BAMLEMCBPIOAS', 'DCOILWTICO', 'DEXKOUS', 'WEI', 'RRPONTSYD', 'WTREGEN', 'EMRATIO'):
             self.assertIn(token, pipeline)
         self.assertIn('010200000', pipeline)
         self.assertIn('010210000', pipeline)

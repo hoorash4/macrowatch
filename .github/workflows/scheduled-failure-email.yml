@@ -30,7 +30,7 @@ on:
       - "Refresh Korean market stress"
       - "Refresh KOSPI market context"
       - "Refresh market-implied policy expectations"
-      - "Refresh U.S. credit stress"
+      - "Refresh U.S. market stress"
       - "Refresh U.S. inflation model"
       - "Refresh U.S. small business risk"
       - "Refresh liquidity pressure and capacity"

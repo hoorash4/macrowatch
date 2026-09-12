@@ -28,7 +28,6 @@ WORKFLOWS = {
 DATABASE_SERIES = {
     "us_small_business_risk_monthly": ("us_small_business_risk_monthly", "month", 100),
     "kr_small_business_risk_monthly": ("kr_small_business_risk_monthly", "month", 100),
-    "us_credit_stress_monthly": ("us_credit_stress_monthly", "month", 100),
     "us_market_tension_weekly": ("us_market_tension_weekly", "week", 21),
     "em_market_stress_weekly": ("em_market_stress_weekly", "week", 21),
     "em_capital_capacity_daily": ("em_capital_capacity_daily", "observation_date", 14),
@@ -56,7 +55,7 @@ SECTOR_FLOW_JOBS = {
 WORKFLOW_DATABASE_SERIES = {
     "small-business-risk.yml": "us_small_business_risk_monthly",
     "korea-small-business-risk.yml": "kr_small_business_risk_monthly",
-    "financial-stress.yml": "us_credit_stress_monthly",
+    "financial-stress.yml": "us_market_tension_weekly",
     "em-stress.yml": "em_market_stress_weekly",
     "em-capital-capacity.yml": "em_capital_capacity_daily",
     "equity-bond-attractiveness.yml": "equity_bond_attractiveness_weekly",

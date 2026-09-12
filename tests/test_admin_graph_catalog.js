@@ -11,7 +11,7 @@ const catalog = global.window.MacroWatchAdminGraphCatalog;
 
 test('graph catalog covers every dashboard menu and chart card', () => {
   assert.deepEqual(catalog.MENUS.map((menu) => menu.id), ['overview', 'policy', 'earnings', 'stress']);
-  assert.equal(catalog.MENUS.reduce((sum, menu) => sum + menu.charts.length, 0), 16);
+  assert.equal(catalog.MENUS.reduce((sum, menu) => sum + menu.charts.length, 0), 15);
   assert.ok(catalog.MENUS.every((menu) => menu.charts.every((chart) => chart.series.length && chart.components.length)));
 });
 
@@ -22,7 +22,7 @@ test('graph catalog renders menu groups collapsed by default', () => {
   assert.equal(catalog.render(fakeDocument), true);
   assert.equal((container.innerHTML.match(/<details /g) || []).length, 4);
   assert.doesNotMatch(container.innerHTML, /<details[^>]*\sopen(?:\s|>)/);
-  assert.equal(summary.textContent, '4개 메뉴 · 16개 그래프');
+  assert.equal(summary.textContent, '4개 메뉴 · 15개 그래프');
 });
 
 test('admin separates operational controls from the information catalog', () => {

@@ -6,11 +6,8 @@
 
 from __future__ import annotations
 
-import calendar
 import csv
 import io
-import re
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 import openpyxl
@@ -23,34 +20,10 @@ TIMEOUT_SECONDS = 45
 OFFICIAL_DATA_HEADERS = {"User-Agent": "MacroWatch/1.0 (+https://hoorash4.github.io/macrowatch/)"}
 EBP_CSV_URL = "https://www.federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv"
 CMDI_XLSX_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx"
-COURTS_URLS = (
-    "https://www.uscourts.gov/sites/default/files/document/bf_f2.1_{period}.xlsx",
-    "https://www.uscourts.gov/sites/default/files/data_tables/bf_f2.1_{period}.xlsx",
-    "https://www.uscourts.gov/sites/default/files/{publication_year}-{publication_month:02d}/bf_f2.1_{period}.xlsx",
-)
-MONTH_PATTERN = re.compile(r"Ending\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})")
 
 
 def month_start(value: date) -> str:
     return value.replace(day=1).isoformat()
-
-
-def quarter_ends(start_year: int, start_month: int, end_year: int, end_month: int):
-    cursor_year, cursor_month = start_year, ((start_month - 1) // 3 + 1) * 3
-    while (cursor_year, cursor_month) <= (end_year, end_month):
-        yield cursor_year, cursor_month, calendar.monthrange(cursor_year, cursor_month)[1]
-        cursor_month += 3
-        if cursor_month > 12:
-            cursor_year += 1
-            cursor_month = 3
-
-
-def latest_completed_quarter_end(today: date) -> date:
-    quarter_start_month = ((today.month - 1) // 3) * 3 + 1
-    if quarter_start_month == 1:
-        return date(today.year - 1, 12, 31)
-    previous_month = quarter_start_month - 1
-    return date(today.year, previous_month, calendar.monthrange(today.year, previous_month)[1])
 
 
 def _fred_observations(series_id: str, api_key: str, start: date, end: date):
@@ -61,19 +34,6 @@ def _fred_observations(series_id: str, api_key: str, start: date, end: date):
         end=end.isoformat(),
         timeout=TIMEOUT_SECONDS,
     )
-
-
-def fetch_fred_monthly(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
-    values: dict[str, list[float]] = defaultdict(list)
-    for observation in _fred_observations(series_id, api_key, start, end):
-        raw_value = observation.get("value")
-        if raw_value in (None, "."):
-            continue
-        try:
-            values[observation["date"][:7] + "-01"].append(float(raw_value))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return {month: sum(rows) / len(rows) for month, rows in values.items() if rows}
 
 
 def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
@@ -91,21 +51,6 @@ def fetch_fred_month_end(series_id: str, api_key: str, start: date, end: date) -
         if month not in values or observed_on > values[month][0]:
             values[month] = (observed_on, value)
     return {month: value for month, (_observed_on, value) in values.items()}
-
-
-def fetch_fred_latest(series_id: str, api_key: str, start: date, end: date) -> tuple[date, float] | None:
-    latest: tuple[date, float] | None = None
-    for observation in _fred_observations(series_id, api_key, start, end):
-        raw_value, observed_on = observation.get("value"), observation.get("date")
-        if raw_value in (None, ".") or not isinstance(observed_on, str):
-            continue
-        try:
-            candidate = (date.fromisoformat(observed_on), float(raw_value))
-        except (TypeError, ValueError):
-            continue
-        if latest is None or candidate[0] > latest[0]:
-            latest = candidate
-    return latest
 
 
 def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) -> dict[str, float]:
@@ -211,65 +156,3 @@ def fetch_cmdi_monthly(start: date, end: date) -> dict[str, float]:
     if not values:
         raise RuntimeError("뉴욕연은 CMDI XLSX에서 Market CMDI 값을 찾지 못했습니다.")
     return {month: value for month, (_observed_on, value) in values.items()}
-
-
-def fetch_court_workbook(year: int, month: int, day: int) -> bytes:
-    period = f"{month:02d}{day:02d}.{year}"
-    publication_year, publication_month = year, month + 1
-    if publication_month == 13:
-        publication_year, publication_month = year + 1, 1
-    for template in COURTS_URLS:
-        response = requests.get(
-            template.format(
-                period=period,
-                publication_year=publication_year,
-                publication_month=publication_month,
-            ),
-            timeout=TIMEOUT_SECONDS,
-        )
-        if response.ok:
-            return response.content
-    raise RuntimeError(f"법원 F-2 월간 XLSX를 찾지 못했습니다: {year}-{month:02d}")
-
-
-def parse_business_filings(workbook_bytes: bytes) -> dict[str, int]:
-    workbook = openpyxl.load_workbook(io.BytesIO(workbook_bytes), read_only=True, data_only=True)
-    filings: dict[str, int] = {}
-    try:
-        for sheet in workbook.worksheets:
-            if "(" in sheet.title:
-                continue
-            match = MONTH_PATTERN.search(str(sheet.cell(2, 1).value or ""))
-            if not match:
-                continue
-            total_row = next(
-                (row for row in range(1, sheet.max_row + 1) if str(sheet.cell(row, 1).value or "").strip() == "Total"),
-                None,
-            )
-            if total_row is None:
-                raise RuntimeError(f"법원 F-2 표에서 Total 행을 찾지 못했습니다: {sheet.title}")
-            try:
-                filing_count = int(str(sheet.cell(total_row, 7).value).replace(",", ""))
-            except (TypeError, ValueError) as error:
-                raise RuntimeError(f"법원 F-2 사업체 파산보호 건수가 올바르지 않습니다: {sheet.title}") from error
-            month_number = list(calendar.month_name).index(match.group(1))
-            filings[f"{match.group(3)}-{month_number:02d}-01"] = filing_count
-    finally:
-        workbook.close()
-    if not filings:
-        raise RuntimeError("법원 F-2 XLSX에서 월별 사업체 파산보호 신청 건수를 찾지 못했습니다.")
-    return filings
-
-
-def collect_business_filings(start: date, end: date) -> dict[str, int]:
-    filings: dict[str, int] = {}
-    for year, month, day in quarter_ends(start.year, start.month, end.year, end.month):
-        try:
-            workbook = fetch_court_workbook(year, month, day)
-        except RuntimeError as error:
-            print(f"skipped_court_report={year}-{month:02d} reason={error}")
-            continue
-        for month_key, value in parse_business_filings(workbook).items():
-            if start.isoformat()[:7] <= month_key[:7] <= end.isoformat()[:7]:
-                filings[month_key] = value
-    return filings

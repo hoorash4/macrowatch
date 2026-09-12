@@ -326,10 +326,6 @@ class SharedCalculationTests(unittest.TestCase):
         self.assertEqual(em.score(30.0, 10.0, 20.0), 200.0)
         self.assertEqual(kr.score(30.0, 10.0, 20.0), 200.0)
 
-    def test_completed_quarter_boundary(self) -> None:
-        self.assertEqual(us.latest_completed_quarter_end(date(2026, 8, 26)), date(2026, 6, 30))
-        self.assertEqual(us.latest_completed_quarter_end(date(2026, 1, 2)), date(2025, 12, 31))
-
     def test_equity_bond_features_use_fixed_calendar_lags(self) -> None:
         monthly = []
         month = date(2020, 1, 1)
@@ -973,8 +969,19 @@ class SourceContractTests(unittest.TestCase):
 
     def test_financial_stress_workflow_tracks_source_adapter(self) -> None:
         workflow = (ROOT / ".github/workflows/financial-stress.yml").read_text(encoding="utf-8")
+        pipeline = (ROOT / "backend/signals/financial_stress_pipeline.py").read_text(encoding="utf-8")
+        health = (ROOT / "backend/operations/collection_health.py").read_text(encoding="utf-8")
+        migration = (ROOT / "supabase/migrations/20260913050000_remove_us_credit_stress_card.sql").read_text(encoding="utf-8")
         self.assertNotIn("push:", workflow)
         self.assertIn("signals.financial_stress_pipeline --years 3", workflow)
+        self.assertNotIn("us_credit_stress_monthly", pipeline)
+        self.assertNotIn("us_credit_stress_latest", pipeline)
+        self.assertNotIn("collect_business_filings", pipeline)
+        self.assertIn('"financial-stress.yml": "us_market_tension_weekly"', health)
+        self.assertIn("drop table if exists public.us_credit_stress_monthly", migration)
+        self.assertIn("drop table if exists public.us_credit_stress_latest", migration)
+        self.assertNotIn("drop table if exists public.us_market_stress_index_monthly", migration)
+        self.assertNotIn("drop table if exists public.us_market_tension_weekly", migration)
 
     def test_small_business_workflow_is_schedule_only_and_incremental(self) -> None:
         workflow = (ROOT / ".github/workflows/small-business-risk.yml").read_text(encoding="utf-8")

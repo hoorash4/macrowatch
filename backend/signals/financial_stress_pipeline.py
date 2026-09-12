@@ -1,22 +1,17 @@
-"""미국 신용·시장 스트레스 원천자료를 수집하고 월·주 지수를 갱신한다."""
+"""미국 시장 스트레스 원천자료를 수집하고 월·주 지수를 갱신한다."""
 
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import date
 
 from common import SupabaseRest, carry_forward, require_env, uncapped_score
 from sources.financial_stress import (
     TIMEOUT_SECONDS,
-    collect_business_filings,
     fetch_cmdi_monthly,
     fetch_ebp_monthly,
-    fetch_fred_latest,
     fetch_fred_month_end,
-    fetch_fred_monthly,
     fetch_fred_week_end,
-    latest_completed_quarter_end,
-    month_start,
 )
 
 
@@ -52,7 +47,6 @@ FIXED_COMPONENT_SCALES = {
     "corporate_bond_market_distress_index": (0.0, 1.0),
     "excess_bond_premium": (-1.0, 4.0),
     "nonfinancial_leverage_index": (-1.5, 2.0),
-    "business_bankruptcy_filings": (1000.0, 5000.0),
 }
 
 
@@ -112,38 +106,9 @@ def build_weekly_market_tension(
     return rows
 
 
-def upsert_rows(rows: list[dict[str, object]], supabase_url: str, service_role_key: str, current_month: str) -> int:
-    database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
-    writable = database.automatic_rows(
-        "us_credit_stress_monthly", rows, key="month", refresh_keys={current_month}
-    )
-    if writable:
-        database.upsert("us_credit_stress_monthly", writable, conflict="month")
-    return len(writable)
-
-
 def fixed_stress_score(value: float, key: str) -> float:
     floor, reference = FIXED_COMPONENT_SCALES[key]
     return uncapped_score(value, floor, reference)
-
-
-def smoothed_filings(rows: list[dict[str, object]]) -> tuple[dict[str, float], set[str]]:
-    """Return a trailing filing average and the months backed by published reports."""
-    observed: list[float] = []
-    values: dict[str, float] = {}
-    confirmed: set[str] = set()
-    for row in sorted(rows, key=lambda item: str(item["month"])):
-        raw_value = row.get("business_bankruptcy_filings")
-        if isinstance(raw_value, (int, float)) and raw_value > 0:
-            observed.append(float(raw_value))
-            values[str(row["month"])] = sum(observed[-3:]) / min(3, len(observed))
-            confirmed.add(str(row["month"]))
-        elif observed:
-            # A court report is not yet available. Preserve the latest published
-            # trend instead of treating an unreported month as zero or changing
-            # component weights.
-            values[str(row["month"])] = sum(observed[-3:]) / min(3, len(observed))
-    return values, confirmed
 
 
 def positive_score(value: float, reference: float) -> float:
@@ -219,12 +184,6 @@ def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: st
     return len(writable)
 
 
-def upsert_latest_credit_stress(row: dict[str, object], supabase_url: str, service_role_key: str) -> None:
-    SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS).upsert(
-        "us_credit_stress_latest", row, conflict="singleton"
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--years", type=int, default=3)
@@ -239,65 +198,22 @@ def main() -> None:
     start = date(today.year - args.years, today.month, 1)
     end = date(today.year, today.month, 1)
 
-    high_yield = fetch_fred_monthly(HIGH_YIELD_SERIES, fred_api_key, start, end)
-    financial_conditions = fetch_fred_monthly(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, end)
-    financial_risk = fetch_fred_monthly(FINANCIAL_RISK_SERIES, fred_api_key, start, end)
     excess_bond_premium = fetch_ebp_monthly(start, end)
     cmdi = fetch_cmdi_monthly(start, end)
     sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
-    commercial_paper = fetch_fred_monthly(COMMERCIAL_PAPER_SERIES, fred_api_key, start, end)
-    three_month_treasury = fetch_fred_monthly(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, end)
-    short_term_funding_spread = {
-        month: commercial_paper[month] - three_month_treasury[month]
-        for month in commercial_paper.keys() & three_month_treasury.keys()
-    }
-    business_filings = collect_business_filings(start, latest_completed_quarter_end(today))
-    months = sorted(
-        set(high_yield) | set(financial_conditions) | set(financial_risk)
-        | set(excess_bond_premium) | set(cmdi) | set(business_filings)
-    )
-    short_term_funding_spread = carry_forward_values(short_term_funding_spread, months)
-    rows = [
+    index_months = sorted(set(excess_bond_premium) | set(cmdi))
+    index_source_rows = [
         {
             "month": month,
-            "high_yield_oas_pct": high_yield.get(month),
-            "financial_conditions_credit_index": financial_conditions.get(month),
-            "financial_conditions_risk_index": financial_risk.get(month),
             "excess_bond_premium": excess_bond_premium.get(month),
             "corporate_bond_market_distress_index": cmdi.get(month),
-            "business_bankruptcy_filings": business_filings.get(month),
         }
-        for month in months
+        for month in index_months
     ]
-    if not rows:
-        raise RuntimeError("저장할 월별 신용 스트레스 데이터가 없습니다.")
-    latest_start = today - timedelta(days=60)
-    latest_high_yield = fetch_fred_latest(HIGH_YIELD_SERIES, fred_api_key, latest_start, today)
-    latest_conditions = fetch_fred_latest(FINANCIAL_CONDITIONS_SERIES, fred_api_key, latest_start, today)
-    latest_risk = fetch_fred_latest(FINANCIAL_RISK_SERIES, fred_api_key, latest_start, today)
-    latest_dates = [source[0] for source in (latest_high_yield, latest_conditions, latest_risk) if source is not None]
-    latest_month = month_start(max(latest_dates)) if latest_dates else None
-    if latest_month and latest_high_yield and latest_conditions and latest_risk:
-        latest_values = {
-            "high_yield_oas_pct": latest_high_yield[1],
-            "financial_conditions_credit_index": latest_conditions[1],
-            "financial_conditions_risk_index": latest_risk[1],
-            "excess_bond_premium": excess_bond_premium.get(latest_month),
-            "corporate_bond_market_distress_index": cmdi.get(latest_month),
-        }
-        matching_row = next((row for row in rows if row["month"] == latest_month), None)
-        if matching_row is None:
-            rows.append({
-                "month": latest_month,
-                **latest_values,
-                "business_bankruptcy_filings": None,
-            })
-        else:
-            matching_row.update(latest_values)
-    index_rows_input = rows
-    stored_months = upsert_rows(rows, supabase_url, service_role_key, end.isoformat())
+    if not index_source_rows:
+        raise RuntimeError("저장할 미국 시장 스트레스 데이터가 없습니다.")
     index_rows = build_market_stress_index(
-        index_rows_input,
+        index_source_rows,
         today,
         sp500_month_end,
     )
@@ -319,22 +235,13 @@ def main() -> None:
         weekly_sp500,
     )
     stored_weeks = upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
-    if latest_dates:
-        upsert_latest_credit_stress({
-            "singleton": True,
-            "as_of": max(latest_dates).isoformat(),
-            "high_yield_oas_pct": latest_high_yield[1] if latest_high_yield else None,
-            "financial_conditions_credit_index": latest_conditions[1] if latest_conditions else None,
-        }, supabase_url, service_role_key)
     print(
-        f"calculated_months={len(rows)} stored_months={stored_months} "
         f"calculated_market_stress_index={len(index_rows)} stored_market_stress_index={stored_index} "
         f"calculated_weeks={len(weekly_rows)} stored_weeks={stored_weeks} "
-        f"business_filings={len(business_filings)} high_yield={len(high_yield)} "
-        f"nfci_credit={len(financial_conditions)} nfci_risk={len(financial_risk)} "
         f"ebp_months={len(excess_bond_premium)} cmdi_months={len(cmdi)} "
         f"sp500={len(sp500_month_end)} "
-        f"short_funding_spread={len(short_term_funding_spread)} "
+        f"weekly_nfci_credit={len(weekly_credit_conditions)} "
+        f"weekly_nfci_risk={len(weekly_risk_conditions)} "
         f"weekly_leverage={len(weekly_leverage)}"
     )
 

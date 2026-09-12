@@ -126,7 +126,6 @@ test('every line-chart legend uses the common slot at the bottom of the chart re
     .join('\n');
   assert.match(liquidity, /setChartLegend\(legend,/);
   assert.match(attractiveness, /setChartLegend\(legend,/);
-  assert.match(dashboard, /setChartLegend\(document\.getElementById\('credit-stress-components-legend'\), legend/);
   assert.doesNotMatch(chartModules, /\.legendItem\(/, 'chart modules must use the shared legend renderer');
   assert.doesNotMatch(`${liquidity}\n${attractiveness}\n${dashboard}`, /insertAdjacentHTML\('beforeend', `[^`]*legend/);
 });
@@ -165,7 +164,6 @@ test('every dashboard chart declares the common profile or common default', () =
   assert.match(dashboard, /US_MSI_PROFILE = chartProfile/);
   assert.match(dashboard, /KOREA_MSI_PROFILE = chartProfile/);
   assert.match(dashboard, /EM_MSI_PROFILE = chartProfile/);
-  assert.match(dashboard, /const profile = createProfile\(\{ axisMode: 'dual', cursorSeries:[\s\S]*series\.map/);
 });
 
 test('MSI and legacy charts are mounted into the same canonical shell', () => {
@@ -333,7 +331,7 @@ test('every dual-axis chart builds its right labels from the shared left-grid al
   const dashboard = fs.readFileSync(path.join(__dirname, '../assets/js/dashboard/dashboard-charts.js'), 'utf8');
   const usSmallBusiness = fs.readFileSync(path.join(__dirname, '../assets/js/charts/small-business-risk-chart.js'), 'utf8');
   const koreaSmallBusiness = fs.readFileSync(path.join(__dirname, '../assets/js/charts/korea-small-business-risk-chart.js'), 'utf8');
-  assert.ok((dashboard.match(/alignedSecondaryTicks\(/g) || []).length >= 5);
+  assert.ok((dashboard.match(/alignedSecondaryTicks\(/g) || []).length >= 4);
   assert.match(usSmallBusiness, /alignedSecondaryTicks\(riskTicks, riskY, optimismDomain/);
   assert.match(koreaSmallBusiness, /alignedSecondaryTicks\(riskTicks, riskY, headlineDomain/);
   assert.doesNotMatch([dashboard, usSmallBusiness, koreaSmallBusiness].join('\n'), /Domain\.ticks\.map\(\(value\) => `<text data-chart-right-axis/);

@@ -639,9 +639,6 @@ body:has(#app-shell:not(.hidden)) {
   background:transparent;
   box-shadow:none;
 }
-#credit-stress-components-dashboard {
-  margin-bottom:0;
-}
 #inflation-model-dashboard {
   min-width:0;
 }
@@ -922,7 +919,7 @@ body:has(#app-shell:not(.hidden)) {
 #profile-close-button {
   flex:none;
 }
-#news-sentiment-chart, #credit-stress-chart, #credit-stress-components-chart, #korea-stress-chart, #em-stress-chart {
+#news-sentiment-chart, #credit-stress-chart, #korea-stress-chart, #em-stress-chart {
   padding:1.6rem 0 0;
 }
 /* 뉴스 그래프는 아래 결정적 뉴스 상자와 같은 좌우 기준선에 맞춥니다. */

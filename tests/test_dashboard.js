@@ -497,12 +497,6 @@ test('KOSPI 100 earnings card reads V2 market lifecycle rows', () => {
 });
 
 
-test('미국 신용위험 그래프는 파산보호 신청값이 없는 최신 행을 0으로 그리지 않는다', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/dashboard-charts.js'), 'utf8');
-  assert.match(source, /Number\.isFinite\(toCreditStressNumber\(row\[item\.key\]\)\)/);
-  assert.match(source, /null을 좌표식에 넘기면[\s\S]*?0으로 강제 변환/);
-});
-
 test('지표 등록 오류는 브라우저 경고창 대신 공용 중앙 모달을 사용한다', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'assets/js/dashboard/script.js'), 'utf8');
   const start = script.indexOf('async function handleAddTarget(e)');
@@ -681,14 +675,14 @@ test('이머징 자금 유입 여건은 3년 자료를 6개월·1년·2년·MAX�
 test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
-  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 18);
-  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 31);
+  assert.equal((html.match(/class="[^"]*analysis-card-header(?:\s|"|[^"]*)/g) || []).length, 17);
+  assert.equal((html.match(/<p class="analysis-card-description(?:\s|--|")/g) || []).length, 29);
   assert.doesNotMatch(html, /analysis-card-header-flush/);
   assert.doesNotMatch(html, /analysis-card-description[^">]*(?:text-slate-|text-\[#[0-9a-fA-F])/);
   assert.match(styles, /--analysis-card-description-color:\s*#64748b/);
   assert.match(html, /<header class="analysis-card-header dashboard-tracker-heading">/);
-  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 20);
-  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 18);
+  assert.equal((html.match(/class="analysis-card-heading-row"/g) || []).length, 19);
+  assert.equal((html.match(/class="analysis-card-eyebrow analysis-card-eyebrow--/g) || []).length, 17);
   assert.doesNotMatch(html, /analysis-card-title (?:mt-|text-|font-|tracking-)/);
   assert.doesNotMatch(html, /analysis-card-description (?:mt-|text-)/);
   assert.match(styles, /\.analysis-card-title\s*\{[\s\S]*?font-size:1\.15rem;[\s\S]*?font-weight:700;/);

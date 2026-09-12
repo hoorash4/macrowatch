@@ -1,8 +1,8 @@
-name: Refresh U.S. credit stress
+name: Refresh U.S. market stress
 
 on:
   schedule:
-    # 06:10 KST: update the in-progress month's averages every day.
+    # 06:10 KST: refresh the monthly and weekly market-stress series.
     - cron: "10 21 * * *"
   workflow_dispatch:
 
@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
       - name: Install spreadsheet reader
         run: pip install --disable-pip-version-check openpyxl requests
-      - name: Collect monthly stress data
+      - name: Collect U.S. market stress data
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

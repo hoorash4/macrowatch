@@ -22,6 +22,7 @@ FRED_SERIES = {
     "US10Y": ("DGS10", "D"),
     "US10Y2Y": ("T10Y2Y", "D"),
     "HY_OAS": ("BAMLH0A0HYM2", "D"),
+    "NFCI_CREDIT": ("NFCICREDIT", "W"),
     "EM_OAS": ("BAMLEMCBPIOAS", "D"),
     "WTI": ("DCOILWTICO", "D"),
     "USDKRW": ("DEXKOUS", "D"),
