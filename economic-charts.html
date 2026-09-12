@@ -64,24 +64,8 @@
   <script src="assets/js/core/economic-supabase-capture.js?v=2"></script>
   <script src="assets/js/charts/economic-charts.js?v=12"></script>
   <script src="assets/js/charts/economic-series-manager.js?v=3"></script>
-  <script src="assets/js/core/auth.js?v=23"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-      const link = document.getElementById('admin-page-link');
-      if (!link) return;
-      link.hidden = true;
-      try {
-        const client = window.macroWatchSupabase || window.MacroWatchFrontend.createSupabaseClient();
-        const { data: sessionData } = await client.auth.getSession();
-        const userId = sessionData.session?.user?.id;
-        if (!userId) return;
-        const { data, error } = await client.from('user_accounts').select('is_admin').eq('user_id', userId).maybeSingle();
-        if (!error && data?.is_admin === true) link.hidden = false;
-      } catch (error) {
-        console.warn('admin access check failed', error);
-      }
-    });
-  </script>
+  <script src="assets/js/core/account-modal.js?v=1"></script>
+  <script src="assets/js/core/auth-chart.js?v=1"></script>
   <script>
     (() => {
       const before = '미국 기업 회생 신청건수';
