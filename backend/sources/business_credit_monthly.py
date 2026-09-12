@@ -63,35 +63,59 @@ def _clean_equifax(text: str) -> str:
     return re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
 
 
+def _equifax_block_level(clean: str, start_pattern: str, end_pattern: str) -> float | None:
+    """Read the reported percentage level from one bounded Equifax metric block."""
+    pattern = re.compile(rf"{start_pattern}(?P<body>.{{0,180}}?)(?={end_pattern}|$)", re.I)
+    for match in pattern.finditer(clean):
+        body = match.group("body")
+        level = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)", body, re.I)
+        if level:
+            value = float(level.group(1))
+            if 0 <= value < 10:
+                return value
+        percentages = [float(value) for value in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%", body)]
+        if len(percentages) == 1 and 0 <= percentages[0] < 10:
+            return percentages[0]
+    return None
+
+
 def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     clean = _clean_equifax(text)
-    new = re.search(
-        r"SBDI\s*31\s*-\s*90\s*Days.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\).*?"
-        r"SBDI\s*91\s*-\s*180\s*Days.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\).*?"
-        r"SBDFI.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\)", clean, re.I,
+
+    # Modern report layouts place each metric in its own block. Bound extraction to the
+    # next metric label so M/M or Y/Y values from SBLI can never be mistaken for SBDI/SBDFI.
+    short = _equifax_block_level(
+        clean,
+        r"SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?",
+        r"SBDI\s*91\s*-\s*180\s*Days",
     )
-    if new:
-        return tuple(map(float, new.groups()))
-    short = re.search(
-        r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due.*?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)%", clean, re.I,
+    severe = _equifax_block_level(
+        clean,
+        r"SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?",
+        r"SBDFI\b",
     )
-    severe = re.search(
-        r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due.*?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)%", clean, re.I,
+    default = _equifax_block_level(clean, r"SBDFI\b", r"SBLI\b")
+    if short is not None and severe is not None and default is not None:
+        return short, severe, default
+
+    # Older narrative releases describe the current level in prose.
+    short_match = re.search(
+        r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean,
+        re.I,
     )
-    default = re.search(r"Defaults?\b.{0,100}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)%", clean, re.I)
-    if not severe:
-        severe = re.search(
-            r"SBDI:\s*91\s*-\s*180\s*Days\s*Past\s*Due\s*SBDI:\s*31\s*-\s*90\s*Days\s*Past\s*Due\s*([0-9]+(?:\.[0-9]+)?)%",
-            clean, re.I,
-        )
-    if short and severe and default:
-        return float(short.group(1)), float(severe.group(1)), float(default.group(1))
-    header = re.search(
-        r"([0-9]+(?:\.[0-9]+)?)%.*?Delinquent Percentage.*?SBDI:\s*91\s*-\s*180.*?SBDI:\s*31\s*-\s*90.*?([0-9]+(?:\.[0-9]+)?)%",
-        clean, re.I,
+    severe_match = re.search(
+        r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean,
+        re.I,
     )
-    if header and default:
-        return float(header.group(1)), float(header.group(2)), float(default.group(1))
+    default_match = re.search(
+        r"Defaults?\b[^.]{0,160}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean,
+        re.I,
+    )
+    if short_match and severe_match and default_match:
+        return float(short_match.group(1)), float(severe_match.group(1)), float(default_match.group(1))
     return None
 
 
