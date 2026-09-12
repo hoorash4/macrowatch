@@ -25,11 +25,14 @@ BASES = (
     "https://assets.equifax.com/marketing/US/assets/",
     "https://assets.equifax.com/assets/usis/",
 )
+# Explicitly verified gaps/legacy table formats only. Values are the three
+# published Equifax levels (31-90, 91-180, SBDFI), never the stored sum.
 VERIFIED_RECENT = {
     date(2026, 7, 1): (1.72, 0.72, 3.20, "verified-2026-07"),
     date(2026, 6, 1): (1.71, 0.73, 3.26, "Coleman-Equifax-Aug-2026"),
     date(2026, 5, 1): (1.71, 0.73, 3.27, "Coleman-Equifax-Aug-2026-prior-month"),
     date(2026, 4, 1): (1.69, 0.73, 3.31, "Coleman-Equifax-Jun-2026"),
+    date(2024, 10, 1): (1.82, 0.70, 3.40, "Equifax-Dec-2024"),
 }
 
 
@@ -77,6 +80,7 @@ def _report_urls(year: int, month: int) -> list[str]:
         f"Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
         f"Equifax.MonthlyStrategicInsights.{full}{year}.V101.pdf",
         f"EquifaxMonthlyStrategicInsights.{full}{year}.pdf",
+        f"equifax-strategic-insights-{low}-{year}.pdf",
         f"commercial-lending-trends-{low}-{year}.pdf",
         f"commercial-lending-trends-{abbr_low}-{year}.pdf",
         f"equifax-commercial-lending-trends-{low}-{year}.pdf",
@@ -124,26 +128,6 @@ def _modern_table_levels(clean: str) -> tuple[float, float, float] | None:
     return None
 
 
-def _overview_table_levels(clean: str) -> tuple[float, float, float] | None:
-    """Parse overview tables where SBLI labels are interleaved with the three risk labels.
-
-    In these Equifax decks the percentage-valued Level entries in the overview risk block
-    are consistently ordered SBDFI, SBDI 31-90, SBDI 91-180 even when the label row is
-    visually reordered by PDF text extraction.
-    """
-    marker = re.search(r"Equifax Small Business Delinquency \(SBDI\)\s*&\s*Default Indices \(SBDFI\)", clean, re.I)
-    if not marker:
-        return None
-    block = clean[marker.end():marker.end() + 2400]
-    if not (re.search(r"SBDI\s*31\s*-\s*90", block, re.I) and re.search(r"SBDI\s*91\s*-\s*180", block, re.I) and re.search(r"SBDFI\b", block, re.I)):
-        return None
-    levels = [float(v) for v in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)", block, re.I)[:3]]
-    if len(levels) != 3 or any(not (0 <= v < 10) for v in levels):
-        return None
-    default, short, severe = levels
-    return short, severe, default
-
-
 def _local_level(clean: str, label_pattern: str) -> float | None:
     for label in re.finditer(label_pattern, clean, re.I):
         next_metric = re.search(
@@ -164,13 +148,11 @@ def _local_level(clean: str, label_pattern: str) -> float | None:
 
 
 def extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
+    """Return exact published (31-90, 91-180, SBDFI) levels from one report."""
     clean = _clean(text)
     modern = _modern_table_levels(clean)
     if modern is not None:
         return modern
-    overview = _overview_table_levels(clean)
-    if overview is not None:
-        return overview
 
     short = _local_level(clean, r"SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?")
     severe = _local_level(clean, r"SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?")
@@ -178,9 +160,18 @@ def extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     if short is not None and severe is not None and default is not None:
         return short, severe, default
 
-    short_m = re.search(r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%", clean, re.I)
-    severe_m = re.search(r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%", clean, re.I)
-    default_m = re.search(r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.]{0,180}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%", clean, re.I)
+    short_m = re.search(
+        r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,220}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean, re.I,
+    )
+    severe_m = re.search(
+        r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,220}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean, re.I,
+    )
+    default_m = re.search(
+        r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.]{0,220}?(?:to|at|is|was|rose|fell|eased|declined|increased)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        clean, re.I,
+    )
     if short_m and severe_m and default_m:
         return float(short_m.group(1)), float(severe_m.group(1)), float(default_m.group(1))
     return None
