@@ -201,7 +201,10 @@ def main() -> None:
     excess_bond_premium = fetch_ebp_monthly(start, end)
     cmdi = fetch_cmdi_monthly(start, end)
     sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
-    index_months = sorted(set(excess_bond_premium) | set(cmdi))
+    # Keep the current month in the MSI timeline even before either monthly
+    # component is published. build_market_stress_index then carries the last
+    # confirmed component values forward and marks that month provisional.
+    index_months = sorted(set(excess_bond_premium) | set(cmdi) | {end.isoformat()})
     index_source_rows = [
         {
             "month": month,

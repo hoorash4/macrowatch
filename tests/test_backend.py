@@ -326,6 +326,24 @@ class SharedCalculationTests(unittest.TestCase):
         self.assertEqual(em.score(30.0, 10.0, 20.0), 200.0)
         self.assertEqual(kr.score(30.0, 10.0, 20.0), 200.0)
 
+    def test_us_msi_carries_confirmed_components_into_current_provisional_month(self) -> None:
+        rows = us.build_market_stress_index([
+            {
+                "month": "2026-08-01",
+                "excess_bond_premium": 0.5,
+                "corporate_bond_market_distress_index": 0.2,
+            },
+            {
+                "month": "2026-09-01",
+                "excess_bond_premium": None,
+                "corporate_bond_market_distress_index": None,
+            },
+        ], date(2026, 9, 13), {})
+        self.assertEqual([row["month"] for row in rows], ["2026-08-01", "2026-09-01"])
+        self.assertFalse(rows[0]["is_provisional"])
+        self.assertTrue(rows[1]["is_provisional"])
+        self.assertEqual(rows[1]["stress_index"], rows[0]["stress_index"])
+
     def test_equity_bond_features_use_fixed_calendar_lags(self) -> None:
         monthly = []
         month = date(2020, 1, 1)
@@ -977,6 +995,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("us_credit_stress_monthly", pipeline)
         self.assertNotIn("us_credit_stress_latest", pipeline)
         self.assertNotIn("collect_business_filings", pipeline)
+        self.assertIn("set(excess_bond_premium) | set(cmdi) | {end.isoformat()}", pipeline)
         self.assertIn('"financial-stress.yml": "us_market_tension_weekly"', health)
         self.assertIn("drop table if exists public.us_credit_stress_monthly", migration)
         self.assertIn("drop table if exists public.us_credit_stress_latest", migration)
