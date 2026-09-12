@@ -6,7 +6,7 @@ from html import unescape
 from io import BytesIO
 import re
 from typing import Iterable
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 
 import requests
 from pypdf import PdfReader
@@ -46,18 +46,25 @@ def _equifax_urls(year: int, month: int) -> list[str]:
     low = full.lower()
     base = "https://assets.equifax.com/marketing/US/assets/"
     legacy = "https://assets.equifax.com/assets/usis/"
-    return [
-        f"{base}main-street-lending-report-{low}-{year}.pdf",
-        f"{base}commercial-lending-trends-{low}-{year}.pdf",
-        f"{base}Equifax.MainStreetLendingReport.{full}{year}.pdf",
-        f"{base}Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
-        f"{base}equifax-small-business-indices-{low}-{year}.pdf",
-        f"{legacy}equifax-small-business-indices-{low}-{year}.pdf",
+    names = [
+        f"main-street-lending-report-{low}-{year}.pdf",
+        f"equifax-main-street-lending-report-{low}-{year}.pdf",
+        f"commercial-lending-trends-{low}-{year}.pdf",
+        f"equifax-commercial-lending-trends-{low}-{year}.pdf",
+        f"Equifax.MainStreetLendingReport.{full}{year}.pdf",
+        f"Equifax.CommercialLendingTrends.{full}{year}.pdf",
+        f"Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
+        f"equifax-small-business-indices-{low}-{year}.pdf",
     ]
+    return [f"{base}{name}" for name in names] + [f"{legacy}{names[-1]}"]
+
+
+def _clean_equifax(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
 
 
 def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
-    clean = re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
+    clean = _clean_equifax(text)
     new = re.search(
         r"SBDI\s*31\s*-\s*90\s*Days.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\).*?"
         r"SBDI\s*91\s*-\s*180\s*Days.*?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\).*?"
@@ -88,36 +95,92 @@ def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     return None
 
 
+def _signed_bps(symbol: str, number: str) -> float | None:
+    if symbol in ("▲", "+"):
+        return float(number)
+    if symbol in ("▼", "-"):
+        return -float(number)
+    return None
+
+
+def _extract_equifax_changes(text: str) -> dict[str, tuple[float, float, float]]:
+    """Return level, M/M bps and Y/Y bps when all three are explicit in a report block."""
+    clean = _clean_equifax(text)
+    labels = {
+        "US_SBDI_31_90": r"SBDI\s*31\s*-\s*90\s*Days",
+        "US_SBDI_91_180": r"SBDI\s*91\s*-\s*180\s*Days",
+        "US_SBDFI": r"SBDFI\b",
+    }
+    out: dict[str, tuple[float, float, float]] = {}
+    for code, label in labels.items():
+        match = re.search(
+            rf"{label}.{{0,120}}?([▲▼+-])\s*([0-9]+(?:\.[0-9]+)?)\s*bps?\s*\(M/M\)"
+            rf".{{0,120}}?([▲▼+-])\s*([0-9]+(?:\.[0-9]+)?)\s*bps?\s*\(Y/Y\)"
+            rf".{{0,120}}?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\)",
+            clean, re.I,
+        )
+        if not match:
+            continue
+        mom = _signed_bps(match.group(1), match.group(2))
+        yoy = _signed_bps(match.group(3), match.group(4))
+        if mom is None or yoy is None:
+            continue
+        out[code] = (float(match.group(5)), mom, yoy)
+    return out
+
+
+def _put_equifax(target: dict[tuple[int, int], tuple[int, dict]], row: dict, priority: int) -> None:
+    year, month = map(int, row["observation_date"][:7].split("-"))
+    current = target.get((year, month))
+    if current is None or priority > current[0]:
+        target[(year, month)] = (priority, row)
+
+
 def fetch_equifax_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Fetch exact monthly public Equifax report levels. Missing report months are skipped."""
-    result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
+    """Fetch exact Equifax levels and exact values implied by published M/M and Y/Y basis-point changes."""
+    start_month = date(start.year, start.month, 1)
+    stores: dict[str, dict[tuple[int, int], tuple[int, dict]]] = {
+        "US_SBDI_31_90": {}, "US_SBDI_91_180": {}, "US_SBDFI": {}
+    }
     report_y, report_m = _shift_month(start.year, start.month, 2)
     end_y, end_m = _shift_month(end.year, end.month, 2)
     while (report_y, report_m) <= (end_y, end_m):
-        parsed = None
+        text = None
         used_url = None
+        levels = None
         for url in _equifax_urls(report_y, report_m):
             try:
-                response = requests.get(url, timeout=25, headers={"User-Agent": USER_AGENT})
-                if response.status_code != 200 or "pdf" not in response.headers.get("content-type", "").lower():
+                response = requests.get(url, timeout=15, headers={"User-Agent": USER_AGENT})
+                ctype = response.headers.get("content-type", "").lower()
+                if response.status_code != 200 or "pdf" not in ctype:
                     continue
                 text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
-                parsed = _extract_equifax_levels(text)
-                if parsed:
+                levels = _extract_equifax_levels(text)
+                if levels:
                     used_url = url
                     break
             except Exception:
                 continue
-        if parsed and used_url:
+        if levels and used_url and text:
             obs_y, obs_m = _shift_month(report_y, report_m, -2)
             observed = date(obs_y, obs_m, 1)
-            if date(start.year, start.month, 1) <= observed <= end:
-                a, b, c = parsed
-                result["US_SBDI_31_90"].append(_row("US_SBDI_31_90", obs_y, obs_m, a, f"Equifax:SBDI31-90:{used_url}"))
-                result["US_SBDI_91_180"].append(_row("US_SBDI_91_180", obs_y, obs_m, b, f"Equifax:SBDI91-180:{used_url}"))
-                result["US_SBDFI"].append(_row("US_SBDFI", obs_y, obs_m, c, f"Equifax:SBDFI:{used_url}"))
+            if start_month <= observed <= end:
+                for code, value, token in zip(
+                    ("US_SBDI_31_90", "US_SBDI_91_180", "US_SBDFI"), levels, ("SBDI31-90", "SBDI91-180", "SBDFI")
+                ):
+                    _put_equifax(stores[code], _row(code, obs_y, obs_m, value, f"Equifax:{token}:{used_url}"), 3)
+            for code, (level, mom_bps, yoy_bps) in _extract_equifax_changes(text).items():
+                py, pm = _shift_month(obs_y, obs_m, -1)
+                yy, ym = _shift_month(obs_y, obs_m, -12)
+                for y, m, value, kind in (
+                    (py, pm, round(level - mom_bps / 100.0, 4), "MOM"),
+                    (yy, ym, round(level - yoy_bps / 100.0, 4), "YOY"),
+                ):
+                    observed2 = date(y, m, 1)
+                    if start_month <= observed2 <= end:
+                        _put_equifax(stores[code], _row(code, y, m, value, f"Equifax:{code}:derived-{kind}:{used_url}"), 1)
         report_y, report_m = _shift_month(report_y, report_m, 1)
-    return result
+    return {code: [item[1] for _, item in sorted(store.items())] for code, store in stores.items()}
 
 
 def _plain_html(html: str) -> str:
@@ -153,23 +216,33 @@ def _extract_epiq_ch11(text: str) -> list[tuple[int, int, int]]:
 
 
 def fetch_epiq_ch11_rows(start: date, end: date, *, max_pages: int = 20) -> list[dict]:
-    root = "https://www.epiqglobal.com/en-us/resource-center/news"
+    roots = [
+        "https://www.epiqglobal.com/en-us/resource-center/news",
+        "https://www.epiqglobal.com/en-hk/resource-center/news",
+        "https://www.epiqglobal.com/en-gb/resource-center/news",
+    ]
     links: set[str] = set()
-    for page in range(1, max_pages + 1):
-        url = root if page == 1 else f"{root}?page={page}"
-        try:
-            response = _request(url)
-        except Exception:
-            continue
-        page_links = {
-            urljoin(response.url, href)
-            for href in re.findall(r'href=["\']([^"\']+)["\']', response.text, re.I)
-            if "/resource-center/news/" in href
-            and any(token in href.lower() for token in ("bankrupt", "chapter-11", "chapter-11s", "filing"))
-        }
-        links.update(page_links)
-        if page > 1 and not page_links:
-            break
+    for root in roots:
+        empty_pages = 0
+        for page in range(1, max_pages + 1):
+            url = root if page == 1 else f"{root}?page={page}"
+            try:
+                response = _request(url)
+            except Exception:
+                empty_pages += 1
+                if empty_pages >= 3:
+                    break
+                continue
+            page_links = {
+                urljoin(response.url, href)
+                for href in re.findall(r'href=["\']([^"\']+)["\']', response.text, re.I)
+                if "/resource-center/news/" in href
+                and any(token in href.lower() for token in ("bankrupt", "chapter-11", "chapter-11s", "filing"))
+            }
+            links.update(page_links)
+            empty_pages = empty_pages + 1 if not page_links else 0
+            if empty_pages >= 3:
+                break
     values: dict[tuple[int, int], tuple[int, str]] = {}
     for url in sorted(links):
         try:
@@ -206,9 +279,77 @@ def fetch_ecos_monthly_rows(code: str, stat_code: str, item_codes: Iterable[str]
     return rows
 
 
+def _extract_kdi_corporate_delinquency(text: str) -> tuple[int, int, float] | None:
+    clean = re.sub(r"\s+", " ", text)
+    month_match = re.search(r"(?:[‘'′’]?([12]?\d)\s*[.년]\s*)?(1[0-2]|0?[1-9])월말", clean)
+    if not month_match:
+        month_match = re.search(r"(20\d{2})년\s*(1[0-2]|0?[1-9])월말", clean)
+        if not month_match:
+            return None
+    raw_year = month_match.group(1)
+    month = int(month_match.group(2))
+    if raw_year is None:
+        return None
+    year = int(raw_year)
+    if year < 100:
+        year += 2000
+    value_match = re.search(
+        r"기업대출(?:\(원화\))?\s*연체율(?:은|는)?\s*(?:현재\s*)?(?:\()?([0-9]+(?:\.[0-9]+)?)%",
+        clean,
+    )
+    if not value_match:
+        value_match = re.search(r"기업대출(?:\(원화\))?\s*연체율\(([0-9]+(?:\.[0-9]+)?)%\)", clean)
+    if not value_match:
+        return None
+    return year, month, float(value_match.group(1))
+
+
+def _fetch_kdi_corporate_delinquency_rows(start: date, end: date, *, max_pages: int = 12) -> list[dict]:
+    root = "https://eiec.kdi.re.kr/policy/materialList.do"
+    links: set[str] = set()
+    for page in range(1, max_pages + 1):
+        query = urlencode({"search_txt": "국내은행의 원화대출 연체율", "pg": page, "pp": 100})
+        try:
+            response = _request(f"{root}?{query}")
+        except Exception:
+            continue
+        page_links = {
+            urljoin(response.url, unescape(href))
+            for href in re.findall(r'href=["\']([^"\']*materialView\.do\?[^"\']+)["\']', response.text, re.I)
+            if "num=" in href
+        }
+        before = len(links)
+        links.update(page_links)
+        if page > 1 and len(links) == before:
+            break
+    values: dict[tuple[int, int], tuple[float, str]] = {}
+    for url in sorted(links):
+        try:
+            text = _plain_html(_request(url).text)
+        except Exception:
+            continue
+        parsed = _extract_kdi_corporate_delinquency(text)
+        if not parsed:
+            continue
+        year, month, value = parsed
+        observed = date(year, month, 1)
+        if date(start.year, start.month, 1) <= observed <= end:
+            values[(year, month)] = (value, url)
+    return [_row("KR_CORP_DELINQ", y, m, value, f"FSS-KDI:{url}") for (y, m), (value, url) in sorted(values.items())]
+
+
 def fetch_korea_business_delinquency_rows(start: date, end: date) -> list[dict]:
-    available = max(start, date(2019, 12, 1))
-    return fetch_ecos_monthly_rows("KR_CORP_DELINQ", "141Y005", ("R4AB00", "X00", "0960"), available, end)
+    rows: dict[tuple[int, int], dict] = {}
+    if start < date(2019, 12, 1):
+        for row in _fetch_kdi_corporate_delinquency_rows(start, min(end, date(2019, 11, 30))):
+            year, month = map(int, row["observation_date"][:7].split("-"))
+            rows[(year, month)] = row
+    if end >= date(2019, 12, 1):
+        available = max(start, date(2019, 12, 1))
+        for row in fetch_ecos_monthly_rows("KR_CORP_DELINQ", "141Y005", ("R4AB00", "X00", "0960"), available, end):
+            year, month = map(int, row["observation_date"][:7].split("-"))
+            rows[(year, month)] = row
+    return [rows[key] for key in sorted(rows)]
 
 
 def fetch_korea_default_company_rows(start: date, end: date) -> list[dict]:
