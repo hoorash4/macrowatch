@@ -26,7 +26,6 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           PYTHONPATH=backend python - <<'PY'
-          from __future__ import annotations
           from datetime import date
           from io import BytesIO
           import re
@@ -35,13 +34,14 @@ jobs:
           from pypdf import PdfReader
           from common import SupabaseRest
           from signals.economic_chart_pipeline import _insert_missing
+          from sources.business_credit_monthly import _extract_equifax_levels
 
           UA={"User-Agent":"Mozilla/5.0 (compatible; MacroWatch/1.0)"}
-          MONTH_NAMES="January February March April May June July August September October November December".split()
-          MONTHS={m:i for i,m in enumerate(MONTH_NAMES,1)}
-          MP="(?:"+"|".join(MONTH_NAMES)+")"
+          MONTHS={m:i for i,m in enumerate("January February March April May June July August September October November December".split(),1)}
+          MP="(?:"+"|".join(MONTHS)+")"
           DETAIL_RE=re.compile(r'href=["\']([^"\']*/industry-data/\d+/[^"\']+)["\']',re.I)
           PDF_RE=re.compile(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']',re.I)
+          TITLE_RE=re.compile(rf'(?:SBLI|Lending Index|Economic Update|Strategic Insights)[^<\n]*?[-–]\s*({MP})\s+(20\d{{2}})',re.I)
 
           def get(url):
               r=requests.get(url,headers=UA,timeout=20)
@@ -52,79 +52,61 @@ jobs:
               "https://www.equipmentfa.com/industry-data/category/145/Small%2BBusiness%2BLending%2BReports",
               "https://www.equipmentfa.com/industry-data/tags/6/2068/thomson-reuterspaynet-small-business-delinquency-index-sbdi",
           ]
-          details=set(); pdfs=set()
+          details=set()
           for root in roots:
               try: html=get(root).text
               except Exception: continue
               details |= {urljoin(root,x) for x in DETAIL_RE.findall(html)}
-              pdfs |= {urljoin(root,x) for x in PDF_RE.findall(html)}
-          for u in sorted(details):
-              try: html=get(u).text
-              except Exception: continue
-              pdfs |= {urljoin(u,x) for x in PDF_RE.findall(html)}
-          pdfs |= {
-              "https://cdn2.hubspot.net/hubfs/4211185/Vital-FS-April2018/Pdf/paynetmonthlycreditreportjan2018.pdf",
-              "https://www.equipmentfa.com/Images/IndustryData/16-09-07-01-30-16-2016-09-01-PayNet-July-2016-Economic-Update-Small-Business-Report.pdf",
-              "https://www.equipmentfa.com/Images/IndustryData/17-06-06-16-16-38-2017-06-01-PayNet-April-2017-Economic-Update-Small-Business-Report.pdf",
-          }
 
-          def publication(text,url):
-              clean=re.sub(r'\s+',' ',text)
-              m=re.search(rf'\b({MP})\s+(20\d{{2}})\b',clean[:1400],re.I)
-              if m: return int(m.group(2)),MONTHS[m.group(1).capitalize()]
-              m=re.search(r'/(\d{2})-(\d{2})-\d{2}[^/]*-(20\d{2})-',url)
-              if m: return int(m.group(3)),int(m.group(1))
-              return None
-
-          def resolve_year(month,explicit,pub):
-              if explicit: return int(explicit)
-              if not pub: return None
-              py,pm=pub
-              return py-1 if month>pm else py
-
-          def series_sentence_values(text,label,pub):
+          def current_levels(text):
+              levels=_extract_equifax_levels(text)
+              if levels: return levels
               clean=re.sub(r'\s+',' ',text.replace('–','-').replace('—','-'))
-              out=[]
-              # Search bounded windows so another index cannot donate its number.
-              for lm in re.finditer(label,clean,re.I):
-                  window=clean[lm.start():lm.start()+420]
-                  # Exact value followed by an explicit observation month/year.
-                  for m in re.finditer(rf'([0-9]+(?:\.[0-9]+)?)\s*(?:%|percent)\b[^.;:]{{0,45}}?\b(?:in|for|during)?\s*({MP})(?:\s+(20\d{{2}}))?',window,re.I):
-                      val=float(m.group(1)); mon=MONTHS[m.group(2).capitalize()]; yr=resolve_year(mon,m.group(3),pub)
-                      if yr: out.append((yr,mon,val))
-                  # Table/new-report layout: month may precede the level token.
-                  for m in re.finditer(rf'\b({MP})(?:\s+(20\d{{2}}))?[^.;:]{{0,45}}?([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)',window,re.I):
-                      mon=MONTHS[m.group(1).capitalize()]; yr=resolve_year(mon,m.group(2),pub)
-                      if yr: out.append((yr,mon,float(m.group(3))))
-              # When a sentence says 'from old in Feb to new in Mar', both are explicit raw observations.
-              return list(dict.fromkeys(out))
+              def one(label, extras=''):
+                  m=re.search(rf'{label}.{{0,220}}?(?:fell|declined|decreased|edged|rose|increased|climbed|held\s+steady|remained|was|is|stands?|stood)?[^.;:]{{0,100}}?(?:to|at|is|was|of)?\s*([0-9]+(?:\.[0-9]+)?)%',clean,re.I)
+                  if m: return float(m.group(1))
+                  m=re.search(rf'{label}.{{0,120}}?([0-9]+(?:\.[0-9]+)?)%\s*\(Level\)',clean,re.I)
+                  return float(m.group(1)) if m else None
+              a=one(r'SBDI(?:\)|:)?\s*31\s*-\s*90(?:\s*Days(?:\s*Past\s*Due)?)?')
+              b=one(r'SBDI(?:\)|:)?\s*91\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?')
+              c=one(r'(?:Small\s+Business\s+Default\s+Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)')
+              return (a,b,c)
 
-          labels={
-              'US_SBDI_31_90':r'SBDI(?:\)|:)?\s*31\s*-\s*90(?:\s*Days(?:\s*Past\s*Due)?)?',
-              'US_SBDI_91_180':r'SBDI(?:\)|:)?\s*91\s*-\s*180(?:\s*Days(?:\s*Past\s*Due)?)?',
-              'US_SBDFI':r'(?:Small\s+Business\s+Default\s+Index\s*\(SBDFI\)|SBDFI\b)',
-          }
-          found={c:{} for c in labels}
-          parsed_pdfs=0
-          for url in sorted(pdfs):
-              try:
-                  r=get(url)
-                  if 'pdf' not in r.headers.get('content-type','').lower() and not url.lower().split('?')[0].endswith('.pdf'): continue
-                  text='\n'.join(p.extract_text() or '' for p in PdfReader(BytesIO(r.content)).pages)
-                  pub=publication(text,url)
-                  any_value=False
-                  for code,label in labels.items():
-                      for y,m,v in series_sentence_values(text,label,pub):
-                          obs=date(y,m,1)
-                          if date(2016,9,1)<=obs<=date.today():
-                              found[code].setdefault((y,m),(v,url)); any_value=True
-                  if any_value: parsed_pdfs+=1
-              except Exception:
-                  continue
+          found={c:{} for c in ('US_SBDI_31_90','US_SBDI_91_180','US_SBDFI')}
+          parsed=0
+          for detail in sorted(details):
+              try: html=get(detail).text
+              except Exception: continue
+              title=TITLE_RE.search(re.sub(r'\s+',' ',html))
+              if not title:
+                  # URL slug itself often ends in the report observation month/year.
+                  slug=re.search(rf'-({MP})-(20\d{{2}})(?:$|[?/#])',detail,re.I)
+                  if not slug: continue
+                  month_name,year_s=slug.group(1),slug.group(2)
+              else:
+                  month_name,year_s=title.group(1),title.group(2)
+              y=int(year_s); m=MONTHS[month_name.capitalize()]
+              if not (date(2016,9,1)<=date(y,m,1)<=date.today()): continue
+              pdfs={urljoin(detail,x) for x in PDF_RE.findall(html)}
+              for pdf in sorted(pdfs):
+                  if not any(k in pdf.lower() for k in ('economic-update','strategic','monthly','credit','small-business-report')): continue
+                  try:
+                      r=get(pdf)
+                      text='\n'.join(p.extract_text() or '' for p in PdfReader(BytesIO(r.content)).pages)
+                  except Exception: continue
+                  vals=current_levels(text)
+                  if not any(v is not None for v in vals): continue
+                  for code,v in zip(found,vals):
+                      if v is not None and 0 < v < 10:
+                          found[code].setdefault((y,m),(v,pdf))
+                  parsed+=1
+                  break
+
           db=SupabaseRest()
           for code,vals in found.items():
               rows=[{'series_code':code,'observation_date':f'{y:04d}-{m:02d}-01','value':v,'frequency':'M','source':f'PayNet-archive:{u}'} for (y,m),(v,u) in sorted(vals.items())]
               inserted=_insert_missing(db,rows,date(2016,9,1))
               print(code,'fetched',len(rows),'inserted',inserted,'first',rows[0]['observation_date'] if rows else None,'last',rows[-1]['observation_date'] if rows else None)
-          print('archive_pdfs',len(pdfs),'detail_pages',len(details),'parsed_pdfs',parsed_pdfs)
+              print('months',','.join(r['observation_date'][:7] for r in rows))
+          print('detail_pages',len(details),'parsed_reports',parsed)
           PY
