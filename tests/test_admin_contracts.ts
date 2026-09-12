@@ -148,7 +148,8 @@ test("allowed schedule edit writes the new cron then clears queued old scheduled
     const writeIndex = calls.findIndex((call) => call.method === "PUT");
     const cancelIndex = calls.findIndex((call) => call.url.includes("/cancel"));
     assert.ok(writeIndex >= 0 && cancelIndex > writeIndex);
-    assert.match(calls[writeIndex].body, /10 9 \* \* \*/);
+    const payload = JSON.parse(calls[writeIndex].body);
+    assert.match(decodeBase64Utf8(payload.content), /10 9 \* \* \*/);
   } finally { globalThis.fetch = original; }
 });
 
