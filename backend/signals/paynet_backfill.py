@@ -11,6 +11,7 @@ from signals.business_credit_backfill import _validate_rows
 
 TABLE = "economic_chart_points"
 EXPECTED_LATEST = date(2026, 7, 1)
+LEGACY_DERIVE_FIRST = date(2020, 4, 1)
 
 
 def _shift_month(d: date, months: int) -> date:
@@ -51,6 +52,26 @@ def _first_missing_month(db: SupabaseRest, required: list[date]) -> date | None:
     return None
 
 
+def _recover_month(month: date) -> dict[str, dict | None]:
+    if month <= LEGACY_DERIVE_FIRST:
+        rows = fetch_paynet_derived_month(month)
+        if all(rows[code] is not None for code in (SERIES_DELINQUENCY, SERIES_DEFAULT)):
+            return rows
+        direct = fetch_paynet_month(month)
+        for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
+            if rows[code] is None:
+                rows[code] = direct[code]
+        return rows
+
+    rows = fetch_paynet_month(month)
+    if any(rows[code] is None for code in (SERIES_DELINQUENCY, SERIES_DEFAULT)):
+        derived = fetch_paynet_derived_month(month)
+        for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
+            if rows[code] is None:
+                rows[code] = derived[code]
+    return rows
+
+
 def run() -> dict[str, object]:
     required = _required_months(EXPECTED_LATEST)
     db = SupabaseRest()
@@ -71,13 +92,7 @@ def run() -> dict[str, object]:
     oldest_stored: date | None = None
     unresolved: list[str] = []
     for month in remaining:
-        rows = fetch_paynet_month(month)
-        if any(rows[code] is None for code in (SERIES_DELINQUENCY, SERIES_DEFAULT)):
-            derived = fetch_paynet_derived_month(month)
-            for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
-                if rows[code] is None:
-                    rows[code] = derived[code]
-
+        rows = _recover_month(month)
         missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
         if missing:
             unresolved.append(f"{month:%Y-%m}")
