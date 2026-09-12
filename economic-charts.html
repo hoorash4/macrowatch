@@ -47,6 +47,17 @@
     </main>
   </div>
 
+  <div id="economic-profile-modal" class="economic-modal" hidden>
+    <div class="economic-modal-backdrop" data-economic-profile-close></div>
+    <section class="economic-modal-card economic-profile-card" role="dialog" aria-modal="true" aria-labelledby="economic-profile-title">
+      <div class="economic-modal-head"><div><strong id="economic-profile-title">개인 설정</strong><small>계정과 이메일 알림 설정을 관리합니다.</small></div><button id="economic-profile-close" type="button" aria-label="닫기">×</button></div>
+      <div class="economic-profile-row"><span>현재 아이디</span><strong id="economic-profile-username">확인 중</strong></div>
+      <label>이메일 알림 주소<input id="economic-profile-email" type="email" autocomplete="email" placeholder="name@example.com"></label>
+      <div class="economic-profile-actions"><button id="economic-profile-email-remove" type="button" hidden>이메일 알림 해제</button><span></span><button id="economic-profile-email-save" type="button" class="primary">저장</button></div>
+      <p class="economic-modal-help">비밀번호 변경·카카오 연결·회원 탈퇴 등 전체 계정 설정은 메인 화면의 개인 설정과 동일한 계정에 적용됩니다.</p>
+    </section>
+  </div>
+
   <div id="economic-alert-modal" class="economic-modal" hidden>
     <div class="economic-modal-backdrop" data-close-alert></div>
     <form id="economic-alert-form" class="economic-modal-card">
@@ -59,7 +70,7 @@
   </div>
   <script src="assets/js/charts/economic-charts.js?v=12"></script>
   <script src="assets/js/charts/economic-series-manager.js?v=3"></script>
-  <script src="assets/js/charts/economic-page-actions.js?v=1"></script>
+  <script src="assets/js/charts/economic-page-actions.js?v=2"></script>
   <script>
     (() => {
       const before = '미국 기업 회생 신청건수';
