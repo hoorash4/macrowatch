@@ -32,7 +32,6 @@ def _required_months(latest: date, years: int = 10) -> list[date]:
 
 
 def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[str, dict]]]:
-    """Integrity helper retained for tests and complete-history validation."""
     by_code: dict[str, dict[str, dict]] = {}
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         rows = rows_by_code.get(code) or []
@@ -51,12 +50,35 @@ def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[
     return EXPECTED_LATEST, by_code
 
 
+def _first_missing_month(db: SupabaseRest, required: list[date]) -> date | None:
+    existing = db.request(
+        "GET",
+        TABLE,
+        params={
+            "select": "series_code,observation_date",
+            "series_code": f"in.({SERIES_DELINQUENCY},{SERIES_DEFAULT})",
+            "observation_date": f"gte.{required[-1].isoformat()}",
+            "limit": "1000",
+        },
+    ) or []
+    by_month: dict[str, set[str]] = {}
+    for row in existing:
+        key = str(row.get("observation_date") or "")
+        code = str(row.get("series_code") or "")
+        if key and code:
+            by_month.setdefault(key, set()).add(code)
+
+    needed = {SERIES_DELINQUENCY, SERIES_DEFAULT}
+    for month in required:
+        if by_month.get(month.isoformat(), set()) != needed:
+            return month
+    return None
+
+
 def run() -> dict[str, object]:
     required = _required_months(EXPECTED_LATEST)
     db = SupabaseRest()
 
-    # Old split series are no longer part of the product. Remove them once up front;
-    # the unified delinquency/default rows are then repaired newest -> oldest.
     db.request(
         "DELETE",
         TABLE,
@@ -64,9 +86,23 @@ def run() -> dict[str, object]:
         prefer="return=minimal",
     )
 
+    resume = _first_missing_month(db, required)
+    if resume is None:
+        return {
+            "latest": EXPECTED_LATEST.isoformat(),
+            "oldest": required[-1].isoformat(),
+            "months": len(required),
+            "rows": 0,
+            "status": "already-complete",
+        }
+
+    start_index = required.index(resume)
+    remaining = required[start_index:]
+    print(json.dumps({"resume_from": f"{resume:%Y-%m}", "remaining_months": len(remaining)}, ensure_ascii=False))
+
     stored = 0
     oldest_stored: date | None = None
-    for month in required:
+    for month in remaining:
         rows = fetch_paynet_month(month)
         missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
         if missing:
