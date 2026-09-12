@@ -26,8 +26,7 @@ const SERIES_CATALOG = [
   {code:'EMRATIO',title:'미국 인구대비 고용률',frequency:'월별',category:'고빈도 경기'},
   {code:'US_RETAIL_SALES',title:'미국 소매판매 YoY',frequency:'월별',category:'고빈도 경기'},
   {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'10일 구간',category:'고빈도 경기'},
-  {code:'US_SBDI_31_90',title:'미국 단기 연체율',frequency:'월별',category:'기업신용'},
-  {code:'US_SBDI_91_180',title:'미국 장기 연체율',frequency:'월별',category:'기업신용'},
+  {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'월별',category:'기업신용'},
   {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'월별',category:'기업신용'},
   {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'월별',category:'기업신용'},
   {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'월별',category:'기업신용'},
@@ -60,135 +59,96 @@ function buildModal() {
         <span></span><span></span><button type="button" data-close-existing-series>취소</button><button type="submit" id="economic-existing-series-submit" class="primary">추가</button>
       </div>
     </form>`;
-  document.body.append(shell);
-  shell.querySelectorAll('[data-close-existing-series]').forEach(node => node.addEventListener('click', closeModal));
-  $('economic-existing-series-form').addEventListener('submit', saveSelected);
-  modal = shell;
+  document.body.appendChild(shell);
+  shell.querySelectorAll('[data-close-existing-series]').forEach(button => {
+    button.addEventListener('click', closeModal);
+  });
+  $('economic-existing-series-form').addEventListener('submit', addSelected);
   return shell;
 }
 
-async function preferenceRow() {
-  const {data, error} = await client
-    .from('economic_chart_preferences')
-    .select('series_order,hidden_series,horizontal_lines')
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (error) throw error;
-  return data || {series_order:{}, hidden_series:[], horizontal_lines:{}};
-}
-
-function groupedMissing(hiddenCodes) {
-  const hidden = new Set(hiddenCodes);
-  const groups = new Map();
-  for (const item of SERIES_CATALOG) {
-    if (!hidden.has(item.code)) continue;
-    if (!groups.has(item.category)) groups.set(item.category, []);
-    groups.get(item.category).push(item);
-  }
-  return groups;
-}
-
-async function openModal() {
-  if (!client || !user) return;
-  buildModal();
-  const list = $('economic-existing-series-list');
-  const submit = $('economic-existing-series-submit');
-  list.innerHTML = '<div class="economic-existing-series-empty">불러오는 중</div>';
-  submit.disabled = true;
+function openModal() {
+  modal = buildModal();
+  renderChoices().catch(showError);
   modal.hidden = false;
-  try {
-    const row = await preferenceRow();
-    const hidden = Array.isArray(row.hidden_series) ? row.hidden_series : [];
-    const groups = groupedMissing(hidden);
-    list.replaceChildren();
-    if (!groups.size) {
-      list.innerHTML = '<div class="economic-existing-series-empty">현재 목록에서 빠져있는 지표가 없습니다.</div>';
-      return;
-    }
-    for (const [category, items] of groups) {
-      const section = document.createElement('div');
-      section.className = 'economic-existing-series-group';
-      const title = document.createElement('div');
-      title.className = 'economic-existing-series-group-title';
-      title.textContent = category;
-      section.append(title);
-      for (const item of items) {
-        const label = document.createElement('label');
-        label.className = 'economic-existing-series-option';
-        label.innerHTML = `<input type="checkbox" name="series_code" value="${item.code}"><span><strong>${item.title}</strong><small>${item.frequency}</small></span>`;
-        section.append(label);
-      }
-      list.append(section);
-    }
-    list.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener('change', () => {
-      submit.disabled = !list.querySelector('input[type="checkbox"]:checked');
-    }));
-  } catch (error) {
-    console.error(error);
-    list.innerHTML = `<div class="economic-existing-series-empty">지표 목록을 불러오지 못했습니다.<small>${error?.message || '조회 오류'}</small></div>`;
-  }
 }
 
 function closeModal() {
   if (modal) modal.hidden = true;
 }
 
-async function saveSelected(event) {
-  event.preventDefault();
-  if (!client || !user) return;
-  const selected = new Set([...$('economic-existing-series-list').querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value));
-  if (!selected.size) return;
-  const submit = $('economic-existing-series-submit');
-  submit.disabled = true;
-  try {
-    const row = await preferenceRow();
-    const hidden = (Array.isArray(row.hidden_series) ? row.hidden_series : []).filter(code => !selected.has(code));
-    const payload = {
-      user_id: user.id,
-      series_order: row.series_order || {},
-      hidden_series: hidden,
-      horizontal_lines: row.horizontal_lines || {},
-      updated_at: new Date().toISOString()
-    };
-    const {error} = await client.from('economic_chart_preferences').upsert(payload, {onConflict:'user_id'});
-    if (error) throw error;
-    closeModal();
-    location.reload();
-  } catch (error) {
-    console.error(error);
-    submit.disabled = false;
-    const note = $('economic-note');
-    if (note) note.textContent = `지표 추가 오류: ${error?.message || '알 수 없는 오류'}`;
-  }
+function showError(error) {
+  const root = $('economic-existing-series-list');
+  if (root) root.textContent = `불러오기 오류: ${error?.message || error}`;
 }
 
-function ensureAddButton() {
-  const root = $('economic-series-list');
-  if (!root) return;
-  root.querySelectorAll('.economic-series-restore').forEach(node => node.remove());
-  if ($('economic-existing-series-add')) return;
+async function preferences() {
+  const { data, error } = await client
+    .from('economic_chart_preferences')
+    .select('hidden_series')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.hidden_series) ? data.hidden_series : [];
+}
+
+async function renderChoices() {
+  const hidden = new Set(await preferences());
+  const root = $('economic-existing-series-list');
+  root.replaceChildren();
+  let count = 0;
+  for (const item of SERIES_CATALOG) {
+    if (!hidden.has(item.code)) continue;
+    count += 1;
+    const label = document.createElement('label');
+    label.className = 'economic-existing-series-item';
+    label.innerHTML = `<input type="checkbox" value="${item.code}"><span><strong>${item.title}</strong><small>${item.category} · ${item.frequency}</small></span>`;
+    root.appendChild(label);
+  }
+  if (!count) root.textContent = '추가할 수 있는 숨김 지표가 없습니다.';
+}
+
+async function addSelected(event) {
+  event.preventDefault();
+  const selected = new Set(
+    [...$('economic-existing-series-list').querySelectorAll('input[type="checkbox"]:checked')]
+      .map(input => input.value)
+  );
+  if (!selected.size) return;
+  const hidden = await preferences();
+  const next = hidden.filter(code => !selected.has(code));
+  const { error } = await client
+    .from('economic_chart_preferences')
+    .upsert({ user_id: user.id, hidden_series: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) throw error;
+  location.reload();
+}
+
+function ensureButton() {
+  if ($('economic-existing-series-open')) return;
+  const host = $('economic-series-actions');
+  if (!host) return;
   const button = document.createElement('button');
+  button.id = 'economic-existing-series-open';
   button.type = 'button';
-  button.id = 'economic-existing-series-add';
-  button.className = 'economic-existing-series-add';
+  button.className = 'economic-series-restore';
   button.textContent = '+ 기존 지표 추가';
   button.addEventListener('click', openModal);
-  root.append(button);
+  host.appendChild(button);
 }
 
-async function initialize() {
+function startObserver() {
+  if (observer || !document.body) return;
+  observer = new MutationObserver(ensureButton);
+  observer.observe(document.body, { childList: true, subtree: true });
+  ensureButton();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
   if (!client) return;
-  buildModal();
-  const {data} = await client.auth.getSession();
+  const { data } = await client.auth.getSession();
   user = data.session?.user || null;
   if (!user) return;
-  ensureAddButton();
-  const root = $('economic-series-list');
-  if (root) {
-    observer = new MutationObserver(ensureAddButton);
-    observer.observe(root, {childList:true});
-  }
-}
-
-document.addEventListener('DOMContentLoaded', initialize);
+  startObserver();
+});
 })();
