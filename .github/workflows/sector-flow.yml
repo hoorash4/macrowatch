@@ -1,8 +1,6 @@
 name: Refresh sector flow
 
-# Regular execution is owned by Supabase pg_cron, not this workflow.
-# Source-of-truth slots (UTC): '10 0 * * 1-5' 'open', '30 3 * * 1-5' 'intraday',
-# and '40 6 * * 1-5' 'close'. Each has a +15 minute retry in Supabase.
+# Regular execution is owned by Supabase pg_cron; this workflow is manual/fallback only.
 on:
   workflow_dispatch:
     inputs:
