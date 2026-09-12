@@ -7,7 +7,6 @@ import json
 from typing import Iterator
 
 import requests
-from openpyxl import load_workbook
 
 from common import request_with_retry
 
@@ -89,9 +88,21 @@ def _download_workbook(meta: dict) -> bytes:
     return response.content
 
 
+def _load_workbook(content: bytes):
+    """Import the optional XLSX reader only at the source boundary.
+
+    Some unrelated repository tests install lightweight module doubles while the full suite is
+    importing. Keeping openpyxl out of module import time prevents those doubles from affecting
+    source discovery; production parsing still uses the pinned openpyxl dependency.
+    """
+    from openpyxl import load_workbook
+
+    return load_workbook(BytesIO(content), data_only=True, read_only=True)
+
+
 def _parse_monthly_filings(content: bytes) -> int:
     """Return the nationwide monthly filing count from the official 회생합의 workbook."""
-    workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+    workbook = _load_workbook(content)
     try:
         sheet = workbook["회생합의"] if "회생합의" in workbook.sheetnames else workbook.worksheets[0]
         for values in sheet.iter_rows(values_only=True):
