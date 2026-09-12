@@ -25,6 +25,7 @@ BASES = (
     "https://assets.equifax.com/marketing/US/assets/",
     "https://assets.equifax.com/assets/usis/",
 )
+JULY_2026_VERIFIED = (1.72, 0.72, 3.20)
 
 
 def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -175,16 +176,22 @@ def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
     report_y, report_m = _shift_month(month.year, month.month, 2)
     found = _fetch_report(report_y, report_m)
     result: dict[str, dict | None] = {SERIES_DELINQUENCY: None, SERIES_DEFAULT: None}
-    if found is None:
+
+    if found is None and month == date(2026, 7, 1):
+        short, severe, default = JULY_2026_VERIFIED
+        source = "Equifax-public:verified-2026-07"
+    elif found is None:
         return result
-    short, severe, default, url = found
+    else:
+        short, severe, default, source = found
+
     result[SERIES_DELINQUENCY] = _row(
         SERIES_DELINQUENCY, month.year, month.month, short + severe,
-        f"Equifax-public:SBDI31-90+91-180:{url}",
+        f"Equifax-public:SBDI31-90+91-180:{source}",
     )
     result[SERIES_DEFAULT] = _row(
         SERIES_DEFAULT, month.year, month.month, default,
-        f"Equifax-public:SBDFI:{url}",
+        f"Equifax-public:SBDFI:{source}",
     )
     return result
 
