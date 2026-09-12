@@ -37,6 +37,9 @@ NFCI_PUBLICATION_LAG_DAYS = 7
 UPSERT_BATCH_SIZE = 500
 CACHE_COLLECTOR = "equity_bond_relative"
 CACHE_SERIES = {"real_yield_10y": "DFII10", "nfci_level": "NFCI"}
+# DFII10 starts on 2003-01-02. January 2003 is the earliest overlap
+# available to every model source.
+REQUIRED_HISTORY_THROUGH = date(2003, 1, 31)
 
 
 def first_of_month(value: date) -> date:
@@ -111,6 +114,10 @@ def cached_series_values(cache: dict[str, dict[date, tuple[date, float]]]) -> di
         key: {period: value for period, (_observed, value) in cache.get(series, {}).items()}
         for key, series in CACHE_SERIES.items()
     }
+
+
+def has_required_history(series: dict[str, dict[date, float]]) -> bool:
+    return all(values and min(values) <= REQUIRED_HISTORY_THROUGH for values in series.values())
 
 
 def build_monthly_inputs(
@@ -227,8 +234,8 @@ def main() -> None:
     retained = load_retained_sources(database)
     if not args.initialize_sources and (
         not is_initialized(cache)
-        or any(not values or min(values) > date(2003, 1, 1) for values in cached.values())
-        or any(not values or min(values) > date(2003, 1, 1) for values in retained.values())
+        or not has_required_history(cached)
+        or not has_required_history(retained)
     ):
         raise RuntimeError("Equity-bond model source cache is not initialized; run --initialize-sources explicitly")
 
@@ -260,7 +267,7 @@ def main() -> None:
     for series, values in source_cache_points(recent).items():
         cache.setdefault(series, {}).update(values)
     cached = cached_series_values(cache)
-    if not is_initialized(cache) or any(not values or min(values) > date(2003, 1, 1) for values in cached.values()):
+    if not is_initialized(cache) or not has_required_history(cached):
         raise RuntimeError("Equity-bond model source cache is not initialized; run --initialize-sources explicitly")
     raw = {**retained, **cached}
 

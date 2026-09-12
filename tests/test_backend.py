@@ -404,6 +404,16 @@ class SharedCalculationTests(unittest.TestCase):
             "SPY_ADJUSTED_CLOSE", "TLT_ADJUSTED_CLOSE", "T10Y2Y", "BAA10Y",
         })
 
+    def test_equity_bond_history_accepts_actual_dfii10_start(self) -> None:
+        self.assertTrue(equity_bond_pipeline.has_required_history({
+            "real_yield_10y": {date(2003, 1, 2): 2.0},
+            "nfci_level": {date(2002, 12, 27): -0.1},
+        }))
+        self.assertFalse(equity_bond_pipeline.has_required_history({
+            "real_yield_10y": {date(2003, 2, 3): 2.0},
+            "nfci_level": {date(2002, 12, 27): -0.1},
+        }))
+
 
 class CommonClientTests(unittest.TestCase):
     def test_fred_client_preserves_query_contract(self) -> None:
