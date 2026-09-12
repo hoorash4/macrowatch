@@ -8,7 +8,7 @@ const validate = globalThis.MacroWatchScheduleGuard.validateScheduleChange;
 const items = [
   {
     workflow_id: 'liquidity.yml', cron: '30 4 * * *', kst_time: '13:30', name: '미국·한국 주식시장 자금환경',
-    earliest_safe_time_kst: '18:10', dependency_reason: '한국은행 원천데이터 공개 이후에 실행되어야 합니다.',
+    earliest_safe_time_kst: '13:30', dependency_reason: '한국은행 원천데이터 공개 이후에 실행되어야 합니다.',
   },
   {
     workflow_id: 'sector-flow-open.yml', cron: '10 0 * * 1-5', kst_time: '09:10', name: '주도섹터 흐름 · 장초반',
@@ -26,9 +26,9 @@ const items = [
 
 test('frontend guard preserves an unchanged legacy time but blocks a newly unsafe edit', () => {
   assert.equal(validate(items, 'liquidity.yml', '30 4 * * *', '13:30'), null);
-  const issue = validate(items, 'liquidity.yml', '30 4 * * *', '17:59');
+  const issue = validate(items, 'liquidity.yml', '30 4 * * *', '13:29');
   assert.equal(issue.title, '실행 시간을 변경할 수 없습니다');
-  assert.match(issue.message, /18:10 KST 이후/);
+  assert.match(issue.message, /13:30 KST 이후/);
 });
 
 test('frontend guard includes retry time when protecting phase order', () => {

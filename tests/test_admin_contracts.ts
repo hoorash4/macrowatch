@@ -26,8 +26,8 @@ test("KST schedule translation preserves the Korean recurrence date", () => {
 
 test("central schedule policy rejects unsafe time and allows the boundary", () => {
   const liquidity = schedulePolicy("liquidity.yml");
-  assert.throws(() => assertScheduleTime(liquidity, "18:09"), /18:10 KST 이후/);
-  assert.doesNotThrow(() => assertScheduleTime(liquidity, "18:10"));
+  assert.throws(() => assertScheduleTime(liquidity, "13:29"), /13:30 KST 이후/);
+  assert.doesNotThrow(() => assertScheduleTime(liquidity, "13:30"));
   const market = schedulePolicy("market-context.yml");
   assert.throws(() => assertScheduleTime(market, "15:59"), /16:00 KST 이후/);
 });
@@ -117,8 +117,8 @@ test("changed unsafe clock value is rejected before any workflow write", async (
       return new Response(JSON.stringify({ name: "liquidity.yml", path: ".github/workflows/liquidity.yml", sha: "sha", content: btoa(workflow) }));
     };
     await assert.rejects(
-      updateAutomationTime("liquidity.yml", "30 4 * * *", "17:59", "test-token"),
-      /18:10 KST 이후/,
+      updateAutomationTime("liquidity.yml", "30 4 * * *", "13:29", "test-token"),
+      /13:30 KST 이후/,
     );
     assert.equal(calls.filter((call) => call.method === "PUT").length, 0);
   } finally { globalThis.fetch = original; }
@@ -144,12 +144,12 @@ test("allowed schedule edit writes the new cron then clears queued old scheduled
       if (path.includes("/actions/runs/123/cancel")) return new Response(null, {status:202});
       throw new Error(`Unexpected request: ${method} ${path}`);
     };
-    await updateAutomationTime("liquidity.yml", "30 4 * * *", "18:10", "test-token");
+    await updateAutomationTime("liquidity.yml", "30 4 * * *", "13:45", "test-token");
     const writeIndex = calls.findIndex((call) => call.method === "PUT");
     const cancelIndex = calls.findIndex((call) => call.url.includes("/cancel"));
     assert.ok(writeIndex >= 0 && cancelIndex > writeIndex);
     const payload = JSON.parse(calls[writeIndex].body);
-    assert.match(decodeBase64Utf8(payload.content), /10 9 \* \* \*/);
+    assert.match(decodeBase64Utf8(payload.content), /45 4 \* \* \*/);
   } finally { globalThis.fetch = original; }
 });
 
