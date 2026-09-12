@@ -23,16 +23,16 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install dependencies
+      - name: Require PayNet login for direct delinquency/default data
         env:
           PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
           PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
+        run: test -n "$PAYNET_USERNAME" && test -n "$PAYNET_PASSWORD"
+      - name: Install dependencies
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
-          if [ -n "$PAYNET_USERNAME" ] && [ -n "$PAYNET_PASSWORD" ]; then
-            pip install --disable-pip-version-check playwright
-            playwright install chromium
-          fi
+          pip install --disable-pip-version-check playwright
+          playwright install chromium
       - name: Backfill direct PayNet 31-180 delinquency and SBDFI
         env:
           PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
