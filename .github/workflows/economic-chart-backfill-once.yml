@@ -1,6 +1,11 @@
 name: Economic chart backfill once
 
 on:
+  # One explicit push-triggered run is used for the user-requested Korean export backfill.
+  # Remove this push trigger after the run completes; normal backfills remain manual-only.
+  push:
+    paths:
+      - ".github/workflows/economic-chart-backfill-once.yml"
   workflow_dispatch:
     inputs:
       target:
@@ -11,6 +16,7 @@ on:
         options:
           - kospi-valuation
           - census-retail
+          - korea-export
           - all
 
 permissions:
@@ -32,6 +38,7 @@ jobs:
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
       - name: Backfill selected economic chart series
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.target != 'korea-export' }}
         env:
           PYTHONPATH: backend
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -43,7 +50,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python -m signals.economic_chart_backfill --only "${{ inputs.target }}"
       - name: Backfill Korean export history
-        if: ${{ inputs.target == 'all' }}
+        if: ${{ github.event_name == 'push' || inputs.target == 'korea-export' || inputs.target == 'all' }}
         env:
           PYTHONPATH: backend
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
