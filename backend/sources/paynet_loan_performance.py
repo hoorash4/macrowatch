@@ -106,7 +106,7 @@ def extract_direct_levels(text: str) -> tuple[float | None, float | None]:
 def _fetch_report(report_year: int, report_month: int) -> tuple[float | None, float | None, str] | None:
     for url in _report_urls(report_year, report_month):
         try:
-            response = requests.get(url, timeout=15, headers={"User-Agent": USER_AGENT})
+            response = requests.get(url, timeout=12, headers={"User-Agent": USER_AGENT})
             if response.status_code != 200 or "pdf" not in response.headers.get("content-type", "").lower():
                 continue
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
@@ -120,31 +120,38 @@ def _fetch_report(report_year: int, report_month: int) -> tuple[float | None, fl
     return None
 
 
+def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
+    """Fetch one observation month from its public report; no split-bucket fallback."""
+    month = date(observed.year, observed.month, 1)
+    report_y, report_m = _shift_month(month.year, month.month, 2)
+    found = _fetch_report(report_y, report_m)
+    result: dict[str, dict | None] = {SERIES_DELINQUENCY: None, SERIES_DEFAULT: None}
+    if found is None:
+        return result
+    delinquency, default, url = found
+    if delinquency is not None:
+        result[SERIES_DELINQUENCY] = _row(
+            SERIES_DELINQUENCY, month.year, month.month, delinquency,
+            f"Equifax-public:SBDI31-180:{url}",
+        )
+    if default is not None:
+        result[SERIES_DEFAULT] = _row(
+            SERIES_DEFAULT, month.year, month.month, default,
+            f"Equifax-public:SBDFI:{url}",
+        )
+    return result
+
+
 def fetch_paynet_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Fetch direct public monthly levels, newest observation first.
-
-    Reports are normally published about two months after the observation month. A
-    month is included only when the report explicitly states the required level.
-    """
+    """Fetch direct public monthly levels, newest observation first."""
     first = date(start.year, start.month, 1)
-    last = date(end.year, end.month, 1)
+    current = date(end.year, end.month, 1)
     result = {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
-
-    current = last
     while current >= first:
-        report_y, report_m = _shift_month(current.year, current.month, 2)
-        found = _fetch_report(report_y, report_m)
-        if found is not None:
-            delinquency, default, url = found
-            if delinquency is not None:
-                result[SERIES_DELINQUENCY].append(
-                    _row(SERIES_DELINQUENCY, current.year, current.month, delinquency, f"Equifax-public:SBDI31-180:{url}")
-                )
-            if default is not None:
-                result[SERIES_DEFAULT].append(
-                    _row(SERIES_DEFAULT, current.year, current.month, default, f"Equifax-public:SBDFI:{url}")
-                )
+        rows = fetch_paynet_month(current)
+        for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
+            if rows[code] is not None:
+                result[code].append(rows[code])
         prev_y, prev_m = _shift_month(current.year, current.month, -1)
         current = date(prev_y, prev_m, 1)
-
     return result
