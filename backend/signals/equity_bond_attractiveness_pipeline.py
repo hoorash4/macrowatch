@@ -16,11 +16,11 @@ OEF_PAGE = "https://www.ishares.com/us/products/239723/ishares-sp-100-etf"
 KOREA_10Y_STAT = "817Y002"
 KOREA_10Y_ITEM = "010210000"
 START = date(2015, 1, 1)
-# The score needs 260 weeks of percentile history plus 13-week change/return
-# lags, reporting-lag price anchors and four-week smoothing. Keep a bounded
-# cushion so incremental automatic runs reproduce the same new rows as a full
-# history calculation without redownloading the fixed 2015 history every week.
-AUTOMATIC_OVERLAP_WEEKS = 320
+# Exact parity needs the 260-week percentile window, the 13-week gap change,
+# the 52-week earnings comparison and the four scored weeks used by smoothing.
+# A 340-week source window leaves a small holiday/missing-observation cushion
+# while avoiding a fixed 2015-to-present download on every automatic run.
+AUTOMATIC_OVERLAP_WEEKS = 340
 
 
 def weekly_last(values: dict[date, float]) -> dict[date, float]:
