@@ -15,19 +15,29 @@ import numpy as np
 import requests
 
 try:
-    from .common import SupabaseRest, fetch_fred_observations, require_env
+    from .common import (
+        AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS, SupabaseRest,
+        fetch_fred_observations, month_start_months_ago, request_with_retry, require_env,
+    )
     from .inflation_lead_model import (
         MODEL_VERSION, ProducerCalibration, align_producer_inflation,
         fisher_real_rate_pct, fit_ridge, predict_ridge,
         select_direction_ridge_alpha, select_ridge_alpha, shelter_adjusted_cpi_yoy,
     )
+    from .signals.automatic_source_cache import is_initialized, load as load_source_cache
+    from .signals.automatic_source_cache import mark_initialized, store as store_source_cache
 except ImportError:  # Direct script execution used by GitHub Actions.
-    from common import SupabaseRest, fetch_fred_observations, require_env
+    from common import (
+        AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS, SupabaseRest,
+        fetch_fred_observations, month_start_months_ago, request_with_retry, require_env,
+    )
     from inflation_lead_model import (
         MODEL_VERSION, ProducerCalibration, align_producer_inflation,
         fisher_real_rate_pct, fit_ridge, predict_ridge,
         select_direction_ridge_alpha, select_ridge_alpha, shelter_adjusted_cpi_yoy,
     )
+    from signals.automatic_source_cache import is_initialized, load as load_source_cache
+    from signals.automatic_source_cache import mark_initialized, store as store_source_cache
 
 
 TIMEOUT_SECONDS = 60
@@ -63,6 +73,8 @@ COMMODITY_GROUPS = {
     "industrial": ("HG=F", "ALI=F", "HRC=F", "CT=F"),
 }
 OFFICIAL_SHELTER_WEIGHTS = {"headline": 0.356, "core": 0.446}
+CACHE_COLLECTOR = "inflation_model"
+DAILY_FRED_NAMES = frozenset({"dollar", "policy_rate", "treasury_10y"})
 
 
 @dataclass(frozen=True)
@@ -100,13 +112,17 @@ def latest_on_or_before(values: dict[date, float], cutoff: date) -> float | None
     return values[max(candidates)] if candidates else None
 
 
-def fetch_fred_series(api_key: str, today: date) -> dict[str, dict[date, float]]:
+def fetch_fred_series(
+    api_key: str,
+    today: date,
+    starts: dict[str, date] | None = None,
+) -> dict[str, dict[date, float]]:
     output: dict[str, dict[date, float]] = {}
     for name, series_id in FRED_SERIES.items():
         rows = fetch_fred_observations(
             series_id,
             api_key,
-            start=SOURCE_START.isoformat(),
+            start=(starts or {}).get(name, SOURCE_START).isoformat(),
             end=today.isoformat(),
             timeout=TIMEOUT_SECONDS,
         )
@@ -125,21 +141,23 @@ def fetch_fred_series(api_key: str, today: date) -> dict[str, dict[date, float]]
     return output
 
 
-def fetch_bls_series(series_id: str, today: date) -> dict[date, float]:
+def fetch_bls_series(series_id: str, today: date, start: date = SOURCE_START) -> dict[date, float]:
     """Fetch a long monthly BLS series in public-API-sized year blocks."""
 
     values: dict[date, float] = {}
-    for start_year in range(SOURCE_START.year, today.year + 1, 10):
+    for start_year in range(start.year, today.year + 1, 10):
         end_year = min(start_year + 9, today.year)
-        response = requests.post(
-            BLS_TIMESERIES_URL,
-            json={
-                "seriesid": [series_id],
-                "startyear": str(start_year),
-                "endyear": str(end_year),
-            },
-            headers={"User-Agent": "MacroWatch inflation research/2.0"},
-            timeout=TIMEOUT_SECONDS,
+        response = request_with_retry(
+            lambda: requests.post(
+                BLS_TIMESERIES_URL,
+                json={
+                    "seriesid": [series_id],
+                    "startyear": str(start_year),
+                    "endyear": str(end_year),
+                },
+                headers={"User-Agent": "MacroWatch inflation research/2.0"},
+                timeout=TIMEOUT_SECONDS,
+            )
         )
         response.raise_for_status()
         payload = response.json()
@@ -154,7 +172,8 @@ def fetch_bls_series(series_id: str, today: date) -> dict[date, float]:
                 continue
             try:
                 observed_on = date(int(row["year"]), int(period[1:]), 1)
-                values[observed_on] = float(row["value"])
+                if observed_on >= start:
+                    values[observed_on] = float(row["value"])
             except (KeyError, TypeError, ValueError):
                 continue
     if not values:
@@ -162,29 +181,24 @@ def fetch_bls_series(series_id: str, today: date) -> dict[date, float]:
     return values
 
 
-def fetch_yahoo_series(symbol: str, today: date) -> dict[date, float]:
+def fetch_yahoo_series(symbol: str, today: date, start: date = SOURCE_START) -> dict[date, float]:
     params = {
-        "period1": int(datetime.combine(SOURCE_START, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
+        "period1": int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
         "period2": int(datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp()),
         "interval": "1d",
         "events": "history",
     }
-    response = None
-    for attempt in range(6):
+    attempt = 0
+    def send():
+        nonlocal attempt
         url = YAHOO_CHART_URLS[attempt % len(YAHOO_CHART_URLS)].format(symbol=quote(symbol, safe=""))
-        response = requests.get(
-            url,
-            params=params,
+        attempt += 1
+        return requests.get(
+            url, params=params,
             headers={"User-Agent": "Mozilla/5.0 MacroWatch inflation research"},
             timeout=TIMEOUT_SECONDS,
         )
-        if response.status_code not in (429, 500, 502, 503, 504):
-            break
-        if attempt < 5:
-            import time
-            time.sleep(min(2 ** attempt, 20))
-    if response is None:
-        raise RuntimeError(f"Yahoo {symbol} did not return a response")
+    response = request_with_retry(send)
     response.raise_for_status()
     result = (response.json().get("chart", {}).get("result") or [{}])[0]
     timestamps = result.get("timestamp") or []
@@ -215,10 +229,12 @@ def parse_chart_date(label: str, target: date) -> date | None:
 
 
 def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
-    response = requests.get(
-        CLEVELAND_MONTHLY_URL,
-        headers={"User-Agent": "MacroWatch inflation research/2.0"},
-        timeout=TIMEOUT_SECONDS,
+    response = request_with_retry(
+        lambda: requests.get(
+            CLEVELAND_MONTHLY_URL,
+            headers={"User-Agent": "MacroWatch inflation research/2.0"},
+            timeout=TIMEOUT_SECONDS,
+        )
     )
     response.raise_for_status()
     payload = response.json()
@@ -651,7 +667,7 @@ def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str
 
 
 def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
-    tail = rows[-10:]
+    tail = rows[-AUTOMATIC_DAILY_VALUES:]
     if not tail:
         return
     first_day = str(tail[0]["observed_on"])
@@ -695,6 +711,7 @@ def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -
 
 
 def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> None:
+    monthly = monthly[-AUTOMATIC_MONTHLY_PERIODS:]
     existing = client.request("GET", "us_inflation_monthly", params={"select": "month,status", "limit": "500"}) or []
     status_by_month = {row["month"]: row["status"] for row in existing}
     selected_monthly = [
@@ -734,23 +751,88 @@ def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day:
         raise RuntimeError("Policy-rate verification did not return the expected latest row")
 
 
+def inflation_cache_points(
+    fred: dict[str, dict[date, float]],
+    prices: dict[str, dict[date, float]],
+) -> dict[str, dict[date, tuple[date, float]]]:
+    values = {
+        **{f"FRED:{name}": series for name, series in fred.items()},
+        **{f"YAHOO:{symbol}": series for symbol, series in prices.items()},
+    }
+    return {
+        series: {period: (period, value) for period, value in points.items()}
+        for series, points in values.items()
+    }
+
+
+def inflation_cached_values(
+    cache: dict[str, dict[date, tuple[date, float]]],
+) -> tuple[dict[str, dict[date, float]], dict[str, dict[date, float]]]:
+    def values(series: str) -> dict[date, float]:
+        return {period: value for period, (_observed, value) in cache.get(series, {}).items()}
+
+    fred = {name: values(f"FRED:{name}") for name in (*FRED_SERIES, "core_cpi_ex_shelter")}
+    prices = {
+        symbol: values(f"YAHOO:{symbol}")
+        for symbols in COMMODITY_GROUPS.values()
+        for symbol in symbols
+    }
+    return fred, prices
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=date.fromisoformat, default=PUBLISH_START)
+    parser.add_argument("--initialize-sources", action="store_true")
     args = parser.parse_args()
     if args.start < PUBLISH_START:
         raise SystemExit("Publish start cannot precede 2020-01-01")
 
     fred_key = require_env("FRED_API_KEY")
     today = date.today()
-    fred = fetch_fred_series(fred_key, today)
-    fred["core_cpi_ex_shelter"] = fetch_bls_series(BLS_CORE_CPI_EX_SHELTER, today)
-    nowcasts = fetch_cleveland_nowcasts()
-    prices = {
-        symbol: fetch_yahoo_series(symbol, today)
+    client = SupabaseRest(
+        url=require_env("SUPABASE_URL"),
+        service_key=require_env("SUPABASE_SERVICE_ROLE_KEY"),
+        timeout=TIMEOUT_SECONDS,
+    )
+    cache = load_source_cache(client, CACHE_COLLECTOR)
+    if not args.initialize_sources and not is_initialized(cache):
+        raise RuntimeError("Inflation source cache is not initialized; run --initialize-sources explicitly")
+
+    daily_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
+    monthly_start = month_start_months_ago(today, AUTOMATIC_MONTHLY_PERIODS - 1)
+    starts = {
+        name: SOURCE_START if args.initialize_sources else (
+            daily_start if name in DAILY_FRED_NAMES else monthly_start
+        )
+        for name in FRED_SERIES
+    }
+    fred_recent = fetch_fred_series(fred_key, today, starts)
+    fred_recent["core_cpi_ex_shelter"] = fetch_bls_series(
+        BLS_CORE_CPI_EX_SHELTER,
+        today,
+        SOURCE_START if args.initialize_sources else monthly_start,
+    )
+    price_start = SOURCE_START if args.initialize_sources else daily_start
+    prices_recent = {
+        symbol: fetch_yahoo_series(symbol, today, price_start)
         for symbols in COMMODITY_GROUPS.values()
         for symbol in symbols
     }
+    recent_cache = inflation_cache_points(fred_recent, prices_recent)
+    if args.initialize_sources and any(not points for points in recent_cache.values()):
+        raise RuntimeError("Inflation source initialization returned incomplete history")
+    store_source_cache(client, CACHE_COLLECTOR, recent_cache)
+    if args.initialize_sources:
+        mark_initialized(client, CACHE_COLLECTOR, today)
+        cache = load_source_cache(client, CACHE_COLLECTOR)
+    else:
+        for series, values in recent_cache.items():
+            cache.setdefault(series, {}).update(values)
+    fred, prices = inflation_cached_values(cache)
+    if any(not values for values in (*fred.values(), *prices.values())):
+        raise RuntimeError("Inflation source cache is incomplete; run --initialize-sources explicitly")
+    nowcasts = fetch_cleveland_nowcasts()
     features = MarketFeatures(prices, fred["dollar"])
     headline_levels, headline_ppi, _ = integrated_levels(fred, "headline")
     core_levels, core_ppi, _ = integrated_levels(fred, "core")
@@ -769,11 +851,6 @@ def main() -> None:
     if not policies:
         raise RuntimeError("Policy-rate calculation produced no publishable rows")
 
-    client = SupabaseRest(
-        url=require_env("SUPABASE_URL"),
-        service_key=require_env("SUPABASE_SERVICE_ROLE_KEY"),
-        timeout=TIMEOUT_SECONDS,
-    )
     save_automatic(client, monthly)
     save_policy_automatic(client, policies)
     verify_saved(client, str(monthly[-1]["month"]), str(policies[-1]["observed_on"]))

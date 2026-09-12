@@ -7,7 +7,13 @@ from datetime import date, datetime
 
 import requests
 
-from common import SupabaseRest, month_start_months_ago, uncapped_score
+from common import (
+    AUTOMATIC_MONTHLY_CONTEXT_PERIODS,
+    AUTOMATIC_MONTHLY_PERIODS,
+    SupabaseRest,
+    month_start_months_ago,
+    uncapped_score,
+)
 from sources.korea_small_business_risk import TIMEOUT_SECONDS, fetch_all
 
 
@@ -76,16 +82,16 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict[str, object]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=10)
+    parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
     args = parser.parse_args()
-    if args.years < 1 or args.years > 15:
-        raise SystemExit("--years 값은 1~15 사이여야 합니다.")
+    if args.months < 1 or args.months > 12:
+        raise SystemExit("--months 값은 1~12 사이여야 합니다.")
     today = date.today()
     database = SupabaseRest(timeout=TIMEOUT_SECONDS)
-    start = date(today.year - args.years, today.month, 1)
+    start = month_start_months_ago(today, args.months - 1)
     end = today.replace(day=1)
     # 최초 표시월에도 발표가 느린 가동률·연체율의 직전 관측치가 필요하다.
-    collection_start = month_start_months_ago(start, 3)
+    collection_start = month_start_months_ago(start, AUTOMATIC_MONTHLY_CONTEXT_PERIODS)
     try:
         raw = fetch_all(collection_start, end, include_historical=False)
     except requests.RequestException as error:
@@ -99,7 +105,12 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 한국 중소기업 위험지수 데이터가 없습니다.")
     writable = database.automatic_rows(
-        "kr_small_business_risk_monthly", rows, key="month", provisional="is_provisional"
+        "kr_small_business_risk_monthly", rows, key="month", provisional="is_provisional",
+        compare_fields=(
+            "risk_index", "funding_outlook_sbhi", "funding_source_month", "utilization_sa_pct",
+            "utilization_source_month", "sme_loan_delinquency_pct", "delinquency_source_month",
+            "headline_outlook_sbhi", "method_version",
+        ),
     )
     if writable:
         database.upsert("kr_small_business_risk_monthly", writable, conflict="month")

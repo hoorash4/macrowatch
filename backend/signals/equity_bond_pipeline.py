@@ -13,7 +13,10 @@ from bisect import bisect_right
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from common import SupabaseRest, fetch_fred_observations, require_env
+from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, fetch_fred_observations, month_start_months_ago, require_env
+from signals.automatic_source_cache import load as load_source_cache
+from signals.automatic_source_cache import is_initialized, mark_initialized
+from signals.automatic_source_cache import store as store_source_cache
 from signals.equity_bond_model import MODEL_VERSION, MonthlyInputs, build_feature_rows, walk_forward_forecasts
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
@@ -32,6 +35,8 @@ SOURCE_CODES = {
 }
 NFCI_PUBLICATION_LAG_DAYS = 7
 UPSERT_BATCH_SIZE = 500
+CACHE_COLLECTOR = "equity_bond_relative"
+CACHE_SERIES = {"real_yield_10y": "DFII10", "nfci_level": "NFCI"}
 
 
 def first_of_month(value: date) -> date:
@@ -71,43 +76,41 @@ def lagged_month_values(
     return aligned
 
 
-def reused_dfii10_values(
-    database: SupabaseRest,
-    fred_api_key: str,
-    start: date,
-    end: date,
-) -> dict[date, float]:
-    """Reuse the retained EM DFII10 rows and fetch only their missing history."""
-
-    existing: dict[date, float] = {}
-    try:
+def load_retained_sources(database: SupabaseRest) -> dict[str, dict[date, float]]:
+    code_to_key = {series_code: key for key, (series_code, _source) in SOURCE_CODES.items()}
+    raw = {key: {} for key in SOURCE_CODES}
+    offset = 0
+    while True:
         rows = database.request(
-            "GET",
-            "em_capital_capacity_daily",
+            "GET", "equity_bond_source_monthly",
             params={
-                "select": "observation_date,real_yield_10y",
-                "observation_date": f"gte.{start.isoformat()}",
-                "order": "observation_date.asc",
-                "limit": "5000",
+                "select": "series_code,observation_date,value",
+                "order": "series_code.asc,month.asc", "offset": str(offset), "limit": "1000",
             },
         ) or []
         for row in rows:
-            existing[date.fromisoformat(str(row["observation_date"]))] = float(row["real_yield_10y"])
-    except (KeyError, TypeError, ValueError, RuntimeError):
-        # A first deployment or temporary PostgREST failure must not corrupt the
-        # calculation; FRED remains the authoritative fallback.
-        existing = {}
-    missing_end = min(existing) - timedelta(days=1) if existing else end
-    historical: dict[date, float] = {}
-    if missing_end >= start:
-        historical = valid_fred_values(fetch_fred_observations(
-            FRED_SERIES["real_yield_10y"],
-            fred_api_key,
-            start=start.isoformat(),
-            end=missing_end.isoformat(),
-        ))
-    historical.update(existing)
-    return historical
+            key = code_to_key.get(str(row.get("series_code")))
+            if key:
+                observed = date.fromisoformat(str(row["observation_date"])[:10])
+                raw[key][observed] = float(row["value"])
+        if len(rows) < 1000:
+            break
+        offset += len(rows)
+    return raw
+
+
+def source_cache_points(raw: dict[str, dict[date, float]]) -> dict[str, dict[date, tuple[date, float]]]:
+    return {
+        CACHE_SERIES[key]: {period: (period, value) for period, value in raw[key].items()}
+        for key in CACHE_SERIES
+    }
+
+
+def cached_series_values(cache: dict[str, dict[date, tuple[date, float]]]) -> dict[str, dict[date, float]]:
+    return {
+        key: {period: value for period, (_observed, value) in cache.get(series, {}).items()}
+        for key, series in CACHE_SERIES.items()
+    }
 
 
 def build_monthly_inputs(
@@ -207,46 +210,68 @@ def upsert_batches(database: SupabaseRest, table: str, rows: list[dict[str, Any]
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--initialize-sources", action="store_true")
     args = parser.parse_args()
+    if args.dry_run and args.initialize_sources:
+        raise SystemExit("--initialize-sources cannot be combined with --dry-run")
     today = date.today()
     end = previous_completed_month(today)
-    # The model still needs its fixed calibration history, but automatic storage
-    # below writes only missing sources and pending/new forecasts.
-    start = date(2002, 1, 1)
+    calibration_start = date(2002, 1, 1)
+    source_start = calibration_start if args.initialize_sources else month_start_months_ago(
+        end, AUTOMATIC_MONTHLY_PERIODS - 1,
+    )
     fred_api_key = require_env("FRED_API_KEY")
     database = SupabaseRest()
+    cache = load_source_cache(database, CACHE_COLLECTOR)
+    cached = cached_series_values(cache)
+    retained = load_retained_sources(database)
+    if not args.initialize_sources and (
+        not is_initialized(cache)
+        or any(not values or min(values) > date(2003, 1, 1) for values in cached.values())
+        or any(not values or min(values) > date(2003, 1, 1) for values in retained.values())
+    ):
+        raise RuntimeError("Equity-bond model source cache is not initialized; run --initialize-sources explicitly")
 
-    raw = {
-        "spy_adjusted_close": fetch_yahoo_adjusted("SPY", start, end),
-        "tlt_adjusted_close": fetch_yahoo_adjusted("TLT", start, end),
-        "real_yield_10y": reused_dfii10_values(database, fred_api_key, start, end),
+    recent = {
+        "spy_adjusted_close": fetch_yahoo_adjusted("SPY", source_start, end),
+        "tlt_adjusted_close": fetch_yahoo_adjusted("TLT", source_start, end),
     }
-    for key in ("yield_curve_10y_2y", "baa_spread", "nfci_level"):
-        raw[key] = valid_fred_values(fetch_fred_observations(
+    for key in FRED_SERIES:
+        recent[key] = valid_fred_values(fetch_fred_observations(
             FRED_SERIES[key],
             fred_api_key,
-            start=start.isoformat(),
+            start=source_start.isoformat(),
             end=end.isoformat(),
         ))
 
-    inputs = build_monthly_inputs(raw, start=start, end=end)
+    updated_at = datetime.now(timezone.utc).isoformat()
+    recent_source_rows = source_rows(recent, updated_at)
+    if not args.dry_run:
+        upsert_batches(database, "equity_bond_source_monthly", recent_source_rows, "series_code,month")
+        store_source_cache(database, CACHE_COLLECTOR, source_cache_points(recent))
+        if args.initialize_sources:
+            mark_initialized(database, CACHE_COLLECTOR, today)
+            cache = load_source_cache(database, CACHE_COLLECTOR)
+
+    if args.initialize_sources:
+        retained = load_retained_sources(database)
+    for key in SOURCE_CODES:
+        retained[key].update(recent[key])
+    for series, values in source_cache_points(recent).items():
+        cache.setdefault(series, {}).update(values)
+    cached = cached_series_values(cache)
+    if not is_initialized(cache) or any(not values or min(values) > date(2003, 1, 1) for values in cached.values()):
+        raise RuntimeError("Equity-bond model source cache is not initialized; run --initialize-sources explicitly")
+    raw = {**retained, **cached}
+
+    inputs = build_monthly_inputs(raw, start=calibration_start, end=end)
     features = build_feature_rows(inputs)
     forecasts = walk_forward_forecasts(features)
     if not forecasts:
         raise RuntimeError("No equity-bond forecasts were produced; verify source history and overlap.")
-    updated_at = datetime.now(timezone.utc).isoformat()
-    retained_sources = source_rows(raw, updated_at)
+    retained_sources = recent_source_rows
     retained_forecasts = forecast_rows(forecasts, updated_at)
     if not args.dry_run:
-        existing_sources = database.request(
-            "GET", "equity_bond_source_monthly",
-            params={"select": "series_code,month", "limit": "10000"},
-        ) or []
-        source_keys = {(str(row["series_code"]), str(row["month"])) for row in existing_sources}
-        retained_sources = [
-            row for row in retained_sources
-            if (str(row["series_code"]), str(row["month"])) not in source_keys
-        ]
         existing_forecasts = database.request(
             "GET", "equity_bond_relative_forecasts",
             params={"select": "forecast_month,outcome_status", "limit": "10000"},
@@ -257,10 +282,10 @@ def main() -> None:
             if str(row["forecast_month"]) not in forecast_state
             or forecast_state[str(row["forecast_month"])] == "pending"
         ]
-        upsert_batches(database, "equity_bond_source_monthly", retained_sources, "series_code,month")
         upsert_batches(database, "equity_bond_relative_forecasts", retained_forecasts, "forecast_month")
     print(
-        f"Equity-bond V1: inputs={len(inputs)} sources={len(retained_sources)} "
+        f"Equity-bond V1: source_start={source_start} initialized={args.initialize_sources} "
+        f"inputs={len(inputs)} sources={len(retained_sources)} "
         f"forecasts={len(retained_forecasts)} latest={retained_forecasts[-1]['forecast_month']} "
         f"verdict={retained_forecasts[-1]['verdict']} dry_run={args.dry_run}"
     )

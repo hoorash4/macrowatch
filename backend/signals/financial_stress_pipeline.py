@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, timedelta
 
-from common import SupabaseRest, carry_forward, require_env, uncapped_score
+from common import (
+    AUTOMATIC_MONTHLY_CONTEXT_PERIODS,
+    AUTOMATIC_MONTHLY_PERIODS,
+    AUTOMATIC_WEEKLY_CONTEXT_WEEKS,
+    AUTOMATIC_WEEKLY_WEEKS,
+    SupabaseRest,
+    carry_forward,
+    month_start_months_ago,
+    require_env,
+    uncapped_score,
+)
 from sources.financial_stress import (
     TIMEOUT_SECONDS,
     fetch_cmdi_monthly,
@@ -22,7 +32,6 @@ NONFINANCIAL_LEVERAGE_SERIES = "NFCINONFINLEVERAGE"
 SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
-INDEX_HISTORY_YEARS = 3
 MONTHLY_STRESS_COMPONENT_WEIGHTS = {
     "excess_bond_premium": 1,
     "corporate_bond_market_distress_index": 1,
@@ -120,8 +129,7 @@ def build_market_stress_index(
     today: date,
     sp500_month_end: dict[str, float],
 ) -> list[dict[str, object]]:
-    index_start = date(today.year - INDEX_HISTORY_YEARS, today.month, 1).isoformat()
-    recent_rows = [row for row in rows if str(row["month"]) >= index_start]
+    recent_rows = rows
     months = [str(row["month"]) for row in recent_rows]
     raw_component_values: dict[str, dict[str, float]] = {}
     for key in MONTHLY_STRESS_COMPONENTS:
@@ -167,7 +175,8 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
         return 0
     database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
     writable = database.automatic_rows(
-        "us_market_stress_index_monthly", rows, key="month", provisional="is_provisional"
+        "us_market_stress_index_monthly", rows, key="month", provisional="is_provisional",
+        compare_fields=("stress_index", "sp500_month_end_close"),
     )
     if writable:
         database.upsert("us_market_stress_index_monthly", writable, conflict="month")
@@ -177,7 +186,12 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
 def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> int:
     database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
     writable = database.automatic_rows(
-        "us_market_tension_weekly", rows, key="week", provisional="is_provisional"
+        "us_market_tension_weekly", rows, key="week", provisional="is_provisional",
+        compare_fields=(
+            "tension_index", "tension_momentum", "high_yield_oas_pct",
+            "financial_conditions_credit_index", "financial_conditions_risk_index",
+            "nonfinancial_leverage_index", "short_term_funding_spread", "sp500_friday_close",
+        ),
     )
     if writable:
         database.upsert("us_market_tension_weekly", writable, conflict="week")
@@ -186,21 +200,26 @@ def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: st
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=3)
+    parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
     args = parser.parse_args()
-    if args.years < 1 or args.years > 10:
-        raise SystemExit("--years 값은 1~10 사이여야 합니다.")
+    if args.months < 1 or args.months > 12:
+        raise SystemExit("--months 값은 1~12 사이여야 합니다.")
 
     fred_api_key = require_env("FRED_API_KEY")
     supabase_url = require_env("SUPABASE_URL")
     service_role_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
-    start = date(today.year - args.years, today.month, 1)
+    monthly_start = month_start_months_ago(
+        today, args.months - 1 + AUTOMATIC_MONTHLY_CONTEXT_PERIODS,
+    )
+    weekly_start = today - timedelta(
+        weeks=AUTOMATIC_WEEKLY_WEEKS + AUTOMATIC_WEEKLY_CONTEXT_WEEKS,
+    )
     end = date(today.year, today.month, 1)
 
-    excess_bond_premium = fetch_ebp_monthly(start, end)
-    cmdi = fetch_cmdi_monthly(start, end)
-    sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, start, end)
+    excess_bond_premium = fetch_ebp_monthly(monthly_start, end)
+    cmdi = fetch_cmdi_monthly(monthly_start, end)
+    sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, monthly_start, end)
     # Keep the current month in the MSI timeline even before either monthly
     # component is published. build_market_stress_index then carries the last
     # confirmed component values forward and marks that month provisional.
@@ -219,15 +238,15 @@ def main() -> None:
         index_source_rows,
         today,
         sp500_month_end,
-    )
+    )[-args.months:]
     stored_index = upsert_market_stress_index(index_rows, supabase_url, service_role_key)
-    weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, start, today)
-    weekly_credit_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, start, today)
-    weekly_risk_conditions = fetch_fred_week_end(FINANCIAL_RISK_SERIES, fred_api_key, start, today)
-    weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, start, today)
-    weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, start, today)
-    weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, start, today)
-    weekly_sp500 = fetch_fred_week_end(SP500_SERIES, fred_api_key, start, today)
+    weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, weekly_start, today)
+    weekly_credit_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, weekly_start, today)
+    weekly_risk_conditions = fetch_fred_week_end(FINANCIAL_RISK_SERIES, fred_api_key, weekly_start, today)
+    weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, weekly_start, today)
+    weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, weekly_start, today)
+    weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, weekly_start, today)
+    weekly_sp500 = fetch_fred_week_end(SP500_SERIES, fred_api_key, weekly_start, today)
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys()}
     weekly_rows = build_weekly_market_tension(
         weekly_high_yield,
@@ -236,7 +255,7 @@ def main() -> None:
         weekly_funding,
         weekly_leverage,
         weekly_sp500,
-    )
+    )[-AUTOMATIC_WEEKLY_WEEKS:]
     stored_weeks = upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
     print(
         f"calculated_market_stress_index={len(index_rows)} stored_market_stress_index={stored_index} "

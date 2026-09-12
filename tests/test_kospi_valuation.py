@@ -33,7 +33,10 @@ class FakeDb:
     def request(self, method, table, params=None, **_kwargs):
         if method == "GET" and table == pipeline.TABLE:
             code = str((params or {}).get("series_code", "")).removeprefix("eq.")
-            return [{"observation_date": item} for item in self.existing.get(code, set())]
+            stored = self.existing.get(code, {})
+            if isinstance(stored, dict):
+                return [{"observation_date": item, "value": value} for item, value in stored.items()]
+            return [{"observation_date": item} for item in stored]
         if method == "GET" and table == "targets":
             return []
         raise AssertionError((method, table, params))
@@ -100,7 +103,7 @@ class KospiValuationSourceTests(unittest.TestCase):
 
 class KospiValuationStorageTests(unittest.TestCase):
     def test_duplicate_dates_are_not_written(self):
-        db = FakeDb(existing={"KOSPI_PER": {"2026-09-10"}})
+        db = FakeDb(existing={"KOSPI_PER": {"2026-09-10": 12.0}})
         rows = [
             {"series_code": "KOSPI_PER", "observation_date": "2026-09-10", "value": 12.0, "frequency": "D", "source": "x"},
             {"series_code": "KOSPI_PER", "observation_date": "2026-09-11", "value": 12.1, "frequency": "D", "source": "x"},

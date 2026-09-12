@@ -10,7 +10,10 @@ from __future__ import annotations
 import argparse
 from datetime import date, datetime, timedelta, timezone
 
-from common import SupabaseRest, fetch_fred_observations, require_env
+from common import (
+    AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, SupabaseRest,
+    fetch_fred_observations, require_env,
+)
 from sources.us_treasury_yields import fetch_treasury_nominal_values
 
 
@@ -62,7 +65,10 @@ def build_rows(series_values: dict[str, dict[str, float]]) -> list[dict]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=21, help="Recent calendar-day collection window")
+    parser.add_argument(
+        "--days", type=int, default=AUTOMATIC_DAILY_CALENDAR_DAYS,
+        help="Recent calendar-day collection window",
+    )
     return parser.parse_args()
 
 
@@ -82,7 +88,7 @@ def main() -> None:
         "treasury_2y_rate": {observed.isoformat(): value for observed, value in treasury["2Y"].items()},
         "effr_rate": effr,
     }
-    rows = build_rows(series_values)
+    rows = build_rows(series_values)[-AUTOMATIC_DAILY_VALUES:]
     if not rows:
         print(f"No complete policy expectation observations from {start} through {today}.")
         return
@@ -93,6 +99,10 @@ def main() -> None:
         "policy_expectation_spreads",
         rows,
         key="observation_date",
+        compare_fields=(
+            "treasury_3m_rate", "treasury_2y_rate", "effr_rate",
+            "near_term_spread_bps", "cycle_spread_bps", "expectation_spread_bps",
+        ),
     )
     for offset in range(0, len(writable), UPSERT_BATCH_SIZE):
         database.upsert(

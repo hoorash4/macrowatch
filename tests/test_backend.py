@@ -931,8 +931,11 @@ class SourceContractTests(unittest.TestCase):
 
         for pipeline in (us_pipeline, korea_pipeline, em_pipeline):
             self.assertNotIn("RETENTION_MONTHS", pipeline)
-            self.assertNotIn("month_start_months_ago", pipeline)
             self.assertNotIn("delete_before(", pipeline)
+            self.assertIn("automatic_rows(", pipeline)
+        self.assertIn("AUTOMATIC_MONTHLY_PERIODS", us_pipeline)
+        self.assertIn("AUTOMATIC_MONTHLY_PERIODS", korea_pipeline)
+        self.assertIn("AUTOMATIC_WEEKLY_WEEKS", em_pipeline)
         self.assertIn("today = date.today()", korea_pipeline)
         self.assertIn("today_month = today.replace(day=1).isoformat()", korea_pipeline)
 
@@ -991,7 +994,7 @@ class SourceContractTests(unittest.TestCase):
         health = (ROOT / "backend/operations/collection_health.py").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260913050000_remove_us_credit_stress_card.sql").read_text(encoding="utf-8")
         self.assertNotIn("push:", workflow)
-        self.assertIn("signals.financial_stress_pipeline --years 3", workflow)
+        self.assertIn("signals.financial_stress_pipeline --months 5", workflow)
         self.assertNotIn("us_credit_stress_monthly", pipeline)
         self.assertNotIn("us_credit_stress_latest", pipeline)
         self.assertNotIn("collect_business_filings", pipeline)
@@ -1005,7 +1008,7 @@ class SourceContractTests(unittest.TestCase):
     def test_small_business_workflow_is_schedule_only_and_incremental(self) -> None:
         workflow = (ROOT / ".github/workflows/small-business-risk.yml").read_text(encoding="utf-8")
         self.assertNotIn("push:", workflow)
-        self.assertIn("signals.small_business_risk_pipeline --years 1", workflow)
+        self.assertIn("signals.small_business_risk_pipeline --months 5", workflow)
         self.assertNotIn("--replace", workflow)
         self.assertIn('cron: "30 21 * * *"', workflow)
 
@@ -1158,7 +1161,7 @@ class SourceContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/korea-small-business-risk.yml").read_text(encoding="utf-8")
         self.assertIn("KOSIS_API_KEY", workflow)
         self.assertIn("ECOS_API_KEY", workflow)
-        self.assertIn("--years 1", workflow)
+        self.assertIn("--months 5", workflow)
         self.assertNotIn("--replace", workflow)
         self.assertNotIn("workflow_run:", workflow)
         deploy_workflow = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")

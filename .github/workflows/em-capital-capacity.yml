@@ -5,6 +5,12 @@ on:
     # 14:30 KST: refresh after U.S. daily data releases.
     - cron: "30 5 * * *"
   workflow_dispatch:
+    inputs:
+      initialize_sources:
+        description: Explicitly initialize the historical calculation cache
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -29,4 +35,9 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.em_capital_capacity_pipeline --years 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          [[ "${{ inputs.initialize_sources || 'false' }}" == "true" ]] && args+=(--initialize-sources)
+          PYTHONPATH=backend python -m signals.em_capital_capacity_pipeline "${args[@]}"

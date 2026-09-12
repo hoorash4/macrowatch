@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 import json
 
-from common import SupabaseRest
+from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago
 from sources.business_credit_monthly import (
     fetch_korea_business_delinquency_rows,
     fetch_korea_default_company_rows,
@@ -14,15 +14,10 @@ from sources.epiq_ch11_source import fetch_epiq_ch11_rows
 from signals.economic_chart_pipeline import _insert_missing
 
 
-def _months_ago(d: date, months: int) -> date:
-    serial = d.year * 12 + d.month - 1 - months
-    return date(serial // 12, serial % 12 + 1, 1)
-
-
 def collect_recent() -> dict[str, int]:
     """Collect enough recent months to tolerate delayed monthly publication."""
     end = date.today()
-    start = _months_ago(end, 18)
+    start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
     db = SupabaseRest()
     counts: dict[str, int] = {}
 
@@ -35,7 +30,7 @@ def collect_recent() -> dict[str, int]:
     kr_default = fetch_korea_default_company_rows(start, end)
     counts["KR_DEFAULT_COMPANIES"] = _insert_missing(db, kr_default, start)
 
-    court_start = _months_ago(end, 3)
+    court_start = start
     kr_rehab = fetch_korea_corporate_rehab_rows(court_start, end)
     counts["KR_CORP_REHAB"] = _insert_missing(db, kr_rehab, court_start)
 

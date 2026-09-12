@@ -7,7 +7,16 @@ from bisect import bisect_right
 from datetime import date, datetime, timedelta, timezone
 from math import sqrt
 
-from common import SupabaseRest, fetch_fred_observations, require_env
+from common import (
+    AUTOMATIC_DAILY_CALENDAR_DAYS,
+    AUTOMATIC_DAILY_VALUES,
+    SupabaseRest,
+    fetch_fred_observations,
+    require_env,
+)
+from signals.automatic_source_cache import load as load_source_cache
+from signals.automatic_source_cache import is_initialized, mark_initialized
+from signals.automatic_source_cache import store as store_source_cache
 
 
 SERIES = {
@@ -17,8 +26,9 @@ SERIES = {
     "nfci": "NFCI",
 }
 MINIMUM_HISTORY = 60
-HISTORY_YEARS = 3
+INITIALIZATION_HISTORY_YEARS = 3
 UPSERT_BATCH_SIZE = 500
+CACHE_COLLECTOR = "em_capital_capacity"
 
 
 def valid_values(observations: list[dict]) -> dict[str, float]:
@@ -88,24 +98,63 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict]:
     return rows
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=HISTORY_YEARS)
-    args = parser.parse_args()
-    today = date.today()
-    start = today - timedelta(days=max(args.years, 1) * 366)
-    api_key = require_env("FRED_API_KEY")
-    raw = {
-        key: valid_values(fetch_fred_observations(series_id, api_key, start=start.isoformat(), end=today.isoformat()))
+def fetch_sources(api_key: str, start: date, end: date) -> dict[str, dict[str, float]]:
+    return {
+        key: valid_values(fetch_fred_observations(
+            series_id, api_key, start=start.isoformat(), end=end.isoformat(),
+        ))
         for key, series_id in SERIES.items()
     }
-    rows = build_rows(raw)
+
+
+def cache_points(raw: dict[str, dict[str, float]]) -> dict[str, dict[date, tuple[date, float]]]:
+    return {
+        key: {
+            date.fromisoformat(period): (date.fromisoformat(period), value)
+            for period, value in values.items()
+        }
+        for key, values in raw.items()
+    }
+
+
+def cached_values(cache: dict[str, dict[date, tuple[date, float]]]) -> dict[str, dict[str, float]]:
+    return {
+        key: {period.isoformat(): value for period, (_observed, value) in cache.get(key, {}).items()}
+        for key in SERIES
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--initialize-sources", action="store_true")
+    args = parser.parse_args()
+    today = date.today()
+    api_key = require_env("FRED_API_KEY")
+    database = SupabaseRest()
+    cache = load_source_cache(database, CACHE_COLLECTOR)
+    if args.initialize_sources:
+        initialization_start = today - timedelta(days=INITIALIZATION_HISTORY_YEARS * 366)
+        historical = fetch_sources(api_key, initialization_start, today)
+        if any(len(historical.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
+            raise RuntimeError("EM capital source initialization returned insufficient history")
+        store_source_cache(database, CACHE_COLLECTOR, cache_points(historical))
+        mark_initialized(database, CACHE_COLLECTOR, today)
+        cache = load_source_cache(database, CACHE_COLLECTOR)
+    if not is_initialized(cache) or any(len(cache.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
+        raise RuntimeError("EM capital source cache is not initialized; run --initialize-sources explicitly")
+    recent_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
+    recent = fetch_sources(api_key, recent_start, today)
+    store_source_cache(database, CACHE_COLLECTOR, cache_points(recent))
+    for key, values in recent.items():
+        cache.setdefault(key, {}).update(cache_points({key: values})[key])
+    raw = cached_values(cache)
+    rows = build_rows(raw)[-AUTOMATIC_DAILY_VALUES:]
     if not rows:
         raise RuntimeError("저장할 이머징 자금 유입 여건 데이터가 없습니다.")
-    database = SupabaseRest()
     writable = database.automatic_rows(
         "em_capital_capacity_daily", rows,
         key="observation_date", provisional="is_provisional",
+        compare_fields=tuple(SERIES) + ("capacity_index",),
     )
     for offset in range(0, len(writable), UPSERT_BATCH_SIZE):
         database.upsert("em_capital_capacity_daily", writable[offset:offset + UPSERT_BATCH_SIZE], conflict="observation_date")

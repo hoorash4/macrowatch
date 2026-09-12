@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import re
+import argparse
 from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import SupabaseRest, fetch_fred_observations, require_env, request_with_retry
+from common import AUTOMATIC_WEEKLY_WEEKS, SupabaseRest, fetch_fred_observations, require_env, request_with_retry
+from signals.automatic_source_cache import load as load_source_cache
+from signals.automatic_source_cache import is_initialized, mark_initialized
+from signals.automatic_source_cache import store as store_source_cache
 from signals.equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
@@ -15,12 +19,11 @@ from sources.market import fetch_yahoo_adjusted, valid_fred_values
 OEF_PAGE = "https://www.ishares.com/us/products/239723/ishares-sp-100-etf"
 KOREA_10Y_STAT = "817Y002"
 KOREA_10Y_ITEM = "010210000"
-START = date(2015, 1, 1)
-# Exact parity needs the 260-week percentile window, the 13-week gap change,
-# the 52-week earnings comparison and the four scored weeks used by smoothing.
-# A 340-week source window leaves a small holiday/missing-observation cushion
-# while avoiding a fixed 2015-to-present download on every automatic run.
-AUTOMATIC_OVERLAP_WEEKS = 340
+# The explicit one-time cache initialization retains enough history for exact
+# 260-week percentile parity, the 13/52-week dependencies, and smoothing.
+INITIALIZATION_HISTORY_WEEKS = 340
+CACHE_COLLECTOR = "equity_bond_attractiveness"
+CACHE_SERIES = ("KR_EQUITY", "KR_YIELD", "US_EQUITY", "US_YIELD")
 
 
 def weekly_last(values: dict[date, float]) -> dict[date, float]:
@@ -46,23 +49,12 @@ def align_to_weeks(values: dict[date, float], weeks: list[date]) -> dict[date, f
     return result
 
 
-def automatic_source_start(existing: list[dict]) -> date:
-    latest: dict[str, date] = {}
-    for row in existing:
-        if str(row.get("method_version")) != METHOD_VERSION:
-            continue
-        country = str(row.get("country") or "")
-        if country not in ("KR", "US"):
-            continue
-        try:
-            observed = date.fromisoformat(str(row["observation_date"])[:10])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if country not in latest or observed > latest[country]:
-            latest[country] = observed
-    if set(latest) != {"KR", "US"}:
-        return START
-    return max(START, min(latest.values()) - timedelta(weeks=AUTOMATIC_OVERLAP_WEEKS))
+def cache_weekly(values: dict[date, float]) -> dict[date, tuple[date, float]]:
+    return {week: (week, value) for week, value in values.items()}
+
+
+def cache_values(cache: dict[str, dict[date, tuple[date, float]]], series: str) -> dict[date, float]:
+    return {period: value for period, (_observed, value) in cache.get(series, {}).items()}
 
 
 def fetch_ecos_10y(api_key: str, start: date, end: date) -> dict[date, float]:
@@ -134,19 +126,56 @@ def stored_rows(country: str, rows: list[dict], calculated_at: str) -> list[dict
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--initialize-sources", action="store_true")
+    args = parser.parse_args()
     today = date.today()
     database = SupabaseRest()
     existing = database.request(
         "GET", "equity_bond_attractiveness_weekly",
-        params={"select": "country,observation_date,method_version", "limit": "10000"},
+        params={
+            "select": (
+                "country,observation_date,method_version,score,earnings_yield_pct,"
+                "sovereign_yield_pct,yield_gap_pct,earnings_momentum_pct,"
+                "equity_return_13w_pct,component_scores"
+            ),
+            "limit": "10000",
+        },
     ) or []
-    source_start = automatic_source_start(existing)
     quarters = load_quarters(database)
-    yahoo = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, source_start, today)) for symbol in ("^KS11", "OEF")}
-    fred = weekly_last(valid_fred_values(fetch_fred_observations(
+    cache = load_source_cache(database, CACHE_COLLECTOR)
+    if not args.initialize_sources and (
+        not is_initialized(cache) or any(len(cache.get(series, {})) < 260 for series in CACHE_SERIES)
+    ):
+        raise RuntimeError("Attractiveness source cache is not initialized; run --initialize-sources explicitly")
+    source_start = today - timedelta(weeks=INITIALIZATION_HISTORY_WEEKS) if args.initialize_sources else today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS)
+    yahoo_recent = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, source_start, today)) for symbol in ("^KS11", "OEF")}
+    fred_recent = weekly_last(valid_fred_values(fetch_fred_observations(
         "DGS10", require_env("FRED_API_KEY"), start=source_start.isoformat(), end=today.isoformat()
     )))
-    ecos = weekly_last(fetch_ecos_10y(require_env("ECOS_API_KEY"), source_start, today))
+    ecos_recent = weekly_last(fetch_ecos_10y(require_env("ECOS_API_KEY"), source_start, today))
+    recent_cache = {
+        "KR_EQUITY": cache_weekly(yahoo_recent["^KS11"]),
+        "KR_YIELD": cache_weekly(ecos_recent),
+        "US_EQUITY": cache_weekly(yahoo_recent["OEF"]),
+        "US_YIELD": cache_weekly(fred_recent),
+    }
+    if args.initialize_sources and any(len(recent_cache.get(series, {})) < 260 for series in CACHE_SERIES):
+        raise RuntimeError("Attractiveness source initialization returned insufficient history")
+    store_source_cache(database, CACHE_COLLECTOR, recent_cache)
+    if args.initialize_sources:
+        mark_initialized(database, CACHE_COLLECTOR, today)
+        cache = load_source_cache(database, CACHE_COLLECTOR)
+    for series, values in recent_cache.items():
+        cache.setdefault(series, {}).update(values)
+    if not is_initialized(cache) or any(len(cache.get(series, {})) < 260 for series in CACHE_SERIES):
+        raise RuntimeError("Attractiveness source cache is not initialized; run --initialize-sources explicitly")
+    yahoo = {
+        "^KS11": cache_values(cache, "KR_EQUITY"),
+        "OEF": cache_values(cache, "US_EQUITY"),
+    }
+    fred = cache_values(cache, "US_YIELD")
+    ecos = cache_values(cache, "KR_YIELD")
     calculated_at = datetime.now(timezone.utc).isoformat()
     rows = []
     for country, equity_symbol, yields, anchor in (
@@ -165,18 +194,30 @@ def main() -> None:
         rows.extend(stored_rows(country, result, calculated_at))
     if not rows:
         raise RuntimeError("No attractiveness rows were calculated")
-    existing_keys = {
-        (str(row["country"]), str(row["observation_date"]), str(row["method_version"]))
+    existing_by_key = {
+        (str(row["country"]), str(row["observation_date"]), str(row["method_version"])): row
         for row in existing
     }
+    compare_fields = (
+        "score", "earnings_yield_pct", "sovereign_yield_pct", "yield_gap_pct",
+        "earnings_momentum_pct", "equity_return_13w_pct", "component_scores",
+    )
+    refresh_cutoff = today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS)
     writable = [
         row for row in rows
-        if (str(row["country"]), str(row["observation_date"]), str(row["method_version"])) not in existing_keys
+        if (
+            (key := (str(row["country"]), str(row["observation_date"]), str(row["method_version"])))
+            not in existing_by_key
+            or (
+                date.fromisoformat(str(row["observation_date"])[:10]) >= refresh_cutoff
+                and any(existing_by_key[key].get(field) != row.get(field) for field in compare_fields)
+            )
+        )
     ]
     if writable:
         database.upsert("equity_bond_attractiveness_weekly", writable, conflict="country,observation_date,method_version")
     print(
-        f"source_start={source_start.isoformat()} calculated={len(rows)} stored={len(writable)} "
+        f"source_start={source_start.isoformat()} initialized={args.initialize_sources} calculated={len(rows)} stored={len(writable)} "
         f"kr={sum(row['country']=='KR' for row in writable)} us={sum(row['country']=='US' for row in writable)}"
     )
 

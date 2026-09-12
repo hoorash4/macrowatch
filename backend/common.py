@@ -21,6 +21,15 @@ DEFAULT_HTTP_TIMEOUT = 45
 FRED_OBSERVATIONS_URL = "https://api.stlouisfed.org/fred/series/observations"
 MACROWATCH_URL = "https://hoorash4.github.io/macrowatch/"
 
+# Automatic collectors inspect only the latest publication window.  Historical
+# replacement belongs to an explicit backfill/initialization command.
+AUTOMATIC_DAILY_CALENDAR_DAYS = 14
+AUTOMATIC_DAILY_VALUES = 5
+AUTOMATIC_WEEKLY_WEEKS = 5
+AUTOMATIC_MONTHLY_PERIODS = 5
+AUTOMATIC_MONTHLY_CONTEXT_PERIODS = 3
+AUTOMATIC_WEEKLY_CONTEXT_WEEKS = 3
+
 # These FRED identifiers are aliases for first-party U.S. Treasury data.  Keep
 # accepting the identifiers at shared call sites for compatibility, but route
 # them to Treasury so active collectors are not held back by FRED publication lag.
@@ -255,11 +264,16 @@ class SupabaseRest:
         key: str,
         provisional: str | None = None,
         refresh_keys: set[str] | None = None,
+        compare_fields: tuple[str, ...] = (),
     ) -> list[dict[str, Any]]:
         """자동수집에서는 신규·잠정·명시한 현재 주기 행만 저장한다."""
         if not rows:
             return []
-        select = key + (f",{provisional}" if provisional else "")
+        selected_fields = [key]
+        if provisional:
+            selected_fields.append(provisional)
+        selected_fields.extend(field for field in compare_fields if field not in selected_fields)
+        select = ",".join(selected_fields)
         existing = self.request(
             "GET",
             table,
@@ -269,11 +283,14 @@ class SupabaseRest:
                 "limit": "10000",
             },
         ) or []
-        state = {str(row[key]): bool(row.get(provisional)) if provisional else False for row in existing}
+        state = {str(row[key]): row for row in existing}
         forced = refresh_keys or set()
         return [
             row for row in rows
-            if str(row[key]) not in state or state[str(row[key])] or str(row[key]) in forced
+            if str(row[key]) not in state
+            or (provisional and bool(state[str(row[key])].get(provisional)))
+            or str(row[key]) in forced
+            or any(state[str(row[key])].get(field) != row.get(field) for field in compare_fields)
         ]
 
     def invoke_function(self, name: str, body: Any) -> Any:

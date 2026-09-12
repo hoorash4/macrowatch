@@ -16,6 +16,8 @@ from urllib.parse import quote
 import requests
 
 from common import (
+    AUTOMATIC_DAILY_CALENDAR_DAYS,
+    AUTOMATIC_MONTHLY_PERIODS,
     SupabaseRest,
     fetch_fred_observations,
     require_env,
@@ -97,17 +99,18 @@ def fetch_fred(config: dict[str, Any]) -> Decimal:
 def ecos_date_range(cycle: str) -> tuple[str, str]:
     now = datetime.now(KST)
     if cycle == "D":
-        return (now - timedelta(days=45)).strftime("%Y%m%d"), now.strftime("%Y%m%d")
+        return (now - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)).strftime("%Y%m%d"), now.strftime("%Y%m%d")
     if cycle == "M":
-        return (now - timedelta(days=730)).strftime("%Y%m"), now.strftime("%Y%m")
+        serial = now.year * 12 + now.month - 1 - (AUTOMATIC_MONTHLY_PERIODS - 1)
+        return f"{serial // 12:04d}{serial % 12 + 1:02d}", now.strftime("%Y%m")
     if cycle == "Q":
-        start_year = now.year - 5
-        return f"{start_year}Q1", f"{now.year}Q4"
+        serial = now.year * 4 + (now.month - 1) // 3 - (AUTOMATIC_MONTHLY_PERIODS - 1)
+        return f"{serial // 4:04d}Q{serial % 4 + 1}", f"{now.year}Q{(now.month - 1) // 3 + 1}"
     if cycle == "S":
-        start_year = now.year - 8
-        return f"{start_year}S1", f"{now.year}S2"
+        serial = now.year * 2 + (now.month - 1) // 6 - (AUTOMATIC_MONTHLY_PERIODS - 1)
+        return f"{serial // 2:04d}S{serial % 2 + 1}", f"{now.year}S{(now.month - 1) // 6 + 1}"
     if cycle == "A":
-        return str(now.year - 15), str(now.year)
+        return str(now.year - (AUTOMATIC_MONTHLY_PERIODS - 1)), str(now.year)
     raise CollectionError(f"지원하지 않는 ECOS 주기입니다: {cycle}")
 
 

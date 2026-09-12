@@ -19,10 +19,11 @@ class EconomicChartLiveSourceTests(unittest.TestCase):
         automatic = (ROOT / "backend/signals/economic_chart_automatic.py").read_text(encoding="utf-8")
 
         self.assertIn('LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "US10Y2Y", "WTI", "USDKRW"}', automatic)
-        self.assertIn('fetch_treasury_yield_rows(start, today)', automatic)
-        self.assertIn('fetch_treasury_real_yield_rows(start, today)', automatic)
-        self.assertIn('fetch_yahoo_daily_rows("USDKRW", "KRW=X", start, today)', automatic)
-        self.assertIn('_derive_spread(db, "US10Y2Y", "US10Y", "US2Y", "D", start, today)', automatic)
+        self.assertIn('fetch_treasury_yield_rows(daily_start, today)', automatic)
+        self.assertIn('fetch_treasury_real_yield_rows(daily_start, today)', automatic)
+        self.assertIn('fetch_yahoo_daily_rows("USDKRW", "KRW=X", daily_start, today)', automatic)
+        self.assertIn('db, "US10Y2Y", "US10Y", "US2Y", "D", daily_start, today,', automatic)
+        self.assertIn('max_rows=AUTOMATIC_DAILY_VALUES', automatic)
         self.assertFalse((ROOT / "backend/signals/economic_chart_backfill.py").exists())
 
     def test_treasury_xml_parses_official_three_month_two_and_ten_year_rates(self):

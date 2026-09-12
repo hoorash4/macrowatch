@@ -5,6 +5,12 @@ on:
     # 매주 토요일 10:10 KST. 금요일까지 확정된 주간 가격·금리를 반영합니다.
     - cron: "10 1 * * 6"
   workflow_dispatch:
+    inputs:
+      initialize_sources:
+        description: Explicitly initialize the historical calculation cache
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -30,4 +36,9 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.equity_bond_attractiveness_pipeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          [[ "${{ inputs.initialize_sources || 'false' }}" == "true" ]] && args+=(--initialize-sources)
+          PYTHONPATH=backend python -m signals.equity_bond_attractiveness_pipeline "${args[@]}"

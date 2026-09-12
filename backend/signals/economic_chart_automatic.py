@@ -9,7 +9,15 @@ import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from common import SupabaseRest, require_env
+from common import (
+    AUTOMATIC_DAILY_CALENDAR_DAYS,
+    AUTOMATIC_DAILY_VALUES,
+    AUTOMATIC_MONTHLY_PERIODS,
+    AUTOMATIC_WEEKLY_WEEKS,
+    SupabaseRest,
+    month_start_months_ago,
+    require_env,
+)
 from signals.economic_chart_pipeline import (
     ECOS_SERIES,
     FRED_SERIES,
@@ -35,6 +43,10 @@ from sources.yahoo_daily import fetch_yahoo_daily_rows
 
 LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "US10Y2Y", "WTI", "USDKRW"}
 KST = ZoneInfo("Asia/Seoul")
+
+
+def latest_automatic_rows(rows: list[dict]) -> list[dict]:
+    return sorted(rows, key=lambda row: str(row["observation_date"]))[-AUTOMATIC_DAILY_VALUES:]
 
 
 def collect_kospi_valuation(target: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
@@ -72,7 +84,12 @@ def collect_kospi_valuation(target: date | None = None, db: SupabaseRest | None 
 def collect() -> tuple[dict[str, int], dict[str, str]]:
     """Collect every regular economic-chart series in one scheduled refresh."""
     today = date.today()
-    start = today - timedelta(days=45)
+    starts = {
+        "D": today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS),
+        "W": today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS),
+        "M": month_start_months_ago(today, AUTOMATIC_MONTHLY_PERIODS - 1),
+    }
+    daily_start = starts["D"]
     db = SupabaseRest()
     inserted: dict[str, int] = {}
     errors: dict[str, str] = {}
@@ -92,45 +109,53 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
     for code, (source_id, frequency) in FRED_SERIES.items():
         if code in LIVE_NON_FRED_SERIES:
             continue
-        run(code, lambda code=code, source_id=source_id, frequency=frequency: _insert_missing(
-            db, _fred_rows(code, source_id, frequency, start, today), start
+        series_start = starts.get(frequency, daily_start)
+        run(code, lambda code=code, source_id=source_id, frequency=frequency, series_start=series_start: _insert_missing(
+            db, latest_automatic_rows(_fred_rows(code, source_id, frequency, series_start, today)), series_start
         ))
 
     try:
-        treasury_rows = fetch_treasury_yield_rows(start, today)
+        treasury_rows = fetch_treasury_yield_rows(daily_start, today)
         for code in ("US2Y", "US10Y"):
-            run(code, lambda code=code: _insert_missing(db, treasury_rows.get(code, []), start))
+            run(code, lambda code=code: _insert_missing(db, latest_automatic_rows(treasury_rows.get(code, [])), daily_start))
     except Exception as error:
         for code in ("US2Y", "US10Y"):
             inserted.setdefault(code, 0)
             errors[code] = f"{error.__class__.__name__}: {error}"
 
     try:
-        treasury_real_rows = fetch_treasury_real_yield_rows(start, today)
-        run("US10Y_REAL", lambda: _insert_missing(db, treasury_real_rows.get("US10Y_REAL", []), start))
+        treasury_real_rows = fetch_treasury_real_yield_rows(daily_start, today)
+        run("US10Y_REAL", lambda: _insert_missing(db, latest_automatic_rows(treasury_real_rows.get("US10Y_REAL", [])), daily_start))
     except Exception as error:
         inserted.setdefault("US10Y_REAL", 0)
         errors["US10Y_REAL"] = f"{error.__class__.__name__}: {error}"
 
-    run("US10Y2Y", lambda: _derive_spread(db, "US10Y2Y", "US10Y", "US2Y", "D", start, today))
-    run("WTI", lambda: _insert_missing(db, fetch_wti_futures_rows(start, today), start))
-    run("USDKRW", lambda: _insert_missing(db, fetch_yahoo_daily_rows("USDKRW", "KRW=X", start, today), start))
+    run("US10Y2Y", lambda: _derive_spread(
+        db, "US10Y2Y", "US10Y", "US2Y", "D", daily_start, today,
+        max_rows=AUTOMATIC_DAILY_VALUES,
+    ))
+    run("WTI", lambda: _insert_missing(db, latest_automatic_rows(fetch_wti_futures_rows(daily_start, today)), daily_start))
+    run("USDKRW", lambda: _insert_missing(db, latest_automatic_rows(fetch_yahoo_daily_rows("USDKRW", "KRW=X", daily_start, today)), daily_start))
 
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
-        run(code, lambda code=code, stat_code=stat_code, item_code=item_code, frequency=frequency: _insert_missing(
-            db, _ecos_rows(code, stat_code, item_code, frequency, start, today), start
+        series_start = starts.get(frequency, daily_start)
+        run(code, lambda code=code, stat_code=stat_code, item_code=item_code, frequency=frequency, series_start=series_start: _insert_missing(
+            db, latest_automatic_rows(_ecos_rows(code, stat_code, item_code, frequency, series_start, today)), series_start
         ))
 
-    run("KR10Y3Y", lambda: _derive_spread(db, "KR10Y3Y", "KR10Y", "KR3Y", "D", start, today))
-    run("REDBOOK", lambda: _insert_missing(db, fetch_recent_redbook_rows(), start))
+    run("KR10Y3Y", lambda: _derive_spread(
+        db, "KR10Y3Y", "KR10Y", "KR3Y", "D", daily_start, today,
+        max_rows=AUTOMATIC_DAILY_VALUES,
+    ))
+    run("REDBOOK", lambda: _insert_missing(db, latest_automatic_rows(fetch_recent_redbook_rows()), starts["W"]))
     run("US_RETAIL_SALES", lambda: _insert_missing(
         db,
-        census_retail_chart_rows(fetch_census_retail_sales(
-            start,
+        latest_automatic_rows(census_retail_chart_rows(fetch_census_retail_sales(
+            starts["M"],
             today,
             api_key=require_env("CENSUS_API_KEY"),
-        )),
-        start,
+        ))),
+        starts["M"],
     ))
 
     export_start_month = (today - timedelta(days=65)).replace(day=1)
@@ -152,7 +177,7 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
     alerts = check_collected_series_alerts(db, changed)
     print(json.dumps({
         "mode": "automatic",
-        "start": start.isoformat(),
+        "starts": {frequency: value.isoformat() for frequency, value in starts.items()},
         "end": today.isoformat(),
         "inserted": inserted,
         "errors": errors,

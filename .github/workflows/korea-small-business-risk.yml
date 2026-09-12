@@ -30,4 +30,4 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.korea_small_business_risk_pipeline --years 1
+        run: PYTHONPATH=backend python -m signals.korea_small_business_risk_pipeline --months 5

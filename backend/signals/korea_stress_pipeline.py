@@ -11,7 +11,16 @@ from urllib.parse import quote
 
 import requests
 
-from common import SupabaseRest, require_env, uncapped_score
+from common import (
+    AUTOMATIC_MONTHLY_CONTEXT_PERIODS,
+    AUTOMATIC_MONTHLY_PERIODS,
+    AUTOMATIC_WEEKLY_CONTEXT_WEEKS,
+    AUTOMATIC_WEEKLY_WEEKS,
+    SupabaseRest,
+    month_start_months_ago,
+    require_env,
+    uncapped_score,
+)
 
 
 ECOS = "https://ecos.bok.or.kr/api"
@@ -91,16 +100,18 @@ def ecos_rows(key: str, stat: str, cycle: str, start: str, end: str, item: str =
     return rows
 
 
-def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, float]:
-    today = date.today()
-    # ECOS becomes unreliable when a multi-year daily range is searched at
-    # once.  Keep each official request within one calendar year, then merge
-    # the pages locally.
+def daily_source_rows(key: str, stat: str, item: str, start: date, end: date) -> list[dict]:
+    """Fetch a bounded daily ECOS range in calendar-year chunks."""
     rows: list[dict] = []
-    for year in range(today.year - years, today.year + 1):
-        start = f"{year}0101"
-        end = today.strftime("%Y%m%d") if year == today.year else f"{year}1231"
-        rows.extend(ecos_rows(key, stat, "D", start, end, item))
+    for year in range(start.year, end.year + 1):
+        lower = max(start, date(year, 1, 1)).strftime("%Y%m%d")
+        upper = min(end, date(year, 12, 31)).strftime("%Y%m%d")
+        rows.extend(ecos_rows(key, stat, "D", lower, upper, item))
+    return rows
+
+
+def daily_month_end(key: str, stat: str, item: str, start: date, end: date) -> dict[str, float]:
+    rows = daily_source_rows(key, stat, item, start, end)
     values: dict[str, tuple[str, float]] = {}
     for row in rows:
         try:
@@ -113,14 +124,9 @@ def daily_month_end(key: str, stat: str, item: str, years: int) -> dict[str, flo
     return {month: value for month, (_observed, value) in values.items()}
 
 
-def daily_friday_values(key: str, stat: str, item: str, years: int) -> dict[str, tuple[date, float]]:
+def daily_friday_values(key: str, stat: str, item: str, start: date, end: date) -> dict[str, tuple[date, float]]:
     """Return each Friday-ending week's last official daily value."""
-    today = date.today()
-    rows: list[dict] = []
-    for year in range(today.year - years, today.year + 1):
-        start = f"{year}0101"
-        end = today.strftime("%Y%m%d") if year == today.year else f"{year}1231"
-        rows.extend(ecos_rows(key, stat, "D", start, end, item))
+    rows = daily_source_rows(key, stat, item, start, end)
     closes: dict[str, tuple[date, float]] = {}
     for row in rows:
         try:
@@ -130,7 +136,7 @@ def daily_friday_values(key: str, stat: str, item: str, years: int) -> dict[str,
             continue
         friday = observed + timedelta(days=4 - observed.weekday())
         # Do not label a partial current week as a completed Friday close.
-        if friday > today:
+        if friday > end:
             continue
         week = friday.isoformat()
         if week not in closes or observed > closes[week][0]:
@@ -138,7 +144,7 @@ def daily_friday_values(key: str, stat: str, item: str, years: int) -> dict[str,
     return closes
 
 
-def fetch_bok_fsi(years: int) -> dict[str, float]:
+def fetch_bok_fsi(first_month: date) -> dict[str, float]:
     """Read the Bank of Korea's published FSI comparison series directly."""
     headers = {**HEADERS, "Referer": "https://snapshot.bok.or.kr/dashboard/A6"}
     last_error: Exception | None = None
@@ -147,12 +153,12 @@ def fetch_bok_fsi(years: int) -> dict[str, float]:
             response = requests.get(BOK_SNAPSHOT_FSI, headers=headers, timeout=(12, TIMEOUT))
             response.raise_for_status()
             csv_text = response.json()["data"]["chart_opt"]["data"]["csv"]
-            first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
+            first_month_iso = first_month.replace(day=1).isoformat()
             values: dict[str, float] = {}
             for row in csv.DictReader(io.StringIO(csv_text)):
                 try:
                     month = datetime.fromtimestamp(float(row["period"]) / 1000, tz=timezone.utc).date().replace(day=1).isoformat()
-                    if month >= first_month:
+                    if month >= first_month_iso:
                         values[month] = float(next(value for key, value in row.items() if key != "period"))
                 except (KeyError, StopIteration, TypeError, ValueError, OSError):
                     continue
@@ -172,24 +178,26 @@ def score(value: float, low: float, high: float) -> float:
 
 def upsert_automatic(
     rows: list[dict], url: str, service_key: str, table: str, conflict: str,
-    *, provisional: str | None = None,
+    *, provisional: str | None = None, compare_fields: tuple[str, ...] = (),
 ) -> int:
     database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
-    writable = database.automatic_rows(table, rows, key=conflict, provisional=provisional)
+    writable = database.automatic_rows(
+        table, rows, key=conflict, provisional=provisional, compare_fields=compare_fields,
+    )
     if writable:
         database.upsert(table, writable, conflict=conflict)
     return len(writable)
 
 
-def fetch_existing_fsi(url: str, service_key: str, years: int) -> dict[str, float]:
+def fetch_existing_fsi(url: str, service_key: str, first_month: date) -> dict[str, float]:
     """Keep the last official FSI reading if the source is briefly unavailable."""
-    first_month = date.today().replace(year=date.today().year - years, day=1).isoformat()
+    first_month_iso = first_month.replace(day=1).isoformat()
     response = requests.get(
         f"{url.rstrip('/')}/rest/v1/korea_market_stress_monthly",
         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
         params={
             "select": "month,bok_fsi",
-            "month": f"gte.{first_month}",
+            "month": f"gte.{first_month_iso}",
             "bok_fsi": "not.is.null",
         },
         timeout=TIMEOUT,
@@ -270,18 +278,29 @@ def build_monthly_rows(values: dict[str, dict[str, float]], fsi: dict[str, float
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=3)
+    parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
     args = parser.parse_args()
+    if args.months < 1 or args.months > 12:
+        raise SystemExit("--months 값은 1~12 사이여야 합니다.")
     key = require_env("ECOS_API_KEY")
     url = require_env("SUPABASE_URL")
     service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
-    values = {name: daily_month_end(key, stat, item, args.years) for name, (stat, item) in SERIES.items()}
-    kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], args.years)
-    corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], args.years)
-    treasury_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["treasury_3y"][1], args.years)
-    cp_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cp_91d"][1], args.years)
-    cd_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cd_91d"][1], args.years)
+    monthly_start = month_start_months_ago(
+        today, args.months - 1 + AUTOMATIC_MONTHLY_CONTEXT_PERIODS,
+    )
+    weekly_start = today - timedelta(
+        weeks=AUTOMATIC_WEEKLY_WEEKS + AUTOMATIC_WEEKLY_CONTEXT_WEEKS,
+    )
+    values = {
+        name: daily_month_end(key, stat, item, monthly_start, today)
+        for name, (stat, item) in SERIES.items()
+    }
+    kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], weekly_start, today)
+    corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], weekly_start, today)
+    treasury_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["treasury_3y"][1], weekly_start, today)
+    cp_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cp_91d"][1], weekly_start, today)
+    cd_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cd_91d"][1], weekly_start, today)
     kospi_weekly = []
     for week, (observed_at, kospi_close) in sorted(kospi_weekly_values.items()):
         corporate = corporate_weekly_values.get(week)
@@ -295,23 +314,32 @@ def main() -> None:
             "corporate_credit_spread": round(corporate[1] - treasury[1], 4) if corporate and treasury else None,
             "short_term_funding_spread": round(cp_weekly[1] - cd_weekly[1], 4) if cp_weekly and cd_weekly else None,
         })
-    existing_fsi = fetch_existing_fsi(url, service_key, args.years)
+    kospi_weekly = kospi_weekly[-AUTOMATIC_WEEKLY_WEEKS:]
+    existing_fsi = fetch_existing_fsi(url, service_key, monthly_start)
     try:
-        fsi = {**existing_fsi, **fetch_bok_fsi(args.years)}
+        fsi = {**existing_fsi, **fetch_bok_fsi(monthly_start)}
     except Exception as error:
         # The MacroWatch index and KOSPI update must not stop merely because
         # the official comparison series is temporarily unavailable.
         print(f"fsi_unavailable={error}")
         fsi = existing_fsi
-    rows = build_monthly_rows(values, fsi, today)
+    rows = build_monthly_rows(values, fsi, today)[-args.months:]
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
     stored_months = upsert_automatic(
-        rows, url, service_key, "korea_market_stress_monthly", "month", provisional="is_provisional"
+        rows, url, service_key, "korea_market_stress_monthly", "month", provisional="is_provisional",
+        compare_fields=(
+            "stress_index", "market_component_index", "corporate_credit_spread",
+            "investment_grade_spread", "rating_gap_spread", "short_term_funding_spread",
+            "interbank_liquidity_spread", "kospi_close", "bok_fsi",
+        ),
     )
     stored_weeks = 0
     if kospi_weekly:
-        stored_weeks = upsert_automatic(kospi_weekly, url, service_key, "korea_market_stress_weekly", "week")
+        stored_weeks = upsert_automatic(
+            kospi_weekly, url, service_key, "korea_market_stress_weekly", "week",
+            compare_fields=("kospi_close", "observed_at", "corporate_credit_spread", "short_term_funding_spread"),
+        )
     print(
         f"calculated_months={len(rows)} stored_months={stored_months} "
         f"calculated_weeks={len(kospi_weekly)} stored_weeks={stored_weeks} fsi_months={len(fsi)}"

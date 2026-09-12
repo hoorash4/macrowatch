@@ -101,25 +101,32 @@ def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str,
     return rows
 
 
-def _existing_dates(db: SupabaseRest, series_code: str, start: date) -> set[str]:
+def _existing_values(db: SupabaseRest, series_code: str, start: date) -> dict[str, float]:
     rows = db.request("GET", TABLE, params={
-        "select": "observation_date",
+        "select": "observation_date,value",
         "series_code": f"eq.{series_code}",
         "observation_date": f"gte.{start.isoformat()}",
         "limit": "10000",
     }) or []
-    return {str(row.get("observation_date")) for row in rows if row.get("observation_date")}
+    return {
+        str(row["observation_date"]): float(row["value"])
+        for row in rows if row.get("observation_date") is not None and row.get("value") is not None
+    }
 
 
 def _insert_missing(db: SupabaseRest, rows: list[dict[str, Any]], start: date) -> int:
     if not rows:
         return 0
     code = str(rows[0]["series_code"])
-    existing = _existing_dates(db, code, start)
-    missing = [row for row in rows if str(row["observation_date"]) not in existing]
-    if missing:
-        db.upsert(TABLE, missing, conflict="series_code,observation_date")
-    return len(missing)
+    existing = _existing_values(db, code, start)
+    changed = [
+        row for row in rows
+        if str(row["observation_date"]) not in existing
+        or float(row["value"]) != existing[str(row["observation_date"])]
+    ]
+    if changed:
+        db.upsert(TABLE, changed, conflict="series_code,observation_date")
+    return len(changed)
 
 
 def _read_values(db: SupabaseRest, series_code: str, start: date, end: date) -> dict[str, float]:
@@ -134,7 +141,17 @@ def _read_values(db: SupabaseRest, series_code: str, start: date, end: date) -> 
     return {str(row["observation_date"]): float(row["value"]) for row in rows}
 
 
-def _derive_spread(db: SupabaseRest, code: str, left: str, right: str, frequency: str, start: date, end: date) -> int:
+def _derive_spread(
+    db: SupabaseRest,
+    code: str,
+    left: str,
+    right: str,
+    frequency: str,
+    start: date,
+    end: date,
+    *,
+    max_rows: int | None = None,
+) -> int:
     lhs = _read_values(db, left, start, end)
     rhs = _read_values(db, right, start, end)
     rows = [{
@@ -144,6 +161,8 @@ def _derive_spread(db: SupabaseRest, code: str, left: str, right: str, frequency
         "frequency": frequency,
         "source": f"DERIVED:{left}-{right}",
     } for observed in sorted(lhs.keys() & rhs.keys())]
+    if max_rows is not None:
+        rows = rows[-max_rows:]
     return _insert_missing(db, rows, start)
 
 

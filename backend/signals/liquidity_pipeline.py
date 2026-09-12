@@ -13,7 +13,11 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import SupabaseRest, fetch_fred_observations, require_env, request_with_retry
+from common import (
+    AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS,
+    SupabaseRest, fetch_fred_observations, month_start_months_ago, require_env,
+    request_with_retry,
+)
 
 VERSION = "liquidity-monthly-v2"
 US_VERSION = "us-equity-environment-weekly-v2"
@@ -111,8 +115,12 @@ def collect(country, existing, end):
     session = requests.Session()
     session.headers.update({"User-Agent": "MacroWatch liquidity research", "Referer": "https://snapshot.bok.or.kr/"})
 
+    daily_start = end - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
+    monthly_start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
+
     def begin(name):
-        return max(result[name]) + timedelta(days=1) if result.get(name) else SOURCE_START
+        stored_next = max(result[name]) + timedelta(days=1) if result.get(name) else SOURCE_START
+        return max(stored_next, daily_start)
 
     if country == "US":
         key = require_env("FRED_API_KEY")
@@ -138,7 +146,8 @@ def collect(country, existing, end):
         for name, (stat, cycle, item) in ECOS.items():
             start = begin(name)
             if cycle == "M":
-                start = shift_month(max(result[name]), 1) if result.get(name) else SOURCE_START
+                stored_next = shift_month(max(result[name]), 1) if result.get(name) else SOURCE_START
+                start = max(stored_next, monthly_start)
             if start > end:
                 continue
             for year in range(start.year, end.year + 1):
@@ -430,6 +439,14 @@ def main():
     args = parser.parse_args()
     db = SupabaseRest(timeout=120)
     existing = {} if args.dry_run else load_existing(db, args.country)
+    if not args.dry_run:
+        required = set(FRED) if args.country == "US" else {"base", "call", "m2", "lf", *ECOS}
+        missing = sorted(name for name in required if not existing.get(name))
+        if missing:
+            raise RuntimeError(
+                "Liquidity source history is not initialized; use the explicit backfill path: "
+                + ", ".join(missing)
+            )
     data = collect(args.country, existing, date.today())
     if args.country == "KR":
         data.update(load_korea_equity_context(db))
@@ -437,9 +454,20 @@ def main():
     raw = [{"country": args.country, "series": series, "observation_date": day.isoformat(), "value": value}
            for series, values in data.items() if series not in ("foreign_flow_ratio", "usdkrw_return")
            for day, value in values.items() if day not in existing.get(series, {})]
+    raw = sorted(raw, key=lambda row: (row["series"], row["observation_date"]))
+    raw = [
+        row
+        for series in sorted({row["series"] for row in raw})
+        for row in [item for item in raw if item["series"] == series][-AUTOMATIC_DAILY_VALUES:]
+    ]
+    selected_results = [
+        row
+        for metric in sorted({row["metric"] for row in results})
+        for row in [item for item in results if item["metric"] == metric][-AUTOMATIC_DAILY_VALUES:]
+    ]
     if not args.dry_run:
         # One database transaction: no partially published country on failure.
-        db.request("POST", "rpc/store_liquidity_batch", body={"p_country": args.country, "p_raw": raw, "p_results": results})
+        db.request("POST", "rpc/store_liquidity_batch", body={"p_country": args.country, "p_raw": raw, "p_results": selected_results})
         for metric in sorted({row["metric"] for row in results}):
             latest = db.request("GET", "liquidity_indices", params={"country": f"eq.{args.country}",
                                 "metric": f"eq.{metric}", "method_version": f"eq.{US_VERSION if args.country == 'US' else KR_VERSION}", "order": "observation_date.desc", "limit": "1"})

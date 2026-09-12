@@ -39,7 +39,7 @@ class EquifaxLoanPerformanceTests(unittest.TestCase):
         """
         self.assertIsNone(extract_equifax_levels(text))
 
-    def test_automatic_collector_checks_only_recent_three_months(self):
+    def test_automatic_collector_checks_only_recent_five_monthly_periods(self):
         class Database:
             pass
 
@@ -59,7 +59,7 @@ class EquifaxLoanPerformanceTests(unittest.TestCase):
             mocked_date.today.return_value = date(2026, 9, 12)
             paynet_monthly.collect_recent()
 
-        self.assertEqual(captured["start"], date(2026, 6, 1))
+        self.assertEqual(captured["start"], date(2026, 5, 1))
         self.assertEqual(captured["end"], date(2026, 9, 12))
         self.assertFalse((ROOT / "backend/signals/paynet_backfill.py").exists())
         self.assertFalse((ROOT / "backend/sources/paynet_derived_history.py").exists())

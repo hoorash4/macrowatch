@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from signals.equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows, percentile_score, symmetric_change
-from signals.equity_bond_attractiveness_pipeline import AUTOMATIC_OVERLAP_WEEKS, START, automatic_source_start
+from signals.equity_bond_attractiveness_pipeline import INITIALIZATION_HISTORY_WEEKS, CACHE_SERIES
 
 
 class EquityBondAttractivenessTests(unittest.TestCase):
@@ -56,14 +56,11 @@ class EquityBondAttractivenessTests(unittest.TestCase):
         rows = build_weekly_rows("KR", weeks, equity, yields, quarters)
         self.assertIn("equity_return_13w_pct", rows[-1])
 
-    def test_automatic_source_start_uses_bounded_overlap_only_after_both_countries_exist(self):
-        latest = date(2026, 9, 11)
-        existing = [
-            {"country": "KR", "observation_date": latest.isoformat(), "method_version": METHOD_VERSION},
-            {"country": "US", "observation_date": latest.isoformat(), "method_version": METHOD_VERSION},
-        ]
-        self.assertEqual(automatic_source_start(existing), latest - timedelta(weeks=AUTOMATIC_OVERLAP_WEEKS))
-        self.assertEqual(automatic_source_start(existing[:1]), START)
+    def test_automatic_sources_are_cached_for_both_markets(self):
+        self.assertEqual(
+            CACHE_SERIES,
+            ("KR_EQUITY", "KR_YIELD", "US_EQUITY", "US_YIELD"),
+        )
 
     def test_incremental_overlap_matches_full_history_for_new_rows(self):
         start = date(2015, 1, 2)
@@ -79,7 +76,7 @@ class EquityBondAttractivenessTests(unittest.TestCase):
             for index in range(52)
         ]
         full = build_weekly_rows("KR", weeks, prices, yields, quarters)
-        incremental_weeks = weeks[-AUTOMATIC_OVERLAP_WEEKS:]
+        incremental_weeks = weeks[-INITIALIZATION_HISTORY_WEEKS:]
         incremental_prices = {week: prices[week] for week in incremental_weeks}
         incremental_yields = {week: yields[week] for week in incremental_weeks}
         incremental = build_weekly_rows("KR", incremental_weeks, incremental_prices, incremental_yields, quarters)

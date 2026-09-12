@@ -116,8 +116,7 @@ class InflationPipelineTests(unittest.TestCase):
         save_policy_automatic(client, rows)
         inserted_days = [row["observed_on"] for row in client.upserts[0][1]]
         self.assertEqual(inserted_days, [
-            "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06",
-            "2026-09-07", "2026-09-08", "2026-09-11", "2026-09-12",
+            "2026-09-08", "2026-09-11", "2026-09-12",
         ])
         self.assertEqual(len(client.patches), 1)
         table, kwargs = client.patches[0]

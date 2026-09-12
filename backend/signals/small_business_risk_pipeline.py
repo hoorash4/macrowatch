@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
-from common import SupabaseRest, uncapped_score
+from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago, uncapped_score
 from sources.small_business_risk import TIMEOUT_SECONDS, fetch_nfib_monthly
 
 
@@ -50,13 +50,13 @@ def build_rows(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=10)
+    parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
     args = parser.parse_args()
-    if args.years < 1 or args.years > 10:
-        raise SystemExit("--years 값은 1~10 사이여야 합니다.")
+    if args.months < 1 or args.months > 12:
+        raise SystemExit("--months 값은 1~12 사이여야 합니다.")
 
     today = date.today()
-    start = date(today.year - args.years, today.month, 1)
+    start = month_start_months_ago(today, args.months - 1)
     end = today.replace(day=1)
     database = SupabaseRest(timeout=TIMEOUT_SECONDS)
     sales, borrowing, optimism = fetch_nfib_monthly(start, end)
@@ -64,7 +64,10 @@ def main() -> None:
     if not rows:
         raise RuntimeError("저장할 미국 중소기업 위험지수 데이터가 없습니다.")
     writable = database.automatic_rows(
-        "us_small_business_risk_monthly", rows, key="month", provisional="is_provisional"
+        "us_small_business_risk_monthly", rows, key="month", provisional="is_provisional",
+        compare_fields=(
+            "risk_index", "sales_expectation_net", "borrowing_difficulty_pct", "optimism_index",
+        ),
     )
     if writable:
         database.upsert("us_small_business_risk_monthly", writable, conflict="month")

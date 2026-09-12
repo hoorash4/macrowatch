@@ -7,13 +7,17 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import SupabaseRest, carry_forward as carry_forward_periods
+from common import (
+    AUTOMATIC_WEEKLY_CONTEXT_WEEKS,
+    AUTOMATIC_WEEKLY_WEEKS,
+    SupabaseRest,
+    carry_forward as carry_forward_periods,
+)
 from common import fetch_fred_observations, require_env as required_env, uncapped_score as score
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
 TIMEOUT = 45
-HISTORY_YEARS = 3
 
 # All values are oriented so that a higher level means greater EM stress.
 SERIES = {
@@ -149,7 +153,11 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
 def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> int:
     database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
     writable = database.automatic_rows(
-        "em_market_stress_weekly", rows, key="week", provisional="is_provisional"
+        "em_market_stress_weekly", rows, key="week", provisional="is_provisional",
+        compare_fields=(
+            "stress_index", "high_yield_4w_average", "tail_risk_4w_average",
+            "blended_4w_average", "vxeem_4w_average", "eem_weekly_close",
+        ),
     )
     if writable:
         database.upsert("em_market_stress_weekly", writable, conflict="week")
@@ -157,17 +165,15 @@ def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, default=HISTORY_YEARS)
-    args = parser.parse_args()
+    argparse.ArgumentParser().parse_args()
     fred_key = required_env("FRED_API_KEY")
     supabase_url = required_env("SUPABASE_URL")
     service_key = required_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
-    start = today.replace(year=today.year - args.years)
+    start = today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS + AUTOMATIC_WEEKLY_CONTEXT_WEEKS)
     raw = {key: fetch_fred_week_end(series_id, fred_key, start, today) for key, series_id in SERIES.items()}
     eem_values = fetch_eem_week_end(start, today)
-    rows = build_rows(raw, today, eem_values)
+    rows = build_rows(raw, today, eem_values)[-AUTOMATIC_WEEKLY_WEEKS:]
     if not rows:
         raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
     stored = upsert(rows, supabase_url, service_key)
