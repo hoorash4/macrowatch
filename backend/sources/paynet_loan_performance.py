@@ -98,6 +98,7 @@ def _report_urls(year: int, month: int) -> list[str]:
         f"commercial-lending-trends-{abbr_low}-{year}.pdf",
         f"equifax-commercial-lending-trends-{low}-{year}.pdf",
         f"small-business-indices-deck-{low}-{year}.pdf",
+        f"monthly-small-business-indices-{low}-{year}.pdf",
         f"market-pulse-webinar-deck-{abbr_low}-{year}.pdf",
         f"equifax-small-business-indices-{low}-{year}.pdf",
         f"equifax-small-business-insights-{low}-{year}.pdf",
