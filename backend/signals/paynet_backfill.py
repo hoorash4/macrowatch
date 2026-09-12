@@ -1,4 +1,4 @@
-"""Authoritative reverse-month backfill for direct PayNet 31-180 delinquency and SBDFI."""
+"""Authoritative reverse-month backfill for direct 31-180 delinquency and SBDFI."""
 from __future__ import annotations
 
 from datetime import date
@@ -8,7 +8,7 @@ from common import SupabaseRest
 from sources.paynet_loan_performance import (
     SERIES_DEFAULT,
     SERIES_DELINQUENCY,
-    fetch_paynet_rows,
+    fetch_paynet_month,
 )
 from signals.business_credit_backfill import _validate_rows
 
@@ -33,40 +33,43 @@ def _required_months(latest: date, years: int = 10) -> list[date]:
 
 def _prepare(rows_by_code: dict[str, list[dict]]) -> tuple[date, dict[str, dict[str, dict]]]:
     by_code: dict[str, dict[str, dict]] = {}
-    latest_dates: list[date] = []
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         rows = rows_by_code.get(code) or []
         if not rows:
-            raise RuntimeError(f"{code}: PayNet returned no direct source rows")
-        parsed = {row["observation_date"]: row for row in rows}
-        by_code[code] = parsed
-        latest_dates.append(max(date.fromisoformat(key) for key in parsed))
+            raise RuntimeError(f"{code}: no direct public source rows")
+        by_code[code] = {row["observation_date"]: row for row in rows}
+        latest = max(date.fromisoformat(key) for key in by_code[code])
+        if latest != EXPECTED_LATEST:
+            raise RuntimeError(f"{code}: expected latest {EXPECTED_LATEST}, got {latest}")
 
-    if any(latest != EXPECTED_LATEST for latest in latest_dates):
-        raise RuntimeError(
-            f"PayNet latest month mismatch: expected {EXPECTED_LATEST}, got {latest_dates}"
-        )
-    latest = EXPECTED_LATEST
-
-    required = _required_months(latest)
-    missing: dict[str, list[str]] = {}
+    required = _required_months(EXPECTED_LATEST)
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         absent = [month.isoformat() for month in required if month.isoformat() not in by_code[code]]
         if absent:
-            missing[code] = absent
-    if missing:
-        raise RuntimeError(f"PayNet ten-year history is incomplete; refusing partial replacement: {missing}")
-    return latest, by_code
+            raise RuntimeError(f"{code}: incomplete direct history; first missing={absent[0]}")
+    return EXPECTED_LATEST, by_code
 
 
 def run() -> dict[str, object]:
-    provisional_start = date(EXPECTED_LATEST.year - 10, EXPECTED_LATEST.month, 1)
-    direct = fetch_paynet_rows(provisional_start, EXPECTED_LATEST)
-    latest, by_code = _prepare(direct)
-    required = _required_months(latest)
-    start = required[-1]
+    required = _required_months(EXPECTED_LATEST)
+    collected = {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
 
-    # Validate the complete direct history before deleting or replacing anything.
+    # Verify July 2026 first, then walk backwards exactly one month at a time.
+    # No database changes happen until every one of the 121 months is present.
+    for month in required:
+        rows = fetch_paynet_month(month)
+        missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
+        if missing:
+            raise RuntimeError(
+                f"{month:%Y-%m}: direct public source missing {','.join(missing)}; "
+                "split delinquency buckets will not be substituted"
+            )
+        for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
+            collected[code].append(rows[code])
+        print(json.dumps({"verified_month": f"{month:%Y-%m}"}, ensure_ascii=False))
+
+    latest, by_code = _prepare(collected)
+    start = required[-1]
     validated: dict[str, dict[str, dict]] = {}
     for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
         ordered = [by_code[code][month.isoformat()] for month in required]
@@ -87,17 +90,11 @@ def run() -> dict[str, object]:
     )
 
     stored = 0
-    # Store exactly July 2026 backwards, one month at a time, through July 2016.
     for month in required:
         key = month.isoformat()
         batch = [validated[SERIES_DELINQUENCY][key], validated[SERIES_DEFAULT][key]]
         db.upsert(TABLE, batch, conflict="series_code,observation_date")
-        stored += len(batch)
-        print(json.dumps({
-            "month": key[:7],
-            SERIES_DELINQUENCY: batch[0]["value"],
-            SERIES_DEFAULT: batch[1]["value"],
-        }, ensure_ascii=False))
+        stored += 2
 
     return {
         "latest": latest.isoformat(),
