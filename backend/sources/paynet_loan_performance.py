@@ -25,7 +25,14 @@ BASES = (
     "https://assets.equifax.com/marketing/US/assets/",
     "https://assets.equifax.com/assets/usis/",
 )
-JULY_2026_VERIFIED = (1.72, 0.72, 3.20)
+# Public-PDF gaps only. Values are the three published Equifax levels
+# (31-90, 91-180, SBDFI), never the stored unified result.
+VERIFIED_RECENT = {
+    date(2026, 7, 1): (1.72, 0.72, 3.20, "verified-2026-07"),
+    date(2026, 6, 1): (1.71, 0.73, 3.26, "Coleman-Equifax-Aug-2026"),
+    date(2026, 5, 1): (1.71, 0.73, 3.27, "Coleman-Equifax-Aug-2026-prior-month"),
+    date(2026, 4, 1): (1.69, 0.73, 3.31, "Coleman-Equifax-Jun-2026"),
+}
 
 
 def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -189,13 +196,12 @@ def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
     found = _fetch_report(report_y, report_m)
     result: dict[str, dict | None] = {SERIES_DELINQUENCY: None, SERIES_DEFAULT: None}
 
-    if found is None and month == date(2026, 7, 1):
-        short, severe, default = JULY_2026_VERIFIED
-        source = "verified-2026-07"
-    elif found is None:
-        return result
-    else:
+    if found is not None:
         short, severe, default, source = found
+    elif month in VERIFIED_RECENT:
+        short, severe, default, source = VERIFIED_RECENT[month]
+    else:
+        return result
 
     result[SERIES_DELINQUENCY] = _row(
         SERIES_DELINQUENCY, month.year, month.month, short + severe,
