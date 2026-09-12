@@ -1,0 +1,141 @@
+name: Patch schedule contracts once
+
+on:
+  push:
+    branches: [fix/schedule-reliability-20260912]
+    paths:
+      - ".github/workflows/patch-schedule-contracts-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/schedule-reliability-20260912
+          fetch-depth: 0
+      - name: Update legacy schedule contract assertions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test_backend.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''        workflow = (ROOT / ".github/workflows/sector-flow.yml").read_text(encoding="utf-8")
+          self.assertIn("market_sector_etf_prices", migration)
+          self.assertIn("market_sector_weekly_rankings", migration)
+          self.assertIn('body.stage === "open"', pipeline)
+          self.assertIn('body.stage === "intraday"', pipeline)
+          self.assertIn('body.stage === "close"', pipeline)
+          for schedule in ('10 0', '30 3', '40 6'):
+              self.assertIn(f'cron: "{schedule} * * 1-5"', workflow)
+          self.assertNotIn('cron: "30 0 * * 1-5"', workflow)
+          self.assertNotIn('cron: "0 7 * * 1-5"', workflow)
+          self.assertIn("github.event.schedule == '30 3 * * 1-5'", workflow)
+  '''
+          new = '''        workflow = (ROOT / ".github/workflows/sector-flow.yml").read_text(encoding="utf-8")
+          scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
+          schedule_migration = (ROOT / "supabase/migrations/20260912133500_stabilize_sector_flow_schedule.sql").read_text(encoding="utf-8")
+          self.assertIn("market_sector_etf_prices", migration)
+          self.assertIn("market_sector_weekly_rankings", migration)
+          self.assertIn('body.stage === "open"', pipeline)
+          self.assertIn('body.stage === "intraday"', pipeline)
+          self.assertIn('body.stage === "close"', pipeline)
+          self.assertNotIn("  schedule:", workflow)
+          self.assertIn("workflow_dispatch:", workflow)
+          self.assertIn("options: [open, intraday, close]", workflow)
+          for schedule in ('10 0 * * 1-5', '30 3 * * 1-5', '40 6 * * 1-5'):
+              self.assertIn(schedule, schedule_migration)
+          self.assertIn('const stage = String(body?.stage || "") as PriceStage', scheduler)
+          self.assertNotIn("github.event.schedule", workflow)
+  '''
+          assert old in text, 'sector-flow contract block not found'
+          text = text.replace(old, new, 1)
+          old = '''        self.assertIn('github.event.schedule == \\'30 3 * * 1-5\\' && \\'intraday\\'', workflow)
+  '''
+          assert old in text, 'sector intraday legacy assertion not found'
+          text = text.replace(old, '', 1)
+
+          old = '''        scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
+          migration = (ROOT / "supabase/migrations/20260828_schedule_sector_flow.sql").read_text(encoding="utf-8")
+          config = (ROOT / "supabase/config.toml").read_text(encoding="utf-8")
+          deploy = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
+
+          self.assertIn('[functions.sector-flow-scheduler]', config)
+          self.assertIn('verify_jwt = false', config.split('[functions.sector-flow-scheduler]', 1)[1].split('[functions.', 1)[0])
+          self.assertIn('skipped: "outside_schedule_window"', scheduler)
+          self.assertIn('skipped: "already_refreshed"', scheduler)
+          self.assertIn('.gte("calculated_at", slotStartedAt.toISOString())', scheduler)
+          self.assertIn('/functions/v1/sector-flow', scheduler)
+          self.assertIn('{ name: "midday", stage: "intraday"', scheduler)
+          self.assertIn('create extension if not exists pg_cron', migration)
+          self.assertIn('create extension if not exists pg_net', migration)
+          for schedule in ('10,25 0 * * 1-5', '30,45 3 * * 1-5', '40,55 6 * * 1-5'):
+              self.assertIn(schedule, migration)
+          self.assertTrue((ROOT / "supabase/migrations/20260828_schedule_sector_flow.sql").exists())
+          self.assertIn("--diff-filter=A", deploy)
+  '''
+          new = '''        scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
+          migration = (ROOT / "supabase/migrations/20260912133500_stabilize_sector_flow_schedule.sql").read_text(encoding="utf-8")
+          config = (ROOT / "supabase/config.toml").read_text(encoding="utf-8")
+          deploy = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
+
+          self.assertIn('[functions.sector-flow-scheduler]', config)
+          self.assertIn('verify_jwt = false', config.split('[functions.sector-flow-scheduler]', 1)[1].split('[functions.', 1)[0])
+          self.assertIn('skipped: "outside_configured_schedule"', scheduler)
+          self.assertIn('skipped: "already_refreshed"', scheduler)
+          self.assertIn('admin.rpc("macrowatch_sector_flow_schedules")', scheduler)
+          self.assertIn('configuredJobs.some((row) => cronMatchesNow(row?.schedule, now))', scheduler)
+          self.assertIn('admin.functions.invoke("sector-flow", { body: { stage } })', scheduler)
+          for job in (
+              'macrowatch-sector-flow-open-primary', 'macrowatch-sector-flow-open-retry',
+              'macrowatch-sector-flow-intraday-primary', 'macrowatch-sector-flow-intraday-retry',
+              'macrowatch-sector-flow-close-primary', 'macrowatch-sector-flow-close-retry',
+          ):
+              self.assertIn(job, migration)
+          for schedule in ('10 0 * * 1-5', '25 0 * * 1-5', '30 3 * * 1-5', '45 3 * * 1-5', '40 6 * * 1-5', '55 6 * * 1-5'):
+              self.assertIn(schedule, migration)
+          self.assertIn('macrowatch_set_sector_flow_schedule', migration)
+          self.assertIn('macrowatch_set_sector_flow_enabled', migration)
+          self.assertIn('grant execute on function public.macrowatch_sector_flow_schedules() to service_role', migration)
+          self.assertIn("--diff-filter=A", deploy)
+  '''
+          assert old in text, 'sector cron dispatcher legacy block not found'
+          text = text.replace(old, new, 1)
+
+          old = '''        automatic_workflow = (ROOT / ".github/workflows/earnings-v2-korea-automatic.yml").read_text(encoding="utf-8")
+          providers = (ROOT / "backend/earnings_v2/providers.py").read_text(encoding="utf-8")
+  '''
+          new = '''        automatic_workflow = (ROOT / ".github/workflows/earnings-v2-korea-automatic.yml").read_text(encoding="utf-8")
+          kis_workflow = (ROOT / ".github/workflows/earnings-v2-korea-kis-automatic.yml").read_text(encoding="utf-8")
+          providers = (ROOT / "backend/earnings_v2/providers.py").read_text(encoding="utf-8")
+  '''
+          assert old in text, 'earnings workflow declaration block not found'
+          text = text.replace(old, new, 1)
+          old = '''        self.assertIn('cron: "30 10 * * 1-5"', automatic_workflow)
+          self.assertIn('cron: "30 11 * * 1-5"', automatic_workflow)
+          self.assertIn("github.event.schedule == '30 10 * * 1-5'", automatic_workflow)
+  '''
+          new = '''        self.assertIn('cron: "30 10 * * 1-5"', automatic_workflow)
+          self.assertIn('cron: "30 11 * * 1-5"', kis_workflow)
+          self.assertIn("github.event_name == 'schedule' && 'dart'", automatic_workflow)
+          self.assertIn('args=(--phase kis)', kis_workflow)
+          self.assertNotIn("github.event.schedule", automatic_workflow)
+          self.assertNotIn("github.event.schedule", kis_workflow)
+  '''
+          assert old in text, 'earnings legacy schedule block not found'
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_backend.py
+          git diff --cached --check
+          git commit -m "Align backend schedule contracts with split schedulers"
+          git push origin HEAD:fix/schedule-reliability-20260912
