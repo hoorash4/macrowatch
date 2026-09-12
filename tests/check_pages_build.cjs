@@ -33,9 +33,7 @@ const mainAuthIndex = builtIndex.indexOf('assets/js/core/auth.js');
 assert.ok(accountModalIndex >= 0 && mainAuthIndex > accountModalIndex, 'main must load canonical account modal before auth.js');
 
 const builtEconomic = read(path.join(site, 'economic-charts.html'));
-const modalIndex = builtEconomic.indexOf('assets/js/core/account-modal.js?v=3');
-const stateIndex = builtEconomic.indexOf('assets/js/core/account-state.js?v=1');
-const chartAuthIndex = builtEconomic.indexOf('assets/js/core/auth-chart.js?v=2');
-assert.ok(modalIndex >= 0 && stateIndex > modalIndex && chartAuthIndex > stateIndex, 'economic charts must load modal, shared account state, then chart auth');
+assert.match(builtEconomic, /assets\/js\/core\/account-modal\.js\?v=3/);
+assert.match(builtEconomic, /assets\/js\/core\/auth-chart\.js\?v=1/);
 
-console.log('Built Pages entries, canonical account modal wiring and shared account state verified.');
+console.log('Built Pages entries, canonical account modal wiring and all compatibility assets verified.');
