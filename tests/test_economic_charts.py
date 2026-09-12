@@ -1,7 +1,6 @@
 from pathlib import Path
 import unittest
 
-# Economic-chart tests protect the automatic/backfill boundary as well as UI behavior.
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -115,24 +114,20 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
         self.assertIn("fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
 
-    def test_economic_chart_collection_separates_automatic_and_explicit_backfill(self):
+    def test_economic_chart_collection_is_automatic_only(self):
         automatic_workflow = (ROOT / '.github/workflows/economic-chart-data.yml').read_text(encoding='utf-8')
-        backfill_workflow = (ROOT / '.github/workflows/economic-chart-backfill-once.yml').read_text(encoding='utf-8')
         automatic = (ROOT / 'backend/signals/economic_chart_automatic.py').read_text(encoding='utf-8')
-        backfill = (ROOT / 'backend/signals/economic_chart_backfill.py').read_text(encoding='utf-8')
         helpers = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
         tracker = (ROOT / 'backend/tracking/check_targets.py').read_text(encoding='utf-8')
 
         self.assertIn('signals.economic_chart_automatic', automatic_workflow)
-        self.assertNotIn('signals.economic_chart_backfill', automatic_workflow)
-        self.assertIn('workflow_dispatch:', backfill_workflow)
-        self.assertNotIn('  schedule:', backfill_workflow)
-        self.assertNotIn('  push:', backfill_workflow)
-        self.assertIn('signals.economic_chart_backfill', backfill_workflow)
-        self.assertIn('signals.korea_export_backfill', backfill_workflow)
-        self.assertNotIn('economic_chart_backfill', automatic)
+        self.assertIn('signals.business_credit_monthly', automatic_workflow)
+        self.assertIn('signals.paynet_monthly', automatic_workflow)
+        self.assertNotIn('backfill', automatic_workflow.lower())
+        self.assertFalse((ROOT / '.github/workflows/economic-chart-backfill-once.yml').exists())
+        self.assertFalse((ROOT / 'backend/signals/economic_chart_backfill.py').exists())
         self.assertIn('timedelta(days=45)', automatic)
-        self.assertIn('timedelta(days=3660)', backfill)
+        self.assertNotIn('economic_chart_backfill', automatic)
         self.assertNotIn('argparse', helpers)
         self.assertNotIn('choices=("automatic", "bootstrap")', helpers)
         self.assertIn('str(row["observation_date"]) not in existing', helpers)
@@ -142,23 +137,21 @@ class EconomicChartFeatureTests(unittest.TestCase):
 
     def test_chart_reads_full_primary_history_and_merges_legacy_fallback_only_as_gap_cover(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
-        backfill = (ROOT / 'backend/signals/economic_chart_backfill.py').read_text(encoding='utf-8')
-        self.assertIn('"US10Y": ("DGS10", "D")', (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8'))
-        self.assertIn('for code, (source_id, frequency) in FRED_SERIES.items()', backfill)
+        pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
+        self.assertIn('"US10Y": ("DGS10", "D")', pipeline)
         self.assertIn('new Map([...fallbackRows,...primaryRows].map', script)
         self.assertIn("economic_chart_points", script)
 
-    def test_korea_export_is_collected_incrementally_and_backfilled_explicitly(self):
+    def test_korea_export_is_collected_incrementally(self):
         automatic = (ROOT / 'backend/signals/economic_chart_automatic.py').read_text(encoding='utf-8')
         source = (ROOT / 'backend/sources/korea_export_intramonth.py').read_text(encoding='utf-8')
-        backfill = (ROOT / 'backend/signals/korea_export_backfill.py').read_text(encoding='utf-8')
         self.assertIn('fetch_snapshots(export_start_month, max_pages=6)', automatic)
         self.assertIn('KR_EXPORT_DAILY_AVG', automatic)
         self.assertIn('cumulative_export_musd - d10.cumulative_export_musd', source)
         self.assertIn('cumulative_workdays - d10.cumulative_workdays', source)
         self.assertIn('cumulative_export_musd - d20.cumulative_export_musd', source)
         self.assertIn('cumulative_workdays - d20.cumulative_workdays', source)
-        self.assertIn('timedelta(days=3660)', backfill)
+        self.assertFalse((ROOT / 'backend/signals/korea_export_backfill.py').exists())
 
     def test_core_series_include_fred_ecos_pykrx_and_derived_spreads(self):
         pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
