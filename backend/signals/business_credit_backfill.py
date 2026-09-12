@@ -24,7 +24,7 @@ def _ten_year_start(today: date) -> date:
 
 
 def _validate_rows(code: str, rows: list[dict], start: date, end: date) -> list[dict]:
-    """Validate source rows before an authoritative backfill upsert.
+    """Validate and deduplicate source rows before an authoritative backfill upsert.
 
     Backfill must never preserve a stale value merely because the date already exists.
     At the same time, sparse external archives (notably historical Equifax reports) must
@@ -32,7 +32,7 @@ def _validate_rows(code: str, rows: list[dict], start: date, end: date) -> list[
     """
     first = date(start.year, start.month, 1)
     last = date(end.year, end.month, 1)
-    validated: list[dict] = []
+    validated_by_date: dict[str, dict] = {}
     seen: dict[str, float] = {}
     for raw in rows:
         if raw.get("series_code") != code:
@@ -58,16 +58,15 @@ def _validate_rows(code: str, rows: list[dict], start: date, end: date) -> list[
         if previous is not None and not math.isclose(previous, value, rel_tol=0.0, abs_tol=1e-12):
             raise RuntimeError(f"{code}: conflicting source values for {observed_s}: {previous} vs {value}")
         seen[observed_s] = value
-        validated.append(raw)
-    validated.sort(key=lambda row: row["observation_date"])
-    return validated
+        # Equal overlapping first-party discoveries are the same observation. Keep one row
+        # so Postgres ON CONFLICT never sees the same key twice in a single statement.
+        validated_by_date.setdefault(observed_s, raw)
+    return [validated_by_date[key] for key in sorted(validated_by_date)]
 
 
 def _store(db: SupabaseRest, code: str, rows: list[dict], start: date, end: date, totals: dict[str, int]) -> None:
     validated = _validate_rows(code, rows, start, end)
     if validated:
-        # Authoritative backfill revalidates and overwrites rediscovered dates. This is
-        # intentionally different from automatic collection, which only fills new/recent gaps.
         db.upsert(TABLE, validated, conflict="series_code,observation_date")
     totals[code] = len(validated)
     print(json.dumps({
