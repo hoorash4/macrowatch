@@ -5,6 +5,7 @@ on:
       - fix/embed-economic-menu-20260913
     paths:
       - .github/scripts/embed_economic_menu.py
+      - .github/workflows/tmp-embed-economic-menu.yml
 permissions:
   contents: write
 jobs:
