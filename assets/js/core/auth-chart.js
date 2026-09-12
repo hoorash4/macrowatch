@@ -3,11 +3,9 @@
 
   const client = window.macroWatchSupabase || window.MacroWatchFrontend.createSupabaseClient();
   window.macroWatchSupabase = client;
+  const accountState = window.MacroWatchAccountState.create(client);
+  const functionClient = window.MacroWatchFrontend.createFunctionClient(client);
   let accountUiBound = false;
-
-  function functionClient() {
-    return window.MacroWatchFrontend.createFunctionClient(client);
-  }
 
   async function session() {
     const { data, error } = await client.auth.getSession();
@@ -15,8 +13,8 @@
     return data.session;
   }
 
-  async function invoke(name, action, payload = {}) {
-    return functionClient().invoke(name, { action, ...payload }, {
+  function invoke(name, action, payload = {}) {
+    return functionClient.invoke(name, { action, ...payload }, {
       errorMessage: status => `요청에 실패했습니다. (${status})`,
     });
   }
@@ -25,72 +23,6 @@
     const modal = document.getElementById('service-preparing-modal');
     modal?.classList.remove('hidden');
     document.getElementById('service-preparing-close')?.focus();
-  }
-
-  function setKakaoStatus(connected, message) {
-    const status = document.getElementById('kakao-connection-status');
-    const badge = document.getElementById('kakao-status-badge');
-    const unlink = document.getElementById('kakao-unlink-button');
-    if (status) status.textContent = message || (connected ? '로그인 한 카카오 계정으로 지표 변동 알림이 전송 됩니다.' : '카카오 알림 연결을 확인하지 못했습니다.');
-    if (badge) {
-      badge.textContent = connected ? '연결됨' : '확인 필요';
-      badge.className = connected
-        ? 'shrink-0 rounded-full border border-emerald-700/50 bg-emerald-950/60 px-2.5 py-1 text-[11px] font-semibold text-emerald-400'
-        : 'shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400';
-    }
-    unlink?.classList.toggle('hidden', !connected);
-  }
-
-  async function loadKakaoStatus() {
-    setKakaoStatus(false, '연결 상태 확인 중');
-    try {
-      const data = await invoke('kakao-auth', 'status');
-      setKakaoStatus(Boolean(data?.connected));
-    } catch (error) {
-      setKakaoStatus(false, error.message || '연결 상태를 확인하지 못했습니다.');
-    }
-  }
-
-  function setEmailStatus(address, active, message) {
-    const status = document.getElementById('email-alert-status');
-    const badge = document.getElementById('email-alert-badge');
-    const input = document.getElementById('email-alert-address');
-    const remove = document.getElementById('email-alert-remove-button');
-    if (status) status.textContent = message || (active ? `${address}로 지표 변동 알림을 받습니다.` : '이메일 알림을 설정하지 않았습니다.');
-    if (badge) {
-      badge.textContent = active ? '사용 중' : '미설정';
-      badge.className = active
-        ? 'shrink-0 rounded-full border border-emerald-700/50 bg-emerald-950/60 px-2.5 py-1 text-[11px] font-semibold text-emerald-400'
-        : 'shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400';
-    }
-    if (input) input.value = address || '';
-    remove?.classList.toggle('hidden', !active);
-  }
-
-  async function loadEmailStatus() {
-    setEmailStatus('', false, '설정 상태 확인 중');
-    try {
-      const data = await invoke('notification-settings', 'status');
-      setEmailStatus(data?.address || '', Boolean(data?.is_active));
-    } catch (error) {
-      setEmailStatus('', false, error.message || '이메일 설정을 확인하지 못했습니다.');
-    }
-  }
-
-  async function loadIdentity() {
-    const output = document.getElementById('profile-username');
-    if (!output) return;
-    output.textContent = '확인 중';
-    try {
-      const current = await session();
-      const userId = current?.user?.id;
-      if (!userId) throw new Error('로그인이 필요합니다.');
-      const { data, error } = await client.from('user_accounts').select('username').eq('user_id', userId).maybeSingle();
-      if (error) throw error;
-      output.textContent = data?.username || '아이디 미등록 · 카카오 전용 계정';
-    } catch {
-      output.textContent = '아이디를 확인하지 못했습니다.';
-    }
   }
 
   function bindAccountModal() {
@@ -104,16 +36,7 @@
     profile?.addEventListener('click', event => { if (event.target === profile) close(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && !profile?.classList.contains('hidden')) close(); });
 
-    const theme = document.getElementById('theme-preference');
-    if (theme) {
-      theme.value = window.MacroWatchTheme?.getPreference?.() || 'system';
-      theme.addEventListener('change', async () => {
-        theme.disabled = true;
-        try { await window.MacroWatchTheme?.savePreference?.(theme.value); }
-        catch (error) { window.alert(error?.message || '테마 설정을 저장하지 못했습니다.'); }
-        finally { theme.disabled = false; }
-      });
-    }
+    accountState.bindTheme();
 
     document.getElementById('password-change-form')?.addEventListener('submit', async event => {
       event.preventDefault();
@@ -139,9 +62,14 @@
     document.getElementById('kakao-unlink-button')?.addEventListener('click', async event => {
       if (!window.confirm('카카오 알림 연결을 해제할까요? ID 계정은 유지됩니다.')) return;
       event.currentTarget.disabled = true;
-      try { await invoke('kakao-auth', 'unlink'); await loadKakaoStatus(); }
-      catch (error) { window.alert(error.message || '카카오 연결을 해제하지 못했습니다.'); }
-      finally { event.currentTarget.disabled = false; }
+      try {
+        await invoke('kakao-auth', 'unlink');
+        await accountState.refresh();
+      } catch (error) {
+        window.alert(error.message || '카카오 연결을 해제하지 못했습니다.');
+      } finally {
+        event.currentTarget.disabled = false;
+      }
     });
 
     document.getElementById('email-alert-save-button')?.addEventListener('click', async event => {
@@ -149,16 +77,25 @@
       try {
         const address = document.getElementById('email-alert-address')?.value.trim() || '';
         await invoke('notification-settings', 'save', { address });
-        await loadEmailStatus();
-      } catch (error) { window.alert(error.message || '이메일 알림을 저장하지 못했습니다.'); }
-      finally { event.currentTarget.disabled = false; }
+        await accountState.refresh();
+      } catch (error) {
+        window.alert(error.message || '이메일 알림을 저장하지 못했습니다.');
+      } finally {
+        event.currentTarget.disabled = false;
+      }
     });
+
     document.getElementById('email-alert-remove-button')?.addEventListener('click', async event => {
       if (!window.confirm('이메일 알림을 해제할까요?')) return;
       event.currentTarget.disabled = true;
-      try { await invoke('notification-settings', 'remove'); await loadEmailStatus(); }
-      catch (error) { window.alert(error.message || '이메일 설정을 해제하지 못했습니다.'); }
-      finally { event.currentTarget.disabled = false; }
+      try {
+        await invoke('notification-settings', 'remove');
+        await accountState.refresh();
+      } catch (error) {
+        window.alert(error.message || '이메일 설정을 해제하지 못했습니다.');
+      } finally {
+        event.currentTarget.disabled = false;
+      }
     });
 
     document.getElementById('account-delete-button')?.addEventListener('click', () => document.getElementById('account-delete-modal')?.classList.remove('hidden'));
@@ -182,7 +119,7 @@
     bindAccountModal();
     document.getElementById('profile-modal')?.classList.remove('hidden');
     document.getElementById('profile-close-button')?.focus();
-    await Promise.all([loadIdentity(), loadKakaoStatus(), loadEmailStatus()]);
+    await accountState.refresh();
   }
 
   async function updateAdminLink(currentSession) {
