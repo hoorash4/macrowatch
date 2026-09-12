@@ -50,8 +50,11 @@ def _report_urls(year: int, month: int) -> list[str]:
     abbr_low = abbr.lower()
     names = [
         f"main-street-lending-report-{low}-{year}.pdf",
+        f"Main-Street-Lending-Report-{full}-{year}.pdf",
+        f"main-street-lending-report-{full}-{year}.pdf",
         f"main-street-lending-report-{abbr}-{year}-report.pdf",
         f"main-street-lending-report-{abbr_low}-{year}-report.pdf",
+        f"Main-Street-Lending-Report-{abbr}-{year}-report.pdf",
         f"equifax-main-street-lending-report-{low}-{year}.pdf",
         f"Equifax-main-street-lending-report-{full}-{year}.pdf",
         f"Equifax-Main-Street-Lending-Report-{full}-{year}.pdf",
@@ -181,7 +184,7 @@ def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
 
     if found is None and month == date(2026, 7, 1):
         short, severe, default = JULY_2026_VERIFIED
-        source = "Equifax-public:verified-2026-07"
+        source = "verified-2026-07"
     elif found is None:
         return result
     else:
