@@ -53,6 +53,9 @@ def _add(out: dict[tuple[int, int], int], count_s: str, month_name: str, year_s:
         return
     count = int(count_s.replace(",", ""))
     if 0 < count < 100000:
+        existing = out.get((year, month))
+        if existing is not None and existing != count:
+            raise RuntimeError(f"Epiq page contains conflicting counts for {year:04d}-{month:02d}: {existing} vs {count}")
         out[(year, month)] = count
 
 
@@ -73,14 +76,12 @@ def extract_epiq_ch11(text: str) -> list[tuple[int, int, int]]:
             for match in re.finditer(pattern, sentence, re.I):
                 _add(out, match.group(1), match.group(2), match.group(3), publication)
 
-        # Form: "in March 2025 ... filings climbing to 733".
         for match in re.finditer(
             rf"\bin\s+({MONTH_PATTERN})(?:\s+(20\d{{2}}))?[^.!?]{{0,160}}?(?:filings?\s+)?(?:climbing|rising|rose|increased|decreased|falling|fell)\s+(?:by\s+[^.!?]{{0,30}}?\s+)?to\s+([0-9][0-9,]*)\b",
             sentence, re.I,
         ):
             _add(out, match.group(3), match.group(1), match.group(2), publication)
 
-        # Prior-period comparator: "from/over the 611 filings ... in March 2024".
         for match in re.finditer(
             rf"\b(?:from|versus|over)\s+(?:the\s+)?([0-9][0-9,]*)\s+(?:commercial\s+chapter\s+11(?:\s+bankruptcy)?\s+)?filings?[^.!?]{{0,80}}?\bin\s+({MONTH_PATTERN})(?:\s+(20\d{{2}}))?",
             sentence, re.I,
@@ -88,6 +89,43 @@ def extract_epiq_ch11(text: str) -> list[tuple[int, int, int]]:
             _add(out, match.group(1), match.group(2), match.group(3), publication)
 
     return [(year, month, out[(year, month)]) for year, month in sorted(out)]
+
+
+def _candidate_priority(publication: tuple[int, int] | None, year: int, month: int) -> tuple[int, int]:
+    """Prefer the dedicated release published one month after its observation month."""
+    if publication is None:
+        return (3, 999)
+    pub_year, pub_month = publication
+    distance = (pub_year * 12 + pub_month) - (year * 12 + month)
+    if distance == 1:
+        return (0, 0)
+    if distance == 0:
+        return (1, 0)
+    if distance > 1:
+        return (2, distance)
+    return (3, abs(distance))
+
+
+def _consider_candidate(
+    values: dict[tuple[int, int], tuple[int, str, tuple[int, int]]],
+    *,
+    year: int,
+    month: int,
+    count: int,
+    url: str,
+    publication: tuple[int, int] | None,
+) -> None:
+    key = (year, month)
+    priority = _candidate_priority(publication, year, month)
+    current = values.get(key)
+    if current is None or priority < current[2]:
+        values[key] = (count, url, priority)
+        return
+    if priority == current[2] and count != current[0]:
+        raise RuntimeError(
+            f"Epiq has conflicting equally authoritative counts for {year:04d}-{month:02d}: "
+            f"{current[0]} ({current[1]}) vs {count} ({url})"
+        )
 
 
 def _row(year: int, month: int, value: int, source: str) -> dict:
@@ -130,15 +168,30 @@ def fetch_epiq_ch11_rows(start: date, end: date, *, max_pages: int = 20) -> list
             if stale_pages >= 3:
                 break
 
-    values: dict[tuple[int, int], tuple[int, str]] = {}
+    values: dict[tuple[int, int], tuple[int, str, tuple[int, int]]] = {}
     first = date(start.year, start.month, 1)
     for url in sorted(links):
         try:
             text = _plain_html(_request(url).text)
-        except Exception:
+            publication = _publication_date(text)
+            extracted = extract_epiq_ch11(text)
+        except Exception as error:
+            # A contradictory official page must not silently contaminate the series.
+            if isinstance(error, RuntimeError):
+                raise
             continue
-        for year, month, count in extract_epiq_ch11(text):
+        for year, month, count in extracted:
             observed = date(year, month, 1)
             if first <= observed <= end:
-                values[(year, month)] = (count, url)
-    return [_row(year, month, count, url) for (year, month), (count, url) in sorted(values.items())]
+                _consider_candidate(
+                    values,
+                    year=year,
+                    month=month,
+                    count=count,
+                    url=url,
+                    publication=publication,
+                )
+    return [
+        _row(year, month, count, url)
+        for (year, month), (count, url, _priority) in sorted(values.items())
+    ]
