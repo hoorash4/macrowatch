@@ -22,27 +22,33 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Require PayNet login for direct delinquency/default data
-        env:
-          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
-          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
-        run: test -n "$PAYNET_USERNAME" && test -n "$PAYNET_PASSWORD"
       - name: Install dependencies
-        run: |
-          pip install --disable-pip-version-check -r backend/requirements.txt
-          pip install --disable-pip-version-check playwright
-          playwright install chromium
-      - name: Collect economic chart series
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Collect regular economic and business-credit series
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
           KRX_ID: ${{ secrets.KRX_ID }}
           KRX_PW: ${{ secrets.KRX_PW }}
-          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
-          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           PYTHONPATH=backend python -m signals.economic_chart_automatic
           PYTHONPATH=backend python -m signals.business_credit_monthly
+      - name: Require PayNet login for direct delinquency/default data
+        env:
+          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
+          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
+        run: test -n "$PAYNET_USERNAME" && test -n "$PAYNET_PASSWORD"
+      - name: Install PayNet browser dependency
+        run: |
+          pip install --disable-pip-version-check playwright
+          playwright install chromium
+      - name: Collect direct PayNet 31-180 delinquency and SBDFI
+        env:
+          PAYNET_USERNAME: ${{ secrets.PAYNET_USERNAME }}
+          PAYNET_PASSWORD: ${{ secrets.PAYNET_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.paynet_monthly
