@@ -1,0 +1,33 @@
+name: Backfill monthly business-credit charts once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/business-credit-backfill-once.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: business-credit-backfill-once
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Backfill monthly business-credit charts
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EPIQ_BACKFILL_PAGES: "20"
+        run: PYTHONPATH=backend python -m signals.business_credit_backfill
