@@ -16,7 +16,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -33,4 +33,6 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.economic_chart_automatic
+        run: |
+          PYTHONPATH=backend python -m signals.economic_chart_automatic
+          PYTHONPATH=backend python -m signals.business_credit_monthly
