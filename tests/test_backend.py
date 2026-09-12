@@ -483,7 +483,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("member-row-grid", admin_ui)
         self.assertNotIn("md:grid-cols-[1fr_1fr_auto_auto_auto]", admin_ui)
         self.assertIn("form.member-row-grid", admin_html)
-        self.assertIn("profile-username", auth)
+        account_modal_data = (ROOT / "assets/js/core/account-modal-data.js").read_text(encoding="utf-8")
+        self.assertIn("profile-username", account_modal_data)
 
     def test_collapsed_admin_lists_show_only_actionable_review_counts(self):
         admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")

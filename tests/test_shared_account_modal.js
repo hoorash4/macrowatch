@@ -12,9 +12,8 @@ const remove = modal.indexOf('id="account-delete-button"');
 
 assert.ok(password >= 0 && kakao > password && email > kakao && theme > email && remove > theme,
   'shared account modal must preserve the main profile order: password → Kakao → email → theme → delete');
-assert.match(modal, /function bindMainThemePreference\(\)/);
-assert.match(modal, /getElementById\('auth-screen'\)/);
-assert.match(modal, /addEventListener\('change',[\s\S]*MacroWatchTheme\?\.savePreference/);
-assert.match(modal, /normalize\(\);\s*bindMainThemePreference\(\);/);
+assert.doesNotMatch(modal, /addEventListener\('change'/);
+assert.doesNotMatch(modal, /MacroWatchTheme/);
+assert.match(modal, /mounted = true;\s*normalize\(\);/);
 
-console.log('shared account modal preserves main layout and binds main theme control: ok');
+console.log('shared account modal owns markup only and preserves the profile layout: ok');

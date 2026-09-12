@@ -12,8 +12,9 @@ for (const id of ['profile-button', 'admin-page-link', 'logout-button']) {
 }
 
 assert.doesNotMatch(html, /assets\/js\/core\/auth\.js/);
-assert.match(html, /assets\/js\/core\/account-modal\.js\?v=1/);
-assert.match(html, /assets\/js\/core\/auth-chart\.js\?v=1/);
+assert.match(html, /assets\/js\/core\/account-modal\.js\?v=4/);
+assert.match(html, /assets\/js\/core\/account-modal-data\.js\?v=2/);
+assert.match(html, /assets\/js\/core\/auth-chart\.js\?v=2/);
 assert.doesNotMatch(html, /window\.macroWatchSupabase[\s\S]*is_admin/);
 
 assert.match(accountModal, /window\.MacroWatchAccountModal\s*=\s*\{ ensure \}/);
@@ -23,7 +24,8 @@ for (const id of ['profile-modal', 'account-delete-modal', 'service-preparing-mo
 
 assert.match(chartAuth, /client\.auth\.getSession\(\)/);
 assert.match(chartAuth, /getElementById\('logout-button'\)[\s\S]*signOut\(\{ scope: 'local' \}\)[\s\S]*location\.replace\('index\.html'\)/);
-assert.match(chartAuth, /getElementById\('profile-button'\)[\s\S]*openProfile/);
+assert.match(chartAuth, /MacroWatchAccountModal\.bindTrigger\([\s\S]*getElementById\('profile-button'\)/);
 assert.match(chartAuth, /MacroWatchAccountModal\.ensure\(\)/);
+assert.doesNotMatch(chartAuth, /function loadKakaoStatus|function loadEmailStatus|password-change-form/);
 
 console.log('economic account controls use chart-specific auth and a reusable modal source: ok');

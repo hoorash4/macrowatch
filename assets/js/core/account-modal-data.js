@@ -5,13 +5,14 @@
   let actionsBound = false;
   let activeClient = null;
   let activeUserId = null;
+  let activeFunctionClient = null;
+  let activeThemeController = null;
+  let activeReturnFocus = null;
+  let activeDeleteRedirect = 'index.html';
 
-  function createFunctionClient(client) {
-    return window.MacroWatchFrontend.createFunctionClient(client);
-  }
-
-  function invoke(client, name, action, payload = {}) {
-    return createFunctionClient(client).invoke(name, { action, ...payload }, {
+  function invoke(name, action, payload = {}) {
+    if (!activeFunctionClient?.invoke) throw new Error('계정 설정 호출 모듈을 초기화하지 못했습니다.');
+    return activeFunctionClient.invoke(name, { action, ...payload }, {
       errorMessage: status => `요청에 실패했습니다. (${status})`,
     });
   }
@@ -57,20 +58,20 @@
     if (error) throw error;
     if (username) username.textContent = data?.username || '아이디 미등록 · 카카오 전용 계정';
     const preference = data?.theme_preference || 'system';
-    window.MacroWatchTheme?.applyPreference?.(preference);
+    activeThemeController?.applyPreference?.(preference);
     const theme = document.getElementById('theme-preference');
     if (theme) theme.value = preference;
   }
 
-  async function loadKakao(client) {
+  async function loadKakao() {
     setKakaoStatus(false, '연결 상태 확인 중');
-    const data = await invoke(client, 'kakao-auth', 'status');
+    const data = await invoke('kakao-auth', 'status');
     setKakaoStatus(Boolean(data?.connected));
   }
 
-  async function loadEmail(client) {
+  async function loadEmail() {
     setEmailStatus('', false, '설정 상태 확인 중');
-    const data = await invoke(client, 'notification-settings', 'status');
+    const data = await invoke('notification-settings', 'status');
     setEmailStatus(data?.address || '', Boolean(data?.is_active));
   }
 
@@ -78,8 +79,8 @@
     if (!activeClient || !activeUserId) return;
     const results = await Promise.allSettled([
       loadAccount(activeClient, activeUserId),
-      loadKakao(activeClient),
-      loadEmail(activeClient),
+      loadKakao(),
+      loadEmail(),
     ]);
     if (results[0].status === 'rejected') {
       const username = document.getElementById('profile-username');
@@ -100,7 +101,10 @@
     if (actionsBound) return;
     actionsBound = true;
     const modal = document.getElementById('profile-modal');
-    const close = () => modal?.classList.add('hidden');
+    const close = () => {
+      modal?.classList.add('hidden');
+      activeReturnFocus?.focus?.();
+    };
     document.getElementById('profile-close-button')?.addEventListener('click', close);
     modal?.addEventListener('click', event => { if (event.target === modal) close(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && !modal?.classList.contains('hidden')) close(); });
@@ -108,7 +112,10 @@
     const theme = document.getElementById('theme-preference');
     theme?.addEventListener('change', async () => {
       theme.disabled = true;
-      try { await window.MacroWatchTheme?.savePreference?.(theme.value); }
+      try {
+        if (!activeThemeController?.savePreference) throw new Error('테마 설정 모듈을 초기화하지 못했습니다.');
+        await activeThemeController.savePreference(theme.value);
+      }
       catch (error) { window.alert(error?.message || '테마 설정을 저장하지 못했습니다.'); }
       finally { theme.disabled = false; }
     });
@@ -141,7 +148,7 @@
     document.getElementById('kakao-unlink-button')?.addEventListener('click', async event => {
       if (!window.confirm('카카오 알림 연결을 해제할까요? ID 계정은 유지됩니다.')) return;
       event.currentTarget.disabled = true;
-      try { await invoke(activeClient, 'kakao-auth', 'unlink'); await loadKakao(activeClient); }
+      try { await invoke('kakao-auth', 'unlink'); await loadKakao(); }
       catch (error) { window.alert(error.message || '카카오 연결을 해제하지 못했습니다.'); }
       finally { event.currentTarget.disabled = false; }
     });
@@ -150,15 +157,15 @@
       event.currentTarget.disabled = true;
       try {
         const address = document.getElementById('email-alert-address')?.value.trim() || '';
-        await invoke(activeClient, 'notification-settings', 'save', { address });
-        await loadEmail(activeClient);
+        await invoke('notification-settings', 'save', { address });
+        await loadEmail();
       } catch (error) { window.alert(error.message || '이메일 알림을 저장하지 못했습니다.'); }
       finally { event.currentTarget.disabled = false; }
     });
     document.getElementById('email-alert-remove-button')?.addEventListener('click', async event => {
       if (!window.confirm('이메일 알림을 해제할까요?')) return;
       event.currentTarget.disabled = true;
-      try { await invoke(activeClient, 'notification-settings', 'remove'); await loadEmail(activeClient); }
+      try { await invoke('notification-settings', 'remove'); await loadEmail(); }
       catch (error) { window.alert(error.message || '이메일 설정을 해제하지 못했습니다.'); }
       finally { event.currentTarget.disabled = false; }
     });
@@ -169,9 +176,9 @@
       event.currentTarget.disabled = true;
       event.currentTarget.textContent = '처리 중';
       try {
-        await invoke(activeClient, 'kakao-auth', 'delete_account');
+        await invoke('kakao-auth', 'delete_account');
         await activeClient.auth.signOut({ scope: 'local' });
-        window.location.replace('index.html');
+        window.location.replace(activeDeleteRedirect);
       } catch (error) {
         window.alert(error.message || '회원 탈퇴를 처리하지 못했습니다.');
         event.currentTarget.disabled = false;
@@ -180,11 +187,24 @@
     });
   }
 
-  async function open({ client, userId }) {
+  async function open({
+    client,
+    userId,
+    functionClient = window.MacroWatchFrontend?.createFunctionClient?.(client),
+    themeController = window.MacroWatchTheme,
+    returnFocus = null,
+    deleteRedirect = 'index.html',
+  }) {
     if (!client || !userId) throw new Error('개인 설정에 필요한 로그인 정보를 받지 못했습니다.');
+    if (!functionClient?.invoke) throw new Error('개인 설정 호출 모듈을 초기화하지 못했습니다.');
     activeClient = client;
     activeUserId = userId;
+    activeFunctionClient = functionClient;
+    activeThemeController = themeController;
+    activeReturnFocus = returnFocus;
+    activeDeleteRedirect = deleteRedirect;
     window.MacroWatchAccountModal.ensure();
+    window.MacroWatchAccountModal.normalize?.();
     bindActions();
     const modal = document.getElementById('profile-modal');
     modal?.classList.remove('hidden');
@@ -192,5 +212,23 @@
     await refresh();
   }
 
+  function bindTrigger({ button, client, deleteRedirect = 'index.html' }) {
+    if (!button || !client || button.dataset.accountModalBound === 'true') return;
+    button.dataset.accountModalBound = 'true';
+    button.addEventListener('click', async () => {
+      try {
+        const { data, error } = await client.auth.getSession();
+        if (error) throw error;
+        const userId = data?.session?.user?.id;
+        if (!userId) throw new Error('로그인이 필요합니다.');
+        await open({ client, userId, returnFocus: button, deleteRedirect });
+      } catch (error) {
+        console.error('profile open failed', error);
+        window.alert(error?.message || '개인 설정을 열지 못했습니다.');
+      }
+    });
+  }
+
   window.MacroWatchAccountModal.open = open;
+  window.MacroWatchAccountModal.bindTrigger = bindTrigger;
 })();

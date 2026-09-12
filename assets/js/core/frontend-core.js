@@ -362,7 +362,11 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
       return chart;
     };
     wrapped.__macroWatchThemeAware = true;
-    library.createChart = wrapped;
+    try {
+      library.createChart = wrapped;
+    } catch (error) {
+      console.warn('LightweightCharts theme adapter could not be installed.', error);
+    }
   }
 
   function applyThemePreference(preference, { cache = true, announce = true } = {}) {
@@ -548,6 +552,24 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     });
   }
 
+  // Publish the shared APIs before optional browser integrations run. A browser-
+  // specific chart adapter failure must never disable authentication or account UI.
+  window.MacroWatchFrontend = Object.freeze({
+    config: Object.freeze({ supabaseUrl, supabasePublishableKey }),
+    createFunctionClient,
+    createSupabaseClient,
+    escapeHtml,
+  });
+  window.MacroWatchTheme = Object.freeze({
+    normalizeThemePreference,
+    resolveTheme,
+    getPreference: () => themePreference,
+    applyPreference: applyThemePreference,
+    loadStoredPreference: loadStoredThemePreference,
+    savePreference: saveThemePreference,
+    chartThemeOptions: lightweightThemeOptions,
+  });
+
   installThemeStyles();
   applyThemePreference(cachedThemePreference(), { cache: false, announce: false });
   installLightweightChartsAdapter();
@@ -567,19 +589,4 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     document.addEventListener('DOMContentLoaded', installConfiguredWorkspaceLinks);
   }
 
-  window.MacroWatchFrontend = Object.freeze({
-    config: Object.freeze({ supabaseUrl, supabasePublishableKey }),
-    createFunctionClient,
-    createSupabaseClient,
-    escapeHtml,
-  });
-  window.MacroWatchTheme = Object.freeze({
-    normalizeThemePreference,
-    resolveTheme,
-    getPreference: () => themePreference,
-    applyPreference: applyThemePreference,
-    loadStoredPreference: loadStoredThemePreference,
-    savePreference: saveThemePreference,
-    chartThemeOptions: lightweightThemeOptions,
-  });
 })();

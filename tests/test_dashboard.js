@@ -697,9 +697,12 @@ test('분석 카드 헤더와 안내 문구는 공통 규격을 사용한다', (
 
 test('공용 대화상자는 하나의 오버레이 컴포넌트와 층위 수정자만 사용한다', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const accountModal = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/account-modal.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
 
-  assert.equal((html.match(/class="modal-overlay[^\"]* hidden"/g) || []).length, 7);
+  assert.equal((html.match(/class="modal-overlay[^\"]* hidden"/g) || []).length
+    + (accountModal.match(/class="modal-overlay[^\"]* hidden"/g) || []).length, 7);
+  assert.doesNotMatch(html, /id="profile-modal"|id="account-delete-modal"|id="service-preparing-modal"/);
   assert.doesNotMatch(html, /class="hidden fixed inset-0[^\"]*bg-black/);
   assert.match(styles, /\.modal-overlay:not\(\.hidden\)\s*\{\s*display:flex;/);
   assert.match(styles, /\.modal-overlay--critical\s*\{[\s\S]*?z-index:80;/);
@@ -977,16 +980,16 @@ test('모바일 카드 폭은 화면 안에 고정되고 주도섹터는 주차�
 });
 
 test('개인설정 모달은 고정 헤더와 스크롤 본문에서 항상 닫을 수 있다', () => {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const modal = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/account-modal.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
-  const auth = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/auth.js'), 'utf8');
-  assert.match(html, /id="profile-modal"[\s\S]*role="dialog"[\s\S]*aria-modal="true"/);
-  assert.match(html, /class="profile-dialog[^"]*"[\s\S]*class="profile-dialog-header[^"]*"[\s\S]*id="profile-close-button"[\s\S]*class="profile-dialog-body"/);
+  const modalData = fs.readFileSync(path.join(__dirname, '..', 'assets/js/core/account-modal-data.js'), 'utf8');
+  assert.match(modal, /id="profile-modal"[\s\S]*role="dialog"[\s\S]*aria-modal="true"/);
+  assert.match(modal, /class="profile-dialog[^"]*"[\s\S]*class="profile-dialog-header[^"]*"[\s\S]*id="profile-close-button"[\s\S]*class="profile-dialog-body"/);
   assert.match(styles, /\.profile-dialog \{[\s\S]*?display:flex;[\s\S]*?max-height:min\(44rem,calc\(100svh - 2rem\)\);[\s\S]*?overflow:hidden;/);
   assert.match(styles, /\.profile-dialog-body \{[\s\S]*?min-height:0;[\s\S]*?overflow-y:auto;/);
   assert.match(styles, /@media \(max-width:1023px\)[\s\S]*?#profile-close-button \{[\s\S]*?width:2\.75rem;[\s\S]*?height:2\.75rem;/);
-  assert.match(auth, /const closeProfileModal = \(\) => \{[\s\S]*?profileModal\.classList\.add\('hidden'\)/);
-  assert.match(auth, /event\.target === event\.currentTarget\) closeProfileModal\(\)/);
-  assert.match(auth, /event\.key === 'Escape'[\s\S]*?closeProfileModal\(\)/);
+  assert.match(modalData, /const close = \(\) => \{[\s\S]*?modal\?\.classList\.add\('hidden'\)/);
+  assert.match(modalData, /event\.target === modal\) close\(\)/);
+  assert.match(modalData, /event\.key === 'Escape'[\s\S]*?close\(\)/);
 });
 
