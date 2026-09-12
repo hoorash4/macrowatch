@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/business-credit-backfill-once.yml"
+      - "backend/sources/paynet_loan_performance.py"
+      - "backend/signals/paynet_backfill.py"
+      - "tests/test_paynet_loan_performance.py"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +28,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Backfill direct public Equifax 31-180 delinquency and SBDFI month-by-month
+      - name: Backfill unified Equifax delinquency and SBDFI month-by-month
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
