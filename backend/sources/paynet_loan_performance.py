@@ -25,8 +25,6 @@ BASES = (
     "https://assets.equifax.com/marketing/US/assets/",
     "https://assets.equifax.com/assets/usis/",
 )
-# Public-PDF gaps only. Values are the three published Equifax levels
-# (31-90, 91-180, SBDFI), never the stored unified result.
 VERIFIED_RECENT = {
     date(2026, 7, 1): (1.72, 0.72, 3.20, "verified-2026-07"),
     date(2026, 6, 1): (1.71, 0.73, 3.26, "Coleman-Equifax-Aug-2026"),
@@ -82,6 +80,7 @@ def _report_urls(year: int, month: int) -> list[str]:
         f"commercial-lending-trends-{low}-{year}.pdf",
         f"commercial-lending-trends-{abbr_low}-{year}.pdf",
         f"equifax-commercial-lending-trends-{low}-{year}.pdf",
+        f"small-business-indices-deck-{low}-{year}.pdf",
         f"equifax-small-business-indices-{low}-{year}.pdf",
         f"equifax-small-business-insights-{low}-{year}.pdf",
     ]
@@ -125,6 +124,26 @@ def _modern_table_levels(clean: str) -> tuple[float, float, float] | None:
     return None
 
 
+def _overview_table_levels(clean: str) -> tuple[float, float, float] | None:
+    """Parse overview tables where SBLI labels are interleaved with the three risk labels.
+
+    In these Equifax decks the percentage-valued Level entries in the overview risk block
+    are consistently ordered SBDFI, SBDI 31-90, SBDI 91-180 even when the label row is
+    visually reordered by PDF text extraction.
+    """
+    marker = re.search(r"Equifax Small Business Delinquency \(SBDI\)\s*&\s*Default Indices \(SBDFI\)", clean, re.I)
+    if not marker:
+        return None
+    block = clean[marker.end():marker.end() + 2400]
+    if not (re.search(r"SBDI\s*31\s*-\s*90", block, re.I) and re.search(r"SBDI\s*91\s*-\s*180", block, re.I) and re.search(r"SBDFI\b", block, re.I)):
+        return None
+    levels = [float(v) for v in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)", block, re.I)[:3]]
+    if len(levels) != 3 or any(not (0 <= v < 10) for v in levels):
+        return None
+    default, short, severe = levels
+    return short, severe, default
+
+
 def _local_level(clean: str, label_pattern: str) -> float | None:
     for label in re.finditer(label_pattern, clean, re.I):
         next_metric = re.search(
@@ -145,11 +164,13 @@ def _local_level(clean: str, label_pattern: str) -> float | None:
 
 
 def extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
-    """Return exact published (31-90, 91-180, SBDFI) levels from one report."""
     clean = _clean(text)
     modern = _modern_table_levels(clean)
     if modern is not None:
         return modern
+    overview = _overview_table_levels(clean)
+    if overview is not None:
+        return overview
 
     short = _local_level(clean, r"SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?")
     severe = _local_level(clean, r"SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?")
@@ -157,18 +178,9 @@ def extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
     if short is not None and severe is not None and default is not None:
         return short, severe, default
 
-    short_m = re.search(
-        r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        clean, re.I,
-    )
-    severe_m = re.search(
-        r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        clean, re.I,
-    )
-    default_m = re.search(
-        r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.]{0,180}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        clean, re.I,
-    )
+    short_m = re.search(r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%", clean, re.I)
+    severe_m = re.search(r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%", clean, re.I)
+    default_m = re.search(r"(?:Small Business Default Index\s*\(SBDFI\)|SBDFI\b|Defaults?\b)[^.]{0,180}?(?:to|at|is|was)\s*([0-9]+(?:\.[0-9]+)?)\s*%", clean, re.I)
     if short_m and severe_m and default_m:
         return float(short_m.group(1)), float(severe_m.group(1)), float(default_m.group(1))
     return None
@@ -192,7 +204,6 @@ def _fetch_report(report_year: int, report_month: int) -> tuple[float, float, fl
 
 
 def fetch_paynet_month(observed: date) -> dict[str, dict | None]:
-    """Fetch one month, sum the two published delinquency buckets, and emit only final rows."""
     month = date(observed.year, observed.month, 1)
     report_y, report_m = _shift_month(month.year, month.month, 2)
     found = _fetch_report(report_y, report_m)
