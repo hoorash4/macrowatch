@@ -28,12 +28,12 @@ const builtIndex = read(path.join(site, 'index.html'));
 assert.doesNotMatch(builtIndex, /<!-- ===== 개인 설정창: 카카오톡 연결 \/ 회원 탈퇴 ===== -->/);
 assert.doesNotMatch(builtIndex, /<!-- ===== 회원 탈퇴 최종 확인창 ===== -->/);
 assert.doesNotMatch(builtIndex, /<!-- ===== 공용 안내창: 서비스 준비 중 \/ 등록 완료 ===== -->/);
-const accountModalIndex = builtIndex.indexOf('assets/js/core/account-modal.js?v=2');
+const accountModalIndex = builtIndex.indexOf('assets/js/core/account-modal.js?v=3');
 const mainAuthIndex = builtIndex.indexOf('assets/js/core/auth.js');
 assert.ok(accountModalIndex >= 0 && mainAuthIndex > accountModalIndex, 'main must load canonical account modal before auth.js');
 
 const builtEconomic = read(path.join(site, 'economic-charts.html'));
-assert.match(builtEconomic, /assets\/js\/core\/account-modal\.js\?v=2/);
+assert.match(builtEconomic, /assets\/js\/core\/account-modal\.js\?v=3/);
 assert.match(builtEconomic, /assets\/js\/core\/auth-chart\.js\?v=1/);
 
 console.log('Built Pages entries, canonical account modal wiring and all compatibility assets verified.');
