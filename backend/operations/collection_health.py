@@ -34,7 +34,12 @@ DATABASE_SERIES = {
     "em_capital_capacity_daily": ("em_capital_capacity_daily", "observation_date", 14),
     "equity_bond_attractiveness_weekly": ("equity_bond_attractiveness_weekly", "observation_date", 21),
     "liquidity_indices": ("liquidity_indices", "observation_date", 21),
-    "sector_flow_rankings": ("market_sector_weekly_rankings", "calculated_at", 4),
+    # Supabase owns sector-flow scheduling, so each phase is monitored from
+    # its own persisted result instead of treating any one phase as proof that
+    # the other two also ran.
+    "sector_flow_open": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.open"}),
+    "sector_flow_intraday": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.intraday"}),
+    "sector_flow_close": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}),
 }
 
 # A successful manual run resolves a failed scheduled run only when there is
@@ -132,16 +137,24 @@ def _observation_date(value: object) -> date:
     return date.fromisoformat(text[:10])
 
 
+def _series_spec(series_name: str) -> tuple[str, str, int, dict[str, str]]:
+    spec = DATABASE_SERIES[series_name]
+    table, column, max_age = spec[:3]
+    filters = spec[3] if len(spec) > 3 else {}
+    return str(table), str(column), int(max_age), dict(filters)
+
+
 def _series_latest_date(db: SupabaseRest, series_name: str) -> date:
-    table, column, _max_age = DATABASE_SERIES[series_name]
-    rows = db.request("GET", table, params={"select": column, "order": f"{column}.desc", "limit": "1"}) or []
+    table, column, _max_age, filters = _series_spec(series_name)
+    params = {"select": column, "order": f"{column}.desc", "limit": "1", **filters}
+    rows = db.request("GET", table, params=params) or []
     if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict) or not rows[0].get(column):
         raise RuntimeError(f"DB 최신값 없음: {series_name}")
     return _observation_date(rows[0][column])
 
 
 def _series_is_fresh(db: SupabaseRest, series_name: str, today: date) -> bool:
-    _table, _column, max_age = DATABASE_SERIES[series_name]
+    _table, _column, max_age, _filters = _series_spec(series_name)
     observed = _series_latest_date(db, series_name)
     return observed <= today and (today - observed).days <= max_age
 
@@ -234,8 +247,9 @@ def check_database(today: date) -> list[str]:
     except Exception as error:
         return [f"DB 최신값 검사 불가: {_message(error)}"]
 
-    for label, (table, column, max_age) in DATABASE_SERIES.items():
+    for label in DATABASE_SERIES:
         try:
+            _table, _column, max_age, _filters = _series_spec(label)
             observed = _series_latest_date(db, label)
             if observed > today:
                 failures.append(f"DB 최신값 날짜 이상: {label}, latest={observed.isoformat()}")
