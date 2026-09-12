@@ -2,7 +2,7 @@ name: Earnings U.S. automatic
 
 on:
   schedule:
-    # KST 11:00 quarter-end snapshot. SEC filing collection has its own workflow.
+    # Scheduled runs are always the quarter-end snapshot phase; clock time is admin-managed.
     # Run every day because the U.S. Friday close is Saturday morning in Korea.
     - cron: "0 2 * * *"
   workflow_dispatch:
