@@ -2,8 +2,8 @@ name: Refresh liquidity pressure and capacity
 
 on:
   schedule:
-    # 13:30 KST, after Korean daily source releases. US publishes completed weeks; KR stays monthly.
-    - cron: '30 4 * * *'
+    # Runs only after the Korean daily liquidity source window is complete.
+    - cron: '10 9 * * *'
   workflow_dispatch:
 
 permissions:
