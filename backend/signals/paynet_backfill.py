@@ -53,15 +53,12 @@ def _first_missing_month(db: SupabaseRest, required: list[date]) -> date | None:
 
 
 def _recover_month(month: date) -> dict[str, dict | None]:
+    # Historical reconstruction policy: once we reach Apr-2020 and earlier,
+    # stop wasting time hunting for the target month's direct PDF. Reconstruct
+    # strictly from official Equifax YoY first, then MoM, using a later report's
+    # published level + change. This intentionally favors complete trend history.
     if month <= LEGACY_DERIVE_FIRST:
-        rows = fetch_paynet_derived_month(month)
-        if all(rows[code] is not None for code in (SERIES_DELINQUENCY, SERIES_DEFAULT)):
-            return rows
-        direct = fetch_paynet_month(month)
-        for code in (SERIES_DELINQUENCY, SERIES_DEFAULT):
-            if rows[code] is None:
-                rows[code] = direct[code]
-        return rows
+        return fetch_paynet_derived_month(month)
 
     rows = fetch_paynet_month(month)
     if any(rows[code] is None for code in (SERIES_DELINQUENCY, SERIES_DEFAULT)):
