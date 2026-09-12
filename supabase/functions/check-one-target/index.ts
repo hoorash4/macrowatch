@@ -31,8 +31,23 @@ function dateRange(cycle: string) {
   throw new Error(`지원하지 않는 ECOS 주기입니다: ${cycle}`);
 }
 
-async function collect(target: any) {
+async function collect(target: any, db: any) {
   const config = target.source_config || {};
+  if (target.source_type === "economic_chart") {
+    const seriesCode = String(config.series_code || "").trim();
+    if (!seriesCode) throw new Error("경제지표 차트의 시리즈 코드가 없습니다.");
+    const { data, error } = await db
+      .from("economic_chart_points")
+      .select("value,observation_date")
+      .eq("series_code", seriesCode)
+      .order("observation_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const value = Number(data?.value);
+    if (!Number.isFinite(value)) throw new Error("경제지표 차트의 최신값을 찾지 못했습니다.");
+    return value;
+  }
   if (target.source_type === "fred") {
     const key = Deno.env.get("FRED_API_KEY");
     const seriesId = String(config.series_id || "").trim().toUpperCase();
@@ -81,7 +96,7 @@ Deno.serve(async (request) => {
     const { data: target, error: targetError } = await db.from("targets").select("*").eq("id", targetId).eq("user_id", userData.user.id).maybeSingle();
     if (targetError) throw targetError;
     if (!target) return respond({ error: "해당 지표를 찾을 수 없습니다." }, 404);
-    const value = await collect(target);
+    const value = await collect(target, db);
     const { data: updated, error: updateError } = await db
       .from("targets")
       .update({ last_value: value, last_checked_at: new Date().toISOString(), last_error: null })
