@@ -1,6 +1,10 @@
 name: Backfill monthly business-credit charts once
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/business-credit-backfill-once.yml"
   workflow_dispatch:
 
 permissions:
@@ -26,5 +30,5 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          EPIQ_BACKFILL_PAGES: "20"
+          EPIQ_BACKFILL_PAGES: "50"
         run: PYTHONPATH=backend python -m signals.business_credit_backfill
