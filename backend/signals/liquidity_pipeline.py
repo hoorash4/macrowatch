@@ -137,7 +137,8 @@ def collect(country, existing, end):
     else:
         for chart, mapping in SNAPSHOTS.items():
             payload = get_json(session, f"https://snapshot.bok.or.kr/api/chart/getChart?id={chart}")
-            parsed = parse_snapshot(payload, mapping, SOURCE_START, end)
+            source_start = daily_start if chart == 849 else monthly_start
+            parsed = parse_snapshot(payload, mapping, source_start, end)
             for name, values in parsed.items():
                 # Previously stored observations are trusted in automatic runs.
                 result[name] = {**values, **result.get(name, {})}
