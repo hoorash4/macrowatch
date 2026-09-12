@@ -1,6 +1,7 @@
 """Broader first-party Equifax PDF archive discovery for monthly small-business risk indices."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from io import BytesIO
 import re
@@ -66,34 +67,46 @@ def _fallback_levels(text: str) -> tuple[float, float, float] | None:
     return short, severe, default
 
 
+def _fetch_report(report_y: int, report_m: int) -> tuple[int, int, tuple[float, float, float], str] | None:
+    for url in _archive_urls(report_y, report_m):
+        try:
+            response = requests.get(url, timeout=8, headers={"User-Agent": USER_AGENT})
+            content_type = response.headers.get("content-type", "").lower()
+            if response.status_code != 200 or "pdf" not in content_type:
+                continue
+            text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+            levels = _fallback_levels(text)
+            if levels:
+                return report_y, report_m, levels, url
+        except Exception:
+            continue
+    return None
+
+
 def fetch_equifax_archive_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Recover exact reported levels from additional known first-party PDF naming schemes."""
+    """Recover exact reported levels from known first-party PDF naming schemes."""
     result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
     report_y, report_m = _shift_month(start.year, start.month, 2)
     end_y, end_m = _shift_month(end.year, end.month, 2)
+    reports: list[tuple[int, int]] = []
     while (report_y, report_m) <= (end_y, end_m):
-        levels = None
-        used_url = None
-        for url in _archive_urls(report_y, report_m):
-            try:
-                response = requests.get(url, timeout=15, headers={"User-Agent": USER_AGENT})
-                content_type = response.headers.get("content-type", "").lower()
-                if response.status_code != 200 or "pdf" not in content_type:
-                    continue
-                text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
-                levels = _fallback_levels(text)
-                if levels:
-                    used_url = url
-                    break
-            except Exception:
-                continue
-        if levels and used_url:
-            obs_y, obs_m = _shift_month(report_y, report_m, -2)
-            observed = date(obs_y, obs_m, 1)
-            if date(start.year, start.month, 1) <= observed <= end:
-                short, severe, default = levels
-                result["US_SBDI_31_90"].append(_row("US_SBDI_31_90", obs_y, obs_m, short, f"Equifax:SBDI31-90:{used_url}"))
-                result["US_SBDI_91_180"].append(_row("US_SBDI_91_180", obs_y, obs_m, severe, f"Equifax:SBDI91-180:{used_url}"))
-                result["US_SBDFI"].append(_row("US_SBDFI", obs_y, obs_m, default, f"Equifax:SBDFI:{used_url}"))
+        reports.append((report_y, report_m))
         report_y, report_m = _shift_month(report_y, report_m, 1)
+
+    discoveries = []
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futures = {executor.submit(_fetch_report, year, month): (year, month) for year, month in reports}
+        for future in as_completed(futures):
+            found = future.result()
+            if found is not None:
+                discoveries.append(found)
+
+    for report_y, report_m, levels, used_url in sorted(discoveries):
+        obs_y, obs_m = _shift_month(report_y, report_m, -2)
+        observed = date(obs_y, obs_m, 1)
+        if date(start.year, start.month, 1) <= observed <= end:
+            short, severe, default = levels
+            result["US_SBDI_31_90"].append(_row("US_SBDI_31_90", obs_y, obs_m, short, f"Equifax:SBDI31-90:{used_url}"))
+            result["US_SBDI_91_180"].append(_row("US_SBDI_91_180", obs_y, obs_m, severe, f"Equifax:SBDI91-180:{used_url}"))
+            result["US_SBDFI"].append(_row("US_SBDFI", obs_y, obs_m, default, f"Equifax:SBDFI:{used_url}"))
     return result
