@@ -1,4 +1,4 @@
-"""Explicit full replacement of up to twenty years of official inflation indexes."""
+"""Explicit full replacement of up to twenty years of official YoY inflation rates."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import date
 
 from common import SupabaseRest
 from signals.economic_chart_pipeline import TABLE
-from sources.inflation_indexes import ALL_SERIES_CODES, fetch_all_indexes
+from sources.inflation_rates import ALL_SERIES_CODES, fetch_all_rates
 
 
 def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
@@ -16,7 +16,7 @@ def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[
     database = db or SupabaseRest()
 
     # Fetch and validate every provider before making the first database change.
-    source_rows = fetch_all_indexes(start, end)
+    source_rows = fetch_all_rates(start, end)
     expected = set(ALL_SERIES_CODES)
     if set(source_rows) != expected:
         raise RuntimeError("Inflation backfill source set is incomplete")
@@ -42,7 +42,7 @@ def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[
 
     print(json.dumps({
         "mode": "backfill",
-        "stage": "inflation-indexes",
+        "stage": "inflation-rates",
         "start": start.isoformat(),
         "end": end.isoformat(),
         "rows": counts,

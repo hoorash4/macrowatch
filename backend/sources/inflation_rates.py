@@ -1,4 +1,8 @@
-"""Official monthly inflation-index sources shared by automatic and backfill entrypoints."""
+"""Official monthly inflation rates shared by automatic and backfill entrypoints.
+
+Only year-over-year rates leave this module. Raw index levels are fetched solely as
+the twelve-month calculation base and are never returned as chart-storage rows.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,6 @@ from common import request_with_retry, require_env
 BLS_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 BEA_URL = "https://apps.bea.gov/api/data"
 BEA_TABLE = "T20804"
-KOSIS_SEARCH_URL = "https://kosis.kr/openapi/statisticsSearch.do"
 KOSIS_DATA_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 TIMEOUT_SECONDS = 60
@@ -30,9 +33,10 @@ BEA_SERIES = {
     "US_CORE_PCE": "25",
 }
 KOSIS_SERIES = {
-    "KR_CPI": "소비자물가지수(2020=100)",
-    "KR_CORE_CPI": "식료품 및 에너지제외지수(2020=100)",
+    "KR_CPI": "총지수",
+    "KR_CORE_CPI": "식료품 및 에너지제외지수",
 }
+KOSIS_TABLE_ID = "DT_J12024"
 ECOS_SERIES = {
     "KR_PPI": ("404Y014", "*AA", None),
     "KR_IMPORT_PRICE": ("401Y015", "*AA", "W"),
@@ -60,10 +64,35 @@ def _row(code: str, observed: date, value: float, source: str) -> dict[str, Any]
     }
 
 
-def fetch_bls_indexes(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
-    """Fetch the four BLS indexes in public-API-sized ten-year blocks."""
-    output = {code: [] for code in BLS_SERIES}
-    for first_year in range(start.year, end.year + 1, 10):
+def _add_months(value: date, months: int) -> date:
+    index = value.year * 12 + value.month - 1 + months
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def _yoy_rows(
+    code: str,
+    levels: dict[date, float],
+    start: date,
+    end: date,
+    source: str,
+) -> list[dict[str, Any]]:
+    rows = []
+    for observed in sorted(levels):
+        if not start <= observed <= end:
+            continue
+        prior = levels.get(_add_months(observed, -12))
+        current = levels[observed]
+        if prior is None or prior == 0:
+            continue
+        rows.append(_row(code, observed, round(100.0 * (current / prior - 1.0), 4), f"{source}:YoY"))
+    return rows
+
+
+def fetch_bls_rates(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
+    """Fetch BLS levels in ten-year blocks and return twelve-month changes."""
+    calculation_start = _add_months(start.replace(day=1), -12)
+    levels = {code: {} for code in BLS_SERIES}
+    for first_year in range(calculation_start.year, end.year + 1, 10):
         last_year = min(first_year + 9, end.year)
         response = request_with_retry(lambda: requests.post(
             BLS_URL,
@@ -72,7 +101,7 @@ def fetch_bls_indexes(start: date, end: date) -> dict[str, list[dict[str, Any]]]
                 "startyear": str(first_year),
                 "endyear": str(last_year),
             },
-            headers={"User-Agent": "MacroWatch inflation indexes/1.0"},
+            headers={"User-Agent": "MacroWatch inflation rates/1.0"},
             timeout=TIMEOUT_SECONDS,
         ))
         response.raise_for_status()
@@ -89,12 +118,20 @@ def fetch_bls_indexes(start: date, end: date) -> dict[str, list[dict[str, Any]]]
                 if not re.fullmatch(r"M(0[1-9]|1[0-2])", period) or value is None:
                     continue
                 observed = date(int(item["year"]), int(period[1:]), 1)
-                if start <= observed <= end:
-                    output[code].append(_row(code, observed, value, f"BLS:{series_id}"))
-    return output
+                if calculation_start <= observed <= end:
+                    levels[code][observed] = value
+    return {
+        code: _yoy_rows(code, values, start, end, f"BLS:{BLS_SERIES[code]}")
+        for code, values in levels.items()
+    }
 
 
-def fetch_bea_indexes(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+def fetch_bea_index_levels(
+    start: date,
+    end: date,
+    api_key: str | None = None,
+) -> dict[str, dict[date, float]]:
+    """Return raw PCE price levels for in-memory model calculations only."""
     years = ",".join(str(year) for year in range(start.year, end.year + 1))
     response = request_with_retry(lambda: requests.get(BEA_URL, params={
         "UserID": api_key or require_env("BEA_API_KEY"),
@@ -110,7 +147,7 @@ def fetch_bea_indexes(start: date, end: date, api_key: str | None = None) -> dic
     if payload.get("Error"):
         raise RuntimeError(f"BEA request failed: {payload['Error']}")
     data = (payload.get("Results") or {}).get("Data") or []
-    output = {code: [] for code in BEA_SERIES}
+    levels = {code: {} for code in BEA_SERIES}
     by_line = {line_number: code for code, line_number in BEA_SERIES.items()}
     for item in data:
         code = by_line.get(str(item.get("LineNumber") or ""))
@@ -120,73 +157,66 @@ def fetch_bea_indexes(start: date, end: date, api_key: str | None = None) -> dic
             continue
         observed = date(int(period[:4]), int(period[-2:]), 1)
         if start <= observed <= end:
-            output[code].append(_row(code, observed, value, "BEA:NIPA/T20804"))
-    return output
+            levels[code][observed] = value
+    return levels
+
+
+def fetch_bea_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    calculation_start = _add_months(start.replace(day=1), -12)
+    levels = fetch_bea_index_levels(calculation_start, end, api_key)
+    return {
+        code: _yoy_rows(code, values, start, end, "BEA:NIPA/T20804")
+        for code, values in levels.items()
+    }
 
 
 def _normalize_title(value: object) -> str:
     return re.sub(r"[\s，,]", "", str(value or ""))
 
 
-def _resolve_kosis_table(title: str, api_key: str) -> str:
-    response = request_with_retry(lambda: requests.get(KOSIS_SEARCH_URL, params={
-        "method": "getList", "apiKey": api_key, "format": "json", "jsonVD": "Y",
-        "searchNm": title, "orgId": "101", "startCount": "1", "resultCount": "100", "sort": "RANK",
+def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    key = api_key or require_env("KOSIS_API_KEY")
+    output = {code: [] for code in KOSIS_SERIES}
+    response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
+        "method": "getList", "apiKey": key, "orgId": "101", "tblId": KOSIS_TABLE_ID,
+        "objL1": "ALL", "objL2": "ALL", "itmId": "ALL", "format": "json", "jsonVD": "Y",
+        "prdSe": "M", "startPrdDe": f"{start:%Y%m}", "endPrdDe": f"{end:%Y%m}",
     }, timeout=TIMEOUT_SECONDS))
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, list):
-        raise RuntimeError(f"KOSIS table search failed: {payload}")
-    wanted = _normalize_title(title)
+        raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} request failed: {payload}")
+    seen = {code: set() for code in KOSIS_SERIES}
     for item in payload:
-        if str(item.get("ORG_ID")) == "101" and _normalize_title(item.get("TBL_NM")) == wanted:
-            return str(item["TBL_ID"])
-    raise RuntimeError(f"KOSIS table not found: {title}")
-
-
-def fetch_kosis_indexes(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    key = api_key or require_env("KOSIS_API_KEY")
-    output = {code: [] for code in KOSIS_SERIES}
-    for code, title in KOSIS_SERIES.items():
-        table_id = _resolve_kosis_table(title, key)
-        response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
-            "method": "getList", "apiKey": key, "orgId": "101", "tblId": table_id,
-            "objL1": "ALL", "itmId": "ALL", "format": "json", "jsonVD": "Y", "prdSe": "M",
-            "startPrdDe": f"{start:%Y%m}", "endPrdDe": f"{end:%Y%m}",
-        }, timeout=TIMEOUT_SECONDS))
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, list):
-            raise RuntimeError(f"KOSIS {table_id} request failed: {payload}")
-        candidates = []
-        for item in payload:
-            period = str(item.get("PRD_DE") or "")
-            value = _number(item.get("DT"))
-            region = str(item.get("C1_NM") or "").strip()
-            item_name = str(item.get("ITM_NM") or "").strip()
-            if not re.fullmatch(r"\d{6}", period) or value is None:
-                continue
-            if region and region not in {"전국", "총지수"}:
-                continue
-            candidates.append((item, period, value, item_name))
-        # Some KOSIS tables expose the index as the item and have no regional dimension.
-        preferred = [item for item in candidates if "지수" in item[3] or "총지수" in item[3]] or candidates
-        seen: set[str] = set()
-        for _item, period, value, _name in preferred:
-            if period in seen:
-                continue
-            seen.add(period)
-            observed = date(int(period[:4]), int(period[4:]), 1)
-            if start <= observed <= end:
-                output[code].append(_row(code, observed, value, f"KOSIS:101/{table_id}"))
+        period = str(item.get("PRD_DE") or "")
+        value = _number(item.get("DT"))
+        labels = _normalize_title(" ".join(
+            str(item.get(field) or "")
+            for field in ("ITM_NM", "C1_NM", "C2_NM", "C3_NM", "UNIT_NM")
+        ))
+        if not re.fullmatch(r"\d{6}", period) or value is None:
+            continue
+        if "전년동월비" not in labels:
+            continue
+        matching = [code for code, label in KOSIS_SERIES.items() if _normalize_title(label) in labels]
+        if len(matching) != 1:
+            continue
+        code = matching[0]
+        if period in seen[code]:
+            raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} returned duplicate YoY rows for {code} {period}")
+        seen[code].add(period)
+        observed = date(int(period[:4]), int(period[4:]), 1)
+        if start <= observed <= end:
+            output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
     return output
 
 
-def fetch_ecos_indexes(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+def fetch_ecos_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
     key = api_key or require_env("ECOS_API_KEY")
-    output = {code: [] for code in ECOS_SERIES}
+    calculation_start = _add_months(start.replace(day=1), -12)
+    levels = {code: {} for code in ECOS_SERIES}
     for code, (table_id, item_id, item_code2) in ECOS_SERIES.items():
-        url = f"{ECOS_URL}/{key}/json/kr/1/10000/{table_id}/M/{start:%Y%m}/{end:%Y%m}/{item_id}"
+        url = f"{ECOS_URL}/{key}/json/kr/1/10000/{table_id}/M/{calculation_start:%Y%m}/{end:%Y%m}/{item_id}"
         if item_code2:
             url += f"/{item_code2}"
         response = request_with_retry(lambda: requests.get(url, timeout=TIMEOUT_SECONDS))
@@ -200,10 +230,18 @@ def fetch_ecos_indexes(start: date, end: date, api_key: str | None = None) -> di
             if not re.fullmatch(r"\d{6}", period) or value is None:
                 continue
             observed = date(int(period[:4]), int(period[4:]), 1)
-            if start <= observed <= end:
-                source_path = f"{table_id}/{item_id}" + (f"/{item_code2}" if item_code2 else "")
-                output[code].append(_row(code, observed, value, f"ECOS:{source_path}"))
-    return output
+            if calculation_start <= observed <= end:
+                levels[code][observed] = value
+    return {
+        code: _yoy_rows(
+            code,
+            values,
+            start,
+            end,
+            "ECOS:" + "/".join(str(part) for part in ECOS_SERIES[code] if part is not None),
+        )
+        for code, values in levels.items()
+    }
 
 
 def validate_complete(result: dict[str, list[dict[str, Any]]]) -> None:
@@ -216,13 +254,13 @@ def validate_complete(result: dict[str, list[dict[str, Any]]]) -> None:
             raise RuntimeError(f"Inflation source returned duplicate months: {code}")
 
 
-def fetch_all_indexes(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
+def fetch_all_rates(start: date, end: date) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     for provider_rows in (
-        fetch_bls_indexes(start, end),
-        fetch_bea_indexes(start, end),
-        fetch_kosis_indexes(start, end),
-        fetch_ecos_indexes(start, end),
+        fetch_bls_rates(start, end),
+        fetch_bea_rates(start, end),
+        fetch_kosis_rates(start, end),
+        fetch_ecos_rates(start, end),
     ):
         result.update(provider_rows)
     validate_complete(result)

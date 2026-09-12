@@ -1,4 +1,4 @@
-"""Recent-only automatic collection of official U.S. and Korean inflation indexes."""
+"""Recent-only automatic collection of official U.S. and Korean YoY inflation rates."""
 
 from __future__ import annotations
 
@@ -6,22 +6,21 @@ import json
 from datetime import date
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago
-from signals.economic_chart_pipeline import _insert_missing
-from sources.inflation_indexes import fetch_all_indexes
+from sources.inflation_rates import fetch_all_rates
 
 
 def collect(today: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
     end = today or date.today()
     start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
     database = db or SupabaseRest()
-    source_rows = fetch_all_indexes(start, end)
-    inserted = {
-        code: _insert_missing(database, rows, start)
-        for code, rows in source_rows.items()
-    }
+    source_rows = fetch_all_rates(start, end)
+    inserted = {}
+    for code, rows in source_rows.items():
+        database.upsert("economic_chart_points", rows, conflict="series_code,observation_date")
+        inserted[code] = len(rows)
     print(json.dumps({
         "mode": "automatic",
-        "stage": "inflation-indexes",
+        "stage": "inflation-rates",
         "start": start.isoformat(),
         "end": end.isoformat(),
         "inserted": inserted,

@@ -39,5 +39,5 @@ jobs:
           PYTHONPATH=backend python -m signals.economic_chart_automatic
           PYTHONPATH=backend python -m signals.business_credit_monthly
           PYTHONPATH=backend python -m signals.paynet_monthly
-          PYTHONPATH=backend python -m signals.inflation_index_automatic
+          PYTHONPATH=backend python -m signals.inflation_rate_automatic
           PYTHONPATH=backend python -m inflation_pipeline

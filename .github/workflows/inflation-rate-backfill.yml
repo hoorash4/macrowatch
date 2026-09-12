@@ -1,4 +1,4 @@
-name: Backfill inflation indexes
+name: Backfill inflation rates
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Replace official index history and rebuild model sources
+      - name: Replace official YoY history and rebuild model sources
         env:
           BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
           KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
@@ -30,5 +30,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          PYTHONPATH=backend python -m signals.inflation_index_backfill
+          PYTHONPATH=backend python -m signals.inflation_rate_backfill
           PYTHONPATH=backend python -m signals.inflation_model_backfill

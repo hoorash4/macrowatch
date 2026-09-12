@@ -25,6 +25,7 @@ try:
     )
     from .signals.automatic_source_cache import is_initialized, load as load_source_cache
     from .signals.automatic_source_cache import store as store_source_cache
+    from .sources.inflation_rates import fetch_bea_index_levels
 except ImportError:  # Direct script execution used by GitHub Actions.
     from common import (
         AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS, SupabaseRest,
@@ -37,6 +38,7 @@ except ImportError:  # Direct script execution used by GitHub Actions.
     )
     from signals.automatic_source_cache import is_initialized, load as load_source_cache
     from signals.automatic_source_cache import store as store_source_cache
+    from sources.inflation_rates import fetch_bea_index_levels
 
 
 TIMEOUT_SECONDS = 60
@@ -60,7 +62,7 @@ FRED_SERIES = {
     "policy_rate": "DFEDTARU",
     "treasury_10y": "DGS10",
 }
-OFFICIAL_INDEX_SERIES = {
+OFFICIAL_INFLATION_SERIES = {
     "cpi": "US_CPI",
     "core_cpi": "US_CORE_CPI",
     "pce": "US_PCE",
@@ -317,14 +319,14 @@ def adjusted_cpi_levels(fred: dict[str, dict[date, float]], kind: str) -> dict[d
     }
 
 
-def integrated_levels(
+def integrated_rates(
     fred: dict[str, dict[date, float]], kind: str
 ) -> tuple[dict[date, float], dict[date, float], ProducerCalibration]:
     pce_name = "pce" if kind == "headline" else "core_pce"
     ppi_name = "headline_ppi" if kind == "headline" else "core_ppi"
-    pce = yoy_levels(fred[pce_name])
+    pce = fred[pce_name]
     cpi = adjusted_cpi_levels(fred, kind)
-    ppi = yoy_levels(fred[ppi_name])
+    ppi = fred[ppi_name]
     calibration_months = sorted(
         month for month in pce.keys() & cpi.keys() & ppi.keys() if month < PUBLISH_START
     )
@@ -338,11 +340,11 @@ def integrated_levels(
         producer_to_consumer_scale=float(np.std(consumer) / np.std(producer)),
     )
     aligned_ppi = {month: align_producer_inflation(value, calibration) for month, value in ppi.items()}
-    levels = {
+    rates = {
         month: 0.60 * pce[month] + 0.30 * cpi[month] + 0.10 * aligned_ppi[month]
         for month in pce.keys() & cpi.keys() & aligned_ppi.keys()
     }
-    return levels, aligned_ppi, calibration
+    return rates, aligned_ppi, calibration
 
 
 class MarketFeatures:
@@ -524,22 +526,22 @@ def component_for_point(
     return ComponentRow(target, pce, cpi, ppi, lag1, lag3)
 
 
-def previous_level(levels: dict[date, float], target: date) -> float | None:
-    candidates = [month for month in levels if month < target]
-    return levels[max(candidates)] if candidates else None
+def previous_rate(rates: dict[date, float], target: date) -> float | None:
+    candidates = [month for month in rates if month < target]
+    return rates[max(candidates)] if candidates else None
 
 
 def build_output_rows(
     fred: dict[str, dict[date, float]],
     nowcasts: dict[str, dict[date, list[NowcastPoint]]],
     features: MarketFeatures,
-    headline_levels: dict[date, float],
-    core_levels: dict[date, float],
+    headline_rates: dict[date, float],
+    core_rates: dict[date, float],
     headline_ppi: dict[date, float],
     core_ppi: dict[date, float],
     publish_start: date,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    headline_change, core_change = changes(headline_levels), changes(core_levels)
+    headline_change, core_change = changes(headline_rates), changes(core_rates)
     headline_rows, headline_ppi_models = build_component_rows(
         "headline", fred, nowcasts["headline"], features, headline_change, changes(headline_ppi)
     )
@@ -553,7 +555,7 @@ def build_output_rows(
     for target in targets:
         if target not in head_models or target not in core_models or target not in headline_ppi_models or target not in core_ppi_models:
             continue
-        headline_anchor, core_anchor = previous_level(headline_levels, target), previous_level(core_levels, target)
+        headline_anchor, core_anchor = previous_rate(headline_rates, target), previous_rate(core_rates, target)
         if headline_anchor is None or core_anchor is None:
             continue
         core_points = {point.observed_on: point for point in nowcasts["core"][target]}
@@ -612,17 +614,17 @@ def build_output_rows(
         daily.append(carried)
 
     monthly: list[dict[str, object]] = []
-    final_months = sorted(month for month in headline_levels.keys() & core_levels.keys() if month >= publish_start)
+    final_months = sorted(month for month in headline_rates.keys() & core_rates.keys() if month >= publish_start)
     for month in final_months:
         cutoff = add_months(month, 1) - timedelta(days=1)
         policy = latest_on_or_before(fred["policy_rate"], cutoff)
         monthly.append({
             "month": month.isoformat(),
-            "headline_yoy_pct": round(headline_levels[month], 4),
-            "core_yoy_pct": round(core_levels[month], 4),
+            "headline_yoy_pct": round(headline_rates[month], 4),
+            "core_yoy_pct": round(core_rates[month], 4),
             "policy_rate_upper_pct": round(policy, 4) if policy is not None else None,
-            "headline_real_rate_pct": round(fisher_real_rate_pct(policy, headline_levels[month]), 4) if policy is not None else None,
-            "core_real_rate_pct": round(fisher_real_rate_pct(policy, core_levels[month]), 4) if policy is not None else None,
+            "headline_real_rate_pct": round(fisher_real_rate_pct(policy, headline_rates[month]), 4) if policy is not None else None,
+            "core_real_rate_pct": round(fisher_real_rate_pct(policy, core_rates[month]), 4) if policy is not None else None,
             "status": "final",
             "model_version": MODEL_VERSION,
             "data_as_of": cutoff.isoformat(),
@@ -630,7 +632,7 @@ def build_output_rows(
     if daily:
         latest = daily[-1]
         target = date.fromisoformat(str(latest["target_month"]))
-        if target not in headline_levels or target not in core_levels:
+        if target not in headline_rates or target not in core_rates:
             monthly.append({
                 "month": target.isoformat(),
                 "headline_yoy_pct": latest["headline_leading_yoy_pct"],
@@ -781,13 +783,13 @@ def inflation_cached_values(
     return fred, prices
 
 
-def load_official_index_values(
+def load_official_inflation_values(
     client: SupabaseRest,
     start: date = SOURCE_START,
 ) -> dict[str, dict[date, float]]:
-    """Read the six official U.S. index levels already stored for economic charts."""
+    """Read the six official U.S. YoY rates stored for economic charts."""
     result: dict[str, dict[date, float]] = {}
-    for name, series_code in OFFICIAL_INDEX_SERIES.items():
+    for name, series_code in OFFICIAL_INFLATION_SERIES.items():
         rows = client.request("GET", "economic_chart_points", params={
             "select": "observation_date,value",
             "series_code": f"eq.{series_code}",
@@ -802,7 +804,7 @@ def load_official_index_values(
             except (KeyError, TypeError, ValueError):
                 continue
         if not values:
-            raise RuntimeError(f"Stored inflation index is empty: {series_code}")
+            raise RuntimeError(f"Stored inflation rate is empty: {series_code}")
         result[name] = values
     return result
 
@@ -839,15 +841,24 @@ def run_automatic() -> None:
     for series, values in recent_cache.items():
         cache.setdefault(series, {}).update(values)
     fred, prices = inflation_cached_values(cache)
-    fred.update(load_official_index_values(client))
+    fred.update(load_official_inflation_values(client))
     if any(not values for values in (*fred.values(), *prices.values())):
         raise RuntimeError("Inflation calculation inputs are incomplete; run the manual inflation backfill")
     nowcasts = fetch_cleveland_nowcasts()
     features = MarketFeatures(prices, fred["dollar"])
-    headline_levels, headline_ppi, _ = integrated_levels(fred, "headline")
-    core_levels, core_ppi, _ = integrated_levels(fred, "core")
+    headline_rates, headline_ppi, _ = integrated_rates(fred, "headline")
+    core_rates, core_ppi, _ = integrated_rates(fred, "core")
+    # Cleveland nowcasts are month-over-month forecasts. Their historical model
+    # needs PCE index levels, but those raw levels are never persisted by
+    # MacroWatch. Fetch them into memory only for this calculation.
+    nowcast_targets = set(nowcasts["headline"]) | set(nowcasts["core"])
+    if not nowcast_targets:
+        raise RuntimeError("Cleveland Fed nowcast history has no target months")
+    pce_levels = fetch_bea_index_levels(add_months(min(nowcast_targets), -13), today)
+    fred["pce"] = pce_levels["US_PCE"]
+    fred["core_pce"] = pce_levels["US_CORE_PCE"]
     monthly, daily = build_output_rows(
-        fred, nowcasts, features, headline_levels, core_levels, headline_ppi, core_ppi, PUBLISH_START
+        fred, nowcasts, features, headline_rates, core_rates, headline_ppi, core_ppi, PUBLISH_START
     )
     monthly = [row for row in monthly if str(row["month"]) >= PUBLISH_START.isoformat()]
     daily = [row for row in daily if str(row["observed_on"]) >= PUBLISH_START.isoformat()]

@@ -83,7 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=17', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=18', html)
 
     def test_crosshair_keeps_the_existing_marker_and_shows_its_raw_value_above_the_line(self):
         html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
