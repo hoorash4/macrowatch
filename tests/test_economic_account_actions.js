@@ -18,7 +18,7 @@ assert.match(actions, /fetch\('index\.html'/);
 assert.match(actions, /getElementById\('profile-modal'\)/);
 assert.match(actions, /select\('is_admin'\)/);
 assert.match(actions, /auth\.signOut\(\{ scope: 'local' \}\)/);
+assert.match(actions, /profileButton\?\.addEventListener\('click', \(\) => showProfile\(\)/);
 assert.doesNotMatch(actions, /sessionStorage\.setItem\('macrowatch\.open-profile'/);
-assert.doesNotMatch(actions, /profileButton[\s\S]{0,300}location\.(?:href|replace)[\s\S]{0,80}index\.html/);
 
 console.log('economic account actions contracts: ok');
