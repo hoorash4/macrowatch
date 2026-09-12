@@ -21,7 +21,34 @@
     }
   }
 
+  function ensureThemePreferenceControl() {
+    if (document.getElementById('theme-preference')) return;
+    const body = document.querySelector('#profile-modal .profile-dialog-body');
+    const deleteSection = document.getElementById('account-delete-button')?.closest('.rounded-xl');
+    if (!body || !deleteSection) return;
+    const card = document.createElement('section');
+    card.className = 'theme-preference-card';
+    card.innerHTML = `
+      <label for="theme-preference">화면 테마</label>
+      <select id="theme-preference" aria-label="화면 테마">
+        <option value="system">시스템 설정</option>
+        <option value="light">라이트 모드</option>
+        <option value="dark">다크 모드</option>
+      </select>
+      <p>시스템 설정은 기기의 라이트/다크 모드 변경을 실시간으로 따릅니다.</p>`;
+    body.insertBefore(card, deleteSection);
+    const select = card.querySelector('#theme-preference');
+    select.value = window.MacroWatchTheme?.getPreference?.() || 'system';
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try { await window.MacroWatchTheme?.savePreference?.(select.value); }
+      catch (error) { window.alert(error?.message || '테마 설정을 저장하지 못했습니다.'); }
+      finally { select.disabled = false; }
+    });
+  }
+
   function normalizeProfileModal() {
+    ensureThemePreferenceControl();
     const modal = document.getElementById('profile-modal');
     const deleteModal = document.getElementById('account-delete-modal');
     const body = modal?.querySelector('.profile-dialog-body');
@@ -253,10 +280,12 @@
       await client.auth.signOut();
       if (!document.getElementById('auth-screen')) window.location.replace('index.html');
     });
-    document.getElementById('service-preparing-close')?.addEventListener('click', () => document.getElementById('service-preparing-modal')?.classList.add('hidden'));
-    document.getElementById('service-preparing-modal')?.addEventListener('click', event => {
-      if (event.target === event.currentTarget) event.currentTarget.classList.add('hidden');
-    });
+    if (!document.getElementById('auth-screen')) {
+      document.getElementById('service-preparing-close')?.addEventListener('click', () => document.getElementById('service-preparing-modal')?.classList.add('hidden'));
+      document.getElementById('service-preparing-modal')?.addEventListener('click', event => {
+        if (event.target === event.currentTarget) event.currentTarget.classList.add('hidden');
+      });
+    }
     await updateAdminLink();
   }
 
