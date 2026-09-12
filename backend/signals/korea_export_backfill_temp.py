@@ -23,7 +23,6 @@ from sources.korea_export_intramonth import (
     independent_segment_rows,
     parse_snapshot,
 )
-from sources.korea_export_monthly import monthly_row_from_snapshot
 
 SERIES = "KR_EXPORT_DAILY_AVG"
 START = date(2016, 1, 1)
@@ -86,8 +85,7 @@ def _period_month(value: object) -> date | None:
     text = str(value or "").strip()
     match = re.search(r"(20\d{2})\D*?(0?[1-9]|1[0-2])(?:\D|$)", text)
     if not match:
-        compact = re.search(r"(20\d{2})(0[1-9]|1[0-2])", text)
-        match = compact
+        match = re.search(r"(20\d{2})(0[1-9]|1[0-2])", text)
     if not match:
         return None
     try:
@@ -97,9 +95,8 @@ def _period_month(value: object) -> date | None:
 
 
 def _number(value: object) -> float | None:
-    text = str(value or "").replace(",", "").strip()
     try:
-        return float(text)
+        return float(str(value or "").replace(",", "").strip())
     except ValueError:
         return None
 
@@ -175,10 +172,7 @@ def _computed_workdays(month: date, kr_holidays) -> float:
         observed = date(month.year, month.month, day)
         if observed in kr_holidays or observed.weekday() == 6:
             continue
-        if observed.weekday() == 5:
-            total += 0.5
-        else:
-            total += 1.0
+        total += 0.5 if observed.weekday() == 5 else 1.0
     return total
 
 
@@ -186,10 +180,7 @@ def _month_range(start: date, end: date):
     current = start
     while current <= end:
         yield current
-        if current.month == 12:
-            current = date(current.year + 1, 1, 1)
-        else:
-            current = date(current.year, current.month + 1, 1)
+        current = date(current.year + 1, 1, 1) if current.month == 12 else date(current.year, current.month + 1, 1)
 
 
 def main() -> None:
@@ -212,21 +203,24 @@ def main() -> None:
     kr_holidays = holidays.country_holidays("KR", years=range(START.year, today.year + 1))
 
     monthly_rows = []
-    computed_workday_rows = 0
     official_workday_rows = 0
+    computed_workday_rows = 0
     for month in _month_range(START, last_complete):
         if month in segment_months:
-            continue
-        items = by_month.get(month, [])
-        month_end = next((item for item in items if item.stage == "month_end"), None)
-        if month_end is not None:
-            monthly_rows.append(monthly_row_from_snapshot(month_end))
-            official_workday_rows += 1
             continue
         amount_musd = monthly_totals.get(month)
         if amount_musd is None:
             continue
-        workdays = _computed_workdays(month, kr_holidays)
+        month_end = next((item for item in by_month.get(month, []) if item.stage == "month_end"), None)
+        official_days = float(month_end.cumulative_workdays) if month_end is not None else 0.0
+        if 10.0 <= official_days <= 27.0:
+            workdays = official_days
+            source = "KCS:TRADEDATA_MONTHLY_EXPORT/official_workdays"
+            official_workday_rows += 1
+        else:
+            workdays = _computed_workdays(month, kr_holidays)
+            source = "KCS:TRADEDATA_MONTHLY_EXPORT/computed_workdays"
+            computed_workday_rows += 1
         if workdays <= 0:
             continue
         last_day = calendar.monthrange(month.year, month.month)[1]
@@ -235,9 +229,8 @@ def main() -> None:
             "observation_date": date(month.year, month.month, last_day).isoformat(),
             "value": round(amount_musd / workdays / 100.0, 6),
             "frequency": "M",
-            "source": "KCS:TRADEDATA_MONTHLY_EXPORT/computed_workdays",
+            "source": source,
         })
-        computed_workday_rows += 1
 
     # Keep the current/incomplete month exclusively on actual intra-month observations.
     segment_rows = [r for r in segment_rows if date.fromisoformat(r["observation_date"]).replace(day=1) <= current_month]
@@ -245,8 +238,17 @@ def main() -> None:
     if not rows:
         raise RuntimeError("KCS backfill produced no rows")
 
+    covered_months = {date.fromisoformat(r["observation_date"]).replace(day=1) for r in rows}
+    expected_complete_months = set(_month_range(START, last_complete))
+    missing_complete = sorted(expected_complete_months - covered_months)
+    if missing_complete:
+        raise RuntimeError(f"Incomplete KCS replacement: missing {missing_complete}")
+    suspicious = [r for r in rows if not (10.0 <= float(r["value"]) <= 80.0)]
+    if suspicious:
+        raise RuntimeError(f"KCS replacement has suspicious daily averages: {suspicious[:10]}")
+
     db = SupabaseRest()
-    # Build first; only after a valid replacement exists do we replace the sparse old series/raw cache.
+    # Only after a complete, sanity-checked replacement exists do we replace the old series/cache.
     db.request("DELETE", "economic_chart_points", params={"series_code": f"eq.{SERIES}"}, prefer="return=minimal")
     db.request("DELETE", RAW_TABLE, params={"reference_month": f"gte.{START.isoformat()}"}, prefer="return=minimal")
 
@@ -264,12 +266,8 @@ def main() -> None:
     db.upsert("economic_chart_points", rows, conflict="series_code,observation_date")
 
     source_counts = defaultdict(int)
-    covered_months = set()
     for row in rows:
         source_counts[row["source"]] += 1
-        covered_months.add(date.fromisoformat(row["observation_date"]).replace(day=1))
-    expected_complete_months = set(_month_range(START, last_complete))
-    missing_complete = sorted(expected_complete_months - covered_months)
     print(json.dumps({
         "stage": "korea_export_backfill_temp",
         "start": START.isoformat(),
@@ -277,9 +275,9 @@ def main() -> None:
         "snapshots": len(snapshots),
         "legacy_snapshots_recovered": recovered,
         "tradedata_months": len(monthly_totals),
-        "covered_complete_months": len(expected_complete_months - set(missing_complete)),
+        "covered_complete_months": len(expected_complete_months),
         "expected_complete_months": len(expected_complete_months),
-        "missing_complete_months": [m.isoformat() for m in missing_complete],
+        "missing_complete_months": [],
         "rows": len(rows),
         "segment_rows": len(segment_rows),
         "monthly_fallback_rows": len(monthly_rows),
