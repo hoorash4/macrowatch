@@ -23,7 +23,31 @@ for (const relative of fs.readdirSync(path.join(root, 'assets/js'), {recursive: 
   fs.writeFileSync(path.join(site, name), dependency + read(path.join('assets/js', relative)));
 }
 fs.writeFileSync(path.join(site, 'styles.css'), read('assets/css/styles.css').replaceAll('../../images/', './images/'));
+
+function removeSection(html, startMarker, nextMarker) {
+  const start = html.indexOf(startMarker);
+  const next = html.indexOf(nextMarker, start + startMarker.length);
+  if (start < 0 || next < 0) throw new Error(`Pages account modal marker missing: ${startMarker}`);
+  return html.slice(0, start) + html.slice(next);
+}
+
+const indexPath = path.join(site, 'index.html');
+let indexHtml = fs.readFileSync(indexPath, 'utf8');
+indexHtml = removeSection(indexHtml, '<!-- ===== 공용 안내창: 서비스 준비 중 / 등록 완료 ===== -->', '<!-- ===== 지표 후보 선택창 ===== -->');
+indexHtml = removeSection(indexHtml, '<!-- ===== 개인 설정창: 카카오톡 연결 / 회원 탈퇴 ===== -->', '<!-- ===== 회원 탈퇴 최종 확인창 ===== -->');
+indexHtml = removeSection(indexHtml, '<!-- ===== 회원 탈퇴 최종 확인창 ===== -->', '<!-- ===== 카카오톡 알림 상태 변경 확인창 ===== -->');
+const authScriptPattern = /(<script src="assets\/js\/core\/auth\.js\?v=\d+"><\/script>)/;
+if (!authScriptPattern.test(indexHtml)) throw new Error('Main auth script tag not found in Pages output.');
+indexHtml = indexHtml.replace(authScriptPattern, '<script src="assets/js/core/account-modal.js?v=2"></script>\n  $1');
+fs.writeFileSync(indexPath, indexHtml);
+
+const economicPath = path.join(site, 'economic-charts.html');
+if (fs.existsSync(economicPath)) {
+  const economicHtml = fs.readFileSync(economicPath, 'utf8').replace('assets/js/core/account-modal.js?v=1', 'assets/js/core/account-modal.js?v=2');
+  fs.writeFileSync(economicPath, economicHtml);
+}
+
 for (const name of ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
   fs.copyFileSync(path.join(root, 'docs', name), path.join(site, name));
 }
-console.log(`Generated ${names.size} legacy scripts, stylesheet and document URLs in build output.`);
+console.log(`Generated ${names.size} legacy scripts, stylesheet, canonical account modal wiring and document URLs in build output.`);
