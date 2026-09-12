@@ -167,7 +167,8 @@ async function scheduledSectorFlows() {
       name: policy?.displayName || `sector-flow ${stage}`,
       state: primary.active === true && retry.active === true ? "active" : "disabled_manually",
       schedule_count: 1,
-      latest_success: null,
+      latest_success: primary.latest_success_at ? { updated_at: primary.latest_success_at } : null,
+      deletable: false,
       ...publicSchedulePolicy(policy),
     });
   }
@@ -195,6 +196,7 @@ export async function scheduledWorkflows(token: string) {
       schedule_count: workflow.crons.length,
       latest_success: latestSuccess,
       scheduler: "github",
+      deletable: true,
       ...publicSchedulePolicy(policy),
     }));
   }));
@@ -288,6 +290,29 @@ async function assertPhaseOrder(workflowId: string, time: string, token: string)
   }
 }
 
+function sectorJobTime(rows: any[], stage: string, suffix: "primary" | "retry") {
+  const row = rows.find((item) => item?.jobname === `macrowatch-sector-flow-${stage}-${suffix}`);
+  if (!row) throw new Error(`주도섹터 ${stage} ${suffix} 일정을 확인하지 못했습니다.`);
+  return kstTimeFromCron(String(row.schedule));
+}
+
+function assertSectorPhaseOrder(rows: any[], stage: string, primaryTime: string, retryTime: string) {
+  const primaryMinutes = timeMinutes(primaryTime);
+  const retryMinutes = timeMinutes(retryTime);
+  if (stage === "open") {
+    const next = timeMinutes(sectorJobTime(rows, "intraday", "primary"));
+    if (retryMinutes >= next) throw new Error(`장초반 재시도까지 장중 단계(${sectorJobTime(rows, "intraday", "primary")} KST) 이전에 끝나야 합니다.`);
+  } else if (stage === "intraday") {
+    const previousRetry = timeMinutes(sectorJobTime(rows, "open", "retry"));
+    const next = timeMinutes(sectorJobTime(rows, "close", "primary"));
+    if (primaryMinutes <= previousRetry) throw new Error(`장중 단계는 장초반 재시도(${sectorJobTime(rows, "open", "retry")} KST) 이후로만 변경할 수 있습니다.`);
+    if (retryMinutes >= next) throw new Error(`장중 재시도까지 종가 단계(${sectorJobTime(rows, "close", "primary")} KST) 이전에 끝나야 합니다.`);
+  } else if (stage === "close") {
+    const previousRetry = timeMinutes(sectorJobTime(rows, "intraday", "retry"));
+    if (primaryMinutes <= previousRetry) throw new Error(`종가 단계는 장중 재시도(${sectorJobTime(rows, "intraday", "retry")} KST) 이후로만 변경할 수 있습니다.`);
+  }
+}
+
 async function cancelQueuedScheduledRuns(workflowId: string, token: string) {
   const data = await githubRequest(`/actions/workflows/${workflowId}/runs?event=schedule&status=queued&per_page=100`, token);
   const runs = Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
@@ -307,13 +332,15 @@ async function saveWorkflowSource(file: WorkflowSource, content: string, message
 async function updateSectorFlowTime(workflowId: string, cron: string, time: string) {
   const stage = sectorStage(workflowId);
   if (!stage) throw new Error("sector-flow stage가 올바르지 않습니다.");
-  const policy = schedulePolicy(workflowId);
-  assertScheduleTime(policy, time);
   const rows = await sectorScheduleRows();
   const primary = rows.find((row) => row?.jobname === `macrowatch-sector-flow-${stage}-primary`);
   if (!primary || String(primary.schedule) !== cron) throw new Error("현재 등록된 Supabase 실행 시간을 찾지 못했습니다.");
-  const retryMinutes = policy?.retryMinutes || 15;
-  const retryTime = addMinutes(time, retryMinutes);
+  if (kstTimeFromCron(String(primary.schedule)) === time) return;
+
+  const policy = schedulePolicy(workflowId);
+  assertScheduleTime(policy, time);
+  const retryTime = addMinutes(time, policy?.retryMinutes || 15);
+  assertSectorPhaseOrder(rows, stage, time, retryTime);
   await supabaseRpc("macrowatch_set_sector_flow_schedule", {
     p_stage: stage,
     p_primary_schedule: weekdayCronForKst(time),
@@ -326,20 +353,27 @@ export async function updateAutomationTime(workflowId: string, cron: string, tim
     await updateSectorFlowTime(workflowId, cron, time);
     return;
   }
-  assertScheduleTime(schedulePolicy(workflowId), time);
-  await assertPhaseOrder(workflowId, time, token);
+
   const file = await workflowSource(`.github/workflows/${workflowId}`, token);
   assertScheduleEditIsIsolated(file);
   const parsed = parseScheduledWorkflow(file);
   if (!parsed || !parsed.crons.includes(cron)) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
   const updatedCron = updateCronTime(cron, time);
   if (updatedCron === cron) return;
+
+  assertScheduleTime(schedulePolicy(workflowId), time);
+  await assertPhaseOrder(workflowId, time, token);
   const block = SCHEDULE_BLOCK.exec(file.content)?.[1];
   if (!block) throw new Error("자동수집 일정 블록을 찾지 못했습니다.");
   const next = file.content.replace(block, block.replace(cron, updatedCron));
   if (next === file.content) throw new Error("현재 등록된 실행 시간을 찾지 못했습니다.");
-  await cancelQueuedScheduledRuns(workflowId, token);
   await saveWorkflowSource(file, next, `Update ${parsed.name} schedule from MacroWatch admin`, token);
+  try {
+    await cancelQueuedScheduledRuns(workflowId, token);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`실행 시간은 저장했지만 기존 대기 실행을 취소하지 못했습니다. 새로고침 후 실행 상태를 확인하세요. (${message})`);
+  }
 }
 
 export async function setWorkflowEnabled(workflowId: string, enabled: boolean, token: string) {
