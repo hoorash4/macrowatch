@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 
+from common import SupabaseRest
 from sources.business_credit_monthly import (
     fetch_epiq_ch11_rows,
     fetch_equifax_rows,
@@ -12,35 +14,33 @@ from sources.business_credit_monthly import (
 from signals.economic_chart_pipeline import _insert_missing
 
 
-def _month_start(d: date) -> date:
-    return d.replace(day=1)
-
-
 def _months_ago(d: date, months: int) -> date:
     serial = d.year * 12 + d.month - 1 - months
     return date(serial // 12, serial % 12 + 1, 1)
 
 
 def collect_recent() -> dict[str, int]:
-    """Collect enough recent months to tolerate delayed/revised monthly publication."""
+    """Collect enough recent months to tolerate delayed monthly publication."""
     end = date.today()
     start = _months_ago(end, 18)
+    db = SupabaseRest()
     counts: dict[str, int] = {}
 
     equifax = fetch_equifax_rows(start, end)
     for code, rows in equifax.items():
-        counts[code] = _insert_missing(rows)
+        counts[code] = _insert_missing(db, rows, start)
 
     epiq = fetch_epiq_ch11_rows(start, end, max_pages=4)
-    counts["US_COMMERCIAL_CH11"] = _insert_missing(epiq)
+    counts["US_COMMERCIAL_CH11"] = _insert_missing(db, epiq, start)
 
     kr_delinquency = fetch_korea_business_delinquency_rows(start, end)
-    counts["KR_CORP_DELINQ"] = _insert_missing(kr_delinquency)
+    counts["KR_CORP_DELINQ"] = _insert_missing(db, kr_delinquency, start)
 
     kr_default = fetch_korea_default_company_rows(start, end)
-    counts["KR_DEFAULT_COMPANIES"] = _insert_missing(kr_default)
+    counts["KR_DEFAULT_COMPANIES"] = _insert_missing(db, kr_default, start)
+    print(json.dumps({"mode": "automatic", "stage": "business-credit", "inserted": counts}, ensure_ascii=False, sort_keys=True))
     return counts
 
 
 if __name__ == "__main__":
-    print({"inserted": collect_recent()})
+    collect_recent()
