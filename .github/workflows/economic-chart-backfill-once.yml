@@ -46,7 +46,6 @@ jobs:
         if: ${{ inputs.target == 'all' }}
         env:
           PYTHONPATH: backend
-          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python -m signals.korea_export_backfill
