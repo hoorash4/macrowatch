@@ -1,6 +1,7 @@
 """Official Supreme Court monthly corporate-rehabilitation statistics source."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from io import BytesIO
 import json
@@ -89,14 +90,7 @@ def _download_workbook(meta: dict) -> bytes:
 
 
 def _load_workbook(content: bytes):
-    """Import the optional XLSX reader only at the source boundary.
-
-    Some unrelated repository tests install lightweight module doubles while the full suite is
-    importing. Keeping openpyxl out of module import time prevents those doubles from affecting
-    source discovery; production parsing still uses the pinned openpyxl dependency.
-    """
     from openpyxl import load_workbook
-
     return load_workbook(BytesIO(content), data_only=True, read_only=True)
 
 
@@ -143,11 +137,10 @@ def fetch_korea_corporate_rehab_month(year: int, month: int) -> dict:
 
 
 def iter_korea_corporate_rehab_rows(start: date, end: date) -> Iterator[dict]:
-    """Yield all available official monthly rows, isolating individual source failures."""
+    """Yield all available official monthly rows while isolating individual source failures."""
     first = date(start.year, start.month, 1)
     last = date(end.year, end.month, 1)
-    attempted = 0
-    succeeded = 0
+    targets: list[tuple[int, int]] = []
     errors: list[str] = []
     for year in range(first.year, last.year + 1):
         try:
@@ -157,24 +150,33 @@ def iter_korea_corporate_rehab_rows(start: date, end: date) -> Iterator[dict]:
             continue
         for month in months:
             observed = date(year, month, 1)
-            if observed < first or observed > last:
-                continue
-            attempted += 1
+            if first <= observed <= last:
+                targets.append((year, month))
+
+    rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(fetch_korea_corporate_rehab_month, year, month): (year, month)
+            for year, month in targets
+        }
+        for future in as_completed(futures):
+            year, month = futures[future]
             try:
-                row = fetch_korea_corporate_rehab_month(year, month)
+                rows.append(future.result())
             except Exception as error:
                 errors.append(f"{year:04d}-{month:02d}: {error.__class__.__name__}: {error}")
-                continue
-            succeeded += 1
-            yield row
+
+    rows.sort(key=lambda row: row["observation_date"])
+    for row in rows:
+        yield row
     if errors:
         print(json.dumps({
             "stage": "court_rehabilitation_source_partial_errors",
-            "attempted": attempted,
-            "succeeded": succeeded,
+            "attempted": len(targets),
+            "succeeded": len(rows),
             "errors": errors,
         }, ensure_ascii=False))
-    if attempted and not succeeded:
+    if targets and not rows:
         raise RuntimeError("Supreme Court rehabilitation source returned no usable monthly rows")
 
 
