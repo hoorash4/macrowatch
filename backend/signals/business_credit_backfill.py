@@ -14,6 +14,7 @@ from sources.business_credit_monthly import (
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
 from sources.epiq_ch11_source import fetch_epiq_ch11_rows
+from sources.equifax_archive_source import fetch_equifax_archive_rows
 
 TABLE = "economic_chart_points"
 
@@ -84,10 +85,12 @@ def run() -> dict[str, int]:
     db = SupabaseRest()
     totals: dict[str, int] = {}
 
-    # Source-by-source writes make the job safe to resume after a later source timeout.
+    # Search both current and legacy first-party Equifax asset naming schemes. Overlap is
+    # deliberate: validation rejects any conflicting values for the same observation month.
     equifax = fetch_equifax_rows(start, end)
+    equifax_archive = fetch_equifax_archive_rows(start, end)
     for code, rows in equifax.items():
-        _store(db, code, rows, start, end, totals)
+        _store(db, code, rows + equifax_archive.get(code, []), start, end, totals)
 
     _store(
         db,
