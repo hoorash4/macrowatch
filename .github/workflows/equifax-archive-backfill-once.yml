@@ -1,0 +1,48 @@
+name: Backfill Equifax small-business archive once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/equifax-archive-backfill-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: equifax-archive-backfill-once
+  cancel-in-progress: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Recover exact levels from first-party Equifax PDFs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date
+          from common import SupabaseRest
+          from signals.business_credit_backfill import _ten_year_start, _validate_rows
+          from sources.equifax_archive_source import fetch_equifax_archive_rows
+
+          end = date.today()
+          start = _ten_year_start(end)
+          found = fetch_equifax_archive_rows(start, end)
+          db = SupabaseRest()
+          for code in ("US_SBDI_31_90", "US_SBDI_91_180", "US_SBDFI"):
+              rows = _validate_rows(code, found.get(code, []), start, end)
+              if rows:
+                  db.upsert("economic_chart_points", rows, conflict="series_code,observation_date")
+              print(code, "upserted", len(rows), "first", rows[0]["observation_date"] if rows else None, "last", rows[-1]["observation_date"] if rows else None)
+          PY
