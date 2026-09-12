@@ -36,6 +36,20 @@
     }
   }
 
+  function bindMainThemePreference() {
+    if (!document.getElementById('auth-screen')) return;
+    const select = document.getElementById('theme-preference');
+    if (!select || select.dataset.accountModalThemeBound === 'true') return;
+    select.dataset.accountModalThemeBound = 'true';
+    select.value = window.MacroWatchTheme?.getPreference?.() || 'system';
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try { await window.MacroWatchTheme?.savePreference?.(select.value); }
+      catch (error) { window.alert(error?.message || '테마 설정을 저장하지 못했습니다.'); }
+      finally { select.disabled = false; }
+    });
+  }
+
   function ensure() {
     if (mounted || !document.body) return;
     for (const id of ['profile-modal', 'account-delete-modal', 'service-preparing-modal']) document.getElementById(id)?.remove();
@@ -57,9 +71,9 @@
           <div class="profile-dialog-body">
             <div class="mt-5 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3"><div><p class="text-xs text-slate-500">현재 아이디</p><p id="profile-username" class="mt-1 text-sm font-bold text-slate-200">확인 중</p></div><i class="fa-solid fa-id-card text-slate-600"></i></div>
             <form id="password-change-form" autocomplete="off" class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4"><p class="text-sm font-bold text-slate-200"><i class="fa-solid fa-key mr-2 text-blue-400"></i>비밀번호 변경</p><div class="mt-3 grid gap-2 sm:grid-cols-3"><input id="current-password" type="password" autocomplete="off" required placeholder="현재 비밀번호" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500"><input id="new-password" type="password" autocomplete="off" required placeholder="새 비밀번호" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500"><input id="confirm-password" type="password" autocomplete="off" required placeholder="새 비밀번호 확인" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500"></div><button type="submit" class="mt-3 w-full rounded-lg border border-blue-700/60 bg-blue-950/40 py-2.5 text-sm font-bold text-blue-300 hover:bg-blue-900/50">비밀번호 변경</button></form>
-            <section class="theme-preference-card"><label for="theme-preference">화면 테마</label><select id="theme-preference" aria-label="화면 테마"><option value="system">시스템 설정</option><option value="light">라이트 모드</option><option value="dark">다크 모드</option></select><p>시스템 설정은 기기의 라이트/다크 모드 변경을 실시간으로 따릅니다.</p></section>
             <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-bold text-slate-200"><i class="fa-solid fa-comment mr-2 text-yellow-400"></i>카카오톡 알림</p><p id="kakao-connection-status" class="mt-1 text-xs text-slate-500">연결 상태 확인 중</p></div><span id="kakao-status-badge" class="shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400">확인 중</span></div><button id="kakao-connect-button" type="button" class="mt-4 flex w-full items-center justify-center rounded-lg bg-yellow-500 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-wait disabled:opacity-60"><i class="fa-solid fa-link mr-2"></i><span>카카오 계정 다시 연결하기</span></button><button id="kakao-unlink-button" type="button" class="mt-2 hidden w-full rounded-lg border border-amber-800/70 py-2.5 text-sm font-bold text-amber-300 hover:bg-amber-950/40">카카오 연동 해제</button></div>
             <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-bold text-slate-200"><i class="fa-solid fa-envelope mr-2 text-sky-400"></i>이메일 알림</p><p id="email-alert-status" class="mt-1 text-xs text-slate-500">설정 상태 확인 중</p></div><span id="email-alert-badge" class="shrink-0 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400">확인 중</span></div><label for="email-alert-address" class="sr-only">이메일 수신 주소</label><div class="mt-4 flex gap-2"><input id="email-alert-address" type="email" autocomplete="email" placeholder="name@example.com" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"><button id="email-alert-save-button" type="button" class="shrink-0 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-sky-400 disabled:cursor-wait disabled:opacity-60">저장</button></div><button id="email-alert-remove-button" type="button" class="mt-2 hidden w-full rounded-lg border border-slate-700 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-800">이메일 알림 해제</button></div>
+            <section class="theme-preference-card"><label for="theme-preference">화면 테마</label><select id="theme-preference" aria-label="화면 테마"><option value="system">시스템 설정</option><option value="light">라이트 모드</option><option value="dark">다크 모드</option></select><p>시스템 설정은 기기의 라이트/다크 모드 변경을 실시간으로 따릅니다.</p></section>
             <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4"><button id="account-delete-button" type="button" class="mt-4 flex w-full items-center justify-center rounded-lg border border-red-800/70 bg-red-950/30 py-2.5 text-sm font-bold text-red-400 transition hover:bg-red-950/60"><i class="fa-solid fa-user-slash mr-2"></i>회원 탈퇴</button></div>
           </div>
         </section>
@@ -67,6 +81,7 @@
       <div id="account-delete-modal" class="modal-overlay modal-overlay--critical hidden"><section class="w-full max-w-sm rounded-2xl border border-red-900/60 bg-slate-900 p-6 text-center shadow-2xl"><i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i><h2 class="mt-4 text-lg font-bold text-white">회원 탈퇴를 진행할까요?</h2><p class="mt-2 text-sm leading-relaxed text-slate-400">등록한 지표와 알림 설정이 모두 삭제되며 되돌릴 수 없습니다.</p><div class="mt-5 flex gap-2"><button id="account-delete-cancel" type="button" class="flex-1 rounded-lg bg-slate-800 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-700">취소</button><button id="account-delete-confirm" type="button" class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-60">탈퇴하기</button></div></section></div>`);
     mounted = true;
     normalize();
+    bindMainThemePreference();
   }
 
   window.MacroWatchAccountModal = { ensure };
