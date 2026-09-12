@@ -1,0 +1,11 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.join(__dirname, '..');
+const core = fs.readFileSync(path.join(root, 'assets/js/core/frontend-core.js'), 'utf8');
+const actions = fs.readFileSync(path.join(root, 'assets/js/core/economic-account-actions.js'), 'utf8');
+assert.ok(core.includes('#profile-modal {'));
+assert.ok(core.includes('--theme-surface: #0f172a'));
+assert.ok(actions.includes("document.getElementById('account-delete-button')"));
+assert.ok(actions.includes('insertBefore(card, deleteSection)'));
+console.log('profile modal theme contracts: ok');
