@@ -22,6 +22,11 @@
       <nav class="economic-nav" aria-label="MacroWatch 메뉴">
         <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><a class="is-active" href="economic-charts.html" aria-current="page">경제지표 챠트</a>
       </nav>
+      <div class="economic-account-actions" aria-label="계정 메뉴">
+        <button id="economic-profile-button" type="button" aria-label="개인 설정" title="개인 설정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0H5Z"/></svg></button>
+        <a id="economic-admin-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 3.5-2.1-.8a7.8 7.8 0 0 0-.6-1.5l.9-2.1-2.8-2.8-2.1.9a7.8 7.8 0 0 0-1.5-.6L12 3H8l-.8 2.1a7.8 7.8 0 0 0-1.5.6l-2.1-.9L.8 7.6l.9 2.1a7.8 7.8 0 0 0-.6 1.5L-1 12v4l2.1.8c.2.5.4 1 .6 1.5l-.9 2.1 2.8 2.8 2.1-.9c.5.3 1 .5 1.5.6L8 25h4l.8-2.1c.5-.2 1-.4 1.5-.6l2.1.9 2.8-2.8-.9-2.1c.3-.5.5-1 .6-1.5L21 16v-4Z" transform="scale(.8) translate(2.5 2.5)"/></svg></a>
+        <button id="economic-logout-button" type="button" aria-label="로그아웃" title="로그아웃"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H4v16h6v-2H6V6h4V4Zm5.6 3.6-1.4 1.4 2 2H9v2h7.2l-2 2 1.4 1.4L20 12l-4.4-4.4Z"/></svg></button>
+      </div>
     </header>
     <main class="economic-main">
       <div class="economic-hero">
@@ -54,6 +59,7 @@
   </div>
   <script src="assets/js/charts/economic-charts.js?v=12"></script>
   <script src="assets/js/charts/economic-series-manager.js?v=3"></script>
+  <script src="assets/js/charts/economic-page-actions.js?v=1"></script>
   <script>
     (() => {
       const before = '미국 기업 회생 신청건수';
