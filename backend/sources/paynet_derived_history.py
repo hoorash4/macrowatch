@@ -27,11 +27,7 @@ _METRICS = (
     ("severe", r"SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?"),
     ("default", r"SBDFI\b|Small\s+Business\s+Default\s+Index"),
 )
-_MONTHS = {
-    name: i for i, name in enumerate(
-        "January February March April May June July August September October November December".split(), 1
-    )
-}
+_MONTHS = {name: i for i, name in enumerate("January February March April May June July August September October November December".split(), 1)}
 _EFA_BASE = "https://www.equipmentfa.com"
 _EFA_INDEXES = (
     "https://www.equipmentfa.com/industry-data/source/729/paynet-inc",
@@ -59,6 +55,21 @@ def _fetch_one(url: str) -> tuple[tuple[float, float, float] | None, str, str] |
     return _pdf_text(url, 4)
 
 
+def _detail_pdf_links(item: tuple[tuple[int, int], str]) -> tuple[tuple[int, int], list[str]]:
+    key, detail_url = item
+    try:
+        response = requests.get(detail_url, timeout=6, headers={"User-Agent": USER_AGENT})
+        html = response.text
+    except Exception:
+        return key, []
+    pdfs: list[str] = []
+    for href in re.findall(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html, re.I):
+        full = urljoin(detail_url, unescape(href))
+        if "IndustryData" in full or "paynet" in full.lower():
+            pdfs.append(full)
+    return key, pdfs
+
+
 def _archive_links() -> dict[tuple[int, int], list[str]]:
     """Discover old PayNet chart/release PDFs mirrored by Equipment Finance Advisor."""
     global _ARCHIVE_CACHE
@@ -66,14 +77,11 @@ def _archive_links() -> dict[tuple[int, int], list[str]]:
         return _ARCHIVE_CACHE
 
     details: dict[tuple[int, int], set[str]] = {}
-    session = requests.Session()
-    session.headers.update({"User-Agent": USER_AGENT})
     for index_url in _EFA_INDEXES:
         try:
-            html = session.get(index_url, timeout=12).text
+            html = requests.get(index_url, timeout=7, headers={"User-Agent": USER_AGENT}).text
         except Exception:
             continue
-        # Detail URLs include the observation month in their visible title/slug.
         for href, label in re.findall(r'href=["\']([^"\']*?/industry-data/\d+/[^"\']+)["\'][^>]*>(.*?)</a>', html, re.I | re.S):
             text = re.sub(r"<[^>]+>", " ", unescape(label))
             text = re.sub(r"\s+", " ", text).strip()
@@ -85,32 +93,31 @@ def _archive_links() -> dict[tuple[int, int], list[str]]:
             month_name, year_s = m.group(1).capitalize(), m.group(2)
             details.setdefault((int(year_s), _MONTHS[month_name]), set()).add(urljoin(_EFA_BASE, href))
 
+    work = [(key, url) for key, urls in details.items() for url in urls]
+    out_sets: dict[tuple[int, int], set[str]] = {}
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        for key, pdfs in pool.map(_detail_pdf_links, work):
+            if pdfs:
+                out_sets.setdefault(key, set()).update(pdfs)
+
     out: dict[tuple[int, int], list[str]] = {}
-    for key, urls in details.items():
-        pdfs: list[str] = []
-        for detail_url in urls:
-            try:
-                html = session.get(detail_url, timeout=10).text
-            except Exception:
-                continue
-            for href in re.findall(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html, re.I):
-                full = urljoin(detail_url, unescape(href))
-                if "IndustryData" in full or "paynet" in full.lower():
-                    pdfs.append(full)
-        if pdfs:
-            # Charts before press releases because charts consistently include both SBDI buckets.
-            pdfs.sort(key=lambda u: ("graph" not in u.lower() and "chart" not in u.lower(), u))
-            out[key] = list(dict.fromkeys(pdfs))
+    for key, pdfset in out_sets.items():
+        pdfs = sorted(pdfset, key=lambda u: ("graph" not in u.lower() and "chart" not in u.lower(), u))
+        out[key] = pdfs
     _ARCHIVE_CACHE = out
     return out
 
 
 def _fetch_archive_report(observed_year: int, observed_month: int) -> tuple[tuple[float, float, float] | None, str, str] | None:
     urls = _archive_links().get((observed_year, observed_month), [])
-    for url in urls:
-        found = _pdf_text(url, 8)
-        if found is not None:
-            return found
+    if not urls:
+        return None
+    with ThreadPoolExecutor(max_workers=min(6, len(urls))) as pool:
+        futures = [pool.submit(_pdf_text, url, 6) for url in urls]
+        for future in as_completed(futures):
+            found = future.result()
+            if found is not None:
+                return found
     return None
 
 
@@ -121,8 +128,6 @@ def _fetch_report_text(report_year: int, report_month: int, *, observed_year: in
         for future in as_completed(futures):
             found = future.result()
             if found is not None:
-                for pending in futures:
-                    pending.cancel()
                 return found
     if observed_year is not None and observed_month is not None:
         return _fetch_archive_report(observed_year, observed_month)
@@ -148,11 +153,9 @@ def _directional_delta(body: str, period: str) -> float | None:
         match = re.search(pattern, body, re.I)
         if match:
             return _to_pp(match.group(1), match.group(2), match.group(3))
-
     if period.upper() == "Y/Y":
         narrative = re.search(
-            r"(?:up|increased|rose|higher)\s+(?:by\s+)?([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?).{0,70}?(?:year|12\s+months)|"
-            r"(?:down|decreased|fell|lower)\s+(?:by\s+)?([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?).{0,70}?(?:year|12\s+months)",
+            r"(?:up|increased|rose|higher)\s+(?:by\s+)?([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?).{0,70}?(?:year|12\s+months)|(?:down|decreased|fell|lower)\s+(?:by\s+)?([0-9]+(?:\.[0-9]+)?)\s*(bps?|bp|pp|percentage\s+points?).{0,70}?(?:year|12\s+months)",
             body, re.I,
         )
         if narrative:
@@ -170,7 +173,7 @@ def _metric_level_and_delta(clean: str, token: str, period: str) -> tuple[float,
     else:
         pat = r"SBDFI\b|Small\s+Business\s+Default\s+Index"
     for m in re.finditer(pat, clean, re.I):
-        body = clean[m.end():m.end() + 550]
+        body = clean[m.end():m.end() + 650]
         level_m = re.search(r"(?:to|at|is|was|of)?\s*([0-9]+(?:\.[0-9]+)?)\s*%", body, re.I)
         delta = _directional_delta(body, period)
         if level_m and delta is not None:
@@ -189,8 +192,6 @@ def _derive_from_report(target: date, *, lag_months: int, period: str) -> dict[s
         return result
     levels, clean, url = fetched
 
-    # Prefer narrative/box current level + published YoY/MoM delta. This works on
-    # both old PayNet Strategic Insights charts and newer Equifax reports.
     short_pair = _metric_level_and_delta(clean, "short", period)
     severe_pair = _metric_level_and_delta(clean, "severe", period)
     default_pair = _metric_level_and_delta(clean, "default", period)
@@ -198,34 +199,21 @@ def _derive_from_report(target: date, *, lag_months: int, period: str) -> dict[s
         short = round(short_pair[0] - short_pair[1], 6)
         severe = round(severe_pair[0] - severe_pair[1], 6)
         provenance = f"PayNet-public:derived-{period.replace('/', '')}:{url}"
-        result[SERIES_DELINQUENCY] = _row(
-            SERIES_DELINQUENCY, target.year, target.month, short + severe,
-            f"{provenance}:SBDI31-90={short:.2f}+SBDI91-180={severe:.2f}",
-        )
+        result[SERIES_DELINQUENCY] = _row(SERIES_DELINQUENCY, target.year, target.month, short + severe, f"{provenance}:SBDI31-90={short:.2f}+SBDI91-180={severe:.2f}")
     if default_pair:
         default = round(default_pair[0] - default_pair[1], 6)
-        result[SERIES_DEFAULT] = _row(
-            SERIES_DEFAULT, target.year, target.month, default,
-            f"PayNet-public:derived-{period.replace('/', '')}:{url}:SBDFI={default:.2f}",
-        )
+        result[SERIES_DEFAULT] = _row(SERIES_DEFAULT, target.year, target.month, default, f"PayNet-public:derived-{period.replace('/', '')}:{url}:SBDFI={default:.2f}")
     if result[SERIES_DELINQUENCY] is not None and result[SERIES_DEFAULT] is not None:
         return result
 
-    # Newer reports sometimes parse cleanly as a three-level overview; use deltas
-    # nearby when available.
     if levels is not None:
         short_now, severe_now, default_now = levels
-        pairs = {
-            "short": _metric_level_and_delta(clean, "short", period),
-            "severe": _metric_level_and_delta(clean, "severe", period),
-            "default": _metric_level_and_delta(clean, "default", period),
-        }
-        if pairs["short"] and pairs["severe"] and result[SERIES_DELINQUENCY] is None:
-            short = short_now - pairs["short"][1]
-            severe = severe_now - pairs["severe"][1]
+        if short_pair and severe_pair and result[SERIES_DELINQUENCY] is None:
+            short = short_now - short_pair[1]
+            severe = severe_now - severe_pair[1]
             result[SERIES_DELINQUENCY] = _row(SERIES_DELINQUENCY, target.year, target.month, short + severe, f"Equifax-public:derived-{period.replace('/', '')}:{url}")
-        if pairs["default"] and result[SERIES_DEFAULT] is None:
-            default = default_now - pairs["default"][1]
+        if default_pair and result[SERIES_DEFAULT] is None:
+            default = default_now - default_pair[1]
             result[SERIES_DEFAULT] = _row(SERIES_DEFAULT, target.year, target.month, default, f"Equifax-public:derived-{period.replace('/', '')}:{url}")
     return result
 
