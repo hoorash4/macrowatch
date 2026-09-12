@@ -8,11 +8,11 @@ import os
 from common import SupabaseRest
 from signals.economic_chart_pipeline import _insert_missing
 from sources.business_credit_monthly import (
-    fetch_epiq_ch11_rows,
     fetch_equifax_rows,
     fetch_korea_business_delinquency_rows,
     fetch_korea_default_company_rows,
 )
+from sources.epiq_ch11_source import fetch_epiq_ch11_rows
 
 
 def _ten_year_start(today: date) -> date:
