@@ -63,6 +63,7 @@ function initializeDashboardNavigation() {
     em: '#em-msi',
     policy: '#policy-signals',
     tracker: '#tracker',
+    economic: '#economic-charts',
   };
   const viewByHash = {
     ...Object.fromEntries(Object.entries(hashByView).map(([view, hash]) => [hash, view])),
@@ -79,6 +80,8 @@ function initializeDashboardNavigation() {
       selectedView = hashByView[view] ? view : 'overview';
       if (selectedView === 'stress') selectedStressMarket = 'credit';
     }
+
+    document.body.classList.toggle('dashboard-economic-view', selectedView === 'economic');
 
     desktopButtons.forEach((button) => {
       const active = button.dataset.dashboardView === selectedView;
