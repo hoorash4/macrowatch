@@ -518,7 +518,9 @@ class SourceContractTests(unittest.TestCase):
     def test_sector_flow_stores_open_intraday_close_and_server_rankings(self):
         migration = (ROOT / "supabase/migrations/20260827_add_sector_flow_prices.sql").read_text(encoding="utf-8")
         intraday_migration = (ROOT / "supabase/migrations/20260828_add_sector_intraday_prices.sql").read_text(encoding="utf-8")
+        schedule_migration = (ROOT / "supabase/migrations/20260912133500_stabilize_sector_flow_schedule.sql").read_text(encoding="utf-8")
         pipeline = (ROOT / "supabase/functions/sector-flow/index.ts").read_text(encoding="utf-8")
+        scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
         scoring = (ROOT / "supabase/functions/_shared/market/sector-flow.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/sector-flow.yml").read_text(encoding="utf-8")
         self.assertIn("market_sector_etf_prices", migration)
@@ -526,11 +528,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('body.stage === "open"', pipeline)
         self.assertIn('body.stage === "intraday"', pipeline)
         self.assertIn('body.stage === "close"', pipeline)
-        for schedule in ('10 0', '30 3', '40 6'):
-            self.assertIn(f'cron: "{schedule} * * 1-5"', workflow)
-        self.assertNotIn('cron: "30 0 * * 1-5"', workflow)
-        self.assertNotIn('cron: "0 7 * * 1-5"', workflow)
-        self.assertIn("github.event.schedule == '30 3 * * 1-5'", workflow)
+        self.assertNotIn("  schedule:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("options: [open, intraday, close]", workflow)
+        for schedule in ('10 0 * * 1-5', '30 3 * * 1-5', '40 6 * * 1-5'):
+            self.assertIn(schedule, schedule_migration)
+        self.assertIn('const stage = String(body?.stage || "") as PriceStage', scheduler)
+        self.assertNotIn("github.event.schedule", workflow)
         self.assertIn("DATABASE_PAGE_SIZE = 1000", pipeline)
         self.assertIn("PRICE_RETENTION_WEEKS = 10", pipeline)
         self.assertIn("RANKING_RETENTION_WEEKS = 6", pipeline)
@@ -542,7 +546,6 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("KIS_RATE_LIMIT_RETRY_DELAYS_MS", kis_client)
         self.assertIn("fetchKisDailyPrices(credentials, token, item.etf_ticker, priceStart, end)", pipeline)
         self.assertIn("fetchKisEtfCurrentPrice(credentials, token, item.etf_ticker)", pipeline)
-        self.assertIn('github.event.schedule == \'30 3 * * 1-5\' && \'intraday\'', workflow)
         self.assertIn("getKisAccessToken(credentials, admin)", pipeline)
         self.assertIn("incompletePriceHistoryIds", pipeline)
         self.assertIn("missingHistoryIds.has(item.id)", pipeline)
@@ -578,22 +581,28 @@ class SourceContractTests(unittest.TestCase):
 
     def test_sector_flow_has_database_cron_with_idempotent_retry_dispatcher(self):
         scheduler = (ROOT / "supabase/functions/sector-flow-scheduler/index.ts").read_text(encoding="utf-8")
-        migration = (ROOT / "supabase/migrations/20260828_schedule_sector_flow.sql").read_text(encoding="utf-8")
+        migration = (ROOT / "supabase/migrations/20260912133500_stabilize_sector_flow_schedule.sql").read_text(encoding="utf-8")
         config = (ROOT / "supabase/config.toml").read_text(encoding="utf-8")
         deploy = (ROOT / ".github/workflows/deploy-supabase.yml").read_text(encoding="utf-8")
 
         self.assertIn('[functions.sector-flow-scheduler]', config)
         self.assertIn('verify_jwt = false', config.split('[functions.sector-flow-scheduler]', 1)[1].split('[functions.', 1)[0])
-        self.assertIn('skipped: "outside_schedule_window"', scheduler)
+        self.assertIn('skipped: "outside_configured_schedule"', scheduler)
         self.assertIn('skipped: "already_refreshed"', scheduler)
-        self.assertIn('.gte("calculated_at", slotStartedAt.toISOString())', scheduler)
-        self.assertIn('/functions/v1/sector-flow', scheduler)
-        self.assertIn('{ name: "midday", stage: "intraday"', scheduler)
-        self.assertIn('create extension if not exists pg_cron', migration)
-        self.assertIn('create extension if not exists pg_net', migration)
-        for schedule in ('10,25 0 * * 1-5', '30,45 3 * * 1-5', '40,55 6 * * 1-5'):
+        self.assertIn('admin.rpc("macrowatch_sector_flow_schedules")', scheduler)
+        self.assertIn('configuredJobs.some((row) => cronMatchesNow(row?.schedule, now))', scheduler)
+        self.assertIn('admin.functions.invoke("sector-flow", { body: { stage } })', scheduler)
+        for job in (
+            'macrowatch-sector-flow-open-primary', 'macrowatch-sector-flow-open-retry',
+            'macrowatch-sector-flow-intraday-primary', 'macrowatch-sector-flow-intraday-retry',
+            'macrowatch-sector-flow-close-primary', 'macrowatch-sector-flow-close-retry',
+        ):
+            self.assertIn(job, migration)
+        for schedule in ('10 0 * * 1-5', '25 0 * * 1-5', '30 3 * * 1-5', '45 3 * * 1-5', '40 6 * * 1-5', '55 6 * * 1-5'):
             self.assertIn(schedule, migration)
-        self.assertTrue((ROOT / "supabase/migrations/20260828_schedule_sector_flow.sql").exists())
+        self.assertIn('macrowatch_set_sector_flow_schedule', migration)
+        self.assertIn('macrowatch_set_sector_flow_enabled', migration)
+        self.assertIn('grant execute on function public.macrowatch_sector_flow_schedules() to service_role', migration)
         self.assertIn("--diff-filter=A", deploy)
 
     def test_new_sector_etf_registration_resolves_metadata_and_backfills_prices(self):
@@ -698,6 +707,7 @@ class SourceContractTests(unittest.TestCase):
         pipeline = (ROOT / "backend/earnings_v2/automatic.py").read_text(encoding="utf-8")
         automatic_cli = (ROOT / "backend/earnings_v2/automatic_cli.py").read_text(encoding="utf-8")
         automatic_workflow = (ROOT / ".github/workflows/earnings-v2-korea-automatic.yml").read_text(encoding="utf-8")
+        kis_workflow = (ROOT / ".github/workflows/earnings-v2-korea-kis-automatic.yml").read_text(encoding="utf-8")
         providers = (ROOT / "backend/earnings_v2/providers.py").read_text(encoding="utf-8")
         repository = (ROOT / "backend/earnings_common/repository.py").read_text(encoding="utf-8")
         migration = (ROOT / "supabase/migrations/20260902224500_add_earnings_v2_daily_checkpoint_read.sql").read_text(encoding="utf-8")
@@ -717,8 +727,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('choices=("dart", "kis", "all")', automatic_cli)
         self.assertIn('args+=(--phase "$PHASE")', automatic_workflow)
         self.assertIn('cron: "30 10 * * 1-5"', automatic_workflow)
-        self.assertIn('cron: "30 11 * * 1-5"', automatic_workflow)
-        self.assertIn("github.event.schedule == '30 10 * * 1-5'", automatic_workflow)
+        self.assertIn('cron: "30 11 * * 1-5"', kis_workflow)
+        self.assertIn("github.event_name == 'schedule' && 'dart'", automatic_workflow)
+        self.assertIn('args=(--phase kis)', kis_workflow)
+        self.assertNotIn("github.event.schedule", automatic_workflow)
+        self.assertNotIn("github.event.schedule", kis_workflow)
         self.assertIn("EARNINGS_FINANCIAL_SOURCE_TOKEN", automatic_workflow)
         self.assertIn("DATA_GO_KR_SERVICE_KEY", automatic_workflow)
         self.assertNotIn("--year", automatic_workflow)
