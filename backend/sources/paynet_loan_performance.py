@@ -61,6 +61,8 @@ def _report_urls(year: int, month: int) -> list[str]:
         f"main-street-lending-report-{abbr}-{year}.pdf",
         f"Main-Street-Lending-Report-{full}-{year}.pdf",
         f"Main-Street-Lending-Report-{full}{year}.pdf",
+        f"MainStreetLendingReport-{full}{year}.pdf",
+        f"MainStreetLendingReport-{full}{year}-V101.pdf",
         f"main-street-lending-report-{full}-{year}.pdf",
         f"main-street-lending-report-{full}{year}.pdf",
         f"main-street-lending-report-{abbr}-{year}-report.pdf",
