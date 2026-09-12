@@ -2,26 +2,17 @@ from datetime import date
 import pathlib
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from signals.paynet_backfill import _prepare, _required_months
+from signals import paynet_monthly  # noqa: E402
 from sources.paynet_loan_performance import (
     SERIES_DEFAULT,
     SERIES_DELINQUENCY,
     extract_equifax_levels,
 )
-
-
-def row(code: str, year: int, month: int, value: float) -> dict:
-    return {
-        "series_code": code,
-        "observation_date": f"{year:04d}-{month:02d}-01",
-        "value": value,
-        "frequency": "M",
-        "source": "Equifax-public:test",
-    }
 
 
 class EquifaxLoanPerformanceTests(unittest.TestCase):
@@ -47,20 +38,31 @@ class EquifaxLoanPerformanceTests(unittest.TestCase):
         """
         self.assertIsNone(extract_equifax_levels(text))
 
-    def test_required_months_run_latest_to_ten_years_back(self):
-        months = _required_months(date(2026, 7, 1))
-        self.assertEqual(months[0], date(2026, 7, 1))
-        self.assertEqual(months[-1], date(2016, 7, 1))
-        self.assertEqual(len(months), 121)
+    def test_automatic_collector_checks_only_recent_three_months(self):
+        class Database:
+            pass
 
-    def test_prepare_accepts_complete_final_history(self):
-        months = _required_months(date(2026, 7, 1))
-        delinquency = [row(SERIES_DELINQUENCY, d.year, d.month, 2.0) for d in months]
-        defaults = [row(SERIES_DEFAULT, d.year, d.month, 3.0) for d in months]
-        latest, prepared = _prepare({SERIES_DELINQUENCY: delinquency, SERIES_DEFAULT: defaults})
-        self.assertEqual(latest, date(2026, 7, 1))
-        self.assertIn("2016-07-01", prepared[SERIES_DELINQUENCY])
-        self.assertIn("2026-07-01", prepared[SERIES_DEFAULT])
+        captured = {}
+
+        def fetch(start, end):
+            captured["start"] = start
+            captured["end"] = end
+            return {SERIES_DELINQUENCY: [], SERIES_DEFAULT: []}
+
+        with (
+            patch.object(paynet_monthly, "date") as mocked_date,
+            patch.object(paynet_monthly, "fetch_paynet_rows", side_effect=fetch),
+            patch.object(paynet_monthly, "SupabaseRest", return_value=Database()),
+            patch.object(paynet_monthly, "_insert_missing", return_value=0),
+        ):
+            mocked_date.today.return_value = date(2026, 9, 12)
+            paynet_monthly.collect_recent()
+
+        self.assertEqual(captured["start"], date(2026, 6, 1))
+        self.assertEqual(captured["end"], date(2026, 9, 12))
+        self.assertFalse((ROOT / "backend/signals/paynet_backfill.py").exists())
+        self.assertFalse((ROOT / "backend/sources/paynet_derived_history.py").exists())
+        self.assertFalse((ROOT / ".github/workflows/business-credit-backfill-once.yml").exists())
 
 
 if __name__ == "__main__":
