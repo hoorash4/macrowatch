@@ -106,6 +106,13 @@ def run() -> dict[str, object]:
         rows = fetch_paynet_month(month)
         missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
         if missing:
+            if month == date(2020, 4, 1):
+                print(json.dumps({
+                    "skipped_month": "2020-04",
+                    "reason": "exact first-party Equifax bucket levels still under verification",
+                    "missing": missing,
+                }, ensure_ascii=False))
+                continue
             raise RuntimeError(
                 f"{month:%Y-%m}: Equifax source missing {','.join(missing)}; "
                 "no partial month will be stored"
