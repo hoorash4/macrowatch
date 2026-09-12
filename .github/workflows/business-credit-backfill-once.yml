@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/business-credit-backfill-once.yml"
       - "backend/sources/paynet_loan_performance.py"
+      - "backend/sources/paynet_derived_history.py"
       - "backend/signals/paynet_backfill.py"
       - "tests/test_paynet_loan_performance.py"
   workflow_dispatch:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -28,15 +29,8 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Resume Equifax below Q1 2021 from first missing month
+      - name: Resume Equifax legacy history with YoY and MoM reconstruction
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: PYTHONPATH=backend python -m signals.paynet_backfill
-      - name: Recover and revalidate other monthly business-credit charts
-        env:
-          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          EPIQ_BACKFILL_PAGES: "80"
-        run: PYTHONPATH=backend python -m signals.business_credit_backfill
