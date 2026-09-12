@@ -540,7 +540,13 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     const actions = document.querySelector('.dashboard-nav-actions');
     if (!actions || !links.length) return;
     links.forEach((item) => {
-      if (!item?.href || actions.querySelector(`[data-workspace-link="${item.href}"]`)) return;
+      if (!item?.href) return;
+      const targetUrl = new URL(item.href, document.baseURI).href;
+      const alreadyLinked = Array.from(document.querySelectorAll('a[href]')).some((link) => {
+        try { return new URL(link.getAttribute('href'), document.baseURI).href === targetUrl; }
+        catch { return false; }
+      });
+      if (alreadyLinked) return;
       const link = document.createElement('a');
       link.className = 'dashboard-nav-item';
       link.dataset.workspaceLink = item.href;
