@@ -12,7 +12,7 @@ BASE_URL = "https://api.census.gov/data/timeseries/eits/marts"
 CATEGORY_CODE = "44X72"  # Retail Trade and Food Services
 DATA_TYPE_CODE = "SM"    # Sales - Monthly, millions of dollars
 SERIES_CODE = "US_RETAIL_SALES"
-SOURCE = "CENSUS:MARTS/44X72/SM/SA"
+SOURCE = "CENSUS:MARTS/44X72/SM/SA/YOY"
 
 
 def _number(value: object) -> float | None:
@@ -35,8 +35,12 @@ def _month_date(value: object) -> date | None:
         return None
 
 
+def _previous_year(observed: date) -> date:
+    return date(observed.year - 1, observed.month, 1)
+
+
 def parse_marts_payload(payload: Any) -> dict[date, float]:
-    """Return seasonally-adjusted total retail-and-food-service monthly sales."""
+    """Return seasonally-adjusted total retail-and-food-service monthly sales levels."""
     if not isinstance(payload, list) or not payload or not isinstance(payload[0], list):
         raise RuntimeError("Census MARTS 응답 형식이 올바르지 않습니다.")
     header = [str(value) for value in payload[0]]
@@ -63,6 +67,21 @@ def parse_marts_payload(payload: Any) -> dict[date, float]:
     return dict(sorted(result.items()))
 
 
+def yoy_values(values: dict[date, float], *, start: date | None = None, end: date | None = None) -> dict[date, float]:
+    """Convert monthly sales levels to same-month year-over-year percentage changes."""
+    result: dict[date, float] = {}
+    for observed, value in sorted(values.items()):
+        if start is not None and observed < start:
+            continue
+        if end is not None and observed > end:
+            continue
+        prior = values.get(_previous_year(observed))
+        if prior is None or prior == 0:
+            continue
+        result[observed] = round((value / prior - 1.0) * 100.0, 6)
+    return result
+
+
 def fetch_census_retail_sales(
     start: date,
     end: date,
@@ -70,15 +89,16 @@ def fetch_census_retail_sales(
     api_key: str,
     session: requests.Session | None = None,
 ) -> dict[date, float]:
-    """Fetch MARTS headline retail sales for every year intersecting ``start``..``end``."""
+    """Fetch MARTS retail-sales YoY for ``start``..``end`` using one extra comparison year."""
     if start > end:
         return {}
     if not str(api_key or "").strip():
         raise RuntimeError("CENSUS_API_KEY가 필요합니다.")
 
+    comparison_start = date(start.year - 1, start.month, 1)
     client = session or requests.Session()
-    result: dict[date, float] = {}
-    for year in range(start.year, end.year + 1):
+    levels: dict[date, float] = {}
+    for year in range(comparison_start.year, end.year + 1):
         params = {
             "get": "cell_value,time_slot_id,time_slot_date,error_data,category_code,seasonally_adj,data_type_code",
             "category_code": CATEGORY_CODE,
@@ -88,14 +108,12 @@ def fetch_census_retail_sales(
         }
         response = request_with_retry(lambda: client.get(BASE_URL, params=params, timeout=30))
         response.raise_for_status()
-        for observed, value in parse_marts_payload(response.json()).items():
-            if start <= observed <= end:
-                result[observed] = value
-    return dict(sorted(result.items()))
+        levels.update(parse_marts_payload(response.json()))
+    return yoy_values(levels, start=start, end=end)
 
 
 def chart_rows(values: dict[date, float]) -> list[dict]:
-    """Map Census observations onto the existing economic_chart_points schema."""
+    """Map Census YoY observations onto the existing economic_chart_points schema."""
     return [
         {
             "series_code": SERIES_CODE,
