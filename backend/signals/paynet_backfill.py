@@ -1,6 +1,7 @@
 """Authoritative reverse-month backfill for unified Equifax delinquency and SBDFI."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 import json
 
@@ -53,10 +54,6 @@ def _first_missing_month(db: SupabaseRest, required: list[date]) -> date | None:
 
 
 def _recover_month(month: date) -> dict[str, dict | None]:
-    # Historical reconstruction policy: once we reach Apr-2020 and earlier,
-    # stop wasting time hunting for the target month's direct PDF. Reconstruct
-    # strictly from official Equifax YoY first, then MoM, using a later report's
-    # published level + change. This intentionally favors complete trend history.
     if month <= LEGACY_DERIVE_FIRST:
         return fetch_paynet_derived_month(month)
 
@@ -67,6 +64,15 @@ def _recover_month(month: date) -> dict[str, dict | None]:
             if rows[code] is None:
                 rows[code] = derived[code]
     return rows
+
+
+def _legacy_recoveries(months: list[date]) -> dict[date, dict[str, dict | None]]:
+    """Reconstruct legacy months in parallel from official YoY/MoM changes."""
+    if not months:
+        return {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        rows = list(pool.map(fetch_paynet_derived_month, months))
+    return dict(zip(months, rows))
 
 
 def run() -> dict[str, object]:
@@ -85,11 +91,14 @@ def run() -> dict[str, object]:
     remaining = required[required.index(resume):]
     print(json.dumps({"resume_from": f"{resume:%Y-%m}", "remaining_months": len(remaining)}, ensure_ascii=False))
 
+    legacy_months = [month for month in remaining if month <= LEGACY_DERIVE_FIRST]
+    legacy_rows = _legacy_recoveries(legacy_months)
+
     stored = 0
     oldest_stored: date | None = None
     unresolved: list[str] = []
     for month in remaining:
-        rows = _recover_month(month)
+        rows = legacy_rows[month] if month in legacy_rows else _recover_month(month)
         missing = [code for code in (SERIES_DELINQUENCY, SERIES_DEFAULT) if rows[code] is None]
         if missing:
             unresolved.append(f"{month:%Y-%m}")
