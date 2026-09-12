@@ -121,6 +121,39 @@ class CollectionHealthTests(unittest.TestCase):
         self.assertIn("예약 실행 실패 또는 미완료: running.yml (status=in_progress, conclusion=None)", failures)
         self.assertIn("예약 실행 시각 이상: future.yml, latest=2026-09-12", failures)
 
+    def test_failed_schedule_is_recovered_only_by_later_manual_success_and_fresh_data(self):
+        failed = {"updated_at": "2026-09-10T00:00:00Z", "status": "completed", "conclusion": "failure"}
+        repair = {"updated_at": "2026-09-11T00:00:00Z", "status": "completed", "conclusion": "success"}
+        db = FakeDb({"fresh_table": [{"day": "2026-09-11"}]})
+        with (
+            patch.object(health, "WORKFLOWS", {"recoverable.yml": 3}),
+            patch.object(health, "WORKFLOW_DATABASE_SERIES", {"recoverable.yml": "fresh"}),
+            patch.object(health, "DATABASE_SERIES", {"fresh": ("fresh_table", "day", 3)}),
+            patch.object(health, "require_env", return_value="token"),
+            patch.object(health, "github_workflow_info", return_value={"state": "active", "created_at": "2026-01-01T00:00:00Z"}),
+            patch.object(health, "github_latest_run", return_value=failed),
+            patch.object(health, "github_manual_success_after", return_value=repair),
+            patch.object(health, "SupabaseRest", return_value=db),
+        ):
+            self.assertEqual([], health.check_workflows(date(2026, 9, 11)))
+
+    def test_manual_success_does_not_hide_failed_schedule_when_data_is_stale(self):
+        failed = {"updated_at": "2026-09-10T00:00:00Z", "status": "completed", "conclusion": "failure"}
+        repair = {"updated_at": "2026-09-11T00:00:00Z", "status": "completed", "conclusion": "success"}
+        db = FakeDb({"stale_table": [{"day": "2026-08-01"}]})
+        with (
+            patch.object(health, "WORKFLOWS", {"recoverable.yml": 3}),
+            patch.object(health, "WORKFLOW_DATABASE_SERIES", {"recoverable.yml": "fresh"}),
+            patch.object(health, "DATABASE_SERIES", {"fresh": ("stale_table", "day", 3)}),
+            patch.object(health, "require_env", return_value="token"),
+            patch.object(health, "github_workflow_info", return_value={"state": "active", "created_at": "2026-01-01T00:00:00Z"}),
+            patch.object(health, "github_latest_run", return_value=failed),
+            patch.object(health, "github_manual_success_after", return_value=repair),
+            patch.object(health, "SupabaseRest", return_value=db),
+        ):
+            failures = health.check_workflows(date(2026, 9, 11))
+        self.assertEqual(["예약 실행 실패 또는 미완료: recoverable.yml (status=completed, conclusion=failure)"], failures)
+
     def test_database_errors_bad_dates_and_future_dates_do_not_stop_remaining_checks(self):
         series = {
             "broken": ("broken_table", "day", 3),
@@ -144,6 +177,35 @@ class CollectionHealthTests(unittest.TestCase):
         self.assertTrue(any(item.startswith("DB 최신값 검사 오류: bad_date:") for item in failures))
         self.assertIn("DB 최신값 날짜 이상: future, latest=2026-09-12", failures)
         self.assertFalse(any("healthy" in item for item in failures))
+
+    def test_sector_flow_health_checks_each_stage_with_its_own_filter(self):
+        series = {
+            "sector_flow_open": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.open"}),
+            "sector_flow_intraday": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.intraday"}),
+            "sector_flow_close": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}),
+        }
+
+        class SectorDb:
+            def __init__(self):
+                self.filters = []
+
+            def request(self, method, table, params=None):
+                self.filters.append(params["price_stage"])
+                latest = {
+                    "eq.open": "2026-09-11T00:10:00+00:00",
+                    "eq.intraday": "2026-09-11T03:30:00+00:00",
+                    "eq.close": "2026-09-01T06:40:00+00:00",
+                }[params["price_stage"]]
+                return [{"calculated_at": latest}]
+
+        db = SectorDb()
+        with (
+            patch.object(health, "DATABASE_SERIES", series),
+            patch.object(health, "SupabaseRest", return_value=db),
+        ):
+            failures = health.check_database(date(2026, 9, 11))
+        self.assertEqual(["eq.open", "eq.intraday", "eq.close"], db.filters)
+        self.assertEqual(["DB 최신값 지연: sector_flow_close, latest=2026-09-01"], failures)
 
     def test_missing_environment_is_reported_instead_of_raising(self):
         with patch.object(health, "require_env", side_effect=RuntimeError("GITHUB_TOKEN missing")):
