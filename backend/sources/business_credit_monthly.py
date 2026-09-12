@@ -3,13 +3,11 @@ from __future__ import annotations
 
 from datetime import date
 from html import unescape
-from io import BytesIO
 import re
 from typing import Iterable
 from urllib.parse import urlencode, urljoin
 
 import requests
-from pypdf import PdfReader
 
 from common import request_with_retry, require_env
 
@@ -34,125 +32,6 @@ def _row(code: str, year: int, month: int, value: float, source: str) -> dict:
         "frequency": "M",
         "source": source,
     }
-
-
-def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
-    serial = year * 12 + month - 1 + delta
-    return serial // 12, serial % 12 + 1
-
-
-def _equifax_urls(year: int, month: int) -> list[str]:
-    full = list(MONTHS)[month - 1]
-    low = full.lower()
-    base = "https://assets.equifax.com/marketing/US/assets/"
-    legacy = "https://assets.equifax.com/assets/usis/"
-    names = [
-        f"main-street-lending-report-{low}-{year}.pdf",
-        f"equifax-main-street-lending-report-{low}-{year}.pdf",
-        f"commercial-lending-trends-{low}-{year}.pdf",
-        f"equifax-commercial-lending-trends-{low}-{year}.pdf",
-        f"Equifax.MainStreetLendingReport.{full}{year}.pdf",
-        f"Equifax.CommercialLendingTrends.{full}{year}.pdf",
-        f"Equifax.MonthlyStrategicInsights.{full}{year}.pdf",
-        f"equifax-small-business-indices-{low}-{year}.pdf",
-    ]
-    return [f"{base}{name}" for name in names] + [f"{legacy}{names[-1]}"]
-
-
-def _clean_equifax(text: str) -> str:
-    return re.sub(r"\s+", " ", text.replace("–", "-").replace("—", "-"))
-
-
-def _equifax_block_level(clean: str, start_pattern: str, end_pattern: str) -> float | None:
-    """Read the reported percentage level from one bounded Equifax metric block."""
-    pattern = re.compile(rf"{start_pattern}(?P<body>.{{0,180}}?)(?={end_pattern}|$)", re.I)
-    for match in pattern.finditer(clean):
-        body = match.group("body")
-        level = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*\(Level\)", body, re.I)
-        if level:
-            value = float(level.group(1))
-            if 0 <= value < 10:
-                return value
-        percentages = [float(value) for value in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%", body)]
-        if len(percentages) == 1 and 0 <= percentages[0] < 10:
-            return percentages[0]
-    return None
-
-
-def _extract_equifax_levels(text: str) -> tuple[float, float, float] | None:
-    clean = _clean_equifax(text)
-
-    # Modern report layouts place each metric in its own block. Bound extraction to the
-    # next metric label so M/M or Y/Y values from SBLI can never be mistaken for SBDI/SBDFI.
-    short = _equifax_block_level(
-        clean,
-        r"SBDI\s*31\s*-\s*90\s*Days(?:\s*Past\s*Due)?",
-        r"SBDI\s*91\s*-\s*180\s*Days",
-    )
-    severe = _equifax_block_level(
-        clean,
-        r"SBDI\s*91\s*-\s*180\s*Days(?:\s*Past\s*Due)?",
-        r"SBDFI\b",
-    )
-    default = _equifax_block_level(clean, r"SBDFI\b", r"SBLI\b")
-    if short is not None and severe is not None and default is not None:
-        return short, severe, default
-
-    # Older narrative releases describe the current level in prose.
-    short_match = re.search(
-        r"SBDI\)?\s*31\s*-\s*90\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        clean,
-        re.I,
-    )
-    severe_match = re.search(
-        r"SBDI\s*91\s*-\s*180\s*Days\s*Past\s*Due[^.]{0,180}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        clean,
-        re.I,
-    )
-    default_match = re.search(
-        r"Defaults?\b[^.]{0,160}?(?:to|at)\s*([0-9]+(?:\.[0-9]+)?)\s*%",
-        clean,
-        re.I,
-    )
-    if short_match and severe_match and default_match:
-        return float(short_match.group(1)), float(severe_match.group(1)), float(default_match.group(1))
-    return None
-
-
-def fetch_equifax_rows(start: date, end: date) -> dict[str, list[dict]]:
-    """Fetch only exact monthly levels stated in public Equifax reports.
-
-    Missing report months remain missing; no M/M or Y/Y-derived values are created.
-    """
-    result = {"US_SBDI_31_90": [], "US_SBDI_91_180": [], "US_SBDFI": []}
-    report_y, report_m = _shift_month(start.year, start.month, 2)
-    end_y, end_m = _shift_month(end.year, end.month, 2)
-    while (report_y, report_m) <= (end_y, end_m):
-        levels = None
-        used_url = None
-        for url in _equifax_urls(report_y, report_m):
-            try:
-                response = requests.get(url, timeout=15, headers={"User-Agent": USER_AGENT})
-                ctype = response.headers.get("content-type", "").lower()
-                if response.status_code != 200 or "pdf" not in ctype:
-                    continue
-                text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
-                levels = _extract_equifax_levels(text)
-                if levels:
-                    used_url = url
-                    break
-            except Exception:
-                continue
-        if levels and used_url:
-            obs_y, obs_m = _shift_month(report_y, report_m, -2)
-            observed = date(obs_y, obs_m, 1)
-            if date(start.year, start.month, 1) <= observed <= end:
-                a, b, c = levels
-                result["US_SBDI_31_90"].append(_row("US_SBDI_31_90", obs_y, obs_m, a, f"Equifax:SBDI31-90:{used_url}"))
-                result["US_SBDI_91_180"].append(_row("US_SBDI_91_180", obs_y, obs_m, b, f"Equifax:SBDI91-180:{used_url}"))
-                result["US_SBDFI"].append(_row("US_SBDFI", obs_y, obs_m, c, f"Equifax:SBDFI:{used_url}"))
-        report_y, report_m = _shift_month(report_y, report_m, 1)
-    return result
 
 
 def _plain_html(html: str) -> str:
