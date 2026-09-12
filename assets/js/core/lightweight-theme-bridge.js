@@ -4,6 +4,10 @@
   const originalLibrary = window.LightweightCharts;
   if (!originalLibrary?.createChart) return;
 
+  const ECONOMIC_RAW_LIGHT = '#111827';
+  const ECONOMIC_RAW_DARK = '#ffffff';
+
+  const isDark = () => document.documentElement.dataset.theme === 'dark';
   const css = (name, fallback) => {
     try {
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -13,7 +17,7 @@
   };
 
   const themeOptions = () => {
-    const dark = document.documentElement.dataset.theme === 'dark';
+    const dark = isDark();
     return {
       layout: {
         background: {
@@ -56,9 +60,24 @@
   };
 
   const charts = new Set();
+  const rawSeries = new Set();
+
   const themedCreateChart = (container, options = {}) => {
     const chart = originalLibrary.createChart(container, mergeTheme(options));
     charts.add(chart);
+
+    const originalAddLineSeries = chart.addLineSeries?.bind(chart);
+    if (originalAddLineSeries) {
+      chart.addLineSeries = (seriesOptions = {}) => {
+        const isEconomicRaw = String(seriesOptions.color || '').toLowerCase() === ECONOMIC_RAW_LIGHT;
+        const series = originalAddLineSeries({
+          ...seriesOptions,
+          color: isEconomicRaw && isDark() ? ECONOMIC_RAW_DARK : seriesOptions.color,
+        });
+        if (isEconomicRaw) rawSeries.add(series);
+        return series;
+      };
+    }
 
     const originalRemove = chart.remove?.bind(chart);
     if (originalRemove) {
@@ -95,6 +114,10 @@
     const options = themeOptions();
     charts.forEach((chart) => {
       try { chart.applyOptions(options); } catch { charts.delete(chart); }
+    });
+    const color = isDark() ? ECONOMIC_RAW_DARK : ECONOMIC_RAW_LIGHT;
+    rawSeries.forEach((series) => {
+      try { series.applyOptions({ color }); } catch { rawSeries.delete(series); }
     });
   });
 })();
