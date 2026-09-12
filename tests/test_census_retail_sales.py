@@ -9,7 +9,6 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from signals import economic_chart_backfill as backfill  # noqa: E402
 from sources import census_retail_sales as census  # noqa: E402
 
 
@@ -77,38 +76,12 @@ class CensusRetailSalesTests(unittest.TestCase):
             "source": "CENSUS:MARTS/44X72/SM/SA/YOY",
         }])
 
-    def test_census_only_backfill_does_not_invoke_other_sources(self):
-        class Database:
-            def request(self, *_args, **_kwargs):
-                return []
-
-            def upsert(self, *_args, **_kwargs):
-                return None
-
-        with (
-            patch.object(backfill, "SupabaseRest", return_value=Database()),
-            patch.object(backfill, "require_env", return_value="census-key"),
-            patch.object(backfill, "fetch_census_retail_sales", return_value={date(2020, 1, 1): 3.25}),
-            patch.object(backfill, "backfill_kospi_valuation") as kospi,
-            patch.object(backfill, "_fred_rows") as fred,
-            patch.object(backfill, "_ecos_rows") as ecos,
-            patch.object(backfill, "fetch_wti_futures_rows") as wti,
-        ):
-            inserted, errors = backfill.backfill(only="census-retail")
-        self.assertEqual(inserted["US_RETAIL_SALES"], 1)
-        self.assertEqual(errors, {})
-        kospi.assert_not_called()
-        fred.assert_not_called()
-        ecos.assert_not_called()
-        wti.assert_not_called()
-
-    def test_workflows_and_frontend_include_census_retail_yoy_contract(self):
+    def test_automatic_workflow_and_frontend_include_census_retail_yoy_contract(self):
         automatic = (ROOT / ".github/workflows/economic-chart-data.yml").read_text(encoding="utf-8")
-        historical = (ROOT / ".github/workflows/economic-chart-backfill-once.yml").read_text(encoding="utf-8")
         chart = (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8")
         self.assertIn("CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}", automatic)
-        self.assertIn("CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}", historical)
-        self.assertIn("census-retail", historical)
+        self.assertIn("signals.economic_chart_automatic", automatic)
+        self.assertFalse((ROOT / ".github/workflows/economic-chart-backfill-once.yml").exists())
         self.assertIn("code:'US_RETAIL_SALES'", chart)
         self.assertIn("title:'미국 소매판매 YoY'", chart)
         self.assertIn("unit:'% YoY'", chart)
