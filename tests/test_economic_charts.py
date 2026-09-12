@@ -64,6 +64,10 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('economic-alert-marker-value', script)
         self.assertIn('economic-alert-bell', script)
         self.assertIn('axisLabelVisible:false', script)
+        self.assertIn('function schedulePlaceBells()', script)
+        self.assertIn('requestAnimationFrame(()=>{bellPositionFrame=requestAnimationFrame(', script)
+        self.assertIn('updateTickMode({from,to});schedulePlaceBells()', script)
+        self.assertIn('chart.applyOptions({width:Math.max(1,host.clientWidth),height:Math.max(1,host.clientHeight)});schedulePlaceBells()', script)
         self.assertNotIn('economic-alert-price', script)
         self.assertNotIn('🔔', script)
         self.assertIn("source_type:'economic_chart'", script)
@@ -79,6 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
+        self.assertIn('assets/js/charts/economic-charts.js?v=14', html)
 
     def test_chart_footer_is_compact_and_date_axis_is_korean(self):
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
