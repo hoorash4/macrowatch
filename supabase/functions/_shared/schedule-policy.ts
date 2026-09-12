@@ -19,6 +19,8 @@ export type SchedulePolicy = {
     | "fixed_safe_window";
   retryMinutes?: number;
   editable?: boolean;
+  mustRunBeforeId?: string;
+  mustRunAfterId?: string;
 };
 
 const POLICIES: Record<string, SchedulePolicy> = {
@@ -28,7 +30,7 @@ const POLICIES: Record<string, SchedulePolicy> = {
     displayName: "미국·한국 주식시장 자금환경",
     earliestSafeTimeKst: "18:10",
     dependencyLabel: "한국은행 및 관련 한국 일별 유동성 원천데이터",
-    dependencyReason: "한국 측 일별 원천데이터가 모두 공개된 뒤 수집해야 합니다.",
+    dependencyReason: "이 작업은 한국은행 및 관련 원천데이터가 모두 공개된 이후에 실행되어야 합니다.",
     dependencyType: "after_ecos_daily_release",
     editable: true,
   },
@@ -49,9 +51,10 @@ const POLICIES: Record<string, SchedulePolicy> = {
     displayName: "시총 상위 100 이익 모멘텀 · 미국 분기 실적 스냅샷",
     phase: "snapshot",
     dependencyLabel: "미국 분기 실적 스냅샷",
-    dependencyReason: "분기 스냅샷 단계의 기존 실행 순서를 유지합니다.",
+    dependencyReason: "분기 실적 스냅샷 수집은 SEC 신규 공시 수집보다 먼저 실행되어야 합니다.",
     dependencyType: "after_us_market_close",
     editable: true,
+    mustRunBeforeId: "earnings-us-edgar-automatic.yml",
   },
   "earnings-us-edgar-automatic.yml": {
     id: "earnings-us-edgar-automatic.yml",
@@ -59,9 +62,10 @@ const POLICIES: Record<string, SchedulePolicy> = {
     displayName: "시총 상위 100 이익 모멘텀 · 미국 SEC 신규 공시",
     phase: "edgar",
     dependencyLabel: "SEC 신규 공시",
-    dependencyReason: "SEC 신규 공시 수집 단계로 고정된 일정입니다.",
+    dependencyReason: "SEC 신규 공시 수집은 분기 실적 스냅샷 수집 뒤에 실행되어야 합니다.",
     dependencyType: "after_previous_phase",
     editable: true,
+    mustRunAfterId: "earnings-us-automatic.yml",
   },
   "earnings-v2-korea-automatic.yml": {
     id: "earnings-v2-korea-automatic.yml",
@@ -70,9 +74,10 @@ const POLICIES: Record<string, SchedulePolicy> = {
     phase: "dart",
     allowedWeekdays: [1, 2, 3, 4, 5],
     dependencyLabel: "DART 공시",
-    dependencyReason: "DART 공시 수집 단계로 고정된 일정입니다.",
+    dependencyReason: "DART 공시 수집은 KIS 가격 수집보다 먼저 실행되어야 합니다.",
     dependencyType: "after_source_publication",
     editable: true,
+    mustRunBeforeId: "earnings-v2-korea-kis-automatic.yml",
   },
   "earnings-v2-korea-kis-automatic.yml": {
     id: "earnings-v2-korea-kis-automatic.yml",
@@ -81,9 +86,10 @@ const POLICIES: Record<string, SchedulePolicy> = {
     phase: "kis",
     allowedWeekdays: [1, 2, 3, 4, 5],
     dependencyLabel: "한국 시장 가격",
-    dependencyReason: "KIS 가격 수집 단계로 고정된 일정입니다.",
+    dependencyReason: "KIS 가격 수집은 DART 공시 수집 뒤에 실행되어야 합니다.",
     dependencyType: "after_previous_phase",
     editable: true,
+    mustRunAfterId: "earnings-v2-korea-automatic.yml",
   },
   "sector-flow-open.yml": {
     id: "sector-flow-open.yml",
@@ -97,6 +103,7 @@ const POLICIES: Record<string, SchedulePolicy> = {
     dependencyType: "fixed_safe_window",
     retryMinutes: 15,
     editable: true,
+    mustRunBeforeId: "sector-flow-intraday.yml",
   },
   "sector-flow-intraday.yml": {
     id: "sector-flow-intraday.yml",
@@ -110,6 +117,8 @@ const POLICIES: Record<string, SchedulePolicy> = {
     dependencyType: "fixed_safe_window",
     retryMinutes: 15,
     editable: true,
+    mustRunAfterId: "sector-flow-open.yml",
+    mustRunBeforeId: "sector-flow-close.yml",
   },
   "sector-flow-close.yml": {
     id: "sector-flow-close.yml",
@@ -123,6 +132,7 @@ const POLICIES: Record<string, SchedulePolicy> = {
     dependencyType: "after_kospi_close",
     retryMinutes: 15,
     editable: true,
+    mustRunAfterId: "sector-flow-intraday.yml",
   },
 };
 
@@ -161,5 +171,7 @@ export function publicSchedulePolicy(policy: SchedulePolicy | null) {
     dependency_type: policy.dependencyType || null,
     retry_minutes: policy.retryMinutes || null,
     editable: policy.editable !== false,
+    must_run_before_id: policy.mustRunBeforeId || null,
+    must_run_after_id: policy.mustRunAfterId || null,
   };
 }
