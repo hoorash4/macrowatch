@@ -11,7 +11,6 @@ from sources.business_credit_monthly import (
 )
 from sources.court_rehabilitation import fetch_korea_corporate_rehab_rows
 from sources.epiq_ch11_source import fetch_epiq_ch11_rows
-from sources.equifax_archive_source import fetch_equifax_archive_rows
 from signals.economic_chart_pipeline import _insert_missing
 
 
@@ -27,12 +26,8 @@ def collect_recent() -> dict[str, int]:
     db = SupabaseRest()
     counts: dict[str, int] = {}
 
-    # Use the broader first-party Equifax asset discovery and the strict order-independent
-    # level parser for the live collector as well as backfill. Automatic collection remains
-    # missing-only; authoritative historical repair belongs to the backfill path.
-    equifax = fetch_equifax_archive_rows(start, end)
-    for code, rows in equifax.items():
-        counts[code] = _insert_missing(db, rows, start)
+    # PayNet/Equifax collection is intentionally absent here until the direct national
+    # 31-180 SBDI + SBDFI source is connected. Do not reconstruct 31-180 from split buckets.
 
     epiq = fetch_epiq_ch11_rows(start, end, max_pages=4)
     counts["US_COMMERCIAL_CH11"] = _insert_missing(db, epiq, start)
@@ -43,8 +38,6 @@ def collect_recent() -> dict[str, int]:
     kr_default = fetch_korea_default_company_rows(start, end)
     counts["KR_DEFAULT_COMPANIES"] = _insert_missing(db, kr_default, start)
 
-    # Court monthly reports are immutable after publication for our missing-only chart store.
-    # Re-read only the recent tail to catch the newly published month without downloading years of XLSX files.
     court_start = _months_ago(end, 3)
     kr_rehab = fetch_korea_corporate_rehab_rows(court_start, end)
     counts["KR_CORP_REHAB"] = _insert_missing(db, kr_rehab, court_start)
