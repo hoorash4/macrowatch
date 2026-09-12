@@ -58,14 +58,7 @@
   }
 
   function formatChartNumber(value, { maximumFractionDigits = 2, showPlus = false, locale = 'en-US' } = {}) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return '—';
-    const digits = Math.max(0, Math.min(2, Number(maximumFractionDigits) || 0));
-    const factor = 10 ** digits;
-    const rounded = Math.round((number + Math.sign(number) * Number.EPSILON) * factor) / factor;
-    const normalized = Object.is(rounded, -0) ? 0 : rounded;
-    const formatted = normalized.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: digits });
-    return `${showPlus && normalized > 0 ? '+' : ''}${formatted}`;
+    return window.MacroWatchFrontend.formatDisplayNumber(value, { maximumFractionDigits, showPlus, locale });
   }
 
   function formatAxisNumber(value, { showPlus = false, locale = 'en-US', suffix = '' } = {}) {

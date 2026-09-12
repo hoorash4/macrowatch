@@ -5,7 +5,7 @@
 // 로그인 모듈이 만든 클라이언트를 재사용하고, 단독 로드 상황에만 공통 팩토리로 생성합니다.
 const supabaseClient = window.macroWatchSupabase
 || window.MacroWatchFrontend.createSupabaseClient();
-const { escapeHtml } = window.MacroWatchFrontend;
+const { escapeHtml, formatDisplayNumber, readDisplayNumberInput, setDisplayNumberInput } = window.MacroWatchFrontend;
 
 // 추적·검색 화면은 공통 인증 함수 클라이언트를 통해 Edge Function을 호출합니다.
 const DashboardApi = window.MacroWatchFrontend.createFunctionClient(supabaseClient);
@@ -743,7 +743,7 @@ function finishTargetRegistration(currentValueDisplay = '', checkErrorMessage = 
 function getCollectionState(item) {
   return item?.last_error
     ? { label: '수집 불가', className: 'text-red-300' }
-    : { label: item?.last_value ?? '—', className: 'text-amber-400' };
+    : { label: item?.last_value === null || item?.last_value === undefined || item?.last_value === '' ? '—' : formatDisplayNumber(item.last_value), className: 'text-amber-400' };
 }
 
 function formatLastCheckedAt(value) {
@@ -761,7 +761,7 @@ async function checkOneTarget(targetId) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await fetchTargets();
     const value = result.target?.last_value;
-    const valueText = value === null || value === undefined || value === '' ? '' : `현재값: ${value}`;
+    const valueText = value === null || value === undefined || value === '' ? '' : `현재값: ${formatDisplayNumber(value)}`;
     showCenteredNotice('현재값 업데이트 완료', valueText);
   } catch (error) {
     const message = error.message || '현재값을 확인하지 못했습니다.';
@@ -779,6 +779,7 @@ async function checkOneTarget(targetId) {
 }
 function renderTargetItem(item, globalIndex) {
   const collection = getCollectionState(item);
+  const targetValue = item.target_value === null || item.target_value === undefined ? '—' : formatDisplayNumber(item.target_value);
   return `
     <div data-target-container="${globalIndex}" class="py-3">
       <div data-target-row class="flex items-center justify-between gap-3 px-2 rounded-lg hover:bg-slate-800/30 transition">
@@ -795,12 +796,12 @@ function renderTargetItem(item, globalIndex) {
 
             </div>
             <span class="compact-mobile-summary block text-xs text-slate-400 mt-0.5">
-              ${item.target_value !== null && item.target_value !== undefined ? `설정: <span class="text-blue-400 font-mono">${item.target_value}</span> | ` : ''}
+              ${item.target_value !== null && item.target_value !== undefined ? `설정: <span class="text-blue-400 font-mono">${targetValue}</span> | ` : ''}
               현재: <span class="${collection.className} font-mono">${collection.label}</span>
             </span>
             <span class="target-condition-summary block text-xs text-slate-400 mt-0.5 truncate">
               <span class="text-slate-300 font-mono">${getConditionText(item.condition_type)}</span>
-              ${item.target_value !== null && item.target_value !== undefined ? ` | 설정: <span class="text-blue-400 font-mono">${item.target_value}</span>` : ''}
+              ${item.target_value !== null && item.target_value !== undefined ? ` | 설정: <span class="text-blue-400 font-mono">${targetValue}</span>` : ''}
               | 현재: <span class="${collection.className} font-mono">${collection.label}</span>
             </span>
           </div>
@@ -834,7 +835,7 @@ function renderTargetItem(item, globalIndex) {
   </div>
   <div>
   <dt class="text-slate-500">설정값</dt>
-  <dd class="mt-1 font-mono text-blue-400">${item.target_value ?? '—'}</dd>
+  <dd class="mt-1 font-mono text-blue-400">${targetValue}</dd>
   </div>
   <div>
   <dt class="text-slate-500">마지막 확인</dt>
@@ -1389,7 +1390,7 @@ async function handleAddTarget(e) {
           finishTargetRegistration(
             checkedTarget.last_value === null || checkedTarget.last_value === undefined || checkedTarget.last_value === ''
               ? ''
-              : String(checkedTarget.last_value)
+              : formatDisplayNumber(checkedTarget.last_value)
           );
         } catch (checkError) {
           console.error('New target value check error:', checkError);
@@ -1421,7 +1422,7 @@ function openEditModal(id) {
   currentEditId = id;
   document.getElementById('edit-title').value = item.title || '';
   document.getElementById('edit-condition').value = item.condition_type || 'changed';
-  document.getElementById('edit-target-val').value = item.target_value ?? '';
+  setDisplayNumberInput(document.getElementById('edit-target-val'), item.target_value);
   toggleTargetValueInput('edit-condition', 'edit-target-val');
 
   document.getElementById('edit-modal').classList.remove('hidden');
@@ -1441,7 +1442,7 @@ async function saveEditTarget() {
 
   const title = document.getElementById('edit-title').value.trim();
   const conditionType = document.getElementById('edit-condition').value;
-  const targetValStr = document.getElementById('edit-target-val').value.trim();
+  const targetValStr = readDisplayNumberInput(document.getElementById('edit-target-val'));
   const targetVal = conditionType === 'changed' || targetValStr === '' ? null : parseFloat(targetValStr);
   const updatedData = {
     title,

@@ -83,7 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=14', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=15', html)
 
     def test_chart_footer_is_compact_and_date_axis_is_korean(self):
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
@@ -100,6 +100,15 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('return`${p.year}년`', script)
         self.assertIn('return`${p.month}월`', script)
         self.assertIn("if(!monthTickDates.has(timeKey(time)))return''", script)
+
+    def test_visible_values_use_the_shared_two_decimal_formatter(self):
+        script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
+        core = (ROOT / 'assets/js/core/frontend-core.js').read_text(encoding='utf-8')
+        self.assertIn('function formatDisplayNumber', core)
+        self.assertIn('Math.min(2,Math.max(0,Number(m?.decimals)||0))', script)
+        self.assertIn("type:'custom'", script)
+        self.assertIn('formatter:value=>window.MacroWatchFrontend.formatDisplayNumber', script)
+        self.assertNotIn('Number(v).toFixed(m.decimals)', script)
 
     def test_moving_averages_do_not_add_current_value_axis_labels(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')

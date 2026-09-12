@@ -486,6 +486,54 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     })[character]);
   }
 
+  // 브라우저에 표시하는 측정값은 이 함수만 거칩니다. 원자료와 계산값은
+  // 그대로 유지하고, 화면에서만 최대 소수 둘째 자리로 반올림합니다.
+  function formatDisplayNumber(value, {
+    maximumFractionDigits = 2,
+    minimumFractionDigits = 0,
+    showPlus = false,
+    locale = 'en-US',
+    useGrouping = true,
+  } = {}) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '—';
+    const maximum = Math.max(0, Math.min(2, Number(maximumFractionDigits) || 0));
+    const minimum = Math.max(0, Math.min(maximum, Number(minimumFractionDigits) || 0));
+    const factor = 10 ** maximum;
+    const normalized = Math.abs(number) < 0.5 / factor ? 0 : number;
+    const formatted = normalized.toLocaleString(locale, {
+      minimumFractionDigits: minimum,
+      maximumFractionDigits: maximum,
+      useGrouping,
+    });
+    return `${showPlus && normalized > 0 ? '+' : ''}${formatted}`;
+  }
+
+  // 편집창에는 반올림한 값을 보여주되, 사용자가 숫자를 건드리지 않은 채
+  // 다른 항목만 저장하면 기존 원값을 그대로 전송합니다.
+  function setDisplayNumberInput(input, value, options = {}) {
+    if (!input) return;
+    if (value === null || value === undefined || value === '') {
+      input.value = '';
+      delete input.dataset.displayNumberRaw;
+      delete input.dataset.displayNumberFormatted;
+      return;
+    }
+    const raw = String(value);
+    const formatted = formatDisplayNumber(value, { ...options, useGrouping: false });
+    input.value = formatted;
+    input.dataset.displayNumberRaw = raw;
+    input.dataset.displayNumberFormatted = formatted;
+  }
+
+  function readDisplayNumberInput(input) {
+    const current = String(input?.value ?? '').trim();
+    if (current === input?.dataset?.displayNumberFormatted && input.dataset.displayNumberRaw !== undefined) {
+      return input.dataset.displayNumberRaw;
+    }
+    return current;
+  }
+
   function createFunctionClient(supabaseClient) {
     // 인증이 필요한 Edge Function 호출의 토큰·갱신·오류 해석을 통일합니다.
     // 각 화면은 함수 이름과 payload만 제공하고 세션 처리 방식을 따로 만들지 않습니다.
@@ -560,6 +608,9 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     createFunctionClient,
     createSupabaseClient,
     escapeHtml,
+    formatDisplayNumber,
+    readDisplayNumberInput,
+    setDisplayNumberInput,
   });
   window.MacroWatchTheme = Object.freeze({
     normalizeThemePreference,

@@ -20,9 +20,31 @@ function fixture(responses, session = { access_token: 'session-token' }, refresh
       json: async () => { if (response.invalidJson) throw new Error('invalid JSON'); return response.body; } };
   } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/js/core/frontend-core.js'), 'utf8'), context);
-  return { invoke: context.window.MacroWatchFrontend.createFunctionClient(client).invoke,
+  return { frontend: context.window.MacroWatchFrontend,
+    invoke: context.window.MacroWatchFrontend.createFunctionClient(client).invoke,
     requests, refreshes: () => refreshes };
 }
+
+test('displayed numbers are rounded to at most two decimals without changing integers', () => {
+  const { formatDisplayNumber } = fixture([]).frontend;
+  assert.equal(formatDisplayNumber(12.345), '12.35');
+  assert.equal(formatDisplayNumber(12), '12');
+  assert.equal(formatDisplayNumber(12.5), '12.5');
+  assert.equal(formatDisplayNumber(-0.004), '0');
+  assert.equal(formatDisplayNumber(-2.675), '-2.68');
+  assert.equal(formatDisplayNumber(1234.567, { maximumFractionDigits: 8, locale: 'ko-KR' }), '1,234.57');
+  assert.equal(formatDisplayNumber(3.2, { showPlus: true, useGrouping: false }), '+3.2');
+});
+
+test('rounded number inputs preserve the original value until the user edits them', () => {
+  const frontend = fixture([]).frontend;
+  const input = { value: '', dataset: {} };
+  frontend.setDisplayNumberInput(input, 1.23456);
+  assert.equal(input.value, '1.23');
+  assert.equal(frontend.readDisplayNumberInput(input), '1.23456');
+  input.value = '1.24';
+  assert.equal(frontend.readDisplayNumberInput(input), '1.24');
+});
 
 test('authenticated function requests preserve endpoint, payload and bearer token', async () => {
   const f = fixture([{ status: 200, body: { ready: true } }]);

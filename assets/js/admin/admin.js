@@ -1,6 +1,6 @@
 (() => {
   const db = window.MacroWatchFrontend.createSupabaseClient();
-  const { escapeHtml } = window.MacroWatchFrontend;
+  const { escapeHtml, formatDisplayNumber } = window.MacroWatchFrontend;
   const functionClient = window.MacroWatchFrontend.createFunctionClient(db);
   const WORKFLOW_CONTROLS = {
     backup: { button: 'run-backup-button', badge: 'backup-badge', action: 'run_backup', idleLabel: '지금 수동 백업', success: '수동 백업이 완료되었습니다.' },
@@ -335,7 +335,7 @@
       await loadSectorEtfs();
       const historyMessage = result.history_initialization_pending
         ? '가격 이력은 다음 정기 수집에서 자동으로 보완됩니다.'
-        : `최근 가격 ${Number(result.price_rows || 0).toLocaleString('ko-KR')}건도 함께 등록했습니다.`;
+        : `최근 가격 ${formatDisplayNumber(result.price_rows || 0, { maximumFractionDigits: 0, locale: 'ko-KR' })}건도 함께 등록했습니다.`;
       showNotice('섹터 ETF 등록 완료', `${result.item?.etf_name || 'ETF'}을(를) 등록했습니다. ${historyMessage}`);
     } catch (error) { showNotice('섹터 ETF 추가 실패', error.message || '추가하지 못했습니다.', true); }
     finally { submit.disabled = false; }

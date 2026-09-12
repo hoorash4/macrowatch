@@ -7,8 +7,11 @@ const assert = require('node:assert/strict');
 // Exercise the production renderers without authentication or database writes.
 function render(kind, rows) {
   const host = { innerHTML: '', querySelector: () => null };
+  const formatDisplayNumber = (value, options = {}) => Number(value).toLocaleString('en-US', {
+    maximumFractionDigits: Math.min(2, options.maximumFractionDigits ?? 2),
+  });
   const context = {
-    window: { MacroWatchFrontend: { escapeHtml: String, createSupabaseClient: () => null } },
+    window: { MacroWatchFrontend: { escapeHtml: String, formatDisplayNumber, createSupabaseClient: () => null } },
     document: { getElementById: () => host, querySelector: () => null, querySelectorAll: () => [] },
   };
   vm.createContext(context);

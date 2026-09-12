@@ -3,6 +3,7 @@
 
   const PAGE_SIZE = 5;
   const state = { rows: [], page: 0, openMeetingDate: null };
+  const { formatDisplayNumber } = window.MacroWatchFrontend;
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
@@ -22,11 +23,11 @@
     const hasLower = Number.isFinite(lower);
     const hasUpper = Number.isFinite(upper);
     const range = hasLower && hasUpper
-      ? (lower === upper ? `${lower.toFixed(2)}%` : `${lower.toFixed(2)}~${upper.toFixed(2)}%`)
+      ? (lower === upper ? `${formatDisplayNumber(lower)}%` : `${formatDisplayNumber(lower)}~${formatDisplayNumber(upper)}%`)
       : '금리 수준 미확인';
     const action = ({ hike: '인상', cut: '인하', hold: '동결' })[row.action] || '결정 미확인';
     const change = row.action !== 'hold' && Number.isFinite(Number(row.change_bps))
-      ? ` · ${Math.abs(Number(row.change_bps))}bp ${action}`
+      ? ` · ${formatDisplayNumber(Math.abs(Number(row.change_bps)))}bp ${action}`
       : ` · ${action}`;
     return `기준금리 ${range}${change}`;
   }
