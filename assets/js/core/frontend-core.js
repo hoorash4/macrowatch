@@ -362,11 +362,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
       return chart;
     };
     wrapped.__macroWatchThemeAware = true;
-    try {
-      library.createChart = wrapped;
-    } catch (error) {
-      console.warn('LightweightCharts theme adapter could not be installed.', error);
-    }
+    library.createChart = wrapped;
   }
 
   function applyThemePreference(preference, { cache = true, announce = true } = {}) {
@@ -558,8 +554,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     });
   }
 
-  // Publish the shared APIs before optional browser integrations run. A browser-
-  // specific chart adapter failure must never disable authentication or account UI.
+  // Publish shared APIs before modules that consume them are initialized.
   window.MacroWatchFrontend = Object.freeze({
     config: Object.freeze({ supabaseUrl, supabasePublishableKey }),
     createFunctionClient,
