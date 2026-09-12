@@ -110,12 +110,10 @@ class EconomicChartFeatureTests(unittest.TestCase):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         for removed in ('POLICY_EXPECTATION', 'EM_CAPACITY', 'US_SME_RISK', 'KR_SME_RISK', 'US_INFLATION'):
             self.assertNotIn(removed, script)
-        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'CASE_SHILLER_20'):
+        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
             self.assertIn(raw, script)
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
         self.assertIn("fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
-        self.assertIn('SPCS20RSA', script)
-        self.assertIn('S&P 재배포 사전허가', script)
 
     def test_economic_chart_collection_separates_automatic_and_explicit_backfill(self):
         automatic_workflow = (ROOT / '.github/workflows/economic-chart-data.yml').read_text(encoding='utf-8')
