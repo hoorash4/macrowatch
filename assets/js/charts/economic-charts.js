@@ -25,8 +25,7 @@ const SERIES=[
  {code:'WEI',title:'미국 주간 경제 지수',frequency:'W',unit:'%',category:'고빈도 경기',decimals:2},
  {code:'EMRATIO',title:'미국 인구대비 고용률',frequency:'M',unit:'%',category:'고빈도 경기',decimals:1},
  {code:'US_RETAIL_SALES',title:'미국 소매판매 YoY',frequency:'M',unit:'% YoY',category:'고빈도 경기',decimals:2},
- {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'T',unit:'억달러/조업일',category:'고빈도 경기',decimals:2,pending:'관세청 1~10일·1~20일·월말 누계와 조업일수로 독립 구간 일평균을 적재합니다.'},
- {code:'CASE_SHILLER_20',title:'미국 20개 도시 주택가격',frequency:'M',unit:'지수',category:'주택',decimals:2,pending:'FRED에 SPCS20RSA가 있으나 S&P 재배포 사전허가가 필요한 시계열이라 자동 적재는 보류했습니다.'}
+ {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'T',unit:'억달러/조업일',category:'고빈도 경기',decimals:2,pending:'관세청 1~10일·1~20일·월말 누계와 조업일수로 독립 구간 일평균을 적재합니다.'}
 ];
 const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월']};
 let user=null,meta=null,rows=[],chart=null,raw=null,fast=null,slow=null,resizeObserver=null,lineMode=false,lineCounter=0,lines=[],selected=null,alerts=[],changingRange=false,dragState=null,preferences=structuredClone(DEFAULT_PREFERENCES),preferenceSaveChain=Promise.resolve(),tickMode='month',monthTickDates=new Set(),initialRangePending=false,initialRangeFrame=0;
