@@ -39,7 +39,7 @@ def _actual(value: str) -> float | None:
         return None
 
 
-def _fetch_month(session: requests.Session, start: date, end: date) -> list[dict]:
+def _fetch_window(session: requests.Session, start: date, end: date) -> list[dict]:
     payload = {
         "country[]": "5",
         "dateFrom": start.isoformat(),
@@ -85,9 +85,16 @@ def _fetch_month(session: requests.Session, start: date, end: date) -> list[dict
 
 def main() -> None:
     year = int(os.environ["REDBOOK_YEAR"])
+    quarter = int(os.environ["REDBOOK_QUARTER"])
+    if quarter not in {1, 2, 3, 4}:
+        raise RuntimeError(f"Bad quarter: {quarter}")
     today = date.today()
-    if year > today.year:
-        raise RuntimeError(f"Future year requested: {year}")
+    first_month = 1 + (quarter - 1) * 3
+    quarter_start = date(year, first_month, 1)
+    if quarter_start > today:
+        print(json.dumps({"stage": "redbook_backfill_quarter", "year": year, "quarter": quarter, "rows": 0, "skipped": "future"}))
+        return
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
@@ -101,36 +108,40 @@ def main() -> None:
 
     by_date: dict[str, dict] = {}
     errors: list[str] = []
-    monthly_counts: dict[int, int] = {}
-    last_month = today.month if year == today.year else 12
-    for month in range(1, last_month + 1):
-        start = date(year, month, 1)
+    window_counts: dict[str, int] = {}
+    for month in range(first_month, first_month + 3):
+        if month > 12:
+            break
         last_day = calendar.monthrange(year, month)[1]
-        end = min(date(year, month, last_day), today)
-        try:
-            month_rows = _fetch_month(session, start, end)
-            monthly_counts[month] = len(month_rows)
-            for row in month_rows:
-                by_date[row["observation_date"]] = row
-        except Exception as error:
-            errors.append(f"{year}-{month:02d}: {error.__class__.__name__}: {error}")
-        time.sleep(0.55)
+        for start_day, end_day in ((1, 15), (16, last_day)):
+            start = date(year, month, start_day)
+            if start > today:
+                continue
+            end = min(date(year, month, end_day), today)
+            key = f"{month:02d}-{start_day:02d}:{end.day:02d}"
+            try:
+                window_rows = _fetch_window(session, start, end)
+                window_counts[key] = len(window_rows)
+                for row in window_rows:
+                    by_date[row["observation_date"]] = row
+            except Exception as error:
+                errors.append(f"{start}..{end}: {error.__class__.__name__}: {error}")
+            time.sleep(0.7)
 
     rows = [by_date[key] for key in sorted(by_date)]
     if rows:
         SupabaseRest().upsert("economic_chart_points", rows, conflict="series_code,observation_date")
     print(json.dumps({
-        "stage": "redbook_backfill_year",
+        "stage": "redbook_backfill_quarter",
         "year": year,
+        "quarter": quarter,
         "rows": len(rows),
         "min_date": rows[0]["observation_date"] if rows else None,
         "max_date": rows[-1]["observation_date"] if rows else None,
-        "monthly_counts": monthly_counts,
+        "window_counts": window_counts,
         "error_count": len(errors),
-        "errors": errors[:12],
+        "errors": errors[:8],
     }, ensure_ascii=False, sort_keys=True))
-    if year >= 2015 and len(rows) < 35:
-        raise RuntimeError(f"Too few Redbook observations for {year}: {len(rows)}")
 
 
 if __name__ == "__main__":
