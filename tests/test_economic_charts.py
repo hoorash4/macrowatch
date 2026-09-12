@@ -83,7 +83,20 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=15', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=16', html)
+
+    def test_crosshair_keeps_the_existing_marker_and_shows_its_raw_value_above_the_line(self):
+        html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
+        script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
+        css = (ROOT / 'assets/css/economic-crosshair.css').read_text(encoding='utf-8')
+        self.assertIn('id="economic-crosshair-value"', html)
+        self.assertIn('function showCrosshairValue(param)', script)
+        self.assertIn('param?.seriesData?.get(raw)', script)
+        self.assertIn('chart.subscribeCrosshairMove(showCrosshairValue)', script)
+        self.assertIn('host.onmouseleave=hideCrosshairValue', script)
+        self.assertIn('function hideCrosshairValue()', script)
+        self.assertIn('.economic-crosshair-value{position:absolute;top:6px', css)
+        self.assertIn('background:#111827;color:#fff', css)
 
     def test_chart_footer_is_compact_and_date_axis_is_korean(self):
         css = (ROOT / 'assets/css/economic-charts.css').read_text(encoding='utf-8')
