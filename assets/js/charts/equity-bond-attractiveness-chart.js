@@ -50,7 +50,7 @@
     const grid = ticks.map(value => `<line x1="${LEFT}" x2="${width - RIGHT}" y1="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" y2="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" stroke="${value === 50 ? '#94a3b8' : '#e2e8f0'}" ${value === 50 ? 'stroke-dasharray="5 4"' : ''}/>`).join('');
     const paths = ['KR', 'US'].map(country => `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="${lineWidths.primary}"/>`).join('');
     const guides = timelineGuides(dates, first, last, width);
-    const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: AXIS, leftAxisMarkup: axis, ariaLabel: `한미 주식투자 매력 흐름`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" fill="#334155" font-size="11"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 15}" class="policy-expectation-cursor-detail"></text></svg>` });
+    const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: AXIS, leftAxisMarkup: axis, ariaLabel: `한미 주식투자 매력 흐름`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text></svg>` });
     utils.setChartLegend(legend, [
       { label: LABELS.KR, style: { stroke: COLORS.KR, width: lineWidths.primary } },
       { label: LABELS.US, style: { stroke: COLORS.US, width: lineWidths.primary } },
@@ -64,10 +64,11 @@
       const x = scale(Date.parse(nearestDate), first, last, LEFT, width - RIGHT);
       const rows = ['KR', 'US'].map(country => state.rows.find(row => row.country === country && row.observation_date === nearestDate)).filter(Boolean);
       cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); cursor.classList.add('is-visible');
-      value.setAttribute('x', x); value.textContent = rows.map(row => `${LABELS[row.country]} ${utils.formatChartNumber(row.score, { maximumFractionDigits: 1 })}`).join(' · '); value.setAttribute('visibility', 'visible');
-      dateLabel.setAttribute('x', x); dateLabel.textContent = nearestDate; dateLabel.classList.add('is-visible');
+      value.textContent = rows.map(row => `${LABELS[row.country]} ${utils.formatChartNumber(row.score, { maximumFractionDigits: 1 })}`).join(' · '); value.setAttribute('visibility', 'visible');
+      dateLabel.textContent = nearestDate; dateLabel.setAttribute('visibility', 'visible');
+      utils.positionCursorText(value, x, frame); utils.positionCursorText(dateLabel, x, frame);
     });
-    frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); value.setAttribute('visibility', 'hidden'); dateLabel.classList.remove('is-visible'); });
+    frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); value.setAttribute('visibility', 'hidden'); dateLabel.setAttribute('visibility', 'hidden'); });
   }
 
   async function load({ supabaseClient }) {
