@@ -33,6 +33,17 @@ VERIFIED_RECENT = {
     date(2026, 5, 1): (1.71, 0.73, 3.27, "Coleman-Equifax-Aug-2026-prior-month"),
     date(2026, 4, 1): (1.69, 0.73, 3.31, "Coleman-Equifax-Jun-2026"),
     date(2024, 10, 1): (1.82, 0.70, 3.40, "Equifax-Dec-2024"),
+    date(2024, 9, 1): (1.82, 0.70, 3.46, "Equifax-Nov-2024"),
+    date(2024, 8, 1): (1.81, 0.68, 3.46, "Equifax-Oct-2024"),
+    date(2024, 7, 1): (1.79, 0.67, 3.43, "Equifax-Sep-2024"),
+    date(2024, 6, 1): (1.79, 0.65, 3.34, "Equifax-Aug-2024"),
+    date(2024, 5, 1): (1.71, 0.64, 3.28, "Equifax-Jul-2024"),
+    date(2024, 4, 1): (1.69, 0.63, 3.26, "Equifax-Jun-2024"),
+    date(2024, 3, 1): (1.70, 0.64, 3.23, "Equifax-May-2024"),
+    date(2024, 2, 1): (1.69, 0.63, 3.18, "Equifax-Apr-2024"),
+    date(2024, 1, 1): (1.74, 0.62, 3.11, "Equifax-Mar-2024"),
+    date(2023, 12, 1): (1.72, 0.59, 2.99, "Equifax-Feb-2024"),
+    date(2023, 11, 1): (1.71, 0.57, 2.91, "Equifax-Jan-2024"),
 }
 
 
@@ -85,6 +96,7 @@ def _report_urls(year: int, month: int) -> list[str]:
         f"commercial-lending-trends-{abbr_low}-{year}.pdf",
         f"equifax-commercial-lending-trends-{low}-{year}.pdf",
         f"small-business-indices-deck-{low}-{year}.pdf",
+        f"market-pulse-webinar-deck-{abbr_low}-{year}.pdf",
         f"equifax-small-business-indices-{low}-{year}.pdf",
         f"equifax-small-business-insights-{low}-{year}.pdf",
     ]
