@@ -2,7 +2,10 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from backend.inflation_pipeline import MODEL_VERSION, NowcastPoint, build_rows, fetch_cleveland_nowcasts, save_automatic
+from backend.inflation_pipeline import (
+    MODEL_VERSION, NowcastPoint, build_rows, fetch_cleveland_nowcasts,
+    save_automatic, store_cleveland_nowcasts,
+)
 
 
 class FakeSupabase:
@@ -51,6 +54,17 @@ class InflationPipelineTests(unittest.TestCase):
                 {"month": "2026-08-01", "status": "provisional", "model_version": MODEL_VERSION}]
         save_automatic(client, rows)
         self.assertEqual([row["month"] for row in client.upserts[0][1]], ["2026-07-01", "2026-08-01"])
+
+    def test_automatic_nowcast_storage_keeps_only_five_recent_target_months(self):
+        client = FakeSupabase()
+        months = [date(2026, month, 1) for month in range(1, 7)]
+        nowcasts = {
+            kind: {month: [NowcastPoint(month, 3.0, 2.5)] for month in months}
+            for kind in ("headline", "core")
+        }
+        self.assertEqual(store_cleveland_nowcasts(client, nowcasts), 10)
+        stored_months = {row["target_month"] for row in client.upserts[0][1]}
+        self.assertEqual(stored_months, {month.isoformat() for month in months[-5:]})
 
 
 if __name__ == "__main__": unittest.main()

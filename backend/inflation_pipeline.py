@@ -10,9 +10,9 @@ from datetime import date, datetime, timezone
 import requests
 
 try:
-    from .common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, request_with_retry
+    from .common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago, request_with_retry
 except ImportError:
-    from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, request_with_retry
+    from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago, request_with_retry
 
 
 TIMEOUT_SECONDS = 60
@@ -88,24 +88,29 @@ def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
 
 def store_cleveland_nowcasts(db: SupabaseRest,
                              nowcasts: dict[str, dict[date, list[NowcastPoint]]]) -> int:
+    recent_months = set(sorted({month for months in nowcasts.values() for month in months})[
+        -AUTOMATIC_MONTHLY_PERIODS:
+    ])
     rows = [{"kind": kind, "target_month": month.isoformat(),
              "observed_on": point.observed_on.isoformat(),
              "cpi_yoy_pct": round(point.cpi_yoy_pct, 8),
              "pce_yoy_pct": round(point.pce_yoy_pct, 8),
              "source": "CLEVELAND_FED:inflation_nowcasting"}
-            for kind, months in nowcasts.items() for month, points in months.items() for point in points]
+            for kind, months in nowcasts.items() for month, points in months.items()
+            if month in recent_months for point in points]
     if rows:
         db.upsert("inflation_nowcast_vintages", rows,
                   conflict="kind,target_month,observed_on")
     return len(rows)
 
 
-def load_cleveland_nowcasts(db: SupabaseRest) -> dict[str, dict[date, list[NowcastPoint]]]:
+def load_cleveland_nowcasts(db: SupabaseRest, start_month: date) -> dict[str, dict[date, list[NowcastPoint]]]:
     output: dict[str, dict[date, list[NowcastPoint]]] = {"headline": {}, "core": {}}
     offset = 0
     while True:
         page = db.request("GET", "inflation_nowcast_vintages", params={
             "select": "kind,target_month,observed_on,cpi_yoy_pct,pce_yoy_pct",
+            "target_month": f"gte.{start_month.isoformat()}",
             "order": "target_month.asc,observed_on.asc", "offset": str(offset), "limit": "1000",
         }) or []
         for row in page:
@@ -223,7 +228,8 @@ def run_automatic() -> None:
     db = SupabaseRest(timeout=TIMEOUT_SECONDS)
     official = load_canonical_series(db, tuple(OFFICIAL_INFLATION_SERIES.values()))
     policy = load_canonical_series(db, ("US_POLICY_RATE_MID",))["US_POLICY_RATE_MID"]
-    rows = build_rows(official, load_cleveland_nowcasts(db), policy)
+    nowcast_start = month_start_months_ago(date.today(), AUTOMATIC_MONTHLY_PERIODS - 1)
+    rows = build_rows(official, load_cleveland_nowcasts(db, nowcast_start), policy)
     if not rows:
         raise RuntimeError("Inflation calculation produced no rows")
     stored = save_automatic(db, rows)
