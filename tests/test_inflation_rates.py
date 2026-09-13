@@ -19,6 +19,7 @@ from sources.inflation_rates import (
     fetch_bls_rates,
     fetch_ecos_rates,
     fetch_kosis_rates,
+    _ecos_month_windows,
 )
 
 
@@ -82,6 +83,13 @@ class InflationRateSourceTests(unittest.TestCase):
         self.assertEqual([item["itmId"] for item in params], ["T03", "T03"])
         self.assertEqual([item["objL1"] for item in params], ["0", "4"])
         self.assertTrue(all("objL2" not in item for item in params))
+
+    def test_ecos_long_history_is_split_without_splitting_automatic_windows(self):
+        self.assertEqual(
+            _ecos_month_windows(date(2005, 9, 1), date(2026, 9, 1)),
+            [(date(2005, 9, 1), date(2015, 8, 1)), (date(2015, 9, 1), date(2025, 8, 1)), (date(2025, 9, 1), date(2026, 9, 1))],
+        )
+        self.assertEqual(_ecos_month_windows(date(2026, 5, 1), date(2026, 9, 1)), [(date(2026, 5, 1), date(2026, 9, 1))])
 
     @patch("sources.inflation_rates.request_with_retry")
     def test_ecos_calculates_yoy_without_returning_raw_levels(self, request):

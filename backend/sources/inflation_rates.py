@@ -205,27 +205,39 @@ def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dic
                 output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
     return output
 
+def _ecos_month_windows(start: date, end: date, months: int = 120) -> list[tuple[date, date]]:
+    """Bound ECOS history reads while retaining one small automatic request."""
+    windows: list[tuple[date, date]] = []
+    current = start.replace(day=1)
+    while current <= end:
+        next_start = _add_months(current, months)
+        windows.append((current, min(end, _add_months(next_start, -1))))
+        current = next_start
+    return windows
+
+
 def fetch_ecos_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
     key = api_key or require_env("ECOS_API_KEY")
     calculation_start = _add_months(start.replace(day=1), -12)
     levels = {code: {} for code in ECOS_SERIES}
     for code, (table_id, item_id, item_code2) in ECOS_SERIES.items():
-        url = f"{ECOS_URL}/{key}/json/kr/1/10000/{table_id}/M/{calculation_start:%Y%m}/{end:%Y%m}/{item_id}"
-        if item_code2:
-            url += f"/{item_code2}"
-        response = request_with_retry(lambda: requests.get(url, timeout=TIMEOUT_SECONDS))
-        response.raise_for_status()
-        payload = response.json()
-        if payload.get("RESULT"):
-            raise RuntimeError(f"ECOS {table_id} request failed: {payload['RESULT'].get('MESSAGE')}")
-        for item in ((payload.get("StatisticSearch") or {}).get("row") or []):
-            period = str(item.get("TIME") or "")
-            value = _number(item.get("DATA_VALUE"))
-            if not re.fullmatch(r"\d{6}", period) or value is None:
-                continue
-            observed = date(int(period[:4]), int(period[4:]), 1)
-            if calculation_start <= observed <= end:
-                levels[code][observed] = value
+        for window_start, window_end in _ecos_month_windows(calculation_start, end):
+            url = f"{ECOS_URL}/{key}/json/kr/1/10000/{table_id}/M/{window_start:%Y%m}/{window_end:%Y%m}/{item_id}"
+            if item_code2:
+                url += f"/{item_code2}"
+            response = request_with_retry(lambda: requests.get(url, timeout=TIMEOUT_SECONDS))
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("RESULT"):
+                raise RuntimeError(f"ECOS {table_id} request failed: {payload['RESULT'].get('MESSAGE')}")
+            for item in ((payload.get("StatisticSearch") or {}).get("row") or []):
+                period = str(item.get("TIME") or "")
+                value = _number(item.get("DATA_VALUE"))
+                if not re.fullmatch(r"\d{6}", period) or value is None:
+                    continue
+                observed = date(int(period[:4]), int(period[4:]), 1)
+                if calculation_start <= observed <= end:
+                    levels[code][observed] = value
     return {
         code: _yoy_rows(
             code,
