@@ -30,6 +30,7 @@ FRED_SERIES = {
     "TGA": ("WTREGEN", "W"),
     "WEI": ("WEI", "W"),
     "EMRATIO": ("EMRATIO", "M"),
+    "DRALACBS": ("DRALACBS", "Q"),
 }
 ECOS_SERIES = {
     "KR3Y": ("817Y002", "010200000", "D"),
@@ -73,6 +74,30 @@ def _fred_rows(series_code: str, source_id: str, frequency: str, start: date, en
             "source": f"FRED:{source_id}",
         })
     return rows
+
+
+def _fred_recent_rows(series_code: str, source_id: str, frequency: str, count: int = 5) -> list[dict[str, Any]]:
+    """Return the latest observations without using their (possibly stale) reference dates."""
+    observations = fetch_fred_observations(
+        source_id,
+        require_env("FRED_API_KEY"),
+        sort_order="desc",
+        limit=count,
+    )
+    rows: list[dict[str, Any]] = []
+    for item in observations:
+        value = _numeric(item.get("value"))
+        observed = str(item.get("date") or "")[:10]
+        if value is None or len(observed) != 10:
+            continue
+        rows.append({
+            "series_code": series_code,
+            "observation_date": observed,
+            "value": value,
+            "frequency": frequency,
+            "source": f"FRED:{source_id}",
+        })
+    return sorted(rows, key=lambda row: str(row["observation_date"]))[-count:]
 
 
 def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str, start: date, end: date) -> list[dict[str, Any]]:

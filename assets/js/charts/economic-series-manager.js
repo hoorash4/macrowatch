@@ -32,6 +32,7 @@ const SERIES_CATALOG = [
   {code:'KR_CPI',title:'한국 CPI',frequency:'월별',category:'물가'},
   {code:'KR_PPI',title:'한국 PPI',frequency:'월별',category:'물가'},
   {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'월별',category:'기업신용'},
+  {code:'DRALACBS',title:'미국 은행 전체대출 연체율',frequency:'분기별',category:'기업신용'},
   {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'월별',category:'기업신용'},
   {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'월별',category:'기업신용'},
   {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'월별',category:'기업신용'},

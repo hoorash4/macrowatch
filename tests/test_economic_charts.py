@@ -83,7 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=19', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=20', html)
 
     def test_crosshair_keeps_the_existing_marker_and_shows_its_raw_value_above_the_line(self):
         html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
@@ -138,6 +138,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
             self.assertNotIn(removed, script)
         for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
             self.assertIn(raw, script)
+        self.assertIn("code:'DRALACBS'", script)
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
         self.assertIn("fallback:['us_treasury_10y_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
 
@@ -215,6 +216,10 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('010200000', pipeline)
         self.assertIn('010210000', pipeline)
         self.assertIn('signals.policy_rate_automatic', automatic)
+        self.assertIn('"DRALACBS": ("DRALACBS", "Q")', pipeline)
+        self.assertIn('_fred_recent_rows(code, source_id, frequency, AUTOMATIC_DAILY_VALUES)', automatic)
+        quarterly = (ROOT / 'supabase/migrations/20260913200000_add_quarterly_economic_chart_frequency.sql').read_text(encoding='utf-8')
+        self.assertIn("'Q'", quarterly)
         self.assertIn('US10Y2Y', pipeline)
         self.assertIn('KR10Y3Y', pipeline)
         self.assertIn('from pykrx import stock', krx_source)

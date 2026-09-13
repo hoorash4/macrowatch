@@ -35,17 +35,18 @@ const SERIES=[
  {code:'KR_CPI',compareCode:'KR_CORE_CPI',title:'한국 CPI',compareTitle:'Core CPI (식료품·에너지 제외)',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
  {code:'KR_PPI',compareCode:'KR_IMPORT_PRICE',title:'한국 PPI',compareTitle:'수입물가',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
  {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'M',unit:'%',category:'기업신용',decimals:2},
+ {code:'DRALACBS',title:'미국 은행 전체대출 연체율',frequency:'Q',unit:'%',category:'기업신용',decimals:2},
  {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'M',unit:'%',category:'기업신용',decimals:2},
  {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'M',unit:'건',category:'기업신용',decimals:0},
  {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'M',unit:'%',category:'기업신용',decimals:2},
  {code:'KR_DEFAULT_COMPANIES',title:'한국 부도업체수',frequency:'M',unit:'개',category:'기업신용',decimals:0},
  {code:'KR_CORP_REHAB',title:'한국 법인회생 신청건수',frequency:'M',unit:'건',category:'기업신용',decimals:0}
 ];
-const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월'],E:[1,1,'','']};
+const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월'],Q:[4,8,'4분기','8분기'],E:[1,1,'','']};
 let user=null,isAdmin=false,categoryOrder=[...DEFAULT_CATEGORY_ORDER],categoryDrag=null,meta=null,rows=[],chart=null,raw=null,compare=null,fast=null,slow=null,compareFast=null,compareSlow=null,resizeObserver=null,lineMode=false,lineCounter=0,lines=[],selected=null,alerts=[],changingRange=false,dragState=null,preferences=structuredClone(DEFAULT_PREFERENCES),preferenceSaveChain=Promise.resolve(),tickMode='month',monthTickDates=new Set(),initialRangePending=false,initialRangeFrame=0,bellPositionFrame=0;
 const maVisibility=new Map();
 const $=id=>document.getElementById(id);
-const freq=f=>({D:'일별',W:'주별',T:'10일 구간',M:'월별',E:'결정일'})[f]||f;
+const freq=f=>({D:'일별',W:'주별',T:'10일 구간',M:'월별',Q:'분기별',E:'결정일'})[f]||f;
 const displayDecimals=m=>Math.min(2,Math.max(0,Number(m?.decimals)||0));
 const fmt=(v,m=meta)=>!m||!Number.isFinite(Number(v))?'—':`${window.MacroWatchFrontend.formatDisplayNumber(v,{maximumFractionDigits:displayDecimals(m)})}${m.unit?` ${m.unit}`:''}`;
 function ma(data,n,key='value'){const out=[],q=[];let sum=0;for(const row of data){const value=Number(row[key]);if(!Number.isFinite(value))continue;q.push(value);sum+=value;if(q.length>n)sum-=q.shift();if(q.length===n)out.push({time:row.time,value:sum/n});}return out;}

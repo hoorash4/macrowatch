@@ -24,6 +24,7 @@ from signals.economic_chart_pipeline import (
     _derive_spread,
     _ecos_rows,
     _fred_rows,
+    _fred_recent_rows,
     _insert_missing,
     check_collected_series_alerts,
 )
@@ -110,6 +111,14 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
 
     for code, (source_id, frequency) in FRED_SERIES.items():
         if code in LIVE_NON_FRED_SERIES:
+            continue
+        if frequency == "Q":
+            run(code, lambda code=code, source_id=source_id, frequency=frequency: (
+                lambda rows: _insert_missing(
+                    db, rows,
+                    date.fromisoformat(str(rows[0]["observation_date"])) if rows else today,
+                )
+            )(_fred_recent_rows(code, source_id, frequency, AUTOMATIC_DAILY_VALUES)))
             continue
         series_start = starts.get(frequency, daily_start)
         run(code, lambda code=code, source_id=source_id, frequency=frequency, series_start=series_start: _insert_missing(
