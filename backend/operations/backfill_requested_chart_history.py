@@ -4,6 +4,7 @@ This entrypoint is removed after the verified run. Automatic collectors never im
 """
 from __future__ import annotations
 
+import math
 import time
 from datetime import date
 from typing import Callable
@@ -11,7 +12,9 @@ from typing import Callable
 from common import SupabaseRest
 from signals.canonical_series import store as store_canonical
 from signals.economic_chart_pipeline import _fred_rows
-from sources.krx_index_fundamentals import fetch_krx_kospi_fundamental_rows
+from sources.krx_index_fundamentals import SERIES as KRX_SERIES
+from sources.krx_index_fundamentals import SOURCE as KRX_SOURCE
+from sources.krx_index_fundamentals import _call_frame, _index_date
 
 
 NFCI_START = date(1990, 1, 1)
@@ -71,7 +74,7 @@ def replace_history(database: SupabaseRest, rows: list[dict], *, owner: str,
     )
 
 
-def retry_krx(fetch: Callable[[], dict[str, list[dict]]], label: str) -> dict[str, list[dict]]:
+def retry_krx(fetch: Callable[[], object], label: str) -> object:
     last_error: Exception | None = None
     for attempt in range(1, 4):
         try:
@@ -84,16 +87,45 @@ def retry_krx(fetch: Callable[[], dict[str, list[dict]]], label: str) -> dict[st
     raise RuntimeError(f"KRX history fetch failed for {label}: {last_error}") from last_error
 
 
+def parse_krx_history_frame(frame: object) -> dict[str, list[dict]]:
+    """Treat KRX's historical '-' cells as missing observations, never as zero."""
+    if frame is None or bool(getattr(frame, "empty", True)):
+        raise RuntimeError("KRX historical response is empty")
+    columns = {str(column) for column in getattr(frame, "columns", [])}
+    expected = {field for field, _frequency in KRX_SERIES.values()}
+    if not expected.issubset(columns):
+        raise RuntimeError(f"KRX historical columns are missing: {sorted(expected - columns)}")
+    result = {code: [] for code in KRX_SERIES}
+    for index, row in frame.iterrows():
+        observed = _index_date(index)
+        for code, (field, frequency) in KRX_SERIES.items():
+            text = str(row[field]).strip().replace(",", "")
+            try:
+                value = float(text)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(value) or value <= 0:
+                continue
+            result[code].append({
+                "series_code": code,
+                "observation_date": observed.isoformat(),
+                "value": value,
+                "frequency": frequency,
+                "source": KRX_SOURCE,
+            })
+    return result
+
+
 def fetch_kospi_history(start: date, end: date) -> dict[str, list[dict]]:
     combined = {"KOSPI_PER": [], "KOSPI_PBR": []}
     for year in range(start.year, end.year + 1):
         chunk_start = max(start, date(year, 1, 1))
         chunk_end = min(end, date(year, 12, 31))
-        chunk = retry_krx(
-            lambda chunk_start=chunk_start, chunk_end=chunk_end:
-                fetch_krx_kospi_fundamental_rows(chunk_start, chunk_end),
+        frame = retry_krx(
+            lambda chunk_start=chunk_start, chunk_end=chunk_end: _call_frame(chunk_start, chunk_end),
             str(year),
         )
+        chunk = parse_krx_history_frame(frame)
         for code in combined:
             combined[code].extend(chunk[code])
         print(f"krx_year={year} rows={len(chunk['KOSPI_PER'])}")
