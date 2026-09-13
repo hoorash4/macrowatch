@@ -56,7 +56,20 @@ function systemPrompt(extremeRules: ExtremeNewsRule[]) {
 
   const criteria = criteriaText(extremeRules);
   const withoutLegacyCandidates = prompt.replace(/\{\{news_candidates\}\}/gi, "").trim();
-  const eventKeyRule = `\n\n## [결정적 뉴스 사건 키]\n결정적 뉴스(extreme_signal=decisive)에는 같은 사건을 여러 기사에서 하나로 묶기 위한 extreme_event_key를 반드시 작성한다. 기사 제목을 복사하지 말고, 핵심 주체·사건·현재 상태를 짧고 일관된 한국어 명사구로 정리한다. 입력의 existing_decisive_event_keys 중 같은 실제 사건이 있으면 그 키를 정확히 재사용한다. 단순히 같은 주제·업종·위험 유형이라는 이유만으로 다른 사건을 같은 키로 묶지 않는다. 결정적 뉴스가 아니면 extreme_event_key는 null이다.`;
+  const eventKeyRule = `
+
+## [결정적 뉴스 사건 키]
+결정적 뉴스(extreme_signal=decisive)에는 같은 실제 사건을 여러 기사에서 하나로 묶기 위한 extreme_event_key를 반드시 작성한다. extreme_event_key는 기사의 영향이나 해석이 아니라 실제 사건 자체를 식별하는 중복 집계용 키다.
+
+규칙:
+1. 사건 자체만 표현한다. 기사 제목을 복사하지 말고, "핵심 주체 + 핵심 행위/사건 + 필요한 최소 상태" 형태의 짧고 일관된 한국어 명사구로 작성한다.
+2. 유가 급등, 시장 불안, 위험회피, 인플레이션 압력, 금리 인상 우려 등 사건의 원인·파생 결과·시장 반응·해석은 event_key에 넣지 않는다. 이런 내용은 extreme_keywords에 기사별로 반영할 수 있다.
+3. 입력의 existing_decisive_event_keys 중 동일한 실제 사건 또는 동일 사건의 후속 보도를 나타내는 키가 있으면, 현재 기사 표현이 조금 달라도 반드시 그 기존 키를 정확히 재사용한다. 이 경우 새 키를 만들지 않는다.
+4. 같은 사건에 대한 후속 기사, 재인용, 분석, 영향 보도, 상태 지속 보도는 하나의 사건으로 묶는다.
+5. 단, 기존 사건과 별개로 새로운 행위·결정·공격·봉쇄·정책 발표 등 독립적인 사건이 실제로 새로 발생한 경우에만 새 키를 만든다.
+6. 단순히 같은 주제·업종·위험 유형이라는 이유만으로 서로 다른 실제 사건을 같은 키로 묶지 않는다.
+7. 동일한 event_key를 사용하더라도 extreme_keywords는 각 기사가 강조하는 시장 영향 경로에 따라 달라도 된다.
+8. 결정적 뉴스가 아니면 extreme_event_key는 null이다.`;
   if (withoutLegacyCandidates.includes("{{EXTREME_SIGNAL_CRITERIA}}")) {
     return withoutLegacyCandidates.replace(/\{\{EXTREME_SIGNAL_CRITERIA\}\}/g, criteria) + eventKeyRule;
   }
