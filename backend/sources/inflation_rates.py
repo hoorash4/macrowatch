@@ -174,40 +174,53 @@ def _normalize_title(value: object) -> str:
     return re.sub(r"[\s，,]", "", str(value or ""))
 
 
+def _kosis_month_windows(start: date, end: date, months: int = 12) -> list[tuple[date, date]]:
+    """Keep KOSIS parameter requests bounded; its long-range endpoint times out."""
+    windows: list[tuple[date, date]] = []
+    current = start.replace(day=1)
+    while current <= end:
+        next_start = _add_months(current, months)
+        window_end = min(end, _add_months(next_start, -1))
+        windows.append((current, window_end))
+        current = next_start
+    return windows
+
+
 def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
     key = api_key or require_env("KOSIS_API_KEY")
     output = {code: [] for code in KOSIS_SERIES}
-    response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
-        "method": "getList", "apiKey": key, "orgId": "101", "tblId": KOSIS_TABLE_ID,
-        "objL1": "ALL", "objL2": "ALL", "itmId": "ALL", "format": "json", "jsonVD": "Y",
-        "prdSe": "M", "startPrdDe": f"{start:%Y%m}", "endPrdDe": f"{end:%Y%m}",
-    }, timeout=TIMEOUT_SECONDS))
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, list):
-        raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} request failed: {payload}")
     seen = {code: set() for code in KOSIS_SERIES}
-    for item in payload:
-        period = str(item.get("PRD_DE") or "")
-        value = _number(item.get("DT"))
-        labels = _normalize_title(" ".join(
-            str(item.get(field) or "")
-            for field in ("ITM_NM", "C1_NM", "C2_NM", "C3_NM", "UNIT_NM")
-        ))
-        if not re.fullmatch(r"\d{6}", period) or value is None:
-            continue
-        if "전년동월비" not in labels:
-            continue
-        matching = [code for code, label in KOSIS_SERIES.items() if _normalize_title(label) in labels]
-        if len(matching) != 1:
-            continue
-        code = matching[0]
-        if period in seen[code]:
-            raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} returned duplicate YoY rows for {code} {period}")
-        seen[code].add(period)
-        observed = date(int(period[:4]), int(period[4:]), 1)
-        if start <= observed <= end:
-            output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
+    for window_start, window_end in _kosis_month_windows(start, end):
+        response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
+            "method": "getList", "apiKey": key, "orgId": "101", "tblId": KOSIS_TABLE_ID,
+            "objL1": "ALL", "objL2": "ALL", "itmId": "ALL", "format": "json", "jsonVD": "Y",
+            "prdSe": "M", "startPrdDe": f"{window_start:%Y%m}", "endPrdDe": f"{window_end:%Y%m}",
+        }, timeout=TIMEOUT_SECONDS))
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} request failed: {payload}")
+        for item in payload:
+            period = str(item.get("PRD_DE") or "")
+            value = _number(item.get("DT"))
+            labels = _normalize_title(" ".join(
+                str(item.get(field) or "")
+                for field in ("ITM_NM", "C1_NM", "C2_NM", "C3_NM", "UNIT_NM")
+            ))
+            if not re.fullmatch(r"\d{6}", period) or value is None:
+                continue
+            if "전년동월비" not in labels:
+                continue
+            matching = [code for code, label in KOSIS_SERIES.items() if _normalize_title(label) in labels]
+            if len(matching) != 1:
+                continue
+            code = matching[0]
+            if period in seen[code]:
+                raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} returned duplicate YoY rows for {code} {period}")
+            seen[code].add(period)
+            observed = date(int(period[:4]), int(period[4:]), 1)
+            if start <= observed <= end:
+                output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
     return output
 
 

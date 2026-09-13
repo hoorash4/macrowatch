@@ -19,6 +19,7 @@ from sources.inflation_rates import (
     fetch_bls_rates,
     fetch_ecos_rates,
     fetch_kosis_rates,
+    _kosis_month_windows,
 )
 
 
@@ -78,6 +79,16 @@ class InflationRateSourceTests(unittest.TestCase):
         self.assertEqual(result["KR_CPI"][0]["source"], "KOSIS:101/DT_1J22042:YoY")
         self.assertEqual(result["KR_CPI"][0]["value"], 3.7)
         self.assertEqual(result["KR_CORE_CPI"][0]["value"], 2.9)
+
+    def test_kosis_long_history_is_split_into_small_monthly_windows(self):
+        self.assertEqual(
+            _kosis_month_windows(date(2009, 1, 1), date(2011, 2, 1)),
+            [
+                (date(2009, 1, 1), date(2009, 12, 1)),
+                (date(2010, 1, 1), date(2010, 12, 1)),
+                (date(2011, 1, 1), date(2011, 2, 1)),
+            ],
+        )
 
     @patch("sources.inflation_rates.request_with_retry")
     def test_ecos_calculates_yoy_without_returning_raw_levels(self, request):
