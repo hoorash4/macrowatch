@@ -72,7 +72,7 @@ CANONICAL_SERIES = {
     "US": {
         "sofr": ("US_SOFR", "D", "FRED:SOFR"), "iorb": ("US_IORB", "D", "FRED:IORB"),
         "ioer": ("US_IOER", "D", "FRED:IOER"), "rrp": ("RRP", "D", "FRED:RRPONTSYD"),
-        "real_yield": ("US10Y_REAL", "D", "USTREASURY:10Y_REAL"),
+        "real_yield": ("US10Y_REAL", "D", "FRED:DFII10"),
         "credit_conditions": ("NFCI_CREDIT", "W", "FRED:NFCICREDIT"),
         "fed_assets": ("US_FED_ASSETS", "W", "FRED:WALCL"), "tga": ("TGA", "W", "FRED:WTREGEN"),
     },

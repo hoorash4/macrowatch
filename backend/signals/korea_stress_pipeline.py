@@ -190,32 +190,6 @@ def upsert_automatic(
     return len(writable)
 
 
-def fetch_existing_fsi(url: str, service_key: str, first_month: date) -> dict[str, float]:
-    """Keep the last official FSI reading if the source is briefly unavailable."""
-    first_month_iso = first_month.replace(day=1).isoformat()
-    response = requests.get(
-        f"{url.rstrip('/')}/rest/v1/korea_market_stress_monthly",
-        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
-        params={
-            "select": "month,bok_fsi",
-            "month": f"gte.{first_month_iso}",
-            "bok_fsi": "not.is.null",
-        },
-        timeout=TIMEOUT,
-    )
-    if not response.ok:
-        return {}
-    values: dict[str, float] = {}
-    for row in response.json():
-        try:
-            value = float(row["bok_fsi"])
-            if value != 0:
-                values[str(row["month"])] = value
-        except (KeyError, TypeError, ValueError):
-            continue
-    return values
-
-
 def build_monthly_rows(values: dict[str, dict[str, float]], fsi: dict[str, float], today: date) -> list[dict]:
     """수집·저장과 분리된 기존 월간 K-MSI 계산."""
     months = sorted(set().union(*[set(rows) for rows in values.values()]))

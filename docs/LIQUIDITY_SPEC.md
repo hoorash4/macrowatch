@@ -61,16 +61,16 @@ M2와 Lf는 합쳐 국내 통화 축 50%로 제한한다. 단순 금액 합산�
 
 ## 저장·실행
 
-- `liquidity_observations`: 출처별 원관측값. 일반 사용자는 직접 조회 불가.
-- `liquidity_indices`: 점수/구성요소/표본수/버전. 읽기만 공개하며 쓰기는 서비스 역할 한정.
-- `store_liquidity_batch`: 국가별 원자료와 점수를 한 트랜잭션으로 추가한다.
+- `economic_chart_points`: 다른 기능과 함께 쓰는 출처별 원관측값의 canonical 저장소.
+- `liquidity_indices`: 최종 점수/표본수/버전. 읽기만 공개하며 쓰기는 서비스 역할 한정.
+- `store_liquidity_batch`: canonical 원자료와 유동성 점수를 한 트랜잭션으로 추가한다.
   실패시 해당 요청은 전부 롤백. 기존 국가는 영향 없음.
-- 기존 기록은 `ON CONFLICT DO NOTHING`: 매일 실행해도 과거 기록 변경/삭제 없음.
-- 최초 실행: 전체 원자료 확보/기간 검증 후 저장. 이후 FRED/ECOS는 마지막 수집 이후만 조회.
+- 자동 수집은 기존 확정 결과를 보존하고 최근 누락분만 추가한다. 원천의 같은 날짜 정정값은 canonical 행에 반영한다.
+- 장기 이력 초기화는 명시적 백필로만 수행한다. 자동 수집은 FRED/ECOS의 최근 구간만 조회한다.
   한국은행 스냅샷은 공식 차트 전체 응답을 받되 이미 저장된 관측을 보존한다.
 - GitHub `Refresh liquidity pressure and capacity`, 매일 18:10 KST. 국가별 병렬 실행.
 - 공통 예약 실패 이메일 워크플로에 등록. 수집 오류·필수자료 누락·과도한 노후화는 실패.
-- 배포 SQL 기록: `supabase/reference/liquidity_schema.sql` (Supabase MCP migration).
+- 스키마 변경은 `supabase/migrations`의 불변 migration 기록으로 관리한다.
 
 ## 검증
 

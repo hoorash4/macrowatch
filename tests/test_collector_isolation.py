@@ -12,6 +12,28 @@ def text(path: str) -> str:
 
 
 class CollectorIsolationTests(unittest.TestCase):
+    def test_runtime_uses_canonical_sources_instead_of_legacy_caches(self) -> None:
+        legacy_relations = {
+            "automatic_source_points",
+            "equity_bond_source_monthly",
+            "korea_foreign_flow_raw",
+            "korea_market_stress_weekly",
+            "liquidity_observations",
+            "us_inflation_leading_daily",
+            "us_treasury_10y_daily",
+        }
+        for root in (ROOT / "backend", ROOT / "assets" / "js", ROOT / "supabase" / "functions"):
+            for path in root.rglob("*"):
+                if not path.is_file() or path.suffix not in {".py", ".js", ".ts"}:
+                    continue
+                source = path.read_text(encoding="utf-8")
+                for relation in legacy_relations:
+                    self.assertNotIn(relation, source, f"{path.relative_to(ROOT)} still uses {relation}")
+
+        cleanup = text("supabase/migrations/20260913234000_remove_duplicate_source_storage.sql")
+        for relation in legacy_relations:
+            self.assertIn(f"drop table if exists public.{relation}", cleanup)
+
     def test_pages_deploy_is_frontend_only(self) -> None:
         workflow = text(".github/workflows/pages-deploy.yml")
         self.assertIn('paths:', workflow)
