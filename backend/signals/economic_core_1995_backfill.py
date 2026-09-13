@@ -45,7 +45,7 @@ def _policy_rows(db: SupabaseRest, end: date) -> list[dict[str, Any]]:
             continue
         observed_date = date.fromisoformat(observed)
         values[observed_date] = value
-        if previous is None or value != previous:
+        if previous is not None and value != previous:
             change_dates.add(observed_date)
         previous = value
 
