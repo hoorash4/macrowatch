@@ -1,11 +1,13 @@
 """Official U.S. and Korean policy-rate source adapters.
 
-The U.S. source is daily. The chart keeps that complete target-range history,
-so its flat segments show every published hold as well as rate changes.
+FRED provides daily target-range observations.  The policy-rate chart stores
+one observation per official FOMC decision date, including decisions to hold.
 """
 from __future__ import annotations
 
-from datetime import date
+from bisect import bisect_left
+from datetime import date, timedelta
+import re
 from typing import Any
 
 import requests
@@ -75,26 +77,75 @@ def fetch_us_policy_rate_rows(
     return rows
 
 
-def us_policy_chart_rows(
+FED_FOMC_CALENDAR_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+FED_FOMC_HISTORICAL_URL = "https://www.federalreserve.gov/monetarypolicy/fomchistorical{year}.htm"
+_FED_STATEMENT_DATE = re.compile(r"monetary(\d{8})a\.htm", re.IGNORECASE)
+
+
+def _fed_statement_dates(html: str) -> set[date]:
+    dates: set[date] = set()
+    for raw in _FED_STATEMENT_DATE.findall(html):
+        try:
+            dates.add(date(int(raw[:4]), int(raw[4:6]), int(raw[6:8])))
+        except ValueError:
+            continue
+    return dates
+
+
+def _fetch_fed_page(url: str) -> str:
+    response = request_with_retry(lambda: requests.get(url, timeout=45))
+    response.raise_for_status()
+    return response.text
+
+
+def fetch_fed_decision_dates(start: date, end: date) -> list[date]:
+    """Return official FOMC statement dates directly from the Federal Reserve.
+
+    The calendar page covers 2010 onward; the separate historical page provides
+    2009.  A statement is the official decision record, so holds are retained.
+    """
+    dates = _fed_statement_dates(_fetch_fed_page(FED_FOMC_CALENDAR_URL))
+    # The calendar page has a rolling set of recent years.  Complete older
+    # years directly from each official historical archive instead of inferring
+    # meetings from daily rate values.
+    for year in range(start.year, end.year + 1):
+        if not any(observed.year == year for observed in dates):
+            dates.update(_fed_statement_dates(_fetch_fed_page(FED_FOMC_HISTORICAL_URL.format(year=year))))
+    result = sorted(observed for observed in dates if start <= observed <= end)
+    if not result:
+        raise RuntimeError("Federal Reserve FOMC calendar returned no decision dates")
+    return result
+
+
+def us_policy_event_chart_rows(
     source_rows: list[dict[str, object]],
+    decision_dates: list[date],
     *,
     start: date | None = None,
 ) -> list[dict[str, object]]:
-    """Project every U.S. daily target-rate observation, including holds, for charts."""
+    """Match official FOMC decisions to the first published FRED target range."""
+    source_by_date = {
+        date.fromisoformat(str(row["observed_on"])): row
+        for row in source_rows
+    }
+    observed_dates = sorted(source_by_date)
     rows: list[dict[str, object]] = []
-    for source in sorted(source_rows, key=lambda row: str(row["observed_on"])):
-        observed = date.fromisoformat(str(source["observed_on"]))
-        if start is not None and observed < start:
+    for decision in sorted(set(decision_dates)):
+        if start is not None and decision < start:
             continue
+        position = bisect_left(observed_dates, decision)
+        if position == len(observed_dates) or observed_dates[position] > decision + timedelta(days=7):
+            raise RuntimeError(f"FRED policy-rate value missing after FOMC decision {decision.isoformat()}")
+        source = source_by_date[observed_dates[position]]
         rows.append({
             "series_code": "US_POLICY_RATE_MID",
-            "observation_date": observed.isoformat(),
+            "observation_date": decision.isoformat(),
             "value": float(source["target_mid_pct"]),
             "frequency": "D",
-            "source": "DERIVED:FRED:DFEDTARL,DFEDTARU:midpoint",
+            "source": "DERIVED:FED:FOMC-statement+FRED:DFEDTARL,DFEDTARU:midpoint",
         })
-    if not rows and start is None and source_rows:
-        raise RuntimeError("U.S. policy-rate chart projection produced no rows")
+    if not rows:
+        raise RuntimeError("U.S. policy-rate decision projection produced no rows")
     return rows
 
 
