@@ -58,6 +58,11 @@ class PolicyRateSourceTests(unittest.TestCase):
         self.assertEqual([row["observation_date"] for row in rows], ["2026-01-28"])
         links.assert_not_called()
 
+    def test_fed_statement_parser_accepts_historical_fraction_only_range_bound(self):
+        from backend.sources.policy_rates import _fed_target_range
+        html = "<p>The Committee decided to keep its target range for the federal funds rate at 0 to 1/4 percent.</p>"
+        self.assertEqual(_fed_target_range(html), (0.0, 0.25))
+
     @patch("backend.sources.policy_rates.requests.get")
     def test_korea_monthly_rate_uses_ecos_base_rate_item(self, get):
         class Response:

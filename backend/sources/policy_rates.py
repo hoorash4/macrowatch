@@ -32,8 +32,8 @@ _FED_ORIGIN = "https://www.federalreserve.gov"
 _FED_STATEMENT_LINK = re.compile(r"href\s*=\s*['\"](?P<href>[^'\"]*monetary(?P<date>\d{8})a\.htm)[^'\"]*['\"]", re.IGNORECASE)
 _FED_TARGET_RANGE = re.compile(
     r"target\s+range\s+for\s+(?:the\s+)?federal\s+funds\s+rate\s+(?:at|to)\s+"
-    r"(?P<lower>\d+(?:[-‑–]\d+/\d+)?)\s+(?:to|[-‑–])\s+"
-    r"(?P<upper>\d+(?:[-‑–]\d+/\d+)?)\s+percent",
+    r"(?P<lower>\d+(?:(?:[-‑–]\d+)?/\d+)?)\s+(?:to|[-‑–])\s+"
+    r"(?P<upper>\d+(?:(?:[-‑–]\d+)?/\d+)?)\s+percent",
     re.IGNORECASE,
 )
 
@@ -73,6 +73,9 @@ def _fed_decision_links(start: date, end: date) -> dict[date, str]:
 
 def _fed_percent(value: str) -> float:
     normalized = value.replace("‑", "-").replace("–", "-")
+    if "/" in normalized and "-" not in normalized:
+        numerator, denominator = normalized.split("/", 1)
+        return float(numerator) / float(denominator)
     if "-" not in normalized:
         return float(normalized)
     whole, fraction = normalized.split("-", 1)
