@@ -4,43 +4,7 @@
 const cfg = window.MACROWATCH_CONFIG || {};
 const client = window.supabase?.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey);
 
-// Keep this catalog aligned with SERIES in economic-charts.js. A contract test guards drift.
-const SERIES_CATALOG = [
-  {code:'US2Y',title:'미국채 2년',frequency:'일별',category:'금리 · 신용'},
-  {code:'US10Y',title:'미국채 10년',frequency:'일별',category:'금리 · 신용'},
-  {code:'US10Y_REAL',title:'미국채 10년 실질금리',frequency:'일별',category:'금리 · 신용'},
-  {code:'US10Y2Y',title:'미국 10Y-2Y 스프레드',frequency:'일별',category:'금리 · 신용'},
-  {code:'US_POLICY_RATE_MID',title:'기준금리',frequency:'미국 결정일 · 한국 월별',category:'금리 · 신용'},
-  {code:'HY_OAS',title:'미국 하이일드 OAS',frequency:'일별',category:'금리 · 신용'},
-  {code:'NFCI_CREDIT',title:'미국 금융 신용여건',frequency:'주별',category:'금리 · 신용'},
-  {code:'EM_OAS',title:'이머징 채권 OAS',frequency:'일별',category:'금리 · 신용'},
-  {code:'KR3Y',title:'국고채 3년',frequency:'일별',category:'금리 · 신용'},
-  {code:'KR10Y',title:'국고채 10년',frequency:'일별',category:'금리 · 신용'},
-  {code:'KR10Y3Y',title:'국고채 10Y-3Y 스프레드',frequency:'일별',category:'금리 · 신용'},
-  {code:'KOSPI_PER',title:'KOSPI PER',frequency:'일별',category:'밸류에이션'},
-  {code:'KOSPI_PBR',title:'KOSPI PBR',frequency:'일별',category:'밸류에이션'},
-  {code:'WTI',title:'WTI 유가',frequency:'일별',category:'시장가격'},
-  {code:'USDKRW',title:'원/달러 환율',frequency:'일별',category:'시장가격'},
-  {code:'REDBOOK',title:'Redbook Index',frequency:'주별',category:'고빈도 경기'},
-  {code:'WEI',title:'미국 주간 경제 지수',frequency:'주별',category:'고빈도 경기'},
-  {code:'EMRATIO',title:'미국 인구대비 고용률',frequency:'월별',category:'고빈도 경기'},
-  {code:'US_RETAIL_SALES',title:'미국 소매판매 YoY',frequency:'월별',category:'고빈도 경기'},
-  {code:'KR_EXPORT_DAILY_AVG',title:'한국 일평균 수출',frequency:'10일 구간',category:'고빈도 경기'},
-  {code:'US_CPI',title:'미국 CPI',frequency:'월별',category:'물가'},
-  {code:'US_PPI',title:'미국 PPI',frequency:'월별',category:'물가'},
-  {code:'US_PCE',title:'미국 PCE 가격지수',frequency:'월별',category:'물가'},
-  {code:'KR_CPI',title:'한국 CPI',frequency:'월별',category:'물가'},
-  {code:'KR_PPI',title:'한국 PPI',frequency:'월별',category:'물가'},
-  {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'월별',category:'기업신용'},
-  {code:'DRALACBS',title:'미국 은행 전체대출 연체율',frequency:'분기별',category:'기업신용'},
-  {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'월별',category:'기업신용'},
-  {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'월별',category:'기업신용'},
-  {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'월별',category:'기업신용'},
-  {code:'KR_DEFAULT_COMPANIES',title:'한국 부도업체수',frequency:'월별',category:'기업신용'},
-  {code:'KR_CORP_REHAB',title:'한국 법인회생 신청건수',frequency:'월별',category:'기업신용'},
-  {code:'RRP',title:'미 연준 역레포 잔고',frequency:'일별',category:'유동성'},
-  {code:'TGA',title:'미 재무부 TGA 잔고',frequency:'주별',category:'유동성'}
-];
+const SERIES_CATALOG = window.MacroWatchEconomicSeriesCatalog || [];
 
 let user = null;
 let modal = null;

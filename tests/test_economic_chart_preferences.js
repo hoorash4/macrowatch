@@ -10,6 +10,7 @@ const html = fs.readFileSync('economic-charts.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260911161000_add_economic_chart_preferences.sql', 'utf8');
 const catalogMigration = fs.readFileSync('supabase/migrations/20260913153000_add_economic_chart_catalog_settings.sql', 'utf8');
 const categorySplitMigration = fs.readFileSync('supabase/migrations/20260913210000_split_financial_credit_category.sql', 'utf8');
+const businessDistressMigration = fs.readFileSync('supabase/migrations/20260913213000_rename_business_distress_category.sql', 'utf8');
 
 test('economic chart uses real chart-space right gap instead of a white overlay', () => {
   assert.doesNotMatch(html, /economic-plot-gap/);
@@ -83,6 +84,16 @@ test('rates and market credit use separate centralized categories without losing
   assert.match(categorySplitMigration, /economic_chart_catalog_settings/);
   assert.match(categorySplitMigration, /economic_chart_preferences/);
   assert.match(categorySplitMigration, /'금융신용'/);
+});
+
+test('business distress replaces the legacy business credit category in UI and saved order', () => {
+  assert.match(chart, /BUSINESS_DISTRESS_CATEGORY='기업부실'/);
+  assert.match(chart, /LEGACY_BUSINESS_CREDIT_CATEGORY='기업신용'/);
+  for (const code of ['US_SBDI_31_180','DRALACBS','US_SBDFI','US_COMMERCIAL_CH11','KR_CORP_DELINQ','KR_DEFAULT_COMPANIES','KR_CORP_REHAB']) {
+    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+category:BUSINESS_DISTRESS_CATEGORY`));
+  }
+  assert.match(businessDistressMigration, /economic_chart_catalog_settings/);
+  assert.match(businessDistressMigration, /economic_chart_preferences/);
 });
 
 test('every paired chart defaults moving averages off from one common rule', () => {

@@ -6,7 +6,9 @@ const C={raw:'#111827',compare:'#d97706',fast:'#2563eb',slow:'#7c3aed',compareFa
 const RIGHT_GAP_PX=18,DEFAULT_VISIBLE_BARS=300,MIN_VISIBLE_BARS=12,MIN_BAR_SPACING=.01,MIN_DATA_SCREEN_RATIO=.5;
 const DEFAULT_PREFERENCES={series_order:{},hidden_series:[],horizontal_lines:{}};
 const RATE_CATEGORY='금리',FINANCIAL_CREDIT_CATEGORY='금융신용',LEGACY_RATE_CATEGORY='금리 · 신용';
-const DEFAULT_CATEGORY_ORDER=[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY,'밸류에이션','시장가격','고빈도 경기','물가','기업신용','유동성'];
+const BUSINESS_DISTRESS_CATEGORY='기업부실',LEGACY_BUSINESS_CREDIT_CATEGORY='기업신용';
+const FREQUENCY_LABELS={D:'일별',W:'주별',T:'10일 구간',M:'월별',Q:'분기별',E:'결정일'};
+const DEFAULT_CATEGORY_ORDER=[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY,'밸류에이션','시장가격','고빈도 경기','물가',BUSINESS_DISTRESS_CATEGORY,'유동성'];
 const SERIES=[
  {code:'US2Y',title:'미국채 2년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2,fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate','observation_date','treasury_2y_rate']},
  {code:'US10Y',title:'미국채 10년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2,fallback:['us_treasury_10y_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']},
@@ -35,19 +37,20 @@ const SERIES=[
  {code:'US_PCE',compareCode:'US_CORE_PCE',title:'미국 PCE 가격지수',compareTitle:'Core PCE 가격지수',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
  {code:'KR_CPI',compareCode:'KR_CORE_CPI',title:'한국 CPI',compareTitle:'Core CPI (식료품·에너지 제외)',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
  {code:'KR_PPI',compareCode:'KR_IMPORT_PRICE',title:'한국 PPI',compareTitle:'수입물가',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
- {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'M',unit:'%',category:'기업신용',decimals:2},
- {code:'DRALACBS',title:'미국 은행 전체대출 연체율',frequency:'Q',unit:'%',category:'기업신용',decimals:2},
- {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'M',unit:'%',category:'기업신용',decimals:2},
- {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'M',unit:'건',category:'기업신용',decimals:0},
- {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'M',unit:'%',category:'기업신용',decimals:2},
- {code:'KR_DEFAULT_COMPANIES',title:'한국 부도업체수',frequency:'M',unit:'개',category:'기업신용',decimals:0},
- {code:'KR_CORP_REHAB',title:'한국 법인회생 신청건수',frequency:'M',unit:'건',category:'기업신용',decimals:0}
+ {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'M',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
+ {code:'DRALACBS',title:'미국 은행 전체대출 연체율',frequency:'Q',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
+ {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'M',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
+ {code:'US_COMMERCIAL_CH11',title:'미국 기업 회생 신청건수',frequency:'M',unit:'건',category:BUSINESS_DISTRESS_CATEGORY,decimals:0},
+ {code:'KR_CORP_DELINQ',title:'한국 기업대출 연체율',frequency:'M',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
+ {code:'KR_DEFAULT_COMPANIES',title:'한국 부도업체수',frequency:'M',unit:'개',category:BUSINESS_DISTRESS_CATEGORY,decimals:0},
+ {code:'KR_CORP_REHAB',title:'한국 법인회생 신청건수',frequency:'M',unit:'건',category:BUSINESS_DISTRESS_CATEGORY,decimals:0}
 ];
+window.MacroWatchEconomicSeriesCatalog=Object.freeze(SERIES.map(item=>Object.freeze({code:item.code,title:item.title,frequency:item.frequencyLabel||FREQUENCY_LABELS[item.frequency]||item.frequency,category:item.category})));
 const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월'],Q:[4,8,'4분기','8분기'],E:[1,1,'','']};
 let user=null,isAdmin=false,categoryOrder=[...DEFAULT_CATEGORY_ORDER],categoryDrag=null,meta=null,rows=[],chart=null,raw=null,compare=null,fast=null,slow=null,compareFast=null,compareSlow=null,resizeObserver=null,lineMode=false,lineCounter=0,lines=[],selected=null,alerts=[],changingRange=false,dragState=null,preferences=structuredClone(DEFAULT_PREFERENCES),preferenceSaveChain=Promise.resolve(),tickMode='month',monthTickDates=new Set(),initialRangePending=false,initialRangeFrame=0,bellPositionFrame=0;
 const maVisibility=new Map();
 const $=id=>document.getElementById(id);
-const freq=f=>({D:'일별',W:'주별',T:'10일 구간',M:'월별',Q:'분기별',E:'결정일'})[f]||f;
+const freq=f=>FREQUENCY_LABELS[f]||f;
 const displayDecimals=m=>Math.min(2,Math.max(0,Number(m?.decimals)||0));
 const fmt=(v,m=meta)=>!m||!Number.isFinite(Number(v))?'—':`${window.MacroWatchFrontend.formatDisplayNumber(v,{maximumFractionDigits:displayDecimals(m)})}${m.unit?` ${m.unit}`:''}`;
 function ma(data,n,key='value'){const out=[],q=[];let sum=0;for(const row of data){const value=Number(row[key]);if(!Number.isFinite(value))continue;q.push(value);sum+=value;if(q.length>n)sum-=q.shift();if(q.length===n)out.push({time:row.time,value:sum/n});}return out;}
@@ -61,8 +64,8 @@ function koTick(time,tickMarkType){const p=dateParts(time);if(!p)return'';if(tic
 function setTickMode(mode){if(tickMode===mode)return;tickMode=mode;chart?.timeScale().applyOptions({tickMarkFormatter:koTick});}
 function updateTickMode(range){if(!range||!rows.length)return;const from=Math.max(0,Math.min(rows.length-1,Math.floor(range.from)));const to=Math.max(0,Math.min(rows.length-1,Math.ceil(range.to)));const a=new Date(`${rows[from].time}T00:00:00Z`),b=new Date(`${rows[to].time}T00:00:00Z`);const span=Math.max(0,(b-a)/86400000);setTickMode(span>1460?'year':span<120?'detail':'month');}
 function options(){return{layout:{background:{color:'#fff'},textColor:C.text,fontFamily:'Pretendard, system-ui, sans-serif',fontSize:11,attributionLogo:false},localization:{locale:'ko-KR',dateFormat:'yyyy. MM. dd.'},grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},rightPriceScale:{borderColor:'#d1d5db',scaleMargins:{top:.10,bottom:.10},minimumWidth:92},timeScale:{borderColor:'#d1d5db',timeVisible:false,secondsVisible:false,rightOffset:0,barSpacing:7,minBarSpacing:MIN_BAR_SPACING,fixRightEdge:false,tickMarkFormatter:koTick},crosshair:{mode:window.LightweightCharts.CrosshairMode.Normal,vertLine:{color:C.cross,width:1,style:2},horzLine:{color:C.cross,width:1,style:2}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},handleScale:{axisPressedMouseMove:false,mouseWheel:false,pinch:true},kineticScroll:{mouse:true,touch:true}};}
-function normalizeSeriesOrder(value){const order=value&&typeof value==='object'&&!Array.isArray(value)?structuredClone(value):{};if(Array.isArray(order[LEGACY_RATE_CATEGORY])){const legacy=order[LEGACY_RATE_CATEGORY];if(!Array.isArray(order[RATE_CATEGORY]))order[RATE_CATEGORY]=legacy.filter(code=>SERIES.some(item=>item.code===code&&item.category===RATE_CATEGORY));if(!Array.isArray(order[FINANCIAL_CREDIT_CATEGORY]))order[FINANCIAL_CREDIT_CATEGORY]=legacy.filter(code=>SERIES.some(item=>item.code===code&&item.category===FINANCIAL_CREDIT_CATEGORY));delete order[LEGACY_RATE_CATEGORY];}return order;}
-function normalizeCategoryOrder(value){const stored=Array.isArray(value)?value.filter(name=>typeof name==='string'):[];const expanded=stored.flatMap(name=>name===LEGACY_RATE_CATEGORY?[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY]:[name]);return[...new Set([...expanded.filter(name=>DEFAULT_CATEGORY_ORDER.includes(name)),...DEFAULT_CATEGORY_ORDER])];}
+function normalizeSeriesOrder(value){const order=value&&typeof value==='object'&&!Array.isArray(value)?structuredClone(value):{};if(Array.isArray(order[LEGACY_RATE_CATEGORY])){const legacy=order[LEGACY_RATE_CATEGORY];if(!Array.isArray(order[RATE_CATEGORY]))order[RATE_CATEGORY]=legacy.filter(code=>SERIES.some(item=>item.code===code&&item.category===RATE_CATEGORY));if(!Array.isArray(order[FINANCIAL_CREDIT_CATEGORY]))order[FINANCIAL_CREDIT_CATEGORY]=legacy.filter(code=>SERIES.some(item=>item.code===code&&item.category===FINANCIAL_CREDIT_CATEGORY));delete order[LEGACY_RATE_CATEGORY];}if(Array.isArray(order[LEGACY_BUSINESS_CREDIT_CATEGORY])){if(!Array.isArray(order[BUSINESS_DISTRESS_CATEGORY]))order[BUSINESS_DISTRESS_CATEGORY]=order[LEGACY_BUSINESS_CREDIT_CATEGORY];delete order[LEGACY_BUSINESS_CREDIT_CATEGORY];}return order;}
+function normalizeCategoryOrder(value){const stored=Array.isArray(value)?value.filter(name=>typeof name==='string'):[];const expanded=stored.flatMap(name=>name===LEGACY_RATE_CATEGORY?[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY]:[name===LEGACY_BUSINESS_CREDIT_CATEGORY?BUSINESS_DISTRESS_CATEGORY:name]);return[...new Set([...expanded.filter(name=>DEFAULT_CATEGORY_ORDER.includes(name)),...DEFAULT_CATEGORY_ORDER])];}
 function normalizePreferences(row){const order=normalizeSeriesOrder(row?.series_order);const hidden=Array.isArray(row?.hidden_series)?row.hidden_series.filter(code=>typeof code==='string'):[];const horizontal=row?.horizontal_lines&&typeof row.horizontal_lines==='object'&&!Array.isArray(row.horizontal_lines)?row.horizontal_lines:{};return{series_order:order,hidden_series:hidden,horizontal_lines:horizontal};}
 async function loadPreferences(){const {data,error}=await supabaseClient.from('economic_chart_preferences').select('series_order,hidden_series,horizontal_lines').eq('user_id',user.id).maybeSingle();if(error){console.warn('economic chart preferences load failed',error);preferences=structuredClone(DEFAULT_PREFERENCES);return;}preferences=normalizePreferences(data);}
 async function loadCatalogSettings(){const [{data:account,error:accountError},{data:settings,error:settingsError}]=await Promise.all([supabaseClient.from('user_accounts').select('is_admin').eq('user_id',user.id).maybeSingle(),supabaseClient.from('economic_chart_catalog_settings').select('category_order').eq('id',true).maybeSingle()]);if(accountError)console.warn('economic chart admin role load failed',accountError);isAdmin=!accountError&&account?.is_admin===true;if(settingsError)console.warn('economic chart category order load failed',settingsError);categoryOrder=normalizeCategoryOrder(settingsError?[]:settings?.category_order);}

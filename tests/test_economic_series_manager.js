@@ -9,15 +9,6 @@ const manager = fs.readFileSync(path.join(ROOT, 'assets/js/charts/economic-serie
 const automatic = fs.readFileSync(path.join(ROOT, 'backend/signals/economic_chart_automatic.py'), 'utf8');
 const html = fs.readFileSync(path.join(ROOT, 'economic-charts.html'), 'utf8');
 
-function codesFrom(source, marker) {
-  const start = source.indexOf(marker);
-  assert.notEqual(start, -1, `${marker} missing`);
-  const tail = source.slice(start);
-  const end = tail.indexOf('];');
-  assert.notEqual(end, -1, `${marker} terminator missing`);
-  return [...tail.slice(0, end).matchAll(/code\s*:\s*'([^']+)'/g)].map(match => match[1]);
-}
-
 test('economic chart list removal only changes per-user visibility, never collection scope', () => {
   assert.match(chart, /function hideSeries\(m\).*hidden\.add\(m\.code\).*saveHidden\(hidden\)/s);
   assert.doesNotMatch(chart, /hideSeries\(m\).*economic_chart_points.*delete/s);
@@ -36,7 +27,7 @@ test('existing series add UI offers only hidden series and removes selected code
 });
 
 test('series manager catalog cannot silently drift from the economic chart catalog', () => {
-  const chartCodes = codesFrom(chart, 'const SERIES=[').sort();
-  const managerCodes = codesFrom(manager, 'const SERIES_CATALOG = [').sort();
-  assert.deepEqual(managerCodes, chartCodes);
+  assert.match(chart, /window\.MacroWatchEconomicSeriesCatalog=Object\.freeze\(SERIES\.map/);
+  assert.match(manager, /const SERIES_CATALOG = window\.MacroWatchEconomicSeriesCatalog \|\| \[\]/);
+  assert.doesNotMatch(manager, /code:'US2Y'|category:'기업신용'|category:'금리 · 신용'/);
 });
