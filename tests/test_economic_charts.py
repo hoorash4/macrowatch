@@ -83,7 +83,11 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=20', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=21', html)
+        self.assertIn('MIN_BAR_SPACING=.01', script)
+        self.assertIn('minBarSpacing:MIN_BAR_SPACING', script)
+        self.assertIn('if(from<0){from=0;to=Math.min(maxTo,w);}', script)
+        self.assertIn('nextW=Math.min(maxW', script)
 
     def test_crosshair_keeps_the_existing_marker_and_shows_its_raw_value_above_the_line(self):
         html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
