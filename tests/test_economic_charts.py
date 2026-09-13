@@ -179,7 +179,6 @@ class EconomicChartFeatureTests(unittest.TestCase):
     def test_us_policy_rate_is_stored_as_decision_events_not_daily_rows(self):
         source = (ROOT / 'backend/sources/policy_rates.py').read_text(encoding='utf-8')
         automatic = (ROOT / 'backend/signals/policy_rate_automatic.py').read_text(encoding='utf-8')
-        sync = (ROOT / 'backend/signals/policy_rate_chart_sync.py').read_text(encoding='utf-8')
         migration = (ROOT / 'supabase/migrations/20260913193000_replace_us_policy_rate_with_decision_events.sql').read_text(encoding='utf-8')
         self.assertIn('central_bank_policy_events', source)
         self.assertIn('DB:central_bank_policy_events', source)
@@ -189,10 +188,10 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('fetch_us_policy_rate_chart_rows(', automatic)
         self.assertIn('database, US_HISTORY_START, end, recent_limit=US_RECENT_DECISIONS', automatic)
         self.assertIn('recent_limit=US_RECENT_DECISIONS', automatic)
-        self.assertIn('fetch_us_policy_rate_chart_rows(database', sync)
         self.assertFalse((ROOT / 'backend/signals/policy_rate_backfill.py').exists())
         self.assertFalse((ROOT / '.github/workflows/policy-rate-backfill.yml').exists())
-        self.assertTrue((ROOT / '.github/workflows/policy-rate-chart-sync.yml').exists())
+        self.assertFalse((ROOT / 'backend/signals/policy_rate_chart_sync.py').exists())
+        self.assertFalse((ROOT / '.github/workflows/policy-rate-chart-sync.yml').exists())
         self.assertIn("frequency in ('D', 'W', 'T', 'M', 'E')", migration)
         self.assertIn("where series_code = 'US_POLICY_RATE_MID'", migration)
 

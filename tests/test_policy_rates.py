@@ -8,7 +8,7 @@ from backend.sources.policy_rates import (
     fetch_korea_policy_rate_rows,
     fetch_us_policy_rate_chart_rows,
 )
-from backend.signals import policy_rate_automatic, policy_rate_chart_sync
+from backend.signals import policy_rate_automatic
 
 
 class FakeDatabase:
@@ -94,30 +94,6 @@ class PolicyRateCollectionTests(unittest.TestCase):
         )
         self.assertEqual(database.upserts[0][1][0]["frequency"], "E")
         self.assertEqual(count, 1)
-
-    @patch("backend.signals.policy_rate_chart_sync.fetch_us_policy_rate_chart_rows")
-    def test_manual_sync_replaces_us_chart_rows_from_stored_events_only(self, source):
-        source.return_value = [
-            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2009-01-28", "value": 0.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
-            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-01-28", "value": 3.625, "frequency": "E", "source": "DB:central_bank_policy_events"},
-        ]
-        database = FakeDatabase(chart_rows=[
-            {"observation_date": "2009-01-28"},
-            {"observation_date": "2009-01-29"},
-        ])
-        result = policy_rate_chart_sync.sync(date(2026, 9, 13), database)
-        self.assertEqual(result, {"rows": 2, "earliest": "2009-01-28", "latest": "2026-01-28"})
-        deletes = [item for item in database.requests if item[0] == "DELETE"]
-        self.assertEqual(deletes[0][2]["params"]["observation_date"], "eq.2009-01-29")
-
-    @patch("backend.signals.policy_rate_chart_sync.fetch_us_policy_rate_chart_rows", return_value=[])
-    def test_manual_sync_does_not_write_when_stored_history_is_missing(self, _source):
-        database = FakeDatabase()
-        with self.assertRaisesRegex(RuntimeError, "does not begin in 2009"):
-            policy_rate_chart_sync.sync(date(2026, 9, 13), database)
-        self.assertEqual(database.upserts, [])
-        self.assertEqual(database.requests, [])
-
 
 if __name__ == "__main__":
     unittest.main()

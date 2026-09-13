@@ -15,8 +15,8 @@ from common import SupabaseRest, fetch_fred_observations, request_with_retry, re
 from tracking.check_targets import CheckResult, condition_met, enqueue_alerts, json_number, parse_decimal
 
 
-# Source contracts shared by automatic (short recent window) and explicit backfill
-# (up to ten years or the provider's maximum available range).
+# Source contracts used by the short-window automatic collector. One-time historical
+# replacement code may import these pure adapters, but is removed after that run completes.
 FRED_SERIES = {
     "US2Y": ("DGS2", "D"),
     "US10Y": ("DGS10", "D"),
