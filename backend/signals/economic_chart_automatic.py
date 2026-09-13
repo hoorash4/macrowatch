@@ -27,7 +27,8 @@ from signals.economic_chart_pipeline import (
     _insert_missing,
     check_collected_series_alerts,
 )
-from signals.policy_rate_automatic import collect as collect_policy_rates
+from signals.policy_rate_automatic import collect_korea as collect_korea_policy_rate
+from signals.policy_rate_automatic import collect_us as collect_us_policy_rate
 from signals.korea_export_chart import derive_missing_segments, insert_missing_snapshots
 from sources.census_retail_sales import chart_rows as census_retail_chart_rows
 from sources.census_retail_sales import fetch_census_retail_sales
@@ -144,12 +145,8 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
             db, latest_automatic_rows(_ecos_rows(code, stat_code, item_code, frequency, series_start, today)), series_start
         ))
 
-    try:
-        inserted.update(collect_policy_rates(today=today, db=db))
-    except Exception as error:
-        for code in ("US_POLICY_RATE_MID", "KR_POLICY_RATE"):
-            inserted.setdefault(code, 0)
-            errors[code] = f"{error.__class__.__name__}: {error}"
+    run("US_POLICY_RATE_MID", lambda: collect_us_policy_rate(today=today, db=db))
+    run("KR_POLICY_RATE", lambda: collect_korea_policy_rate(today=today, db=db))
 
     run("KR10Y3Y", lambda: _derive_spread(
         db, "KR10Y3Y", "KR10Y", "KR3Y", "D", daily_start, today,

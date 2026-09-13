@@ -1,47 +1,56 @@
-"""Short-window automatic collection for the combined Korea/U.S. policy-rate chart."""
+"""Short-window automatic collection for Korea/U.S. policy-rate chart series."""
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago
-from signals.economic_chart_pipeline import TABLE, _insert_missing
+from signals.economic_chart_pipeline import _insert_missing
 from sources.policy_rates import (
     fetch_korea_policy_rate_rows,
     fetch_us_policy_rate_chart_rows,
 )
 
 
-# Reconcile a short recent window; full history remains manual-backfill only.
-US_WRITE_DAYS = 120
+# Automatic reconciliation is limited to the latest five FOMC decisions.
+US_HISTORY_START = date(2009, 1, 1)
+US_RECENT_DECISIONS = 5
 
 
-def collect(today: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
+def collect_us(today: date | None = None, db: SupabaseRest | None = None) -> int:
     end = today or date.today()
     database = db or SupabaseRest()
-    us_write_start = end - timedelta(days=US_WRITE_DAYS)
-    kr_start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
-
-    # Read both inputs before the first write. A source failure therefore cannot
-    # leave one country updated and the other untouched.
-    us_chart_rows = fetch_us_policy_rate_chart_rows(database, us_write_start, end)
-    kr_chart_rows = fetch_korea_policy_rate_rows(kr_start, end)
-    counts = {
-        "US_POLICY_RATE_MID": _insert_missing(database, us_chart_rows, us_write_start),
-        "KR_POLICY_RATE": _insert_missing(database, kr_chart_rows, kr_start),
-    }
+    us_chart_rows = fetch_us_policy_rate_chart_rows(
+        database, US_HISTORY_START, end, recent_limit=US_RECENT_DECISIONS,
+    )
+    us_check_start = date.fromisoformat(str(us_chart_rows[0]["observation_date"])) if us_chart_rows else end
+    inserted = _insert_missing(database, us_chart_rows, us_check_start)
     print(json.dumps({
         "mode": "automatic",
-        "stage": "policy-rates",
-        "us_write_start": us_write_start.isoformat(),
-        "kr_start": kr_start.isoformat(),
-        "inserted": counts,
+        "stage": "us-policy-rate",
+        "us_recent_decisions": US_RECENT_DECISIONS,
+        "inserted": inserted,
     }, ensure_ascii=False, sort_keys=True))
-    return counts
+    return inserted
+
+
+def collect_korea(today: date | None = None, db: SupabaseRest | None = None) -> int:
+    end = today or date.today()
+    database = db or SupabaseRest()
+    start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
+    rows = fetch_korea_policy_rate_rows(start, end)
+    inserted = _insert_missing(database, rows, start)
+    print(json.dumps({
+        "mode": "automatic", "stage": "korea-policy-rate",
+        "start": start.isoformat(), "inserted": inserted,
+    }, ensure_ascii=False, sort_keys=True))
+    return inserted
 
 
 def main() -> None:
-    collect()
+    database = SupabaseRest()
+    collect_us(db=database)
+    collect_korea(db=database)
 
 
 if __name__ == "__main__":

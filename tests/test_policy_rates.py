@@ -8,71 +8,51 @@ from backend.sources.policy_rates import (
     fetch_korea_policy_rate_rows,
     fetch_us_policy_rate_chart_rows,
 )
-from backend.signals import policy_rate_automatic, policy_rate_backfill
+from backend.signals import policy_rate_automatic, policy_rate_chart_sync
+
+
+class FakeDatabase:
+    def __init__(self, events=None, chart_rows=None):
+        self.events = events or []
+        self.chart_rows = chart_rows or []
+        self.upserts = []
+        self.requests = []
+
+    def upsert(self, table, rows, *, conflict):
+        self.upserts.append((table, rows, conflict))
+
+    def request(self, method, table, **kwargs):
+        self.requests.append((method, table, kwargs))
+        if method == "GET" and table == "central_bank_policy_events":
+            return self.events
+        if method == "GET" and table == "economic_chart_points":
+            return self.chart_rows
+        return []
 
 
 class PolicyRateSourceTests(unittest.TestCase):
-    class SavedEventDatabase:
-        def __init__(self, events):
-            self.events = events
-            self.requests = []
-
-        def request(self, method, table, **kwargs):
-            self.requests.append((method, table, kwargs))
-            if method == "GET" and table == "central_bank_policy_events":
-                return self.events
-            return []
-
-    @patch("backend.sources.policy_rates._fetch_fed_page")
-    @patch("backend.sources.policy_rates._fed_decision_links")
-    def test_us_rate_prefers_saved_fomc_ranges_and_fetches_only_missing_statement(self, links, fetch_page):
-        links.return_value = {
-            date(2026, 1, 28): "https://fed.example/20260128",
-            date(2026, 3, 18): "https://fed.example/20260318",
-        }
-        fetch_page.return_value = "<p>The Committee decided to maintain the target range for the federal funds rate at 4 to 4-1/4 percent.</p>"
-        database = self.SavedEventDatabase([{
-            "meeting_date": "2026-01-28",
-            "target_range_lower": "4.25",
-            "target_range_upper": "4.50",
-        }])
-
+    def test_us_rate_projects_only_stored_decision_date_and_midpoint(self):
+        database = FakeDatabase(events=[
+            {"meeting_date": "2026-03-18", "target_range_lower": "4.00", "target_range_upper": "4.25"},
+            {"meeting_date": "2026-01-28", "target_range_lower": "4.25", "target_range_upper": "4.50"},
+        ])
         rows = fetch_us_policy_rate_chart_rows(
-            database, date(2026, 1, 1), date(2026, 3, 31), fill_missing_from_fed=True,
+            database, date(2009, 1, 1), date(2026, 9, 13), recent_limit=5,
         )
-
         self.assertEqual(rows, [
             {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-01-28", "value": 4.375, "frequency": "E", "source": "DB:central_bank_policy_events"},
-            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-03-18", "value": 4.125, "frequency": "E", "source": "FED:FOMC-statement"},
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-03-18", "value": 4.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
         ])
-        fetch_page.assert_called_once_with("https://fed.example/20260318")
+        params = database.requests[0][2]["params"]
+        self.assertEqual(params["order"], "meeting_date.desc")
+        self.assertEqual(params["limit"], "5")
 
-    @patch("backend.sources.policy_rates._fed_decision_links")
-    def test_regular_collection_reads_saved_events_without_requesting_fed_history(self, links):
-        database = self.SavedEventDatabase([{
-            "meeting_date": "2026-01-28",
-            "target_range_lower": "4.25",
-            "target_range_upper": "4.50",
+    def test_us_rate_rejects_completed_stored_event_with_missing_rate(self):
+        database = FakeDatabase(events=[{
+            "meeting_date": "2026-03-18", "target_range_lower": None, "target_range_upper": None,
         }])
-        rows = fetch_us_policy_rate_chart_rows(database, date(2026, 1, 1), date(2026, 3, 31))
-        self.assertEqual([row["observation_date"] for row in rows], ["2026-01-28"])
-        links.assert_not_called()
-
-    def test_fed_statement_parser_accepts_historical_fraction_only_range_bound(self):
-        from backend.sources.policy_rates import _fed_target_range
-        html = "<p>The Committee decided to keep its target range for the federal funds rate at 0 to 1/4 percent.</p>"
-        self.assertEqual(_fed_target_range(html), (0.0, 0.25))
-
-    def test_historical_calendar_excludes_non_statement_monetary_releases(self):
-        from backend.sources.policy_rates import _fed_historical_statement_links
-        html = """
-          <a href=\"/newsevents/pressreleases/monetary20090128a.htm\">Statement</a>
-          <a href=\"/newsevents/pressreleases/monetary20090218a.htm\">Discount window update</a>
-        """
-        self.assertEqual(
-            _fed_historical_statement_links(html),
-            {date(2009, 1, 28): "https://www.federalreserve.gov/newsevents/pressreleases/monetary20090128a.htm"},
-        )
+        with self.assertRaisesRegex(RuntimeError, "2026-03-18"):
+            fetch_us_policy_rate_chart_rows(database, date(2009, 1, 1), date(2026, 9, 13))
 
     @patch("backend.sources.policy_rates.requests.get")
     def test_korea_monthly_rate_uses_ecos_base_rate_item(self, get):
@@ -97,40 +77,40 @@ class PolicyRateSourceTests(unittest.TestCase):
 
 
 class PolicyRateCollectionTests(unittest.TestCase):
-    class FakeDatabase:
-        def __init__(self):
-            self.upserts = []
-            self.requests = []
-
-        def upsert(self, table, rows, *, conflict):
-            self.upserts.append((table, rows, conflict))
-
-        def request(self, method, table, **kwargs):
-            self.requests.append((method, table, kwargs))
-            return []
-
-    @patch("backend.signals.policy_rate_automatic.fetch_korea_policy_rate_rows")
     @patch("backend.signals.policy_rate_automatic.fetch_us_policy_rate_chart_rows")
-    def test_automatic_collection_writes_only_decision_date_chart_values(self, us_source, kr_source):
+    def test_automatic_collection_checks_only_latest_five_stored_us_decisions(self, us_source):
         us_source.return_value = [{
             "series_code": "US_POLICY_RATE_MID", "observation_date": "2026-09-17", "value": 4.125,
             "frequency": "E", "source": "DB:central_bank_policy_events",
         }]
-        kr_source.return_value = [{
-            "series_code": "KR_POLICY_RATE", "observation_date": "2026-09-01", "value": 2.5, "frequency": "M", "source": "ECOS:722Y001/0101000",
-        }]
-        database = self.FakeDatabase()
-        counts = policy_rate_automatic.collect(date(2026, 9, 18), database)
-        self.assertEqual(database.upserts[0][1][0]["observation_date"], "2026-09-17")
+        database = FakeDatabase()
+        count = policy_rate_automatic.collect_us(date(2026, 9, 18), database)
+        us_source.assert_called_once_with(
+            database, date(2009, 1, 1), date(2026, 9, 18), recent_limit=5,
+        )
         self.assertEqual(database.upserts[0][1][0]["frequency"], "E")
-        self.assertEqual(counts, {"US_POLICY_RATE_MID": 1, "KR_POLICY_RATE": 1})
-        us_source.assert_called_once_with(database, date(2026, 5, 21), date(2026, 9, 18))
+        self.assertEqual(count, 1)
 
-    @patch("backend.signals.policy_rate_backfill.fetch_us_policy_rate_chart_rows", side_effect=RuntimeError("Fed records unavailable"))
-    def test_backfill_does_not_write_when_us_decision_source_fails(self, _source):
-        database = self.FakeDatabase()
-        with self.assertRaisesRegex(RuntimeError, "Fed records unavailable"):
-            policy_rate_backfill.backfill(date(2026, 9, 13), database)
+    @patch("backend.signals.policy_rate_chart_sync.fetch_us_policy_rate_chart_rows")
+    def test_manual_sync_replaces_us_chart_rows_from_stored_events_only(self, source):
+        source.return_value = [
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2009-01-28", "value": 0.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-01-28", "value": 3.625, "frequency": "E", "source": "DB:central_bank_policy_events"},
+        ]
+        database = FakeDatabase(chart_rows=[
+            {"observation_date": "2009-01-28"},
+            {"observation_date": "2009-01-29"},
+        ])
+        result = policy_rate_chart_sync.sync(date(2026, 9, 13), database)
+        self.assertEqual(result, {"rows": 2, "earliest": "2009-01-28", "latest": "2026-01-28"})
+        deletes = [item for item in database.requests if item[0] == "DELETE"]
+        self.assertEqual(deletes[0][2]["params"]["observation_date"], "eq.2009-01-29")
+
+    @patch("backend.signals.policy_rate_chart_sync.fetch_us_policy_rate_chart_rows", return_value=[])
+    def test_manual_sync_does_not_write_when_stored_history_is_missing(self, _source):
+        database = FakeDatabase()
+        with self.assertRaisesRegex(RuntimeError, "does not begin in 2009"):
+            policy_rate_chart_sync.sync(date(2026, 9, 13), database)
         self.assertEqual(database.upserts, [])
         self.assertEqual(database.requests, [])
 

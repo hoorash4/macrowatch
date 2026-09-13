@@ -1,4 +1,4 @@
-name: Backfill Korea and U.S. policy rates
+name: Sync stored U.S. policy rates to chart
 
 on:
   workflow_dispatch:
@@ -7,13 +7,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: macrowatch-policy-rate-backfill
+  group: macrowatch-policy-rate-chart-sync
   cancel-in-progress: false
 
 jobs:
-  replace-history:
+  sync-chart:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -21,10 +21,8 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Replace 2009+ official policy-rate history
+      - name: Project stored 2009+ FOMC rates to chart rows
         env:
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.policy_rate_backfill
+        run: PYTHONPATH=backend python -m signals.policy_rate_chart_sync
