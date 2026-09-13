@@ -6,7 +6,7 @@ import json
 from datetime import date
 
 from common import SupabaseRest, month_start_months_ago
-from signals.economic_chart_pipeline import TABLE
+from signals.canonical_series import TABLE, store as store_canonical_series
 from sources.inflation_rates import ALL_SERIES_CODES, fetch_all_rates
 
 
@@ -25,7 +25,7 @@ def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[
     counts: dict[str, int] = {}
     for code in ALL_SERIES_CODES:
         rows = source_rows[code]
-        database.upsert(TABLE, rows, conflict="series_code,observation_date")
+        store_canonical_series(database, rows)
         source_dates = {str(row["observation_date"]) for row in rows}
         existing = database.request("GET", TABLE, params={
             "select": "observation_date",

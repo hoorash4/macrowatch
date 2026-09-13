@@ -8,6 +8,7 @@ on:
       - "assets/**"
       - "backend/**"
       - "supabase/functions/**"
+      - "supabase/migrations/**"
       - "tests/**"
       - "tools/build/**"
       - "docs/**"

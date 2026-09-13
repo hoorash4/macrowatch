@@ -6,6 +6,7 @@ import json
 from datetime import date
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago
+from signals.canonical_series import store as store_canonical_series
 from sources.inflation_rates import fetch_all_rates
 
 
@@ -17,7 +18,7 @@ def collect(today: date | None = None, db: SupabaseRest | None = None) -> dict[s
     source_rows = fetch_all_rates(start, end)
     inserted = {}
     for code, rows in source_rows.items():
-        database.upsert("economic_chart_points", rows, conflict="series_code,observation_date")
+        store_canonical_series(database, rows)
         inserted[code] = len(rows)
     print(json.dumps({
         "mode": "automatic",

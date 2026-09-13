@@ -12,6 +12,7 @@ from typing import Any
 import requests
 
 from common import SupabaseRest, fetch_fred_observations, request_with_retry, require_env
+from signals.canonical_series import store as store_canonical_series
 from tracking.check_targets import CheckResult, condition_met, enqueue_alerts, json_number, parse_decimal
 
 
@@ -150,7 +151,7 @@ def _insert_missing(db: SupabaseRest, rows: list[dict[str, Any]], start: date) -
         or float(row["value"]) != existing[str(row["observation_date"])]
     ]
     if changed:
-        db.upsert(TABLE, changed, conflict="series_code,observation_date")
+        store_canonical_series(db, changed)
     return len(changed)
 
 

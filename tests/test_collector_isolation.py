@@ -12,6 +12,35 @@ def text(path: str) -> str:
 
 
 class CollectorIsolationTests(unittest.TestCase):
+    def test_canonical_series_has_one_python_write_boundary(self) -> None:
+        allowed = ROOT / "backend" / "signals" / "canonical_series.py"
+        direct_write_markers = (
+            'upsert("economic_chart_points"',
+            "upsert('economic_chart_points'",
+        )
+        for path in (ROOT / "backend").rglob("*.py"):
+            if path == allowed:
+                continue
+            source = path.read_text(encoding="utf-8")
+            for marker in direct_write_markers:
+                self.assertNotIn(marker, source, f"{path.relative_to(ROOT)} bypasses canonical_series.store")
+            if 'TABLE = "economic_chart_points"' in source:
+                self.assertNotIn("upsert(TABLE", source, f"{path.relative_to(ROOT)} bypasses canonical_series.store")
+
+    def test_new_migrations_cannot_reintroduce_private_source_stores(self) -> None:
+        cutoff = "20260913234000"
+        forbidden_fragments = ("_raw", "_source", "_cache", "_observations")
+        for path in (ROOT / "supabase" / "migrations").glob("*.sql"):
+            if path.stem.split("_", 1)[0] <= cutoff:
+                continue
+            source = path.read_text(encoding="utf-8").lower()
+            for fragment in forbidden_fragments:
+                self.assertNotRegex(
+                    source,
+                    rf"create\s+table(?:\s+if\s+not\s+exists)?\s+(?:public\.)?[a-z0-9_]*{fragment}[a-z0-9_]*",
+                    f"{path.name} reintroduces a feature-private source store; use economic_chart_points",
+                )
+
     def test_runtime_uses_canonical_sources_instead_of_legacy_caches(self) -> None:
         legacy_relations = {
             "automatic_source_points",
