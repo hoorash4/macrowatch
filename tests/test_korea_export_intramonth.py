@@ -4,6 +4,7 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -12,12 +13,23 @@ from sources.korea_export_intramonth import (  # noqa: E402
     ReleaseLink,
     _reported_daily_average,
     _workdays,
+    fetch_release_links,
     independent_segment_rows,
     parse_snapshot,
 )
 
 
 class KoreaExportIntramonthTests(unittest.TestCase):
+    def test_recent_scan_limit_does_not_reject_a_long_filtered_board(self):
+        markup = """
+        <span>500</span>건 <span>1 / 10</span>
+        <table><tr><td><a class="nttInfoBtn" data-id="1" title="2026년 9월 1일 ~ 9월 10일 수출입 현황 [잠정치]">release</a></td><td>2026-09-11</td></tr></table>
+        """
+        with patch("sources.korea_export_intramonth._post_board", return_value=markup):
+            links, errors = fetch_release_links(date(2026, 5, 1), max_pages=1)
+        self.assertEqual(len(links), 1)
+        self.assertEqual(errors, [])
+
     def test_current_kcs_text_variants_parse_workdays_and_daily_average(self):
         text = "※조업일수[(’25)8.5 일,(’26)8.5 일] 고려 시 일평균 수출액[(’25)35.6,(’26)41.1]"
         self.assertEqual(_workdays(text), 8.5)

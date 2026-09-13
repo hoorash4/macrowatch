@@ -156,9 +156,6 @@ def fetch_release_links(start_month: date, *, max_pages: int = 80) -> tuple[list
             continue
         if pages is None:
             pages = _total_pages(markup)
-            if pages is not None and pages > max_pages:
-                errors.append(f"KCS filtered board unexpectedly has {pages} pages")
-                break
         page_links = _release_links(markup)
         for link in page_links:
             if link.reference_month >= start_month:
