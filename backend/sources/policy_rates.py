@@ -14,7 +14,9 @@ KR_POLICY_ITEM_CODE = "0101000"
 
 
 def _number(value: object) -> float | None:
-    text = str(value or "").strip().replace(",", "")
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "")
     if not text or text in {".", "-", "—"}:
         return None
     try:

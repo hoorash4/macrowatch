@@ -35,11 +35,13 @@ class PolicyRateSourceTests(unittest.TestCase):
         database = FakeDatabase(events=[
             {"meeting_date": "2026-03-18", "action": "cut", "change_bps": -25, "target_range_lower": "4.00", "target_range_upper": "4.25"},
             {"meeting_date": "2026-01-28", "action": "hold", "change_bps": 0, "target_range_lower": "4.25", "target_range_upper": "4.50"},
+            {"meeting_date": "2009-01-28", "action": "hold", "change_bps": 0, "target_range_lower": 0.0, "target_range_upper": 0.25},
         ])
         rows = fetch_us_policy_rate_chart_rows(
             database, date(2009, 1, 1), date(2026, 9, 13), recent_limit=5,
         )
         self.assertEqual(rows, [
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2009-01-28", "value": 0.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
             {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-01-28", "value": 4.375, "frequency": "E", "source": "DB:central_bank_policy_events"},
             {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-03-18", "value": 4.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
         ])
