@@ -83,7 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=18', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=19', html)
 
     def test_crosshair_keeps_the_existing_marker_and_shows_its_raw_value_above_the_line(self):
         html = (ROOT / 'economic-charts.html').read_text(encoding='utf-8')
@@ -170,6 +170,8 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('"US10Y": ("DGS10", "D")', pipeline)
         self.assertIn('new Map([...fallbackRows,...primaryRows].map', script)
         self.assertIn("economic_chart_points", script)
+        self.assertIn("US_POLICY_RATE_MID", script)
+        self.assertIn("KR_POLICY_RATE", script)
 
     def test_korea_export_is_collected_incrementally(self):
         automatic = (ROOT / 'backend/signals/economic_chart_automatic.py').read_text(encoding='utf-8')
@@ -184,11 +186,13 @@ class EconomicChartFeatureTests(unittest.TestCase):
 
     def test_core_series_include_fred_ecos_pykrx_and_derived_spreads(self):
         pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
+        automatic = (ROOT / 'backend/signals/economic_chart_automatic.py').read_text(encoding='utf-8')
         krx_source = (ROOT / 'backend/sources/krx_index_fundamentals.py').read_text(encoding='utf-8')
         for token in ('DGS2', 'DGS10', 'BAMLH0A0HYM2', 'NFCICREDIT', 'BAMLEMCBPIOAS', 'DCOILWTICO', 'DEXKOUS', 'WEI', 'RRPONTSYD', 'WTREGEN', 'EMRATIO'):
             self.assertIn(token, pipeline)
         self.assertIn('010200000', pipeline)
         self.assertIn('010210000', pipeline)
+        self.assertIn('signals.policy_rate_automatic', automatic)
         self.assertIn('US10Y2Y', pipeline)
         self.assertIn('KR10Y3Y', pipeline)
         self.assertIn('from pykrx import stock', krx_source)

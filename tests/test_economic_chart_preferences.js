@@ -69,9 +69,9 @@ test('administrator category order is stored globally and category titles are th
   assert.match(catalogMigration, /grant insert, update .* to authenticated/);
 });
 
-test('inflation cards pair headline and core indexes and default moving averages off', () => {
+test('every paired chart defaults moving averages off from one common rule', () => {
   for (const code of ['US_CPI','US_PPI','US_PCE','KR_CPI','KR_PPI']) {
-    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+defaultMa:false`));
+    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+compareCode:`));
   }
   assert.match(chart, /compareCode:'US_CORE_CPI'/);
   assert.match(chart, /compareCode:'US_CORE_PPI'/);
@@ -80,5 +80,7 @@ test('inflation cards pair headline and core indexes and default moving averages
   assert.match(chart, /compareCode:'KR_IMPORT_PRICE'/);
   assert.match(html, /id="economic-ma-toggle"/);
   assert.match(chart, /function applyMaVisibility\(\)/);
-  assert.match(chart, /m\.defaultMa!==false/);
+  assert.match(chart, /!m\.compareCode&&m\.defaultMa!==false/);
+  assert.match(chart, /code:'US_POLICY_RATE_MID',compareCode:'KR_POLICY_RATE'/);
+  assert.match(chart, /title:'미국 PCE 가격지수'/);
 });
