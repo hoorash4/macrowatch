@@ -1,8 +1,7 @@
 """Official U.S. and Korean policy-rate source adapters.
 
-The U.S. source is daily, but the chart store keeps only target-range change
-dates so the chart represents actual policy decisions rather than repeated
-daily values.  The complete upper/lower history is retained separately.
+The U.S. source is daily. The chart keeps that complete target-range history,
+so its flat segments show every published hold as well as rate changes.
 """
 from __future__ import annotations
 
@@ -76,25 +75,21 @@ def fetch_us_policy_rate_rows(
     return rows
 
 
-def us_policy_change_chart_rows(
+def us_policy_chart_rows(
     source_rows: list[dict[str, object]],
     *,
     start: date | None = None,
 ) -> list[dict[str, object]]:
-    """Project U.S. target-rate history to first/change observations for charts."""
+    """Project every U.S. daily target-rate observation, including holds, for charts."""
     rows: list[dict[str, object]] = []
-    previous: float | None = None
     for source in sorted(source_rows, key=lambda row: str(row["observed_on"])):
         observed = date.fromisoformat(str(source["observed_on"]))
-        midpoint = float(source["target_mid_pct"])
-        changed = previous is None or midpoint != previous
-        previous = midpoint
-        if not changed or (start is not None and observed < start):
+        if start is not None and observed < start:
             continue
         rows.append({
             "series_code": "US_POLICY_RATE_MID",
             "observation_date": observed.isoformat(),
-            "value": midpoint,
+            "value": float(source["target_mid_pct"]),
             "frequency": "D",
             "source": "DERIVED:FRED:DFEDTARL,DFEDTARU:midpoint",
         })
