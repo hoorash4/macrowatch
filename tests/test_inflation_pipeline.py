@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, policy_rows, save_automatic, save_policy_automatic
+from backend.inflation_pipeline import fetch_bls_series, fetch_cleveland_nowcasts, treasury_rows, save_automatic, save_treasury_automatic
 
 
 class FakeSupabase:
@@ -15,7 +15,7 @@ class FakeSupabase:
         if method == "PATCH":
             self.patches.append((table, kwargs))
             return None
-        if table == "us_policy_rate_daily":
+        if table == "us_treasury_10y_daily":
             return [
                 {"observed_on": "2026-09-09", "treasury_10y_pct": 4.1},
                 {"observed_on": "2026-09-10", "treasury_10y_pct": None},
@@ -30,15 +30,15 @@ class FakeSupabase:
 
 
 class InflationPipelineTests(unittest.TestCase):
-    def test_policy_rows_keep_ten_year_yield_on_business_observations_only(self):
+    def test_treasury_rows_keep_ten_year_yield_on_business_observations_only(self):
         fred = {
             "policy_rate": {date(2026, 9, 7): 5.5, date(2026, 9, 8): 5.5},
             "treasury_10y": {date(2026, 9, 7): 4.1},
         }
-        rows = policy_rows(fred, date(2026, 9, 1), "2026-09-09T00:00:00Z")
+        rows = treasury_rows(fred, date(2026, 9, 1), "2026-09-09T00:00:00Z")
         self.assertEqual(rows[0]["treasury_10y_pct"], 4.1)
-        self.assertIsNone(rows[-1]["treasury_10y_pct"])
-        self.assertEqual(rows[-1]["source"], "FRED:DFEDTARU,DGS10")
+        self.assertEqual(rows[-1]["treasury_10y_pct"], 4.1)
+        self.assertEqual(rows[-1]["source"], "FRED:DGS10")
 
     @patch("backend.inflation_pipeline.requests.get")
     def test_nowcast_keeps_business_day_vintages_after_target_month(self, get):
@@ -101,26 +101,25 @@ class InflationPipelineTests(unittest.TestCase):
         self.assertEqual(stored_months, ["2026-07-01", "2026-08-01"])
         self.assertEqual(len(client.upserts), 1)
 
-    def test_policy_automatic_inserts_missing_and_only_fills_null_treasury(self):
+    def test_treasury_automatic_inserts_missing_and_only_fills_null_treasury(self):
         client = FakeSupabase()
         rows = [
             {
                 "observed_on": f"2026-09-{day:02d}",
-                "target_upper_pct": 5.5,
                 "treasury_10y_pct": 4.0 + day / 100,
-                "source": "FRED:DFEDTARU,DGS10",
+                "source": "FRED:DGS10",
                 "updated_at": "2026-09-12T00:00:00Z",
             }
             for day in range(1, 13)
         ]
-        save_policy_automatic(client, rows)
+        save_treasury_automatic(client, rows)
         inserted_days = [row["observed_on"] for row in client.upserts[0][1]]
         self.assertEqual(inserted_days, [
             "2026-09-08", "2026-09-11", "2026-09-12",
         ])
         self.assertEqual(len(client.patches), 1)
         table, kwargs = client.patches[0]
-        self.assertEqual(table, "us_policy_rate_daily")
+        self.assertEqual(table, "us_treasury_10y_daily")
         self.assertEqual(kwargs["params"]["observed_on"], "eq.2026-09-10")
         self.assertEqual(kwargs["params"]["treasury_10y_pct"], "is.null")
         self.assertEqual(set(kwargs["body"]), {"treasury_10y_pct", "updated_at"})

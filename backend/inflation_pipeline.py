@@ -652,63 +652,50 @@ def batched(rows: list[dict[str, object]], size: int = 400) -> Iterable[list[dic
         yield rows[index:index + size]
 
 
-def policy_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str) -> list[dict[str, object]]:
+def treasury_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str) -> list[dict[str, object]]:
+    """Persist only the genuinely daily U.S. 10-year Treasury series.
+
+    The FOMC target rate remains an in-memory input for inflation calculations;
+    its persisted chart series is stored separately at decision dates.
+    """
     return [
         {
             "observed_on": observed_on.isoformat(),
-            "target_upper_pct": round(value, 4),
-            "treasury_10y_pct": (
-                round(fred["treasury_10y"][observed_on], 4)
-                if observed_on in fred["treasury_10y"] else None
-            ),
-            "source": "FRED:DFEDTARU,DGS10",
+            "treasury_10y_pct": round(value, 4),
+            "source": "FRED:DGS10",
             "updated_at": updated_at,
         }
-        for observed_on, value in sorted(fred["policy_rate"].items())
+        for observed_on, value in sorted(fred["treasury_10y"].items())
         if observed_on >= start
     ]
 
 
-def save_policy_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
+def save_treasury_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
     tail = rows[-AUTOMATIC_DAILY_VALUES:]
     if not tail:
         return
     first_day = str(tail[0]["observed_on"])
     existing = client.request(
         "GET",
-        "us_policy_rate_daily",
+        "us_treasury_10y_daily",
         params={
             "select": "observed_on,treasury_10y_pct",
             "observed_on": f"gte.{first_day}",
             "limit": "20",
         },
     ) or []
-    treasury_by_day = {
-        str(row["observed_on"]): row.get("treasury_10y_pct")
-        for row in existing
-    }
-    missing = [row for row in tail if str(row["observed_on"]) not in treasury_by_day]
+    stored = {str(row["observed_on"]): row.get("treasury_10y_pct") for row in existing}
+    missing = [row for row in tail if str(row["observed_on"]) not in stored]
     if missing:
-        client.upsert("us_policy_rate_daily", missing, conflict="observed_on")
-
-    # A recent policy row can legitimately arrive before DGS10. In that one
-    # case automatic collection may fill only the missing treasury field; it
-    # never rewrites the stored policy rate, source, or a non-null history row.
+        client.upsert("us_treasury_10y_daily", missing, conflict="observed_on")
     for row in tail:
         observed_on = str(row["observed_on"])
-        if (
-            observed_on in treasury_by_day
-            and treasury_by_day[observed_on] is None
-            and row.get("treasury_10y_pct") is not None
-        ):
+        if observed_on in stored and stored[observed_on] is None:
             client.request(
                 "PATCH",
-                "us_policy_rate_daily",
+                "us_treasury_10y_daily",
                 params={"observed_on": f"eq.{observed_on}", "treasury_10y_pct": "is.null"},
-                body={
-                    "treasury_10y_pct": row["treasury_10y_pct"],
-                    "updated_at": row["updated_at"],
-                },
+                body={"treasury_10y_pct": row["treasury_10y_pct"], "updated_at": row["updated_at"]},
                 prefer="return=minimal",
             )
 
@@ -727,31 +714,26 @@ def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> No
         client.upsert("us_inflation_monthly", selected_monthly, conflict="month")
 
 
-def verify_saved(client: SupabaseRest, expected_month: str, expected_policy_day: str) -> None:
+def verify_saved(client: SupabaseRest, expected_month: str, expected_treasury_day: str) -> None:
     monthly = client.request(
         "GET", "us_inflation_monthly",
         params={"select": "month,status,model_version", "order": "month.desc", "limit": "1"},
     ) or []
-    policy = client.request(
-        "GET", "us_policy_rate_daily",
-        params={"select": "observed_on,source", "order": "observed_on.desc", "limit": "1"},
-    ) or []
     treasury = client.request(
-        "GET", "us_policy_rate_daily",
-        params={"select": "observed_on,treasury_10y_pct", "treasury_10y_pct": "not.is.null", "order": "observed_on.desc", "limit": "1"},
+        "GET", "us_treasury_10y_daily",
+        params={"select": "observed_on,treasury_10y_pct,source", "order": "observed_on.desc", "limit": "1"},
     ) or []
     if not monthly or monthly[0].get("month") != expected_month:
         raise RuntimeError("Monthly inflation verification did not return the expected latest row")
     if monthly[0].get("model_version") != MODEL_VERSION:
         raise RuntimeError("Inflation verification found an unexpected model version")
     if (
-        not policy
-        or policy[0].get("observed_on") != expected_policy_day
-        or policy[0].get("source") != "FRED:DFEDTARU,DGS10"
-        or not treasury
+        not treasury
+        or treasury[0].get("observed_on") != expected_treasury_day
+        or treasury[0].get("source") != "FRED:DGS10"
         or treasury[0].get("treasury_10y_pct") is None
     ):
-        raise RuntimeError("Policy-rate verification did not return the expected latest row")
+        raise RuntimeError("Treasury verification did not return the expected latest row")
 
 
 def inflation_cache_points(
@@ -868,19 +850,19 @@ def run_automatic() -> None:
     updated_at = datetime.now(timezone.utc).isoformat()
     for row in monthly:
         row["updated_at"] = updated_at
-    policies = policy_rows(fred, PUBLISH_START, updated_at)
-    if not policies:
-        raise RuntimeError("Policy-rate calculation produced no publishable rows")
+    treasuries = treasury_rows(fred, PUBLISH_START, updated_at)
+    if not treasuries:
+        raise RuntimeError("Treasury calculation produced no publishable rows")
 
     save_automatic(client, monthly)
-    save_policy_automatic(client, policies)
-    verify_saved(client, str(monthly[-1]["month"]), str(policies[-1]["observed_on"]))
+    save_treasury_automatic(client, treasuries)
+    verify_saved(client, str(monthly[-1]["month"]), str(treasuries[-1]["observed_on"]))
     print(json.dumps({
         "mode": "automatic",
         "model_version": MODEL_VERSION,
         "monthly_rows_calculated": len(monthly),
         "daily_rows_calculated": len(daily),
-        "policy_rows_calculated": len(policies),
+        "treasury_rows_calculated": len(treasuries),
         "latest_month": monthly[-1]["month"],
         "latest_day": daily[-1]["observed_on"],
     }, ensure_ascii=False))

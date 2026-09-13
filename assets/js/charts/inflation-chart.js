@@ -10,7 +10,7 @@
       { key: 'core_yoy_pct', label: '코어', format: value => `${chartUtils.formatChartNumber(value)}%` },
     ]),
   });
-  const state = { years: String(PROFILE.defaultYears), monthly: [], policy: [] };
+  const state = { years: String(PROFILE.defaultYears), monthly: [], policy: [], treasury: [] };
   const COLORS = { headline: '#0f766e', core: '#ea580c', policy: '#334155', treasury: '#94a3b8' };
   const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
   const finiteNumber = value => value === null || value === undefined || value === '' ? NaN : Number(value);
@@ -58,25 +58,26 @@
   function render() {
     const host = document.getElementById('inflation-model-chart');
     const realHost = document.getElementById('inflation-real-rate-chart');
-    const monthly = state.monthly, policy = withTreasuryAverage(state.policy);
+    const monthly = state.monthly, policy = state.policy, treasury = withTreasuryAverage(state.treasury);
     if (!host || !realHost) return;
-    if (!monthly.length || !policy.length) {
+    if (!monthly.length || !policy.length || !treasury.length) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">저장된 통합물가 데이터가 없습니다.</div>';
       realHost.innerHTML = '';
       return;
     }
 
-    const allDates = [...monthly.map(row => timestamp(addMonthsIso(row.month, 1))), ...policy.map(row => timestamp(row.observed_on))].filter(Number.isFinite);
+    const allDates = [...monthly.map(row => timestamp(addMonthsIso(row.month, 1))), ...policy.map(row => timestamp(row.observation_date)), ...treasury.map(row => timestamp(row.observed_on))].filter(Number.isFinite);
     const first = Math.min(...allDates), last = Math.max(...allDates);
     const { baseWidth, mainHeight: height, auxiliaryHeight: realHeight } = chartUtils.chartLayout, padding = chartUtils.chartPadding('single', { top: chartUtils.chartLayout.plot.top, bottom: chartUtils.chartLayout.plot.bottom });
     const historyYears = (last - first) / (365.25 * 86400000);
     const width = state.years === 'max' ? baseWidth : Math.max(baseWidth, baseWidth * historyYears / Number(state.years));
     const xDate = value => padding.left + (timestamp(value) - first) / Math.max(1, last - first) * (width - padding.left - padding.right);
     const xInflation = row => xDate(addMonthsIso(row.month, 1));
-    const xPolicy = row => xDate(row.observed_on);
+    const xPolicy = row => xDate(row.observation_date);
+    const xTreasury = row => xDate(row.observed_on);
     const values = [
       ...monthly.flatMap(row => [Number(row.headline_yoy_pct), Number(row.core_yoy_pct)]),
-      ...policy.flatMap(row => [Number(row.target_upper_pct), finiteNumber(row.treasury_10y_5d_pct)]),
+      ...policy.map(row => Number(row.value)), ...treasury.map(row => finiteNumber(row.treasury_10y_5d_pct)),
     ].filter(Number.isFinite);
     const domain = chartUtils.axisDomain(values, { minimumSpan: 2 });
     const y = value => padding.top + (domain.max - value) / (domain.max - domain.min) * (height - padding.top - padding.bottom);
@@ -96,14 +97,15 @@
       const point = displayRows.find(row => String(row.display_month).startsWith(year));
       return point ? `<line x1="${xDate(point.display_month)}" x2="${xDate(point.display_month)}" y1="${padding.top}" y2="${height - padding.bottom}" stroke="#edf0f4"/><text x="${xDate(point.display_month)}" y="${height - 16}" text-anchor="middle" class="analysis-chart-year-label">${year}</text>` : '';
     }).join('');
-    host.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="헤드라인과 코어 통합물가지수, 기준금리와 미국 10년물 금리 추이">${grid}${guides}<path d="${path(finalRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${path(finalRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${stepPath(policy, xPolicy, y, 'target_upper_pct')}" fill="none" stroke="${COLORS.policy}" stroke-width="${lineWidths.auxiliary}"/><path d="${path(policy, 'treasury_10y_5d_pct', y, xPolicy)}" fill="none" stroke="${COLORS.treasury}" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/><rect data-inflation-hit x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}" fill="transparent"/><line data-inflation-cursor x1="0" x2="0" y1="${padding.top}" y2="${height - padding.bottom}" class="policy-expectation-cursor"/><text data-inflation-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-inflation-date x="0" y="${height - padding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text></svg>`;
+    host.innerHTML = `<svg class="w-full" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="헤드라인과 코어 통합물가지수, 기준금리와 미국 10년물 금리 추이">${grid}${guides}<path d="${path(finalRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'headline_yoy_pct')}" fill="none" stroke="${COLORS.headline}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${path(finalRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-linecap="round"/><path d="${path(bridgeRows, 'core_yoy_pct')}" fill="none" stroke="${COLORS.core}" stroke-width="${lineWidths.primary}" stroke-dasharray="5 4" stroke-linecap="round"/><path d="${stepPath(policy, xPolicy, y, 'value')}" fill="none" stroke="${COLORS.policy}" stroke-width="${lineWidths.auxiliary}"/><path d="${path(treasury, 'treasury_10y_5d_pct', y, xTreasury)}" fill="none" stroke="${COLORS.treasury}" stroke-width="${lineWidths.comparison}" stroke-linecap="round"/><rect data-inflation-hit x="${padding.left}" y="${padding.top}" width="${width - padding.left - padding.right}" height="${height - padding.top - padding.bottom}" fill="transparent"/><line data-inflation-cursor x1="0" x2="0" y1="${padding.top}" y2="${height - padding.bottom}" class="policy-expectation-cursor"/><text data-inflation-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-inflation-date x="0" y="${height - padding.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text></svg>`;
     chartUtils.scrollableSvg(host.querySelector('svg'), width, baseWidth, {
       left: padding.left, right: padding.right,
       axisMode: padding.axisMode,
       top: padding.top, bottom: height - padding.bottom,
       axes: [{ side: 'left', y, points: [
         ...monthly.flatMap(row => [{ x: xInflation(row), value: Number(row.headline_yoy_pct) }, { x: xInflation(row), value: Number(row.core_yoy_pct) }]),
-        ...policy.flatMap(row => [{ x: xPolicy(row), value: Number(row.target_upper_pct) }, { x: xPolicy(row), value: finiteNumber(row.treasury_10y_5d_pct) }]),
+        ...policy.map(row => ({ x: xPolicy(row), value: Number(row.value) })),
+        ...treasury.map(row => ({ x: xTreasury(row), value: finiteNumber(row.treasury_10y_5d_pct) })),
       ], selector: `path[stroke="${COLORS.headline}"],path[stroke="${COLORS.core}"],path[stroke="${COLORS.policy}"],path[stroke="${COLORS.treasury}"]`, format: value => chartUtils.formatAxisNumber(value, { suffix: '%' }) }],
     });
 
@@ -167,15 +169,16 @@
   async function load() {
     const host = document.getElementById('inflation-model-chart');
     if (!host || !supabaseClient) return;
-    const [monthlyResponse, policyResponse] = await Promise.all([
+    const [monthlyResponse, policyResponse, treasuryResponse] = await Promise.all([
       chartUtils.loadAllRows((from, to) => supabaseClient.from('us_inflation_monthly').select('month,headline_yoy_pct,core_yoy_pct,policy_rate_upper_pct,headline_real_rate_pct,core_real_rate_pct,status,data_as_of').order('month', { ascending: true }).range(from, to)),
-      chartUtils.loadAllRows((from, to) => supabaseClient.from('us_policy_rate_daily').select('observed_on,target_upper_pct,treasury_10y_pct').order('observed_on', { ascending: true }).range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'US_POLICY_RATE_MID').order('observation_date', { ascending: true }).range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('us_treasury_10y_daily').select('observed_on,treasury_10y_pct').order('observed_on', { ascending: true }).range(from, to)),
     ]);
-    if (monthlyResponse.error || policyResponse.error) {
+    if (monthlyResponse.error || policyResponse.error || treasuryResponse.error) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">통합물가 데이터를 불러오지 못했습니다.</div>';
       return;
     }
-    state.monthly = monthlyResponse.data || []; state.policy = policyResponse.data || []; render();
+    state.monthly = monthlyResponse.data || []; state.policy = policyResponse.data || []; state.treasury = treasuryResponse.data || []; render();
   }
 
   document.querySelectorAll('[data-inflation-ranges] [data-inflation-range]').forEach(button => button.addEventListener('click', () => {

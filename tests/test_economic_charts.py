@@ -139,7 +139,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
             self.assertIn(raw, script)
         self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
-        self.assertIn("fallback:['us_policy_rate_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
+        self.assertIn("fallback:['us_treasury_10y_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
 
     def test_economic_chart_collection_is_automatic_only(self):
         automatic_workflow = (ROOT / '.github/workflows/economic-chart-data.yml').read_text(encoding='utf-8')
@@ -172,6 +172,8 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn("economic_chart_points", script)
         self.assertIn("US_POLICY_RATE_MID", script)
         self.assertIn("KR_POLICY_RATE", script)
+        self.assertIn("lineType:'steps'", script)
+        self.assertIn("window.LightweightCharts.LineType.WithSteps", script)
 
     def test_korea_export_is_collected_incrementally(self):
         automatic = (ROOT / 'backend/signals/economic_chart_automatic.py').read_text(encoding='utf-8')
