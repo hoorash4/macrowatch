@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from common import SupabaseRest
+from common import SupabaseRest, month_start_months_ago
 from signals.economic_chart_pipeline import TABLE
 from sources.inflation_rates import ALL_SERIES_CODES, fetch_all_rates
 
 
 def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
-    end = today or date.today()
+    # A complete monthly YoY observation cannot exist for the current month.
+    end = month_start_months_ago(today or date.today(), 1)
     start = date(end.year - 20, end.month, 1)
     database = db or SupabaseRest()
 

@@ -159,6 +159,29 @@ class InflationRateSourceTests(unittest.TestCase):
         result = collect_automatic_rates(date(2026, 9, 13), database)
         self.assertEqual(result, {"US_CPI": 1})
         self.assertEqual(database.calls, [("economic_chart_points", rows, "series_code,observation_date")])
+        fetch.assert_called_once_with(date(2026, 4, 1), date(2026, 8, 1))
+
+    @patch("signals.inflation_rate_backfill.fetch_all_rates")
+    def test_backfill_ends_at_last_completed_month(self, fetch):
+        from signals.inflation_rate_backfill import backfill
+
+        fetch.return_value = {code: [{
+            "series_code": code,
+            "observation_date": "2026-08-01",
+            "value": 1.0,
+            "frequency": "M",
+            "source": "test",
+        }] for code in ALL_SERIES_CODES}
+
+        class Database:
+            def upsert(self, *_args, **_kwargs):
+                return None
+
+            def request(self, *_args, **_kwargs):
+                return []
+
+        backfill(date(2026, 9, 13), Database())
+        fetch.assert_called_once_with(date(2006, 8, 1), date(2026, 8, 1))
 
     def test_automatic_and_backfill_are_separate_and_workflow_is_single(self):
         automatic = (ROOT / "backend/signals/inflation_rate_automatic.py").read_text(encoding="utf-8")

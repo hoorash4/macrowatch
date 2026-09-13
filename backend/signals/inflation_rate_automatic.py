@@ -10,7 +10,8 @@ from sources.inflation_rates import fetch_all_rates
 
 
 def collect(today: date | None = None, db: SupabaseRest | None = None) -> dict[str, int]:
-    end = today or date.today()
+    # Monthly YoY sources cannot publish a value for the in-progress month.
+    end = month_start_months_ago(today or date.today(), 1)
     start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
     database = db or SupabaseRest()
     source_rows = fetch_all_rates(start, end)
