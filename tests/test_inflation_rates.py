@@ -20,6 +20,7 @@ from sources.inflation_rates import (
     fetch_ecos_rates,
     fetch_kosis_rates,
     _ecos_month_windows,
+    _kosis_month_windows,
 )
 
 
@@ -83,6 +84,12 @@ class InflationRateSourceTests(unittest.TestCase):
         self.assertEqual([item["itmId"] for item in params], ["T03", "T03"])
         self.assertEqual([item["objL1"] for item in params], ["0", "4"])
         self.assertTrue(all("objL2" not in item for item in params))
+
+    def test_kosis_long_history_is_split_into_bounded_windows(self):
+        self.assertEqual(
+            _kosis_month_windows(date(2006, 9, 1), date(2016, 9, 1)),
+            [(date(2006, 9, 1), date(2011, 8, 1)), (date(2011, 9, 1), date(2016, 8, 1)), (date(2016, 9, 1), date(2016, 9, 1))],
+        )
 
     def test_ecos_long_history_is_split_without_splitting_automatic_windows(self):
         self.assertEqual(

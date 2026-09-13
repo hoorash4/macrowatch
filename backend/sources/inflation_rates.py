@@ -171,38 +171,45 @@ def fetch_bea_rates(start: date, end: date, api_key: str | None = None) -> dict[
     }
 
 
-def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Fetch the two published Korean CPI YoY series directly from KOSIS.
+def _kosis_month_windows(start: date, end: date, months: int = 60) -> list[tuple[date, date]]:
+    """Keep KOSIS history requests bounded for reliable hosted execution."""
+    windows: list[tuple[date, date]] = []
+    current = start.replace(day=1)
+    while current <= end:
+        next_start = _add_months(current, months)
+        windows.append((current, min(end, _add_months(next_start, -1))))
+        current = next_start
+    return windows
 
-    The table has an item dimension (T03, year-over-year change) and a CPI-kind
-    dimension.  Selecting exactly one kind per request keeps the response small
-    and avoids the endpoint's invalid/slow all-dimension query path.
-    """
+
+def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    """Fetch the two published Korean CPI YoY series directly from KOSIS."""
     key = api_key or require_env("KOSIS_API_KEY")
     output = {code: [] for code in KOSIS_SERIES}
     for code, object_id in KOSIS_SERIES.items():
-        response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
-            "method": "getList", "apiKey": key, "orgId": "101", "tblId": KOSIS_TABLE_ID,
-            "itmId": KOSIS_YOY_ITEM_ID, "objL1": object_id,
-            "format": "json", "jsonVD": "Y", "prdSe": "M",
-            "startPrdDe": f"{start:%Y%m}", "endPrdDe": f"{end:%Y%m}",
-        }, timeout=TIMEOUT_SECONDS))
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, list):
-            raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} request failed: {payload}")
         seen: set[str] = set()
-        for item in payload:
-            period = str(item.get("PRD_DE") or "")
-            value = _number(item.get("DT"))
-            if not re.fullmatch(r"\d{6}", period) or value is None:
-                continue
-            if period in seen:
-                raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} returned duplicate YoY rows for {code} {period}")
-            seen.add(period)
-            observed = date(int(period[:4]), int(period[4:]), 1)
-            if start <= observed <= end:
-                output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
+        for window_start, window_end in _kosis_month_windows(start, end):
+            response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
+                "method": "getList", "apiKey": key, "orgId": "101", "tblId": KOSIS_TABLE_ID,
+                "itmId": KOSIS_YOY_ITEM_ID, "objL1": object_id,
+                "format": "json", "jsonVD": "Y", "prdSe": "M",
+                "startPrdDe": f"{window_start:%Y%m}", "endPrdDe": f"{window_end:%Y%m}",
+            }, timeout=TIMEOUT_SECONDS))
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, list):
+                raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} request failed: {payload}")
+            for item in payload:
+                period = str(item.get("PRD_DE") or "")
+                value = _number(item.get("DT"))
+                if not re.fullmatch(r"\d{6}", period) or value is None:
+                    continue
+                if period in seen:
+                    raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} returned duplicate YoY rows for {code} {period}")
+                seen.add(period)
+                observed = date(int(period[:4]), int(period[4:]), 1)
+                if start <= observed <= end:
+                    output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
     return output
 
 def _ecos_month_windows(start: date, end: date, months: int = 120) -> list[tuple[date, date]]:
