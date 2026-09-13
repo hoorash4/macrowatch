@@ -33,8 +33,8 @@ class FakeDatabase:
 class PolicyRateSourceTests(unittest.TestCase):
     def test_us_rate_projects_only_stored_decision_date_and_midpoint(self):
         database = FakeDatabase(events=[
-            {"meeting_date": "2026-03-18", "target_range_lower": "4.00", "target_range_upper": "4.25"},
-            {"meeting_date": "2026-01-28", "target_range_lower": "4.25", "target_range_upper": "4.50"},
+            {"meeting_date": "2026-03-18", "action": "cut", "change_bps": -25, "target_range_lower": "4.00", "target_range_upper": "4.25"},
+            {"meeting_date": "2026-01-28", "action": "hold", "change_bps": 0, "target_range_lower": "4.25", "target_range_upper": "4.50"},
         ])
         rows = fetch_us_policy_rate_chart_rows(
             database, date(2009, 1, 1), date(2026, 9, 13), recent_limit=5,
@@ -47,11 +47,21 @@ class PolicyRateSourceTests(unittest.TestCase):
         self.assertEqual(params["order"], "meeting_date.desc")
         self.assertEqual(params["limit"], "5")
 
-    def test_us_rate_rejects_completed_stored_event_with_missing_rate(self):
+    def test_us_rate_reconstructs_missing_bounds_from_stored_changes_and_anchor(self):
+        database = FakeDatabase(events=[
+            {"meeting_date": "2009-01-28", "action": "hold", "change_bps": None, "target_range_lower": None, "target_range_upper": None},
+            {"meeting_date": "2009-03-18", "action": "hold", "change_bps": None, "target_range_lower": None, "target_range_upper": None},
+            {"meeting_date": "2015-12-16", "action": "hike", "change_bps": 25, "target_range_lower": "0.25", "target_range_upper": "0.50"},
+        ])
+        rows = fetch_us_policy_rate_chart_rows(database, date(2009, 1, 1), date(2026, 9, 13))
+        self.assertEqual([row["value"] for row in rows], [0.125, 0.125, 0.375])
+
+    def test_us_rate_rejects_history_without_rate_anchor(self):
         database = FakeDatabase(events=[{
-            "meeting_date": "2026-03-18", "target_range_lower": None, "target_range_upper": None,
+            "meeting_date": "2026-03-18", "action": "cut", "change_bps": -25,
+            "target_range_lower": None, "target_range_upper": None,
         }])
-        with self.assertRaisesRegex(RuntimeError, "2026-03-18"):
+        with self.assertRaisesRegex(RuntimeError, "no policy-rate anchor"):
             fetch_us_policy_rate_chart_rows(database, date(2009, 1, 1), date(2026, 9, 13))
 
     @patch("backend.sources.policy_rates.requests.get")
