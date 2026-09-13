@@ -148,8 +148,11 @@ def main() -> None:
     kospi = fetch_kospi_history(KOSPI_START, today)
     for code in ("KOSPI_PER", "KOSPI_PBR"):
         dates = {str(row["observation_date"]) for row in kospi[code]}
-        if not dates or min(dates) > "2001-01-31":
-            raise RuntimeError(f"{code} history did not reach January 2001")
+        if not dates:
+            raise RuntimeError(f"{code} authoritative history is empty")
+        if code == "KOSPI_PER" and min(dates) > "2001-01-31":
+            raise RuntimeError("KOSPI_PER history did not reach January 2001")
+        print(f"series={code} authoritative_available_from={min(dates)}")
         replace_history(database, kospi[code], owner="economic_chart", start=KOSPI_START, end=today)
 
 
