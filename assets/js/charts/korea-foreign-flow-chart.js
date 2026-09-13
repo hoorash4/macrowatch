@@ -125,9 +125,9 @@
     if (!container || !supabaseClient) return;
     const [derived, foreign, trading, fx] = await Promise.all([
       chartUtils.loadAllRows((from, to) => supabaseClient.from('korea_foreign_flow_daily').select('observation_date,flow_index').order('observation_date').range(from, to)),
-      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'KR_FOREIGN_NET_BUY').order('observation_date').range(from, to)),
-      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'KOSPI_TRADING_VALUE').order('observation_date').range(from, to)),
-      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'USDKRW').order('observation_date').range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_series_points').select('observation_date,value').eq('series_code', 'KR_FOREIGN_NET_BUY').order('observation_date').range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_series_points').select('observation_date,value').eq('series_code', 'KOSPI_TRADING_VALUE').order('observation_date').range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_series_points').select('observation_date,value').eq('series_code', 'USDKRW').order('observation_date').range(from, to)),
     ]);
     if ([derived, foreign, trading, fx].some((result) => result.error)) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도를 불러오지 못했습니다.</div>'; return; }
     const merge = new Map((derived.data || []).map((row) => [String(row.observation_date), { ...row }]));

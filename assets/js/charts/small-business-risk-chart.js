@@ -108,7 +108,7 @@
     const [risk, optimism] = await Promise.all([
       utils.loadAllRows((from, to) => supabaseClient.from('us_small_business_risk_monthly')
         .select('month,risk_index,is_provisional').order('month', { ascending: true }).range(from, to)),
-      utils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points')
+      utils.loadAllRows((from, to) => supabaseClient.from('economic_chart_series_points')
         .select('observation_date,value').eq('series_code', 'US_NFIB_OPTIMISM')
         .order('observation_date', { ascending: true }).range(from, to)),
     ]);

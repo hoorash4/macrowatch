@@ -97,6 +97,9 @@ class SourceDerivedBoundaryTests(unittest.TestCase):
         for path in consumers:
             self.assertIn("economic_chart_series_points", path.read_text(encoding="utf-8"), str(path))
 
+        for path in (ROOT / "assets" / "js").rglob("*.js"):
+            self.assertNotIn("from('economic_chart_points')", path.read_text(encoding="utf-8"), str(path))
+
     def test_small_business_and_corporate_delinquency_codes_are_distinct(self):
         pipeline = (ROOT / "backend/signals/korea_small_business_risk_pipeline.py").read_text(encoding="utf-8")
         self.assertIn('"KR_SME_LOAN_DELINQ"', pipeline)
