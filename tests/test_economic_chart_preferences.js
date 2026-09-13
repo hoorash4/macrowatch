@@ -9,6 +9,7 @@ const css = fs.readFileSync('assets/css/economic-charts.css', 'utf8');
 const html = fs.readFileSync('economic-charts.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260911161000_add_economic_chart_preferences.sql', 'utf8');
 const catalogMigration = fs.readFileSync('supabase/migrations/20260913153000_add_economic_chart_catalog_settings.sql', 'utf8');
+const categorySplitMigration = fs.readFileSync('supabase/migrations/20260913210000_split_financial_credit_category.sql', 'utf8');
 
 test('economic chart uses real chart-space right gap instead of a white overlay', () => {
   assert.doesNotMatch(html, /economic-plot-gap/);
@@ -67,6 +68,21 @@ test('administrator category order is stored globally and category titles are th
   assert.match(catalogMigration, /for select to authenticated[\s\S]*using \(true\)/);
   assert.match(catalogMigration, /is_admin = true/g);
   assert.match(catalogMigration, /grant insert, update .* to authenticated/);
+});
+
+test('rates and market credit use separate centralized categories without losing saved order', () => {
+  assert.match(chart, /RATE_CATEGORY='금리',FINANCIAL_CREDIT_CATEGORY='금융신용'/);
+  for (const code of ['HY_OAS','NFCI_CREDIT','EM_OAS']) {
+    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+category:FINANCIAL_CREDIT_CATEGORY`));
+  }
+  for (const code of ['US2Y','US10Y','US10Y_REAL','US10Y2Y','US_POLICY_RATE_MID','KR3Y','KR10Y','KR10Y3Y']) {
+    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+category:RATE_CATEGORY`));
+  }
+  assert.match(chart, /function normalizeCategoryOrder\(value\)/);
+  assert.match(chart, /function normalizeSeriesOrder\(value\)/);
+  assert.match(categorySplitMigration, /economic_chart_catalog_settings/);
+  assert.match(categorySplitMigration, /economic_chart_preferences/);
+  assert.match(categorySplitMigration, /'금융신용'/);
 });
 
 test('every paired chart defaults moving averages off from one common rule', () => {
