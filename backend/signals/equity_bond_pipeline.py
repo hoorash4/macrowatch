@@ -22,8 +22,8 @@ FRED_SERIES = {
 SOURCE_CODES = {
     "spy_adjusted_close": ("SPY_ADJUSTED_CLOSE", "D", "YAHOO:SPY"),
     "tlt_adjusted_close": ("TLT_ADJUSTED_CLOSE", "D", "YAHOO:TLT"),
-    "real_yield_10y": ("US10Y_REAL", "D", "FRED:DFII10"),
-    "yield_curve_10y_2y": ("US10Y2Y", "D", "FRED:T10Y2Y"),
+    "real_yield_10y": ("US10Y_REAL", "D", "USTREASURY:daily_treasury_real_yield_curve"),
+    "yield_curve_10y_2y": ("US10Y2Y", "D", "DERIVED:US10Y-US2Y"),
     "baa_spread": ("BAA10Y", "D", "FRED:BAA10Y"),
     "nfci_level": ("NFCI", "W", "FRED:NFCI"),
 }

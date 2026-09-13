@@ -34,6 +34,14 @@ class CollectorIsolationTests(unittest.TestCase):
         for relation in legacy_relations:
             self.assertIn(f"drop table if exists public.{relation}", cleanup)
 
+    def test_canonical_treasury_metadata_matches_the_actual_adapter(self) -> None:
+        equity_bond = text("backend/signals/equity_bond_pipeline.py")
+        liquidity = text("backend/signals/liquidity_pipeline.py")
+        treasury_source = "USTREASURY:daily_treasury_real_yield_curve"
+        self.assertIn(f'("US10Y_REAL", "D", "{treasury_source}")', equity_bond)
+        self.assertIn(f'("US10Y_REAL", "D", "{treasury_source}")', liquidity)
+        self.assertIn('("US10Y2Y", "D", "DERIVED:US10Y-US2Y")', equity_bond)
+
     def test_pages_deploy_is_frontend_only(self) -> None:
         workflow = text(".github/workflows/pages-deploy.yml")
         self.assertIn('paths:', workflow)
