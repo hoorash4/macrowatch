@@ -68,6 +68,7 @@ class SourceDerivedBoundaryTests(unittest.TestCase):
             derived_job = text.split("\n  derived:\n", 1)[1]
             self.assertIn("needs: sources", derived_job, name)
             self.assertIn("--stage derived", derived_job, name)
+            self.assertIn("pip install", derived_job, f"{name}: derived runtime dependencies")
             for token in provider_tokens:
                 self.assertNotIn(token, derived_job, f"{name}: {token}")
 

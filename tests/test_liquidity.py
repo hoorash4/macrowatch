@@ -97,6 +97,14 @@ class LiquidityTests(unittest.TestCase):
         self.assertEqual(lp.shift_month(date(2024,2,29), -12), date(2023,2,28))
         self.assertEqual(lp.CANONICAL_SERIES['KR']['base'][0], 'KR_POLICY_RATE')
 
+    def test_monthly_reference_dates_allow_publication_lag_only_for_monthly_sources(self):
+        today = date(2026, 9, 13)
+        latest_month = date(2026, 6, 1)
+        for source in ('m2', 'lf', 'equity_flow', 'bond_flow'):
+            self.assertTrue(lp.source_is_fresh(source, latest_month, today), source)
+        self.assertFalse(lp.source_is_fresh('credit_conditions', latest_month, today))
+        self.assertFalse(lp.source_is_fresh('lf', date(2026, 5, 1), today))
+
     def test_future_does_not_change_past_score(self):
         from unittest.mock import patch
         feature = weekly_environment(date(2016, 1, 1), date(2021, 12, 31),

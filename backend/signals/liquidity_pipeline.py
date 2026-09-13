@@ -60,14 +60,23 @@ SNAPSHOTS = {849: {"콜금리(익일물)": "call"},
 # false collection failure.  These are maximum ages, not imputed values.
 FRESHNESS_DAYS = {
     "base": 45,
-    "m2": 55,
-    "lf": 85,
-    "equity_flow": 55,
-    "bond_flow": 55,
+    # Monthly observations are dated on the first of their reference month,
+    # not on their later publication day.  Allow the normal BOK/BOP release
+    # lag without weakening the shorter daily and weekly source checks.
+    "m2": 120,
+    "lf": 120,
+    "equity_flow": 120,
+    "bond_flow": 120,
     "fed_assets": 21,
     "tga": 21,
     "credit_conditions": 21,
 }
+
+
+def source_is_fresh(name: str, latest: date, end: date) -> bool:
+    return (end - latest).days <= FRESHNESS_DAYS.get(name, 10)
+
+
 CANONICAL_SERIES = {
     "US": {
         "sofr": ("US_SOFR", "D", "FRED:SOFR"), "iorb": ("US_IORB", "D", "FRED:IORB"),
@@ -212,8 +221,7 @@ def collect(country, existing, end, names=None):
     for name in expected:
         if name == "ioer":
             continue
-        allowance = FRESHNESS_DAYS.get(name, 10)
-        if (end - max(result[name])).days > allowance:
+        if not source_is_fresh(name, max(result[name]), end):
             raise RuntimeError(f"Stale source: {name}, latest={max(result[name])}")
     return result
 

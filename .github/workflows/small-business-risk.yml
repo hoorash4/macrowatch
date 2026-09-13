@@ -39,6 +39,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Install runtime client
+        run: pip install --disable-pip-version-check requests
       - name: Calculate small business risk from stored observations
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
