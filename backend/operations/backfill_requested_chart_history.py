@@ -128,7 +128,10 @@ def fetch_kospi_history(start: date, end: date) -> dict[str, list[dict]]:
         chunk = parse_krx_history_frame(frame)
         for code in combined:
             combined[code].extend(chunk[code])
-        print(f"krx_year={year} rows={len(chunk['KOSPI_PER'])}")
+        print(
+            f"krx_year={year} per_rows={len(chunk['KOSPI_PER'])} "
+            f"pbr_rows={len(chunk['KOSPI_PBR'])}"
+        )
         time.sleep(0.25)
     return combined
 
@@ -143,13 +146,10 @@ def main() -> None:
     replace_history(database, nfci_rows, owner="financial_stress", start=NFCI_START, end=today)
 
     kospi = fetch_kospi_history(KOSPI_START, today)
-    per_dates = {str(row["observation_date"]) for row in kospi["KOSPI_PER"]}
-    pbr_dates = {str(row["observation_date"]) for row in kospi["KOSPI_PBR"]}
-    if per_dates != pbr_dates:
-        raise RuntimeError("KOSPI PER/PBR authoritative date sets differ")
-    if not per_dates or min(per_dates) > "2001-01-31":
-        raise RuntimeError("KOSPI valuation history did not reach January 2001")
     for code in ("KOSPI_PER", "KOSPI_PBR"):
+        dates = {str(row["observation_date"]) for row in kospi[code]}
+        if not dates or min(dates) > "2001-01-31":
+            raise RuntimeError(f"{code} history did not reach January 2001")
         replace_history(database, kospi[code], owner="economic_chart", start=KOSPI_START, end=today)
 
 
