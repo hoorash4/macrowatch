@@ -217,6 +217,7 @@ def calculate_derived() -> tuple[dict[str, int], dict[str, str]]:
     tracked_codes = set(FRED_SERIES) | set(ECOS_SERIES) | set(KRX_INDEX_FUNDAMENTALS) | {
         "US2Y", "US10Y", "US10Y_REAL", "US10Y2Y", "WTI", "KR_POLICY_RATE",
         "US_POLICY_RATE_MID", "KR10Y3Y", "REDBOOK", "US_RETAIL_SALES", "KR_EXPORT_DAILY_AVG",
+        "NFCI_RISK", "KR_CORP_CREDIT_SPREAD",
     }
     alerts = check_collected_series_alerts(db, tracked_codes)
     print(json.dumps({"mode": "automatic", "stage": "derived", "inserted": inserted,

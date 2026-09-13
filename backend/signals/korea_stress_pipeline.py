@@ -333,6 +333,10 @@ def main() -> None:
                     "treasury_3y": "KR3Y", "kofr": "KR_KOFR"}
     daily_values = {name: load_canonical(database, code, start=min(monthly_start, weekly_start), end=today)
                     for name, code in code_by_name.items()}
+    corporate_credit_spread = {
+        observed: daily_values["aa_minus_3y"][observed] - daily_values["treasury_3y"][observed]
+        for observed in daily_values["aa_minus_3y"].keys() & daily_values["treasury_3y"].keys()
+    }
     values = {name: period_last(series, "M", today) for name, series in daily_values.items()}
     kospi_weekly_values = weekly_observations(daily_values["kospi_close"], today)
     corporate_weekly_values = weekly_observations(daily_values["bbb_minus_3y"], today)
@@ -365,6 +369,10 @@ def main() -> None:
     calculated_payload.extend(derived_series_rows(
         "KOSPI_WEEKLY_CLOSE", {date.fromisoformat(row["week"]): float(row["kospi_close"]) for row in kospi_weekly},
         frequency="W", source="RESAMPLED:ECOS:802Y001/0001000/W",
+    ))
+    calculated_payload.extend(derived_series_rows(
+        "KR_CORP_CREDIT_SPREAD", corporate_credit_spread,
+        frequency="D", source="DERIVED:KR_AA_YIELD-KR3Y",
     ))
     store_derived(database, calculated_payload)
     result_rows = [{key: row[key] for key in ("month", "stress_index", "market_component_index", "is_provisional")} for row in rows]

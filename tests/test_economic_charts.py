@@ -83,7 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=24', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=25', html)
         self.assertIn('MIN_BAR_SPACING=.01', script)
         self.assertIn('minBarSpacing:MIN_BAR_SPACING', script)
         self.assertIn('MIN_DATA_SCREEN_RATIO=.5', script)
@@ -143,8 +143,9 @@ class EconomicChartFeatureTests(unittest.TestCase):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
         for removed in ('POLICY_EXPECTATION', 'EM_CAPACITY', 'US_SME_RISK', 'KR_SME_RISK', 'US_INFLATION'):
             self.assertNotIn(removed, script)
-        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
+        for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'NFCI_RISK', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
             self.assertIn(raw, script)
+        self.assertIn("code:'KR_CORP_CREDIT_SPREAD'", script)
         self.assertIn("code:'DRALACBS'", script)
         self.assertNotIn("fallback:['policy_expectation_spreads'", script)
         self.assertNotIn("us_treasury_10y_daily", script)
@@ -231,6 +232,10 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn("'Q'", quarterly)
         self.assertIn('US10Y2Y', automatic)
         self.assertIn('KR10Y3Y', automatic)
+        self.assertIn('"NFCI_RISK", "KR_CORP_CREDIT_SPREAD"', automatic)
+        korea_stress = (ROOT / 'backend/signals/korea_stress_pipeline.py').read_text(encoding='utf-8')
+        self.assertIn('"KR_CORP_CREDIT_SPREAD", corporate_credit_spread', korea_stress)
+        self.assertIn('source="DERIVED:KR_AA_YIELD-KR3Y"', korea_stress)
         self.assertIn('from pykrx import stock', krx_source)
         self.assertIn('KOSPI_INDEX_TICKER = "1001"', krx_source)
         self.assertIn('"KOSPI_PER": ("PER", "D")', krx_source)
