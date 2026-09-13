@@ -124,6 +124,7 @@ class AutomationIsolationTests(unittest.TestCase):
     def test_backfill_runtime_entrypoints_are_retired(self) -> None:
         removed = (
             ".github/workflows/economic-chart-backfill-once.yml",
+            ".github/workflows/economic-core-1990-backfill.yml",
             ".github/workflows/business-credit-backfill-once.yml",
             ".github/workflows/korea-rehab-backfill-once.yml",
             ".github/workflows/legacy-ch11-backfill-once.yml",
@@ -131,6 +132,7 @@ class AutomationIsolationTests(unittest.TestCase):
             "backend/signals/business_credit_backfill.py",
             "backend/signals/economic_chart_backfill.py",
             "backend/signals/economic_chart_spread_backfill.py",
+            "backend/signals/economic_core_1990_backfill.py",
             "backend/signals/korea_export_backfill.py",
             "backend/signals/paynet_backfill.py",
             "backend/signals/wti_futures_backfill.py",
