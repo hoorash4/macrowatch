@@ -69,16 +69,13 @@ class InflationRateSourceTests(unittest.TestCase):
 
     @patch("sources.inflation_rates.request_with_retry")
     def test_kosis_reads_headline_and_food_energy_excluded_yoy_directly(self, request):
-        request.side_effect = [
-            Response([{"ORG_ID": "101", "TBL_ID": "CURRENT", "TBL_NM": "월별 소비자물가 등락률"}]),
-            Response([
+        request.return_value = Response([
                 {"PRD_DE": "202608", "DT": "3.7", "C1_NM": "총지수", "ITM_NM": "전년동월비", "UNIT_NM": "%"},
                 {"PRD_DE": "202608", "DT": "0.4", "C1_NM": "총지수", "ITM_NM": "전월비", "UNIT_NM": "%"},
                 {"PRD_DE": "202608", "DT": "2.9", "C1_NM": "식료품 및 에너지 제외지수", "ITM_NM": "전년동월비", "UNIT_NM": "%"},
-            ]),
-        ]
+            ])
         result = fetch_kosis_rates(date(2026, 8, 1), date(2026, 8, 1), "key")
-        self.assertEqual(result["KR_CPI"][0]["source"], "KOSIS:101/CURRENT:YoY")
+        self.assertEqual(result["KR_CPI"][0]["source"], "KOSIS:101/DT_1J22042:YoY")
         self.assertEqual(result["KR_CPI"][0]["value"], 3.7)
         self.assertEqual(result["KR_CORE_CPI"][0]["value"], 2.9)
 
