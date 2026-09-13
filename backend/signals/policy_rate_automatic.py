@@ -7,10 +7,8 @@ from datetime import date, timedelta
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago
 from signals.economic_chart_pipeline import TABLE, _insert_missing
 from sources.policy_rates import (
-    fetch_fed_decision_dates,
     fetch_korea_policy_rate_rows,
-    fetch_us_policy_rate_rows,
-    us_policy_event_chart_rows,
+    fetch_us_policy_rate_chart_rows,
 )
 
 
@@ -24,12 +22,10 @@ def collect(today: date | None = None, db: SupabaseRest | None = None) -> dict[s
     us_write_start = end - timedelta(days=US_WRITE_DAYS)
     kr_start = month_start_months_ago(end, AUTOMATIC_MONTHLY_PERIODS - 1)
 
-    # Fetch both providers before the first write.  A source failure therefore
-    # cannot leave one country updated and the other untouched.
-    us_source = fetch_us_policy_rate_rows(us_write_start, end)
-    decision_dates = fetch_fed_decision_dates(us_write_start, end)
+    # Read both inputs before the first write. A source failure therefore cannot
+    # leave one country updated and the other untouched.
+    us_chart_rows = fetch_us_policy_rate_chart_rows(database, us_write_start, end)
     kr_chart_rows = fetch_korea_policy_rate_rows(kr_start, end)
-    us_chart_rows = us_policy_event_chart_rows(us_source, decision_dates, start=us_write_start)
     counts = {
         "US_POLICY_RATE_MID": _insert_missing(database, us_chart_rows, us_write_start),
         "KR_POLICY_RATE": _insert_missing(database, kr_chart_rows, kr_start),

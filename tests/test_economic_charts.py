@@ -175,6 +175,22 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn("lineType:'steps'", script)
         self.assertIn("window.LightweightCharts.LineType.WithSteps", script)
 
+    def test_us_policy_rate_is_stored_as_decision_events_not_daily_rows(self):
+        source = (ROOT / 'backend/sources/policy_rates.py').read_text(encoding='utf-8')
+        automatic = (ROOT / 'backend/signals/policy_rate_automatic.py').read_text(encoding='utf-8')
+        backfill = (ROOT / 'backend/signals/policy_rate_backfill.py').read_text(encoding='utf-8')
+        migration = (ROOT / 'supabase/migrations/20260913193000_replace_us_policy_rate_with_decision_events.sql').read_text(encoding='utf-8')
+        self.assertIn('central_bank_policy_events', source)
+        self.assertIn('DB:central_bank_policy_events', source)
+        self.assertIn('FED:FOMC-statement', source)
+        self.assertIn('"frequency": "E"', source)
+        self.assertNotIn('fetch_fred_observations', source)
+        self.assertIn('fetch_us_policy_rate_chart_rows(database', automatic)
+        self.assertIn('fetch_us_policy_rate_chart_rows(', backfill)
+        self.assertIn('fill_missing_from_fed=True', backfill)
+        self.assertIn("frequency in ('D', 'W', 'T', 'M', 'E')", migration)
+        self.assertIn("where series_code = 'US_POLICY_RATE_MID'", migration)
+
     def test_korea_export_is_collected_incrementally(self):
         automatic = (ROOT / 'backend/signals/economic_chart_automatic.py').read_text(encoding='utf-8')
         source = (ROOT / 'backend/sources/korea_export_intramonth.py').read_text(encoding='utf-8')

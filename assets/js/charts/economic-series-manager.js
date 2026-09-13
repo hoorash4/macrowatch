@@ -10,7 +10,7 @@ const SERIES_CATALOG = [
   {code:'US10Y',title:'미국채 10년',frequency:'일별',category:'금리 · 신용'},
   {code:'US10Y_REAL',title:'미국채 10년 실질금리',frequency:'일별',category:'금리 · 신용'},
   {code:'US10Y2Y',title:'미국 10Y-2Y 스프레드',frequency:'일별',category:'금리 · 신용'},
-  {code:'US_POLICY_RATE_MID',title:'기준금리',frequency:'일별',category:'금리 · 신용'},
+  {code:'US_POLICY_RATE_MID',title:'기준금리',frequency:'미국 결정일 · 한국 월별',category:'금리 · 신용'},
   {code:'HY_OAS',title:'미국 하이일드 OAS',frequency:'일별',category:'금리 · 신용'},
   {code:'NFCI_CREDIT',title:'미국 금융 신용여건',frequency:'주별',category:'금리 · 신용'},
   {code:'EM_OAS',title:'이머징 채권 OAS',frequency:'일별',category:'금리 · 신용'},

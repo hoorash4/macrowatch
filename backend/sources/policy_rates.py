@@ -1,22 +1,17 @@
-"""Official U.S. and Korean policy-rate source adapters.
-
-FRED provides daily target-range observations.  The policy-rate chart stores
-one observation per official FOMC decision date, including decisions to hold.
-"""
+"""Official Korean policy-rate and U.S. FOMC decision-rate adapters."""
 from __future__ import annotations
 
-from bisect import bisect_left
-from datetime import date, timedelta
+from datetime import date
+from html import unescape
 import re
 from typing import Any
+from urllib.parse import urljoin
 
 import requests
 
-from common import fetch_fred_observations, request_with_retry, require_env
+from common import request_with_retry, require_env
 
 
-US_POLICY_LOWER_SERIES = "DFEDTARL"
-US_POLICY_UPPER_SERIES = "DFEDTARU"
 KR_POLICY_STAT_CODE = "722Y001"
 KR_POLICY_ITEM_CODE = "0101000"
 
@@ -31,65 +26,28 @@ def _number(value: object) -> float | None:
         return None
 
 
-def _fred_values(series_id: str, start: date, end: date, api_key: str) -> dict[date, float]:
-    values: dict[date, float] = {}
-    for row in fetch_fred_observations(
-        series_id,
-        api_key,
-        start=start.isoformat(),
-        end=end.isoformat(),
-    ):
-        raw_date = row.get("date")
-        value = _number(row.get("value"))
-        if not isinstance(raw_date, str) or value is None:
-            continue
-        try:
-            values[date.fromisoformat(raw_date)] = value
-        except ValueError:
-            continue
-    if not values:
-        raise RuntimeError(f"FRED {series_id} returned no usable policy-rate values")
-    return values
-
-
-def fetch_us_policy_rate_rows(
-    start: date,
-    end: date,
-    api_key: str | None = None,
-) -> list[dict[str, object]]:
-    """Return every published U.S. target-range observation with its midpoint."""
-    key = api_key or require_env("FRED_API_KEY")
-    lower = _fred_values(US_POLICY_LOWER_SERIES, start, end, key)
-    upper = _fred_values(US_POLICY_UPPER_SERIES, start, end, key)
-    shared = sorted(lower.keys() & upper.keys())
-    rows = [
-        {
-            "observed_on": observed.isoformat(),
-            "target_lower_pct": round(lower[observed], 4),
-            "target_upper_pct": round(upper[observed], 4),
-            "target_mid_pct": round((lower[observed] + upper[observed]) / 2, 4),
-            "source": f"FRED:{US_POLICY_LOWER_SERIES},{US_POLICY_UPPER_SERIES}",
-        }
-        for observed in shared
-    ]
-    if not rows:
-        raise RuntimeError("FRED target-range bounds do not have overlapping observation dates")
-    return rows
-
-
 FED_FOMC_CALENDAR_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
 FED_FOMC_HISTORICAL_URL = "https://www.federalreserve.gov/monetarypolicy/fomchistorical{year}.htm"
-_FED_STATEMENT_DATE = re.compile(r"monetary(\d{8})a\.htm", re.IGNORECASE)
+_FED_ORIGIN = "https://www.federalreserve.gov"
+_FED_STATEMENT_LINK = re.compile(r"href\s*=\s*['\"](?P<href>[^'\"]*monetary(?P<date>\d{8})a\.htm)[^'\"]*['\"]", re.IGNORECASE)
+_FED_TARGET_RANGE = re.compile(
+    r"target\s+range\s+for\s+(?:the\s+)?federal\s+funds\s+rate\s+(?:at|to)\s+"
+    r"(?P<lower>\d+(?:[-‑–]\d+/\d+)?)\s+(?:to|[-‑–])\s+"
+    r"(?P<upper>\d+(?:[-‑–]\d+/\d+)?)\s+percent",
+    re.IGNORECASE,
+)
 
 
-def _fed_statement_dates(html: str) -> set[date]:
-    dates: set[date] = set()
-    for raw in _FED_STATEMENT_DATE.findall(html):
+def _fed_statement_links(html: str) -> dict[date, str]:
+    links: dict[date, str] = {}
+    for match in _FED_STATEMENT_LINK.finditer(html):
+        raw = match.group("date")
         try:
-            dates.add(date(int(raw[:4]), int(raw[4:6]), int(raw[6:8])))
+            observed = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
         except ValueError:
             continue
-    return dates
+        links[observed] = urljoin(_FED_ORIGIN, match.group("href"))
+    return links
 
 
 def _fetch_fed_page(url: str) -> str:
@@ -98,54 +56,96 @@ def _fetch_fed_page(url: str) -> str:
     return response.text
 
 
-def fetch_fed_decision_dates(start: date, end: date) -> list[date]:
-    """Return official FOMC statement dates directly from the Federal Reserve.
-
-    The calendar page covers 2010 onward; the separate historical page provides
-    2009.  A statement is the official decision record, so holds are retained.
-    """
-    dates = _fed_statement_dates(_fetch_fed_page(FED_FOMC_CALENDAR_URL))
+def _fed_decision_links(start: date, end: date) -> dict[date, str]:
+    """Return official FOMC statement URLs to verify DB coverage by decision date."""
+    links = _fed_statement_links(_fetch_fed_page(FED_FOMC_CALENDAR_URL))
     # The calendar page has a rolling set of recent years.  Complete older
     # years directly from each official historical archive instead of inferring
     # meetings from daily rate values.
     for year in range(start.year, end.year + 1):
-        if not any(observed.year == year for observed in dates):
-            dates.update(_fed_statement_dates(_fetch_fed_page(FED_FOMC_HISTORICAL_URL.format(year=year))))
-    result = sorted(observed for observed in dates if start <= observed <= end)
+        if not any(observed.year == year for observed in links):
+            links.update(_fed_statement_links(_fetch_fed_page(FED_FOMC_HISTORICAL_URL.format(year=year))))
+    result = {observed: href for observed, href in links.items() if start <= observed <= end}
     if not result:
         raise RuntimeError("Federal Reserve FOMC calendar returned no decision dates")
     return result
 
 
-def us_policy_event_chart_rows(
-    source_rows: list[dict[str, object]],
-    decision_dates: list[date],
+def _fed_percent(value: str) -> float:
+    normalized = value.replace("‑", "-").replace("–", "-")
+    if "-" not in normalized:
+        return float(normalized)
+    whole, fraction = normalized.split("-", 1)
+    numerator, denominator = fraction.split("/", 1)
+    return float(whole) + float(numerator) / float(denominator)
+
+
+def _fed_target_range(statement_html: str) -> tuple[float, float]:
+    text = re.sub(r"<[^>]+>", " ", unescape(statement_html))
+    text = re.sub(r"\s+", " ", text).strip()
+    match = _FED_TARGET_RANGE.search(text)
+    if not match:
+        raise RuntimeError("Federal Reserve statement did not contain a target-rate range")
+    lower, upper = _fed_percent(match.group("lower")), _fed_percent(match.group("upper"))
+    if lower > upper:
+        raise RuntimeError("Federal Reserve statement produced an inverted target-rate range")
+    return lower, upper
+
+
+def fetch_us_policy_rate_chart_rows(
+    db: Any,
+    start: date,
+    end: date,
     *,
-    start: date | None = None,
+    fill_missing_from_fed: bool = False,
 ) -> list[dict[str, object]]:
-    """Match official FOMC decisions to the first published FRED target range."""
-    source_by_date = {
-        date.fromisoformat(str(row["observed_on"])): row
-        for row in source_rows
-    }
-    observed_dates = sorted(source_by_date)
-    rows: list[dict[str, object]] = []
-    for decision in sorted(set(decision_dates)):
-        if start is not None and decision < start:
+    """Read analyzed FOMC events; explicit backfill alone fills missing records from the Fed."""
+    saved = db.request("GET", "central_bank_policy_events", params={
+        "select": "meeting_date,target_range_lower,target_range_upper",
+        "central_bank": "eq.fed",
+        "analysis_status": "eq.completed",
+        "meeting_date": f"gte.{start.isoformat()}",
+        "and": f"(meeting_date.lte.{end.isoformat()})",
+        "order": "meeting_date.asc",
+        "limit": "10000",
+    }) or []
+    stored: dict[date, tuple[float, float]] = {}
+    for row in saved:
+        try:
+            observed = date.fromisoformat(str(row.get("meeting_date") or ""))
+        except ValueError:
             continue
-        position = bisect_left(observed_dates, decision)
-        if position == len(observed_dates) or observed_dates[position] > decision + timedelta(days=7):
-            raise RuntimeError(f"FRED policy-rate value missing after FOMC decision {decision.isoformat()}")
-        source = source_by_date[observed_dates[position]]
+        lower, upper = _number(row.get("target_range_lower")), _number(row.get("target_range_upper"))
+        if lower is not None and upper is not None and lower <= upper:
+            stored[observed] = (lower, upper)
+
+    if not fill_missing_from_fed:
+        return [{
+            "series_code": "US_POLICY_RATE_MID",
+            "observation_date": observed.isoformat(),
+            "value": round((lower + upper) / 2, 4),
+            "frequency": "E",
+            "source": "DB:central_bank_policy_events",
+        } for observed, (lower, upper) in sorted(stored.items())]
+
+    links = _fed_decision_links(start, end)
+    rows: list[dict[str, object]] = []
+    for decision, href in sorted(links.items()):
+        if decision in stored:
+            lower, upper = stored[decision]
+            source = "DB:central_bank_policy_events"
+        else:
+            lower, upper = _fed_target_range(_fetch_fed_page(href))
+            source = "FED:FOMC-statement"
         rows.append({
             "series_code": "US_POLICY_RATE_MID",
             "observation_date": decision.isoformat(),
-            "value": float(source["target_mid_pct"]),
-            "frequency": "D",
-            "source": "DERIVED:FED:FOMC-statement+FRED:DFEDTARL,DFEDTARU:midpoint",
+            "value": round((lower + upper) / 2, 4),
+            "frequency": "E",
+            "source": source,
         })
     if not rows:
-        raise RuntimeError("U.S. policy-rate decision projection produced no rows")
+        raise RuntimeError("U.S. policy-rate collection produced no decision-date rows")
     return rows
 
 

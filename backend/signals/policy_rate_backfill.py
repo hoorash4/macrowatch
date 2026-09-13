@@ -7,10 +7,8 @@ from datetime import date
 from common import SupabaseRest
 from signals.economic_chart_pipeline import TABLE
 from sources.policy_rates import (
-    fetch_fed_decision_dates,
     fetch_korea_policy_rate_rows,
-    fetch_us_policy_rate_rows,
-    us_policy_event_chart_rows,
+    fetch_us_policy_rate_chart_rows,
 )
 
 
@@ -52,11 +50,11 @@ def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[
     database = db or SupabaseRest()
 
     # Both external histories must be complete before this function changes DB state.
-    us_source = fetch_us_policy_rate_rows(BACKFILL_START, end)
-    decision_dates = fetch_fed_decision_dates(BACKFILL_START, end)
+    us_chart_rows = fetch_us_policy_rate_chart_rows(
+        database, BACKFILL_START, end, fill_missing_from_fed=True,
+    )
     kr_chart_rows = fetch_korea_policy_rate_rows(BACKFILL_START, end)
-    us_chart_rows = us_policy_event_chart_rows(us_source, decision_dates)
-    if not us_source or not us_chart_rows or not kr_chart_rows:
+    if not us_chart_rows or not kr_chart_rows:
         raise RuntimeError("Policy-rate backfill source validation failed")
 
     _replace_chart_series(database, "US_POLICY_RATE_MID", us_chart_rows, end)
