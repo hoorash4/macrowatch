@@ -18,10 +18,10 @@ class EconomicChartLiveSourceTests(unittest.TestCase):
     def test_automatic_treasury_series_use_first_party_feed(self):
         automatic = (ROOT / "backend/signals/economic_chart_automatic.py").read_text(encoding="utf-8")
 
-        self.assertIn('LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "US10Y2Y", "WTI", "USDKRW"}', automatic)
+        self.assertIn('LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "WTI"}', automatic)
         self.assertIn('fetch_treasury_yield_rows(daily_start, today)', automatic)
         self.assertIn('fetch_treasury_real_yield_rows(daily_start, today)', automatic)
-        self.assertIn('fetch_yahoo_daily_rows("USDKRW", "KRW=X", daily_start, today)', automatic)
+        self.assertNotIn('fetch_yahoo_daily_rows("USDKRW"', automatic)
         self.assertIn('db, "US10Y2Y", "US10Y", "US2Y", "D", daily_start, today,', automatic)
         self.assertIn('max_rows=AUTOMATIC_DAILY_VALUES', automatic)
         self.assertFalse((ROOT / "backend/signals/economic_chart_backfill.py").exists())

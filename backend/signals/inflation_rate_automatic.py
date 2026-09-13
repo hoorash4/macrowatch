@@ -18,7 +18,7 @@ def collect(today: date | None = None, db: SupabaseRest | None = None) -> dict[s
     source_rows = fetch_all_rates(start, end)
     inserted = {}
     for code, rows in source_rows.items():
-        store_canonical_series(database, rows)
+        store_canonical_series(database, rows, owner="inflation_rates")
         inserted[code] = len(rows)
     print(json.dumps({
         "mode": "automatic",

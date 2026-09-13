@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -30,7 +30,7 @@ jobs:
           python-version: "3.12"
       - name: Install model dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Collect monthly sources and run purged walk-forward model
+      - name: Collect canonical monthly source observations
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -40,4 +40,21 @@ jobs:
           set -euo pipefail
           args=()
           [[ "${{ inputs.initialize_sources || 'false' }}" == "true" ]] && args+=(--initialize-sources)
-          PYTHONPATH=backend python -m signals.equity_bond_pipeline "${args[@]}"
+          PYTHONPATH=backend python -m signals.equity_bond_pipeline --stage sources "${args[@]}"
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install model dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Run the model from stored source observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.equity_bond_pipeline --stage derived

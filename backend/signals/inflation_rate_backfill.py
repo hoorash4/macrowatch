@@ -25,7 +25,7 @@ def backfill(today: date | None = None, db: SupabaseRest | None = None) -> dict[
     counts: dict[str, int] = {}
     for code in ALL_SERIES_CODES:
         rows = source_rows[code]
-        store_canonical_series(database, rows)
+        store_canonical_series(database, rows, owner="inflation_rates")
         source_dates = {str(row["observation_date"]) for row in rows}
         existing = database.request("GET", TABLE, params={
             "select": "observation_date",

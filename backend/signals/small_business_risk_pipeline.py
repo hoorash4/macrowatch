@@ -6,7 +6,7 @@ import argparse
 from datetime import date
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago, uncapped_score
-from signals.canonical_series import rows as canonical_rows, store as store_canonical
+from signals.canonical_series import load, rows as canonical_rows, store as store_canonical
 from sources.small_business_risk import TIMEOUT_SECONDS, fetch_nfib_monthly
 
 
@@ -69,26 +69,10 @@ def build_rows(
     return rows
 
 
-def fetch_stored_delinquency(database: SupabaseRest, start: date, end: date) -> dict[str, float]:
-    lookup_start = month_start_months_ago(start, MAX_DELINQUENCY_LAG_MONTHS)
-    saved = database.request("GET", "economic_chart_points", params={
-        "select": "observation_date,value",
-        "series_code": "eq.US_SBDI_31_180",
-        "observation_date": f"gte.{lookup_start.isoformat()}",
-        "and": f"(observation_date.lte.{end.isoformat()})",
-        "order": "observation_date.asc",
-        "limit": "10000",
-    }) or []
-    return {
-        str(row["observation_date"]): float(row["value"])
-        for row in saved
-        if row.get("observation_date") is not None and row.get("value") is not None
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     if args.months < 1 or args.months > 12:
         raise SystemExit("--months 값은 1~12 사이여야 합니다.")
@@ -97,22 +81,32 @@ def main() -> None:
     start = month_start_months_ago(today, args.months - 1)
     end = today.replace(day=1)
     database = SupabaseRest(timeout=TIMEOUT_SECONDS)
-    sales, borrowing, optimism = fetch_nfib_monthly(start, end)
-    delinquency = fetch_stored_delinquency(database, start, end)
+    if args.stage in ("sources", "all"):
+        sales, borrowing, optimism = fetch_nfib_monthly(start, end)
+        source_payload = []
+        for code, values, source in (
+            ("US_NFIB_SALES_EXPECTATION", sales, "NFIB:SBET/sales_expect"),
+            ("US_NFIB_BORROWING_DIFFICULTY", borrowing, "NFIB:SBET/credit_access"),
+            ("US_NFIB_OPTIMISM", optimism, "NFIB:SBET/OPT_INDEX"),
+        ):
+            source_payload.extend(canonical_rows(
+                code, {date.fromisoformat(day): value for day, value in values.items()},
+                frequency="M", source=source,
+            ))
+        store_canonical(database, source_payload, owner="small_business_risk")
+        print(f"stage=sources stored={len(source_payload)}")
+        if args.stage == "sources":
+            return
+    def stored(code: str) -> dict[str, float]:
+        return {day.isoformat(): value for day, value in load(database, code,
+                                                               start=month_start_months_ago(start, MAX_DELINQUENCY_LAG_MONTHS), end=end).items()}
+    sales = stored("US_NFIB_SALES_EXPECTATION")
+    borrowing = stored("US_NFIB_BORROWING_DIFFICULTY")
+    optimism = stored("US_NFIB_OPTIMISM")
+    delinquency = stored("US_SBDI_31_180")
     rows = build_rows(sales, borrowing, delinquency, optimism, today)
     if not rows:
         raise RuntimeError("저장할 미국 중소기업 위험지수 데이터가 없습니다.")
-    source_payload = []
-    for code, values, source in (
-        ("US_NFIB_SALES_EXPECTATION", sales, "NFIB:SBET/sales_expect"),
-        ("US_NFIB_BORROWING_DIFFICULTY", borrowing, "NFIB:SBET/credit_access"),
-        ("US_NFIB_OPTIMISM", optimism, "NFIB:SBET/OPT_INDEX"),
-    ):
-        source_payload.extend(canonical_rows(
-            code, {date.fromisoformat(day): value for day, value in values.items()},
-            frequency="M", source=source,
-        ))
-    store_canonical(database, source_payload)
     derived_rows = [{key: row[key] for key in (
         "month", "risk_index", "delinquency_source_month", "is_provisional",
     )} for row in rows]

@@ -1,4 +1,4 @@
-"""Incremental automatic collection for economic charts.
+"""Collect every regular economic-chart series in one scheduled refresh.
 
 Only a short recent source window is inspected. Historical backfill is a separate explicit
 entrypoint and is never imported or invoked from this scheduled collector.
@@ -6,6 +6,7 @@ entrypoint and is never imported or invoked from this scheduled collector.
 from __future__ import annotations
 
 import json
+import argparse
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -42,9 +43,8 @@ from sources.krx_index_fundamentals import (
 from sources.redbook import fetch_recent_redbook_rows
 from sources.us_treasury_yields import fetch_treasury_real_yield_rows, fetch_treasury_yield_rows
 from sources.wti_futures import fetch_wti_futures_rows
-from sources.yahoo_daily import fetch_yahoo_daily_rows
 
-LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "US10Y2Y", "WTI", "USDKRW"}
+LIVE_NON_FRED_SERIES = {"US2Y", "US10Y", "WTI"}
 KST = ZoneInfo("Asia/Seoul")
 
 
@@ -84,8 +84,8 @@ def collect_kospi_valuation(target: date | None = None, db: SupabaseRest | None 
     return inserted
 
 
-def collect() -> tuple[dict[str, int], dict[str, str]]:
-    """Collect every regular economic-chart series in one scheduled refresh."""
+def collect_sources() -> tuple[dict[str, int], dict[str, str]]:
+    """Fetch and persist only externally published observations."""
     today = date.today()
     starts = {
         "D": today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS),
@@ -141,26 +141,14 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
         inserted.setdefault("US10Y_REAL", 0)
         errors["US10Y_REAL"] = f"{error.__class__.__name__}: {error}"
 
-    run("US10Y2Y", lambda: _derive_spread(
-        db, "US10Y2Y", "US10Y", "US2Y", "D", daily_start, today,
-        max_rows=AUTOMATIC_DAILY_VALUES,
-    ))
     run("WTI", lambda: _insert_missing(db, latest_automatic_rows(fetch_wti_futures_rows(daily_start, today)), daily_start))
-    run("USDKRW", lambda: _insert_missing(db, latest_automatic_rows(fetch_yahoo_daily_rows("USDKRW", "KRW=X", daily_start, today)), daily_start))
-
     for code, (stat_code, item_code, frequency) in ECOS_SERIES.items():
         series_start = starts.get(frequency, daily_start)
         run(code, lambda code=code, stat_code=stat_code, item_code=item_code, frequency=frequency, series_start=series_start: _insert_missing(
             db, latest_automatic_rows(_ecos_rows(code, stat_code, item_code, frequency, series_start, today)), series_start
         ))
 
-    run("US_POLICY_RATE_MID", lambda: collect_us_policy_rate(today=today, db=db))
     run("KR_POLICY_RATE", lambda: collect_korea_policy_rate(today=today, db=db))
-
-    run("KR10Y3Y", lambda: _derive_spread(
-        db, "KR10Y3Y", "KR10Y", "KR3Y", "D", daily_start, today,
-        max_rows=AUTOMATIC_DAILY_VALUES,
-    ))
     run("REDBOOK", lambda: _insert_missing(db, latest_automatic_rows(fetch_recent_redbook_rows()), starts["W"]))
     run("US_RETAIL_SALES", lambda: _insert_missing(
         db,
@@ -178,30 +166,87 @@ def collect() -> tuple[dict[str, int], dict[str, str]]:
         if export_errors:
             errors["KR_EXPORT_SOURCE"] = " | ".join(export_errors[:5])
         inserted["KR_EXPORT_RAW"] = insert_missing_snapshots(db, snapshots, export_start_month)
-        inserted["KR_EXPORT_DAILY_AVG"] = derive_missing_segments(db, export_start_month)
     except Exception as error:
-        inserted.setdefault("KR_EXPORT_DAILY_AVG", 0)
-        errors["KR_EXPORT_DAILY_AVG"] = f"{error.__class__.__name__}: {error}"
+        inserted.setdefault("KR_EXPORT_RAW", 0)
+        errors["KR_EXPORT_RAW"] = f"{error.__class__.__name__}: {error}"
 
     # KOSPI valuation is part of the same regular refresh, but unlike tolerant source adapters its
     # strict pykrx validation must fail the workflow when KRX returns malformed/missing data.
     inserted.update(collect_kospi_valuation(db=db))
 
-    changed = {code for code, count in inserted.items() if count > 0 and code != "KR_EXPORT_RAW"}
-    alerts = check_collected_series_alerts(db, changed)
     print(json.dumps({
         "mode": "automatic",
+        "stage": "sources",
         "starts": {frequency: value.isoformat() for frequency, value in starts.items()},
         "end": today.isoformat(),
         "inserted": inserted,
         "errors": errors,
-        "alerts": alerts,
     }, ensure_ascii=False, sort_keys=True))
     return inserted, errors
 
 
+def calculate_derived() -> tuple[dict[str, int], dict[str, str]]:
+    """Calculate chart series using stored source data only; no provider calls are allowed here."""
+    today = date.today()
+    daily_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
+    export_start_month = (today - timedelta(days=65)).replace(day=1)
+    db = SupabaseRest()
+    inserted: dict[str, int] = {}
+    errors: dict[str, str] = {}
+
+    def run(name: str, action) -> None:
+        try:
+            inserted[name] = int(action())
+        except Exception as error:
+            inserted.setdefault(name, 0)
+            errors[name] = f"{error.__class__.__name__}: {error}"
+
+    run("US10Y2Y", lambda: _derive_spread(
+        db, "US10Y2Y", "US10Y", "US2Y", "D", daily_start, today,
+        max_rows=AUTOMATIC_DAILY_VALUES,
+    ))
+    run("KR10Y3Y", lambda: _derive_spread(
+        db, "KR10Y3Y", "KR10Y", "KR3Y", "D", daily_start, today,
+        max_rows=AUTOMATIC_DAILY_VALUES,
+    ))
+    run("US_POLICY_RATE_MID", lambda: collect_us_policy_rate(today=today, db=db))
+    run("KR_EXPORT_DAILY_AVG", lambda: derive_missing_segments(db, export_start_month))
+
+    # Checking every supported code keeps alert state correct across the job boundary.
+    # An unchanged value cannot retrigger a crossing alert.
+    tracked_codes = set(FRED_SERIES) | set(ECOS_SERIES) | set(KRX_INDEX_FUNDAMENTALS) | {
+        "US2Y", "US10Y", "US10Y_REAL", "US10Y2Y", "WTI", "KR_POLICY_RATE",
+        "US_POLICY_RATE_MID", "KR10Y3Y", "REDBOOK", "US_RETAIL_SALES", "KR_EXPORT_DAILY_AVG",
+    }
+    alerts = check_collected_series_alerts(db, tracked_codes)
+    print(json.dumps({"mode": "automatic", "stage": "derived", "inserted": inserted,
+                      "errors": errors, "alerts": alerts}, ensure_ascii=False, sort_keys=True))
+    return inserted, errors
+
+
+def collect() -> tuple[dict[str, int], dict[str, str]]:
+    """Compatibility entrypoint: source publication, then DB-only derivation."""
+    source_inserted, source_errors = collect_sources()
+    if source_errors:
+        return source_inserted, source_errors
+    derived_inserted, derived_errors = calculate_derived()
+    return {**source_inserted, **derived_inserted}, derived_errors
+
+
 def main() -> None:
-    collect()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
+    args = parser.parse_args()
+    if args.stage == "sources":
+        _inserted, errors = collect_sources()
+    elif args.stage == "derived":
+        _inserted, errors = calculate_derived()
+    else:
+        _inserted, errors = collect()
+    if errors:
+        raise RuntimeError("Economic chart collection partially failed: " + " | ".join(
+            f"{series}: {message}" for series, message in sorted(errors.items())
+        ))
 
 
 if __name__ == "__main__":

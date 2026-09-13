@@ -58,7 +58,7 @@ def fetch_us_policy_rate_chart_rows(
             "observation_date": observed.isoformat(),
             "value": round((lower + upper) / 2, 4),
             "frequency": "E",
-            "source": "DB:central_bank_policy_events",
+            "source": "DERIVED:central_bank_policy_events",
         })
     return sorted(rows, key=lambda item: str(item["observation_date"]))
 

@@ -4,7 +4,8 @@
 
 ## 저장 원칙
 
-- 재사용 가능한 단일 숫자 경제·시장 관측값의 canonical source는 `economic_chart_points(series_code, observation_date)`이다.
+- 재사용 가능한 외부 원천 경제·시장 관측값은 `economic_chart_points(series_code, observation_date)`에 저장한다.
+- 재사용 가능한 계산·리샘플 시계열은 `economic_chart_derived_points(series_code, observation_date)`에 분리하며, 소비자는 `economic_chart_series_points` 읽기 뷰를 사용한다.
 - OHLC, ETF 메타데이터처럼 단일 숫자 시계열 구조로 손실 없이 표현할 수 없는 데이터는 해당 공용 구조화 테이블을 canonical source로 유지한다.
 - 합성지수, 모델 최종값, 뉴스 분석, 사용자 설정과 작업 상태는 목적별 결과 테이블에 둔다.
 - 파생 테이블에는 원천값 복사본을 두지 않는다. 계산에 사용한 원천의 기준일처럼 결과의 의미를 설명하는 provenance는 유지한다.
@@ -21,6 +22,8 @@
 | 테이블 | 행 수 / 크기 | 기간·주기 | 의미·원천 | 수집·사용처 | 분류·결정 |
 |---|---:|---|---|---|---|
 | `economic_chart_points` | 114,550 / 23MB | 1990-01-01~2026-09-11, D/W/M/Q/T/E | FRED, 미 재무부, ECOS, KOSIS, BLS, BEA, KIS, Yahoo 등의 재사용 시계열 | 경제차트, 알림, 각 지수 collector와 대시보드 | **공용 canonical 원천 저장소**. `(series_code, observation_date)`가 식별자 |
+| `economic_chart_derived_points` | 배포 후 운영 집계 | D/W/M/Q/T/E | canonical 원천을 계산·리샘플한 재사용 시계열 | 경제차트, 알림, 각 지수와 대시보드 | **공용 파생 저장소**. 외부 제공자 출처를 직접 저장할 수 없음 |
+| `inflation_nowcast_vintages` | 배포 후 운영 집계 | 발표 vintage | Cleveland Fed가 발표한 CPI/PCE headline·core nowcast | 통합물가 계산 | 목표월과 관측일이 모두 필요한 전용 원천 구조 |
 | `automatic_source_points` | 109,990 / 28MB | 1970-01-01~2026-09-12, 혼합 | 인플레이션 자체모델용 장기 원자재·시장자료와 기능별 캐시 | 구 인플레이션 ridge, EM capacity, 주식·채권 모델 | 가장 큰 사일로. 필요한 비인플레이션 원천은 canonical로 이관하고 테이블 삭제 |
 | `liquidity_observations` | 28,060 / 2.8MB | 2016-08-01~2026-09-12, D/W/M | FRED·BOK·ECOS 유동성 원천 | `liquidity_pipeline.py` | canonical로 이관 후 삭제 |
 | `liquidity_indices` | 4,077 / 1.64MB | 2021-09-01~2026-09-04, W/M | 공용 원천에서 계산한 미국·한국 환경/모멘텀/압력/여력 점수 | 유동성 카드 | 파생 결과 유지. 미사용 원천·구성점수 JSON 제거 |
@@ -81,7 +84,7 @@
 | 한국 스트레스 원천 열/주간 테이블 | `KR_BBB_YIELD`, `KR_AA_YIELD`, `KR3Y`, `KR_CP91`, `KR_CD91`, `KR_KORIBOR3M`, `KR_KOFR`, `BOK_FSI`, `KOSPI_*` | 한국 MSI |
 | 이머징 스트레스/여력 원천 열 | `EM_HY_OAS`, `EM_DOLLAR_INDEX`, `EM_TAIL_RISK_OAS`, `VXEEM`, `EEM_WEEKLY_CLOSE`, `US10Y_REAL`, `NFCI` | 이머징 MSI·자금여력 |
 | 미국 중소기업 원천 열 | `US_NFIB_SALES_EXPECTATION`, `US_NFIB_BORROWING_DIFFICULTY`, `US_NFIB_OPTIMISM`, `US_SBDI_31_180` | 미국 중소기업 위험 |
-| 한국 중소기업 원천 열 | `KR_SME_FUNDING_OUTLOOK`, `KR_SME_UTILIZATION_SA`, `KR_CORP_DELINQ`, `KR_SME_HEADLINE_OUTLOOK` | 한국 중소기업 위험 |
+| 한국 중소기업 원천 열 | `KR_SME_FUNDING_OUTLOOK`, `KR_SME_UTILIZATION_SA`, `KR_SME_LOAN_DELINQ`, `KR_SME_HEADLINE_OUTLOOK` | 한국 중소기업 위험 |
 | `equity_bond_source_monthly`·관련 캐시 | `SPY_ADJUSTED_CLOSE`, `TLT_ADJUSTED_CLOSE`, `US10Y_REAL`, `US10Y2Y`, `BAA10Y`, `NFCI` | 주식·채권 상대가치 |
 
 ## 인플레이션 단순화

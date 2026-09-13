@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,8 +24,23 @@ jobs:
           python-version: "3.12"
       - name: Install data clients
         run: pip install --disable-pip-version-check requests
-      - name: Collect small business risk
+      - name: Collect canonical NFIB source observations
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.small_business_risk_pipeline --months 5
+        run: PYTHONPATH=backend python -m signals.small_business_risk_pipeline --months 5 --stage sources
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Calculate small business risk from stored observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.small_business_risk_pipeline --months 5 --stage derived

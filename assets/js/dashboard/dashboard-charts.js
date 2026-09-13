@@ -79,7 +79,7 @@ let sectorFlowMobileLayout = null;
 async function loadEconomicSeries(seriesCode) {
   const rows = [];
   for (let from = 0;; from += 1000) {
-    const { data, error } = await supabaseClient.from('economic_chart_points')
+    const { data, error } = await supabaseClient.from('economic_chart_series_points')
       .select('observation_date,value').eq('series_code', seriesCode)
       .order('observation_date').range(from, from + 999);
     if (error) throw error;

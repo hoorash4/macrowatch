@@ -12,6 +12,7 @@ from common import (
     AUTOMATIC_WEEKLY_WEEKS,
     SupabaseRest,
     carry_forward,
+    fetch_fred_observations,
     month_start_months_ago,
     require_env,
     uncapped_score,
@@ -20,10 +21,9 @@ from sources.financial_stress import (
     TIMEOUT_SECONDS,
     fetch_cmdi_monthly,
     fetch_ebp_monthly,
-    fetch_fred_month_end,
-    fetch_fred_week_end,
 )
-from signals.canonical_series import rows as canonical_rows, store as store_canonical
+from signals.canonical_series import load, rows as canonical_rows, store as store_canonical
+from signals.derived_series import rows as derived_rows, store as store_derived
 
 
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
@@ -197,14 +197,35 @@ def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: st
     return len(writable)
 
 
+def _valid_fred_values(series_id: str, api_key: str, start: date, end: date) -> dict[date, float]:
+    values: dict[date, float] = {}
+    for row in fetch_fred_observations(series_id, api_key, start=start.isoformat(), end=end.isoformat()):
+        try:
+            values[date.fromisoformat(str(row["date"]))] = float(row["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return values
+
+
+def _period_last(values: dict[date, float], frequency: str) -> dict[str, float]:
+    grouped: dict[str, tuple[date, float]] = {}
+    for observed, value in sorted(values.items()):
+        period = (observed.replace(day=1) if frequency == "M"
+                  else observed + timedelta(days=4 - observed.weekday()))
+        key = period.isoformat()
+        if key not in grouped or observed > grouped[key][0]:
+            grouped[key] = (observed, value)
+    return {period: item[1] for period, item in grouped.items()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     if args.months < 1 or args.months > 12:
         raise SystemExit("--months 값은 1~12 사이여야 합니다.")
 
-    fred_api_key = require_env("FRED_API_KEY")
     supabase_url = require_env("SUPABASE_URL")
     service_role_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
@@ -216,9 +237,27 @@ def main() -> None:
     )
     end = date(today.year, today.month, 1)
 
-    excess_bond_premium = fetch_ebp_monthly(monthly_start, end)
-    cmdi = fetch_cmdi_monthly(monthly_start, end)
-    sp500_month_end = fetch_fred_month_end(SP500_SERIES, fred_api_key, monthly_start, end)
+    canonical = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    if args.stage in ("sources", "all"):
+        fred_api_key = require_env("FRED_API_KEY")
+        source_values = {
+            "US_EBP": ({date.fromisoformat(day): value for day, value in fetch_ebp_monthly(monthly_start, end).items()}, "M", "FEDERAL_RESERVE:EBP"),
+            "US_CMDI": ({date.fromisoformat(day): value for day, value in fetch_cmdi_monthly(monthly_start, end).items()}, "M", "NYFED:CMDI"),
+            "NFCI_RISK": (_valid_fred_values(FINANCIAL_RISK_SERIES, fred_api_key, weekly_start, today), "W", f"FRED:{FINANCIAL_RISK_SERIES}"),
+            "NFCI_NONFIN_LEVERAGE": (_valid_fred_values(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, weekly_start, today), "W", f"FRED:{NONFINANCIAL_LEVERAGE_SERIES}"),
+            "US_COMMERCIAL_PAPER_3M": (_valid_fred_values(COMMERCIAL_PAPER_SERIES, fred_api_key, weekly_start, today), "D", f"FRED:{COMMERCIAL_PAPER_SERIES}"),
+            "SP500": (_valid_fred_values(SP500_SERIES, fred_api_key, monthly_start, today), "D", f"FRED:{SP500_SERIES}"),
+        }
+        source_payload = [row for code, (values, frequency, source) in source_values.items()
+                          for row in canonical_rows(code, values, frequency=frequency, source=source)]
+        store_canonical(canonical, source_payload, owner="financial_stress")
+        print(f"stage=sources stored={len(source_payload)}")
+        if args.stage == "sources":
+            return
+    excess_bond_premium = {day.isoformat(): value for day, value in load(canonical, "US_EBP", start=monthly_start, end=end).items()}
+    cmdi = {day.isoformat(): value for day, value in load(canonical, "US_CMDI", start=monthly_start, end=end).items()}
+    sp500_daily = load(canonical, "SP500", start=monthly_start, end=today)
+    sp500_month_end = _period_last(sp500_daily, "M")
     # Keep the current month in the MSI timeline even before either monthly
     # component is published. build_market_stress_index then carries the last
     # confirmed component values forward and marks that month provisional.
@@ -239,13 +278,13 @@ def main() -> None:
         sp500_month_end,
     )[-args.months:]
     stored_index = upsert_market_stress_index(index_rows, supabase_url, service_role_key)
-    weekly_high_yield = fetch_fred_week_end(HIGH_YIELD_SERIES, fred_api_key, weekly_start, today)
-    weekly_credit_conditions = fetch_fred_week_end(FINANCIAL_CONDITIONS_SERIES, fred_api_key, weekly_start, today)
-    weekly_risk_conditions = fetch_fred_week_end(FINANCIAL_RISK_SERIES, fred_api_key, weekly_start, today)
-    weekly_leverage = fetch_fred_week_end(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, weekly_start, today)
-    weekly_cp = fetch_fred_week_end(COMMERCIAL_PAPER_SERIES, fred_api_key, weekly_start, today)
-    weekly_treasury = fetch_fred_week_end(THREE_MONTH_TREASURY_SERIES, fred_api_key, weekly_start, today)
-    weekly_sp500 = fetch_fred_week_end(SP500_SERIES, fred_api_key, weekly_start, today)
+    weekly_high_yield = _period_last(load(canonical, "HY_OAS", start=weekly_start, end=today), "W")
+    weekly_credit_conditions = _period_last(load(canonical, "NFCI_CREDIT", start=weekly_start, end=today), "W")
+    weekly_risk_conditions = _period_last(load(canonical, "NFCI_RISK", start=weekly_start, end=today), "W")
+    weekly_leverage = _period_last(load(canonical, "NFCI_NONFIN_LEVERAGE", start=weekly_start, end=today), "W")
+    weekly_cp = _period_last(load(canonical, "US_COMMERCIAL_PAPER_3M", start=weekly_start, end=today), "W")
+    weekly_treasury = _period_last(load(canonical, "US3M", start=weekly_start, end=today), "W")
+    weekly_sp500 = _period_last(sp500_daily, "W")
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys()}
     weekly_rows = build_weekly_market_tension(
         weekly_high_yield,
@@ -255,24 +294,18 @@ def main() -> None:
         weekly_leverage,
         weekly_sp500,
     )[-AUTOMATIC_WEEKLY_WEEKS:]
-    canonical = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
-    source_payload = []
+    calculated_payload = []
     for code, values, frequency, source in (
-        ("US_EBP", excess_bond_premium, "M", "FEDERAL_RESERVE:EBP"),
-        ("US_CMDI", cmdi, "M", "NYFED:CMDI"),
-        ("SP500_MONTH_END", sp500_month_end, "M", "FRED:SP500"),
-        ("HY_OAS_WEEKLY", weekly_high_yield, "W", f"FRED:{HIGH_YIELD_SERIES}"),
-        ("NFCI_CREDIT", weekly_credit_conditions, "W", f"FRED:{FINANCIAL_CONDITIONS_SERIES}"),
-        ("NFCI_RISK", weekly_risk_conditions, "W", f"FRED:{FINANCIAL_RISK_SERIES}"),
-        ("NFCI_NONFIN_LEVERAGE", weekly_leverage, "W", f"FRED:{NONFINANCIAL_LEVERAGE_SERIES}"),
+        ("SP500_MONTH_END", sp500_month_end, "M", "RESAMPLED:FRED:SP500/M"),
+        ("HY_OAS_WEEKLY", weekly_high_yield, "W", f"RESAMPLED:FRED:{HIGH_YIELD_SERIES}/W"),
         ("US_SHORT_FUNDING_SPREAD", weekly_funding, "W", "DERIVED:DCPN3M-DGS3MO"),
-        ("SP500_WEEKLY_CLOSE", weekly_sp500, "W", "FRED:SP500"),
+        ("SP500_WEEKLY_CLOSE", weekly_sp500, "W", "RESAMPLED:FRED:SP500/W"),
     ):
-        source_payload.extend(canonical_rows(
+        calculated_payload.extend(derived_rows(
             code, {date.fromisoformat(day): value for day, value in values.items()},
             frequency=frequency, source=source,
         ))
-    store_canonical(canonical, source_payload)
+    store_derived(canonical, calculated_payload)
     stored_weeks = upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
     print(
         f"calculated_market_stress_index={len(index_rows)} stored_market_stress_index={stored_index} "

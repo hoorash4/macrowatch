@@ -319,7 +319,7 @@ def independent_segment_rows(snapshots: list[ExportSnapshot]) -> list[dict[str, 
                 "observation_date": d10.period_end.isoformat(),
                 "value": round(d10.cumulative_export_musd / d10.cumulative_workdays / 100.0, 6),
                 "frequency": "T",
-                "source": "KCS:INTRAMONTH_EXPORT/d10",
+                "source": "DERIVED:KCS:INTRAMONTH_EXPORT/d10",
             })
         if d10 and d20:
             days = d20.cumulative_workdays - d10.cumulative_workdays
@@ -330,7 +330,7 @@ def independent_segment_rows(snapshots: list[ExportSnapshot]) -> list[dict[str, 
                     "observation_date": d20.period_end.isoformat(),
                     "value": round(amount / days / 100.0, 6),
                     "frequency": "T",
-                    "source": "KCS:INTRAMONTH_EXPORT/d11_20",
+                    "source": "DERIVED:KCS:INTRAMONTH_EXPORT/d11_20",
                 })
         if d20 and month:
             days = month.cumulative_workdays - d20.cumulative_workdays
@@ -341,6 +341,6 @@ def independent_segment_rows(snapshots: list[ExportSnapshot]) -> list[dict[str, 
                     "observation_date": month.period_end.isoformat(),
                     "value": round(amount / days / 100.0, 6),
                     "frequency": "T",
-                    "source": "KCS:INTRAMONTH_EXPORT/d21_end",
+                    "source": "DERIVED:KCS:INTRAMONTH_EXPORT/d21_end",
                 })
     return rows

@@ -5,7 +5,7 @@ import json
 from datetime import date
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago
-from signals.economic_chart_pipeline import _insert_missing
+from signals.economic_chart_pipeline import _insert_missing, _insert_missing_derived
 from sources.policy_rates import (
     fetch_korea_policy_rate_rows,
     fetch_us_policy_rate_chart_rows,
@@ -24,7 +24,7 @@ def collect_us(today: date | None = None, db: SupabaseRest | None = None) -> int
         database, US_HISTORY_START, end, recent_limit=US_RECENT_DECISIONS,
     )
     us_check_start = date.fromisoformat(str(us_chart_rows[0]["observation_date"])) if us_chart_rows else end
-    inserted = _insert_missing(database, us_chart_rows, us_check_start)
+    inserted = _insert_missing_derived(database, us_chart_rows, us_check_start)
     print(json.dumps({
         "mode": "automatic",
         "stage": "us-policy-rate",

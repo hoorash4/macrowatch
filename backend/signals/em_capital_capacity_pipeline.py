@@ -99,12 +99,13 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict]:
     return rows
 
 
-def fetch_sources(api_key: str, start: date, end: date) -> dict[str, dict[str, float]]:
+def fetch_sources(api_key: str, start: date, end: date,
+                  keys: tuple[str, ...] = tuple(SERIES)) -> dict[str, dict[str, float]]:
     return {
         key: valid_values(fetch_fred_observations(
             series_id, api_key, start=start.isoformat(), end=end.isoformat(),
         ))
-        for key, series_id in SERIES.items()
+        for key, series_id in SERIES.items() if key in keys
     }
 
 
@@ -116,37 +117,38 @@ def load_canonical(database: SupabaseRest) -> dict[str, dict[str, float]]:
 
 def store_sources(database: SupabaseRest, raw: dict[str, dict[str, float]]) -> None:
     payload = []
-    for key, values in raw.items():
+    for key in ("nfci",):
+        values = raw[key]
         payload.extend(canonical_rows(
             CANONICAL_CODES[key], {date.fromisoformat(day): value for day, value in values.items()},
             frequency="W" if key == "nfci" else "D", source=f"FRED:{SERIES[key]}",
         ))
-    store_canonical(database, payload)
+    store_canonical(database, payload, owner="em_capital_capacity")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--initialize-sources", action="store_true")
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     today = date.today()
-    api_key = require_env("FRED_API_KEY")
     database = SupabaseRest()
-    if args.initialize_sources:
-        initialization_start = today - timedelta(days=INITIALIZATION_HISTORY_YEARS * 366)
-        historical = fetch_sources(api_key, initialization_start, today)
-        if any(len(historical.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
+    owned_keys = ("nfci",)
+    if args.stage in ("sources", "all"):
+        api_key = require_env("FRED_API_KEY")
+        source_start = (today - timedelta(days=INITIALIZATION_HISTORY_YEARS * 366)
+                        if args.initialize_sources else today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS))
+        recent = fetch_sources(api_key, source_start, today, owned_keys)
+        if args.initialize_sources and any(len(recent.get(key, {})) < MINIMUM_HISTORY for key in owned_keys):
             raise RuntimeError("EM capital source initialization returned insufficient history")
-        store_sources(database, historical)
+        store_sources(database, recent)
+        print(f"stage=sources stored={sum(len(values) for values in recent.values())}")
+        if args.stage == "sources":
+            return
     canonical = load_canonical(database)
     if any(len(canonical.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
         raise RuntimeError("EM capital canonical source history is incomplete; run --initialize-sources explicitly")
-    recent_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
-    recent = fetch_sources(api_key, recent_start, today)
-    store_sources(database, recent)
-    for key, values in recent.items():
-        canonical[key].update(values)
-    raw = canonical
-    rows = build_rows(raw)[-AUTOMATIC_DAILY_VALUES:]
+    rows = build_rows(canonical)[-AUTOMATIC_DAILY_VALUES:]
     if not rows:
         raise RuntimeError("저장할 이머징 자금 유입 여건 데이터가 없습니다.")
     derived = [{key: row[key] for key in ("observation_date", "capacity_index", "is_provisional", "updated_at")} for row in rows]

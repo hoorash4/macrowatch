@@ -14,7 +14,7 @@ from common import (
     month_start_months_ago,
     uncapped_score,
 )
-from signals.canonical_series import rows as canonical_rows, store as store_canonical
+from signals.canonical_series import load, rows as canonical_rows, store as store_canonical
 from sources.korea_small_business_risk import TIMEOUT_SECONDS, fetch_all
 
 
@@ -84,6 +84,7 @@ def build_rows(raw: dict[str, dict[str, float]]) -> list[dict[str, object]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     if args.months < 1 or args.months > 12:
         raise SystemExit("--months 값은 1~12 사이여야 합니다.")
@@ -93,30 +94,36 @@ def main() -> None:
     end = today.replace(day=1)
     # 최초 표시월에도 발표가 느린 가동률·연체율의 직전 관측치가 필요하다.
     collection_start = month_start_months_ago(start, AUTOMATIC_MONTHLY_CONTEXT_PERIODS)
-    try:
-        raw = fetch_all(collection_start, end, include_historical=False)
-    except requests.RequestException as error:
-        print(
-            "source_unavailable=true "
-            f"source_error={type(error).__name__} "
-            "existing_confirmed_data_preserved=true"
-        )
-        return
+    if args.stage in ("sources", "all"):
+        try:
+            raw = fetch_all(collection_start, end, include_historical=False)
+        except requests.RequestException as error:
+            raise RuntimeError(f"Korea small-business source unavailable: {type(error).__name__}") from error
+        source_payload = []
+        for name, code, source in (
+            ("funding_outlook", "KR_SME_FUNDING_OUTLOOK", "KOSIS:DT_D10116"),
+            ("utilization_sa", "KR_SME_UTILIZATION_SA", "KOSIS:DT_D10125"),
+            ("delinquency", "KR_SME_LOAN_DELINQ", "ECOS:141Y005/R4AB12/X00"),
+            ("headline_outlook", "KR_SME_HEADLINE_OUTLOOK", "KOSIS:DT_D10102"),
+        ):
+            source_payload.extend(canonical_rows(
+                code, {date.fromisoformat(day): value for day, value in raw.get(name, {}).items()},
+                frequency="M", source=source,
+            ))
+        store_canonical(database, source_payload, owner="korea_small_business_risk")
+        print(f"stage=sources stored={len(source_payload)}")
+        if args.stage == "sources":
+            return
+    codes = {
+        "funding_outlook": "KR_SME_FUNDING_OUTLOOK", "utilization_sa": "KR_SME_UTILIZATION_SA",
+        "delinquency": "KR_SME_LOAN_DELINQ", "headline_outlook": "KR_SME_HEADLINE_OUTLOOK",
+    }
+    raw = {name: {day.isoformat(): value for day, value in load(
+        database, code, start=collection_start, end=end,
+    ).items()} for name, code in codes.items()}
     rows = [row for row in build_rows(raw) if str(row["month"]) >= start.isoformat()]
     if not rows:
         raise RuntimeError("저장할 한국 중소기업 위험지수 데이터가 없습니다.")
-    source_payload = []
-    for name, code, source in (
-        ("funding_outlook", "KR_SME_FUNDING_OUTLOOK", "KOSIS:DT_D10116"),
-        ("utilization_sa", "KR_SME_UTILIZATION_SA", "KOSIS:DT_D10125"),
-        ("delinquency", "KR_CORP_DELINQ", "ECOS:141Y005/R4AB00/X00/0960"),
-        ("headline_outlook", "KR_SME_HEADLINE_OUTLOOK", "KOSIS:DT_D10102"),
-    ):
-        source_payload.extend(canonical_rows(
-            code, {date.fromisoformat(day): value for day, value in raw.get(name, {}).items()},
-            frequency="M", source=source,
-        ))
-    store_canonical(database, source_payload)
     derived_rows = [{key: row[key] for key in (
         "month", "risk_index", "funding_source_month", "utilization_source_month",
         "delinquency_source_month", "is_provisional", "method_version",

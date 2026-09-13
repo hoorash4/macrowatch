@@ -65,7 +65,7 @@ class AutomaticSourceWindowTests(unittest.TestCase):
         database = Database()
         canonical_series.store(database, canonical_series.rows(
             "SERIES", {date(2026, 9, 3): 1.25}, frequency="D", source="test",
-        ))
+        ), owner="test")
         loaded = canonical_series.load(database, "SERIES")
         self.assertEqual(loaded[date(2026, 9, 3)], 1.25)
 

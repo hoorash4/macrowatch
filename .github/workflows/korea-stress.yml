@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -17,9 +17,24 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install --disable-pip-version-check requests
-      - name: Collect Korean market stress data
+      - name: Collect canonical Korean market observations
         env:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.korea_stress_pipeline --months 5
+        run: PYTHONPATH=backend python -m signals.korea_stress_pipeline --months 5 --stage sources
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - run: pip install --disable-pip-version-check requests
+      - name: Calculate Korean market stress from stored observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.korea_stress_pipeline --months 5 --stage derived

@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Collect economic chart series
+      - name: Collect and persist source observations
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
@@ -36,8 +36,27 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          PYTHONPATH=backend python -m signals.economic_chart_automatic
+          PYTHONPATH=backend python -m signals.economic_chart_automatic --stage sources
           PYTHONPATH=backend python -m signals.business_credit_monthly
           PYTHONPATH=backend python -m signals.paynet_monthly
           PYTHONPATH=backend python -m signals.inflation_rate_automatic
-          PYTHONPATH=backend python -m inflation_pipeline
+          PYTHONPATH=backend python -m inflation_pipeline --stage sources
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Calculate from stored source observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python -m signals.economic_chart_automatic --stage derived
+          PYTHONPATH=backend python -m inflation_pipeline --stage derived

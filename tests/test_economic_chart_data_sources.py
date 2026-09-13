@@ -30,7 +30,7 @@ class KoreaExportMonthlyTests(unittest.TestCase):
             "observation_date": "2026-08-31",
             "value": 30.0,
             "frequency": "M",
-            "source": "KCS:MONTHLY_EXPORT/daily_avg",
+            "source": "DERIVED:KCS:MONTHLY_EXPORT/daily_avg",
         })
 
     def test_monthly_export_backfill_fetches_only_month_end_releases(self):

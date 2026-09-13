@@ -14,7 +14,8 @@ from common import (
     carry_forward as carry_forward_periods,
 )
 from common import fetch_fred_observations, require_env as required_env, uncapped_score as score
-from signals.canonical_series import rows as canonical_rows, store as store_canonical
+from signals.canonical_series import load, rows as canonical_rows, store as store_canonical
+from signals.derived_series import rows as derived_rows, store as store_derived
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
@@ -61,8 +62,8 @@ def fetch_fred_week_end(series_id: str, api_key: str, start: date, end: date) ->
     return {week: value for week, (_observed_on, value) in weeks.items()}
 
 
-def fetch_eem_week_end(start: date, end: date) -> dict[str, float]:
-    """Fetch EEM closes for personal-use comparison, then retain each week's last close."""
+def fetch_eem_daily(start: date, end: date) -> dict[date, float]:
+    """Fetch actual EEM daily closes for the canonical source store."""
     response = requests.get(
         YAHOO_CHART_URL,
         params={
@@ -78,7 +79,7 @@ def fetch_eem_week_end(start: date, end: date) -> dict[str, float]:
     result = (response.json().get("chart", {}).get("result") or [{}])[0]
     timestamps = result.get("timestamp") or []
     closes = ((result.get("indicators", {}).get("quote") or [{}])[0].get("close") or [])
-    weeks: dict[str, tuple[date, float]] = {}
+    values: dict[date, float] = {}
     for raw_timestamp, raw_close in zip(timestamps, closes):
         if raw_close is None:
             continue
@@ -86,10 +87,17 @@ def fetch_eem_week_end(start: date, end: date) -> dict[str, float]:
             observed_on, close = datetime.fromtimestamp(raw_timestamp, tz=timezone.utc).date(), float(raw_close)
         except (TypeError, ValueError, OSError):
             continue
+        values[observed_on] = close
+    return values
+
+
+def week_end(values: dict[date, float]) -> dict[str, float]:
+    weeks: dict[str, tuple[date, float]] = {}
+    for observed_on, value in sorted(values.items()):
         week = (observed_on + timedelta(days=4 - observed_on.weekday())).isoformat()
         if week not in weeks or observed_on > weeks[week][0]:
-            weeks[week] = (observed_on, close)
-    return {week: close for week, (_observed_on, close) in weeks.items()}
+            weeks[week] = (observed_on, value)
+    return {week: value for week, (_observed_on, value) in weeks.items()}
 
 
 def carry_forward(values: dict[str, float], weeks: list[str]) -> dict[str, float]:
@@ -164,32 +172,56 @@ def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> int:
 
 
 def main() -> None:
-    argparse.ArgumentParser().parse_args()
-    fred_key = required_env("FRED_API_KEY")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
+    args = parser.parse_args()
     supabase_url = required_env("SUPABASE_URL")
     service_key = required_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
     start = today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS + AUTOMATIC_WEEKLY_CONTEXT_WEEKS)
-    raw = {key: fetch_fred_week_end(series_id, fred_key, start, today) for key, series_id in SERIES.items()}
-    eem_values = fetch_eem_week_end(start, today)
+    database = SupabaseRest(url=supabase_url, service_key=service_key, timeout=TIMEOUT)
+    if args.stage in ("sources", "all"):
+        fred_key = required_env("FRED_API_KEY")
+        daily = {}
+        for key, series_id in SERIES.items():
+            daily[key] = {date.fromisoformat(day): value for day, value in
+                          ((row["date"], float(row["value"])) for row in fetch_fred_observations(
+                              series_id, fred_key, start=start.isoformat(), end=today.isoformat(), timeout=TIMEOUT
+                          ) if row.get("value") not in (None, "."))}
+        eem_daily = fetch_eem_daily(start, today)
+        payload = []
+        for key, code in {"high_yield_oas": "EM_HY_OAS", "em_dollar_index": "EM_DOLLAR_INDEX",
+                          "tail_risk_oas": "EM_TAIL_RISK_OAS", "em_equity_volatility": "VXEEM"}.items():
+            payload.extend(canonical_rows(code, daily[key], frequency="D", source=f"FRED:{SERIES[key]}"))
+        payload.extend(canonical_rows("EEM_CLOSE", eem_daily, frequency="D", source="YAHOO:EEM"))
+        store_canonical(database, payload, owner="em_stress")
+        print(f"stage=sources stored={len(payload)}")
+        if args.stage == "sources":
+            return
+    raw = {key: week_end(load(database, code, start=start, end=today)) for key, code in {
+        "high_yield_oas": "EM_HY_OAS", "em_dollar_index": "EM_DOLLAR_INDEX",
+        "tail_risk_oas": "EM_TAIL_RISK_OAS", "em_equity_volatility": "VXEEM",
+    }.items()}
+    eem_values = week_end(load(database, "EEM_CLOSE", start=start, end=today))
     rows = build_rows(raw, today, eem_values)[-AUTOMATIC_WEEKLY_WEEKS:]
     if not rows:
         raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
-    database = SupabaseRest(url=supabase_url, service_key=service_key, timeout=TIMEOUT)
     payload = []
-    for key, code in {
-        "high_yield_oas": "EM_HY_OAS", "em_dollar_index": "EM_DOLLAR_INDEX",
-        "tail_risk_oas": "EM_TAIL_RISK_OAS", "em_equity_volatility": "VXEEM",
+    for field, code in {
+        "high_yield_4w_average": "EM_HY_OAS_4W",
+        "tail_risk_4w_average": "EM_TAIL_RISK_OAS_4W",
+        "vxeem_4w_average": "VXEEM_4W",
     }.items():
-        payload.extend(canonical_rows(
-            code, {date.fromisoformat(day): value for day, value in raw[key].items()},
-            frequency="W", source=f"FRED:{SERIES[key]}",
+        payload.extend(derived_rows(
+            code, {date.fromisoformat(str(row["week"])): float(row[field]) for row in rows
+                   if row.get(field) is not None},
+            frequency="W", source=f"DERIVED:{field}",
         ))
-    payload.extend(canonical_rows(
+    payload.extend(derived_rows(
         "EEM_WEEKLY_CLOSE", {date.fromisoformat(day): value for day, value in eem_values.items()},
-        frequency="W", source="YAHOO:EEM",
+        frequency="W", source="RESAMPLED:YAHOO:EEM/W",
     ))
-    store_canonical(database, payload)
+    store_derived(database, payload)
     stored = upsert(rows, supabase_url, service_key)
     print("calculated_weeks={} stored_weeks={} eem={} ".format(len(rows), stored, len(eem_values)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
 

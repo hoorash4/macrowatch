@@ -13,11 +13,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Collect the latest KOSPI foreign flow and save the index
+      - name: Collect and persist KIS and ECOS source observations
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -26,4 +26,20 @@ jobs:
             --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             --header "Content-Type: application/json" \
-            --data '{}'
+            --data '{"collect_only":true}'
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Calculate the Korea foreign-flow index from stored observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl --fail-with-body --retry 2 --max-time 120 --request POST "$SUPABASE_URL/functions/v1/korea-foreign-flow" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{"finalize_only":true}'

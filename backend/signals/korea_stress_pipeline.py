@@ -22,6 +22,7 @@ from common import (
     uncapped_score,
 )
 from signals.canonical_series import load as load_canonical, rows as canonical_rows, store as store_canonical
+from signals.derived_series import rows as derived_series_rows, store as store_derived
 
 
 ECOS = "https://ecos.bok.or.kr/api"
@@ -145,6 +146,40 @@ def daily_friday_values(key: str, stat: str, item: str, start: date, end: date) 
     return closes
 
 
+def parsed_daily(rows: list[dict]) -> dict[date, float]:
+    values: dict[date, float] = {}
+    for row in rows:
+        try:
+            values[datetime.strptime(str(row["TIME"]), "%Y%m%d").date()] = float(row["DATA_VALUE"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return values
+
+
+def period_last(values: dict[date, float], frequency: str, end: date) -> dict[str, float]:
+    grouped: dict[str, tuple[date, float]] = {}
+    for observed, value in sorted(values.items()):
+        period = observed.replace(day=1) if frequency == "M" else observed + timedelta(days=4 - observed.weekday())
+        if period > end:
+            continue
+        key = period.isoformat()
+        if key not in grouped or observed > grouped[key][0]:
+            grouped[key] = (observed, value)
+    return {period: item[1] for period, item in grouped.items()}
+
+
+def weekly_observations(values: dict[date, float], end: date) -> dict[str, tuple[date, float]]:
+    grouped: dict[str, tuple[date, float]] = {}
+    for observed, value in sorted(values.items()):
+        friday = observed + timedelta(days=4 - observed.weekday())
+        if friday > end:
+            continue
+        key = friday.isoformat()
+        if key not in grouped or observed > grouped[key][0]:
+            grouped[key] = (observed, value)
+    return grouped
+
+
 def fetch_bok_fsi(first_month: date) -> dict[str, float]:
     """Read the Bank of Korea's published FSI comparison series directly."""
     headers = {**HEADERS, "Referer": "https://snapshot.bok.or.kr/dashboard/A6"}
@@ -254,10 +289,10 @@ def build_monthly_rows(values: dict[str, dict[str, float]], fsi: dict[str, float
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--months", type=int, default=AUTOMATIC_MONTHLY_PERIODS)
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     if args.months < 1 or args.months > 12:
         raise SystemExit("--months 값은 1~12 사이여야 합니다.")
-    key = require_env("ECOS_API_KEY")
     url = require_env("SUPABASE_URL")
     service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     today = date.today()
@@ -267,15 +302,43 @@ def main() -> None:
     weekly_start = today - timedelta(
         weeks=AUTOMATIC_WEEKLY_WEEKS + AUTOMATIC_WEEKLY_CONTEXT_WEEKS,
     )
-    values = {
-        name: daily_month_end(key, stat, item, monthly_start, today)
-        for name, (stat, item) in SERIES.items()
+    database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
+    owned = {
+        "bbb_minus_3y": ("KR_BBB_YIELD", "ECOS:817Y002/010320000"),
+        "aa_minus_3y": ("KR_AA_YIELD", "ECOS:817Y002/010300000"),
+        "cp_91d": ("KR_CP91", "ECOS:817Y002/010503000"),
+        "cd_91d": ("KR_CD91", "ECOS:817Y002/010502000"),
+        "koribor_3m": ("KR_KORIBOR3M", "ECOS:817Y002/010150000"),
+        "kospi_close": ("KOSPI_CLOSE", "ECOS:802Y001/0001000"),
     }
-    kospi_weekly_values = daily_friday_values(key, KOSPI_TABLE, SERIES["kospi_close"][1], weekly_start, today)
-    corporate_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["bbb_minus_3y"][1], weekly_start, today)
-    treasury_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["treasury_3y"][1], weekly_start, today)
-    cp_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cp_91d"][1], weekly_start, today)
-    cd_weekly_values = daily_friday_values(key, MARKET_RATES, SERIES["cd_91d"][1], weekly_start, today)
+    if args.stage in ("sources", "all"):
+        key = require_env("ECOS_API_KEY")
+        daily_sources = {name: parsed_daily(daily_source_rows(key, SERIES[name][0], SERIES[name][1],
+                                                               min(monthly_start, weekly_start), today))
+                         for name in owned}
+        source_payload = [row for name, (code, source) in owned.items()
+                          for row in canonical_rows(code, daily_sources[name], frequency="D", source=source)]
+        existing_fsi = load_canonical(database, "BOK_FSI", start=monthly_start)
+        try:
+            fsi_source = {date.fromisoformat(day): value for day, value in fetch_bok_fsi(monthly_start).items()}
+        except Exception as error:
+            print(f"fsi_unavailable={error}")
+            fsi_source = existing_fsi
+        source_payload.extend(canonical_rows("BOK_FSI", fsi_source, frequency="M", source="BOK_SNAPSHOT:1583"))
+        store_canonical(database, source_payload, owner="korea_stress")
+        print(f"stage=sources stored={len(source_payload)}")
+        if args.stage == "sources":
+            return
+    code_by_name = {**{name: definition[0] for name, definition in owned.items()},
+                    "treasury_3y": "KR3Y", "kofr": "KR_KOFR"}
+    daily_values = {name: load_canonical(database, code, start=min(monthly_start, weekly_start), end=today)
+                    for name, code in code_by_name.items()}
+    values = {name: period_last(series, "M", today) for name, series in daily_values.items()}
+    kospi_weekly_values = weekly_observations(daily_values["kospi_close"], today)
+    corporate_weekly_values = weekly_observations(daily_values["bbb_minus_3y"], today)
+    treasury_weekly_values = weekly_observations(daily_values["treasury_3y"], today)
+    cp_weekly_values = weekly_observations(daily_values["cp_91d"], today)
+    cd_weekly_values = weekly_observations(daily_values["cd_91d"], today)
     kospi_weekly = []
     for week, (observed_at, kospi_close) in sorted(kospi_weekly_values.items()):
         corporate = corporate_weekly_values.get(week)
@@ -290,48 +353,23 @@ def main() -> None:
             "short_term_funding_spread": round(cp_weekly[1] - cd_weekly[1], 4) if cp_weekly and cd_weekly else None,
         })
     kospi_weekly = kospi_weekly[-AUTOMATIC_WEEKLY_WEEKS:]
-    database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
-    existing_fsi = {month.isoformat(): value for month, value in load_canonical(
-        database, "BOK_FSI", start=monthly_start,
-    ).items()}
-    try:
-        fsi = {**existing_fsi, **fetch_bok_fsi(monthly_start)}
-    except Exception as error:
-        # The MacroWatch index and KOSPI update must not stop merely because
-        # the official comparison series is temporarily unavailable.
-        print(f"fsi_unavailable={error}")
-        fsi = existing_fsi
+    fsi = {month.isoformat(): value for month, value in load_canonical(database, "BOK_FSI", start=monthly_start).items()}
     rows = build_monthly_rows(values, fsi, today)[-args.months:]
     if not rows:
         raise RuntimeError("저장할 한국 시장 스트레스 데이터가 없습니다.")
-    source_payload = []
-    monthly_sources = {
-        "bbb_minus_3y": ("KR_BBB_YIELD", "ECOS:817Y002/010320000"),
-        "aa_minus_3y": ("KR_AA_YIELD", "ECOS:817Y002/010300000"),
-        "treasury_3y": ("KR3Y", "ECOS:817Y002/010200000"),
-        "cp_91d": ("KR_CP91", "ECOS:817Y002/010503000"),
-        "cd_91d": ("KR_CD91", "ECOS:817Y002/010502000"),
-        "koribor_3m": ("KR_KORIBOR3M", "ECOS:817Y002/010150000"),
-        "kofr": ("KR_KOFR", "ECOS:817Y002/010901000"),
-        "kospi_close": ("KOSPI_MONTH_END", "ECOS:802Y001/0001000"),
-    }
-    for name, (code, source) in monthly_sources.items():
-        source_payload.extend(canonical_rows(
-            code, {date.fromisoformat(day): value for day, value in values[name].items()},
-            frequency="M", source=source,
-        ))
-    source_payload.extend(canonical_rows(
-        "BOK_FSI", {date.fromisoformat(day): value for day, value in fsi.items()},
-        frequency="M", source="BOK_SNAPSHOT:1583",
+    calculated_payload = []
+    calculated_payload.extend(derived_series_rows(
+        "KOSPI_MONTH_END", {date.fromisoformat(day): value for day, value in values["kospi_close"].items()},
+        frequency="M", source="RESAMPLED:ECOS:802Y001/0001000/M",
     ))
-    source_payload.extend(canonical_rows(
+    calculated_payload.extend(derived_series_rows(
         "KOSPI_WEEKLY_CLOSE", {date.fromisoformat(row["week"]): float(row["kospi_close"]) for row in kospi_weekly},
-        frequency="W", source="ECOS:802Y001/0001000",
+        frequency="W", source="RESAMPLED:ECOS:802Y001/0001000/W",
     ))
-    store_canonical(database, source_payload)
-    derived_rows = [{key: row[key] for key in ("month", "stress_index", "market_component_index", "is_provisional")} for row in rows]
+    store_derived(database, calculated_payload)
+    result_rows = [{key: row[key] for key in ("month", "stress_index", "market_component_index", "is_provisional")} for row in rows]
     stored_months = upsert_automatic(
-        derived_rows, url, service_key, "korea_market_stress_monthly", "month", provisional="is_provisional",
+        result_rows, url, service_key, "korea_market_stress_monthly", "month", provisional="is_provisional",
         compare_fields=("stress_index", "market_component_index"),
     )
     stored_weeks = 0

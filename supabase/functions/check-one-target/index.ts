@@ -37,7 +37,7 @@ async function collect(target: any, db: any) {
     const seriesCode = String(config.series_code || "").trim();
     if (!seriesCode) throw new Error("경제지표 차트의 시리즈 코드가 없습니다.");
     const { data, error } = await db
-      .from("economic_chart_points")
+      .from("economic_chart_series_points")
       .select("value,observation_date")
       .eq("series_code", seriesCode)
       .order("observation_date", { ascending: false })

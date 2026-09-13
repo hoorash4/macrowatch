@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
@@ -85,10 +86,47 @@ def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
     return output
 
 
+def store_cleveland_nowcasts(db: SupabaseRest,
+                             nowcasts: dict[str, dict[date, list[NowcastPoint]]]) -> int:
+    rows = [{"kind": kind, "target_month": month.isoformat(),
+             "observed_on": point.observed_on.isoformat(),
+             "cpi_yoy_pct": round(point.cpi_yoy_pct, 8),
+             "pce_yoy_pct": round(point.pce_yoy_pct, 8),
+             "source": "CLEVELAND_FED:inflation_nowcasting"}
+            for kind, months in nowcasts.items() for month, points in months.items() for point in points]
+    if rows:
+        db.upsert("inflation_nowcast_vintages", rows,
+                  conflict="kind,target_month,observed_on")
+    return len(rows)
+
+
+def load_cleveland_nowcasts(db: SupabaseRest) -> dict[str, dict[date, list[NowcastPoint]]]:
+    output: dict[str, dict[date, list[NowcastPoint]]] = {"headline": {}, "core": {}}
+    offset = 0
+    while True:
+        page = db.request("GET", "inflation_nowcast_vintages", params={
+            "select": "kind,target_month,observed_on,cpi_yoy_pct,pce_yoy_pct",
+            "order": "target_month.asc,observed_on.asc", "offset": str(offset), "limit": "1000",
+        }) or []
+        for row in page:
+            kind = str(row["kind"])
+            month = date.fromisoformat(str(row["target_month"])[:10])
+            output[kind].setdefault(month, []).append(NowcastPoint(
+                date.fromisoformat(str(row["observed_on"])[:10]),
+                float(row["cpi_yoy_pct"]), float(row["pce_yoy_pct"]),
+            ))
+        if len(page) < 1000:
+            break
+        offset += len(page)
+    if not output["headline"] or not output["core"]:
+        raise RuntimeError("Stored Cleveland Fed nowcasts are empty")
+    return output
+
+
 def load_canonical_series(db: SupabaseRest, codes: tuple[str, ...]) -> dict[str, dict[date, float]]:
     values: dict[str, dict[date, float]] = {}
     for code in codes:
-        rows = db.request("GET", "economic_chart_points", params={
+        rows = db.request("GET", "economic_chart_series_points", params={
             "select": "observation_date,value", "series_code": f"eq.{code}",
             "observation_date": f"gte.{PUBLISH_START.isoformat()}",
             "order": "observation_date.asc", "limit": "10000",
@@ -173,11 +211,19 @@ def save_automatic(db: SupabaseRest, rows: list[dict[str, object]]) -> int:
     return len(writable)
 
 
+def collect_sources() -> None:
+    db = SupabaseRest(timeout=TIMEOUT_SECONDS)
+    stored = store_cleveland_nowcasts(db, fetch_cleveland_nowcasts())
+    if not stored:
+        raise RuntimeError("Cleveland Fed source collection produced no rows")
+    print(json.dumps({"mode": "automatic", "stage": "sources", "stored": stored}, ensure_ascii=False))
+
+
 def run_automatic() -> None:
     db = SupabaseRest(timeout=TIMEOUT_SECONDS)
     official = load_canonical_series(db, tuple(OFFICIAL_INFLATION_SERIES.values()))
     policy = load_canonical_series(db, ("US_POLICY_RATE_MID",))["US_POLICY_RATE_MID"]
-    rows = build_rows(official, fetch_cleveland_nowcasts(), policy)
+    rows = build_rows(official, load_cleveland_nowcasts(db), policy)
     if not rows:
         raise RuntimeError("Inflation calculation produced no rows")
     stored = save_automatic(db, rows)
@@ -191,7 +237,13 @@ def run_automatic() -> None:
 
 
 def main() -> None:
-    run_automatic()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
+    args = parser.parse_args()
+    if args.stage in ("sources", "all"):
+        collect_sources()
+    if args.stage in ("derived", "all"):
+        run_automatic()
 
 
 if __name__ == "__main__":

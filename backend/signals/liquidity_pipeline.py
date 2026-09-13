@@ -18,7 +18,7 @@ from common import (
     SupabaseRest, fetch_fred_observations, month_start_months_ago, require_env,
     request_with_retry,
 )
-from signals.canonical_series import load as load_canonical
+from signals.canonical_series import load as load_canonical, rows as canonical_rows, store as store_canonical
 
 VERSION = "liquidity-monthly-v2"
 US_VERSION = "us-equity-environment-weekly-v2"
@@ -129,7 +129,7 @@ def parse_snapshot(payload, mapping, start, end):
     return result
 
 
-def collect(country, existing, end):
+def collect(country, existing, end, names=None):
     result = {name: dict(values) for name, values in existing.items()}
     session = requests.Session()
     session.headers.update({"User-Agent": "MacroWatch liquidity research", "Referer": "https://snapshot.bok.or.kr/"})
@@ -144,6 +144,8 @@ def collect(country, existing, end):
     if country == "US":
         key = require_env("FRED_API_KEY")
         for name, series in FRED.items():
+            if names is not None and name not in names:
+                continue
             start = begin(name)
             if name == "ioer" and result.get(name):
                 continue  # Discontinued in July 2021; used only to calibrate pre-IORB history.
@@ -155,15 +157,21 @@ def collect(country, existing, end):
             print(f"source={series} new={sum(v is not None for v in values.values())}", flush=True)
     else:
         for chart, mapping in SNAPSHOTS.items():
+            selected_mapping = {column: name for column, name in mapping.items()
+                                if names is None or name in names}
+            if not selected_mapping:
+                continue
             payload = get_json(session, f"https://snapshot.bok.or.kr/api/chart/getChart?id={chart}")
             source_start = daily_start if chart == 849 else monthly_start
-            parsed = parse_snapshot(payload, mapping, source_start, end)
+            parsed = parse_snapshot(payload, selected_mapping, source_start, end)
             for name, values in parsed.items():
                 # Previously stored observations are trusted in automatic runs.
                 result[name] = {**values, **result.get(name, {})}
             print(f"source=BOK-{chart} rows={sum(map(len, parsed.values()))}", flush=True)
         key = require_env("ECOS_API_KEY")
         for name, (stat, cycle, item) in ECOS.items():
+            if names is not None and name not in names:
+                continue
             start = begin(name)
             if cycle == "M":
                 stored_next = shift_month(max(result[name]), 1) if result.get(name) else SOURCE_START
@@ -197,7 +205,7 @@ def collect(country, existing, end):
                         break
                     offset += 100
             print(f"source=ECOS-{name} rows={len(result.get(name, {}))}", flush=True)
-    expected = set(FRED) if country == "US" else {"base", "call", "m2", "lf", *ECOS}
+    expected = set(names) if names is not None else (set(FRED) if country == "US" else {"base", "call", "m2", "lf", *ECOS})
     if any(not result.get(name) for name in expected):
         raise RuntimeError("A required source has no observations; no results will be saved")
     # Source calendars differ. Do not pretend stale observations are today's data.
@@ -448,48 +456,60 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--country", choices=("US", "KR"), required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     db = SupabaseRest(timeout=120)
-    existing = {} if args.dry_run else load_existing(db, args.country)
-    if not args.dry_run:
-        required = set(FRED) if args.country == "US" else {"base", "call", "m2", "lf", *ECOS}
-        missing = sorted(name for name in required if not existing.get(name))
-        if missing:
-            raise RuntimeError(
-                "Liquidity source history is not initialized; use the explicit backfill path: "
-                + ", ".join(missing)
-            )
-    data = collect(args.country, existing, date.today())
+    owned = ({"sofr", "iorb", "ioer", "fed_assets"} if args.country == "US"
+             else {"call", "m2", "lf", "kofr", "equity_flow", "bond_flow"})
+    if args.stage in ("sources", "all"):
+        existing = {} if args.dry_run else load_existing(db, args.country)
+        data = collect(args.country, existing, date.today(), owned)
+        raw = [row for series in sorted(owned)
+               for row in canonical_rows(CANONICAL_SERIES[args.country][series][0],
+                                          {day: value for day, value in data[series].items()
+                                           if day not in existing.get(series, {})},
+                                          frequency=CANONICAL_SERIES[args.country][series][1],
+                                          source=CANONICAL_SERIES[args.country][series][2])[-AUTOMATIC_DAILY_VALUES:]]
+        if not args.dry_run:
+            store_canonical(db, raw, owner="liquidity")
+        print(json.dumps({"country": args.country, "stage": "sources", "stored": len(raw)}, ensure_ascii=False))
+        if args.stage == "sources":
+            return
+    data = load_existing(db, args.country)
+    required = set(FRED) if args.country == "US" else {"base", "call", "m2", "lf", *ECOS}
+    missing = sorted(name for name in required if not data.get(name))
+    if missing:
+        raise RuntimeError("Liquidity canonical source history is incomplete: " + ", ".join(missing))
     if args.country == "KR":
         data.update(load_korea_equity_context(db))
     results = calculate(args.country, data)
-    raw = [{"country": args.country, "series_code": CANONICAL_SERIES[args.country][series][0],
-            "observation_date": day.isoformat(), "value": value,
-            "frequency": CANONICAL_SERIES[args.country][series][1],
-            "source": CANONICAL_SERIES[args.country][series][2]}
-           for series, values in data.items() if series not in ("foreign_flow_ratio", "usdkrw_return")
-           for day, value in values.items() if day not in existing.get(series, {})]
-    raw = sorted(raw, key=lambda row: (row["series_code"], row["observation_date"]))
-    raw = [
-        row
-        for series in sorted({row["series_code"] for row in raw})
-        for row in [item for item in raw if item["series_code"] == series][-AUTOMATIC_DAILY_VALUES:]
-    ]
     selected_results = [
         row
         for metric in sorted({row["metric"] for row in results})
         for row in [item for item in results if item["metric"] == metric][-AUTOMATIC_DAILY_VALUES:]
     ]
     if not args.dry_run:
-        # One database transaction: no partially published country on failure.
-        db.request("POST", "rpc/store_liquidity_batch", body={"p_country": args.country, "p_raw": raw, "p_results": selected_results})
+        writable_results = []
+        for metric in sorted({row["metric"] for row in selected_results}):
+            metric_rows = [row for row in selected_results if row["metric"] == metric]
+            existing = db.request("GET", "liquidity_indices", params={
+                "select": "observation_date", "country": f"eq.{args.country}",
+                "metric": f"eq.{metric}", "method_version": f"eq.{metric_rows[0]['method_version']}",
+                "observation_date": f"gte.{min(row['observation_date'] for row in metric_rows)}",
+                "limit": "10000",
+            }) or []
+            existing_dates = {str(row["observation_date"]) for row in existing}
+            writable_results.extend(row for row in metric_rows if row["observation_date"] not in existing_dates)
+        if writable_results:
+            db.upsert("liquidity_indices", writable_results,
+                      conflict="country,metric,observation_date,method_version")
         for metric in sorted({row["metric"] for row in results}):
             latest = db.request("GET", "liquidity_indices", params={"country": f"eq.{args.country}",
                                 "metric": f"eq.{metric}", "method_version": f"eq.{US_VERSION if args.country == 'US' else KR_VERSION}", "order": "observation_date.desc", "limit": "1"})
             expected = max(r["observation_date"] for r in results if r["metric"] == metric)
             if not latest or latest[0]["observation_date"] != expected:
                 raise RuntimeError("Post-write verification failed")
-    print(json.dumps({"country": args.country, "saved": not args.dry_run, "new_raw": len(raw), "metrics": {
+    print(json.dumps({"country": args.country, "stage": "derived", "saved": not args.dry_run, "metrics": {
         metric: {"count": len([r for r in results if r["metric"] == metric]),
                  "first": min(r["observation_date"] for r in results if r["metric"] == metric),
                  "latest": max(r["observation_date"] for r in results if r["metric"] == metric)}

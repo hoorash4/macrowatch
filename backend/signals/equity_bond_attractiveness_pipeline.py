@@ -8,15 +8,13 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from common import AUTOMATIC_WEEKLY_WEEKS, SupabaseRest, fetch_fred_observations, require_env, request_with_retry
-from signals.canonical_series import load_many, rows as canonical_rows, store as store_canonical
+from common import AUTOMATIC_WEEKLY_WEEKS, SupabaseRest, request_with_retry
+from signals.canonical_series import load, load_many, rows as canonical_rows, store as store_canonical
 from signals.equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows
-from sources.market import fetch_yahoo_adjusted, valid_fred_values
+from sources.market import fetch_yahoo_adjusted
 
 
 OEF_PAGE = "https://www.ishares.com/us/products/239723/ishares-sp-100-etf"
-KOREA_10Y_STAT = "817Y002"
-KOREA_10Y_ITEM = "010210000"
 # The explicit one-time cache initialization retains enough history for exact
 # 260-week percentile parity, the 13/52-week dependencies, and smoothing.
 INITIALIZATION_HISTORY_WEEKS = 340
@@ -47,30 +45,6 @@ def align_to_weeks(values: dict[date, float], weeks: list[date]) -> dict[date, f
         if latest is not None:
             result[week] = latest
     return result
-
-
-def fetch_ecos_10y(api_key: str, start: date, end: date) -> dict[date, float]:
-    values: dict[date, float] = {}
-    session = requests.Session()
-    for year in range(start.year, end.year + 1):
-        first = max(start, date(year, 1, 1)).strftime("%Y%m%d")
-        last = min(end, date(year, 12, 31)).strftime("%Y%m%d")
-        url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{api_key}/json/kr/1/1000/"
-               f"{KOREA_10Y_STAT}/D/{first}/{last}/{KOREA_10Y_ITEM}")
-        response = request_with_retry(lambda: session.get(url, timeout=45))
-        response.raise_for_status()
-        payload = response.json()
-        rows = payload.get("StatisticSearch", {}).get("row", [])
-        if not rows and payload.get("RESULT", {}).get("CODE") not in (None, "INFO-200"):
-            raise RuntimeError(f"ECOS rejected Korea 10Y request: {payload['RESULT'].get('CODE')}")
-        for row in rows:
-            try:
-                values[datetime.strptime(row["TIME"], "%Y%m%d").date()] = float(row["DATA_VALUE"])
-            except (KeyError, TypeError, ValueError):
-                continue
-    if not values:
-        raise RuntimeError("ECOS returned no Korea 10Y observations")
-    return values
 
 
 def fetch_oef_pe() -> float:
@@ -120,42 +94,33 @@ def stored_rows(country: str, rows: list[dict], calculated_at: str) -> list[dict
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--initialize-sources", action="store_true")
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     today = date.today()
     database = SupabaseRest()
+    source_start = today - timedelta(weeks=INITIALIZATION_HISTORY_WEEKS) if args.initialize_sources else today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS)
+    if args.stage in ("sources", "all"):
+        yahoo_daily = {"OEF": fetch_yahoo_adjusted("OEF", source_start, today)}
+        recent = {"US_EQUITY": yahoo_daily["OEF"]}
+        if args.initialize_sources and any(len(weekly_last(recent.get(series, {}))) < 260 for series in recent):
+            raise RuntimeError("Attractiveness source initialization returned insufficient history")
+        payload = []
+        for series in recent:
+            frequency, source = {"KR_EQUITY": ("D", "YAHOO:^KS11"),
+                                 "US_EQUITY": ("D", "YAHOO:OEF")}[series]
+            payload.extend(canonical_rows(CANONICAL_CODES[series], recent[series], frequency=frequency, source=source))
+        payload.extend(canonical_rows("OEF_PE", {today: fetch_oef_pe()}, frequency="D", source="ISHARES:OEF"))
+        store_canonical(database, payload, owner="equity_bond_attractiveness")
+        print(f"stage=sources stored={len(payload)}")
+        if args.stage == "sources":
+            return
     existing = database.request(
         "GET", "equity_bond_attractiveness_weekly",
-        params={
-            "select": (
-                "country,observation_date,method_version,score,earnings_yield_pct,"
-                "sovereign_yield_pct,yield_gap_pct,earnings_momentum_pct,"
-                "equity_return_13w_pct,component_scores"
-            ),
-            "limit": "10000",
-        },
+        params={"select": ("country,observation_date,method_version,score,earnings_yield_pct,"
+                            "sovereign_yield_pct,yield_gap_pct,earnings_momentum_pct,"
+                            "equity_return_13w_pct,component_scores"), "limit": "10000"},
     ) or []
     quarters = load_quarters(database)
-    source_start = today - timedelta(weeks=INITIALIZATION_HISTORY_WEEKS) if args.initialize_sources else today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS)
-    yahoo_daily = {symbol: fetch_yahoo_adjusted(symbol, source_start, today) for symbol in ("^KS11", "OEF")}
-    fred_daily = valid_fred_values(fetch_fred_observations(
-        "DGS10", require_env("FRED_API_KEY"), start=source_start.isoformat(), end=today.isoformat()
-    ))
-    ecos_daily = fetch_ecos_10y(require_env("ECOS_API_KEY"), source_start, today)
-    recent = {
-        "KR_EQUITY": yahoo_daily["^KS11"], "KR_YIELD": ecos_daily,
-        "US_EQUITY": yahoo_daily["OEF"], "US_YIELD": fred_daily,
-    }
-    if args.initialize_sources and any(len(weekly_last(recent.get(series, {}))) < 260 for series in CANONICAL_CODES):
-        raise RuntimeError("Attractiveness source initialization returned insufficient history")
-    sources = {
-        "KR_EQUITY": ("D", "YAHOO:^KS11"), "KR_YIELD": ("D", "ECOS:817Y002/010210000"),
-        "US_EQUITY": ("D", "YAHOO:OEF"), "US_YIELD": ("D", "USTREASURY:10Y"),
-    }
-    payload = []
-    for series, values in recent.items():
-        frequency, source = sources[series]
-        payload.extend(canonical_rows(CANONICAL_CODES[series], values, frequency=frequency, source=source))
-    store_canonical(database, payload)
     canonical = load_many(database, CANONICAL_CODES.values())
     weekly = {series: weekly_last(canonical[code]) for series, code in CANONICAL_CODES.items()}
     if any(len(weekly.get(series, {})) < 260 for series in CANONICAL_CODES):
@@ -166,11 +131,14 @@ def main() -> None:
     }
     fred = weekly["US_YIELD"]
     ecos = weekly["KR_YIELD"]
+    oef_pe = load(database, "OEF_PE")
+    if not oef_pe:
+        raise RuntimeError("OEF P/E canonical source is empty")
     calculated_at = datetime.now(timezone.utc).isoformat()
     rows = []
     for country, equity_symbol, yields, anchor in (
         ("KR", "^KS11", ecos, None),
-        ("US", "OEF", fred, 100.0 / fetch_oef_pe()),
+        ("US", "OEF", fred, 100.0 / list(oef_pe.values())[-1]),
     ):
         weeks = sorted(yahoo[equity_symbol])
         result = build_weekly_rows(

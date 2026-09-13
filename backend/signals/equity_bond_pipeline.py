@@ -9,15 +9,13 @@ from typing import Any
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, fetch_fred_observations, month_start_months_ago, require_env
 from signals.canonical_series import load_many, rows as canonical_rows, store as store_canonical
+from signals.derived_series import load as load_derived
 from signals.equity_bond_model import MODEL_VERSION, MonthlyInputs, build_feature_rows, walk_forward_forecasts
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
 
 FRED_SERIES = {
-    "real_yield_10y": "DFII10",
-    "yield_curve_10y_2y": "T10Y2Y",
     "baa_spread": "BAA10Y",
-    "nfci_level": "NFCI",
 }
 SOURCE_CODES = {
     "spy_adjusted_close": ("SPY_ADJUSTED_CLOSE", "D", "YAHOO:SPY"),
@@ -72,8 +70,10 @@ def lagged_month_values(
 
 
 def load_retained_sources(database: SupabaseRest) -> dict[str, dict[date, float]]:
-    stored = load_many(database, (item[0] for item in SOURCE_CODES.values()))
-    return {key: stored[definition[0]] for key, definition in SOURCE_CODES.items()}
+    source_codes = [definition[0] for key, definition in SOURCE_CODES.items() if key != "yield_curve_10y_2y"]
+    stored = load_many(database, source_codes)
+    return {key: (load_derived(database, definition[0]) if key == "yield_curve_10y_2y"
+                  else stored[definition[0]]) for key, definition in SOURCE_CODES.items()}
 
 
 def has_required_history(series: dict[str, dict[date, float]]) -> bool:
@@ -127,8 +127,9 @@ def build_monthly_inputs(
 
 def source_rows(raw: dict[str, dict[date, float]], _updated_at: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for key, (series_code, frequency, source) in SOURCE_CODES.items():
-        rows.extend(canonical_rows(series_code, raw[key], frequency=frequency, source=source))
+    for key, values in raw.items():
+        series_code, frequency, source = SOURCE_CODES[key]
+        rows.extend(canonical_rows(series_code, values, frequency=frequency, source=source))
     return rows
 
 
@@ -170,6 +171,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--initialize-sources", action="store_true")
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     args = parser.parse_args()
     if args.dry_run and args.initialize_sources:
         raise SystemExit("--initialize-sources cannot be combined with --dry-run")
@@ -179,32 +181,25 @@ def main() -> None:
     source_start = calibration_start if args.initialize_sources else month_start_months_ago(
         end, AUTOMATIC_MONTHLY_PERIODS - 1,
     )
-    fred_api_key = require_env("FRED_API_KEY")
     database = SupabaseRest()
-    retained = load_retained_sources(database)
-    if not args.initialize_sources and (
-        not has_required_history(retained)
-    ):
-        raise RuntimeError("Equity-bond canonical source history is incomplete; run --initialize-sources explicitly")
-
-    recent = {
-        "spy_adjusted_close": fetch_yahoo_adjusted("SPY", source_start, end),
-        "tlt_adjusted_close": fetch_yahoo_adjusted("TLT", source_start, end),
-    }
-    for key in FRED_SERIES:
-        recent[key] = valid_fred_values(fetch_fred_observations(
-            FRED_SERIES[key],
-            fred_api_key,
-            start=source_start.isoformat(),
-            end=end.isoformat(),
-        ))
-
     updated_at = datetime.now(timezone.utc).isoformat()
-    recent_source_rows = source_rows(recent, updated_at)
-    if not args.dry_run:
-        store_canonical(database, recent_source_rows)
-    for key in SOURCE_CODES:
-        retained[key].update(recent[key])
+    if args.stage in ("sources", "all"):
+        fred_api_key = require_env("FRED_API_KEY")
+        recent = {
+            "spy_adjusted_close": fetch_yahoo_adjusted("SPY", source_start, end),
+            "tlt_adjusted_close": fetch_yahoo_adjusted("TLT", source_start, end),
+        }
+        for key in FRED_SERIES:
+            recent[key] = valid_fred_values(fetch_fred_observations(
+                FRED_SERIES[key], fred_api_key, start=source_start.isoformat(), end=end.isoformat(),
+            ))
+        recent_source_rows = source_rows(recent, updated_at)
+        if not args.dry_run:
+            store_canonical(database, recent_source_rows, owner="equity_bond")
+        print(f"stage=sources stored={0 if args.dry_run else len(recent_source_rows)}")
+        if args.stage == "sources":
+            return
+    retained = load_retained_sources(database)
     if not has_required_history(retained):
         raise RuntimeError("Equity-bond canonical source history is incomplete; run --initialize-sources explicitly")
     raw = retained

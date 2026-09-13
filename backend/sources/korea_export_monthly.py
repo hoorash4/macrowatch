@@ -24,7 +24,7 @@ from sources.korea_export_intramonth import (
     parse_snapshot,
 )
 
-MONTHLY_SOURCE = "KCS:MONTHLY_EXPORT/daily_avg"
+MONTHLY_SOURCE = "DERIVED:KCS:MONTHLY_EXPORT/daily_avg"
 
 
 def _detail_markup(session: requests.Session, link: ReleaseLink) -> str:

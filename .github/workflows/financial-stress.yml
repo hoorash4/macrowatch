@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,9 +24,26 @@ jobs:
           python-version: "3.12"
       - name: Install spreadsheet reader
         run: pip install --disable-pip-version-check openpyxl requests
-      - name: Collect U.S. market stress data
+      - name: Collect canonical U.S. stress source observations
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.financial_stress_pipeline --months 5
+        run: PYTHONPATH=backend python -m signals.financial_stress_pipeline --months 5 --stage sources
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install spreadsheet reader
+        run: pip install --disable-pip-version-check openpyxl requests
+      - name: Calculate U.S. market stress from stored observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.financial_stress_pipeline --months 5 --stage derived

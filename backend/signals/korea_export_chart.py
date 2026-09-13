@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any
 
 from common import SupabaseRest
-from signals.economic_chart_pipeline import _insert_missing
+from signals.economic_chart_pipeline import _insert_missing_derived
 from sources.korea_export_intramonth import ExportSnapshot, independent_segment_rows
 
 RAW_TABLE = "korea_export_intramonth_snapshots"
@@ -68,4 +68,4 @@ def read_snapshots(db: SupabaseRest, start_month: date) -> list[ExportSnapshot]:
 def derive_missing_segments(db: SupabaseRest, start_month: date) -> int:
     snapshots = read_snapshots(db, start_month)
     rows = independent_segment_rows(snapshots)
-    return _insert_missing(db, rows, start_month) if rows else 0
+    return _insert_missing_derived(db, rows, start_month) if rows else 0

@@ -14,7 +14,7 @@ from common import (
     AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, SupabaseRest,
     fetch_fred_observations, require_env,
 )
-from signals.canonical_series import rows as canonical_rows, store as store_canonical
+from signals.canonical_series import load, rows as canonical_rows, store as store_canonical
 from sources.us_treasury_yields import fetch_treasury_nominal_values
 
 
@@ -70,6 +70,7 @@ def parse_args() -> argparse.Namespace:
         "--days", type=int, default=AUTOMATIC_DAILY_CALENDAR_DAYS,
         help="Recent calendar-day collection window",
     )
+    parser.add_argument("--stage", choices=("sources", "derived", "all"), default="all")
     return parser.parse_args()
 
 
@@ -77,37 +78,30 @@ def main() -> None:
     args = parse_args()
     today = date.today()
     start = today - timedelta(days=max(args.days, 7))
-    treasury = fetch_treasury_nominal_values(start, today, ("3M", "2Y"))
-    effr = valid_daily_values(fetch_fred_observations(
-        EFFR_SERIES,
-        require_env("FRED_API_KEY"),
-        start=start.isoformat(),
-        end=today.isoformat(),
-    ))
+    database = SupabaseRest()
+    if args.stage in ("sources", "all"):
+        treasury = fetch_treasury_nominal_values(start, today, ("3M",))
+        effr = valid_daily_values(fetch_fred_observations(
+            EFFR_SERIES, require_env("FRED_API_KEY"), start=start.isoformat(), end=today.isoformat(),
+        ))
+        source_payload = []
+        for values, code, source in (
+            (treasury["3M"], "US3M", "USTREASURY:daily_treasury_yield_curve"),
+            ({date.fromisoformat(day): value for day, value in effr.items()}, "EFFR", "FRED:DFF"),
+        ):
+            source_payload.extend(canonical_rows(code, values, frequency="D", source=source))
+        store_canonical(database, source_payload, owner="policy_expectation")
+        print(f"stage=sources stored={len(source_payload)}")
+        if args.stage == "sources":
+            return
     series_values = {
-        "treasury_3m_rate": {observed.isoformat(): value for observed, value in treasury["3M"].items()},
-        "treasury_2y_rate": {observed.isoformat(): value for observed, value in treasury["2Y"].items()},
-        "effr_rate": effr,
+        "treasury_3m_rate": {day.isoformat(): value for day, value in load(database, "US3M", start=start, end=today).items()},
+        "treasury_2y_rate": {day.isoformat(): value for day, value in load(database, "US2Y", start=start, end=today).items()},
+        "effr_rate": {day.isoformat(): value for day, value in load(database, "EFFR", start=start, end=today).items()},
     }
     rows = build_rows(series_values)[-AUTOMATIC_DAILY_VALUES:]
     if not rows:
-        print(f"No complete policy expectation observations from {start} through {today}.")
-        return
-    database = SupabaseRest()
-    # The lookback window is for source-release lag tolerance only. Automatic
-    # collection never rewrites an observation that has already been stored.
-    source_payload = []
-    for key, code, source in (
-        ("treasury_3m_rate", "US3M", "USTREASURY:daily_treasury_yield_curve"),
-        ("treasury_2y_rate", "US2Y", "USTREASURY:daily_treasury_yield_curve"),
-        ("effr_rate", "EFFR", "FRED:DFF"),
-    ):
-        source_payload.extend(canonical_rows(
-            code,
-            {date.fromisoformat(day): value for day, value in series_values[key].items()},
-            frequency="D", source=source,
-        ))
-    store_canonical(database, source_payload)
+        raise RuntimeError(f"No complete stored policy expectation observations from {start} through {today}.")
     derived_rows = [{key: row[key] for key in (
         "observation_date", "near_term_spread_bps", "cycle_spread_bps", "expectation_spread_bps",
     )} for row in rows]

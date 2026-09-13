@@ -251,7 +251,7 @@ test('통화정책 기대 아래에 통합물가와 금리 카드를 둔다', ()
   assert.match(html, /data-inflation-range="1"[\s\S]*data-inflation-range="2"/);
   assert.match(html, /data-inflation-range="2" class="is-active"/);
   assert.match(chart, /us_inflation_monthly/);
-  assert.match(chart, /economic_chart_points/);
+  assert.match(chart, /economic_chart_series_points/);
   assert.doesNotMatch(chart, /us_treasury_10y_daily/);
   assert.match(chart, /통합물가/);
   assert.doesNotMatch(chart, /시장 선행/);

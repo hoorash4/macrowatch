@@ -171,7 +171,7 @@
     if (!host || !supabaseClient) return;
     const [monthlyResponse, policyResponse, treasuryResponse] = await Promise.all([
       chartUtils.loadAllRows((from, to) => supabaseClient.from('us_inflation_monthly').select('month,headline_yoy_pct,core_yoy_pct,policy_rate_upper_pct,headline_real_rate_pct,core_real_rate_pct,status,data_as_of').order('month', { ascending: true }).range(from, to)),
-      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'US_POLICY_RATE_MID').order('observation_date', { ascending: true }).range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_series_points').select('observation_date,value').eq('series_code', 'US_POLICY_RATE_MID').order('observation_date', { ascending: true }).range(from, to)),
       chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'US10Y').order('observation_date', { ascending: true }).range(from, to)),
     ]);
     if (monthlyResponse.error || policyResponse.error || treasuryResponse.error) {

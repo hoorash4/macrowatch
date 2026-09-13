@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -28,10 +28,31 @@ jobs:
       - run: pip install --disable-pip-version-check requests==2.32.5
       - name: Test liquidity contracts
         run: python -m unittest discover -s tests -p test_liquidity.py -v
-      - name: Collect, calculate, atomically save and verify
+      - name: Collect canonical liquidity source observations
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.liquidity_pipeline --country '${{ matrix.country }}'
+        run: PYTHONPATH=backend python -m signals.liquidity_pipeline --country '${{ matrix.country }}' --stage sources
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        country: [US, KR]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: pip install --disable-pip-version-check requests==2.32.5
+      - name: Test liquidity contracts
+        run: python -m unittest discover -s tests -p test_liquidity.py -v
+      - name: Calculate liquidity indices from stored observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.liquidity_pipeline --country '${{ matrix.country }}' --stage derived

@@ -15,4 +15,4 @@ Automatic collectors, manual recalculation, historical bootstrap/backfill, repai
 
 ## Economic indicator charts
 
-`economic-charts.html` provides the dedicated economic-indicator chart workspace. Official FRED/ECOS series are stored in `economic_chart_points`; scheduled collection appends recent observations while the 10-year bootstrap remains an explicit manual mode.
+`economic-charts.html` provides the dedicated economic-indicator chart workspace. Externally published observations are stored in `economic_chart_points`, reusable calculations in `economic_chart_derived_points`, and charts read their union through `economic_chart_series_points`. Scheduled collection appends recent observations while historical backfill remains an explicit manual mode.

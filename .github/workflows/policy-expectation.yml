@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,9 +24,24 @@ jobs:
           python-version: "3.12"
       - name: Install HTTP client
         run: pip install --disable-pip-version-check requests
-      - name: Collect and calculate daily policy expectations
+      - name: Collect canonical policy source observations
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.policy_expectation_pipeline --days 14
+        run: PYTHONPATH=backend python -m signals.policy_expectation_pipeline --days 14 --stage sources
+
+  derived:
+    needs: sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Calculate policy expectations from stored observations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m signals.policy_expectation_pipeline --days 14 --stage derived

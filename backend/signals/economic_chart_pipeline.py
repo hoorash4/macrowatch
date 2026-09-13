@@ -13,6 +13,7 @@ import requests
 
 from common import SupabaseRest, fetch_fred_observations, request_with_retry, require_env
 from signals.canonical_series import store as store_canonical_series
+from signals.derived_series import store as store_derived_series
 from tracking.check_targets import CheckResult, condition_met, enqueue_alerts, json_number, parse_decimal
 
 
@@ -21,12 +22,10 @@ from tracking.check_targets import CheckResult, condition_met, enqueue_alerts, j
 FRED_SERIES = {
     "US2Y": ("DGS2", "D"),
     "US10Y": ("DGS10", "D"),
-    "US10Y2Y": ("T10Y2Y", "D"),
     "HY_OAS": ("BAMLH0A0HYM2", "D"),
     "NFCI_CREDIT": ("NFCICREDIT", "W"),
     "EM_OAS": ("BAMLEMCBPIOAS", "D"),
     "WTI": ("DCOILWTICO", "D"),
-    "USDKRW": ("DEXKOUS", "D"),
     "RRP": ("RRPONTSYD", "D"),
     "TGA": ("WTREGEN", "W"),
     "WEI": ("WEI", "W"),
@@ -41,6 +40,7 @@ DERIVED_SERIES = {
     "KR10Y3Y": ("KR10Y", "KR3Y", "D"),
 }
 TABLE = "economic_chart_points"
+READ_VIEW = "economic_chart_series_points"
 TARGET_SOURCE_TYPE = "economic_chart"
 
 
@@ -127,8 +127,8 @@ def _ecos_rows(series_code: str, stat_code: str, item_code: str, frequency: str,
     return rows
 
 
-def _existing_values(db: SupabaseRest, series_code: str, start: date) -> dict[str, float]:
-    rows = db.request("GET", TABLE, params={
+def _existing_values(db: SupabaseRest, series_code: str, start: date, *, table: str = TABLE) -> dict[str, float]:
+    rows = db.request("GET", table, params={
         "select": "observation_date,value",
         "series_code": f"eq.{series_code}",
         "observation_date": f"gte.{start.isoformat()}",
@@ -151,7 +151,19 @@ def _insert_missing(db: SupabaseRest, rows: list[dict[str, Any]], start: date) -
         or float(row["value"]) != existing[str(row["observation_date"])]
     ]
     if changed:
-        store_canonical_series(db, changed)
+        store_canonical_series(db, changed, owner="economic_chart")
+    return len(changed)
+
+
+def _insert_missing_derived(db: SupabaseRest, rows: list[dict[str, Any]], start: date) -> int:
+    if not rows:
+        return 0
+    code = str(rows[0]["series_code"])
+    existing = _existing_values(db, code, start, table="economic_chart_derived_points")
+    changed = [row for row in rows if str(row["observation_date"]) not in existing
+               or float(row["value"]) != existing[str(row["observation_date"])]]
+    if changed:
+        store_derived_series(db, changed)
     return len(changed)
 
 
@@ -189,11 +201,11 @@ def _derive_spread(
     } for observed in sorted(lhs.keys() & rhs.keys())]
     if max_rows is not None:
         rows = rows[-max_rows:]
-    return _insert_missing(db, rows, start)
+    return _insert_missing_derived(db, rows, start)
 
 
 def _latest_value(db: SupabaseRest, series_code: str) -> Decimal | None:
-    rows = db.request("GET", TABLE, params={
+    rows = db.request("GET", READ_VIEW, params={
         "select": "value,observation_date",
         "series_code": f"eq.{series_code}",
         "order": "observation_date.desc",

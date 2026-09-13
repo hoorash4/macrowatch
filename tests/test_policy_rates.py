@@ -41,9 +41,9 @@ class PolicyRateSourceTests(unittest.TestCase):
             database, date(2009, 1, 1), date(2026, 9, 13), recent_limit=5,
         )
         self.assertEqual(rows, [
-            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2009-01-28", "value": 0.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
-            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-01-28", "value": 4.375, "frequency": "E", "source": "DB:central_bank_policy_events"},
-            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-03-18", "value": 4.125, "frequency": "E", "source": "DB:central_bank_policy_events"},
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2009-01-28", "value": 0.125, "frequency": "E", "source": "DERIVED:central_bank_policy_events"},
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-01-28", "value": 4.375, "frequency": "E", "source": "DERIVED:central_bank_policy_events"},
+            {"series_code": "US_POLICY_RATE_MID", "observation_date": "2026-03-18", "value": 4.125, "frequency": "E", "source": "DERIVED:central_bank_policy_events"},
         ])
         params = database.requests[0][2]["params"]
         self.assertEqual(params["order"], "meeting_date.desc")
@@ -85,7 +85,7 @@ class PolicyRateCollectionTests(unittest.TestCase):
     def test_automatic_collection_checks_only_latest_five_stored_us_decisions(self, us_source):
         us_source.return_value = [{
             "series_code": "US_POLICY_RATE_MID", "observation_date": "2026-09-17", "value": 4.125,
-            "frequency": "E", "source": "DB:central_bank_policy_events",
+            "frequency": "E", "source": "DERIVED:central_bank_policy_events",
         }]
         database = FakeDatabase()
         count = policy_rate_automatic.collect_us(date(2026, 9, 18), database)
