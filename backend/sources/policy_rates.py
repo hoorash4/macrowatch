@@ -30,6 +30,10 @@ FED_FOMC_CALENDAR_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalen
 FED_FOMC_HISTORICAL_URL = "https://www.federalreserve.gov/monetarypolicy/fomchistorical{year}.htm"
 _FED_ORIGIN = "https://www.federalreserve.gov"
 _FED_STATEMENT_LINK = re.compile(r"href\s*=\s*['\"](?P<href>[^'\"]*monetary(?P<date>\d{8})a\.htm)[^'\"]*['\"]", re.IGNORECASE)
+_FED_HISTORICAL_STATEMENT_LINK = re.compile(
+    r"<a\b[^>]*href\s*=\s*['\"](?P<href>[^'\"]*monetary(?P<date>\d{8})a\.htm)[^'\"]*['\"][^>]*>(?P<label>.*?)</a>",
+    re.IGNORECASE | re.DOTALL,
+)
 _FED_TARGET_RANGE = re.compile(
     r"target\s+range\s+for\s+(?:the\s+)?federal\s+funds\s+rate\s+(?:at|to)\s+"
     r"(?P<lower>\d+(?:(?:[-‑–]\d+)?/\d+)?)\s+(?:to|[-‑–])\s+"
@@ -41,6 +45,22 @@ _FED_TARGET_RANGE = re.compile(
 def _fed_statement_links(html: str) -> dict[date, str]:
     links: dict[date, str] = {}
     for match in _FED_STATEMENT_LINK.finditer(html):
+        raw = match.group("date")
+        try:
+            observed = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
+        except ValueError:
+            continue
+        links[observed] = urljoin(_FED_ORIGIN, match.group("href"))
+    return links
+
+
+def _fed_historical_statement_links(html: str) -> dict[date, str]:
+    """Keep only the FOMC page's links labelled Statement, excluding other Fed releases."""
+    links: dict[date, str] = {}
+    for match in _FED_HISTORICAL_STATEMENT_LINK.finditer(html):
+        label = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", unescape(match.group("label")))).strip().lower()
+        if label not in {"statement", "fomc statement"}:
+            continue
         raw = match.group("date")
         try:
             observed = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
@@ -64,7 +84,7 @@ def _fed_decision_links(start: date, end: date) -> dict[date, str]:
     # meetings from daily rate values.
     for year in range(start.year, end.year + 1):
         if not any(observed.year == year for observed in links):
-            links.update(_fed_statement_links(_fetch_fed_page(FED_FOMC_HISTORICAL_URL.format(year=year))))
+            links.update(_fed_historical_statement_links(_fetch_fed_page(FED_FOMC_HISTORICAL_URL.format(year=year))))
     result = {observed: href for observed, href in links.items() if start <= observed <= end}
     if not result:
         raise RuntimeError("Federal Reserve FOMC calendar returned no decision dates")

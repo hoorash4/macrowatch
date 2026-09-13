@@ -63,6 +63,17 @@ class PolicyRateSourceTests(unittest.TestCase):
         html = "<p>The Committee decided to keep its target range for the federal funds rate at 0 to 1/4 percent.</p>"
         self.assertEqual(_fed_target_range(html), (0.0, 0.25))
 
+    def test_historical_calendar_excludes_non_statement_monetary_releases(self):
+        from backend.sources.policy_rates import _fed_historical_statement_links
+        html = """
+          <a href=\"/newsevents/pressreleases/monetary20090128a.htm\">Statement</a>
+          <a href=\"/newsevents/pressreleases/monetary20090218a.htm\">Discount window update</a>
+        """
+        self.assertEqual(
+            _fed_historical_statement_links(html),
+            {date(2009, 1, 28): "https://www.federalreserve.gov/newsevents/pressreleases/monetary20090128a.htm"},
+        )
+
     @patch("backend.sources.policy_rates.requests.get")
     def test_korea_monthly_rate_uses_ecos_base_rate_item(self, get):
         class Response:
