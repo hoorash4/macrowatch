@@ -9,7 +9,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from inflation_pipeline import OFFICIAL_INFLATION_SERIES, integrated_rates, load_official_inflation_values
+from inflation_pipeline import OFFICIAL_INFLATION_SERIES, load_canonical_series
 from signals.inflation_rate_automatic import collect as collect_automatic_rates
 from sources.inflation_rates import (
     ALL_SERIES_CODES,
@@ -114,31 +114,15 @@ class InflationRateSourceTests(unittest.TestCase):
         self.assertEqual(ECOS_SERIES["KR_IMPORT_PRICE"], ("401Y015", "*AA", "W"))
         self.assertEqual(result["KR_IMPORT_PRICE"][0]["source"], "ECOS:401Y015/*AA/W:YoY")
 
-    def test_integrated_model_reads_six_official_rates_from_chart_storage(self):
+    def test_inflation_pipeline_reads_six_official_rates_from_canonical_storage(self):
         class Database:
             def request(self, _method, _table, *, params):
                 code = params["series_code"].removeprefix("eq.")
                 return [{"observation_date": "2026-08-01", "value": len(code)}]
 
-        result = load_official_inflation_values(Database(), date(2026, 1, 1))
-        self.assertEqual(set(result), set(OFFICIAL_INFLATION_SERIES))
+        result = load_canonical_series(Database(), tuple(OFFICIAL_INFLATION_SERIES.values()))
+        self.assertEqual(set(result), set(OFFICIAL_INFLATION_SERIES.values()))
         self.assertEqual(len(OFFICIAL_INFLATION_SERIES), 6)
-
-    def test_integrated_model_consumes_stored_yoy_without_second_conversion(self):
-        months = []
-        for year in range(2016, 2020):
-            months.extend(date(year, month, 1) for month in range(1, 13))
-        index_levels = {month: 100 * (1.02 ** (position / 12)) for position, month in enumerate(months)}
-        rate_months = months[12:]
-        fred = {
-            "pce": {month: 2.0 for month in rate_months},
-            "headline_ppi": {month: 1.0 + (position % 3) for position, month in enumerate(rate_months)},
-            "shelter": index_levels,
-            "cpi_ex_shelter": index_levels,
-        }
-        rates, _ppi, _calibration = integrated_rates(fred, "headline")
-        self.assertGreaterEqual(len(rates), 24)
-        self.assertTrue(all(0 < value < 5 for value in rates.values()))
 
     @patch("signals.inflation_rate_automatic.fetch_all_rates")
     def test_automatic_upserts_recent_rates_so_official_revisions_are_applied(self, fetch):

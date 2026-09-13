@@ -172,13 +172,14 @@
     const [monthlyResponse, policyResponse, treasuryResponse] = await Promise.all([
       chartUtils.loadAllRows((from, to) => supabaseClient.from('us_inflation_monthly').select('month,headline_yoy_pct,core_yoy_pct,policy_rate_upper_pct,headline_real_rate_pct,core_real_rate_pct,status,data_as_of').order('month', { ascending: true }).range(from, to)),
       chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'US_POLICY_RATE_MID').order('observation_date', { ascending: true }).range(from, to)),
-      chartUtils.loadAllRows((from, to) => supabaseClient.from('us_treasury_10y_daily').select('observed_on,treasury_10y_pct').order('observed_on', { ascending: true }).range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'US10Y').order('observation_date', { ascending: true }).range(from, to)),
     ]);
     if (monthlyResponse.error || policyResponse.error || treasuryResponse.error) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">통합물가 데이터를 불러오지 못했습니다.</div>';
       return;
     }
-    state.monthly = monthlyResponse.data || []; state.policy = policyResponse.data || []; state.treasury = treasuryResponse.data || []; render();
+    state.monthly = monthlyResponse.data || []; state.policy = policyResponse.data || [];
+    state.treasury = (treasuryResponse.data || []).map(row => ({ observed_on: row.observation_date, treasury_10y_pct: row.value })); render();
   }
 
   document.querySelectorAll('[data-inflation-ranges] [data-inflation-range]').forEach(button => button.addEventListener('click', () => {

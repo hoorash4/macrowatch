@@ -76,6 +76,19 @@ let newsSentimentView = 'recent';
 let sectorFlowRows = [];
 let sectorFlowMobileLayout = null;
 
+async function loadEconomicSeries(seriesCode) {
+  const rows = [];
+  for (let from = 0;; from += 1000) {
+    const { data, error } = await supabaseClient.from('economic_chart_points')
+      .select('observation_date,value').eq('series_code', seriesCode)
+      .order('observation_date').range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if ((data || []).length < 1000) break;
+  }
+  return new Map(rows.map((row) => [String(row.observation_date), Number(row.value)]));
+}
+
 // ===== 뉴스 흐름 분석 모듈 =====
 // 일별 집계 데이터 조회, 긍정·부정 비율 계산, 기간별 막대 렌더링을 담당한다.
 // 기사 분류와 저장은 서버에서 수행하므로 이 구역은 읽기와 화면 표시만 맡는다.
@@ -507,13 +520,17 @@ function renderCreditConditionsMomentum(rows) {
 
 async function loadMarketTension(monthlyRows = []) {
   if (!supabaseClient) return;
-  const weeklyResponse = await supabaseClient
-    .from('us_market_tension_weekly')
-    .select('week,tension_index,financial_conditions_credit_index,financial_conditions_risk_index,sp500_friday_close,is_provisional')
-    .order('week', { ascending: false })
-    .limit(STRESS_HISTORY_QUERY_LIMIT);
+  const [weeklyResponse, credit, risk, sp500] = await Promise.all([
+    supabaseClient.from('us_market_tension_weekly')
+      .select('week,tension_index,is_provisional').order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
+    loadEconomicSeries('NFCI_CREDIT'), loadEconomicSeries('NFCI_RISK'), loadEconomicSeries('SP500_WEEKLY_CLOSE'),
+  ]);
   if (weeklyResponse.error) return;
-  const selectedWeeklyRows = weeklyResponse.data || [];
+  const selectedWeeklyRows = (weeklyResponse.data || []).map((row) => ({ ...row,
+    financial_conditions_credit_index: credit.get(String(row.week)),
+    financial_conditions_risk_index: risk.get(String(row.week)),
+    sp500_friday_close: sp500.get(String(row.week)),
+  }));
   renderMarketStressDashboard(monthlyRows, selectedWeeklyRows);
   const weeklyRows = selectedWeeklyRows.map((row) => ({ ...row, month: row.week }));
   renderCreditConditionsMomentum(weeklyRows);
@@ -523,12 +540,13 @@ async function loadMarketStressDashboard() {
   const chart = document.getElementById('credit-stress-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from('us_market_stress_index_monthly')
-      .select('month,stress_index,is_provisional')
-      .order('month', { ascending: false })
-      .limit(STRESS_HISTORY_QUERY_LIMIT);
+    const [{ data, error }, sp500] = await Promise.all([
+      supabaseClient.from('us_market_stress_index_monthly').select('month,stress_index,is_provisional')
+        .order('month', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
+      loadEconomicSeries('SP500_MONTH_END'),
+    ]);
     if (error) throw error;
-    const selectedRows = data || [];
+    const selectedRows = (data || []).map((row) => ({ ...row, sp500_month_end_close: sp500.get(String(row.month)) }));
     renderMarketStressDashboard(selectedRows);
     loadMarketTension(selectedRows);
   } catch (error) {
@@ -590,11 +608,13 @@ async function loadEmStressDashboard() {
   const chart = document.getElementById('em-stress-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from('em_market_stress_weekly')
-      .select('week,stress_index,eem_weekly_close,is_provisional')
-      .order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT);
+    const [{ data, error }, eem] = await Promise.all([
+      supabaseClient.from('em_market_stress_weekly').select('week,stress_index,is_provisional')
+        .order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
+      loadEconomicSeries('EEM_WEEKLY_CLOSE'),
+    ]);
     if (error) throw error;
-    renderEmStressDashboard(data || []);
+    renderEmStressDashboard((data || []).map((row) => ({ ...row, eem_weekly_close: eem.get(String(row.week)) })));
   } catch (_) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">이머징 시장 스트레스 지수를 불러오지 못했습니다.</div>';
   }
@@ -707,17 +727,14 @@ async function loadKoreaStressDashboard() {
   const chart = document.getElementById('korea-stress-chart');
   if (!chart || !supabaseClient) return;
   try {
-    const [monthlyResponse, weeklyResponse] = await Promise.all([
+    const [monthlyResponse, bokFsi, kospiWeekly] = await Promise.all([
       supabaseClient.from('korea_market_stress_monthly')
-        .select('month,stress_index,bok_fsi,kospi_close,is_provisional')
+        .select('month,stress_index,is_provisional')
         .order('month', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
-      supabaseClient.from('korea_market_stress_weekly')
-        .select('week,kospi_close,corporate_credit_spread,short_term_funding_spread')
-        .order('week', { ascending: false }).limit(STRESS_HISTORY_QUERY_LIMIT),
+      loadEconomicSeries('BOK_FSI'), loadEconomicSeries('KOSPI_WEEKLY_CLOSE'),
     ]);
     if (monthlyResponse.error) throw monthlyResponse.error;
-    if (weeklyResponse.error) throw weeklyResponse.error;
-    let displayRows = monthlyResponse.data || [];
+    let displayRows = (monthlyResponse.data || []).map((row) => ({ ...row, bok_fsi: bokFsi.get(String(row.month)) }));
     if (!displayRows.some((row) => Number.isFinite(Number(row.bok_fsi)))) {
       try {
         const officialFsi = await fetchBokFsiForDisplay();
@@ -728,7 +745,7 @@ async function loadKoreaStressDashboard() {
     }
     renderKoreaStressChart(
       displayRows,
-      weeklyResponse.data || [],
+      [...kospiWeekly].map(([week, kospi_close]) => ({ week, kospi_close })),
     );
   } catch (error) {
     chart.innerHTML = '<div class="flex min-h-44 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/30 p-5 text-sm text-slate-500">한국 시장 스트레스 데이터를 불러오지 못했습니다.</div>';

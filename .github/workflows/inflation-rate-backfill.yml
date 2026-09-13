@@ -21,14 +21,12 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Replace official YoY history and rebuild model sources
+      - name: Replace official YoY history
         env:
           BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
           KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           PYTHONPATH=backend python -m signals.inflation_rate_backfill
-          PYTHONPATH=backend python -m signals.inflation_model_backfill

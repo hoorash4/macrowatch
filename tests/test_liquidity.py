@@ -85,8 +85,9 @@ class LiquidityTests(unittest.TestCase):
     def test_snapshot_exact_headers_and_null(self):
         payload = {'data': {'chart_opt': {'data': {'csv': 'period,기준금리,콜금리(익일물)\n1630454400000,0,\n1630540800000,1,2'}}}}
         rows = lp.parse_snapshot(payload, lp.SNAPSHOTS[849], date(2021,1,1), date(2022,1,1))
-        self.assertEqual(rows['base'][date(2021,9,1)], 0)
         self.assertNotIn(date(2021,9,1), rows['call'])
+        self.assertEqual(rows['call'][date(2021,9,2)], 2)
+        self.assertNotIn('base', rows)
         with self.assertRaises(RuntimeError):
             lp.parse_snapshot(payload, {'wrong': 'bad'}, date(2021,1,1), date(2022,1,1))
 
@@ -94,6 +95,7 @@ class LiquidityTests(unittest.TestCase):
         for weights in lp.WEIGHTS.values():
             self.assertAlmostEqual(sum(weights.values()), 1)
         self.assertEqual(lp.shift_month(date(2024,2,29), -12), date(2023,2,28))
+        self.assertEqual(lp.CANONICAL_SERIES['KR']['base'][0], 'KR_POLICY_RATE')
 
     def test_future_does_not_change_past_score(self):
         from unittest.mock import patch

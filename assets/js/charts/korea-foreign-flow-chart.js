@@ -123,9 +123,19 @@
   async function load({ supabaseClient }) {
     const container = document.getElementById('korea-foreign-flow-chart');
     if (!container || !supabaseClient) return;
-    const { data, error } = await chartUtils.loadAllRows((from, to) => supabaseClient.from('korea_foreign_flow_daily').select('observation_date,foreign_net_buy_amount,kospi_trading_value,usdkrw_rate,flow_index').order('observation_date').range(from, to));
-    if (error) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도를 불러오지 못했습니다.</div>'; return; }
-    state.rows = applyHysteresis(calculateTenDayCumulative(data || []));
+    const [derived, foreign, trading, fx] = await Promise.all([
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('korea_foreign_flow_daily').select('observation_date,flow_index').order('observation_date').range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'KR_FOREIGN_NET_BUY').order('observation_date').range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'KOSPI_TRADING_VALUE').order('observation_date').range(from, to)),
+      chartUtils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points').select('observation_date,value').eq('series_code', 'USDKRW').order('observation_date').range(from, to)),
+    ]);
+    if ([derived, foreign, trading, fx].some((result) => result.error)) { container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">한국 외국인 자금 유출입 강도를 불러오지 못했습니다.</div>'; return; }
+    const merge = new Map((derived.data || []).map((row) => [String(row.observation_date), { ...row }]));
+    for (const [result, key] of [[foreign, 'foreign_net_buy_amount'], [trading, 'kospi_trading_value'], [fx, 'usdkrw_rate']]) {
+      for (const row of result.data || []) merge.set(String(row.observation_date), { ...(merge.get(String(row.observation_date)) || { observation_date: row.observation_date }), [key]: Number(row.value) });
+    }
+    const data = [...merge.values()].filter((row) => Number.isFinite(Number(row.flow_index)) && Number.isFinite(Number(row.foreign_net_buy_amount)) && Number.isFinite(Number(row.kospi_trading_value)) && Number.isFinite(Number(row.usdkrw_rate))).sort((a, b) => String(a.observation_date).localeCompare(String(b.observation_date)));
+    state.rows = applyHysteresis(calculateTenDayCumulative(data));
     updateRegimeLabel(state.rows); render(container, state.rows, state.selectedYears);
     const controls = document.querySelector('[data-korea-foreign-flow-ranges]');
     if (controls && controls.dataset.bound !== 'true') {

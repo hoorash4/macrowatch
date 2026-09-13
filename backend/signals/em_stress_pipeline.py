@@ -14,6 +14,7 @@ from common import (
     carry_forward as carry_forward_periods,
 )
 from common import fetch_fred_observations, require_env as required_env, uncapped_score as score
+from signals.canonical_series import rows as canonical_rows, store as store_canonical
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/EEM"
@@ -152,12 +153,10 @@ def build_rows(raw: dict[str, dict[str, float]], today: date, eem_values: dict[s
 
 def upsert(rows: list[dict[str, object]], url: str, service_key: str) -> int:
     database = SupabaseRest(url=url, service_key=service_key, timeout=TIMEOUT)
+    derived = [{key: row[key] for key in ("week", "stress_index", "is_provisional")} for row in rows]
     writable = database.automatic_rows(
-        "em_market_stress_weekly", rows, key="week", provisional="is_provisional",
-        compare_fields=(
-            "stress_index", "high_yield_4w_average", "tail_risk_4w_average",
-            "blended_4w_average", "vxeem_4w_average", "eem_weekly_close",
-        ),
+        "em_market_stress_weekly", derived, key="week", provisional="is_provisional",
+        compare_fields=("stress_index",),
     )
     if writable:
         database.upsert("em_market_stress_weekly", writable, conflict="week")
@@ -176,6 +175,21 @@ def main() -> None:
     rows = build_rows(raw, today, eem_values)[-AUTOMATIC_WEEKLY_WEEKS:]
     if not rows:
         raise RuntimeError("저장할 이머징 스트레스 데이터가 없습니다.")
+    database = SupabaseRest(url=supabase_url, service_key=service_key, timeout=TIMEOUT)
+    payload = []
+    for key, code in {
+        "high_yield_oas": "EM_HY_OAS", "em_dollar_index": "EM_DOLLAR_INDEX",
+        "tail_risk_oas": "EM_TAIL_RISK_OAS", "em_equity_volatility": "VXEEM",
+    }.items():
+        payload.extend(canonical_rows(
+            code, {date.fromisoformat(day): value for day, value in raw[key].items()},
+            frequency="W", source=f"FRED:{SERIES[key]}",
+        ))
+    payload.extend(canonical_rows(
+        "EEM_WEEKLY_CLOSE", {date.fromisoformat(day): value for day, value in eem_values.items()},
+        frequency="W", source="YAHOO:EEM",
+    ))
+    store_canonical(database, payload)
     stored = upsert(rows, supabase_url, service_key)
     print("calculated_weeks={} stored_weeks={} eem={} ".format(len(rows), stored, len(eem_values)) + " ".join(f"{key}={len(values)}" for key, values in raw.items()))
 

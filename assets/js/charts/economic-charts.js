@@ -10,8 +10,8 @@ const BUSINESS_DISTRESS_CATEGORY='기업부실',LEGACY_BUSINESS_CREDIT_CATEGORY=
 const FREQUENCY_LABELS={D:'일별',W:'주별',T:'10일 구간',M:'월별',Q:'분기별',E:'결정일'};
 const DEFAULT_CATEGORY_ORDER=[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY,'밸류에이션','시장가격','고빈도 경기','물가',BUSINESS_DISTRESS_CATEGORY,'유동성'];
 const SERIES=[
- {code:'US2Y',title:'미국채 2년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2,fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate','observation_date','treasury_2y_rate']},
- {code:'US10Y',title:'미국채 10년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2,fallback:['us_treasury_10y_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']},
+ {code:'US2Y',title:'미국채 2년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2},
+ {code:'US10Y',title:'미국채 10년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2},
  {code:'US10Y_REAL',title:'미국채 10년 실질금리',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2},
  {code:'US10Y2Y',title:'미국 10Y-2Y 스프레드',frequency:'D',unit:'%p',category:RATE_CATEGORY,decimals:2},
  {code:'US_POLICY_RATE_MID',compareCode:'KR_POLICY_RATE',title:'기준금리',legendTitle:'미국 기준금리 (약 6주 간격)',compareTitle:'한국 기준금리 (1개월 간격)',frequency:'E',frequencyLabel:'미국 결정일 · 한국 1개월',unit:'%',category:RATE_CATEGORY,decimals:2,lineType:'steps',maAvailable:false},

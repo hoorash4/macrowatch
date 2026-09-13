@@ -1,10 +1,4 @@
-"""Collect minimal monthly sources and persist V1 equity-bond forecasts.
-
-Only source series absent from the existing MacroWatch database are retained:
-SPY/TLT adjusted closes, T10Y2Y and BAA10Y.  DFII10 is reused from the EM
-capital-capacity table where available, while historical DFII10 and weekly NFCI
-are read from FRED without creating another duplicate raw-data table.
-"""
+"""Collect canonical market sources and persist V1 equity-bond forecasts."""
 
 from __future__ import annotations
 
@@ -14,9 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, fetch_fred_observations, month_start_months_ago, require_env
-from signals.automatic_source_cache import load as load_source_cache
-from signals.automatic_source_cache import is_initialized, mark_initialized
-from signals.automatic_source_cache import store as store_source_cache
+from signals.canonical_series import load_many, rows as canonical_rows, store as store_canonical
 from signals.equity_bond_model import MODEL_VERSION, MonthlyInputs, build_feature_rows, walk_forward_forecasts
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
@@ -28,15 +20,15 @@ FRED_SERIES = {
     "nfci_level": "NFCI",
 }
 SOURCE_CODES = {
-    "spy_adjusted_close": ("SPY_ADJUSTED_CLOSE", "yahoo_finance"),
-    "tlt_adjusted_close": ("TLT_ADJUSTED_CLOSE", "yahoo_finance"),
-    "yield_curve_10y_2y": ("T10Y2Y", "fred"),
-    "baa_spread": ("BAA10Y", "fred"),
+    "spy_adjusted_close": ("SPY_ADJUSTED_CLOSE", "D", "YAHOO:SPY"),
+    "tlt_adjusted_close": ("TLT_ADJUSTED_CLOSE", "D", "YAHOO:TLT"),
+    "real_yield_10y": ("US10Y_REAL", "D", "USTREASURY:10Y_REAL"),
+    "yield_curve_10y_2y": ("US10Y2Y", "D", "DERIVED:US10Y-US2Y"),
+    "baa_spread": ("BAA10Y", "D", "FRED:BAA10Y"),
+    "nfci_level": ("NFCI", "W", "FRED:NFCI"),
 }
 NFCI_PUBLICATION_LAG_DAYS = 7
 UPSERT_BATCH_SIZE = 500
-CACHE_COLLECTOR = "equity_bond_relative"
-CACHE_SERIES = {"real_yield_10y": "DFII10", "nfci_level": "NFCI"}
 # DFII10 starts on 2003-01-02. January 2003 is the earliest overlap
 # available to every model source.
 REQUIRED_HISTORY_THROUGH = date(2003, 1, 31)
@@ -80,40 +72,8 @@ def lagged_month_values(
 
 
 def load_retained_sources(database: SupabaseRest) -> dict[str, dict[date, float]]:
-    code_to_key = {series_code: key for key, (series_code, _source) in SOURCE_CODES.items()}
-    raw = {key: {} for key in SOURCE_CODES}
-    offset = 0
-    while True:
-        rows = database.request(
-            "GET", "equity_bond_source_monthly",
-            params={
-                "select": "series_code,observation_date,value",
-                "order": "series_code.asc,month.asc", "offset": str(offset), "limit": "1000",
-            },
-        ) or []
-        for row in rows:
-            key = code_to_key.get(str(row.get("series_code")))
-            if key:
-                observed = date.fromisoformat(str(row["observation_date"])[:10])
-                raw[key][observed] = float(row["value"])
-        if len(rows) < 1000:
-            break
-        offset += len(rows)
-    return raw
-
-
-def source_cache_points(raw: dict[str, dict[date, float]]) -> dict[str, dict[date, tuple[date, float]]]:
-    return {
-        CACHE_SERIES[key]: {period: (period, value) for period, value in raw[key].items()}
-        for key in CACHE_SERIES
-    }
-
-
-def cached_series_values(cache: dict[str, dict[date, tuple[date, float]]]) -> dict[str, dict[date, float]]:
-    return {
-        key: {period: value for period, (_observed, value) in cache.get(series, {}).items()}
-        for key, series in CACHE_SERIES.items()
-    }
+    stored = load_many(database, (item[0] for item in SOURCE_CODES.values()))
+    return {key: stored[definition[0]] for key, definition in SOURCE_CODES.items()}
 
 
 def has_required_history(series: dict[str, dict[date, float]]) -> bool:
@@ -165,18 +125,10 @@ def build_monthly_inputs(
     return results
 
 
-def source_rows(raw: dict[str, dict[date, float]], updated_at: str) -> list[dict[str, Any]]:
+def source_rows(raw: dict[str, dict[date, float]], _updated_at: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for key, (series_code, source) in SOURCE_CODES.items():
-        for month, (observation_date, value) in month_end_values(raw[key]).items():
-            rows.append({
-                "series_code": series_code,
-                "month": month.isoformat(),
-                "observation_date": observation_date.isoformat(),
-                "value": round(value, 8),
-                "source": source,
-                "updated_at": updated_at,
-            })
+    for key, (series_code, frequency, source) in SOURCE_CODES.items():
+        rows.extend(canonical_rows(series_code, raw[key], frequency=frequency, source=source))
     return rows
 
 
@@ -229,15 +181,11 @@ def main() -> None:
     )
     fred_api_key = require_env("FRED_API_KEY")
     database = SupabaseRest()
-    cache = load_source_cache(database, CACHE_COLLECTOR)
-    cached = cached_series_values(cache)
     retained = load_retained_sources(database)
     if not args.initialize_sources and (
-        not is_initialized(cache)
-        or not has_required_history(cached)
-        or not has_required_history(retained)
+        not has_required_history(retained)
     ):
-        raise RuntimeError("Equity-bond model source cache is not initialized; run --initialize-sources explicitly")
+        raise RuntimeError("Equity-bond canonical source history is incomplete; run --initialize-sources explicitly")
 
     recent = {
         "spy_adjusted_close": fetch_yahoo_adjusted("SPY", source_start, end),
@@ -254,29 +202,18 @@ def main() -> None:
     updated_at = datetime.now(timezone.utc).isoformat()
     recent_source_rows = source_rows(recent, updated_at)
     if not args.dry_run:
-        upsert_batches(database, "equity_bond_source_monthly", recent_source_rows, "series_code,month")
-        store_source_cache(database, CACHE_COLLECTOR, source_cache_points(recent))
-        if args.initialize_sources:
-            mark_initialized(database, CACHE_COLLECTOR, today)
-            cache = load_source_cache(database, CACHE_COLLECTOR)
-
-    if args.initialize_sources:
-        retained = load_retained_sources(database)
+        store_canonical(database, recent_source_rows)
     for key in SOURCE_CODES:
         retained[key].update(recent[key])
-    for series, values in source_cache_points(recent).items():
-        cache.setdefault(series, {}).update(values)
-    cached = cached_series_values(cache)
-    if not is_initialized(cache) or not has_required_history(cached):
-        raise RuntimeError("Equity-bond model source cache is not initialized; run --initialize-sources explicitly")
-    raw = {**retained, **cached}
+    if not has_required_history(retained):
+        raise RuntimeError("Equity-bond canonical source history is incomplete; run --initialize-sources explicitly")
+    raw = retained
 
     inputs = build_monthly_inputs(raw, start=calibration_start, end=end)
     features = build_feature_rows(inputs)
     forecasts = walk_forward_forecasts(features)
     if not forecasts:
         raise RuntimeError("No equity-bond forecasts were produced; verify source history and overlap.")
-    retained_sources = recent_source_rows
     retained_forecasts = forecast_rows(forecasts, updated_at)
     if not args.dry_run:
         existing_forecasts = database.request(
@@ -292,7 +229,7 @@ def main() -> None:
         upsert_batches(database, "equity_bond_relative_forecasts", retained_forecasts, "forecast_month")
     print(
         f"Equity-bond V1: source_start={source_start} initialized={args.initialize_sources} "
-        f"inputs={len(inputs)} sources={len(retained_sources)} "
+        f"inputs={len(inputs)} sources={sum(len(values) for values in retained.values())} "
         f"forecasts={len(retained_forecasts)} latest={retained_forecasts[-1]['forecast_month']} "
         f"verdict={retained_forecasts[-1]['verdict']} dry_run={args.dry_run}"
     )

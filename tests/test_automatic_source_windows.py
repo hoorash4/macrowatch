@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from common import SupabaseRest  # noqa: E402
-from signals import automatic_source_cache  # noqa: E402
+from signals import canonical_series  # noqa: E402
 from signals.economic_chart_pipeline import _insert_missing  # noqa: E402
 
 
@@ -50,7 +50,7 @@ class AutomaticSourceWindowTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(database.written[0]["value"], 1.1)
 
-    def test_private_source_cache_round_trips_period_and_observation_dates(self):
+    def test_canonical_source_round_trips_observation_dates(self):
         class Database:
             def __init__(self):
                 self.rows = []
@@ -63,15 +63,11 @@ class AutomaticSourceWindowTests(unittest.TestCase):
                 return self.rows[offset:offset + 1000]
 
         database = Database()
-        automatic_source_cache.store(database, "collector", {
-            "SERIES": {date(2026, 9, 1): (date(2026, 9, 3), 1.25)},
-        })
-        loaded = automatic_source_cache.load(database, "collector")
-        self.assertEqual(loaded["SERIES"][date(2026, 9, 1)], (date(2026, 9, 3), 1.25))
-        automatic_source_cache.mark_initialized(database, "collector", date(2026, 9, 12))
-        self.assertTrue(automatic_source_cache.is_initialized(
-            automatic_source_cache.load(database, "collector")
+        canonical_series.store(database, canonical_series.rows(
+            "SERIES", {date(2026, 9, 3): 1.25}, frequency="D", source="test",
         ))
+        loaded = canonical_series.load(database, "SERIES")
+        self.assertEqual(loaded[date(2026, 9, 3)], 1.25)
 
     def test_historical_cache_initialization_is_manual_only(self):
         workflows = {
@@ -93,7 +89,7 @@ class AutomaticSourceWindowTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", inflation_backfill)
         self.assertNotIn("schedule:", inflation_backfill)
         self.assertIn("signals.inflation_rate_backfill", inflation_backfill)
-        self.assertIn("signals.inflation_model_backfill", inflation_backfill)
+        self.assertNotIn("signals.inflation_model_backfill", inflation_backfill)
         self.assertFalse((ROOT / ".github/workflows/inflation-model.yml").exists())
 
 

@@ -1,871 +1,193 @@
-"""Collect, calculate, and publish the current MacroWatch U.S. inflation model."""
+"""Publish the U.S. inflation composite from canonical official rates and Cleveland nowcasts."""
 
 from __future__ import annotations
 
 import json
-import math
-import statistics
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import Iterable
-from urllib.parse import quote
+from datetime import date, datetime, timezone
 
-import numpy as np
 import requests
 
 try:
-    from .common import (
-        AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS, SupabaseRest,
-        fetch_fred_observations, month_start_months_ago, request_with_retry, require_env,
-    )
-    from .inflation_lead_model import (
-        MODEL_VERSION, ProducerCalibration, align_producer_inflation,
-        fisher_real_rate_pct, fit_ridge, predict_ridge,
-        select_direction_ridge_alpha, select_ridge_alpha, shelter_adjusted_cpi_yoy,
-    )
-    from .signals.automatic_source_cache import is_initialized, load as load_source_cache
-    from .signals.automatic_source_cache import store as store_source_cache
-    from .sources.inflation_rates import fetch_bea_index_levels
-except ImportError:  # Direct script execution used by GitHub Actions.
-    from common import (
-        AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, AUTOMATIC_MONTHLY_PERIODS, SupabaseRest,
-        fetch_fred_observations, month_start_months_ago, request_with_retry, require_env,
-    )
-    from inflation_lead_model import (
-        MODEL_VERSION, ProducerCalibration, align_producer_inflation,
-        fisher_real_rate_pct, fit_ridge, predict_ridge,
-        select_direction_ridge_alpha, select_ridge_alpha, shelter_adjusted_cpi_yoy,
-    )
-    from signals.automatic_source_cache import is_initialized, load as load_source_cache
-    from signals.automatic_source_cache import store as store_source_cache
-    from sources.inflation_rates import fetch_bea_index_levels
+    from .common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, request_with_retry
+except ImportError:
+    from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, request_with_retry
 
 
 TIMEOUT_SECONDS = 60
-SOURCE_START = date(2009, 1, 1)
 PUBLISH_START = date(2020, 1, 1)
-CLEVELAND_MONTHLY_URL = (
+CLEVELAND_YEARLY_URL = (
     "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/"
-    "nowcast_month.json?sc_lang=en"
+    "nowcast_year.json?sc_lang=en"
 )
-BLS_TIMESERIES_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
-BLS_CORE_CPI_EX_SHELTER = "CUSR0000SA0L12E"
-YAHOO_CHART_URLS = (
-    "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
-    "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
-)
-
-FRED_SERIES = {
-    "shelter": "CUSR0000SAH1",
-    "cpi_ex_shelter": "CUSR0000SA0L2",
-    "dollar": "DTWEXBGS",
-    "policy_rate": "DFEDTARU",
-    "treasury_10y": "DGS10",
-}
+MODEL_VERSION = "cleveland_nowcast_v1"
 OFFICIAL_INFLATION_SERIES = {
-    "cpi": "US_CPI",
-    "core_cpi": "US_CORE_CPI",
-    "pce": "US_PCE",
-    "core_pce": "US_CORE_PCE",
-    "headline_ppi": "US_PPI",
-    "core_ppi": "US_CORE_PPI",
+    "cpi": "US_CPI", "core_cpi": "US_CORE_CPI", "pce": "US_PCE",
+    "core_pce": "US_CORE_PCE", "ppi": "US_PPI", "core_ppi": "US_CORE_PPI",
 }
-COMMODITY_GROUPS = {
-    "energy": ("CL=F", "RB=F", "HO=F", "NG=F"),
-    "food": ("ZC=F", "ZW=F", "ZS=F", "ZL=F", "ZM=F", "LE=F", "HE=F", "DC=F", "SB=F", "KC=F", "CC=F"),
-    "industrial": ("HG=F", "ALI=F", "HRC=F", "CT=F"),
-}
-OFFICIAL_SHELTER_WEIGHTS = {"headline": 0.356, "core": 0.446}
-CACHE_COLLECTOR = "inflation_model"
-DAILY_FRED_NAMES = frozenset({"dollar", "policy_rate", "treasury_10y"})
 
 
 @dataclass(frozen=True)
 class NowcastPoint:
     observed_on: date
-    cpi_mom_pct: float
-    pce_mom_pct: float
-
-
-@dataclass(frozen=True)
-class ComponentRow:
-    month: date
-    pce: float
-    cpi: float
-    ppi: float
-    target_lag1: float
-    target_lag3: float
-
-
-def month_start(value: date) -> date:
-    return date(value.year, value.month, 1)
-
-
-def add_months(value: date, months: int) -> date:
-    index = value.year * 12 + value.month - 1 + months
-    return date(index // 12, index % 12 + 1, 1)
-
-
-def finite(value: object) -> bool:
-    return isinstance(value, (int, float)) and math.isfinite(float(value))
-
-
-def latest_on_or_before(values: dict[date, float], cutoff: date) -> float | None:
-    candidates = [key for key in values if key <= cutoff]
-    return values[max(candidates)] if candidates else None
-
-
-def fetch_fred_series(
-    api_key: str,
-    today: date,
-    starts: dict[str, date] | None = None,
-) -> dict[str, dict[date, float]]:
-    output: dict[str, dict[date, float]] = {}
-    for name, series_id in FRED_SERIES.items():
-        rows = fetch_fred_observations(
-            series_id,
-            api_key,
-            start=(starts or {}).get(name, SOURCE_START).isoformat(),
-            end=today.isoformat(),
-            timeout=TIMEOUT_SECONDS,
-        )
-        values: dict[date, float] = {}
-        for row in rows:
-            raw_date, raw_value = row.get("date"), row.get("value")
-            if not isinstance(raw_date, str) or raw_value in (None, "."):
-                continue
-            try:
-                values[date.fromisoformat(raw_date)] = float(raw_value)
-            except (TypeError, ValueError):
-                continue
-        if not values:
-            raise RuntimeError(f"FRED {series_id} returned no usable observations")
-        output[name] = values
-    return output
-
-
-def fetch_bls_series(series_id: str, today: date, start: date = SOURCE_START) -> dict[date, float]:
-    """Fetch a long monthly BLS series in public-API-sized year blocks."""
-
-    values: dict[date, float] = {}
-    for start_year in range(start.year, today.year + 1, 10):
-        end_year = min(start_year + 9, today.year)
-        response = request_with_retry(
-            lambda: requests.post(
-                BLS_TIMESERIES_URL,
-                json={
-                    "seriesid": [series_id],
-                    "startyear": str(start_year),
-                    "endyear": str(end_year),
-                },
-                headers={"User-Agent": "MacroWatch inflation research/2.0"},
-                timeout=TIMEOUT_SECONDS,
-            )
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if payload.get("status") != "REQUEST_SUCCEEDED":
-            raise RuntimeError(f"BLS {series_id} request failed: {payload.get('message')}")
-        series = payload.get("Results", {}).get("series") or []
-        if not series:
-            raise RuntimeError(f"BLS {series_id} returned no series")
-        for row in series[0].get("data", []):
-            period = str(row.get("period", ""))
-            if not period.startswith("M") or period == "M13":
-                continue
-            try:
-                observed_on = date(int(row["year"]), int(period[1:]), 1)
-                if observed_on >= start:
-                    values[observed_on] = float(row["value"])
-            except (KeyError, TypeError, ValueError):
-                continue
-    if not values:
-        raise RuntimeError(f"BLS {series_id} returned no usable observations")
-    return values
-
-
-def fetch_yahoo_series(symbol: str, today: date, start: date = SOURCE_START) -> dict[date, float]:
-    params = {
-        "period1": int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
-        "period2": int(datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp()),
-        "interval": "1d",
-        "events": "history",
-    }
-    attempt = 0
-    def send():
-        nonlocal attempt
-        url = YAHOO_CHART_URLS[attempt % len(YAHOO_CHART_URLS)].format(symbol=quote(symbol, safe=""))
-        attempt += 1
-        return requests.get(
-            url, params=params,
-            headers={"User-Agent": "Mozilla/5.0 MacroWatch inflation research"},
-            timeout=TIMEOUT_SECONDS,
-        )
-    response = request_with_retry(send)
-    response.raise_for_status()
-    result = (response.json().get("chart", {}).get("result") or [{}])[0]
-    timestamps = result.get("timestamp") or []
-    closes = ((result.get("indicators", {}).get("quote") or [{}])[0].get("close") or [])
-    values: dict[date, float] = {}
-    for stamp, close in zip(timestamps, closes):
-        if close is None:
-            continue
-        try:
-            values[datetime.fromtimestamp(int(stamp), tz=timezone.utc).date()] = float(close)
-        except (TypeError, ValueError, OSError):
-            continue
-    if not values:
-        raise RuntimeError(f"Yahoo {symbol} returned no usable observations")
-    return values
+    cpi_yoy_pct: float
+    pce_yoy_pct: float
 
 
 def parse_chart_date(label: str, target: date) -> date | None:
     try:
         month, day = (int(part) for part in label.split("/"))
+        return date(target.year + (1 if month < target.month else 0), month, day)
     except (AttributeError, TypeError, ValueError):
-        return None
-    year = target.year + (1 if month < target.month else 0)
-    try:
-        return date(year, month, day)
-    except ValueError:
         return None
 
 
 def fetch_cleveland_nowcasts() -> dict[str, dict[date, list[NowcastPoint]]]:
-    response = request_with_retry(
-        lambda: requests.get(
-            CLEVELAND_MONTHLY_URL,
-            headers={"User-Agent": "MacroWatch inflation research/2.0"},
-            timeout=TIMEOUT_SECONDS,
-        )
-    )
+    """Read Cleveland Fed's published year-over-year CPI and PCE nowcasts."""
+    response = request_with_retry(lambda: requests.get(
+        CLEVELAND_YEARLY_URL,
+        headers={"User-Agent": "MacroWatch inflation dashboard/3.0"},
+        timeout=TIMEOUT_SECONDS,
+    ))
     response.raise_for_status()
     payload = response.json()
-    output = {"headline": {}, "core": {}}
-    names = {
-        "headline": ("CPI Inflation", "PCE Inflation"),
-        "core": ("Core CPI Inflation", "Core PCE Inflation"),
-    }
+    output: dict[str, dict[date, list[NowcastPoint]]] = {"headline": {}, "core": {}}
+    names = {"headline": ("CPI Inflation", "PCE Inflation"),
+             "core": ("Core CPI Inflation", "Core PCE Inflation")}
     for item in payload if isinstance(payload, list) else []:
+        caption = str((item.get("chart") or {}).get("subcaption") or "")
         try:
-            target = datetime.strptime(item["chart"]["subcaption"], "%Y-%m").date().replace(day=1)
-        except (KeyError, TypeError, ValueError):
+            target = datetime.strptime(caption[:10], "%Y-%m-%d").date().replace(day=1)
+        except ValueError:
             try:
-                target = datetime.strptime(item["chart"]["subcaption"], "%Y-%m-%d").date().replace(day=1)
-            except (KeyError, TypeError, ValueError):
+                target = datetime.strptime(caption[:7], "%Y-%m").date().replace(day=1)
+            except ValueError:
                 continue
-        labels = item.get("categories", [{}])[0].get("category", [])
+        labels = ((item.get("categories") or [{}])[0].get("category") or [])
         datasets = {entry.get("seriesname"): entry.get("data", []) for entry in item.get("dataset", [])}
         for kind, (cpi_name, pce_name) in names.items():
+            points: list[NowcastPoint] = []
             cpi_values, pce_values = datasets.get(cpi_name, []), datasets.get(pce_name, [])
-            points = []
             for index, label in enumerate(labels):
-                observed_on = parse_chart_date(label.get("label", ""), target)
-                # A monthly nowcast remains live after month-end until the
-                # corresponding release. Keep those later business-day
-                # vintages so the current provisional value can still move.
-                if observed_on is None or observed_on < target:
+                observed_on = parse_chart_date(str(label.get("label") or ""), target)
+                if observed_on is None:
                     continue
                 try:
-                    cpi = float(cpi_values[index].get("value"))
-                    pce = float(pce_values[index].get("value"))
-                except (IndexError, TypeError, ValueError):
+                    cpi = float(cpi_values[index]["value"])
+                    pce = float(pce_values[index]["value"])
+                except (IndexError, KeyError, TypeError, ValueError):
                     continue
                 points.append(NowcastPoint(observed_on, cpi, pce))
             if points:
                 output[kind][target] = sorted(points, key=lambda point: point.observed_on)
     if not output["headline"] or not output["core"]:
-        raise RuntimeError("Cleveland Fed nowcast history was empty or malformed")
+        raise RuntimeError("Cleveland Fed year-over-year nowcast history was empty or malformed")
     return output
 
 
-def monthly_average(values: dict[date, float], cutoff: date | None = None) -> dict[date, float]:
-    grouped: dict[date, list[float]] = {}
-    for observed_on, value in values.items():
-        if cutoff is not None and observed_on > cutoff:
-            continue
-        grouped.setdefault(month_start(observed_on), []).append(value)
-    return {month: float(statistics.fmean(items)) for month, items in grouped.items() if items}
-
-
-def yoy_levels(values: dict[date, float]) -> dict[date, float]:
-    output = {}
-    for month, value in values.items():
-        prior = values.get(add_months(month, -12))
-        if prior and value > 0:
-            output[month] = 100.0 * (value / prior - 1.0)
-    return output
-
-
-def changes(values: dict[date, float]) -> dict[date, float]:
-    return {
-        month: value - values[add_months(month, -1)]
-        for month, value in values.items()
-        if add_months(month, -1) in values
-    }
-
-
-def adjusted_cpi_levels(fred: dict[str, dict[date, float]], kind: str) -> dict[date, float]:
-    shelter = yoy_levels(fred["shelter"])
-    ex_name = "cpi_ex_shelter" if kind == "headline" else "core_cpi_ex_shelter"
-    ex_shelter = yoy_levels(fred[ex_name])
-    return {
-        month: shelter_adjusted_cpi_yoy(
-            shelter_yoy_pct=shelter[month],
-            ex_shelter_yoy_pct=ex_shelter[month],
-            official_shelter_weight=OFFICIAL_SHELTER_WEIGHTS[kind],
-        )
-        for month in shelter.keys() & ex_shelter.keys()
-    }
-
-
-def integrated_rates(
-    fred: dict[str, dict[date, float]], kind: str
-) -> tuple[dict[date, float], dict[date, float], ProducerCalibration]:
-    pce_name = "pce" if kind == "headline" else "core_pce"
-    ppi_name = "headline_ppi" if kind == "headline" else "core_ppi"
-    pce = fred[pce_name]
-    cpi = adjusted_cpi_levels(fred, kind)
-    ppi = fred[ppi_name]
-    calibration_months = sorted(
-        month for month in pce.keys() & cpi.keys() & ppi.keys() if month < PUBLISH_START
-    )
-    consumer = [(0.60 * pce[month] + 0.30 * cpi[month]) / 0.90 for month in calibration_months]
-    producer = [ppi[month] for month in calibration_months]
-    if len(consumer) < 24 or float(np.std(producer)) < 1e-9:
-        raise RuntimeError(f"Insufficient pre-2020 {kind} PPI calibration history")
-    calibration = ProducerCalibration(
-        consumer_mean_pct=float(np.mean(consumer)),
-        producer_mean_pct=float(np.mean(producer)),
-        producer_to_consumer_scale=float(np.std(consumer) / np.std(producer)),
-    )
-    aligned_ppi = {month: align_producer_inflation(value, calibration) for month, value in ppi.items()}
-    rates = {
-        month: 0.60 * pce[month] + 0.30 * cpi[month] + 0.10 * aligned_ppi[month]
-        for month in pce.keys() & cpi.keys() & aligned_ppi.keys()
-    }
-    return rates, aligned_ppi, calibration
-
-
-class MarketFeatures:
-    def __init__(self, prices: dict[str, dict[date, float]], dollar: dict[date, float]) -> None:
-        self.prices = prices
-        self.dollar = dollar
-        self.price_monthly = {symbol: monthly_average(values) for symbol, values in prices.items()}
-        self.dollar_monthly = monthly_average(dollar)
-
-    @staticmethod
-    def _return(current: float | None, previous: float | None) -> float:
-        return 100.0 * (current / previous - 1.0) if current and previous else float("nan")
-
-    def _series_return(self, values: dict[date, float], monthly: dict[date, float], target: date, cutoff: date) -> float:
-        current_values = [value for day, value in values.items() if month_start(day) == target and day <= cutoff]
-        previous = monthly.get(add_months(target, -1))
-        return self._return(float(statistics.fmean(current_values)) if current_values else None, previous)
-
-    def _historical_return(self, monthly: dict[date, float], target: date) -> float:
-        return self._return(monthly.get(target), monthly.get(add_months(target, -1)))
-
-    def row(self, kind: str, target: date, cutoff: date) -> list[float]:
-        groups = ("energy", "food", "industrial") if kind == "headline" else ("industrial",)
-        output: list[float] = []
-        for group in groups:
-            current = [
-                self._series_return(self.prices[symbol], self.price_monthly[symbol], target, cutoff)
-                for symbol in COMMODITY_GROUPS[group]
-            ]
-            current_value = float(np.nanmedian(current))
-            prior = []
-            for lag in (2, 1):
-                values = [self._historical_return(self.price_monthly[symbol], add_months(target, -lag)) for symbol in COMMODITY_GROUPS[group]]
-                prior.append(float(np.nanmedian(values)))
-            output.extend([float(np.clip(current_value, -40.0, 40.0)), float(np.nanmean([*prior, current_value]))])
-        dollar_current = self._series_return(self.dollar, self.dollar_monthly, target, cutoff)
-        dollar_prior = [self._historical_return(self.dollar_monthly, add_months(target, -lag)) for lag in (2, 1)]
-        output.extend([dollar_current, float(np.nanmean([*dollar_prior, dollar_current]))])
-        return output
-
-
-def yoy_delta_from_mom(index: dict[date, float], target: date, mom_pct: float) -> float:
-    prior, year_ago = index.get(add_months(target, -1)), index.get(add_months(target, -12))
-    prior_year_ago = index.get(add_months(target, -13))
-    if not all(finite(value) and float(value) > 0 for value in (prior, year_ago, prior_year_ago)):
-        return float("nan")
-    prior_yoy = 100.0 * (float(prior) / float(prior_year_ago) - 1.0)
-    predicted_yoy = 100.0 * (float(prior) * (1.0 + mom_pct / 100.0) / float(year_ago) - 1.0)
-    return predicted_yoy - prior_yoy
-
-
-def adjusted_cpi_nowcast_delta(
-    fred: dict[str, dict[date, float]], kind: str, target: date, total_mom_pct: float
-) -> float:
-    total_name = "cpi" if kind == "headline" else "core_cpi"
-    ex_name = "cpi_ex_shelter" if kind == "headline" else "core_cpi_ex_shelter"
-    prior = add_months(target, -1)
-    shelter_mom = []
-    for lag in range(3):
-        month = add_months(prior, -lag)
-        previous = fred["shelter"].get(add_months(month, -1))
-        current = fred["shelter"].get(month)
-        if previous and current:
-            shelter_mom.append(100.0 * (current / previous - 1.0))
-    if not shelter_mom:
-        return float("nan")
-    shelter_estimate = float(statistics.fmean(shelter_mom))
-    official = OFFICIAL_SHELTER_WEIGHTS[kind]
-    ex_estimate = (total_mom_pct - official * shelter_estimate) / (1.0 - official)
-    adjusted = official * 0.90
-    shelter_delta = yoy_delta_from_mom(fred["shelter"], target, shelter_estimate)
-    ex_delta = yoy_delta_from_mom(fred[ex_name], target, ex_estimate)
-    # Ensure the total index history needed by the source definition exists.
-    if add_months(target, -1) not in fred[total_name]:
-        return float("nan")
-    return adjusted * shelter_delta + (1.0 - adjusted) * ex_delta
-
-
-def fit_model(features: list[list[float]], targets: list[float], *, direction: bool = False):
-    matrix = np.asarray(features, dtype=float)
-    outcome = np.asarray(targets, dtype=float)
-    if len(outcome) < 36 or not np.isfinite(matrix).all() or not np.isfinite(outcome).all():
-        return None
-    alpha = select_direction_ridge_alpha(matrix, outcome) if direction else select_ridge_alpha(matrix, outcome)
-    return fit_ridge(matrix, outcome, alpha=alpha)
-
-
-def lag_values(target_change: dict[date, float], target: date) -> tuple[float, float]:
-    previous = [target_change.get(add_months(target, -lag)) for lag in (1, 2, 3)]
-    finite_values = [float(value) for value in previous if finite(value)]
-    lag1 = float(previous[0]) if finite(previous[0]) else (finite_values[0] if finite_values else float("nan"))
-    return lag1, float(statistics.fmean(finite_values)) if finite_values else float("nan")
-
-
-def build_component_rows(
-    kind: str,
-    fred: dict[str, dict[date, float]],
-    nowcasts: dict[date, list[NowcastPoint]],
-    features: MarketFeatures,
-    target_change: dict[date, float],
-    ppi_change: dict[date, float],
-) -> tuple[dict[date, ComponentRow], dict[date, object]]:
-    rows: dict[date, ComponentRow] = {}
-    ppi_models: dict[date, object] = {}
-    pce_name = "pce" if kind == "headline" else "core_pce"
-    feature_cache: dict[date, list[float]] = {}
-    for target in sorted(nowcasts):
-        cutoff = nowcasts[target][-1].observed_on
-        feature_cache[target] = features.row(kind, target, cutoff)
-        history_months = [
-            month for month in sorted(feature_cache)
-            if month < target and month in ppi_change and np.isfinite(feature_cache[month]).all()
-        ]
-        model = fit_model([feature_cache[month] for month in history_months], [ppi_change[month] for month in history_months])
-        if model is None or not np.isfinite(feature_cache[target]).all():
-            continue
-        ppi_models[target] = model
-        point = nowcasts[target][-1]
-        pce_delta = yoy_delta_from_mom(fred[pce_name], target, point.pce_mom_pct)
-        cpi_delta = adjusted_cpi_nowcast_delta(fred, kind, target, point.cpi_mom_pct)
-        ppi_delta = predict_ridge(model, feature_cache[target])
-        lag1, lag3 = lag_values(target_change, target)
-        if all(finite(value) for value in (pce_delta, cpi_delta, ppi_delta, lag1, lag3)):
-            rows[target] = ComponentRow(target, pce_delta, cpi_delta, ppi_delta, lag1, lag3)
-    return rows, ppi_models
-
-
-def headline_models(rows: dict[date, ComponentRow], target_change: dict[date, float]) -> dict[date, object]:
-    models = {}
-    for target in sorted(rows):
-        history = [month for month in sorted(rows) if month < target and month in target_change]
-        x = [[rows[month].pce, rows[month].cpi, rows[month].ppi, rows[month].target_lag1, rows[month].target_lag3] for month in history]
-        model = fit_model(x, [target_change[month] for month in history], direction=True)
-        if model is not None:
-            models[target] = model
-    return models
-
-
-def core_residual_models(
-    core_rows: dict[date, ComponentRow],
-    headline_rows: dict[date, ComponentRow],
-    core_target_change: dict[date, float],
-) -> dict[date, object]:
-    models = {}
-    for target in sorted(core_rows.keys() & headline_rows.keys()):
-        history = [
-            month for month in sorted(core_rows.keys() & headline_rows.keys())
-            if month < target and month in core_target_change
-        ]
-        x = [[headline_rows[month].pce, headline_rows[month].cpi, headline_rows[month].ppi] for month in history]
-        residual = [
-            core_target_change[month]
-            - (0.60 * core_rows[month].pce + 0.30 * core_rows[month].cpi + 0.10 * core_rows[month].ppi)
-            for month in history
-        ]
-        model = fit_model(x, residual)
-        if model is not None:
-            models[target] = model
-    return models
-
-
-def component_for_point(
-    kind: str,
-    fred: dict[str, dict[date, float]],
-    features: MarketFeatures,
-    target: date,
-    point: NowcastPoint,
-    ppi_model,
-    target_change: dict[date, float],
-) -> ComponentRow | None:
-    pce_name = "pce" if kind == "headline" else "core_pce"
-    market = features.row(kind, target, point.observed_on)
-    pce = yoy_delta_from_mom(fred[pce_name], target, point.pce_mom_pct)
-    cpi = adjusted_cpi_nowcast_delta(fred, kind, target, point.cpi_mom_pct)
-    ppi = predict_ridge(ppi_model, market) if np.isfinite(market).all() else float("nan")
-    lag1, lag3 = lag_values(target_change, target)
-    if not all(finite(value) for value in (pce, cpi, ppi, lag1, lag3)):
-        return None
-    return ComponentRow(target, pce, cpi, ppi, lag1, lag3)
-
-
-def previous_rate(rates: dict[date, float], target: date) -> float | None:
-    candidates = [month for month in rates if month < target]
-    return rates[max(candidates)] if candidates else None
-
-
-def build_output_rows(
-    fred: dict[str, dict[date, float]],
-    nowcasts: dict[str, dict[date, list[NowcastPoint]]],
-    features: MarketFeatures,
-    headline_rates: dict[date, float],
-    core_rates: dict[date, float],
-    headline_ppi: dict[date, float],
-    core_ppi: dict[date, float],
-    publish_start: date,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    headline_change, core_change = changes(headline_rates), changes(core_rates)
-    headline_rows, headline_ppi_models = build_component_rows(
-        "headline", fred, nowcasts["headline"], features, headline_change, changes(headline_ppi)
-    )
-    core_rows, core_ppi_models = build_component_rows(
-        "core", fred, nowcasts["core"], features, core_change, changes(core_ppi)
-    )
-    head_models = headline_models(headline_rows, headline_change)
-    core_models = core_residual_models(core_rows, headline_rows, core_change)
-    daily: list[dict[str, object]] = []
-    targets = sorted(nowcasts["headline"].keys() & nowcasts["core"].keys())
-    for target in targets:
-        if target not in head_models or target not in core_models or target not in headline_ppi_models or target not in core_ppi_models:
-            continue
-        headline_anchor, core_anchor = previous_rate(headline_rates, target), previous_rate(core_rates, target)
-        if headline_anchor is None or core_anchor is None:
-            continue
-        core_points = {point.observed_on: point for point in nowcasts["core"][target]}
-        for head_point in nowcasts["headline"][target]:
-            if head_point.observed_on < publish_start or head_point.observed_on not in core_points:
-                continue
-            core_point = core_points[head_point.observed_on]
-            head = component_for_point(
-                "headline", fred, features, target, head_point, headline_ppi_models[target], headline_change
-            )
-            core = component_for_point(
-                "core", fred, features, target, core_point, core_ppi_models[target], core_change
-            )
-            if head is None or core is None:
-                continue
-            headline_delta = predict_ridge(
-                head_models[target], [head.pce, head.cpi, head.ppi, head.target_lag1, head.target_lag3]
-            )
-            core_base = 0.60 * core.pce + 0.30 * core.cpi + 0.10 * core.ppi
-            core_correction = predict_ridge(core_models[target], [head.pce, head.cpi, head.ppi])
-            headline_yoy, core_yoy = headline_anchor + headline_delta, core_anchor + core_base + core_correction
-            policy = latest_on_or_before(fred["policy_rate"], head_point.observed_on)
-            daily.append({
-                "observed_on": head_point.observed_on.isoformat(),
-                "target_month": target.isoformat(),
-                "headline_leading_yoy_pct": round(headline_yoy, 4),
-                "core_leading_yoy_pct": round(core_yoy, 4),
-                "policy_rate_upper_pct": round(policy, 4) if policy is not None else None,
-                "headline_real_rate_pct": round(fisher_real_rate_pct(policy, headline_yoy), 4) if policy is not None else None,
-                "core_real_rate_pct": round(fisher_real_rate_pct(policy, core_yoy), 4) if policy is not None else None,
-                "model_version": MODEL_VERSION,
-            })
-    daily.sort(key=lambda row: str(row["observed_on"]))
-    # PCE is released after month-end. During that short gap the model still
-    # targets the just-completed month, so carry its final within-month estimate
-    # to the latest Cleveland business date instead of making the chart appear
-    # stale or jumping ahead without a usable PCE starting level.
-    latest_source_day = max(
-        point.observed_on
-        for kind_rows in nowcasts.values()
-        for points in kind_rows.values()
-        for point in points
-    )
-    if daily and date.fromisoformat(str(daily[-1]["observed_on"])) < latest_source_day:
-        carried = dict(daily[-1])
-        carried["observed_on"] = latest_source_day.isoformat()
-        policy = latest_on_or_before(fred["policy_rate"], latest_source_day)
-        carried["policy_rate_upper_pct"] = round(policy, 4) if policy is not None else None
-        if policy is not None:
-            carried["headline_real_rate_pct"] = round(
-                fisher_real_rate_pct(policy, float(carried["headline_leading_yoy_pct"])), 4
-            )
-            carried["core_real_rate_pct"] = round(
-                fisher_real_rate_pct(policy, float(carried["core_leading_yoy_pct"])), 4
-            )
-        daily.append(carried)
-
-    monthly: list[dict[str, object]] = []
-    final_months = sorted(month for month in headline_rates.keys() & core_rates.keys() if month >= publish_start)
-    for month in final_months:
-        cutoff = add_months(month, 1) - timedelta(days=1)
-        policy = latest_on_or_before(fred["policy_rate"], cutoff)
-        monthly.append({
-            "month": month.isoformat(),
-            "headline_yoy_pct": round(headline_rates[month], 4),
-            "core_yoy_pct": round(core_rates[month], 4),
-            "policy_rate_upper_pct": round(policy, 4) if policy is not None else None,
-            "headline_real_rate_pct": round(fisher_real_rate_pct(policy, headline_rates[month]), 4) if policy is not None else None,
-            "core_real_rate_pct": round(fisher_real_rate_pct(policy, core_rates[month]), 4) if policy is not None else None,
-            "status": "final",
-            "model_version": MODEL_VERSION,
-            "data_as_of": cutoff.isoformat(),
-        })
-    if daily:
-        latest = daily[-1]
-        target = date.fromisoformat(str(latest["target_month"]))
-        if target not in headline_rates or target not in core_rates:
-            monthly.append({
-                "month": target.isoformat(),
-                "headline_yoy_pct": latest["headline_leading_yoy_pct"],
-                "core_yoy_pct": latest["core_leading_yoy_pct"],
-                "policy_rate_upper_pct": latest["policy_rate_upper_pct"],
-                "headline_real_rate_pct": latest["headline_real_rate_pct"],
-                "core_real_rate_pct": latest["core_real_rate_pct"],
-                "status": "provisional",
-                "model_version": MODEL_VERSION,
-                "data_as_of": latest["observed_on"],
-            })
-    return monthly, daily
-
-
-def batched(rows: list[dict[str, object]], size: int = 400) -> Iterable[list[dict[str, object]]]:
-    for index in range(0, len(rows), size):
-        yield rows[index:index + size]
-
-
-def treasury_rows(fred: dict[str, dict[date, float]], start: date, updated_at: str) -> list[dict[str, object]]:
-    """Persist only the genuinely daily U.S. 10-year Treasury series.
-
-    The FOMC target rate remains an in-memory input for inflation calculations;
-    its persisted chart series is stored separately at decision dates.
-    """
-    return [
-        {
-            "observed_on": observed_on.isoformat(),
-            "treasury_10y_pct": round(value, 4),
-            "source": "FRED:DGS10",
-            "updated_at": updated_at,
-        }
-        for observed_on, value in sorted(fred["treasury_10y"].items())
-        if observed_on >= start
-    ]
-
-
-def save_treasury_automatic(client: SupabaseRest, rows: list[dict[str, object]]) -> None:
-    tail = rows[-AUTOMATIC_DAILY_VALUES:]
-    if not tail:
-        return
-    first_day = str(tail[0]["observed_on"])
-    existing = client.request(
-        "GET",
-        "us_treasury_10y_daily",
-        params={
-            "select": "observed_on,treasury_10y_pct",
-            "observed_on": f"gte.{first_day}",
-            "limit": "20",
-        },
-    ) or []
-    stored = {str(row["observed_on"]): row.get("treasury_10y_pct") for row in existing}
-    missing = [row for row in tail if str(row["observed_on"]) not in stored]
-    if missing:
-        client.upsert("us_treasury_10y_daily", missing, conflict="observed_on")
-    for row in tail:
-        observed_on = str(row["observed_on"])
-        if observed_on in stored and stored[observed_on] is None:
-            client.request(
-                "PATCH",
-                "us_treasury_10y_daily",
-                params={"observed_on": f"eq.{observed_on}", "treasury_10y_pct": "is.null"},
-                body={"treasury_10y_pct": row["treasury_10y_pct"], "updated_at": row["updated_at"]},
-                prefer="return=minimal",
-            )
-
-
-def save_automatic(client: SupabaseRest, monthly: list[dict[str, object]]) -> None:
-    monthly = monthly[-AUTOMATIC_MONTHLY_PERIODS:]
-    existing = client.request("GET", "us_inflation_monthly", params={"select": "month,status", "limit": "500"}) or []
-    status_by_month = {row["month"]: row["status"] for row in existing}
-    selected_monthly = [
-        row for row in monthly
-        if row["status"] == "provisional"
-        or row["month"] not in status_by_month
-        or status_by_month[row["month"]] == "provisional"
-    ]
-    if selected_monthly:
-        client.upsert("us_inflation_monthly", selected_monthly, conflict="month")
-
-
-def verify_saved(client: SupabaseRest, expected_month: str, expected_treasury_day: str) -> None:
-    monthly = client.request(
-        "GET", "us_inflation_monthly",
-        params={"select": "month,status,model_version", "order": "month.desc", "limit": "1"},
-    ) or []
-    treasury = client.request(
-        "GET", "us_treasury_10y_daily",
-        params={"select": "observed_on,treasury_10y_pct,source", "order": "observed_on.desc", "limit": "1"},
-    ) or []
-    if not monthly or monthly[0].get("month") != expected_month:
-        raise RuntimeError("Monthly inflation verification did not return the expected latest row")
-    if monthly[0].get("model_version") != MODEL_VERSION:
-        raise RuntimeError("Inflation verification found an unexpected model version")
-    if (
-        not treasury
-        or treasury[0].get("observed_on") != expected_treasury_day
-        or treasury[0].get("source") != "FRED:DGS10"
-        or treasury[0].get("treasury_10y_pct") is None
-    ):
-        raise RuntimeError("Treasury verification did not return the expected latest row")
-
-
-def inflation_cache_points(
-    fred: dict[str, dict[date, float]],
-    prices: dict[str, dict[date, float]],
-) -> dict[str, dict[date, tuple[date, float]]]:
-    values = {
-        **{f"FRED:{name}": series for name, series in fred.items()},
-        **{f"YAHOO:{symbol}": series for symbol, series in prices.items()},
-    }
-    return {
-        series: {period: (period, value) for period, value in points.items()}
-        for series, points in values.items()
-    }
-
-
-def inflation_cached_values(
-    cache: dict[str, dict[date, tuple[date, float]]],
-) -> tuple[dict[str, dict[date, float]], dict[str, dict[date, float]]]:
-    def values(series: str) -> dict[date, float]:
-        return {period: value for period, (_observed, value) in cache.get(series, {}).items()}
-
-    fred = {name: values(f"FRED:{name}") for name in (*FRED_SERIES, "core_cpi_ex_shelter")}
-    prices = {
-        symbol: values(f"YAHOO:{symbol}")
-        for symbols in COMMODITY_GROUPS.values()
-        for symbol in symbols
-    }
-    return fred, prices
-
-
-def load_official_inflation_values(
-    client: SupabaseRest,
-    start: date = SOURCE_START,
-) -> dict[str, dict[date, float]]:
-    """Read the six official U.S. YoY rates stored for economic charts."""
-    result: dict[str, dict[date, float]] = {}
-    for name, series_code in OFFICIAL_INFLATION_SERIES.items():
-        rows = client.request("GET", "economic_chart_points", params={
-            "select": "observation_date,value",
-            "series_code": f"eq.{series_code}",
-            "observation_date": f"gte.{start.isoformat()}",
-            "order": "observation_date.asc",
-            "limit": "10000",
+def load_canonical_series(db: SupabaseRest, codes: tuple[str, ...]) -> dict[str, dict[date, float]]:
+    values: dict[str, dict[date, float]] = {}
+    for code in codes:
+        rows = db.request("GET", "economic_chart_points", params={
+            "select": "observation_date,value", "series_code": f"eq.{code}",
+            "observation_date": f"gte.{PUBLISH_START.isoformat()}",
+            "order": "observation_date.asc", "limit": "10000",
         }) or []
-        values: dict[date, float] = {}
-        for row in rows:
-            try:
-                values[date.fromisoformat(str(row["observation_date"]))] = float(row["value"])
-            except (KeyError, TypeError, ValueError):
-                continue
-        if not values:
-            raise RuntimeError(f"Stored inflation rate is empty: {series_code}")
-        result[name] = values
-    return result
+        values[code] = {date.fromisoformat(str(row["observation_date"])[:10]): float(row["value"])
+                        for row in rows if row.get("value") is not None}
+        if not values[code]:
+            raise RuntimeError(f"Canonical inflation series is empty: {code}")
+    return values
+
+
+def latest_on_or_before(values: dict[date, float], target: date) -> float | None:
+    available = [observed for observed in values if observed <= target]
+    return values[max(available)] if available else None
+
+
+def weighted_composite(pce: float, cpi: float, ppi: float) -> float:
+    return 0.60 * pce + 0.30 * cpi + 0.10 * ppi
+
+
+def fisher_real_rate_pct(policy: float, inflation: float) -> float:
+    return 100.0 * ((1.0 + policy / 100.0) / (1.0 + inflation / 100.0) - 1.0)
+
+
+def build_rows(official: dict[str, dict[date, float]],
+               nowcasts: dict[str, dict[date, list[NowcastPoint]]],
+               policy: dict[date, float]) -> list[dict[str, object]]:
+    updated_at = datetime.now(timezone.utc).isoformat()
+    official_months = sorted(official["US_CPI"].keys() & official["US_CORE_CPI"].keys()
+                             & official["US_PCE"].keys() & official["US_CORE_PCE"].keys()
+                             & official["US_PPI"].keys() & official["US_CORE_PPI"].keys())
+    rows: list[dict[str, object]] = []
+
+    def output(month: date, headline: float, core: float, status: str, data_as_of: date) -> dict[str, object]:
+        policy_value = latest_on_or_before(policy, data_as_of)
+        return {
+            "month": month.isoformat(), "headline_yoy_pct": round(headline, 4),
+            "core_yoy_pct": round(core, 4),
+            "policy_rate_upper_pct": round(policy_value, 4) if policy_value is not None else None,
+            "headline_real_rate_pct": round(fisher_real_rate_pct(policy_value, headline), 4) if policy_value is not None else None,
+            "core_real_rate_pct": round(fisher_real_rate_pct(policy_value, core), 4) if policy_value is not None else None,
+            "status": status, "model_version": MODEL_VERSION,
+            "data_as_of": data_as_of.isoformat(), "updated_at": updated_at,
+        }
+
+    for month in official_months:
+        rows.append(output(
+            month,
+            weighted_composite(official["US_PCE"][month], official["US_CPI"][month], official["US_PPI"][month]),
+            weighted_composite(official["US_CORE_PCE"][month], official["US_CORE_CPI"][month], official["US_CORE_PPI"][month]),
+            "final", month,
+        ))
+    final_months = set(official_months)
+    for month in sorted(nowcasts["headline"].keys() & nowcasts["core"].keys()):
+        if month in final_months:
+            continue
+        headline_point, core_point = nowcasts["headline"][month][-1], nowcasts["core"][month][-1]
+        ppi = latest_on_or_before(official["US_PPI"], month)
+        core_ppi = latest_on_or_before(official["US_CORE_PPI"], month)
+        if ppi is None or core_ppi is None:
+            continue
+        rows.append(output(
+            month,
+            weighted_composite(headline_point.pce_yoy_pct, headline_point.cpi_yoy_pct, ppi),
+            weighted_composite(core_point.pce_yoy_pct, core_point.cpi_yoy_pct, core_ppi),
+            "provisional", max(headline_point.observed_on, core_point.observed_on),
+        ))
+    return sorted(rows, key=lambda row: str(row["month"]))
+
+
+def save_automatic(db: SupabaseRest, rows: list[dict[str, object]]) -> int:
+    recent = rows[-AUTOMATIC_MONTHLY_PERIODS:]
+    existing = db.request("GET", "us_inflation_monthly", params={
+        "select": "month,status,model_version", "order": "month.desc", "limit": "24",
+    }) or []
+    state = {str(row["month"]): row for row in existing}
+    writable = [row for row in recent if str(row["month"]) not in state
+                or state[str(row["month"])].get("status") == "provisional"
+                or state[str(row["month"])].get("model_version") != MODEL_VERSION]
+    if writable:
+        db.upsert("us_inflation_monthly", writable, conflict="month")
+    return len(writable)
 
 
 def run_automatic() -> None:
-    fred_key = require_env("FRED_API_KEY")
-    today = date.today()
-    client = SupabaseRest(
-        url=require_env("SUPABASE_URL"),
-        service_key=require_env("SUPABASE_SERVICE_ROLE_KEY"),
-        timeout=TIMEOUT_SECONDS,
-    )
-    cache = load_source_cache(client, CACHE_COLLECTOR)
-    if not is_initialized(cache):
-        raise RuntimeError("Inflation auxiliary source cache is not initialized; run the manual inflation backfill")
-
-    daily_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
-    monthly_start = month_start_months_ago(today, AUTOMATIC_MONTHLY_PERIODS - 1)
-    starts = {
-        name: daily_start if name in DAILY_FRED_NAMES else monthly_start
-        for name in FRED_SERIES
-    }
-    fred_recent = fetch_fred_series(fred_key, today, starts)
-    fred_recent["core_cpi_ex_shelter"] = fetch_bls_series(
-        BLS_CORE_CPI_EX_SHELTER, today, monthly_start,
-    )
-    prices_recent = {
-        symbol: fetch_yahoo_series(symbol, today, daily_start)
-        for symbols in COMMODITY_GROUPS.values()
-        for symbol in symbols
-    }
-    recent_cache = inflation_cache_points(fred_recent, prices_recent)
-    store_source_cache(client, CACHE_COLLECTOR, recent_cache)
-    for series, values in recent_cache.items():
-        cache.setdefault(series, {}).update(values)
-    fred, prices = inflation_cached_values(cache)
-    fred.update(load_official_inflation_values(client))
-    if any(not values for values in (*fred.values(), *prices.values())):
-        raise RuntimeError("Inflation calculation inputs are incomplete; run the manual inflation backfill")
-    nowcasts = fetch_cleveland_nowcasts()
-    features = MarketFeatures(prices, fred["dollar"])
-    headline_rates, headline_ppi, _ = integrated_rates(fred, "headline")
-    core_rates, core_ppi, _ = integrated_rates(fred, "core")
-    # Cleveland nowcasts are month-over-month forecasts. Their historical model
-    # needs PCE index levels, but those raw levels are never persisted by
-    # MacroWatch. Fetch them into memory only for this calculation.
-    nowcast_targets = set(nowcasts["headline"]) | set(nowcasts["core"])
-    if not nowcast_targets:
-        raise RuntimeError("Cleveland Fed nowcast history has no target months")
-    pce_levels = fetch_bea_index_levels(add_months(min(nowcast_targets), -13), today)
-    fred["pce"] = pce_levels["US_PCE"]
-    fred["core_pce"] = pce_levels["US_CORE_PCE"]
-    monthly, daily = build_output_rows(
-        fred, nowcasts, features, headline_rates, core_rates, headline_ppi, core_ppi, PUBLISH_START
-    )
-    monthly = [row for row in monthly if str(row["month"]) >= PUBLISH_START.isoformat()]
-    daily = [row for row in daily if str(row["observed_on"]) >= PUBLISH_START.isoformat()]
-    if not monthly or not daily:
-        raise RuntimeError("Inflation calculation produced no publishable rows")
-
-    updated_at = datetime.now(timezone.utc).isoformat()
-    for row in monthly:
-        row["updated_at"] = updated_at
-    treasuries = treasury_rows(fred, PUBLISH_START, updated_at)
-    if not treasuries:
-        raise RuntimeError("Treasury calculation produced no publishable rows")
-
-    save_automatic(client, monthly)
-    save_treasury_automatic(client, treasuries)
-    verify_saved(client, str(monthly[-1]["month"]), str(treasuries[-1]["observed_on"]))
-    print(json.dumps({
-        "mode": "automatic",
-        "model_version": MODEL_VERSION,
-        "monthly_rows_calculated": len(monthly),
-        "daily_rows_calculated": len(daily),
-        "treasury_rows_calculated": len(treasuries),
-        "latest_month": monthly[-1]["month"],
-        "latest_day": daily[-1]["observed_on"],
-    }, ensure_ascii=False))
+    db = SupabaseRest(timeout=TIMEOUT_SECONDS)
+    official = load_canonical_series(db, tuple(OFFICIAL_INFLATION_SERIES.values()))
+    policy = load_canonical_series(db, ("US_POLICY_RATE_MID",))["US_POLICY_RATE_MID"]
+    rows = build_rows(official, fetch_cleveland_nowcasts(), policy)
+    if not rows:
+        raise RuntimeError("Inflation calculation produced no rows")
+    stored = save_automatic(db, rows)
+    latest = db.request("GET", "us_inflation_monthly", params={
+        "select": "month,status,model_version", "order": "month.desc", "limit": "1",
+    }) or []
+    if not latest or latest[0].get("model_version") != MODEL_VERSION:
+        raise RuntimeError("Post-write inflation verification failed")
+    print(json.dumps({"mode": "automatic", "model_version": MODEL_VERSION,
+                      "calculated": len(rows), "stored": stored, "latest": latest[0]}, ensure_ascii=False))
 
 
 def main() -> None:

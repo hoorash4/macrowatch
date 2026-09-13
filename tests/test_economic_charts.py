@@ -146,8 +146,8 @@ class EconomicChartFeatureTests(unittest.TestCase):
         for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
             self.assertIn(raw, script)
         self.assertIn("code:'DRALACBS'", script)
-        self.assertIn("fallback:['policy_expectation_spreads','observation_date,treasury_2y_rate'", script)
-        self.assertIn("fallback:['us_treasury_10y_daily','observed_on,treasury_10y_pct','observed_on','treasury_10y_pct']", script)
+        self.assertNotIn("fallback:['policy_expectation_spreads'", script)
+        self.assertNotIn("us_treasury_10y_daily", script)
 
     def test_economic_chart_collection_is_automatic_only(self):
         automatic_workflow = (ROOT / '.github/workflows/economic-chart-data.yml').read_text(encoding='utf-8')

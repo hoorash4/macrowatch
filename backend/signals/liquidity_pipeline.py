@@ -18,6 +18,7 @@ from common import (
     SupabaseRest, fetch_fred_observations, month_start_months_ago, require_env,
     request_with_retry,
 )
+from signals.canonical_series import load as load_canonical
 
 VERSION = "liquidity-monthly-v2"
 US_VERSION = "us-equity-environment-weekly-v2"
@@ -51,13 +52,14 @@ ECOS = {
     "equity_flow": ("301Y013", "M", "BOPF22100000"),
     "bond_flow": ("301Y013", "M", "BOPF22200000"),
 }
-SNAPSHOTS = {849: {"기준금리": "base", "콜금리(익일물)": "call"},
+SNAPSHOTS = {849: {"콜금리(익일물)": "call"},
              875: {"M2(평잔, 좌축)": "m2"}, 876: {"Lf(평잔, 좌축)": "lf"}}
 # Publication calendars are source-specific.  In particular BOK Lf is a
 # monthly release that normally trails the reference month longer than M2;
 # checking it with a daily-market threshold turns a valid release lag into a
 # false collection failure.  These are maximum ages, not imputed values.
 FRESHNESS_DAYS = {
+    "base": 45,
     "m2": 55,
     "lf": 85,
     "equity_flow": 55,
@@ -65,6 +67,23 @@ FRESHNESS_DAYS = {
     "fed_assets": 21,
     "tga": 21,
     "credit_conditions": 21,
+}
+CANONICAL_SERIES = {
+    "US": {
+        "sofr": ("US_SOFR", "D", "FRED:SOFR"), "iorb": ("US_IORB", "D", "FRED:IORB"),
+        "ioer": ("US_IOER", "D", "FRED:IOER"), "rrp": ("RRP", "D", "FRED:RRPONTSYD"),
+        "real_yield": ("US10Y_REAL", "D", "USTREASURY:10Y_REAL"),
+        "credit_conditions": ("NFCI_CREDIT", "W", "FRED:NFCICREDIT"),
+        "fed_assets": ("US_FED_ASSETS", "W", "FRED:WALCL"), "tga": ("TGA", "W", "FRED:WTREGEN"),
+    },
+    "KR": {
+        "base": ("KR_POLICY_RATE", "M", "ECOS:722Y001/0101000"),
+        "call": ("KR_CALL_RATE", "D", "BOK_SNAPSHOT:849"),
+        "m2": ("KR_M2", "M", "BOK_SNAPSHOT:875"), "lf": ("KR_LF", "M", "BOK_SNAPSHOT:876"),
+        "kofr": ("KR_KOFR", "D", "ECOS:817Y002/010901000"),
+        "equity_flow": ("KR_BOP_EQUITY_FLOW", "M", "ECOS:301Y013/BOPF22100000"),
+        "bond_flow": ("KR_BOP_BOND_FLOW", "M", "ECOS:301Y013/BOPF22200000"),
+    },
 }
 
 
@@ -207,7 +226,7 @@ def features(country, data):
         return {"environment": korea_equity_environment_features(data)}
     else:
         for day in sorted(set(data["call"]) & set(data["kofr"])):
-            rate = asof(data["base"], day, 7)
+            rate = asof(data["base"], day, 45)
             if rate is not None:
                 pressure[day] = {"call_spread": data["call"][day] - rate,
                                  "repo_spread": data["kofr"][day] - rate}
@@ -263,7 +282,7 @@ def korea_equity_environment_features(data):
     output = {}
     for day, equity_flow in sorted(data["foreign_flow_ratio"].items()):
         call, repo = asof(data["call"], day, 7), asof(data["kofr"], day, 7)
-        base, liquidity = asof(data["base"], day, 14), asof(money_growth, day, 100)
+        base, liquidity = asof(data["base"], day, 45), asof(money_growth, day, 100)
         won_return = data["usdkrw_return"].get(day)
         if all(value is not None for value in (call, repo, base, liquidity, won_return)):
             output[day] = {"funding_spread": ((call - base) + (repo - base)) / 2,
@@ -402,16 +421,8 @@ def calculate(country, data, end=None):
 
 
 def load_existing(db, country):
-    data, offset = {}, 0
-    while True:
-        page = db.request("GET", "liquidity_observations", params={"country": f"eq.{country}",
-                          "select": "series,observation_date,value", "order": "series,observation_date",
-                          "offset": str(offset), "limit": "1000"})
-        for row in page:
-            data.setdefault(row["series"], {})[date.fromisoformat(row["observation_date"])] = float(row["value"])
-        if len(page) < 1000:
-            return data
-        offset += len(page)
+    return {name: load_canonical(db, definition[0])
+            for name, definition in CANONICAL_SERIES[country].items()}
 
 
 def load_korea_equity_context(db):
@@ -452,14 +463,17 @@ def main():
     if args.country == "KR":
         data.update(load_korea_equity_context(db))
     results = calculate(args.country, data)
-    raw = [{"country": args.country, "series": series, "observation_date": day.isoformat(), "value": value}
+    raw = [{"country": args.country, "series_code": CANONICAL_SERIES[args.country][series][0],
+            "observation_date": day.isoformat(), "value": value,
+            "frequency": CANONICAL_SERIES[args.country][series][1],
+            "source": CANONICAL_SERIES[args.country][series][2]}
            for series, values in data.items() if series not in ("foreign_flow_ratio", "usdkrw_return")
            for day, value in values.items() if day not in existing.get(series, {})]
-    raw = sorted(raw, key=lambda row: (row["series"], row["observation_date"]))
+    raw = sorted(raw, key=lambda row: (row["series_code"], row["observation_date"]))
     raw = [
         row
-        for series in sorted({row["series"] for row in raw})
-        for row in [item for item in raw if item["series"] == series][-AUTOMATIC_DAILY_VALUES:]
+        for series in sorted({row["series_code"] for row in raw})
+        for row in [item for item in raw if item["series_code"] == series][-AUTOMATIC_DAILY_VALUES:]
     ]
     selected_results = [
         row

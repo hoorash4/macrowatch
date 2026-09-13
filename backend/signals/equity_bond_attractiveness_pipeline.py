@@ -9,9 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import requests
 
 from common import AUTOMATIC_WEEKLY_WEEKS, SupabaseRest, fetch_fred_observations, require_env, request_with_retry
-from signals.automatic_source_cache import load as load_source_cache
-from signals.automatic_source_cache import is_initialized, mark_initialized
-from signals.automatic_source_cache import store as store_source_cache
+from signals.canonical_series import load_many, rows as canonical_rows, store as store_canonical
 from signals.equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows
 from sources.market import fetch_yahoo_adjusted, valid_fred_values
 
@@ -22,8 +20,10 @@ KOREA_10Y_ITEM = "010210000"
 # The explicit one-time cache initialization retains enough history for exact
 # 260-week percentile parity, the 13/52-week dependencies, and smoothing.
 INITIALIZATION_HISTORY_WEEKS = 340
-CACHE_COLLECTOR = "equity_bond_attractiveness"
-CACHE_SERIES = ("KR_EQUITY", "KR_YIELD", "US_EQUITY", "US_YIELD")
+CANONICAL_CODES = {
+    "KR_EQUITY": "KOSPI_CLOSE", "KR_YIELD": "KR10Y",
+    "US_EQUITY": "OEF_ADJUSTED_CLOSE", "US_YIELD": "US10Y",
+}
 
 
 def weekly_last(values: dict[date, float]) -> dict[date, float]:
@@ -47,14 +47,6 @@ def align_to_weeks(values: dict[date, float], weeks: list[date]) -> dict[date, f
         if latest is not None:
             result[week] = latest
     return result
-
-
-def cache_weekly(values: dict[date, float]) -> dict[date, tuple[date, float]]:
-    return {week: (week, value) for week, value in values.items()}
-
-
-def cache_values(cache: dict[str, dict[date, tuple[date, float]]], series: str) -> dict[date, float]:
-    return {period: value for period, (_observed, value) in cache.get(series, {}).items()}
 
 
 def fetch_ecos_10y(api_key: str, start: date, end: date) -> dict[date, float]:
@@ -143,39 +135,37 @@ def main() -> None:
         },
     ) or []
     quarters = load_quarters(database)
-    cache = load_source_cache(database, CACHE_COLLECTOR)
-    if not args.initialize_sources and (
-        not is_initialized(cache) or any(len(cache.get(series, {})) < 260 for series in CACHE_SERIES)
-    ):
-        raise RuntimeError("Attractiveness source cache is not initialized; run --initialize-sources explicitly")
     source_start = today - timedelta(weeks=INITIALIZATION_HISTORY_WEEKS) if args.initialize_sources else today - timedelta(weeks=AUTOMATIC_WEEKLY_WEEKS)
-    yahoo_recent = {symbol: weekly_last(fetch_yahoo_adjusted(symbol, source_start, today)) for symbol in ("^KS11", "OEF")}
-    fred_recent = weekly_last(valid_fred_values(fetch_fred_observations(
+    yahoo_daily = {symbol: fetch_yahoo_adjusted(symbol, source_start, today) for symbol in ("^KS11", "OEF")}
+    fred_daily = valid_fred_values(fetch_fred_observations(
         "DGS10", require_env("FRED_API_KEY"), start=source_start.isoformat(), end=today.isoformat()
-    )))
-    ecos_recent = weekly_last(fetch_ecos_10y(require_env("ECOS_API_KEY"), source_start, today))
-    recent_cache = {
-        "KR_EQUITY": cache_weekly(yahoo_recent["^KS11"]),
-        "KR_YIELD": cache_weekly(ecos_recent),
-        "US_EQUITY": cache_weekly(yahoo_recent["OEF"]),
-        "US_YIELD": cache_weekly(fred_recent),
+    ))
+    ecos_daily = fetch_ecos_10y(require_env("ECOS_API_KEY"), source_start, today)
+    recent = {
+        "KR_EQUITY": yahoo_daily["^KS11"], "KR_YIELD": ecos_daily,
+        "US_EQUITY": yahoo_daily["OEF"], "US_YIELD": fred_daily,
     }
-    if args.initialize_sources and any(len(recent_cache.get(series, {})) < 260 for series in CACHE_SERIES):
+    if args.initialize_sources and any(len(weekly_last(recent.get(series, {}))) < 260 for series in CANONICAL_CODES):
         raise RuntimeError("Attractiveness source initialization returned insufficient history")
-    store_source_cache(database, CACHE_COLLECTOR, recent_cache)
-    if args.initialize_sources:
-        mark_initialized(database, CACHE_COLLECTOR, today)
-        cache = load_source_cache(database, CACHE_COLLECTOR)
-    for series, values in recent_cache.items():
-        cache.setdefault(series, {}).update(values)
-    if not is_initialized(cache) or any(len(cache.get(series, {})) < 260 for series in CACHE_SERIES):
-        raise RuntimeError("Attractiveness source cache is not initialized; run --initialize-sources explicitly")
-    yahoo = {
-        "^KS11": cache_values(cache, "KR_EQUITY"),
-        "OEF": cache_values(cache, "US_EQUITY"),
+    sources = {
+        "KR_EQUITY": ("D", "YAHOO:^KS11"), "KR_YIELD": ("D", "ECOS:817Y002/010210000"),
+        "US_EQUITY": ("D", "YAHOO:OEF"), "US_YIELD": ("D", "USTREASURY:10Y"),
     }
-    fred = cache_values(cache, "US_YIELD")
-    ecos = cache_values(cache, "KR_YIELD")
+    payload = []
+    for series, values in recent.items():
+        frequency, source = sources[series]
+        payload.extend(canonical_rows(CANONICAL_CODES[series], values, frequency=frequency, source=source))
+    store_canonical(database, payload)
+    canonical = load_many(database, CANONICAL_CODES.values())
+    weekly = {series: weekly_last(canonical[code]) for series, code in CANONICAL_CODES.items()}
+    if any(len(weekly.get(series, {})) < 260 for series in CANONICAL_CODES):
+        raise RuntimeError("Attractiveness canonical source history is incomplete; run --initialize-sources explicitly")
+    yahoo = {
+        "^KS11": weekly["KR_EQUITY"],
+        "OEF": weekly["US_EQUITY"],
+    }
+    fred = weekly["US_YIELD"]
+    ecos = weekly["KR_YIELD"]
     calculated_at = datetime.now(timezone.utc).isoformat()
     rows = []
     for country, equity_symbol, yields, anchor in (

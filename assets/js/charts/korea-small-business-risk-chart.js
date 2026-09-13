@@ -111,16 +111,19 @@
   async function load() {
     const host = document.getElementById('korea-small-business-risk-chart');
     if (!host || !supabaseClient) return;
-    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient
-      .from('kr_small_business_risk_monthly')
-      .select('month,risk_index,headline_outlook_sbhi,is_provisional')
-      .order('month', { ascending: true })
-      .range(from, to));
-    if (error) {
+    const [risk, headline] = await Promise.all([
+      utils.loadAllRows((from, to) => supabaseClient.from('kr_small_business_risk_monthly')
+        .select('month,risk_index,is_provisional').order('month', { ascending: true }).range(from, to)),
+      utils.loadAllRows((from, to) => supabaseClient.from('economic_chart_points')
+        .select('observation_date,value').eq('series_code', 'KR_SME_HEADLINE_OUTLOOK')
+        .order('observation_date', { ascending: true }).range(from, to)),
+    ]);
+    if (risk.error || headline.error) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">중소기업 위험지수를 불러오지 못했습니다.</div>';
       return;
     }
-    state.rows = data || [];
+    const headlineByMonth = new Map((headline.data || []).map((row) => [String(row.observation_date), Number(row.value)]));
+    state.rows = (risk.data || []).map((row) => ({ ...row, headline_outlook_sbhi: headlineByMonth.get(String(row.month)) }));
     render();
   }
 

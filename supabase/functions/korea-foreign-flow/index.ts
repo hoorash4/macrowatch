@@ -27,16 +27,24 @@ function latestFxOnOrBefore(values: Map<string, number>, marketDate: string) {
 }
 
 async function loadRawHistory(admin: SupabaseClient, start: string) {
-  const rows: Record<string, unknown>[] = [];
-  for (let offset = 0;; offset += 1000) {
-    const { data, error } = await admin.from("korea_foreign_flow_raw")
-      .select("observation_date,foreign_net_buy_amount,kospi_trading_value,usdkrw_rate")
-      .gte("observation_date", start).order("observation_date").range(offset, offset + 999);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if ((data || []).length < 1000) break;
+  const byDate = new Map<string, Record<string, number>>();
+  const definitions = [["KR_FOREIGN_NET_BUY", "foreign_net_buy_amount"],
+    ["KOSPI_TRADING_VALUE", "kospi_trading_value"], ["USDKRW", "usdkrw_rate"]] as const;
+  for (const [seriesCode, field] of definitions) {
+    for (let offset = 0;; offset += 1000) {
+      const { data, error } = await admin.from("economic_chart_points")
+        .select("observation_date,value").eq("series_code", seriesCode)
+        .gte("observation_date", start).order("observation_date").range(offset, offset + 999);
+      if (error) throw error;
+      for (const row of data || []) byDate.set(String(row.observation_date), {
+        ...(byDate.get(String(row.observation_date)) || {}), [field]: Number(row.value),
+      });
+      if ((data || []).length < 1000) break;
+    }
   }
-  return rows;
+  return [...byDate].filter(([, row]) => definitions.every(([, field]) => Number.isFinite(row[field])))
+    .map(([observation_date, row]) => ({ observation_date, ...row }))
+    .sort((a, b) => a.observation_date.localeCompare(b.observation_date));
 }
 
 function dateYearsAgo(years: number) {
@@ -62,8 +70,9 @@ Deno.serve(async (request) => {
       const credentials = loadKisCredentials(), token = await getKisAccessToken(credentials, admin);
       const marketDays = await fetchKisKospiMarketDays(credentials, token, new Date(`${start}T00:00:00Z`), new Date(`${end}T00:00:00Z`));
       const fx = await fetchFx(new Date(Date.parse(`${start}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10), end);
-      const { data: existing, error: existingError } = await admin.from("korea_foreign_flow_raw")
-        .select("observation_date").gte("observation_date", start).lte("observation_date", end);
+      const { data: existing, error: existingError } = await admin.from("economic_chart_points")
+        .select("observation_date").eq("series_code", "KR_FOREIGN_NET_BUY")
+        .gte("observation_date", start).lte("observation_date", end);
       if (existingError) throw existingError;
       const existingDates = new Set((existing || []).map((row) => String(row.observation_date)));
       for (const day of marketDays.sort((a, b) => a.marketDate.localeCompare(b.marketDate))) {
@@ -76,10 +85,7 @@ Deno.serve(async (request) => {
         await wait(WAIT_MS);
       }
       if (rawRows.length) {
-        const { error } = await admin.from("korea_foreign_flow_raw").insert(rawRows.map((row) => ({
-          observation_date: row.observationDate, foreign_net_buy_amount: row.foreignNetBuyAmount,
-          kospi_trading_value: row.kospiTradingValue, usdkrw_rate: row.usdkrwRate, updated_at: new Date().toISOString(),
-        })));
+        const { error } = await admin.rpc("store_korea_foreign_flow_sources", { p_rows: rawRows });
         if (error) throw error;
       }
       if (collectOnly) return json({ ok: true, start, end, collected: rawRows.length, stored: 0, failures });
@@ -97,7 +103,9 @@ Deno.serve(async (request) => {
     const existingCalculatedDates = new Set((existingCalculated || []).map((row) => String(row.observation_date)));
     const publishable = calculated.filter((row) =>
       row.observation_date >= start && row.observation_date <= end && !existingCalculatedDates.has(row.observation_date)
-    );
+    ).map((row) => ({ observation_date: row.observation_date, foreign_flow_ratio: row.foreign_flow_ratio,
+      usdkrw_return: row.usdkrw_return, foreign_flow_z: row.foreign_flow_z,
+      won_strength_z: row.won_strength_z, flow_index: row.flow_index, updated_at: row.updated_at }));
     if (publishable.length) {
       const { error } = await admin.from("korea_foreign_flow_daily").insert(publishable);
       if (error) throw error;

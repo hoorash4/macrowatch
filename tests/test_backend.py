@@ -391,7 +391,7 @@ class SharedCalculationTests(unittest.TestCase):
         self.assertLessEqual(equity_bond.shift_month(first.training_end_month, 12), first.month)
         self.assertAlmostEqual(first.stock_probability + (1.0 - first.stock_probability), 1.0)
 
-    def test_equity_bond_source_storage_excludes_existing_dfii10_and_nfci(self) -> None:
+    def test_equity_bond_source_storage_uses_canonical_codes(self) -> None:
         observed = {date(2026, 7, 31): 1.5}
         raw = {
             "spy_adjusted_close": observed,
@@ -403,7 +403,8 @@ class SharedCalculationTests(unittest.TestCase):
         }
         rows = equity_bond_pipeline.source_rows(raw, "2026-08-28T00:00:00+00:00")
         self.assertEqual({row["series_code"] for row in rows}, {
-            "SPY_ADJUSTED_CLOSE", "TLT_ADJUSTED_CLOSE", "T10Y2Y", "BAA10Y",
+            "SPY_ADJUSTED_CLOSE", "TLT_ADJUSTED_CLOSE", "US10Y_REAL",
+            "US10Y2Y", "BAA10Y", "NFCI",
         })
 
     def test_equity_bond_history_accepts_actual_dfii10_start(self) -> None:

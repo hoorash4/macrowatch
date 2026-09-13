@@ -14,9 +14,7 @@ from common import (
     fetch_fred_observations,
     require_env,
 )
-from signals.automatic_source_cache import load as load_source_cache
-from signals.automatic_source_cache import is_initialized, mark_initialized
-from signals.automatic_source_cache import store as store_source_cache
+from signals.canonical_series import load_many, rows as canonical_rows, store as store_canonical
 
 
 SERIES = {
@@ -25,10 +23,13 @@ SERIES = {
     "us_high_yield_oas": "BAMLH0A0HYM2",
     "nfci": "NFCI",
 }
+CANONICAL_CODES = {
+    "em_dollar_index": "EM_DOLLAR_INDEX", "real_yield_10y": "US10Y_REAL",
+    "us_high_yield_oas": "HY_OAS", "nfci": "NFCI",
+}
 MINIMUM_HISTORY = 60
 INITIALIZATION_HISTORY_YEARS = 3
 UPSERT_BATCH_SIZE = 500
-CACHE_COLLECTOR = "em_capital_capacity"
 
 
 def valid_values(observations: list[dict]) -> dict[str, float]:
@@ -107,21 +108,20 @@ def fetch_sources(api_key: str, start: date, end: date) -> dict[str, dict[str, f
     }
 
 
-def cache_points(raw: dict[str, dict[str, float]]) -> dict[str, dict[date, tuple[date, float]]]:
-    return {
-        key: {
-            date.fromisoformat(period): (date.fromisoformat(period), value)
-            for period, value in values.items()
-        }
-        for key, values in raw.items()
-    }
+def load_canonical(database: SupabaseRest) -> dict[str, dict[str, float]]:
+    stored = load_many(database, CANONICAL_CODES.values())
+    return {key: {day.isoformat(): value for day, value in stored[code].items()}
+            for key, code in CANONICAL_CODES.items()}
 
 
-def cached_values(cache: dict[str, dict[date, tuple[date, float]]]) -> dict[str, dict[str, float]]:
-    return {
-        key: {period.isoformat(): value for period, (_observed, value) in cache.get(key, {}).items()}
-        for key in SERIES
-    }
+def store_sources(database: SupabaseRest, raw: dict[str, dict[str, float]]) -> None:
+    payload = []
+    for key, values in raw.items():
+        payload.extend(canonical_rows(
+            CANONICAL_CODES[key], {date.fromisoformat(day): value for day, value in values.items()},
+            frequency="W" if key == "nfci" else "D", source=f"FRED:{SERIES[key]}",
+        ))
+    store_canonical(database, payload)
 
 
 def main() -> None:
@@ -131,30 +131,29 @@ def main() -> None:
     today = date.today()
     api_key = require_env("FRED_API_KEY")
     database = SupabaseRest()
-    cache = load_source_cache(database, CACHE_COLLECTOR)
     if args.initialize_sources:
         initialization_start = today - timedelta(days=INITIALIZATION_HISTORY_YEARS * 366)
         historical = fetch_sources(api_key, initialization_start, today)
         if any(len(historical.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
             raise RuntimeError("EM capital source initialization returned insufficient history")
-        store_source_cache(database, CACHE_COLLECTOR, cache_points(historical))
-        mark_initialized(database, CACHE_COLLECTOR, today)
-        cache = load_source_cache(database, CACHE_COLLECTOR)
-    if not is_initialized(cache) or any(len(cache.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
-        raise RuntimeError("EM capital source cache is not initialized; run --initialize-sources explicitly")
+        store_sources(database, historical)
+    canonical = load_canonical(database)
+    if any(len(canonical.get(key, {})) < MINIMUM_HISTORY for key in SERIES):
+        raise RuntimeError("EM capital canonical source history is incomplete; run --initialize-sources explicitly")
     recent_start = today - timedelta(days=AUTOMATIC_DAILY_CALENDAR_DAYS)
     recent = fetch_sources(api_key, recent_start, today)
-    store_source_cache(database, CACHE_COLLECTOR, cache_points(recent))
+    store_sources(database, recent)
     for key, values in recent.items():
-        cache.setdefault(key, {}).update(cache_points({key: values})[key])
-    raw = cached_values(cache)
+        canonical[key].update(values)
+    raw = canonical
     rows = build_rows(raw)[-AUTOMATIC_DAILY_VALUES:]
     if not rows:
         raise RuntimeError("저장할 이머징 자금 유입 여건 데이터가 없습니다.")
+    derived = [{key: row[key] for key in ("observation_date", "capacity_index", "is_provisional", "updated_at")} for row in rows]
     writable = database.automatic_rows(
-        "em_capital_capacity_daily", rows,
+        "em_capital_capacity_daily", derived,
         key="observation_date", provisional="is_provisional",
-        compare_fields=tuple(SERIES) + ("capacity_index",),
+        compare_fields=("capacity_index",),
     )
     for offset in range(0, len(writable), UPSERT_BATCH_SIZE):
         database.upsert("em_capital_capacity_daily", writable[offset:offset + UPSERT_BATCH_SIZE], conflict="observation_date")

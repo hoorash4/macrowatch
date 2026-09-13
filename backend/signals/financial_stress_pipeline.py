@@ -23,6 +23,7 @@ from sources.financial_stress import (
     fetch_fred_month_end,
     fetch_fred_week_end,
 )
+from signals.canonical_series import rows as canonical_rows, store as store_canonical
 
 
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
@@ -174,9 +175,10 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
     if not rows:
         return 0
     database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    derived = [{key: row[key] for key in ("month", "stress_index", "is_provisional")} for row in rows]
     writable = database.automatic_rows(
-        "us_market_stress_index_monthly", rows, key="month", provisional="is_provisional",
-        compare_fields=("stress_index", "sp500_month_end_close"),
+        "us_market_stress_index_monthly", derived, key="month", provisional="is_provisional",
+        compare_fields=("stress_index",),
     )
     if writable:
         database.upsert("us_market_stress_index_monthly", writable, conflict="month")
@@ -185,13 +187,10 @@ def upsert_market_stress_index(rows: list[dict[str, object]], supabase_url: str,
 
 def upsert_weekly_market_tension(rows: list[dict[str, object]], supabase_url: str, service_role_key: str) -> int:
     database = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    derived = [{key: row[key] for key in ("week", "tension_index", "tension_momentum", "is_provisional")} for row in rows]
     writable = database.automatic_rows(
-        "us_market_tension_weekly", rows, key="week", provisional="is_provisional",
-        compare_fields=(
-            "tension_index", "tension_momentum", "high_yield_oas_pct",
-            "financial_conditions_credit_index", "financial_conditions_risk_index",
-            "nonfinancial_leverage_index", "short_term_funding_spread", "sp500_friday_close",
-        ),
+        "us_market_tension_weekly", derived, key="week", provisional="is_provisional",
+        compare_fields=("tension_index", "tension_momentum"),
     )
     if writable:
         database.upsert("us_market_tension_weekly", writable, conflict="week")
@@ -256,6 +255,24 @@ def main() -> None:
         weekly_leverage,
         weekly_sp500,
     )[-AUTOMATIC_WEEKLY_WEEKS:]
+    canonical = SupabaseRest(url=supabase_url, service_key=service_role_key, timeout=TIMEOUT_SECONDS)
+    source_payload = []
+    for code, values, frequency, source in (
+        ("US_EBP", excess_bond_premium, "M", "FEDERAL_RESERVE:EBP"),
+        ("US_CMDI", cmdi, "M", "NYFED:CMDI"),
+        ("SP500_MONTH_END", sp500_month_end, "M", "FRED:SP500"),
+        ("HY_OAS_WEEKLY", weekly_high_yield, "W", f"FRED:{HIGH_YIELD_SERIES}"),
+        ("NFCI_CREDIT", weekly_credit_conditions, "W", f"FRED:{FINANCIAL_CONDITIONS_SERIES}"),
+        ("NFCI_RISK", weekly_risk_conditions, "W", f"FRED:{FINANCIAL_RISK_SERIES}"),
+        ("NFCI_NONFIN_LEVERAGE", weekly_leverage, "W", f"FRED:{NONFINANCIAL_LEVERAGE_SERIES}"),
+        ("US_SHORT_FUNDING_SPREAD", weekly_funding, "W", "DERIVED:DCPN3M-DGS3MO"),
+        ("SP500_WEEKLY_CLOSE", weekly_sp500, "W", "FRED:SP500"),
+    ):
+        source_payload.extend(canonical_rows(
+            code, {date.fromisoformat(day): value for day, value in values.items()},
+            frequency=frequency, source=source,
+        ))
+    store_canonical(canonical, source_payload)
     stored_weeks = upsert_weekly_market_tension(weekly_rows, supabase_url, service_role_key)
     print(
         f"calculated_market_stress_index={len(index_rows)} stored_market_stress_index={stored_index} "

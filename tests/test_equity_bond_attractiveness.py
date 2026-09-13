@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from signals.equity_bond_attractiveness import METHOD_VERSION, QuarterlyInput, build_weekly_rows, percentile_score, symmetric_change
-from signals.equity_bond_attractiveness_pipeline import INITIALIZATION_HISTORY_WEEKS, CACHE_SERIES
+from signals.equity_bond_attractiveness_pipeline import INITIALIZATION_HISTORY_WEEKS, CANONICAL_CODES
 
 
 class EquityBondAttractivenessTests(unittest.TestCase):
@@ -56,10 +56,10 @@ class EquityBondAttractivenessTests(unittest.TestCase):
         rows = build_weekly_rows("KR", weeks, equity, yields, quarters)
         self.assertIn("equity_return_13w_pct", rows[-1])
 
-    def test_automatic_sources_are_cached_for_both_markets(self):
+    def test_automatic_sources_use_canonical_series_for_both_markets(self):
         self.assertEqual(
-            CACHE_SERIES,
-            ("KR_EQUITY", "KR_YIELD", "US_EQUITY", "US_YIELD"),
+            set(CANONICAL_CODES),
+            {"KR_EQUITY", "KR_YIELD", "US_EQUITY", "US_YIELD"},
         )
 
     def test_incremental_overlap_matches_full_history_for_new_rows(self):

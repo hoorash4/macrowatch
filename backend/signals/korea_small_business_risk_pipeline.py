@@ -14,6 +14,7 @@ from common import (
     month_start_months_ago,
     uncapped_score,
 )
+from signals.canonical_series import rows as canonical_rows, store as store_canonical
 from sources.korea_small_business_risk import TIMEOUT_SECONDS, fetch_all
 
 
@@ -104,12 +105,27 @@ def main() -> None:
     rows = [row for row in build_rows(raw) if str(row["month"]) >= start.isoformat()]
     if not rows:
         raise RuntimeError("저장할 한국 중소기업 위험지수 데이터가 없습니다.")
+    source_payload = []
+    for name, code, source in (
+        ("funding_outlook", "KR_SME_FUNDING_OUTLOOK", "KOSIS:DT_D10116"),
+        ("utilization_sa", "KR_SME_UTILIZATION_SA", "KOSIS:DT_D10125"),
+        ("delinquency", "KR_CORP_DELINQ", "ECOS:141Y005/R4AB00/X00/0960"),
+        ("headline_outlook", "KR_SME_HEADLINE_OUTLOOK", "KOSIS:DT_D10102"),
+    ):
+        source_payload.extend(canonical_rows(
+            code, {date.fromisoformat(day): value for day, value in raw.get(name, {}).items()},
+            frequency="M", source=source,
+        ))
+    store_canonical(database, source_payload)
+    derived_rows = [{key: row[key] for key in (
+        "month", "risk_index", "funding_source_month", "utilization_source_month",
+        "delinquency_source_month", "is_provisional", "method_version",
+    )} for row in rows]
     writable = database.automatic_rows(
-        "kr_small_business_risk_monthly", rows, key="month", provisional="is_provisional",
+        "kr_small_business_risk_monthly", derived_rows, key="month", provisional="is_provisional",
         compare_fields=(
-            "risk_index", "funding_outlook_sbhi", "funding_source_month", "utilization_sa_pct",
-            "utilization_source_month", "sme_loan_delinquency_pct", "delinquency_source_month",
-            "headline_outlook_sbhi", "method_version",
+            "risk_index", "funding_source_month", "utilization_source_month",
+            "delinquency_source_month", "method_version",
         ),
     )
     if writable:

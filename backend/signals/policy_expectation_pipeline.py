@@ -14,6 +14,7 @@ from common import (
     AUTOMATIC_DAILY_CALENDAR_DAYS, AUTOMATIC_DAILY_VALUES, SupabaseRest,
     fetch_fred_observations, require_env,
 )
+from signals.canonical_series import rows as canonical_rows, store as store_canonical
 from sources.us_treasury_yields import fetch_treasury_nominal_values
 
 
@@ -95,12 +96,26 @@ def main() -> None:
     database = SupabaseRest()
     # The lookback window is for source-release lag tolerance only. Automatic
     # collection never rewrites an observation that has already been stored.
+    source_payload = []
+    for key, code, source in (
+        ("treasury_3m_rate", "US3M", "USTREASURY:daily_treasury_yield_curve"),
+        ("treasury_2y_rate", "US2Y", "USTREASURY:daily_treasury_yield_curve"),
+        ("effr_rate", "EFFR", "FRED:DFF"),
+    ):
+        source_payload.extend(canonical_rows(
+            code,
+            {date.fromisoformat(day): value for day, value in series_values[key].items()},
+            frequency="D", source=source,
+        ))
+    store_canonical(database, source_payload)
+    derived_rows = [{key: row[key] for key in (
+        "observation_date", "near_term_spread_bps", "cycle_spread_bps", "expectation_spread_bps",
+    )} for row in rows]
     writable = database.automatic_rows(
         "policy_expectation_spreads",
-        rows,
+        derived_rows,
         key="observation_date",
         compare_fields=(
-            "treasury_3m_rate", "treasury_2y_rate", "effr_rate",
             "near_term_spread_bps", "cycle_spread_bps", "expectation_spread_bps",
         ),
     )

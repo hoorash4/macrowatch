@@ -6,6 +6,7 @@ import argparse
 from datetime import date
 
 from common import AUTOMATIC_MONTHLY_PERIODS, SupabaseRest, month_start_months_ago, uncapped_score
+from signals.canonical_series import rows as canonical_rows, store as store_canonical
 from sources.small_business_risk import TIMEOUT_SECONDS, fetch_nfib_monthly
 
 
@@ -101,12 +102,23 @@ def main() -> None:
     rows = build_rows(sales, borrowing, delinquency, optimism, today)
     if not rows:
         raise RuntimeError("저장할 미국 중소기업 위험지수 데이터가 없습니다.")
+    source_payload = []
+    for code, values, source in (
+        ("US_NFIB_SALES_EXPECTATION", sales, "NFIB:SBET/sales_expect"),
+        ("US_NFIB_BORROWING_DIFFICULTY", borrowing, "NFIB:SBET/credit_access"),
+        ("US_NFIB_OPTIMISM", optimism, "NFIB:SBET/OPT_INDEX"),
+    ):
+        source_payload.extend(canonical_rows(
+            code, {date.fromisoformat(day): value for day, value in values.items()},
+            frequency="M", source=source,
+        ))
+    store_canonical(database, source_payload)
+    derived_rows = [{key: row[key] for key in (
+        "month", "risk_index", "delinquency_source_month", "is_provisional",
+    )} for row in rows]
     writable = database.automatic_rows(
-        "us_small_business_risk_monthly", rows, key="month", provisional="is_provisional",
-        compare_fields=(
-            "risk_index", "sales_expectation_net", "borrowing_difficulty_pct",
-            "small_business_delinquency_pct", "delinquency_source_month", "optimism_index",
-        ),
+        "us_small_business_risk_monthly", derived_rows, key="month", provisional="is_provisional",
+        compare_fields=("risk_index", "delinquency_source_month"),
     )
     if writable:
         database.upsert("us_small_business_risk_monthly", writable, conflict="month")
