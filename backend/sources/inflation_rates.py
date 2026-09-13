@@ -18,6 +18,7 @@ from common import request_with_retry, require_env
 BLS_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 BEA_URL = "https://apps.bea.gov/api/data"
 BEA_TABLE = "T20804"
+KOSIS_SEARCH_URL = "https://kosis.kr/openapi/statisticsSearch.do"
 KOSIS_DATA_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 TIMEOUT_SECONDS = 60
@@ -36,7 +37,7 @@ KOSIS_SERIES = {
     "KR_CPI": "총지수",
     "KR_CORE_CPI": "식료품 및 에너지제외지수",
 }
-KOSIS_TABLE_ID = "DT_J12024"
+KOSIS_TABLE = "월별 소비자물가 등락률"
 ECOS_SERIES = {
     "KR_PPI": ("404Y014", "*AA", None),
     "KR_IMPORT_PRICE": ("401Y015", "*AA", "W"),
@@ -174,18 +175,35 @@ def _normalize_title(value: object) -> str:
     return re.sub(r"[\s，,]", "", str(value or ""))
 
 
+def _resolve_kosis_table(title: str, api_key: str) -> str:
+    response = request_with_retry(lambda: requests.get(KOSIS_SEARCH_URL, params={
+        "method": "getList", "apiKey": api_key, "format": "json", "jsonVD": "Y",
+        "searchNm": title, "orgId": "101", "startCount": "1", "resultCount": "100", "sort": "RANK",
+    }, timeout=TIMEOUT_SECONDS))
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise RuntimeError(f"KOSIS table search failed: {payload}")
+    wanted = _normalize_title(title)
+    for item in payload:
+        if str(item.get("ORG_ID")) == "101" and _normalize_title(item.get("TBL_NM")) == wanted:
+            return str(item["TBL_ID"])
+    raise RuntimeError(f"KOSIS table not found: {title}")
+
+
 def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
     key = api_key or require_env("KOSIS_API_KEY")
     output = {code: [] for code in KOSIS_SERIES}
+    table_id = _resolve_kosis_table(KOSIS_TABLE, key)
     response = request_with_retry(lambda: requests.get(KOSIS_DATA_URL, params={
-        "method": "getList", "apiKey": key, "orgId": "101", "tblId": KOSIS_TABLE_ID,
+        "method": "getList", "apiKey": key, "orgId": "101", "tblId": table_id,
         "objL1": "ALL", "objL2": "ALL", "itmId": "ALL", "format": "json", "jsonVD": "Y",
         "prdSe": "M", "startPrdDe": f"{start:%Y%m}", "endPrdDe": f"{end:%Y%m}",
     }, timeout=TIMEOUT_SECONDS))
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, list):
-        raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} request failed: {payload}")
+        raise RuntimeError(f"KOSIS {table_id} request failed: {payload}")
     seen = {code: set() for code in KOSIS_SERIES}
     for item in payload:
         period = str(item.get("PRD_DE") or "")
@@ -203,11 +221,11 @@ def fetch_kosis_rates(start: date, end: date, api_key: str | None = None) -> dic
             continue
         code = matching[0]
         if period in seen[code]:
-            raise RuntimeError(f"KOSIS {KOSIS_TABLE_ID} returned duplicate YoY rows for {code} {period}")
+            raise RuntimeError(f"KOSIS {table_id} returned duplicate YoY rows for {code} {period}")
         seen[code].add(period)
         observed = date(int(period[:4]), int(period[4:]), 1)
         if start <= observed <= end:
-            output[code].append(_row(code, observed, value, f"KOSIS:101/{KOSIS_TABLE_ID}:YoY"))
+            output[code].append(_row(code, observed, value, f"KOSIS:101/{table_id}:YoY"))
     return output
 
 
