@@ -26,7 +26,14 @@ function latestFxOnOrBefore(values: Map<string, number>, marketDate: string) {
   return [...values.entries()].filter(([date]) => date <= marketDate).sort(([a], [b]) => b.localeCompare(a))[0]?.[1];
 }
 
-async function loadRawHistory(admin: SupabaseClient, start: string) {
+type RawHistoryRow = {
+  observation_date: string;
+  foreign_net_buy_amount: number;
+  kospi_trading_value: number;
+  usdkrw_rate: number;
+};
+
+async function loadRawHistory(admin: SupabaseClient, start: string): Promise<RawHistoryRow[]> {
   const byDate = new Map<string, Record<string, number>>();
   const definitions = [["KR_FOREIGN_NET_BUY", "foreign_net_buy_amount"],
     ["KOSPI_TRADING_VALUE", "kospi_trading_value"], ["USDKRW", "usdkrw_rate"]] as const;
@@ -43,7 +50,12 @@ async function loadRawHistory(admin: SupabaseClient, start: string) {
     }
   }
   return [...byDate].filter(([, row]) => definitions.every(([, field]) => Number.isFinite(row[field])))
-    .map(([observation_date, row]) => ({ observation_date, ...row }))
+    .map(([observation_date, row]) => ({
+      observation_date,
+      foreign_net_buy_amount: row.foreign_net_buy_amount,
+      kospi_trading_value: row.kospi_trading_value,
+      usdkrw_rate: row.usdkrw_rate,
+    }))
     .sort((a, b) => a.observation_date.localeCompare(b.observation_date));
 }
 
