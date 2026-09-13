@@ -58,7 +58,7 @@
         {
           title: '미국 중소기업 위험지수', cadence: '월간',
           series: ['중소기업 위험지수', 'NFIB 소기업낙관지수(역)'],
-          components: ['NFIB 차입난이도 60%', 'NFIB 매출전망 40%'],
+          components: ['NFIB 차입난이도 35%', '미국 소기업 연체율 35%', 'NFIB 매출전망 30%'],
         },
         {
           title: '미국 주식시장 자금환경', cadence: '주간',

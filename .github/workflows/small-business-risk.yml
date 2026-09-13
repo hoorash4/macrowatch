@@ -2,8 +2,8 @@ name: Refresh U.S. small business risk
 
 on:
   schedule:
-    # 06:30 KST: check NFIB for newly released monthly data.
-    - cron: "30 21 * * *"
+    # 08:15 KST: run after the 07:30 economic-chart/Equifax refresh.
+    - cron: "15 23 * * *"
   workflow_dispatch:
 
 permissions:

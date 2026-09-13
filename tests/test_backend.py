@@ -1020,20 +1020,31 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("push:", workflow)
         self.assertIn("signals.small_business_risk_pipeline --months 5", workflow)
         self.assertNotIn("--replace", workflow)
-        self.assertIn('cron: "30 21 * * *"', workflow)
+        self.assertIn('cron: "15 23 * * *"', workflow)
 
     def test_small_business_risk_uses_available_component_weights(self) -> None:
         sales = {"2023-08-01": -15.0, "2023-09-01": -15.0}
         borrowing = {"2023-08-01": 8.5, "2023-09-01": 8.5}
+        delinquency = {"2023-08-01": 2.4, "2023-09-01": 2.5}
         optimism = {"2023-08-01": 91.2, "2023-09-01": 90.7}
-        rows = small_business.build_rows(sales, borrowing, optimism, date(2026, 9, 9))
+        rows = small_business.build_rows(sales, borrowing, delinquency, optimism, date(2026, 9, 9))
         borrowing_score = small_business.component_score(8.5, "borrowing_difficulty")
         sales_score = small_business.component_score(-15.0, "sales_expectation")
-        self.assertEqual(rows[0]["risk_index"], round(borrowing_score * .6 + sales_score * .4, 2))
+        delinquency_score = small_business.component_score(2.4, "delinquency")
+        self.assertEqual(rows[0]["risk_index"], round(borrowing_score * .35 + delinquency_score * .35 + sales_score * .30, 2))
         self.assertEqual(rows[0]["optimism_index"], 91.2)
-        self.assertEqual(rows[1]["risk_index"], round(borrowing_score * .6 + sales_score * .4, 2))
+        self.assertEqual(rows[0]["delinquency_source_month"], "2023-08-01")
+        self.assertEqual(rows[1]["small_business_delinquency_pct"], 2.5)
         self.assertNotIn("high_yield_oas_pct", rows[0])
         self.assertNotIn("includes_oas", rows[0])
+
+    def test_small_business_risk_carries_recent_stored_delinquency_as_provisional(self) -> None:
+        rows = small_business.build_rows(
+            {"2026-07-01": -10.0}, {"2026-07-01": 8.0},
+            {"2026-05-01": 2.4}, {"2026-07-01": 90.0}, date(2026, 9, 13),
+        )
+        self.assertEqual(rows[0]["delinquency_source_month"], "2026-05-01")
+        self.assertTrue(rows[0]["is_provisional"])
 
     def test_nfib_answer_parser_builds_sales_net_and_harder_share(self) -> None:
         sales_rows = [
