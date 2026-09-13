@@ -19,7 +19,6 @@ from sources.inflation_rates import (
     fetch_bls_rates,
     fetch_ecos_rates,
     fetch_kosis_rates,
-    _kosis_month_windows,
 )
 
 
@@ -68,27 +67,21 @@ class InflationRateSourceTests(unittest.TestCase):
         self.assertAlmostEqual(result["US_CORE_PCE"][0]["value"], 2.9)
         self.assertEqual(BEA_TABLE, "T20804")
 
-    @patch("sources.inflation_rates.request_with_retry")
-    def test_kosis_reads_headline_and_food_energy_excluded_yoy_directly(self, request):
-        request.return_value = Response([
-                {"PRD_DE": "202608", "DT": "3.7", "C1_NM": "총지수", "ITM_NM": "전년동월비", "UNIT_NM": "%"},
-                {"PRD_DE": "202608", "DT": "0.4", "C1_NM": "총지수", "ITM_NM": "전월비", "UNIT_NM": "%"},
-                {"PRD_DE": "202608", "DT": "2.9", "C1_NM": "식료품 및 에너지 제외지수", "ITM_NM": "전년동월비", "UNIT_NM": "%"},
-            ])
+    @patch("sources.inflation_rates.requests.get")
+    @patch("sources.inflation_rates.request_with_retry", side_effect=lambda operation: operation())
+    def test_kosis_reads_headline_and_food_energy_excluded_yoy_directly(self, request, get):
+        get.side_effect = [
+            Response([{"PRD_DE": "202608", "DT": "3.7"}]),
+            Response([{"PRD_DE": "202608", "DT": "2.9"}]),
+        ]
         result = fetch_kosis_rates(date(2026, 8, 1), date(2026, 8, 1), "key")
         self.assertEqual(result["KR_CPI"][0]["source"], "KOSIS:101/DT_1J22042:YoY")
         self.assertEqual(result["KR_CPI"][0]["value"], 3.7)
         self.assertEqual(result["KR_CORE_CPI"][0]["value"], 2.9)
-
-    def test_kosis_long_history_is_split_into_small_monthly_windows(self):
-        self.assertEqual(
-            _kosis_month_windows(date(2009, 1, 1), date(2011, 2, 1)),
-            [
-                (date(2009, 1, 1), date(2009, 12, 1)),
-                (date(2010, 1, 1), date(2010, 12, 1)),
-                (date(2011, 1, 1), date(2011, 2, 1)),
-            ],
-        )
+        params = [call.kwargs["params"] for call in get.call_args_list]
+        self.assertEqual([item["itmId"] for item in params], ["T03", "T03"])
+        self.assertEqual([item["objL1"] for item in params], ["0", "4"])
+        self.assertTrue(all("objL2" not in item for item in params))
 
     @patch("sources.inflation_rates.request_with_retry")
     def test_ecos_calculates_yoy_without_returning_raw_levels(self, request):
