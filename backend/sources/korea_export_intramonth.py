@@ -73,7 +73,9 @@ def release_identity(title: str) -> tuple[str, date, date] | None:
         return "d10", ref, date(year, month, 10)
     if re.search(r"1일\s*[~∼～\-]\s*(?:\d{1,2}월\s*)?20일", tail):
         return "d20", ref, date(year, month, 20)
-    if "수출입" in tail and "현황" in tail and not re.search(r"1일\s*[~∼～\-]", tail):
+    if (re.match(r"\s*(?:월간\s*)?수출입\s*현황", tail)
+            and "확정치" not in normalized
+            and not re.search(r"1일\s*[~∼～\-]", tail)):
         last_day = calendar.monthrange(year, month)[1]
         return "month_end", ref, date(year, month, last_day)
     return None
@@ -213,7 +215,7 @@ def _reported_daily_average(page_text: str) -> float | None:
 
 
 def _export_amount_candidates(markup: str) -> list[float]:
-    best: list[float] = []
+    candidates: list[float] = []
     for row in re.findall(r"<tr\b[^>]*>.*?</tr>", markup, flags=re.I | re.S):
         row_text = re.sub(r"\s+", "", _clean(row))
         if not row_text.startswith("수출") and "수출(전년동기대비" not in row_text:
@@ -231,9 +233,8 @@ def _export_amount_candidates(markup: str) -> list[float]:
                 continue
             if value >= 100:
                 values.append(value)
-        if len(values) > len(best):
-            best = values
-    return best
+        candidates.extend(values)
+    return candidates
 
 
 def _fallback_export_amount(candidates: list[float]) -> float:

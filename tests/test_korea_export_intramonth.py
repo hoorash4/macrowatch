@@ -16,6 +16,7 @@ from sources.korea_export_intramonth import (  # noqa: E402
     fetch_release_links,
     independent_segment_rows,
     parse_snapshot,
+    release_identity,
 )
 
 
@@ -52,6 +53,23 @@ class KoreaExportIntramonthTests(unittest.TestCase):
         row = parse_snapshot(markup, link)
         self.assertEqual(row.cumulative_workdays, 8.5)
         self.assertEqual(row.cumulative_export_musd, 34973.0)
+
+    def test_month_end_uses_the_current_summary_row_among_multiple_tables(self):
+        markup = """
+        <div>조업일수[(’25)22.5일,(’26)22.0일] 일평균 수출액[(’25)25.9,(’26)44.7]</div>
+        <table>
+          <tr><th>수출 2025 금액</th><td>49,177</td><td>52,292</td><td>58,065</td><td>58,036</td><td>57,261</td><td>59,834</td><td>60,724</td><td>58,259</td><td>65,904</td><td>59,512</td><td>60,753</td><td>69,514</td><td>709,330</td></tr>
+          <tr><th>수 출</th><td>58,259</td><td>453,648</td><td>98,959</td><td>98,255</td><td>693,318</td></tr>
+        </table>
+        """
+        link = ReleaseLink("2026년 8월 수출입 현황 [잠정치]", "1", "", "month_end",
+                           date(2026, 8, 1), date(2026, 8, 31), date(2026, 9, 1))
+        self.assertEqual(parse_snapshot(markup, link).cumulative_export_musd, 98255.0)
+
+    def test_specialized_and_confirmed_monthly_posts_are_not_intramonth_snapshots(self):
+        self.assertIsNone(release_identity("2026년 7월 기업규모별 수출입 현황"))
+        self.assertIsNone(release_identity("2026년 7월 월간 수출입 현황 [확정치]"))
+        self.assertIsNotNone(release_identity("2026년 8월 수출입 현황 [잠정치]"))
 
     def test_independent_segments_use_incremental_amount_and_workdays(self):
         base = dict(published_on=None, source_url="official")
