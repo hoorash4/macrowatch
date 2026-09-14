@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=190">
-  <link rel="stylesheet" href="assets/css/economic-charts.css?v=9">
+  <link rel="stylesheet" href="assets/css/economic-charts.css?v=10">
   <link rel="stylesheet" href="assets/css/economic-crosshair.css?v=1">
   <link rel="stylesheet" href="assets/css/economic-series-manager.css?v=1">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -22,7 +22,7 @@
 <body class="economic-chart-page">
   <div class="economic-shell">
     <header class="economic-topbar">
-      <a class="economic-brand" href="index.html"><span>MacroWatch</span><small>EVOTIVE RESEARCH</small></a>
+      <a class="economic-brand" href="index.html"><span class="dashboard-logo economic-brand-logo" aria-hidden="true"></span><span>MacroWatch</span><small>EVOTIVE RESEARCH</small></a>
       <nav class="economic-nav" aria-label="MacroWatch 메뉴">
         <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><a class="is-active" href="economic-charts.html" aria-current="page">경제지표 챠트</a>
       </nav>
@@ -89,7 +89,7 @@
       });
       const start = () => {
         rewrite(document.body);
-        observer.observe(document.body, {subtree:true, childList:true, characterData:true});
+        observer.observe(document.body, {subtree:true, childList:true,characterData:true});
       };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once:true});
       else start();
