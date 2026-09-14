@@ -63,6 +63,11 @@ def fetch_naver_kospi(start: date, end: date) -> list[dict[str, Any]]:
         close_value = _number(item[4])
         if None in (open_value, high_value, low_value, close_value):
             continue
+        # Old KOSPI history occasionally contains tiny OHLC rounding inversions (for example,
+        # reported low a few hundredths above open). Preserve open/close and normalize only the
+        # candle envelope so it satisfies the table's OHLC invariants.
+        high_value = max(high_value, open_value, low_value, close_value)
+        low_value = min(low_value, open_value, high_value, close_value)
         rows.append({
             "index_code": "KOSPI",
             "market_date": observed.isoformat(),
