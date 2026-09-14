@@ -23,12 +23,12 @@ from common import (
 )
 from signals.canonical_series import load as load_canonical, rows as canonical_rows, store as store_canonical
 from signals.derived_series import rows as derived_series_rows, store as store_derived
+from signals.market_index_collection import load_close as load_market_index_close
 
 
 ECOS = "https://ecos.bok.or.kr/api"
 BOK_SNAPSHOT_FSI = "https://snapshot.bok.or.kr/api/chart/getChart?id=1583"
 MARKET_RATES = "817Y002"
-KOSPI_TABLE = "802Y001"
 SERIES = {
     "treasury_3y": (MARKET_RATES, "010200000"),
     "aa_minus_3y": (MARKET_RATES, "010300000"),
@@ -37,7 +37,6 @@ SERIES = {
     "cp_91d": (MARKET_RATES, "010503000"),
     "koribor_3m": (MARKET_RATES, "010150000"),
     "kofr": (MARKET_RATES, "010901000"),
-    "kospi_close": (KOSPI_TABLE, "0001000"),
 }
 # Fixed stress bands, rather than ranges recalculated from the displayed
 # period.  This keeps an older quiet period from being re-scaled upward when
@@ -309,7 +308,6 @@ def main() -> None:
         "cp_91d": ("KR_CP91", "ECOS:817Y002/010503000"),
         "cd_91d": ("KR_CD91", "ECOS:817Y002/010502000"),
         "koribor_3m": ("KR_KORIBOR3M", "ECOS:817Y002/010150000"),
-        "kospi_close": ("KOSPI_CLOSE", "ECOS:802Y001/0001000"),
     }
     if args.stage in ("sources", "all"):
         key = require_env("ECOS_API_KEY")
@@ -333,6 +331,7 @@ def main() -> None:
                     "treasury_3y": "KR3Y", "kofr": "KR_KOFR"}
     daily_values = {name: load_canonical(database, code, start=min(monthly_start, weekly_start), end=today)
                     for name, code in code_by_name.items()}
+    daily_values["kospi_close"] = load_market_index_close(database, "KOSPI", min(monthly_start, weekly_start), today)
     corporate_credit_spread = {
         observed: daily_values["aa_minus_3y"][observed] - daily_values["treasury_3y"][observed]
         for observed in daily_values["aa_minus_3y"].keys() & daily_values["treasury_3y"].keys()
@@ -364,11 +363,11 @@ def main() -> None:
     calculated_payload = []
     calculated_payload.extend(derived_series_rows(
         "KOSPI_MONTH_END", {date.fromisoformat(day): value for day, value in values["kospi_close"].items()},
-        frequency="M", source="RESAMPLED:ECOS:802Y001/0001000/M",
+        frequency="M", source="RESAMPLED:MARKET_INDEX:KOSPI/M",
     ))
     calculated_payload.extend(derived_series_rows(
         "KOSPI_WEEKLY_CLOSE", {date.fromisoformat(row["week"]): float(row["kospi_close"]) for row in kospi_weekly},
-        frequency="W", source="RESAMPLED:ECOS:802Y001/0001000/W",
+        frequency="W", source="RESAMPLED:MARKET_INDEX:KOSPI/W",
     ))
     calculated_payload.extend(derived_series_rows(
         "KR_CORP_CREDIT_SPREAD", corporate_credit_spread,
