@@ -1,7 +1,8 @@
 """Canonical daily market-index collection for S&P 500, Nasdaq Composite and KOSPI.
 
-The three raw index histories live only in market_index_prices. Historical replacement and
-scheduled incremental collection are deliberately separate modes.
+The three raw index histories live only in ``market_index_prices``. Historical replacement and
+scheduled incremental collection are deliberately separate modes. US indices come from Yahoo's
+chart history; KOSPI comes from KRX through pykrx so the canonical series reaches back to 1990.
 """
 from __future__ import annotations
 
@@ -11,25 +12,27 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
+from pykrx import stock
 
 from common import SupabaseRest, request_with_retry
 
 START_DATE = date(1990, 1, 1)
 AUTOMATIC_LOOKBACK_DAYS = 14
 UPSERT_BATCH_SIZE = 500
-INDEX_SYMBOLS = {
+INDEX_CODES = ("SP500", "NASDAQ_COMPOSITE", "KOSPI")
+YAHOO_SYMBOLS = {
     "SP500": "^GSPC",
     "NASDAQ_COMPOSITE": "^IXIC",
-    "KOSPI": "^KS11",
 }
+KOSPI_KRX_TICKER = "1001"
 
 
 def _epoch(day: date) -> int:
     return int(datetime.combine(day, time.min, tzinfo=timezone.utc).timestamp())
 
 
-def fetch_index_candles(index_code: str, start: date, end: date) -> list[dict[str, Any]]:
-    symbol = INDEX_SYMBOLS[index_code]
+def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[str, Any]]:
+    symbol = YAHOO_SYMBOLS[index_code]
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}"
     response = request_with_retry(lambda: requests.get(
         url,
@@ -86,10 +89,61 @@ def fetch_index_candles(index_code: str, start: date, end: date) -> list[dict[st
             "source": f"YAHOO:{symbol}",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
+    return rows
+
+
+def _fetch_kospi_candles(start: date, end: date) -> list[dict[str, Any]]:
+    """Fetch official KRX KOSPI index history in bounded yearly chunks."""
+    rows: list[dict[str, Any]] = []
+    for year in range(start.year, end.year + 1):
+        lower = max(start, date(year, 1, 1))
+        upper = min(end, date(year, 12, 31))
+        frame = request_with_retry(lambda lower=lower, upper=upper: stock.get_index_ohlcv_by_date(
+            lower.strftime("%Y%m%d"), upper.strftime("%Y%m%d"), KOSPI_KRX_TICKER,
+        ))
+        if frame is None or frame.empty:
+            continue
+        for observed_at, item in frame.iterrows():
+            try:
+                observed = observed_at.date() if hasattr(observed_at, "date") else date.fromisoformat(str(observed_at)[:10])
+                open_value = float(item["시가"])
+                high_value = float(item["고가"])
+                low_value = float(item["저가"])
+                close_value = float(item["종가"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (start <= observed <= end):
+                continue
+            volume_raw = item.get("거래량") if hasattr(item, "get") else None
+            try:
+                volume = float(volume_raw) if volume_raw is not None else None
+            except (TypeError, ValueError):
+                volume = None
+            rows.append({
+                "index_code": "KOSPI",
+                "market_date": observed.isoformat(),
+                "open": open_value,
+                "high": high_value,
+                "low": low_value,
+                "close": close_value,
+                "volume": volume,
+                "source": "KRX:KOSPI:1001",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+    return rows
+
+
+def fetch_index_candles(index_code: str, start: date, end: date) -> list[dict[str, Any]]:
+    if index_code == "KOSPI":
+        rows = _fetch_kospi_candles(start, end)
+    elif index_code in YAHOO_SYMBOLS:
+        rows = _fetch_yahoo_candles(index_code, start, end)
+    else:
+        raise ValueError(f"unsupported canonical market index: {index_code}")
     unique = {str(row["market_date"]): row for row in rows}
     result_rows = [unique[key] for key in sorted(unique)]
     if not result_rows:
-        raise RuntimeError(f"Yahoo {symbol} returned no usable daily rows")
+        raise RuntimeError(f"{index_code} returned no usable daily rows")
     return result_rows
 
 
@@ -109,7 +163,7 @@ def backfill(db: SupabaseRest | None = None, *, start: date = START_DATE,
     """Replace the requested historical range from fresh external source data."""
     database = db or SupabaseRest()
     end = end or date.today()
-    fetched = {code: fetch_index_candles(code, start, end) for code in INDEX_SYMBOLS}
+    fetched = {code: fetch_index_candles(code, start, end) for code in INDEX_CODES}
     for code, rows in fetched.items():
         first = date.fromisoformat(str(rows[0]["market_date"]))
         last = date.fromisoformat(str(rows[-1]["market_date"]))
@@ -133,7 +187,7 @@ def automatic(db: SupabaseRest | None = None, *, today: date | None = None) -> d
     today = today or date.today()
     start = today - timedelta(days=AUTOMATIC_LOOKBACK_DAYS)
     stored: dict[str, int] = {}
-    for code in INDEX_SYMBOLS:
+    for code in INDEX_CODES:
         rows = fetch_index_candles(code, start, today)
         dates = [str(row["market_date"]) for row in rows]
         existing = database.request("GET", "market_index_prices", params={
