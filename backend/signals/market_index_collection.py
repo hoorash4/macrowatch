@@ -2,7 +2,8 @@
 
 The three raw index histories live only in ``market_index_prices``. Historical replacement and
 scheduled incremental collection are deliberately separate modes. US indices come from Yahoo's
-chart history; KOSPI comes from KRX through pykrx so the canonical series reaches back to 1990.
+chart history; KOSPI comes directly from KRX index-history data so the canonical series reaches
+back to 1990 without depending on a duplicate derived source.
 """
 from __future__ import annotations
 
@@ -12,7 +13,6 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
-from pykrx import stock
 
 from common import SupabaseRest, request_with_retry
 
@@ -25,10 +25,26 @@ YAHOO_SYMBOLS = {
     "NASDAQ_COMPOSITE": "^IXIC",
 }
 KOSPI_KRX_TICKER = "1001"
+KRX_INDEX_URL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+KRX_INDEX_BLD = "dbms/MDC/STAT/standard/MDCSTAT00301"
+HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 MacroWatch/1.0",
+    "Referer": "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd",
+}
 
 
 def _epoch(day: date) -> int:
     return int(datetime.combine(day, time.min, tzinfo=timezone.utc).timestamp())
+
+
+def _number(value: Any) -> float | None:
+    text = str(value or "").replace(",", "").strip()
+    if not text or text == "-":
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[str, Any]]:
@@ -43,7 +59,7 @@ def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[s
             "events": "history",
             "includeAdjustedClose": "true",
         },
-        headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"},
+        headers=HTTP_HEADERS,
         timeout=60,
     ))
     response.raise_for_status()
@@ -92,44 +108,59 @@ def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[s
     return rows
 
 
+def _fetch_kospi_chunk(start: date, end: date) -> list[dict[str, Any]]:
+    response = request_with_retry(lambda: requests.post(
+        KRX_INDEX_URL,
+        data={
+            "bld": KRX_INDEX_BLD,
+            "indIdx": KOSPI_KRX_TICKER[0],
+            "indIdx2": KOSPI_KRX_TICKER[1:],
+            "strtDd": start.strftime("%Y%m%d"),
+            "endDd": end.strftime("%Y%m%d"),
+        },
+        headers=HTTP_HEADERS,
+        timeout=60,
+    ))
+    response.raise_for_status()
+    payload = response.json()
+    output = payload.get("output") if isinstance(payload, dict) else None
+    if not isinstance(output, list):
+        raise RuntimeError(f"KRX KOSPI returned invalid payload for {start}..{end}")
+    rows: list[dict[str, Any]] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        try:
+            observed = datetime.strptime(str(item["TRD_DD"]), "%Y/%m/%d").date()
+        except (KeyError, TypeError, ValueError):
+            continue
+        open_value = _number(item.get("OPNPRC_IDX"))
+        high_value = _number(item.get("HGPRC_IDX"))
+        low_value = _number(item.get("LWPRC_IDX"))
+        close_value = _number(item.get("CLSPRC_IDX"))
+        if None in (open_value, high_value, low_value, close_value):
+            continue
+        rows.append({
+            "index_code": "KOSPI",
+            "market_date": observed.isoformat(),
+            "open": open_value,
+            "high": high_value,
+            "low": low_value,
+            "close": close_value,
+            "volume": _number(item.get("ACC_TRDVOL")),
+            "source": "KRX:KOSPI:1001",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    return rows
+
+
 def _fetch_kospi_candles(start: date, end: date) -> list[dict[str, Any]]:
-    """Fetch official KRX KOSPI index history in bounded yearly chunks."""
+    """Fetch official KRX KOSPI index history in bounded calendar-year chunks."""
     rows: list[dict[str, Any]] = []
     for year in range(start.year, end.year + 1):
         lower = max(start, date(year, 1, 1))
         upper = min(end, date(year, 12, 31))
-        frame = request_with_retry(lambda lower=lower, upper=upper: stock.get_index_ohlcv_by_date(
-            lower.strftime("%Y%m%d"), upper.strftime("%Y%m%d"), KOSPI_KRX_TICKER,
-        ))
-        if frame is None or frame.empty:
-            continue
-        for observed_at, item in frame.iterrows():
-            try:
-                observed = observed_at.date() if hasattr(observed_at, "date") else date.fromisoformat(str(observed_at)[:10])
-                open_value = float(item["시가"])
-                high_value = float(item["고가"])
-                low_value = float(item["저가"])
-                close_value = float(item["종가"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if not (start <= observed <= end):
-                continue
-            volume_raw = item.get("거래량") if hasattr(item, "get") else None
-            try:
-                volume = float(volume_raw) if volume_raw is not None else None
-            except (TypeError, ValueError):
-                volume = None
-            rows.append({
-                "index_code": "KOSPI",
-                "market_date": observed.isoformat(),
-                "open": open_value,
-                "high": high_value,
-                "low": low_value,
-                "close": close_value,
-                "volume": volume,
-                "source": "KRX:KOSPI:1001",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+        rows.extend(_fetch_kospi_chunk(lower, upper))
     return rows
 
 
