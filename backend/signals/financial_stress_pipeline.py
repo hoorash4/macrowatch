@@ -24,13 +24,13 @@ from sources.financial_stress import (
 )
 from signals.canonical_series import load, rows as canonical_rows, store as store_canonical
 from signals.derived_series import rows as derived_rows, store as store_derived
+from signals.market_index_collection import load_close as load_market_index_close
 
 
 HIGH_YIELD_SERIES = "BAMLH0A0HYM2"
 FINANCIAL_CONDITIONS_SERIES = "NFCICREDIT"
 FINANCIAL_RISK_SERIES = "NFCIRISK"
 NONFINANCIAL_LEVERAGE_SERIES = "NFCINONFINLEVERAGE"
-SP500_SERIES = "SP500"
 COMMERCIAL_PAPER_SERIES = "DCPN3M"
 THREE_MONTH_TREASURY_SERIES = "DGS3MO"
 MONTHLY_STRESS_COMPONENT_WEIGHTS = {
@@ -246,7 +246,6 @@ def main() -> None:
             "NFCI_RISK": (_valid_fred_values(FINANCIAL_RISK_SERIES, fred_api_key, weekly_start, today), "W", f"FRED:{FINANCIAL_RISK_SERIES}"),
             "NFCI_NONFIN_LEVERAGE": (_valid_fred_values(NONFINANCIAL_LEVERAGE_SERIES, fred_api_key, weekly_start, today), "W", f"FRED:{NONFINANCIAL_LEVERAGE_SERIES}"),
             "US_COMMERCIAL_PAPER_3M": (_valid_fred_values(COMMERCIAL_PAPER_SERIES, fred_api_key, weekly_start, today), "D", f"FRED:{COMMERCIAL_PAPER_SERIES}"),
-            "SP500": (_valid_fred_values(SP500_SERIES, fred_api_key, monthly_start, today), "D", f"FRED:{SP500_SERIES}"),
         }
         source_payload = [row for code, (values, frequency, source) in source_values.items()
                           for row in canonical_rows(code, values, frequency=frequency, source=source)]
@@ -256,7 +255,7 @@ def main() -> None:
             return
     excess_bond_premium = {day.isoformat(): value for day, value in load(canonical, "US_EBP", start=monthly_start, end=end).items()}
     cmdi = {day.isoformat(): value for day, value in load(canonical, "US_CMDI", start=monthly_start, end=end).items()}
-    sp500_daily = load(canonical, "SP500", start=monthly_start, end=today)
+    sp500_daily = load_market_index_close(canonical, "SP500", monthly_start, today)
     sp500_month_end = _period_last(sp500_daily, "M")
     # Keep the current month in the MSI timeline even before either monthly
     # component is published. build_market_stress_index then carries the last
@@ -284,7 +283,7 @@ def main() -> None:
     weekly_leverage = _period_last(load(canonical, "NFCI_NONFIN_LEVERAGE", start=weekly_start, end=today), "W")
     weekly_cp = _period_last(load(canonical, "US_COMMERCIAL_PAPER_3M", start=weekly_start, end=today), "W")
     weekly_treasury = _period_last(load(canonical, "US3M", start=weekly_start, end=today), "W")
-    weekly_sp500 = _period_last(sp500_daily, "W")
+    weekly_sp500 = _period_last(load_market_index_close(canonical, "SP500", weekly_start, today), "W")
     weekly_funding = {week: weekly_cp[week] - weekly_treasury[week] for week in weekly_cp.keys() & weekly_treasury.keys()}
     weekly_rows = build_weekly_market_tension(
         weekly_high_yield,
@@ -296,10 +295,10 @@ def main() -> None:
     )[-AUTOMATIC_WEEKLY_WEEKS:]
     calculated_payload = []
     for code, values, frequency, source in (
-        ("SP500_MONTH_END", sp500_month_end, "M", "RESAMPLED:FRED:SP500/M"),
+        ("SP500_MONTH_END", sp500_month_end, "M", "RESAMPLED:MARKET_INDEX:SP500/M"),
         ("HY_OAS_WEEKLY", weekly_high_yield, "W", f"RESAMPLED:FRED:{HIGH_YIELD_SERIES}/W"),
         ("US_SHORT_FUNDING_SPREAD", weekly_funding, "W", "DERIVED:DCPN3M-DGS3MO"),
-        ("SP500_WEEKLY_CLOSE", weekly_sp500, "W", "RESAMPLED:FRED:SP500/W"),
+        ("SP500_WEEKLY_CLOSE", weekly_sp500, "W", "RESAMPLED:MARKET_INDEX:SP500/W"),
     ):
         calculated_payload.extend(derived_rows(
             code, {date.fromisoformat(day): value for day, value in values.items()},
