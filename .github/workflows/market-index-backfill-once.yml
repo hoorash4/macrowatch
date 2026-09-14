@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/market-index-backfill-once.yml
+      - backend/signals/market_index_collection.py
 
 permissions:
   contents: read
