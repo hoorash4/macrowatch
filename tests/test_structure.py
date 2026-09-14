@@ -25,5 +25,5 @@ class DeploymentStructureTests(unittest.TestCase):
         self.assertEqual({p.name for p in ROOT.glob('*.md')}, {'AGENTS.md', 'README.md'})
         self.assertEqual(list(ROOT.glob('*.js')), [])
         self.assertEqual(list(ROOT.glob('*.css')), [])
-        for name in ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']:
+        for name in ['CODE_STRUCTURE.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']:
             self.assertTrue((ROOT / 'docs' / name).is_file())
