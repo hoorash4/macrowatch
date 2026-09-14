@@ -24,7 +24,7 @@ for (const relative of fs.readdirSync(path.join(root, 'assets/js'), {recursive: 
 }
 fs.writeFileSync(path.join(site, 'styles.css'), read('assets/css/styles.css').replaceAll('../../images/', './images/'));
 
-for (const name of ['CODE_STRUCTURE.md', 'HANDOFF.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
+for (const name of ['CODE_STRUCTURE.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
   fs.copyFileSync(path.join(root, 'docs', name), path.join(site, name));
 }
 console.log(`Generated ${names.size} legacy scripts, stylesheet, canonical account modal wiring and document URLs in build output.`);

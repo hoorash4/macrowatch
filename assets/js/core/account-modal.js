@@ -4,6 +4,15 @@
   if (window.MacroWatchAccountModal) return;
   let mounted = false;
 
+  function syncDashboardLogo() {
+    const logo = document.querySelector('.dashboard-logo');
+    if (!logo) return;
+    const fileName = document.documentElement.dataset.theme === 'dark'
+      ? 'mw_logo_w.png'
+      : 'mw_logo.png';
+    logo.style.backgroundImage = `url("images/${fileName}")`;
+  }
+
   function normalize() {
     const modal = document.getElementById('profile-modal');
     const deleteModal = document.getElementById('account-delete-modal');
@@ -67,10 +76,12 @@
       <div id="account-delete-modal" class="modal-overlay modal-overlay--critical hidden"><section class="w-full max-w-sm rounded-2xl border border-red-900/60 bg-slate-900 p-6 text-center shadow-2xl"><i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i><h2 class="mt-4 text-lg font-bold text-white">회원 탈퇴를 진행할까요?</h2><p class="mt-2 text-sm leading-relaxed text-slate-400">등록한 지표와 알림 설정이 모두 삭제되며 되돌릴 수 없습니다.</p><div class="mt-5 flex gap-2"><button id="account-delete-cancel" type="button" class="flex-1 rounded-lg bg-slate-800 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-700">취소</button><button id="account-delete-confirm" type="button" class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-60">탈퇴하기</button></div></section></div>`);
     mounted = true;
     normalize();
+    syncDashboardLogo();
   }
 
   window.MacroWatchAccountModal = { ensure };
   window.MacroWatchAccountModal.normalize = normalize;
+  window.addEventListener('macrowatch:themechange', syncDashboardLogo);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true });
   else ensure();
 })();
