@@ -15,7 +15,8 @@ REQUIRED_FIELDS = frozenset({"series_code", "observation_date", "value", "freque
 # Reusable series with more than one consumer have one runtime writer.  Feature
 # pipelines may fetch the same source for an immediate calculation, but they
 # must not publish another copy (or another sampling frequency) under the same
-# canonical code.
+# canonical code. Market index prices are canonical in market_index_prices and
+# therefore intentionally do not appear here.
 SERIES_OWNERS = {
     "EM_OAS": "economic_chart",
     "WTI": "economic_chart",
@@ -77,7 +78,6 @@ SERIES_OWNERS = {
     "NFCI_RISK": "financial_stress",
     "NFCI_NONFIN_LEVERAGE": "financial_stress",
     "US_COMMERCIAL_PAPER_3M": "financial_stress",
-    "SP500": "financial_stress",
     "EM_HY_OAS": "em_stress",
     "EM_TAIL_RISK_OAS": "em_stress",
     "VXEEM": "em_stress",
@@ -87,7 +87,6 @@ SERIES_OWNERS = {
     "KR_CP91": "korea_stress",
     "KR_CD91": "korea_stress",
     "KR_KORIBOR3M": "korea_stress",
-    "KOSPI_CLOSE": "korea_stress",
     "BOK_FSI": "korea_stress",
     "US_SOFR": "liquidity",
     "US_IORB": "liquidity",
