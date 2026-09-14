@@ -8,7 +8,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from signals.market_index_collection import INDEX_SYMBOLS, automatic, backfill, load_close
+from signals.market_index_collection import (
+    INDEX_CODES,
+    KOSPI_KRX_TICKER,
+    YAHOO_SYMBOLS,
+    automatic,
+    backfill,
+    load_close,
+)
 
 
 class FakeDatabase:
@@ -47,23 +54,21 @@ def row(code, day, close=100.0):
 
 class MarketIndexCollectionTests(unittest.TestCase):
     def test_canonical_index_set(self):
-        self.assertEqual({
-            "SP500": "^GSPC",
-            "NASDAQ_COMPOSITE": "^IXIC",
-            "KOSPI": "^KS11",
-        }, INDEX_SYMBOLS)
+        self.assertEqual(("SP500", "NASDAQ_COMPOSITE", "KOSPI"), INDEX_CODES)
+        self.assertEqual({"SP500": "^GSPC", "NASDAQ_COMPOSITE": "^IXIC"}, YAHOO_SYMBOLS)
+        self.assertEqual("1001", KOSPI_KRX_TICKER)
 
     def test_backfill_fetches_all_before_deleting_and_replaces_range(self):
         db = FakeDatabase()
         start, end = date(1990, 1, 1), date(1990, 1, 8)
         samples = {
             code: [row(code, "1990-01-02"), row(code, "1990-01-08", 101.0)]
-            for code in INDEX_SYMBOLS
+            for code in INDEX_CODES
         }
         with patch("signals.market_index_collection.fetch_index_candles",
                    side_effect=lambda code, _start, _end: samples[code]):
             stored = backfill(db, start=start, end=end)
-        self.assertEqual({code: 2 for code in INDEX_SYMBOLS}, stored)
+        self.assertEqual({code: 2 for code in INDEX_CODES}, stored)
         deletes = [call for call in db.requests if call[0] == "DELETE"]
         self.assertEqual(3, len(deletes))
         self.assertTrue(all("market_date.gte.1990-01-01" in call[2]["and"] for call in deletes))
@@ -85,13 +90,13 @@ class MarketIndexCollectionTests(unittest.TestCase):
     def test_automatic_only_writes_missing_or_current_rows(self):
         today = date(2026, 9, 14)
         db = FakeDatabase(existing={
-            code: {"2026-09-11", "2026-09-14"} for code in INDEX_SYMBOLS
+            code: {"2026-09-11", "2026-09-14"} for code in INDEX_CODES
         })
         def sample(code, _start, _end):
             return [row(code, "2026-09-11"), row(code, "2026-09-12"), row(code, "2026-09-14")]
         with patch("signals.market_index_collection.fetch_index_candles", side_effect=sample):
             stored = automatic(db, today=today)
-        self.assertEqual({code: 2 for code in INDEX_SYMBOLS}, stored)
+        self.assertEqual({code: 2 for code in INDEX_CODES}, stored)
         for _, rows, _ in db.upserts:
             self.assertEqual(["2026-09-12", "2026-09-14"], [r["market_date"] for r in rows])
 
