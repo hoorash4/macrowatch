@@ -32,3 +32,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: PYTHONPATH=backend python -m signals.market_index_collection --mode automatic
+      # Delete this one-time workflow after the production backfill is verified.
