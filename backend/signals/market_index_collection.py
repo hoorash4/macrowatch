@@ -3,7 +3,7 @@
 Backfill and automatic collection are intentionally separate:
 - Backfill may use Yahoo daily history for all three indices to reach 1990 consistently.
 - Automatic collection uses Yahoo as same-day provisional data for US indices, then promotes
-  the close to FRED only after two later US trading sessions have passed.
+  the close to FRED after one later US trading session has passed.
 - KOSPI automatic collection uses KRX directly.
 
 All rows live in ``market_index_prices``; downstream returns/drawdowns are derived from these raw
@@ -239,13 +239,13 @@ def backfill(db: SupabaseRest | None = None, *, start: date = START_DATE,
     return stored
 
 
-def _promote_fred_after_two_sessions(index_code: str, rows: list[dict[str, Any]], start: date,
+def _promote_fred_after_one_session(index_code: str, rows: list[dict[str, Any]], start: date,
                                      end: date) -> list[dict[str, Any]]:
-    """Keep two full later US trading sessions provisional, then replace close with FRED."""
-    if index_code not in FRED_SERIES or len(rows) < 3:
+    """Keep the latest US trading session provisional, then replace older closes with FRED."""
+    if index_code not in FRED_SERIES or len(rows) < 2:
         return rows
     trading_dates = [date.fromisoformat(str(row["market_date"])) for row in rows]
-    eligible = set(trading_dates[:-2])
+    eligible = set(trading_dates[:-1])
     fred = _fetch_fred_close(index_code, start, end)
     series_id = FRED_SERIES[index_code]
     symbol = YAHOO_SYMBOLS[index_code]
@@ -255,14 +255,14 @@ def _promote_fred_after_two_sessions(index_code: str, rows: list[dict[str, Any]]
         item = dict(row)
         if observed in eligible and observed in fred:
             item["close"] = fred[observed]
-            item["source"] = f"YAHOO:{symbol}:OHLC+FRED:{series_id}:CLOSE:VERIFIED_2SESSIONS"
+            item["source"] = f"YAHOO:{symbol}:OHLC+FRED:{series_id}:CLOSE:VERIFIED_1SESSION"
             item["updated_at"] = datetime.now(timezone.utc).isoformat()
         promoted.append(item)
     return promoted
 
 
 def automatic(db: SupabaseRest | None = None, *, today: date | None = None) -> dict[str, int]:
-    """Collect recent rows; US closes become canonical only after two later trading sessions."""
+    """Collect recent rows; US closes become canonical after one later trading session."""
     database = db or SupabaseRest()
     today = today or date.today()
     start = today - timedelta(days=AUTOMATIC_LOOKBACK_DAYS)
@@ -270,7 +270,7 @@ def automatic(db: SupabaseRest | None = None, *, today: date | None = None) -> d
     for code in INDEX_CODES:
         rows = fetch_index_candles(code, start, today, mode="automatic")
         if code in FRED_SERIES:
-            rows = _promote_fred_after_two_sessions(code, rows, start, today)
+            rows = _promote_fred_after_one_session(code, rows, start, today)
         # Recent window is deliberately upserted every run so provisional rows can later be
         # promoted to FRED-verified canonical closes and KRX corrections can replace prior rows.
         stored[code] = _store_batches(database, rows)
