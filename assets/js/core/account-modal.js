@@ -5,14 +5,17 @@
   let mounted = false;
 
   function syncDashboardLogo() {
-    const logo = document.querySelector('.dashboard-logo');
-    if (!logo) return;
     const fileName = document.documentElement.dataset.theme === 'dark'
       ? 'mw_logo_w.png'
       : 'mw_logo.png';
-    logo.style.backgroundImage = `url("images/${fileName}")`;
-    logo.style.width = '38px';
-    logo.style.height = '38px';
+    const dashboardLogo = document.querySelector('.dashboard-logo');
+    if (dashboardLogo) {
+      dashboardLogo.style.backgroundImage = `url("images/${fileName}")`;
+      dashboardLogo.style.width = '38px';
+      dashboardLogo.style.height = '38px';
+    }
+    const economicLogo = document.querySelector('.economic-brand-logo');
+    if (economicLogo) economicLogo.style.backgroundImage = `url("images/${fileName}")`;
   }
 
   function normalize() {
