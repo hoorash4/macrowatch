@@ -1,6 +1,6 @@
 """Canonical daily market-index collection for S&P 500, Nasdaq Composite and KOSPI.
 
-The three raw index histories live only in market_index_prices.  Historical replacement and
+The three raw index histories live only in market_index_prices. Historical replacement and
 scheduled incremental collection are deliberately separate modes.
 """
 from __future__ import annotations
@@ -100,6 +100,10 @@ def _store_batches(db: SupabaseRest, rows: list[dict[str, Any]]) -> int:
     return len(rows)
 
 
+def _date_range(start: date, end: date) -> str:
+    return f"(market_date.gte.{start.isoformat()},market_date.lte.{end.isoformat()})"
+
+
 def backfill(db: SupabaseRest | None = None, *, start: date = START_DATE,
              end: date | None = None) -> dict[str, int]:
     """Replace the requested historical range from fresh external source data."""
@@ -117,8 +121,7 @@ def backfill(db: SupabaseRest | None = None, *, start: date = START_DATE,
     for code, rows in fetched.items():
         database.request("DELETE", "market_index_prices", params={
             "index_code": f"eq.{code}",
-            "market_date": f"gte.{start.isoformat()}",
-            "and": f"(market_date.lte.{end.isoformat()})",
+            "and": _date_range(start, end),
         })
         stored[code] = _store_batches(database, rows)
     return stored
@@ -152,8 +155,7 @@ def load_close(db: SupabaseRest, index_code: str, start: date, end: date) -> dic
         page = db.request("GET", "market_index_prices", params={
             "select": "market_date,close",
             "index_code": f"eq.{index_code}",
-            "market_date": f"gte.{start.isoformat()}",
-            "and": f"(market_date.lte.{end.isoformat()})",
+            "and": _date_range(start, end),
             "order": "market_date.asc",
             "offset": str(offset),
             "limit": "1000",
