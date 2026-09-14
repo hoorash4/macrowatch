@@ -35,7 +35,7 @@ assert.ok(accountModalIndex >= 0 && accountModalDataIndex > accountModalIndex &&
   'main must load canonical account modal markup and behavior before auth.js');
 
 const builtEconomic = read(path.join(site, 'economic-charts.html'));
-assert.match(builtEconomic, /assets\/js\/core\/account-modal\.js\?v=4/);
+assert.match(builtEconomic, /assets\/js\/core\/account-modal\.js\?v=5/);
 assert.match(builtEconomic, /assets\/js\/core\/account-modal-data\.js\?v=2/);
 assert.match(builtEconomic, /assets\/js\/core\/auth-chart\.js\?v=2/);
 assert.doesNotMatch(builtEconomic, /economic-account-modal-bridge/);
