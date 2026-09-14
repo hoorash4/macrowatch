@@ -1,26 +1,21 @@
 """One-time canonical daily index backfill from 1990.
 
-US indices use Yahoo chart history. KOSPI uses Stooq history because Yahoo's ^KS11 history starts
-in 1996 and KRX's web endpoint is not reliable from unattended GitHub runners. Production KOSPI
-automatic collection remains separate and continues to use KRX.
+US indices use Yahoo chart history. KOSPI uses Naver Finance history because Yahoo's ^KS11
+history starts in 1996 and the KRX web endpoint rejects unattended GitHub runners. Production
+KOSPI automatic collection remains separate and continues to use KRX.
 """
 from __future__ import annotations
 
-import csv
+import ast
 from datetime import date, datetime, timezone
-from io import StringIO
 from typing import Any
 
 import requests
 
 from common import SupabaseRest, request_with_retry
-from signals.market_index_collection import (
-    START_DATE,
-    UPSERT_BATCH_SIZE,
-    _fetch_yahoo_candles,
-)
+from signals.market_index_collection import START_DATE, UPSERT_BATCH_SIZE, _fetch_yahoo_candles
 
-STOOQ_KOSPI_URL = "https://stooq.com/q/d/l/"
+NAVER_HISTORY_URL = "https://api.finance.naver.com/siseJson.naver"
 
 
 def _number(value: Any) -> float | None:
@@ -33,32 +28,39 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def fetch_stooq_kospi(start: date, end: date) -> list[dict[str, Any]]:
+def fetch_naver_kospi(start: date, end: date) -> list[dict[str, Any]]:
     response = request_with_retry(lambda: requests.get(
-        STOOQ_KOSPI_URL,
+        NAVER_HISTORY_URL,
         params={
-            "s": "^kospi",
-            "d1": start.strftime("%Y%m%d"),
-            "d2": end.strftime("%Y%m%d"),
-            "i": "d",
+            "symbol": "KOSPI",
+            "requestType": "1",
+            "startTime": start.strftime("%Y%m%d"),
+            "endTime": end.strftime("%Y%m%d"),
+            "timeframe": "day",
         },
-        headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0"},
-        timeout=90,
+        headers={"User-Agent": "Mozilla/5.0 MacroWatch/1.0", "Referer": "https://finance.naver.com/"},
+        timeout=120,
     ))
     response.raise_for_status()
-    if "Date" not in response.text or "Close" not in response.text:
-        raise RuntimeError(f"Stooq KOSPI returned non-CSV response: {response.text[:160]!r}")
+    try:
+        payload = ast.literal_eval(response.text.strip())
+    except (SyntaxError, ValueError) as exc:
+        raise RuntimeError(f"Naver KOSPI returned invalid history: {response.text[:160]!r}") from exc
+    if not isinstance(payload, list) or len(payload) < 2:
+        raise RuntimeError(f"Naver KOSPI returned empty history: {response.text[:160]!r}")
 
     rows: list[dict[str, Any]] = []
-    for item in csv.DictReader(StringIO(response.text)):
+    for item in payload[1:]:
+        if not isinstance(item, list) or len(item) < 6:
+            continue
         try:
-            observed = date.fromisoformat(str(item.get("Date")))
+            observed = datetime.strptime(str(item[0]), "%Y%m%d").date()
         except (TypeError, ValueError):
             continue
-        open_value = _number(item.get("Open"))
-        high_value = _number(item.get("High"))
-        low_value = _number(item.get("Low"))
-        close_value = _number(item.get("Close"))
+        open_value = _number(item[1])
+        high_value = _number(item[2])
+        low_value = _number(item[3])
+        close_value = _number(item[4])
         if None in (open_value, high_value, low_value, close_value):
             continue
         rows.append({
@@ -68,23 +70,19 @@ def fetch_stooq_kospi(start: date, end: date) -> list[dict[str, Any]]:
             "high": high_value,
             "low": low_value,
             "close": close_value,
-            "volume": _number(item.get("Volume")),
-            "source": "STOOQ:^KOSPI:BACKFILL",
+            "volume": _number(item[5]),
+            "source": "NAVER:KOSPI:BACKFILL",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
     rows.sort(key=lambda row: str(row["market_date"]))
     if not rows:
-        raise RuntimeError("Stooq KOSPI returned no usable daily rows")
+        raise RuntimeError("Naver KOSPI returned no usable daily rows")
     return rows
 
 
 def _store(db: SupabaseRest, rows: list[dict[str, Any]]) -> int:
     for offset in range(0, len(rows), UPSERT_BATCH_SIZE):
-        db.upsert(
-            "market_index_prices",
-            rows[offset:offset + UPSERT_BATCH_SIZE],
-            conflict="index_code,market_date",
-        )
+        db.upsert("market_index_prices", rows[offset:offset + UPSERT_BATCH_SIZE], conflict="index_code,market_date")
     return len(rows)
 
 
@@ -99,7 +97,7 @@ def _replace(db: SupabaseRest, index_code: str, rows: list[dict[str, Any]], star
 def _validate(index_code: str, rows: list[dict[str, Any]], start: date, end: date) -> None:
     first = date.fromisoformat(str(rows[0]["market_date"]))
     last = date.fromisoformat(str(rows[-1]["market_date"]))
-    if first.year > start.year or last < end.fromordinal(end.toordinal() - 7):
+    if first.year > start.year or last.toordinal() < end.toordinal() - 7:
         raise RuntimeError(f"{index_code} history failed coverage validation: {first}..{last}")
 
 
@@ -108,16 +106,13 @@ def run(start: date = START_DATE, end: date | None = None) -> dict[str, int]:
     fetched = {
         "SP500": _fetch_yahoo_candles("SP500", start, end),
         "NASDAQ_COMPOSITE": _fetch_yahoo_candles("NASDAQ_COMPOSITE", start, end),
-        "KOSPI": fetch_stooq_kospi(start, end),
+        "KOSPI": fetch_naver_kospi(start, end),
     }
     for code, rows in fetched.items():
         _validate(code, rows, start, end)
 
     db = SupabaseRest()
-    stored: dict[str, int] = {}
-    for code, rows in fetched.items():
-        stored[code] = _replace(db, code, rows, start, end)
-    return stored
+    return {code: _replace(db, code, rows, start, end) for code, rows in fetched.items()}
 
 
 if __name__ == "__main__":
