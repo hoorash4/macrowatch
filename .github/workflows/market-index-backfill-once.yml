@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/market-index-backfill-once.yml
       - backend/signals/market_index_collection.py
+      - backend/signals/market_index_backfill.py
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: PYTHONPATH=backend python -m signals.market_index_collection --mode backfill --start 1990-01-01
+        run: PYTHONPATH=backend python -m signals.market_index_backfill
       - name: Verify automatic collection path
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
