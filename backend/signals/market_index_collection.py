@@ -1,14 +1,20 @@
 """Canonical daily market-index collection for S&P 500, Nasdaq Composite and KOSPI.
 
-The three raw index histories live only in ``market_index_prices``. Historical replacement and
-scheduled incremental collection are deliberately separate modes. US indices come from Yahoo's
-chart history; KOSPI comes directly from KRX index-history data so the canonical series reaches
-back to 1990 without depending on a duplicate derived source.
+Backfill and automatic collection are intentionally separate:
+- Backfill may use Yahoo daily history for all three indices to reach 1990 consistently.
+- Automatic collection uses Yahoo as same-day provisional data for US indices, then promotes
+  the close to FRED only after two later US trading sessions have passed.
+- KOSPI automatic collection uses KRX directly.
+
+All rows live in ``market_index_prices``; downstream returns/drawdowns are derived from these raw
+index rows instead of being collected independently.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 from datetime import date, datetime, time, timedelta, timezone
+from io import StringIO
 from typing import Any
 from urllib.parse import quote
 
@@ -17,12 +23,17 @@ import requests
 from common import SupabaseRest, request_with_retry
 
 START_DATE = date(1990, 1, 1)
-AUTOMATIC_LOOKBACK_DAYS = 14
+AUTOMATIC_LOOKBACK_DAYS = 21
 UPSERT_BATCH_SIZE = 500
 INDEX_CODES = ("SP500", "NASDAQ_COMPOSITE", "KOSPI")
 YAHOO_SYMBOLS = {
     "SP500": "^GSPC",
     "NASDAQ_COMPOSITE": "^IXIC",
+    "KOSPI": "^KS11",
+}
+FRED_SERIES = {
+    "SP500": "SP500",
+    "NASDAQ_COMPOSITE": "NASDAQCOM",
 }
 KOSPI_KRX_TICKER = "1001"
 KRX_INDEX_URL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
@@ -30,6 +41,7 @@ KRX_INDEX_BLD = "dbms/MDC/STAT/standard/MDCSTAT00301"
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 MacroWatch/1.0",
     "Referer": "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd",
+    "X-Requested-With": "XMLHttpRequest",
 }
 
 
@@ -39,7 +51,7 @@ def _epoch(day: date) -> int:
 
 def _number(value: Any) -> float | None:
     text = str(value or "").replace(",", "").strip()
-    if not text or text == "-":
+    if not text or text in {"-", "."}:
         return None
     try:
         return float(text)
@@ -90,10 +102,6 @@ def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[s
         if not (start <= observed <= end):
             continue
         volume_raw = fields["volume"][i] if i < len(fields["volume"]) else None
-        try:
-            volume = float(volume_raw) if volume_raw is not None else None
-        except (TypeError, ValueError):
-            volume = None
         rows.append({
             "index_code": index_code,
             "market_date": observed.isoformat(),
@@ -101,11 +109,32 @@ def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[s
             "high": high_value,
             "low": low_value,
             "close": close_value,
-            "volume": volume,
-            "source": f"YAHOO:{symbol}",
+            "volume": _number(volume_raw),
+            "source": f"YAHOO:{symbol}:PROVISIONAL",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
     return rows
+
+
+def _fetch_fred_close(index_code: str, start: date, end: date) -> dict[date, float]:
+    series_id = FRED_SERIES[index_code]
+    response = request_with_retry(lambda: requests.get(
+        "https://fred.stlouisfed.org/graph/fredgraph.csv",
+        params={"id": series_id, "cosd": start.isoformat(), "coed": end.isoformat()},
+        headers={"User-Agent": HTTP_HEADERS["User-Agent"]},
+        timeout=60,
+    ))
+    response.raise_for_status()
+    values: dict[date, float] = {}
+    for item in csv.DictReader(StringIO(response.text)):
+        try:
+            observed = date.fromisoformat(str(item.get("observation_date") or item.get("DATE")))
+        except (TypeError, ValueError):
+            continue
+        value = _number(item.get(series_id))
+        if value is not None and start <= observed <= end:
+            values[observed] = value
+    return values
 
 
 def _fetch_kospi_chunk(start: date, end: date) -> list[dict[str, Any]]:
@@ -155,7 +184,6 @@ def _fetch_kospi_chunk(start: date, end: date) -> list[dict[str, Any]]:
 
 
 def _fetch_kospi_candles(start: date, end: date) -> list[dict[str, Any]]:
-    """Fetch official KRX KOSPI index history in bounded calendar-year chunks."""
     rows: list[dict[str, Any]] = []
     for year in range(start.year, end.year + 1):
         lower = max(start, date(year, 1, 1))
@@ -164,15 +192,17 @@ def _fetch_kospi_candles(start: date, end: date) -> list[dict[str, Any]]:
     return rows
 
 
-def fetch_index_candles(index_code: str, start: date, end: date) -> list[dict[str, Any]]:
-    if index_code == "KOSPI":
-        rows = _fetch_kospi_candles(start, end)
-    elif index_code in YAHOO_SYMBOLS:
-        rows = _fetch_yahoo_candles(index_code, start, end)
-    else:
-        raise ValueError(f"unsupported canonical market index: {index_code}")
+def _dedupe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     unique = {str(row["market_date"]): row for row in rows}
-    result_rows = [unique[key] for key in sorted(unique)]
+    return [unique[key] for key in sorted(unique)]
+
+
+def fetch_index_candles(index_code: str, start: date, end: date, *, mode: str = "backfill") -> list[dict[str, Any]]:
+    if mode == "automatic" and index_code == "KOSPI":
+        rows = _fetch_kospi_candles(start, end)
+    else:
+        rows = _fetch_yahoo_candles(index_code, start, end)
+    result_rows = _dedupe(rows)
     if not result_rows:
         raise RuntimeError(f"{index_code} returned no usable daily rows")
     return result_rows
@@ -191,45 +221,59 @@ def _date_range(start: date, end: date) -> str:
 
 def backfill(db: SupabaseRest | None = None, *, start: date = START_DATE,
              end: date | None = None) -> dict[str, int]:
-    """Replace the requested historical range from fresh external source data."""
+    """Replace a historical range. Yahoo is allowed here as the long-history source."""
     database = db or SupabaseRest()
     end = end or date.today()
-    fetched = {code: fetch_index_candles(code, start, end) for code in INDEX_CODES}
+    fetched = {code: fetch_index_candles(code, start, end, mode="backfill") for code in INDEX_CODES}
     for code, rows in fetched.items():
         first = date.fromisoformat(str(rows[0]["market_date"]))
         last = date.fromisoformat(str(rows[-1]["market_date"]))
         if first.year > start.year or last < end - timedelta(days=7):
-            raise RuntimeError(
-                f"{code} history failed coverage validation: {first.isoformat()}..{last.isoformat()}"
-            )
+            raise RuntimeError(f"{code} history failed coverage validation: {first}..{last}")
     stored: dict[str, int] = {}
     for code, rows in fetched.items():
         database.request("DELETE", "market_index_prices", params={
-            "index_code": f"eq.{code}",
-            "and": _date_range(start, end),
+            "index_code": f"eq.{code}", "and": _date_range(start, end),
         })
         stored[code] = _store_batches(database, rows)
     return stored
 
 
+def _promote_fred_after_two_sessions(index_code: str, rows: list[dict[str, Any]], start: date,
+                                     end: date) -> list[dict[str, Any]]:
+    """Keep two full later US trading sessions provisional, then replace close with FRED."""
+    if index_code not in FRED_SERIES or len(rows) < 3:
+        return rows
+    trading_dates = [date.fromisoformat(str(row["market_date"])) for row in rows]
+    eligible = set(trading_dates[:-2])
+    fred = _fetch_fred_close(index_code, start, end)
+    series_id = FRED_SERIES[index_code]
+    symbol = YAHOO_SYMBOLS[index_code]
+    promoted: list[dict[str, Any]] = []
+    for row in rows:
+        observed = date.fromisoformat(str(row["market_date"]))
+        item = dict(row)
+        if observed in eligible and observed in fred:
+            item["close"] = fred[observed]
+            item["source"] = f"YAHOO:{symbol}:OHLC+FRED:{series_id}:CLOSE:VERIFIED_2SESSIONS"
+            item["updated_at"] = datetime.now(timezone.utc).isoformat()
+        promoted.append(item)
+    return promoted
+
+
 def automatic(db: SupabaseRest | None = None, *, today: date | None = None) -> dict[str, int]:
-    """Fetch a short recent window and add only missing/current observations."""
+    """Collect recent rows; US closes become canonical only after two later trading sessions."""
     database = db or SupabaseRest()
     today = today or date.today()
     start = today - timedelta(days=AUTOMATIC_LOOKBACK_DAYS)
     stored: dict[str, int] = {}
     for code in INDEX_CODES:
-        rows = fetch_index_candles(code, start, today)
-        dates = [str(row["market_date"]) for row in rows]
-        existing = database.request("GET", "market_index_prices", params={
-            "select": "market_date",
-            "index_code": f"eq.{code}",
-            "market_date": f"in.({','.join(dates)})",
-        }) or []
-        existing_dates = {str(row["market_date"]) for row in existing}
-        writable = [row for row in rows if row["market_date"] == today.isoformat()
-                    or row["market_date"] not in existing_dates]
-        stored[code] = _store_batches(database, writable) if writable else 0
+        rows = fetch_index_candles(code, start, today, mode="automatic")
+        if code in FRED_SERIES:
+            rows = _promote_fred_after_two_sessions(code, rows, start, today)
+        # Recent window is deliberately upserted every run so provisional rows can later be
+        # promoted to FRED-verified canonical closes and KRX corrections can replace prior rows.
+        stored[code] = _store_batches(database, rows)
     return stored
 
 
@@ -242,8 +286,7 @@ def load_close(db: SupabaseRest, index_code: str, start: date, end: date) -> dic
             "index_code": f"eq.{index_code}",
             "and": _date_range(start, end),
             "order": "market_date.asc",
-            "offset": str(offset),
-            "limit": "1000",
+            "offset": str(offset), "limit": "1000",
         }) or []
         for row in page:
             if row.get("close") is not None:
