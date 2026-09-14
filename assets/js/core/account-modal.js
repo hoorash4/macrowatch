@@ -11,6 +11,8 @@
       ? 'mw_logo_w.png'
       : 'mw_logo.png';
     logo.style.backgroundImage = `url("images/${fileName}")`;
+    logo.style.width = '38px';
+    logo.style.height = '38px';
   }
 
   function normalize() {
