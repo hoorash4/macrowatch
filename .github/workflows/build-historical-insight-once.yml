@@ -1,0 +1,190 @@
+name: Build Historical Insight shell
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-historical-insight-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Add Historical Insight navigation and shell
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index = Path('index.html')
+          text = index.read_text(encoding='utf-8')
+          old = '''          <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적 알림</span></button>'''
+          new = old + '''\n          <a class="dashboard-nav-item dashboard-nav-tool dashboard-nav-tool-group-start" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>\n          <a class="dashboard-nav-item dashboard-nav-tool" href="historical-insight.html"><i class="fa-solid fa-clock-rotate-left"></i><span>히스토리컬 인사이트</span></a>'''
+          if 'historical-insight.html' not in text:
+              if old not in text:
+                  raise SystemExit('index navigation anchor not found')
+              text = text.replace(old, new, 1)
+          text = text.replace('assets/css/styles.css?v=190', 'assets/css/styles.css?v=191')
+          index.write_text(text, encoding='utf-8')
+
+          styles = Path('assets/css/styles.css')
+          css = styles.read_text(encoding='utf-8')
+          marker = '/* ===== Research tool navigation ===== */'
+          if marker not in css:
+              css += r'''
+
+/* ===== Research tool navigation ===== */
+.dashboard-nav-tool {
+  color:#536b7d;
+  font-weight:750;
+}
+.dashboard-nav-tool-group-start {
+  margin-left:.15rem;
+  padding-left:1rem;
+}
+.dashboard-nav-tool-group-start::before {
+  position:absolute;
+  top:50%;
+  left:.18rem;
+  width:1px;
+  height:1.2rem;
+  content:"";
+  background:rgba(20,36,51,.18);
+  transform:translateY(-50%);
+}
+.dashboard-nav-tool:hover {
+  color:var(--color-brand-navy);
+}
+.dashboard-nav-tool::after {
+  height:2px;
+  background:var(--color-brand-gold-dark);
+}
+html[data-theme="dark"] .dashboard-nav-tool,
+html[data-theme="dark"] .dashboard-nav-tool:hover {
+  color:#d4bf95;
+}
+html[data-theme="dark"] .dashboard-nav-tool-group-start::before {
+  background:rgba(203,213,225,.22);
+}
+@media (max-width:1180px) {
+  .dashboard-nav-inner { gap:clamp(.55rem,1vw,.9rem); }
+  .dashboard-wordmark { margin-right:clamp(.65rem,1.6vw,1.5rem); }
+  .dashboard-nav-item { font-size:.76rem; }
+  .dashboard-nav-tool-group-start { padding-left:.8rem; }
+}
+'''
+          styles.write_text(css, encoding='utf-8')
+
+          econ = Path('economic-charts.html')
+          text = econ.read_text(encoding='utf-8')
+          old_nav = '''        <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><a class="is-active" href="economic-charts.html" aria-current="page">경제지표 챠트</a>'''
+          new_nav = '''        <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><span class="economic-nav-divider" aria-hidden="true"></span><a class="research-nav is-active" href="economic-charts.html" aria-current="page">경제지표 챠트</a><a class="research-nav" href="historical-insight.html">히스토리컬 인사이트</a>'''
+          if 'historical-insight.html' not in text:
+              if old_nav not in text:
+                  raise SystemExit('economic navigation anchor not found')
+              text = text.replace(old_nav, new_nav, 1)
+          text = text.replace('assets/css/styles.css?v=190', 'assets/css/styles.css?v=191')
+          text = text.replace('assets/css/economic-charts.css?v=11', 'assets/css/economic-charts.css?v=12')
+          econ.write_text(text, encoding='utf-8')
+
+          econ_css = Path('assets/css/economic-charts.css')
+          css = econ_css.read_text(encoding='utf-8')
+          marker = '/* Research tools are a distinct workspace family. */'
+          if marker not in css:
+              css += r'''
+
+/* Research tools are a distinct workspace family. */
+.economic-nav-divider{width:1px;height:20px;align-self:center;margin:0 3px;background:#d7dde3}.economic-nav a.research-nav{border:1px solid #d8dee5;background:#f8fafc;color:#334155}.economic-nav a.research-nav:hover{border-color:#b8c3ce;background:#eef2f6;color:#111827}.economic-nav a.research-nav.is-active{border-color:#111827;background:#111827;color:#fff;box-shadow:0 2px 8px rgba(15,23,42,.12)}
+html[data-theme="dark"] .economic-nav-divider{background:#334155}html[data-theme="dark"] .economic-nav a.research-nav{border-color:#334155;background:#111c2f;color:#cbd5e1}html[data-theme="dark"] .economic-nav a.research-nav:hover{border-color:#64748b;background:#17243a;color:#fff}html[data-theme="dark"] .economic-nav a.research-nav.is-active{border-color:#d1a55d;background:#d1a55d;color:#071b42}
+'''
+          econ_css.write_text(css, encoding='utf-8')
+
+          Path('assets/css/historical-insight.css').write_text(r'''body.historical-insight-page{margin:0;background:#f3f4f6;color:#111827;font-family:Pretendard,system-ui,sans-serif}.historical-main{box-sizing:border-box;width:100%;max-width:1540px;margin:0 auto;padding:20px}.historical-hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:16px}.historical-hero h1{margin:0;font-size:26px;letter-spacing:-.03em}.historical-hero p{margin:6px 0 0;color:#6b7280;font-size:13px}.historical-kicker{display:block;margin-bottom:6px;color:#9a6f2c;font-size:10px;font-weight:800;letter-spacing:.12em}.historical-stage{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:610px;border:1px solid #d1d5db;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 4px 18px rgba(15,23,42,.05)}.historical-case-panel{padding:14px;border-right:1px solid #e5e7eb;background:#f9fafb}.historical-panel-label{margin:0 0 10px;color:#9ca3af;font-size:10px;font-weight:800;letter-spacing:.08em}.historical-case-list{display:grid;gap:5px}.historical-case{padding:9px 10px;border:0;border-radius:8px;background:transparent;color:#6b7280;text-align:left;font-size:12px;font-weight:700}.historical-case.is-active{background:#111827;color:#fff}.historical-case[disabled]{cursor:default;opacity:.7}.historical-workspace{display:grid;grid-template-rows:auto minmax(340px,1fr) auto;min-width:0}.historical-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #f0f2f4}.historical-toolbar strong{font-size:15px}.historical-market-tabs{display:flex;gap:6px}.historical-market-tabs button{padding:6px 9px;border:1px solid #d1d5db;border-radius:7px;background:#fff;color:#6b7280;font-size:10px;font-weight:750}.historical-market-tabs button.is-active{border-color:#111827;background:#111827;color:#fff}.historical-chart-placeholder{position:relative;display:grid;place-items:center;min-height:340px;background:linear-gradient(180deg,#fff,#fafbfc);color:#9ca3af;font-size:12px}.historical-chart-placeholder::before{position:absolute;inset:12% 8%;content:"";background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),#edf0f3 25%);pointer-events:none}.historical-placeholder-copy{position:relative;z-index:1;padding:11px 14px;border:1px dashed #cbd5e1;border-radius:9px;background:rgba(255,255,255,.9)}.historical-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:14px 16px;border-top:1px solid #f0f2f4;background:#fbfcfd}.historical-summary article{min-height:74px;padding:11px;border:1px solid #e5e7eb;border-radius:9px;background:#fff}.historical-summary small{display:block;color:#9ca3af;font-size:9px;font-weight:800;letter-spacing:.06em}.historical-summary strong{display:block;margin-top:7px;color:#374151;font-size:12px}.historical-summary p{margin:5px 0 0;color:#9ca3af;font-size:10px;line-height:1.4}.historical-future-tabs{display:flex;gap:5px;margin-top:12px}.historical-future-tabs span{padding:5px 8px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;color:#9ca3af;font-size:9px;font-weight:700}.historical-future-tabs span:first-child{border-color:#d1a55d;color:#8c6428;background:#fffaf1}html[data-theme="dark"] body.historical-insight-page{background:#090f1a;color:#e7edf5}html[data-theme="dark"] .historical-stage,html[data-theme="dark"] .historical-summary article{background:#111c2f;border-color:#334155}html[data-theme="dark"] .historical-case-panel,html[data-theme="dark"] .historical-summary{background:#0f172a;border-color:#334155}html[data-theme="dark"] .historical-toolbar{border-color:#263449}html[data-theme="dark"] .historical-chart-placeholder{background:linear-gradient(180deg,#0b1322,#0f172a)}html[data-theme="dark"] .historical-chart-placeholder::before{background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),#243247 25%)}html[data-theme="dark"] .historical-placeholder-copy{border-color:#40536b;background:rgba(17,28,47,.92);color:#8291a5}html[data-theme="dark"] .historical-summary strong{color:#dbe5f0}html[data-theme="dark"] .historical-market-tabs button,html[data-theme="dark"] .historical-future-tabs span{border-color:#334155;background:#111c2f;color:#a9b5c5}html[data-theme="dark"] .historical-market-tabs button.is-active{border-color:#d1a55d;background:#d1a55d;color:#071b42}@media(max-width:850px){.historical-main{padding:10px}.historical-hero{align-items:flex-start;flex-direction:column}.historical-stage{grid-template-columns:1fr}.historical-case-panel{border-right:0;border-bottom:1px solid #e5e7eb}.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-toolbar{align-items:flex-start;flex-direction:column}.historical-summary{grid-template-columns:1fr}}
+''', encoding='utf-8')
+
+          Path('historical-insight.html').write_text(r'''<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>히스토리컬 인사이트 · MacroWatch</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="assets/css/styles.css?v=191">
+  <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=1">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/core/config.js?v=1"></script>
+  <script src="assets/js/core/frontend-core.js?v=9"></script>
+</head>
+<body class="historical-insight-page">
+  <div class="economic-shell">
+    <header class="economic-topbar">
+      <a class="economic-brand" href="index.html"><span class="economic-brand-logo" aria-hidden="true"></span><span>MacroWatch</span><small>EVOTIVE RESEARCH</small></a>
+      <nav class="economic-nav" aria-label="MacroWatch 메뉴">
+        <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><span class="economic-nav-divider" aria-hidden="true"></span><a class="research-nav" href="economic-charts.html">경제지표 챠트</a><a class="research-nav is-active" href="historical-insight.html" aria-current="page">히스토리컬 인사이트</a>
+      </nav>
+      <div class="dashboard-nav-actions" aria-label="계정 메뉴">
+        <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
+        <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" hidden><i class="fa-solid fa-gear"></i></a>
+        <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃"><i class="fa-solid fa-right-from-bracket"></i></button>
+      </div>
+    </header>
+
+    <main class="historical-main">
+      <div class="historical-hero">
+        <div><span class="historical-kicker">HISTORICAL INSIGHT</span><h1>히스토리컬 인사이트</h1><p>과거 시장 국면의 구조를 확인하고 현재 시장을 해석하기 위한 기준을 만듭니다.</p><div class="historical-future-tabs" aria-label="향후 기능 구조"><span>사례 탐색</span><span>현재 비교</span><span>팩트 시트</span><span>전환 신호</span></div></div>
+      </div>
+
+      <section class="historical-stage" aria-label="히스토리컬 인사이트 작업영역">
+        <aside class="historical-case-panel">
+          <p class="historical-panel-label">HISTORICAL CASES</p>
+          <div class="historical-case-list">
+            <button type="button" class="historical-case is-active">닷컴 버블</button>
+            <button type="button" class="historical-case" disabled>한국 IT 버블</button>
+            <button type="button" class="historical-case" disabled>중국 산업재 버블</button>
+            <button type="button" class="historical-case" disabled>글로벌 금융위기</button>
+            <button type="button" class="historical-case" disabled>코로나 충격</button>
+            <button type="button" class="historical-case" disabled>2022 긴축장</button>
+          </div>
+        </aside>
+        <div class="historical-workspace">
+          <header class="historical-toolbar">
+            <div><strong>국면 차트</strong><div class="economic-chart-meta">시작점 · 고점 · 저점 · 종료점을 검증하는 영역</div></div>
+            <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택"><button type="button">S&amp;P500</button><button type="button" class="is-active">NASDAQ Composite</button><button type="button">KOSPI</button></div>
+          </header>
+          <div class="historical-chart-placeholder"><div class="historical-placeholder-copy">차트와 국면 마커는 다음 단계에서 연결됩니다.</div></div>
+          <div class="historical-summary">
+            <article><small>PHASE MARKERS</small><strong>시작 · 고점 · 저점 · 종료</strong><p>차트에서 각 기준점을 확인하고 저장하는 구조입니다.</p></article>
+            <article><small>HISTORICAL FACTS</small><strong>국면 팩트</strong><p>금리·스프레드·밸류에이션 등 시점별 사실을 연결합니다.</p></article>
+            <article><small>CURRENT COMPARISON</small><strong>현재 유사도</strong><p>확정된 과거 국면과 현재를 비교하는 최종 확장 영역입니다.</p></article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/js/core/account-modal.js?v=5"></script>
+  <script src="assets/js/core/account-modal-data.js?v=2"></script>
+  <script src="assets/js/core/auth-chart.js?v=2"></script>
+</body>
+</html>
+''', encoding='utf-8')
+          PY
+
+      - name: Commit generated shell
+        run: |
+          git config user.name "MacroWatch Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html economic-charts.html historical-insight.html assets/css/styles.css assets/css/economic-charts.css assets/css/historical-insight.css
+          git commit -m "Add Historical Insight workspace shell"
+          git push origin main
