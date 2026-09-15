@@ -101,16 +101,16 @@ class CollectorIsolationTests(unittest.TestCase):
         self.assertNotIn('.from("korea_foreign_flow_daily").delete()', function)
         self.assertNotIn('.from("korea_foreign_flow_raw").delete()', function)
 
-    def test_market_context_automatic_only_refreshes_current_cycle_or_missing_rows(self) -> None:
+    def test_market_context_reads_canonical_rows_after_automatic_collection(self) -> None:
         function = text("supabase/functions/market-context/index.ts")
         workflow = text(".github/workflows/market-context.yml")
-        self.assertIn('type CollectionMode = "automatic" | "bootstrap"', function)
-        self.assertIn('body.mode === "bootstrap" ? "bootstrap" : "automatic"', function)
-        self.assertIn('const automaticRows = rows.filter((row) => row.market_date === todayIso || !existingDates.has(row.market_date))', function)
-        self.assertIn('.upsert(automaticRows, { onConflict: "index_code,market_date" })', function)
-        self.assertNotIn('(count || 0) >= 80 ? REFRESH_DAYS : BOOTSTRAP_DAYS', function)
+        self.assertIn('.from("market_index_prices")', function)
+        self.assertIn('.eq("index_code", "KOSPI")', function)
+        self.assertNotIn('.upsert(', function)
+        self.assertNotIn('fetch(', function)
         self.assertIn("github.event_name == 'schedule' && 'automatic'", workflow)
-        self.assertIn('options: [automatic, bootstrap]', workflow)
+        self.assertIn('options: [automatic, backfill]', workflow)
+        self.assertIn('signals.market_index_collection', workflow)
 
     def test_sector_collection_does_not_run_retention_deletes_or_initialize_history(self) -> None:
         function = text("supabase/functions/sector-flow/index.ts")

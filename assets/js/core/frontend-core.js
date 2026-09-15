@@ -362,7 +362,8 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
       return chart;
     };
     wrapped.__macroWatchThemeAware = true;
-    library.createChart = wrapped;
+    // CDN 번들은 API 객체를 동결할 수 있으므로 원본을 수정하지 않습니다.
+    window.LightweightCharts = { ...library, createChart: wrapped };
   }
 
   function applyThemePreference(preference, { cache = true, announce = true } = {}) {
@@ -475,6 +476,21 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
 
   function createSupabaseClient() {
     return window.supabase?.createClient(supabaseUrl, supabasePublishableKey) || null;
+  }
+
+  // 정렬된 전체 시계열 조회. 페이지가 실패하면 부분 결과를 반환하지 않습니다.
+  async function queryAll(client, table, select, dateKey, filters = [], configure = query => query) {
+    const rows = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      let query = client.from(table).select(select).order(dateKey, { ascending: true })
+        .range(from, from + pageSize - 1);
+      for (const [key, value] of filters) query = query.eq(key, value);
+      const { data, error } = await configure(query);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) return rows;
+    }
   }
 
   function escapeHtml(value) {
@@ -611,6 +627,7 @@ html[data-theme="dark"] .economic-modal-actions .danger { background: var(--them
     config: Object.freeze({ supabaseUrl, supabasePublishableKey }),
     createFunctionClient,
     createSupabaseClient,
+    queryAll,
     escapeHtml,
     formatDisplayNumber,
     readDisplayNumberInput,

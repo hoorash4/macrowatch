@@ -32,6 +32,7 @@ const window = {
   dispatchEvent() {},
   addEventListener() {},
   supabase: null,
+  LightweightCharts: Object.freeze({ createChart: () => ({ applyOptions() {}, remove() {} }) }),
 };
 const context = {
   window,
@@ -47,6 +48,9 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source, context, { filename: 'frontend-core.js' });
 
+const chart = window.LightweightCharts.createChart({});
+assert.ok(window.LightweightCharts.createChart.__macroWatchThemeAware);
+chart.remove();
 const theme = window.MacroWatchTheme;
 assert.ok(theme, 'theme API should be exposed');
 assert.equal(theme.normalizeThemePreference('system'), 'system');

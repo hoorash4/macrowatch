@@ -277,7 +277,7 @@ class SharedCalculationTests(unittest.TestCase):
         months = ["2023-01-01", "2023-02-01", "2023-03-01"]
         values = {
             key: {month: 1.0 for month in months}
-            for key in kr.SERIES
+            for key in (*kr.SERIES, "kospi_close")
         }
         rows = kr.build_monthly_rows(values, {"2023-02-01": 18.0}, date(2023, 3, 15))
         self.assertEqual([row["month"] for row in rows], ["2023-02-01", "2023-03-01"])

@@ -12,7 +12,7 @@ for (const id of ['profile-button', 'admin-page-link', 'logout-button']) {
 }
 
 assert.doesNotMatch(html, /assets\/js\/core\/auth\.js/);
-assert.match(html, /assets\/js\/core\/account-modal\.js\?v=4/);
+assert.match(html, /assets\/js\/core\/account-modal\.js\?v=5/);
 assert.match(html, /assets\/js\/core\/account-modal-data\.js\?v=2/);
 assert.match(html, /assets\/js\/core\/auth-chart\.js\?v=2/);
 assert.doesNotMatch(html, /window\.macroWatchSupabase[\s\S]*is_admin/);

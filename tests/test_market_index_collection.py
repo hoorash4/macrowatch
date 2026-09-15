@@ -55,7 +55,7 @@ def row(code, day, close=100.0):
 class MarketIndexCollectionTests(unittest.TestCase):
     def test_canonical_index_set(self):
         self.assertEqual(("SP500", "NASDAQ_COMPOSITE", "KOSPI"), INDEX_CODES)
-        self.assertEqual({"SP500": "^GSPC", "NASDAQ_COMPOSITE": "^IXIC"}, YAHOO_SYMBOLS)
+        self.assertEqual({"SP500": "^GSPC", "NASDAQ_COMPOSITE": "^IXIC", "KOSPI": "^KS11"}, YAHOO_SYMBOLS)
         self.assertEqual("1001", KOSPI_KRX_TICKER)
 
     def test_backfill_fetches_all_before_deleting_and_replaces_range(self):
@@ -66,7 +66,7 @@ class MarketIndexCollectionTests(unittest.TestCase):
             for code in INDEX_CODES
         }
         with patch("signals.market_index_collection.fetch_index_candles",
-                   side_effect=lambda code, _start, _end: samples[code]):
+                   side_effect=lambda code, _start, _end, **kwargs: samples[code]):
             stored = backfill(db, start=start, end=end)
         self.assertEqual({code: 2 for code in INDEX_CODES}, stored)
         deletes = [call for call in db.requests if call[0] == "DELETE"]
@@ -77,7 +77,7 @@ class MarketIndexCollectionTests(unittest.TestCase):
     def test_backfill_does_not_delete_if_any_source_fails_validation(self):
         db = FakeDatabase()
         start, end = date(1990, 1, 1), date(1990, 1, 8)
-        def sample(code, _start, _end):
+        def sample(code, _start, _end, **kwargs):
             if code == "NASDAQ_COMPOSITE":
                 return [row(code, "1991-01-02")]
             return [row(code, "1990-01-02"), row(code, "1990-01-08")]
@@ -87,18 +87,22 @@ class MarketIndexCollectionTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "DELETE" for call in db.requests))
         self.assertEqual([], db.upserts)
 
-    def test_automatic_only_writes_missing_or_current_rows(self):
+    def test_automatic_refreshes_recent_provisional_rows_with_fred_closes(self):
         today = date(2026, 9, 14)
         db = FakeDatabase(existing={
             code: {"2026-09-11", "2026-09-14"} for code in INDEX_CODES
         })
-        def sample(code, _start, _end):
+        def sample(code, _start, _end, **kwargs):
             return [row(code, "2026-09-11"), row(code, "2026-09-12"), row(code, "2026-09-14")]
-        with patch("signals.market_index_collection.fetch_index_candles", side_effect=sample):
+        with patch("signals.market_index_collection.fetch_index_candles", side_effect=sample), patch("signals.market_index_collection._fetch_fred_close", return_value={date(2026, 9, 11): 99.0}):
             stored = automatic(db, today=today)
-        self.assertEqual({code: 2 for code in INDEX_CODES}, stored)
+        self.assertEqual({code: 3 for code in INDEX_CODES}, stored)
         for _, rows, _ in db.upserts:
-            self.assertEqual(["2026-09-12", "2026-09-14"], [r["market_date"] for r in rows])
+            self.assertEqual(["2026-09-11", "2026-09-12", "2026-09-14"], [r["market_date"] for r in rows])
+            if rows[0]["index_code"] != "KOSPI":
+                self.assertEqual(99.0, rows[0]["close"])
+                self.assertIn("VERIFIED_1SESSION", rows[0]["source"])
+            self.assertEqual(100.0, rows[-1]["close"])
 
     def test_load_close_reads_market_index_prices(self):
         db = FakeDatabase(pages=[[{"market_date": "2026-09-11", "close": "123.45"}]])

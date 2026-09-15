@@ -14,6 +14,7 @@ HTML 진입점은 `index.html`과 `admin.html`이다. 함수 URL, DB 계약, 예
 | `assets/js/dashboard/dashboard-charts.js` | 뉴스·스트레스·신용위험·섹터 조회와 렌더링 |
 | `assets/js/charts/analysis-chart-utils.js` | 보간, 축 범위, 스크롤 공통 처리 |
 | `assets/js/charts/*-chart.js` | 기능별 차트 조회와 렌더링 |
+| `assets/js/historical-insight` | 지수 원천 조회, 차트 어댑터, 페이지 상태 (Phase 1) |
 | `assets/js/admin` | 관리자 화면, 정책 검토, 카드 순서 |
 | `assets/js/policy` | FOMC 브리핑 |
 | `assets/css/styles.css` | 기존 규칙 순서를 유지한 스타일 |

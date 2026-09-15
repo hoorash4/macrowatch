@@ -83,7 +83,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=25', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=26', html)
         self.assertIn('MIN_BAR_SPACING=.01', script)
         self.assertIn('minBarSpacing:MIN_BAR_SPACING', script)
         self.assertIn('MIN_DATA_SCREEN_RATIO=.5', script)

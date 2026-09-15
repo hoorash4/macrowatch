@@ -39,7 +39,7 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - `assets/css`: 실제 스타일 소스
 - 루트에 JS/CSS 실소스를 중복 저장하지 않는다. 이전 공개 URL 호환은 빌드 결과에서만 생성한다.
 
-Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 날짜/숫자 포맷, 차트 테마·수명주기 등은 기존 공통 모듈을 우선 재사용한다.
+Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 숫자 포맷, 전체 페이지 조회(`queryAll`), 차트 테마·등록/해제는 `frontend-core`를 재사용한다. 경제지표 차트도 동일한 페이지 조회 함수를 사용한다. Historical Insight의 크기 관찰은 Lightweight Charts의 `autoSize`로 처리한다.
 
 ### Python
 
@@ -73,7 +73,7 @@ Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 
 - 합성지수, 모델 최종값, 뉴스 분석, 사용자 설정, 작업 상태는 목적별 결과 테이블에 둔다.
 - 기능별 파생 테이블에 재사용 가능한 원천값 복사본을 만들지 않는다.
 
-시장지수 일봉 OHLC의 canonical 저장소는 `market_index_prices`다.
+시장지수 일봉 OHLC의 canonical 저장소는 `market_index_prices`다. Historical Insight는 로그인 사용자의 SELECT 정책으로 기본 3개 지수만 읽으며 브라우저 쓰기 권한은 부여하지 않는다.
 
 현재 기본 지수는 다음 3개다.
 
@@ -160,7 +160,7 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 - 2026-09-13 운영 DB의 중복 원천 저장소 정리와 canonical source 전환이 수행되었고, 상세 결과는 `database-data-inventory.md`에 기록되어 있다.
 - 2026-09-15 `Historical Insight` 별도 페이지와 리서치 툴 내비게이션 구조가 추가되었다.
 - 2026-09-15 S&P 500, Nasdaq Composite, KOSPI의 1990년 이후 일봉 백필을 `market_index_prices`에 구성했고, Historical Insight는 이 canonical 지수를 사용하도록 진행 중이다.
-- Historical Insight는 최종 기능 전체를 한 번에 구현하지 않고, 현재 Phase 1부터 순차 구현한다.
+- Historical Insight는 최종 기능 전체를 한 번에 구현하지 않고, Phase 1은 원천 조회·차트·화면 상태를 분리하여 실제 지수 렌더링, 지수 전환, 전체 기간 복귀, 로딩/빈 데이터/오류 재시도를 구현한다. Phase 2는 별도 단계로 진행한다.
 
 현재 상태를 판단할 때는 항상 `main`의 최신 커밋과 실제 GitHub Actions/Supabase 상태를 다시 확인한다. 이 문서의 날짜나 과거 실행 번호를 현재 상태로 간주하지 않는다.
 

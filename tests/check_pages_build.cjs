@@ -17,7 +17,7 @@ assert.ok(read(path.join(site, 'auth.js')).startsWith(read('assets/js/core/front
 for (const name of ['CODE_STRUCTURE.md', 'LIQUIDITY_SPEC.md', 'SECURITY.md']) {
   assert.equal(read(path.join(site, name)), read(path.join('docs', name)));
 }
-for(const name of ['index.html','admin.html','economic-charts.html']) {
+for(const name of ['index.html','admin.html','economic-charts.html','historical-insight.html']) {
   for(const [,url] of read(path.join(site,name)).matchAll(/<(?:script|link)\b[^>]*?(?:src|href)="([^"]+)"/g)) {
     if(/^(?:https?:|\/\/|#)/.test(url))continue;
     assert.ok(fs.statSync(path.join(site,url.split('?')[0])).isFile(),`${name}: ${url}`);

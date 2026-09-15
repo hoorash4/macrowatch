@@ -10,7 +10,7 @@ const chartAuth = fs.readFileSync('assets/js/core/auth-chart.js', 'utf8');
 const modalData = fs.readFileSync('assets/js/core/account-modal-data.js', 'utf8');
 
 for (const html of [index, economic]) {
-  assert.match(html, /account-modal\.js\?v=4[\s\S]*account-modal-data\.js\?v=2/);
+  assert.match(html, /account-modal\.js\?v=\d+[\s\S]*account-modal-data\.js\?v=2/);
 }
 assert.doesNotMatch(economic, /economic-account-modal-bridge/);
 assert.doesNotMatch(index, /id="profile-modal"|id="account-delete-modal"|id="service-preparing-modal"/);

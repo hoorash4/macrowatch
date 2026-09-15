@@ -28,7 +28,7 @@ on:
       - "Refresh Korea foreign flow"
       - "Refresh Korea small business risk"
       - "Refresh Korean market stress"
-      - "Refresh KOSPI market context"
+      - "Refresh canonical market indices and context"
       - "Refresh market-implied policy expectations"
       - "Refresh U.S. market stress"
       - "Refresh U.S. small business risk"
