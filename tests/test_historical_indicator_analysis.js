@@ -17,6 +17,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   assert.deepEqual({...a.ANALYSIS_POLICY.relevanceMonths},{before:3,after:1});
   assert.deepEqual({...a.ANALYSIS_POLICY.correction},{maximumRetracementFraction:.5,maximumVolatilityUnits:3});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{structural:.45,timing:.35,duration:.2});
+  assert.deepEqual({...a.ANALYSIS_POLICY.pivotSelection},{structuralSimilarityPoints:5});
   assert.equal(a.ANALYSIS_POLICY.relationship.maximumBonus,10);
   assert.doesNotMatch(source,/shortBefore|longBefore|beforeMonths|relevanceDays/);
   assert.doesNotMatch(source,/candidateRange/);
@@ -198,9 +199,19 @@ test('pivot assignment chooses structural certainty even when timing makes a wea
   assert.ok(leading.timingScore>lagging.timingScore);assert.ok(leading.baseScore>lagging.baseScore);assert.equal(assigned.START.pivotDate,lagging.pivotDate);
 });
 
-test('cycle relationship cannot replace the strongest selected pivot with a weaker relationship match',()=>{
+test('cycle-level role fit is resolved globally before choosing among valid structural pivots',()=>{
   const a=analysis(),pivot=(referenceType,pivotDate,relationship,pivotSelectionScore)=>({referenceType,pivotDate,regimeBoundaryDate:pivotDate,relationship,relationshipConfidence:.8,relationshipBonus:5,pivotSelectionScore,structuralScore:pivotSelectionScore,timingScore:50,baseScore:70,score:75}),strongInverse=pivot('START','2020-01-01','inverse',95),weakPositive=pivot('START','2020-02-01','positive',70),peak=pivot('PEAK','2020-06-01','positive',90),trough=pivot('TROUGH','2020-12-01','positive',90),assigned=a.assignReferencePivots({START:{candidates:[weakPositive,strongInverse]},PEAK:{candidates:[peak]},TROUGH:{candidates:[trough]}}),normalized=a.applyCycleRelationship(assigned);
-  assert.equal(assigned.START.pivotDate,strongInverse.pivotDate);assert.equal(normalized.cycleRelationship,'positive');assert.equal(normalized.byReference.START.pivotDate,strongInverse.pivotDate);assert.equal(normalized.byReference.START.relationshipStatus,'conflict');
+  assert.equal(assigned.START.pivotDate,weakPositive.pivotDate);assert.equal(normalized.cycleRelationship,'positive');assert.ok(normalized.results.every(item=>item.relationship==='positive'&&item.relationshipStatus==='aligned'));
+});
+
+test('proximity breaks ties only between structurally similar pivots and does not prefer leading dates',()=>{
+  const a=analysis(),candidate=(pivotDate,offsetDays,pivotSelectionScore)=>({referenceType:'START',referenceDate:'2020-04-01',pivotDate,regimeBoundaryDate:pivotDate,relationship:'positive',offsetDays,pivotSelectionScore,structuralScore:pivotSelectionScore,timingScore:offsetDays<0?100:0,baseScore:50}),farLeading=candidate('2020-01-01',-91,90),nearLagging=candidate('2020-04-20',19,88),assigned=a.assignReferencePivots({START:{candidates:[farLeading,nearLagging]}});
+  assert.equal(assigned.START.pivotDate,nearLagging.pivotDate);
+});
+
+test('a materially stronger structural pivot beats a closer candidate',()=>{
+  const a=analysis(),candidate=(pivotDate,offsetDays,pivotSelectionScore)=>({referenceType:'PEAK',referenceDate:'2020-04-01',pivotDate,regimeBoundaryDate:pivotDate,relationship:'positive',offsetDays,pivotSelectionScore,structuralScore:pivotSelectionScore,timingScore:50,baseScore:50}),strongFar=candidate('2020-01-15',-77,94),weakerNear=candidate('2020-03-28',-4,84),assigned=a.assignReferencePivots({PEAK:{candidates:[weakerNear,strongFar]}});
+  assert.equal(assigned.PEAK.pivotDate,strongFar.pivotDate);
 });
 
 test('START PEAK and TROUGH are evaluated independently and one indicator can retain all three',()=>{
@@ -290,14 +301,14 @@ test('multiple structural pivots in one relevance window remain available for th
   assert.ok(discovery.candidates.length>1);assert.equal(result.result,null);assert.equal(result.candidates.length,discovery.candidates.length);
 });
 
-test('global assignment maximizes valid references without sharing a pivot and is independent of input order',()=>{
+test('earlier market references own a selected pivot and later references cannot reuse it',()=>{
   const a=analysis(),candidate=(referenceType,pivotDate,score,regimeBoundaryDate=pivotDate)=>({referenceType,pivotDate,regimeBoundaryDate,score,structuralScore:score,timingScore:score}),sharedStart=candidate('START','2020-01-10',90),startAlternative=candidate('START','2019-12-01',50),sharedPeak=candidate('PEAK','2020-01-10',95),trough=candidate('TROUGH','2020-06-01',70),references={START:{candidates:[sharedStart,startAlternative]},PEAK:{candidates:[sharedPeak]},TROUGH:{candidates:[trough]}},reversed={TROUGH:references.TROUGH,PEAK:references.PEAK,START:references.START},assigned=a.assignReferencePivots(references),assignedReversed=a.assignReferencePivots(reversed);
-  assert.equal(assigned.START.pivotDate,startAlternative.pivotDate);assert.equal(assigned.PEAK.pivotDate,sharedPeak.pivotDate);assert.equal(assigned.TROUGH.pivotDate,trough.pivotDate);assert.deepEqual(JSON.parse(JSON.stringify(assignedReversed)),JSON.parse(JSON.stringify(assigned)));assert.equal(new Set(Object.values(assigned).filter(Boolean).map(item=>item.pivotDate)).size,3);
+  assert.equal(assigned.START.pivotDate,sharedStart.pivotDate);assert.equal(assigned.PEAK,null);assert.equal(assigned.TROUGH.pivotDate,trough.pivotDate);assert.deepEqual(JSON.parse(JSON.stringify(assignedReversed)),JSON.parse(JSON.stringify(assigned)));assert.equal(new Set(Object.values(assigned).filter(Boolean).map(item=>item.pivotDate)).size,2);
 });
 
 test('same structural boundary conflicts even when candidate pivot dates differ',()=>{
   const a=analysis(),start={referenceType:'START',pivotDate:'2020-01-01',regimeBoundaryDate:'2020-01-15',score:80,structuralScore:80,timingScore:80},peak={referenceType:'PEAK',pivotDate:'2020-01-05',regimeBoundaryDate:'2020-01-15',score:90,structuralScore:90,timingScore:90},assigned=a.assignReferencePivots({START:{candidates:[start]},PEAK:{candidates:[peak]}});
-  assert.equal(assigned.START,null);assert.equal(assigned.PEAK,peak);assert.equal(assigned.TROUGH,null);
+  assert.equal(assigned.START,start);assert.equal(assigned.PEAK,null);assert.equal(assigned.TROUGH,null);
 });
 
 test('retrospective and online state engines are physically separate and expose date diagnostics',()=>{
