@@ -183,6 +183,11 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(chart,/class PivotLinePrimitive/);
   assert.match(chart,/line\.attachPrimitive\(primitive\)/);
   assert.match(chart,/entry\.series\.detachPrimitive\(primitive\)/);
+  assert.match(chart,/class PivotTimeAxisView/);
+  assert.match(chart,/timeAxisViews\(\)\{return \[this\.timeAxisView\];\}/);
+  assert.match(chart,/text\(\)\{return this\.date;\}/);
+  assert.match(chart,/minimumHeight: 48/);
+  assert.doesNotMatch(chart,/pivotText|timingText|fillText\(this\.view\.label/);
   assert.doesNotMatch(chart,/historical-indicator-pivot-line|timeScale\(\)\.subscribeVisible/);
   assert.match(css,/\.historical-indicator-legend \{[^}]*padding: 8px 16px 12px/);
   assert.match(controller,/const caseChanged=Boolean\(activeCase&&activeCase\.code!==item\.code\);if\(caseChanged\)\{clearIndicatorSelection\(\);activeIndicatorContext=null;visibleIndicators=\[\];\}/);

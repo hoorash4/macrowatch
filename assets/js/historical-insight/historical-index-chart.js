@@ -2,18 +2,28 @@
   'use strict';
   class PivotLineRenderer {
     constructor(view){this.view=view;}
-    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),top=(8+(this.view.row%3)*18)*v;ctx.save();ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,scope.bitmapSize.height);ctx.stroke();ctx.setLineDash([]);ctx.font=`${8*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const padX=4*h,labelHeight=14*v,textWidth=ctx.measureText(this.view.label).width,labelWidth=textWidth+padX*2,labelX=Math.min(px+4*h,scope.bitmapSize.width-labelWidth-2*h);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,top,labelWidth,labelHeight);ctx.fillStyle='#fff';ctx.fillText(this.view.label,labelX+padX,top+labelHeight/2);ctx.restore();});}
+    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,px=Math.round(x*h);ctx.save();ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,scope.bitmapSize.height);ctx.stroke();ctx.restore();});}
   }
   class PivotLineView {
-    constructor(chart,time,color,label,row){this.chart=chart;this.time=time;this.color=color;this.label=label;this.row=row;this.x=null;this.rendererInstance=new PivotLineRenderer(this);}
+    constructor(chart,time,color){this.chart=chart;this.time=time;this.color=color;this.x=null;this.rendererInstance=new PivotLineRenderer(this);}
     update(){this.x=this.chart.timeScale().timeToCoordinate(this.time);}
     renderer(){return this.rendererInstance;}
     zOrder(){return 'top';}
   }
+  class PivotTimeAxisView {
+    constructor(paneView,date,color){this.paneView=paneView;this.date=date;this.color=color;}
+    coordinate(){return this.paneView.x??0;}
+    text(){return this.date;}
+    textColor(){return '#fff';}
+    backColor(){return this.color;}
+    visible(){return this.paneView.x!==null;}
+    tickVisible(){return true;}
+  }
   class PivotLinePrimitive {
-    constructor(chart,time,color,label,row){this.view=new PivotLineView(chart,time,color,label,row);}
+    constructor(chart,time,color){this.view=new PivotLineView(chart,time,color);this.timeAxisView=new PivotTimeAxisView(this.view,time,color);}
     updateAllViews(){this.view.update();}
     paneViews(){return [this.view];}
+    timeAxisViews(){return [this.timeAxisView];}
   }
   // 공통 frontend-core가 테마/등록/해제를, 차트 라이브러리가 크기 관찰을 담당합니다.
   function create(host) {
@@ -25,8 +35,6 @@
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
-    const timingText=result=>result.offsetDays===0?'기준점 당일':`기준점 ${Math.abs(result.offsetDays)}일 ${result.offsetDays<0?'전':'후'}`;
-    const pivotText=result=>result.markerStatus==='candidate'?'CANDIDATE 피봇 후보':result.markerStatus==='watch'?'WATCH 조정 감시':result.referenceType==='CURRENT'?'CONFIRMED 최근 피봇':`${result.referenceType} ${timingText(result)}`;
     function ensure() {
       if (chart) return;
       if (!window.LightweightCharts) throw new Error('차트 라이브러리를 불러오지 못했습니다.');
@@ -36,7 +44,7 @@
         localization: { locale: 'ko-KR', dateFormat: 'yyyy. MM. dd.' },
         rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
         leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false, minimumWidth: 34 },
-        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01 },
+        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 48 },
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
         handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -74,7 +82,7 @@
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const primitives=(item.displayPivots||item.results).map((result,index)=>new PivotLinePrimitive(chart,result.pivotDate,color,pivotText(result),index));
+          const primitives=(item.displayPivots||item.results).map(result=>new PivotLinePrimitive(chart,result.pivotDate,color));
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives});
         });
