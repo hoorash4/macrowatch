@@ -16,6 +16,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   assert.deepEqual({...a.ANALYSIS_POLICY.minimumRegimeDays},{short:31,medium:61,long:92});
   assert.deepEqual({...a.ANALYSIS_POLICY.relevanceMonths},{before:3,after:1});
   assert.deepEqual({...a.ANALYSIS_POLICY.correction},{maximumRetracementFraction:.5,maximumVolatilityUnits:3});
+  assert.deepEqual({...a.ANALYSIS_POLICY.transient},{maximumDurationShare:.25,minimumProminenceUnits:1});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{structural:.45,timing:.35,duration:.2});
   assert.deepEqual({...a.ANALYSIS_POLICY.pivotSelection},{structuralSimilarityPoints:5});
   assert.deepEqual({...a.ANALYSIS_POLICY.coverageBonusByCount},{1:0,2:12,3:25});
@@ -39,6 +40,16 @@ test('six-month fall, one-month rebound, and a new low remain one falling regime
 test('a long shallow correction that makes a new high remains one retrospective rising regime',()=>{
   const a=analysis(),rows=segments([[8,5],[4,-1],[10,5]]),past=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:92}),online=a.detectOnlineState(rows,{frequency:'M',minimumRegimeDays:92});
   assert.deepEqual(Array.from(past.regimes,x=>x.type),['rising']);assert.equal(past.pivots.length,0);assert.equal(online.pivots.length,0);assert.ok(online.invalidations.some(item=>item.reason==='replaced_by_new_extreme'));
+});
+
+test('brief spikes and dips that recover into the original trend remain transient across frequencies',()=>{
+  const a=analysis(),make=(count,step,spikeIndex,spike,days)=>Array.from({length:count},(_,index)=>{const date=new Date(Date.UTC(2000,0,1+index*days));return{time:date.toISOString().slice(0,10),value:100+index*step+(index===spikeIndex?spike:0)};}),cases=[['D',make(220,.15,100,35,1),31,'rising'],['W',make(60,.7,28,-30,7),61,'rising'],['M',make(30,2,14,40,31),92,'rising']];
+  for(const [frequency,rows,minimumRegimeDays,expected] of cases){const path=a.detectRetrospectiveRegimes(rows,{frequency,minimumRegimeDays}),independent=a.retrospectiveExtremePivots(rows,{frequency,minimumRegimeDays});assert.deepEqual(Array.from(path.regimes,item=>item.type),[expected],frequency);assert.equal(path.pivots.length,0,frequency);assert.equal(independent.length,0,frequency);}
+});
+
+test('a brief isolated excursion that returns to a sideways range is not a structural regime',()=>{
+  const a=analysis(),rows=Array.from({length:24},(_,index)=>month(index,100+(index===11?35:0))),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:61}),independent=a.retrospectiveExtremePivots(rows,{frequency:'M',minimumRegimeDays:61});
+  assert.deepEqual(Array.from(path.regimes,item=>item.type),['sideways']);assert.equal(path.pivots.length,0);assert.equal(independent.length,0);
 });
 
 test('a volatility-scaled deep reversal remains an independent retrospective regime',()=>{
