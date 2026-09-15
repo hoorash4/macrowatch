@@ -48,6 +48,9 @@
       },
       setIndicators(items,activeCode) {
         if(!chart&&items.length)ensure();
+        // 지표마다 다른 관측일이 시간축에 추가되므로 논리 인덱스가 달라질 수 있습니다.
+        // 사용자가 보고 있던 실제 날짜 범위를 보존해 지표 선택 시 축이 압축되거나 밀리지 않게 합니다.
+        const visibleRange=chart?.timeScale().getVisibleRange();
         for(const entry of indicatorSeries.values())chart?.removeSeries(entry.series);
         indicatorSeries.clear();
         items.forEach((item,index)=>{
@@ -57,6 +60,7 @@
           line.setMarkers(item.results.filter(result=>result.timingType!=='lagging').map(result=>({time:result.pivotDate,position:result.pivotType==='local_low'?'belowBar':'aboveBar',shape:result.timingType==='coincident'?'square':'circle',color,text:result.timingType==='coincident'?'동행':'선행'})));
           indicatorSeries.set(item.meta.code,{series:line,color});
         });
+        if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
       },
       indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
       focus(from, to, markerInset = .12) {

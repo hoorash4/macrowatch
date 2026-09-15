@@ -113,7 +113,7 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-cycle-signal[hidden] { display: none; }
 .historical-cycle-signal strong { color: #15803d; font-size: 15px; }
 .historical-cycle-signal span { color: var(--theme-text-secondary); font-size: 11px; }
-.historical-indicator-legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 0; }
+.historical-indicator-legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 12px; }
 .historical-indicator-legend[hidden] { display: none; }
 .historical-indicator-legend button { padding: 5px 8px 5px 20px; border: 1px solid var(--theme-border); border-radius: 999px; background: var(--theme-surface-elevated); color: var(--theme-text-secondary); font-size: 10px; font-weight: 750; cursor: pointer; position: relative; }
 .historical-indicator-legend button::before { position: absolute; left: 8px; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--indicator-color); transform: translateY(-50%); content: ''; }

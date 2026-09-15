@@ -165,6 +165,13 @@ test('case range keeps the line continuous while placing cycle markers inside bo
   assert.match(chart,/from: Math\.max\(0, startIndex - context\)/);
   assert.match(chart,/to: Math\.min\(data\.length - 1, endIndex \+ context\)/);
 });
+test('indicator toggles preserve the visible calendar range and keep legend controls clear of the plot', () => {
+  const chart=read('assets/js/historical-insight/historical-index-chart.js');
+  const css=read('assets/css/historical-insight.css');
+  assert.match(chart,/const visibleRange=chart\?\.timeScale\(\)\.getVisibleRange\(\)/);
+  assert.match(chart,/if\(visibleRange\)chart\.timeScale\(\)\.setVisibleRange\(visibleRange\)/);
+  assert.match(css,/\.historical-indicator-legend \{[^}]*padding: 8px 16px 12px/);
+});
 function ui() {
   const nodes=new Map();
   const make = () => { const classes=new Set(); return ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',
