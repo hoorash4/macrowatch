@@ -112,9 +112,6 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-indicator-legend[hidden] { display: none; }
 .historical-indicator-legend span { padding: 5px 8px 5px 20px; border: 1px solid var(--indicator-color); border-radius: 999px; background: var(--theme-surface-elevated); color: var(--theme-text-primary); font-size: 10px; font-weight: 750; position: relative; box-shadow: 0 0 0 1px var(--indicator-color); }
 .historical-indicator-legend span::before { position: absolute; left: 8px; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--indicator-color); transform: translateY(-50%); content: ''; }
-.historical-indicator-pivots { position: absolute!important; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
-.historical-indicator-pivot-line { position: absolute; top: 0; bottom: 26px; width: 0; border-left: 1px dashed var(--indicator-color); opacity: .8; }
-.historical-indicator-pivot-line span { position: absolute; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--indicator-color); color: #fff; font-size: 8px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
 .historical-indicator-detail { padding: 18px 20px; border-top: 1px solid var(--theme-border); background: var(--theme-surface-elevated); }
 .historical-indicator-detail[hidden] { display: none; }
 .historical-indicator-detail-heading { display: flex; align-items: baseline; gap: 10px; }
