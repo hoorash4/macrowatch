@@ -1,0 +1,47 @@
+name: Fix research navigation divider
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-research-nav-divider-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Separate divider from Economic Charts link
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index = Path('index.html')
+          text = index.read_text(encoding='utf-8')
+          old = '<a class="dashboard-nav-item dashboard-nav-tool dashboard-nav-tool-group-start" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>'
+          new = '<span class="dashboard-nav-tool-divider" aria-hidden="true"></span>\n          <a class="dashboard-nav-item dashboard-nav-tool" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>'
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif 'dashboard-nav-tool-divider' not in text:
+              raise SystemExit('research nav anchor not found')
+          text = text.replace('assets/css/styles.css?v=191', 'assets/css/styles.css?v=192')
+          index.write_text(text, encoding='utf-8')
+
+          styles = Path('assets/css/styles.css')
+          css = styles.read_text(encoding='utf-8')
+          marker = '/* Research navigation divider is a separate element, never part of a link underline. */'
+          if marker not in css:
+              css += '''\n\n/* Research navigation divider is a separate element, never part of a link underline. */\n.dashboard-nav-tool-divider {\n  width:1px;\n  height:1.2rem;\n  flex:0 0 1px;\n  margin:0 .15rem;\n  background:rgba(20,36,51,.18);\n}\n.dashboard-nav-tool-group-start { margin-left:0; padding-left:0; }\n.dashboard-nav-tool-group-start::before { display:none !important; }\n.dashboard-nav-tool-group-start::after { left:0 !important; }\nhtml[data-theme="dark"] .dashboard-nav-tool-divider { background:rgba(203,213,225,.22); }\n@media(max-width:1180px){ .dashboard-nav-tool-divider { margin:0 .1rem; } }\n'''
+              styles.write_text(css, encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "MacroWatch Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html assets/css/styles.css
+          git diff --cached --quiet && exit 0
+          git commit -m "Separate research nav divider from underline"
+          git push origin main
