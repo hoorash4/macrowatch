@@ -55,6 +55,12 @@ test('current analysis separates a recent unconfirmed turn from confirmed pivots
   assert.equal(result.evidence.status,'candidate');assert.equal(result.evidence.regime.confirmed,false);
 });
 
+test('current probability counts only recent confirmed pivots and drops stale evidence',()=>{
+  const a=analysis(),recentRows=segments([[5,-3],[5,3]]),recent=a.analyzeCurrent({code:'X'},recentRows,recentRows[0].time,recentRows.at(-1).time),extended=[...recentRows,...segments([[8,2]]).map((row,index)=>month(recentRows.length+index,row.value))],stale=a.analyzeCurrent({code:'X'},extended,extended[0].time,extended.at(-1).time);
+  assert.equal(recent.evidence.status,'confirmed');assert.equal(recent.results.length,1);assert.equal(stale.evidence.status,'watching');
+  assert.ok(a.currentPivotProbability([recent]).probability>a.currentPivotProbability([stale]).probability);
+});
+
 test('low-scoring meaningful indicators remain visible and sort by score with deterministic ties',()=>{
   const a=analysis(),items=[
     {meta:{title:'나'},overallScore:10,meaningfulReferenceCount:1,maxReferenceScore:10,visible:true},
