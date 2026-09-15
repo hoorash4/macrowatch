@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=5">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=6">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -37,19 +37,22 @@
           <span class="historical-kicker">HISTORICAL INSIGHT</span>
           <h1>히스토리컬 인사이트</h1>
           <p>과거 시장 국면의 구조를 확인하고 현재 시장을 해석하기 위한 기준을 만듭니다.</p>
-          <div class="historical-future-tabs" aria-label="향후 기능 구조"><span>사례 탐색</span><span>현재 비교</span><span>팩트 시트</span><span>전환 신호</span></div>
+          <div class="historical-analysis-tabs" role="tablist" aria-label="분석 화면 선택">
+            <button type="button" role="tab" class="is-active" aria-selected="true" aria-controls="historical-stage" data-historical-mode="history">과거사례 분석</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="historical-stage" data-historical-mode="current">현재국면 분석</button>
+          </div>
         </div>
       </div>
 
-      <section class="historical-stage" aria-label="히스토리컬 인사이트 작업영역">
-        <aside class="historical-case-panel">
+      <section id="historical-stage" class="historical-stage" aria-label="히스토리컬 인사이트 작업영역">
+        <aside id="historical-case-panel" class="historical-case-panel">
           <p class="historical-panel-label">HISTORICAL CASES</p>
           <div id="historical-case-list" class="historical-case-list" aria-label="Historical Case 목록"><span class="historical-case-loading">사례 불러오는 중</span></div>
         </aside>
         <div class="historical-workspace">
           <header class="historical-toolbar">
             <div>
-              <strong>국면 차트</strong>
+              <strong id="historical-toolbar-title">과거 국면 차트</strong>
               <div id="historical-chart-meta" class="economic-chart-meta">사례와 지수 데이터 불러오는 중</div>
             </div>
             <div class="historical-toolbar-right">
@@ -100,7 +103,7 @@
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
   <script src="assets/js/historical-insight/historical-cycle-data.js?v=3"></script>
   <script src="assets/js/historical-insight/historical-index-chart.js?v=3"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=4"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=5"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>

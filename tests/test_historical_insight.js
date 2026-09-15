@@ -140,6 +140,16 @@ test('cycle summary gives market context and performance figures strong visual h
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #15803d/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #dc2626/);
 });
+test('analysis tabs separate current regime from the historical case list and enlarge their labels', () => {
+  const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
+  assert.match(html,/data-historical-mode="history">과거사례 분석<\/button>/);
+  assert.match(html,/data-historical-mode="current">현재국면 분석<\/button>/);
+  assert.match(css,/\.historical-analysis-tabs button \{[^}]*font-size: 14px/);
+  assert.match(css,/\.historical-stage\.is-current-mode \{ grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css,/\.historical-stage\.is-current-mode \.historical-summary \{ display: none/);
+  assert.match(controller,/cases\.filter\(item => !isCurrentCase\(item\)\)/);
+  assert.match(controller,/activeMode === 'current'[\s\S]*historical-cycle-panel'\)\.hidden = true/);
+});
 test('case range keeps the line continuous while placing cycle markers inside both chart edges', () => {
   const controller=read('assets/js/historical-insight/historical-insight.js');
   const chart=read('assets/js/historical-insight/historical-index-chart.js');
@@ -151,29 +161,32 @@ test('case range keeps the line continuous while placing cycle markers inside bo
 });
 function ui() {
   const nodes=new Map();
-  const make = () => ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',
-    value:'',events:{}, children:[], classList:{toggle(){}}, setAttribute(k,v){this.attrs[k]=v;},
+  const make = () => { const classes=new Set(); return ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',
+    value:'',events:{}, children:[], classList:{toggle(name,on){on?classes.add(name):classes.delete(name);},contains(name){return classes.has(name);}}, setAttribute(k,v){this.attrs[k]=v;},
     getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}, replaceChildren(){this.children=[];},
-    append(...items){this.children.push(...items);}, querySelector(){return null;}});
+    append(...items){this.children.push(...items);}, querySelector(){return null;}}); };
   for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
-  for (const id of ['case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
+  for (const id of ['stage','case-panel','toolbar-title','case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
   const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
   const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
+  const modeButtons=['history','current'].map(mode=>{const b=make();b.dataset.historicalMode=mode;b.attrs['aria-selected']=String(mode==='history');return b;});
   const caseButtons=[];
   const pending=[]; const drawn=[]; let destroyed=0;
   const client={auth:{getSession:async()=>({data:{session:{user:{id:'user-1'}}},error:null})},from:()=>{const q={select(){return q;},eq(){return q;},maybeSingle:async()=>({data:{is_admin:false},error:null})};return q;}};
   const markets=Object.fromEntries(['SP500','NASDAQ_COMPOSITE','KOSPI'].map(indexCode=>[indexCode,{caseCode:'dotcom',indexCode,startDate:'1994-06-24',peakDate:'2000-03-10',troughDate:'2002-10-09',status:'confirmed'}]));
   const definition={code:'dotcom',order:1,name:'닷컴버블',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'1994-01-01',searchEnd:'2003-03-31',summary:'기술주 사이클',markets};
+  const currentMarkets=Object.fromEntries(['SP500','NASDAQ_COMPOSITE','KOSPI'].map(indexCode=>[indexCode,{caseCode:'ai_semiconductor',indexCode,startDate:'2022-10-12',peakDate:null,troughDate:null,status:'in_progress'}]));
+  const currentDefinition={code:'ai_semiconductor',order:10,name:'AI/반도체 상승장',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'2022-06-01',searchEnd:null,summary:'현재 진행 국면',markets:currentMarkets};
   const w={MacroWatchHistoricalData:{indices:{SP500:'S&P 500',NASDAQ_COMPOSITE:'NASDAQ Composite',KOSPI:'KOSPI'},
     createRepository:()=>{const cache=new Map();return{load:code=>{if(!cache.has(code)){const promise=new Promise((resolve,reject)=>pending.push({code,resolve,reject}));cache.set(code,promise);promise.catch(()=>cache.delete(code));}return cache.get(code);}};}},
-    MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[definition]}),marketCycle:(item,code)=>item.markets[code],calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
+    MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[currentDefinition,definition]}),marketCycle:(item,code)=>item.markets[code],calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
     MacroWatchFrontend:{createSupabaseClient:()=>client,formatDisplayNumber:String},
     MacroWatchHistoricalChart:{create:()=>({setData:rows=>drawn.push(rows),setCycle(){},focus(){},fit(){},destroy(){destroyed++;}})},
     addEventListener(){}};
   vm.runInNewContext(read('assets/js/historical-insight/historical-insight.js'),{
-    window:w,document:{getElementById:id=>nodes.get(id),querySelectorAll:s=>s==='[data-historical-index]'?buttons:caseButtons,
+    window:w,document:{getElementById:id=>nodes.get(id),querySelectorAll:s=>s==='[data-historical-index]'?buttons:s==='[data-historical-mode]'?modeButtons:caseButtons,
       querySelector:s=>pointCards[s.match(/"(start|peak|trough)"/)?.[1]],createElement:()=>{const item=make();const append=item.append;item.append=(...values)=>{append.call(item,...values);if(values.length===2&&values[0].textContent)caseButtons.push(item);};return item;}},console:{error(){}}});
-  return {nodes,buttons,caseButtons,pending,drawn,destroyed:()=>destroyed};
+  return {nodes,buttons,modeButtons,caseButtons,pending,drawn,destroyed:()=>destroyed};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 test('rapid switching ignores stale responses and clears previous data',async()=>{
@@ -200,4 +213,16 @@ test('request failure exposes retry and recovery restores the selected chart',as
   f.pending[1].resolve([{time:'1990-01-02',value:5}]); await settle();
   assert.equal(f.nodes.get('historical-chart-host').dataset.state,'ready');
   assert.equal(f.nodes.get('historical-chart-retry').hidden,true);
+});
+test('current mode removes the in-progress case from the left list and hides historical cycle status',async()=>{
+  const f=ui(); await settle();
+  assert.equal(f.caseButtons.length,1);
+  assert.equal(f.caseButtons[0].children[0].textContent,'닷컴버블');
+  f.pending[0].resolve([{time:'1990-01-02',value:5}]); await settle();
+  f.modeButtons[1].events.click(); await settle();
+  assert.equal(f.nodes.get('historical-case-panel').hidden,true);
+  assert.equal(f.nodes.get('historical-cycle-panel').hidden,true);
+  assert.equal(f.nodes.get('historical-toolbar-title').textContent,'현재 국면 차트');
+  assert.match(f.nodes.get('historical-chart-meta').textContent,/AI\/반도체 상승장/);
+  assert.equal(f.nodes.get('historical-stage').classList.contains('is-current-mode'),true);
 });

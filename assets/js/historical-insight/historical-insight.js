@@ -7,8 +7,9 @@
   const status = $('historical-chart-status'), meta = $('historical-chart-meta'), message = $('historical-chart-message');
   const retry = $('historical-chart-retry'), fullRange = $('historical-chart-full-range'), caseRange = $('historical-chart-case-range');
   const marketButtons = [...document.querySelectorAll('[data-historical-index]')];
+  const modeButtons = [...document.querySelectorAll('[data-historical-mode]')];
   const indexData = window.MacroWatchHistoricalData, cycleData = window.MacroWatchHistoricalCycles;
-  let activeCode = 'NASDAQ_COMPOSITE', activeCase = null, cases = [], requestToken = 0;
+  let activeCode = 'NASDAQ_COMPOSITE', activeCase = null, activeMode = 'history', activeHistoricalCode = null, cases = [], requestToken = 0;
   let indexRepository, caseRepository, chart, activeRows = [], currentUser = null, isAdmin = false;
 
   function state(kind, text) {
@@ -37,6 +38,10 @@
   const percentage = (value, absolute = false) => value == null ? '—' : `${absolute ? '' : value > 0 ? '+' : ''}${window.MacroWatchFrontend.formatDisplayNumber(absolute ? Math.abs(value) : value, { maximumFractionDigits: 1 })}%`;
   const duration = value => value == null ? '—' : `${window.MacroWatchFrontend.formatDisplayNumber(value)}일`;
   function showCycle(item, cycle, metrics) {
+    if (activeMode === 'current') {
+      $('historical-cycle-panel').hidden = true;
+      return;
+    }
     $('historical-cycle-panel').hidden = false;
     $('historical-cycle-state').textContent = cycle.status === 'confirmed' ? 'CONFIRMED CYCLE' : cycle.status === 'in_progress' ? 'IN PROGRESS' : 'DRAFT';
     $('historical-cycle-name').textContent = item.name;
@@ -60,7 +65,7 @@
   function renderCaseList() {
     const root = $('historical-case-list');
     root.replaceChildren();
-    for (const item of cases) {
+    for (const item of cases.filter(item => !isCurrentCase(item))) {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'historical-case'; button.dataset.historicalCase = item.code;
       const label = document.createElement('span'), badge = document.createElement('small');
@@ -71,6 +76,9 @@
       button.addEventListener('click', () => selectCase(item.code));
       root.append(button);
     }
+  }
+  function isCurrentCase(item) {
+    return cycleData.marketCycle(item, item.primaryIndex).status === 'in_progress';
   }
   function activeCaseButton() {
     document.querySelectorAll('[data-historical-case]').forEach(button => button.classList.toggle('is-active', button.dataset.historicalCase === activeCase?.code));
@@ -113,8 +121,28 @@
   function selectCase(code) {
     const item = cases.find(candidate => candidate.code === code);
     if (!item) return;
+    if (!isCurrentCase(item)) activeHistoricalCode = item.code;
     activeCase = item; activeCaseButton();
     render(item.primaryIndex);
+  }
+  function setMode(mode) {
+    const currentCases = cases.filter(isCurrentCase);
+    const historicalCases = cases.filter(item => !isCurrentCase(item));
+    const available = mode === 'current' ? currentCases : historicalCases;
+    if (!available.length) return;
+    activeMode = mode;
+    for (const button of modeButtons) {
+      const selected = button.dataset.historicalMode === mode;
+      button.classList.toggle('is-active', selected);
+      button.setAttribute('aria-selected', String(selected));
+    }
+    const currentMode = mode === 'current';
+    $('historical-stage').classList.toggle('is-current-mode', currentMode);
+    $('historical-case-panel').hidden = currentMode;
+    $('historical-toolbar-title').textContent = currentMode ? '현재 국면 차트' : '과거 국면 차트';
+    $('historical-cycle-panel').hidden = currentMode;
+    const desired = currentMode ? available[0] : available.find(item => item.code === activeHistoricalCode) || available[0];
+    selectCase(desired.code);
   }
   async function initialize() {
     try {
@@ -133,12 +161,17 @@
       isAdmin = !accountError && account?.is_admin === true;
       cases = loadedCases;
       if (!cases.length) { state('empty', '저장된 Historical Case가 없습니다.'); return; }
-      renderCaseList(); selectCase(cases[0].code);
+      renderCaseList();
+      const historicalCases = cases.filter(item => !isCurrentCase(item));
+      const currentCases = cases.filter(isCurrentCase);
+      for (const button of modeButtons) button.disabled = button.dataset.historicalMode === 'current' ? !currentCases.length : !historicalCases.length;
+      setMode(historicalCases.length ? 'history' : 'current');
     } catch (error) {
       state('error', 'Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');
       console.error('[Historical Insight]', error);
     }
   }
+  modeButtons.forEach(button => button.addEventListener('click', () => setMode(button.dataset.historicalMode)));
   marketButtons.forEach(button => button.addEventListener('click', () => activeCase && render(button.dataset.historicalIndex)));
   $('historical-cycle-form').addEventListener('submit', async event => {
     event.preventDefault();
