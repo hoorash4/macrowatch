@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MacroWatch Pivot Lab</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
+  <script src="../assets/js/core/config.js"></script>
+  <script src="../assets/js/charts/economic-series-catalog.js"></script>
+</head>
+<body>
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div>
+          <p class="eyebrow">Temporary tool</p>
+          <h1>Indicator Pivot Lab</h1>
+        </div>
+        <span id="series-count" class="count">-</span>
+      </div>
+      <input id="search" class="search" type="search" placeholder="지표 검색" autocomplete="off">
+      <div id="series-list" class="series-list" aria-label="경제지표 목록"></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="workspace-head">
+        <div>
+          <p id="series-meta" class="eyebrow">지표를 선택해 주세요</p>
+          <h2 id="series-title">경제지표 차트</h2>
+        </div>
+        <div class="summary">
+          <span id="point-count">데이터 -</span>
+          <span id="pivot-count">피봇 -</span>
+        </div>
+      </header>
+
+      <div id="status" class="status">왼쪽에서 지표를 선택하면 전체 시계열을 불러옵니다.</div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+      <div class="legend-note">
+        <span><i class="dot high"></i>HIGH</span>
+        <span><i class="dot low"></i>LOW</span>
+        <span>현재 임시 테이블은 비어 있으며 피봇은 아직 계산하지 않습니다.</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
