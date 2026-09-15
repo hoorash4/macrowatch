@@ -14,7 +14,8 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-summary small { font-size: 10px; }
 .historical-summary strong { font-size: 14px; }
 .historical-summary p { font-size: 12px; line-height: 1.55; }
-.historical-workspace { grid-template-rows: auto minmax(340px, 1fr) auto auto; }
+.historical-workspace { display: flex; flex-direction: column; }
+.historical-chart-region { flex: 1 0 340px; }
 .historical-case-loading { padding: 9px 10px; color: var(--theme-text-muted); font-size: 11px; }
 .historical-case { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
 .historical-case small { color: #9ca3af; font-size: 8px; font-weight: 750; white-space: nowrap; }
