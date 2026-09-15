@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>히스토리컬 인사이트 · MacroWatch</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="assets/css/styles.css?v=191">
+  <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=1">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/core/config.js?v=1"></script>
+  <script src="assets/js/core/frontend-core.js?v=9"></script>
+</head>
+<body class="historical-insight-page">
+  <div class="economic-shell">
+    <header class="economic-topbar">
+      <a class="economic-brand" href="index.html"><span class="economic-brand-logo" aria-hidden="true"></span><span>MacroWatch</span><small>EVOTIVE RESEARCH</small></a>
+      <nav class="economic-nav" aria-label="MacroWatch 메뉴">
+        <a href="index.html#news">플로우 분석</a><a href="index.html#policy-signals">통화정책</a><a href="index.html#earnings-signals">기업이익</a><a href="index.html#stress">스트레스</a><a href="index.html#tracker">지표추적</a><span class="economic-nav-divider" aria-hidden="true"></span><a class="research-nav" href="economic-charts.html">경제지표 챠트</a><a class="research-nav is-active" href="historical-insight.html" aria-current="page">히스토리컬 인사이트</a>
+      </nav>
+      <div class="dashboard-nav-actions" aria-label="계정 메뉴">
+        <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
+        <a id="admin-page-link" href="admin.html" aria-label="관리자 페이지" title="관리자 페이지" hidden><i class="fa-solid fa-gear"></i></a>
+        <button id="logout-button" type="button" aria-label="로그아웃" title="로그아웃"><i class="fa-solid fa-right-from-bracket"></i></button>
+      </div>
+    </header>
+
+    <main class="historical-main">
+      <div class="historical-hero">
+        <div>
+          <span class="historical-kicker">HISTORICAL INSIGHT</span>
+          <h1>히스토리컬 인사이트</h1>
+          <p>과거 시장 국면의 구조를 확인하고 현재 시장을 해석하기 위한 기준을 만듭니다.</p>
+          <div class="historical-future-tabs" aria-label="향후 기능 구조"><span>사례 탐색</span><span>현재 비교</span><span>팩트 시트</span><span>전환 신호</span></div>
+        </div>
+      </div>
+
+      <section class="historical-stage" aria-label="히스토리컬 인사이트 작업영역">
+        <aside class="historical-case-panel">
+          <p class="historical-panel-label">HISTORICAL CASES</p>
+          <div class="historical-case-list">
+            <button type="button" class="historical-case is-active">닷컴 버블</button>
+            <button type="button" class="historical-case" disabled>한국 IT 버블</button>
+            <button type="button" class="historical-case" disabled>중국 산업재 버블</button>
+            <button type="button" class="historical-case" disabled>글로벌 금융위기</button>
+            <button type="button" class="historical-case" disabled>코로나 충격</button>
+            <button type="button" class="historical-case" disabled>2022 긴축장</button>
+          </div>
+        </aside>
+        <div class="historical-workspace">
+          <header class="historical-toolbar">
+            <div><strong>국면 차트</strong><div class="economic-chart-meta">시작점 · 고점 · 저점 · 종료점을 검증하는 영역</div></div>
+            <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택"><button type="button">S&amp;P500</button><button type="button" class="is-active">NASDAQ Composite</button><button type="button">KOSPI</button></div>
+          </header>
+          <div class="historical-chart-placeholder"><div class="historical-placeholder-copy">차트와 국면 마커는 다음 단계에서 연결됩니다.</div></div>
+          <div class="historical-summary">
+            <article><small>PHASE MARKERS</small><strong>시작 · 고점 · 저점 · 종료</strong><p>차트에서 각 기준점을 확인하고 저장하는 구조입니다.</p></article>
+            <article><small>HISTORICAL FACTS</small><strong>국면 팩트</strong><p>금리·스프레드·밸류에이션 등 시점별 사실을 연결합니다.</p></article>
+            <article><small>CURRENT COMPARISON</small><strong>현재 유사도</strong><p>확정된 과거 국면과 현재를 비교하는 최종 확장 영역입니다.</p></article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/js/core/account-modal.js?v=5"></script>
+  <script src="assets/js/core/account-modal-data.js?v=2"></script>
+  <script src="assets/js/core/auth-chart.js?v=2"></script>
+</body>
+</html>
