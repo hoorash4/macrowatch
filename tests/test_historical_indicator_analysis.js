@@ -213,6 +213,27 @@ test('market-specific minimum duration is applied while segmenting the full retr
   assert.ok(short.pivots.length>long.pivots.length);assert.ok(short.regimes.length>long.regimes.length);assert.ok(long.regimes.every(item=>item.requiredMinimumDays===92));
 });
 
+test('full-path retrospective validation recovers a clear high and low independently of sequential segmentation',()=>{
+  const a=analysis(),highRows=dailySegments([[120,1],[120,-2]]),lowRows=dailySegments([[120,-1],[120,2]]),high=a.retrospectiveExtremePivots(highRows,{frequency:'D',minimumRegimeDays:92}),low=a.retrospectiveExtremePivots(lowRows,{frequency:'D',minimumRegimeDays:92}),highPivot=high.find(item=>item.previousRegime==='rising'&&item.nextRegime==='falling'),lowPivot=low.find(item=>item.previousRegime==='falling'&&item.nextRegime==='rising');
+  assert.ok(highPivot);assert.equal(highPivot.pivotValue,Math.max(...highRows.map(row=>row.value)));assert.equal(highPivot.validationSource,'retrospective_full_path');
+  assert.ok(lowPivot);assert.equal(lowPivot.pivotValue,Math.min(...lowRows.map(row=>row.value)));assert.equal(lowPivot.validationSource,'retrospective_full_path');
+});
+
+test('candidate validation does not require the clear extreme to exist in the sequential pivot list',()=>{
+  const a=analysis(),rows=dailySegments([[120,1],[120,-2]]),candidate=a.retrospectiveExtremePivots(rows,{frequency:'D',minimumRegimeDays:92}).find(item=>item.previousRegime==='rising'),emptyPath={pivots:[],invalidations:[]},validated=a.validateRetrospectiveCandidate(candidate,emptyPath,92,rows,'D');
+  assert.ok(candidate);assert.ok(validated);assert.equal(validated.pivotDate,candidate.pivotDate);assert.equal(validated.validationSource,'retrospective_full_path');
+});
+
+test('candidate discovery and market matching prefer a full-path extreme omitted by sequential state transitions',()=>{
+  const a=analysis(),rows=dailySegments([[40,-2],[40,.5],[40,-2]]),referenceDate=rows[80].time,cycle={startDate:rows[40].time,peakDate:referenceDate,troughDate:rows.at(-1).time},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'D',minimumRegimeDays:31}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',referenceDate,cycle);
+  assert.equal(discovery.path.pivots.length,0);assert.equal(discovery.candidates.length,1);assert.equal(discovery.candidates[0].pivotValue,Math.max(...rows.slice(40).map(row=>row.value)));assert.ok(result.result);assert.equal(result.result.pivotDate,referenceDate);assert.equal(result.result.validationSource,'retrospective_full_path');assert.ok(result.technicalPivots.some(item=>item.pivotDate===referenceDate));
+});
+
+test('full-path extreme validation rejects a shallow correction when the original trend resumes',()=>{
+  const a=analysis(),rows=dailySegments([[120,1],[100,-.2],[120,1]]),localHigh=rows[120].time,pivots=a.retrospectiveExtremePivots(rows,{frequency:'D',minimumRegimeDays:92});
+  assert.equal(pivots.some(item=>item.pivotDate===localHigh&&item.previousRegime==='rising'),false);
+});
+
 test('an actual trend extreme outside the relevance window cannot be replaced by an earlier local extreme',()=>{
   const a=analysis(),rows=dailySegments([[120,1],[45,-2],[120,2],[120,-2]]),localPeak=rows[119].time,cycle={startDate:rows[0].time,peakDate:localPeak,troughDate:rows.at(-1).time},discovery=a.discoverReferenceCandidates(rows,localPeak,{frequency:'D',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',localPeak,cycle),actualPeak=discovery.path.pivots.find(pivot=>pivot.previousRegime==='rising');
   assert.ok(actualPeak);assert.equal(actualPeak.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(actualPeak.pivotDate>discovery.window.to);assert.equal(discovery.candidates.length,0);assert.equal(result.result,null);
