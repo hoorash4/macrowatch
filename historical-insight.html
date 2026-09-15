@@ -59,6 +59,24 @@
               <div><button type="submit">저장</button><button type="button" id="historical-current-name-cancel">취소</button></div>
               <span id="historical-current-name-status" role="status" aria-live="polite"></span>
             </form>
+            <section class="historical-current-anchors" aria-label="현재 국면 시장 기준점">
+              <div class="historical-current-anchor-heading"><strong>시장 기준점</strong><span id="historical-current-anchor-state">미확정</span></div>
+              <dl>
+                <div><dt>START</dt><dd id="historical-current-start">미확정</dd></div>
+                <div><dt>PEAK</dt><dd id="historical-current-peak">미확정</dd></div>
+                <div><dt>TROUGH</dt><dd id="historical-current-trough">미확정</dd></div>
+              </dl>
+              <details id="historical-current-anchor-editor" class="historical-current-anchor-editor" hidden>
+                <summary>기준점 입력·수정</summary>
+                <form id="historical-current-anchor-form">
+                  <label>START<input id="historical-current-start-date" type="date"></label>
+                  <label>PEAK<input id="historical-current-peak-date" type="date"></label>
+                  <label>TROUGH<input id="historical-current-trough-date" type="date"></label>
+                  <button type="submit">저장</button>
+                  <span id="historical-current-anchor-save-status" role="status" aria-live="polite"></span>
+                </form>
+              </details>
+            </section>
           </div>
           <details id="historical-indicator-accordion" class="historical-indicator-accordion" open>
             <summary><span>비교 지표</span></summary>
@@ -122,10 +140,10 @@
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
   <script src="assets/js/historical-insight/historical-cycle-data.js?v=5"></script>
   <script src="assets/js/historical-insight/historical-indicator-data.js?v=4"></script>
-  <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=17"></script>
+  <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=18"></script>
   <script src="assets/js/historical-insight/historical-indicator-selection.js?v=4"></script>
   <script src="assets/js/historical-insight/historical-index-chart.js?v=11"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=22"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=23"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>

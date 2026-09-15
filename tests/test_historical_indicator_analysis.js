@@ -96,12 +96,12 @@ test('duration scoring caps at one hundred and overall scoring does not punish o
   assert.ok(a.overallScore([{score:90}])>a.overallScore([{score:30},{score:30},{score:30}]));
 });
 
-test('current engine exposes watch, candidate, confirmation, and continuation invalidation',()=>{
+test('current engine exposes watch, candidate, structural-only, and continuation invalidation',()=>{
   const a=analysis(),watchRows=segments([[6,3],[6,-1]]),candidateRows=segments([[6,3],[3,-20]]),resumedRows=segments([[6,3],[2,-4],[2,30]]),confirmedRows=segments([[6,-3],[4,15]]);
   const run=rows=>a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time);
   assert.equal(run(watchRows).evidence.status,'watch');assert.equal(run(candidateRows).evidence.status,'candidate');
   const resumed=run(resumedRows);assert.deepEqual(Array.from(resumed.regimes,x=>x.type),['rising']);assert.equal(resumed.evidence.status,'watching');assert.equal(resumed.evidence.contribution,0);assert.ok(resumed.evidence.invalidations.some(x=>x.reason==='replaced_by_new_extreme'));
-  const confirmed=run(confirmedRows);assert.equal(confirmed.evidence.status,'structural_confirmed');assert.equal(confirmed.results.length,1);assert.equal(confirmed.results[0].pivotRole,'structural');
+  const confirmed=run(confirmedRows);assert.equal(confirmed.evidence.status,'structural_only');assert.equal(confirmed.evidence.signalState,'structural_only');assert.equal(confirmed.results.length,1);assert.equal(confirmed.results[0].pivotRole,'structural-only');assert.ok(confirmed.evidence.contribution<1);
 });
 
 test('elapsed time alone neither ends an online trend nor confirms a pivot',()=>{
@@ -111,12 +111,12 @@ test('elapsed time alone neither ends an online trend nor confirms a pivot',()=>
 
 test('online sideways state requires a structural range breakout before trend confirmation',()=>{
   const a=analysis(),candidateRows=segments([[6,0],[3,20]]),confirmedRows=segments([[6,0],[5,10]]),candidate=a.analyzeCurrent({code:'X',frequency:'M'},candidateRows,candidateRows[0].time,candidateRows.at(-1).time),confirmed=a.analyzeCurrent({code:'X',frequency:'M'},confirmedRows,confirmedRows[0].time,confirmedRows.at(-1).time);
-  assert.equal(candidate.evidence.status,'candidate');assert.equal(candidate.evidence.pending.previousRegime,'sideways');assert.equal(confirmed.evidence.status,'structural_confirmed');assert.equal(confirmed.evidence.pivot.previousRegime,'sideways');assert.equal(confirmed.evidence.pivot.nextRegime,'rising');
+  assert.equal(candidate.evidence.status,'candidate');assert.equal(candidate.evidence.pending.previousRegime,'sideways');assert.equal(confirmed.evidence.status,'structural_only');assert.equal(confirmed.evidence.pivot.previousRegime,'sideways');assert.equal(confirmed.evidence.pivot.nextRegime,'rising');
 });
 
-test('watch retains a recent confirmed contribution and probability rolls provisional evidence back once',()=>{
+test('watch can retain a recent structural-only signal without treating it as market confirmed',()=>{
   const a=analysis(),rows=segments([[6,-5],[4,12],[3,-20]]),current=a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time),probability=a.currentPivotProbability([current]);
-  assert.equal(current.evidence.status,'watch');assert.ok(current.evidence.retainedPivot);assert.equal(current.evidence.contribution,a.ANALYSIS_POLICY.contribution.watchRetained);assert.equal(probability.probability,100);
+  assert.equal(current.evidence.status,'watch');assert.ok(current.evidence.retainedPivot);assert.equal(current.evidence.signalState,'structural_only');assert.ok(current.evidence.contribution>0&&current.evidence.contribution<1);assert.equal(probability.marketRelevantCount,0);assert.equal(probability.structuralOnlyCount,1);
 });
 
 test('a long low-volatility plateau before a new low is folded into the fall and only the final range remains sideways',()=>{
@@ -150,9 +150,40 @@ test('START PEAK and TROUGH are evaluated independently and one indicator can re
   assert.deepEqual(Array.from(result.results,item=>item.referenceType),['START','PEAK','TROUGH']);assert.equal(new Set(result.results.map(item=>item.pivotDate)).size,3);assert.ok(result.results.every(item=>item.pivotDate>=a.relevanceWindow(item.referenceDate).from&&item.pivotDate<=a.relevanceWindow(item.referenceDate).to));
 });
 
-test('current analysis keeps confirmed market anchors retrospective while latest evidence uses online states',()=>{
+test('current analysis keeps confirmed market anchors retrospective while latest evidence uses online classifications',()=>{
   const a=analysis(),rows=segments([[6,-4],[6,5],[6,-1],[8,5]]),cycle={startDate:rows[6].time,peakDate:null,troughDate:null},item={searchStart:rows[0].time,searchEnd:null},result=a.analyzeCurrent({code:'X',title:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time,{item,cycle,marketRows:rows});
-  assert.ok(result.byReference.START);assert.equal(result.byReference.START.pivotRole,'market-relevant');assert.ok(['watching','watch','candidate','structural_confirmed'].includes(result.evidence.status));if(result.evidence.status==='structural_confirmed')assert.equal(result.evidence.result.pivotRole,'structural');
+  assert.ok(result.byReference.START);assert.equal(result.byReference.START.pivotRole,'market-relevant');assert.equal(result.byReference.START.classification,'market_relevant_confirmed');assert.ok(['watching','watch','candidate','structural_only','market_relevant_confirmed'].includes(result.evidence.status));assert.ok(result.evidence.baseScore>=result.byReference.START.score);
+});
+
+test('a current structural signal stays provisional until a market anchor makes it relevant',()=>{
+  const a=analysis(),rows=segments([[6,-3],[5,15]]),plain=a.analyzeCurrent({code:'X',title:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time),pivotDate=plain.evidence.pivot.pivotDate,cycle={startDate:pivotDate,peakDate:null,troughDate:null},item={searchStart:rows[0].time,searchEnd:null},anchored=a.analyzeCurrent({code:'X',title:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time,{item,cycle,marketRows:rows});
+  assert.equal(plain.evidence.signalState,'structural_only');assert.equal(plain.confirmedReferences.length,0);assert.ok(anchored.byReference.START);assert.equal(anchored.byReference.START.classification,'market_relevant_confirmed');assert.equal(anchored.evidence.signalState,'market_relevant_confirmed');assert.equal(anchored.evidence.synergyEligible,false);
+  assert.equal(anchored.evidence.score,anchored.evidence.baseScore);assert.equal(anchored.evidence.contribution,anchored.evidence.baseScore/100);
+});
+
+test('a structurally valid current pivot survives beyond six months without a market anchor',()=>{
+  const a=analysis(),rows=segments([[6,-3],[20,15]]),result=a.analyzeCurrent({code:'X',title:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time);
+  assert.ok(result.evidence.pivot);assert.ok((Date.parse(rows.at(-1).time)-Date.parse(result.evidence.pivot.confirmationDate))/86400000>183);assert.equal(result.evidence.signalState,'structural_only');assert.equal(result.confirmedReferences.length,0);
+});
+
+test('an anchor outside the relevance window leaves a valid current pivot structural-only',()=>{
+  const a=analysis(),rows=segments([[6,-3],[20,15]]),plain=a.analyzeCurrent({code:'X',title:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time),cycle={startDate:rows.at(-1).time,peakDate:null,troughDate:null},item={searchStart:rows[0].time,searchEnd:null},anchored=a.analyzeCurrent({code:'X',title:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time,{item,cycle,marketRows:rows});
+  assert.equal(plain.evidence.signalState,'structural_only');assert.equal(anchored.byReference.START,null);assert.equal(anchored.evidence.signalState,'structural_only');
+});
+
+test('each valid current candidate receives its own calendar-month synergy group',()=>{
+  const a=analysis(),make=(code,date)=>({meta:{code,title:code},evidence:{signalState:'candidate',signalDate:date,synergyEligible:true,baseScore:30,score:30,contribution:.3,invalidations:[]}}),scored=a.applyCurrentSynergy([make('A','2024-01-15'),make('B','2024-02-10'),make('C','2024-03-05')]);
+  assert.deepEqual(Array.from(scored[0].evidence.synergyGroup,x=>x.code),['B']);assert.deepEqual(Array.from(scored[1].evidence.synergyGroup,x=>x.code),['A','C']);assert.deepEqual(Array.from(scored[2].evidence.synergyGroup,x=>x.code),['B']);assert.ok(scored[1].evidence.synergyBonus>scored[0].evidence.synergyBonus);
+});
+
+test('candidate invalidation removes its own score and rolls back every peer synergy immediately',()=>{
+  const a=analysis(),make=(code,date)=>({meta:{code,title:code},evidence:{signalState:'candidate',signalDate:date,synergyEligible:true,baseScore:30,score:30,contribution:.3,invalidations:[]}}),first=a.applyCurrentSynergy([make('A','2024-01-15'),make('B','2024-02-10')]),after=a.applyCurrentSynergy([make('A','2024-01-15'),{meta:{code:'B',title:'B'},evidence:{signalState:'watching',signalDate:null,synergyEligible:false,baseScore:0,score:0,contribution:0,invalidations:[{reason:'range_return'}]}}]);
+  assert.ok(first[0].evidence.synergyBonus>0);assert.equal(after[0].evidence.synergyBonus,0);assert.equal(after[1].evidence.score,0);assert.ok(a.currentPivotProbability(after).probability<a.currentPivotProbability(first).probability);
+});
+
+test('a replaced candidate date builds a new synergy group from that date',()=>{
+  const a=analysis(),make=(code,date)=>({meta:{code,title:code},evidence:{signalState:'candidate',signalDate:date,synergyEligible:true,baseScore:30,score:30,contribution:.3,invalidations:[]}}),before=a.applyCurrentSynergy([make('A','2024-01-15'),make('B','2024-02-10')]),after=a.applyCurrentSynergy([make('A','2024-05-15'),make('B','2024-02-10')]);
+  assert.equal(before[0].evidence.synergyGroup.length,1);assert.equal(after[0].evidence.synergyGroup.length,0);assert.equal(after[1].evidence.synergyGroup.length,0);
 });
 
 test('a resumed trend removes the old candidate and a later reversal uses the replacement extreme',()=>{
@@ -205,7 +236,7 @@ test('UI uses one radio-selected magenta indicator without dimming other series'
   assert.doesNotMatch(html,/historical-indicator-clear|historical-indicator-count|historical-indicator-selection-message/);assert.match(controller,/input\.type='radio'/);assert.match(controller,/input\.name='historical-indicator'/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/accent-color: var\(--historical-indicator-color\)/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.match(css,/historical-reference-badge\[data-reference="START"\]/);assert.match(css,/historical-reference-badge\[data-reference="PEAK"\]/);assert.match(css,/historical-reference-badge\[data-reference="TROUGH"\]/);
   assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/const indicatorColor='#c026d3'/);assert.doesNotMatch(chart,/rgba\(color|subscribeClick|onIndicatorActivate/);assert.doesNotMatch(controller,/최대 5개|snapshot\.active|snapshot\.checked/);
   assert.match(css,/\.historical-indicator-result-grid strong \{[^}]*font-size: 14px/);assert.match(css,/\.historical-indicator-result-grid p \{[^}]*font-size: 13px/);assert.match(controller,/card\.classList\.toggle\('is-empty',!result\)/);
-  assert.match(controller,/CANDIDATE · 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/최소 추세기간/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
+  assert.match(controller,/CANDIDATE · 구조 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/구조 품질/);assert.match(controller,/MARKET RELEVANT · 시장 기준점 관련 확정/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
 

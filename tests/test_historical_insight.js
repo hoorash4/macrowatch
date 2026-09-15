@@ -191,6 +191,11 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(controller,/badge\.className='historical-reference-badge'/);
   assert.match(controller,/activeMode==='history'\?`\$\{Math\.round\(item\.overallScore\)\}점`/);
 });
+test('current market anchors use the persisted cycle path and force a complete signal recalculation',()=>{
+  const html=read('historical-insight.html'),controller=read('assets/js/historical-insight/historical-insight.js');
+  for(const id of ['historical-current-anchor-form','historical-current-start-date','historical-current-peak-date','historical-current-trough-date'])assert.match(html,new RegExp(`id="${id}"`));
+  assert.match(controller,/function saveAnchors\(values,output\)/);assert.match(controller,/await caseRepository\.save\(savedCode,activeCode,values,currentUser\.id\)/);assert.match(controller,/analysisCache\.clear\(\);rebuildCurrentModel\(\)/);assert.match(controller,/historical-current-anchor-form'\)\.addEventListener\('submit'/);assert.match(controller,/showCurrentAnchors\(cycle\)/);
+});
 function ui() {
   const nodes=new Map();
   const make = () => { const classes=new Set(); return ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',
@@ -198,7 +203,7 @@ function ui() {
     getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}, replaceChildren(){this.children=[];},
     append(...items){this.children.push(...items);}, querySelector(){return null;},focus(){}}); };
   for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
-  for (const id of ['stage','case-panel','past-sidebar','current-sidebar','current-case-name','current-case-state','current-name-edit','current-name-form','current-name-input','current-name-cancel','current-name-status','toolbar-title','case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status','indicator-clear','indicator-selection-message']) nodes.set(`historical-${id}`,make());
+  for (const id of ['stage','case-panel','past-sidebar','current-sidebar','current-case-name','current-case-state','current-name-edit','current-name-form','current-name-input','current-name-cancel','current-name-status','current-anchor-state','current-start','current-peak','current-trough','current-anchor-editor','current-anchor-form','current-start-date','current-peak-date','current-trough-date','current-anchor-save-status','toolbar-title','case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status','indicator-clear','indicator-selection-message']) nodes.set(`historical-${id}`,make());
   const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
   const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
   const modeButtons=['history','current'].map(mode=>{const b=make();b.dataset.historicalMode=mode;b.attrs['aria-selected']=String(mode==='history');return b;});
