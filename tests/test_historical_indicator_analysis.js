@@ -319,9 +319,9 @@ test('candidate validation does not require the clear extreme to exist in the se
   assert.ok(candidate);assert.ok(validated);assert.equal(validated.pivotDate,candidate.pivotDate);assert.equal(validated.validationSource,'retrospective_full_path');
 });
 
-test('candidate discovery and market matching prefer a full-path extreme omitted by sequential state transitions',()=>{
-  const a=analysis(),rows=dailySegments([[40,-2],[40,.5],[40,-2]]),referenceDate=rows[80].time,cycle={startDate:rows[40].time,peakDate:referenceDate,troughDate:rows.at(-1).time},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'D',minimumRegimeDays:31}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',referenceDate,cycle);
-  assert.equal(discovery.path.pivots.length,0);assert.equal(discovery.candidates.length,1);assert.equal(discovery.candidates[0].pivotValue,Math.max(...rows.slice(40).map(row=>row.value)));assert.ok(result.result);assert.equal(result.result.pivotDate,referenceDate);assert.equal(result.result.validationSource,'retrospective_full_path');assert.ok(result.technicalPivots.some(item=>item.pivotDate===referenceDate));
+test('full-path discovery preserves a direct extreme when sequential state transitions split it through sideways',()=>{
+  const a=analysis(),rows=dailySegments([[40,-2],[40,0],[40,2]]),referenceDate=rows[40].time,discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'D',minimumRegimeDays:31}),direct=discovery.candidates.find(item=>item.previousRegime==='falling'&&item.nextRegime==='rising');
+  assert.ok(discovery.path.pivots.some(item=>item.nextRegime==='sideways'));assert.ok(discovery.path.pivots.some(item=>item.previousRegime==='sideways'));assert.ok(direct);assert.equal(direct.pivotValue,Math.min(...rows.map(row=>row.value)));assert.equal(direct.validationSource,'retrospective_full_path');assert.ok(discovery.majorPivots.includes(direct));
 });
 
 test('full-path extreme validation rejects a shallow correction when the original trend resumes',()=>{
@@ -332,6 +332,16 @@ test('full-path extreme validation rejects a shallow correction when the origina
 test('an actual trend extreme outside the relevance window cannot be replaced by an earlier local extreme',()=>{
   const a=analysis(),rows=dailySegments([[120,1],[45,-2],[120,2],[120,-2]]),localPeak=rows[119].time,cycle={startDate:rows[0].time,peakDate:localPeak,troughDate:rows.at(-1).time},discovery=a.discoverReferenceCandidates(rows,localPeak,{frequency:'D',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',localPeak,cycle),actualPeak=discovery.path.pivots.find(pivot=>pivot.previousRegime==='rising');
   assert.ok(actualPeak);assert.equal(actualPeak.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(actualPeak.pivotDate>discovery.window.to);assert.equal(discovery.candidates.length,0);assert.equal(result.result,null);
+});
+
+test('a correction low inside the reference window cannot replace a major pivot after the rising trend resumes',()=>{
+  const a=analysis(),rows=dailySegments([[40,2],[40,-.5],[40,2]]),referenceDate=rows[80].time,cycle={startDate:rows[0].time,peakDate:rows[49].time,troughDate:referenceDate},options={frequency:'D',minimumRegimeDays:31},path=a.detectRetrospectiveRegimes(rows,options),independent=a.retrospectiveExtremePivots(rows,options),discovery=a.discoverReferenceCandidates(rows,referenceDate,options),result=a.resultForReference(rows,{frequency:'D'},'TROUGH',referenceDate,cycle);
+  const correction=independent.find(item=>item.pivotDate===referenceDate&&item.previousRegime==='falling'&&item.nextRegime==='rising');assert.ok(correction);assert.ok(path.invalidations.some(item=>item.candidateDate===referenceDate&&item.structuralClassification==='internal_swing'));assert.equal(a.validateRetrospectiveCandidate(correction,path,31,rows,'D'),null);assert.equal(discovery.majorPivots.length,0);assert.equal(discovery.candidates.length,0);assert.equal(result.result,null);assert.equal(result.technicalPivots.length,0);
+});
+
+test('a rebound high inside the reference window cannot replace a major pivot after the falling trend resumes',()=>{
+  const a=analysis(),rows=dailySegments([[40,-2],[40,.5],[40,-2]]),referenceDate=rows[80].time,cycle={startDate:rows[0].time,peakDate:referenceDate,troughDate:rows[111].time},options={frequency:'D',minimumRegimeDays:31},path=a.detectRetrospectiveRegimes(rows,options),independent=a.retrospectiveExtremePivots(rows,options),discovery=a.discoverReferenceCandidates(rows,referenceDate,options),result=a.resultForReference(rows,{frequency:'D'},'PEAK',referenceDate,cycle);
+  assert.ok(independent.some(item=>item.pivotDate===referenceDate&&item.previousRegime==='rising'&&item.nextRegime==='falling'));assert.ok(path.invalidations.some(item=>item.candidateDate===referenceDate&&item.structuralClassification==='internal_swing'));assert.equal(discovery.majorPivots.length,0);assert.equal(discovery.candidates.length,0);assert.equal(result.result,null);assert.equal(result.technicalPivots.length,0);
 });
 
 test('multiple structural pivots in one relevance window remain available for the final assignment stage',()=>{
