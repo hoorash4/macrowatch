@@ -2556,3 +2556,7 @@ body.is-pointer-dragging {
 .equity-bond-attractiveness-view-card,
 #equity-bond-attractiveness-dashboard,
 [data-equity-bond-chart] { min-width:0; max-width:100%; overflow:hidden; }
+
+
+/* ===== Research tool navigation ===== */
+.dashboard-nav-tool{color:#536b7d;font-weight:750}.dashboard-nav-tool-group-start{margin-left:.15rem;padding-left:1rem}.dashboard-nav-tool-group-start::before{position:absolute;top:50%;left:.18rem;width:1px;height:1.2rem;content:"";background:rgba(20,36,51,.18);transform:translateY(-50%)}.dashboard-nav-tool:hover{color:var(--color-brand-navy)}.dashboard-nav-tool::after{height:2px;background:var(--color-brand-gold-dark)}html[data-theme="dark"] .dashboard-nav-tool,html[data-theme="dark"] .dashboard-nav-tool:hover{color:#d4bf95}html[data-theme="dark"] .dashboard-nav-tool-group-start::before{background:rgba(203,213,225,.22)}@media(max-width:1180px){.dashboard-nav-inner{gap:clamp(.55rem,1vw,.9rem)}.dashboard-wordmark{margin-right:clamp(.65rem,1.6vw,1.5rem)}.dashboard-nav-item{font-size:.76rem}.dashboard-nav-tool-group-start{padding-left:.8rem}}
