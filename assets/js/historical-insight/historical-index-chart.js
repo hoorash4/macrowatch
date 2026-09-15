@@ -7,11 +7,14 @@
     let data = [];
     let pivotLayer = null;
     let pivotDefinitions = [];
+    let activationHandler = null;
     const indicatorSeries = new Map();
     const indicatorColors=['#2563eb','#d97706','#059669','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c'];
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
-    const timingText=result=>result.timingType==='coincident'?'동행':`${result.leadDays}일 선행`;
+    const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
+    const rgba=(hex,alpha)=>{const value=hex.replace('#','');return `rgba(${parseInt(value.slice(0,2),16)},${parseInt(value.slice(2,4),16)},${parseInt(value.slice(4,6),16)},${alpha})`;};
+    const timingText=result=>result.offsetDays===0?'기준점 당일':`기준점 ${Math.abs(result.offsetDays)}일 ${result.offsetDays<0?'전':'후'}`;
     function renderPivotLines(){
       if(!pivotLayer||!chart)return;
       pivotLayer.replaceChildren();
@@ -29,7 +32,7 @@
         layout: { fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 11, attributionLogo: false },
         localization: { locale: 'ko-KR', dateFormat: 'yyyy. MM. dd.' },
         rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
-        leftPriceScale: { visible: false, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false },
+        leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false, minimumWidth: 34 },
         timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01 },
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
@@ -40,6 +43,7 @@
           formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value) } });
       pivotLayer=document.createElement('div');pivotLayer.className='historical-indicator-pivots';host.append(pivotLayer);
       chart.timeScale().subscribeVisibleLogicalRangeChange(renderPivotLines);
+      chart.subscribeClick(param=>{if(!activationHandler||!param?.seriesData)return;for(const [code,entry] of indicatorSeries){if(param.seriesData.has(entry.series)){activationHandler(code);break;}}});
       window.addEventListener('macrowatch:themechange', updateLine);
     }
     return Object.freeze({
@@ -53,9 +57,9 @@
       setCycle(points) {
         if (!series) return;
         const style = {
-          START: { position: 'belowBar', shape: 'arrowUp', color: '#15803d' },
-          PEAK: { position: 'aboveBar', shape: 'arrowDown', color: '#b91c1c' },
-          TROUGH: { position: 'belowBar', shape: 'arrowUp', color: '#2563eb' },
+          START: { position: 'belowBar', shape: 'arrowUp', color: referenceColor('START') },
+          PEAK: { position: 'aboveBar', shape: 'arrowDown', color: referenceColor('PEAK') },
+          TROUGH: { position: 'belowBar', shape: 'arrowUp', color: referenceColor('TROUGH') },
         };
         series.setMarkers(points.map(point => ({ time: point.row.time, ...style[point.type],
           text: `${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}` })));
@@ -70,15 +74,16 @@
         pivotDefinitions=[];
         items.forEach((item,index)=>{
           const color=indicatorColors[index%indicatorColors.length];
-          const line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:item.meta.code===activeCode?3:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
+          const active=item.meta.code===activeCode,line=chart.addLineSeries({priceScaleId:'left',color:active?color:rgba(color,.3),lineWidth:active?3:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          for(const result of item.results.filter(result=>result.timingType!=='lagging'))pivotDefinitions.push({time:result.pivotDate,color,label:`${result.referenceType==='CURRENT'?'최근':result.referenceType} ${timingText(result)}`});
+          for(const result of item.results)pivotDefinitions.push({time:result.pivotDate,color:active?color:rgba(color,.3),label:`${result.referenceType==='CURRENT'?'최근':result.referenceType} ${timingText(result)}`});
           indicatorSeries.set(item.meta.code,{series:line,color});
         });
         if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
         renderPivotLines();
       },
       indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
+      onIndicatorActivate(handler){activationHandler=handler;},
       focus(from, to, markerInset = .12) {
         if (!chart || !from || !to || !data.length) return;
         const startIndex = data.findIndex(row => row.time >= from);

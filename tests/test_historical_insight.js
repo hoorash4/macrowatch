@@ -180,7 +180,7 @@ function ui() {
     getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}, replaceChildren(){this.children=[];},
     append(...items){this.children.push(...items);}, querySelector(){return null;},focus(){}}); };
   for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
-  for (const id of ['stage','case-panel','past-sidebar','current-sidebar','current-case-name','current-case-state','current-name-edit','current-name-form','current-name-input','current-name-cancel','current-name-status','filter','toolbar-title','case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
+  for (const id of ['stage','case-panel','past-sidebar','current-sidebar','current-case-name','current-case-state','current-name-edit','current-name-form','current-name-input','current-name-cancel','current-name-status','toolbar-title','case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status','indicator-clear','indicator-selection-message']) nodes.set(`historical-${id}`,make());
   const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
   const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
   const modeButtons=['history','current'].map(mode=>{const b=make();b.dataset.historicalMode=mode;b.attrs['aria-selected']=String(mode==='history');return b;});
@@ -239,7 +239,6 @@ test('current mode keeps the common analysis layout and replaces the left list w
   assert.equal(f.nodes.get('historical-current-sidebar').hidden,false);
   assert.equal(f.nodes.get('historical-current-case-name').textContent,'AI/반도체 상승장');
   assert.equal(f.nodes.get('historical-current-case-state').textContent,'진행 중');
-  assert.equal(f.nodes.get('historical-filter').hidden,true);
   assert.equal(f.nodes.get('historical-cycle-panel').hidden,true);
   assert.equal(f.nodes.get('historical-toolbar-title').textContent,'현재 국면 차트');
   assert.match(f.nodes.get('historical-chart-meta').textContent,/AI\/반도체 상승장/);

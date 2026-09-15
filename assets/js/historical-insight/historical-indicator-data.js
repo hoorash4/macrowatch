@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const INDEX_CODES=new Set(['SP500','NASDAQ_COMPOSITE','KOSPI']);
-  const isKoreaOnly=code=>code==='USDKRW'||code.startsWith('KR_')||code.startsWith('KR3')||code.startsWith('KR10')||code.startsWith('KOSPI_');
+  const INDEX_MARKET_SCOPES=Object.freeze({KOSPI:new Set(['KR','US','GLOBAL']),SP500:new Set(['US','GLOBAL']),NASDAQ_COMPOSITE:new Set(['US','GLOBAL'])});
   function normalize(rows){
     const out=(rows||[]).map(row=>({time:String(row.observation_date||'').slice(0,10),value:Number(row.value)}));
     if(out.some((row,index)=>!/^\d{4}-\d{2}-\d{2}$/.test(row.time)||!Number.isFinite(row.value)||(index&&out[index-1].time>=row.time)))throw new Error('경제지표 원천 데이터의 날짜 또는 값을 확인해 주세요.');
@@ -9,7 +9,7 @@
   }
   function createRepository(client){
     const seriesCache=new Map();let coverageCache=null;
-    const catalog=indexCode=>Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&(indexCode==='KOSPI'||!isKoreaOnly(item.code))));
+    const catalog=indexCode=>{const allowed=INDEX_MARKET_SCOPES[indexCode]||INDEX_MARKET_SCOPES.SP500;return Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&allowed.has(item.marketScope)));};
     async function loadCoverage(){
       if(coverageCache)return coverageCache;
       const {data,error}=await client.from('economic_chart_series_coverage').select('series_code,first_date,last_date,point_count');if(error)throw error;
@@ -23,5 +23,5 @@
     }
     return Object.freeze({catalog,loadCoverage,load,clearAnalysisData(){coverageCache=null;seriesCache.clear();}});
   }
-  window.MacroWatchHistoricalIndicators=Object.freeze({createRepository,normalize,isKoreaOnly});
+  window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize});
 })();

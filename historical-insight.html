@@ -61,7 +61,9 @@
             </form>
           </div>
           <details id="historical-indicator-accordion" class="historical-indicator-accordion" open>
-            <summary><span>비교 지표</span><small id="historical-indicator-count">분석 중</small></summary>
+            <summary><span>비교 지표</span></summary>
+            <div class="historical-indicator-actions"><small id="historical-indicator-count">0/5</small><button type="button" id="historical-indicator-clear">전체 해제</button></div>
+            <p id="historical-indicator-selection-message" class="historical-indicator-selection-message" role="status" aria-live="polite"></p>
             <div id="historical-indicator-list" class="historical-indicator-list" aria-label="비교 지표 선택"><p class="historical-indicator-empty">지표 분석 중</p></div>
           </details>
         </aside>
@@ -72,7 +74,6 @@
               <div id="historical-chart-meta" class="economic-chart-meta">사례와 지수 데이터 불러오는 중</div>
             </div>
             <div class="historical-toolbar-right">
-              <div id="historical-filter" class="historical-filter" role="group" aria-label="지표 필터 강도"><span>지표 필터</span><button type="button" data-indicator-strength="strong">강함</button><button type="button" class="is-active" data-indicator-strength="standard">기본</button><button type="button" data-indicator-strength="weak">약함</button></div>
               <span id="historical-chart-status" role="status" aria-live="polite" class="historical-chart-status">지수 데이터 불러오는 중</span>
               <div class="historical-range-tools"><button type="button" id="historical-chart-case-range" disabled>사례 범위</button><button type="button" id="historical-chart-full-range" disabled>전체 이력</button><button type="button" id="historical-chart-retry" hidden>다시 시도</button></div>
               <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택">
@@ -120,14 +121,14 @@
     </main>
   </div>
 
-  <script src="assets/js/charts/economic-series-catalog.js?v=1"></script>
+  <script src="assets/js/charts/economic-series-catalog.js?v=2"></script>
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
   <script src="assets/js/historical-insight/historical-cycle-data.js?v=5"></script>
-  <script src="assets/js/historical-insight/historical-indicator-data.js?v=2"></script>
-  <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=5"></script>
-  <script src="assets/js/historical-insight/historical-indicator-selection.js?v=2"></script>
-  <script src="assets/js/historical-insight/historical-index-chart.js?v=6"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=12"></script>
+  <script src="assets/js/historical-insight/historical-indicator-data.js?v=3"></script>
+  <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=6"></script>
+  <script src="assets/js/historical-insight/historical-indicator-selection.js?v=3"></script>
+  <script src="assets/js/historical-insight/historical-index-chart.js?v=7"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=13"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>

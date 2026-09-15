@@ -3,6 +3,11 @@
   const RATE_CATEGORY='금리',FINANCIAL_CREDIT_CATEGORY='금융신용',LEGACY_RATE_CATEGORY='금리 · 신용';
   const BUSINESS_DISTRESS_CATEGORY='기업부실',LEGACY_BUSINESS_CREDIT_CATEGORY='기업신용';
   const FREQUENCY_LABELS={D:'일별',W:'주별',T:'10일 구간',M:'월별',Q:'분기별',E:'결정일'};
+  const MARKET_SCOPE=Object.freeze({
+    KR:new Set(['KR_POLICY_RATE','KR_CORP_CREDIT_SPREAD','KR3Y','KR10Y','KR10Y3Y','KOSPI_PER','KOSPI_PBR','USDKRW','KR_EXPORT_DAILY_AVG','KR_CPI','KR_CORE_CPI','KR_PPI','KR_IMPORT_PRICE','KR_CORP_DELINQ','KR_DEFAULT_COMPANIES','KR_CORP_REHAB']),
+    GLOBAL:new Set(['WTI','EM_OAS'])
+  });
+  const marketScope=code=>MARKET_SCOPE.KR.has(code)?'KR':MARKET_SCOPE.GLOBAL.has(code)?'GLOBAL':'US';
   const DEFAULT_CATEGORY_ORDER=[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY,'밸류에이션','시장가격','고빈도 경기','물가',BUSINESS_DISTRESS_CATEGORY,'유동성'];
   const SERIES=[
     {code:'US2Y',title:'미국채 2년',frequency:'D',unit:'%',category:RATE_CATEGORY,decimals:2},
@@ -45,9 +50,9 @@
   const freeze = item => Object.freeze({...item});
   const primary = Object.freeze(SERIES.map(freeze));
   const all = Object.freeze(SERIES.flatMap(item => {
-    const base = {code:item.code,title:item.legendTitle||item.title,frequency:item.frequency,frequencyLabel:item.frequencyLabel||FREQUENCY_LABELS[item.frequency]||item.frequency,unit:item.unit,category:item.category,decimals:item.decimals};
-    return item.compareCode ? [freeze(base),freeze({...base,code:item.compareCode,title:item.compareTitle})] : [freeze(base)];
+    const base = {code:item.code,title:item.legendTitle||item.title,frequency:item.frequency,frequencyLabel:item.frequencyLabel||FREQUENCY_LABELS[item.frequency]||item.frequency,unit:item.unit,category:item.category,decimals:item.decimals,marketScope:marketScope(item.code)};
+    return item.compareCode ? [freeze(base),freeze({...base,code:item.compareCode,title:item.compareTitle,marketScope:marketScope(item.compareCode)})] : [freeze(base)];
   }));
-  window.MacroWatchEconomicSeriesRegistry=Object.freeze({series:primary,allSeries:all,frequencyLabels:Object.freeze({...FREQUENCY_LABELS}),defaultCategoryOrder:Object.freeze([...DEFAULT_CATEGORY_ORDER]),categories:Object.freeze({rate:RATE_CATEGORY,financialCredit:FINANCIAL_CREDIT_CATEGORY,businessDistress:BUSINESS_DISTRESS_CATEGORY,legacyRate:LEGACY_RATE_CATEGORY,legacyBusinessCredit:LEGACY_BUSINESS_CREDIT_CATEGORY})});
+  window.MacroWatchEconomicSeriesRegistry=Object.freeze({series:primary,allSeries:all,marketScopes:Object.freeze(['KR','US','GLOBAL']),frequencyLabels:Object.freeze({...FREQUENCY_LABELS}),defaultCategoryOrder:Object.freeze([...DEFAULT_CATEGORY_ORDER]),categories:Object.freeze({rate:RATE_CATEGORY,financialCredit:FINANCIAL_CREDIT_CATEGORY,businessDistress:BUSINESS_DISTRESS_CATEGORY,legacyRate:LEGACY_RATE_CATEGORY,legacyBusinessCredit:LEGACY_BUSINESS_CREDIT_CATEGORY})});
   window.MacroWatchEconomicSeriesCatalog=Object.freeze(primary.map(item=>freeze({code:item.code,title:item.title,frequency:item.frequencyLabel||FREQUENCY_LABELS[item.frequency]||item.frequency,category:item.category})));
 })();
