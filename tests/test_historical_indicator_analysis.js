@@ -19,6 +19,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{structural:.45,timing:.35,duration:.2});
   assert.equal(a.ANALYSIS_POLICY.relationship.maximumBonus,10);
   assert.doesNotMatch(source,/shortBefore|longBefore|beforeMonths|relevanceDays/);
+  assert.doesNotMatch(source,/candidateRange/);
   assert.doesNotMatch(source,/monthlySamples|stateStarts|extremeForBoundary|directionalChangeThreshold|\.025/);
   assert.doesNotMatch(source,/COVID|US2Y|RETAIL|2020-|2021-|2022-|코로나|소매/);
 });
@@ -45,20 +46,30 @@ test('a volatility-scaled deep reversal remains an independent retrospective reg
 
 test('a short but deep move becomes a new regime once the minimum duration is met',()=>{
   const a=analysis(),rows=segments([[6,5],[2,-15],[3,-5]]),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31}),pivot=path.pivots.find(item=>item.previousRegime==='rising'&&item.nextRegime==='falling');
-  assert.ok(pivot);assert.equal(pivot.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(pivot.durationAfter>=31);
+  assert.ok(pivot);assert.equal(pivot.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(pivot.durationAfter>=31);assert.equal(pivot.regimeBoundaryDate,pivot.pivotDate);assert.notEqual(pivot.confirmationDate,pivot.pivotDate);
+});
+
+test('direct falling-to-rising reversal preserves the raw trough rather than a transition boundary',()=>{
+  const a=analysis(),rows=segments([[6,-5],[2,15],[3,5]]),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31}),pivot=path.pivots.find(item=>item.previousRegime==='falling'&&item.nextRegime==='rising');
+  assert.ok(pivot);assert.equal(pivot.pivotValue,Math.min(...rows.map(row=>row.value)));assert.equal(pivot.regimeBoundaryDate,pivot.pivotDate);assert.equal(pivot.breakoutOrBreakdownDate,null);assert.notEqual(pivot.confirmationDate,pivot.pivotDate);
 });
 
 test('sustained boxes end directional regimes at their raw extremes',()=>{
   const a=analysis(),risingRows=segments([[6,3],[5,0]]),fallingRows=segments([[5,-3],[5,0]]),rising=a.detectRetrospectiveRegimes(risingRows,{frequency:'M',minimumRegimeDays:92}),falling=a.detectRetrospectiveRegimes(fallingRows,{frequency:'M',minimumRegimeDays:92});
-  for(const path of [rising,falling]){assert.equal(path.pivots.length,1);assert.equal(path.pivots[0].nextRegime,'sideways');assert.equal(path.pivots[0].pivotType,'extreme');assert.notEqual(path.pivots[0].pivotDate,path.pivots[0].confirmationDate);}
+  for(const path of [rising,falling]){assert.equal(path.pivots.length,1);assert.equal(path.pivots[0].nextRegime,'sideways');assert.equal(path.pivots[0].pivotType,'extreme');assert.equal(path.pivots[0].regimeBoundaryDate,path.pivots[0].pivotDate);assert.equal(path.pivots[0].breakoutOrBreakdownDate,null);assert.equal(path.pivots[0].confirmationEvidence.type,'structural_persistence');assert.notEqual(path.pivots[0].pivotDate,path.pivots[0].confirmationDate);}
   assert.equal(rising.pivots[0].previousRegime,'rising');assert.equal(falling.pivots[0].previousRegime,'falling');
   assert.equal(rising.pivots[0].pivotValue,Math.max(...risingRows.map(row=>row.value)));assert.equal(falling.pivots[0].pivotValue,Math.min(...fallingRows.map(row=>row.value)));
   const risingCandidate=rising.technicalCandidates.find(item=>item.previousRegime==='rising'&&item.nextRegime==='sideways');assert.equal(risingCandidate.pivotDate,rising.pivots[0].pivotDate);
 });
 
-test('a sideways regime pivots at the structural range breakout',()=>{
-  const a=analysis(),rows=segments([[5,0],[6,5]]),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:61}),pivot=path.pivots.find(item=>item.previousRegime==='sideways'&&item.nextRegime==='rising');
-  assert.ok(pivot);assert.equal(pivot.pivotType,'boundary');assert.ok(pivot.pivotDate>=rows[5].time);
+test('sideways breakouts and breakdowns preserve their raw departure extremes before confirmation',()=>{
+  const a=analysis(),risingRows=segments([[5,0],[6,5]]),fallingRows=segments([[5,0],[6,-5]]),rising=a.detectRetrospectiveRegimes(risingRows,{frequency:'M',minimumRegimeDays:61}).pivots.find(item=>item.previousRegime==='sideways'&&item.nextRegime==='rising'),falling=a.detectRetrospectiveRegimes(fallingRows,{frequency:'M',minimumRegimeDays:61}).pivots.find(item=>item.previousRegime==='sideways'&&item.nextRegime==='falling');
+  for(const [pivot,rows,type] of [[rising,risingRows,'range_breakout'],[falling,fallingRows,'range_breakdown']]){assert.ok(pivot);assert.equal(pivot.pivotType,'departure');assert.equal(pivot.pivotDate,rows[5].time);assert.equal(pivot.regimeBoundaryDate,pivot.pivotDate);assert.ok(pivot.breakoutOrBreakdownDate>pivot.pivotDate);assert.equal(pivot.confirmationEvidence.type,type);assert.equal(pivot.confirmationEvidence.eventDate,pivot.breakoutOrBreakdownDate);}
+});
+
+test('smoothing detects structure without moving the final pivot away from the raw extreme',()=>{
+  const a=analysis(),values=[100,105,110,140,120,100,80,60,50],rows=values.map((value,index)=>month(index,value)),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31}),pivot=path.pivots.find(item=>item.nextRegime==='falling');
+  assert.ok(pivot);assert.equal(pivot.pivotDate,rows[3].time);assert.equal(pivot.pivotValue,140);assert.ok(pivot.breakoutOrBreakdownDate>pivot.pivotDate);assert.equal(pivot.confirmationEvidence.eventDate,pivot.breakoutOrBreakdownDate);
 });
 
 test('market trend duration selects one, two, or three-month indicator regimes independently',()=>{
@@ -112,7 +123,7 @@ test('elapsed time alone neither ends an online trend nor confirms a pivot',()=>
 
 test('online sideways state requires a structural range breakout before trend confirmation',()=>{
   const a=analysis(),candidateRows=segments([[6,0],[3,20]]),confirmedRows=segments([[6,0],[5,10]]),candidate=a.analyzeCurrent({code:'X',frequency:'M'},candidateRows,candidateRows[0].time,candidateRows.at(-1).time),confirmed=a.analyzeCurrent({code:'X',frequency:'M'},confirmedRows,confirmedRows[0].time,confirmedRows.at(-1).time);
-  assert.equal(candidate.evidence.status,'candidate');assert.equal(candidate.evidence.pending.previousRegime,'sideways');assert.equal(confirmed.evidence.status,'structural_only');assert.equal(confirmed.evidence.pivot.previousRegime,'sideways');assert.equal(confirmed.evidence.pivot.nextRegime,'rising');
+  assert.equal(candidate.evidence.status,'candidate');assert.equal(candidate.evidence.pending.previousRegime,'sideways');assert.ok(candidate.evidence.pending.candidateDate<candidate.evidence.pending.breakoutOrBreakdownDate);assert.equal(candidate.evidence.pending.confirmationEvidence.confirmedAt,null);assert.equal(confirmed.evidence.status,'structural_only');assert.equal(confirmed.evidence.pivot.previousRegime,'sideways');assert.equal(confirmed.evidence.pivot.nextRegime,'rising');assert.ok(confirmed.evidence.pivot.pivotDate<confirmed.evidence.pivot.breakoutOrBreakdownDate);assert.ok(confirmed.evidence.pivot.breakoutOrBreakdownDate<confirmed.evidence.pivot.confirmationDate);assert.equal(confirmed.evidence.pivot.confirmationEvidence.type,'range_breakout');
 });
 
 test('watch can retain a recent structural-only signal without treating it as market confirmed',()=>{
@@ -133,7 +144,7 @@ test('a monotonic monthly rise stays one regime without intermediate pivots',()=
 
 test('an initial range breaks into a fall and the later trough uses the raw minimum',()=>{
   const a=analysis(),values=[100,100,100,96,92,88,84,80,76,82,88,94],rows=values.map((value,index)=>({time:new Date(Date.UTC(2000,index,1)).toISOString().slice(0,10),value})),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31});
-  const breakdown=path.pivots.find(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling'),trough=path.pivots.find(x=>x.previousRegime==='falling');assert.ok(breakdown);assert.ok(breakdown.pivotDate>=rows[3].time);assert.ok(trough);assert.equal(trough.pivotValue,Math.min(...rows.map(row=>row.value)));assert.notEqual(trough.pivotDate,trough.confirmationDate);
+  const breakdown=path.pivots.find(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling'),trough=path.pivots.find(x=>x.previousRegime==='falling');assert.ok(breakdown);assert.equal(breakdown.pivotDate,rows[2].time);assert.ok(breakdown.breakoutOrBreakdownDate>breakdown.pivotDate);assert.ok(trough);assert.equal(trough.pivotValue,Math.min(...rows.map(row=>row.value)));assert.notEqual(trough.pivotDate,trough.confirmationDate);
 });
 
 test('reference timing rewards earlier leading pivots across the full relevance window',()=>{
