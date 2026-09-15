@@ -51,7 +51,7 @@ test('duration scoring caps at one hundred and overall scoring does not punish o
 });
 
 test('current engine exposes watch, candidate, confirmation, and continuation invalidation',()=>{
-  const a=analysis(),watchRows=segments([[6,3],[2,-4]]),candidateRows=segments([[6,3],[3,-4]]),resumedRows=segments([[6,3],[2,-4],[2,20]]),confirmedRows=segments([[6,-3],[4,4]]);
+  const a=analysis(),watchRows=segments([[6,3],[2,-4]]),candidateRows=segments([[6,3],[3,-4]]),resumedRows=segments([[6,3],[2,-4],[2,30]]),confirmedRows=segments([[6,-3],[4,4]]);
   const run=rows=>a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time);
   assert.equal(run(watchRows).evidence.status,'watch');assert.equal(run(candidateRows).evidence.status,'candidate');
   const resumed=run(resumedRows);assert.deepEqual(Array.from(resumed.regimes,x=>x.type),['rising']);assert.equal(resumed.evidence.status,'watching');assert.equal(resumed.evidence.contribution,0);assert.ok(resumed.evidence.invalidations.some(x=>x.reason==='higher_high'));
@@ -64,9 +64,9 @@ test('watch retains a recent confirmed contribution and probability rolls provis
 });
 
 test('COVID US2Y can detect a late-January sideways-to-falling boundary with a one-month minimum',()=>{
-  const a=analysis(),rows=[];for(let i=0;i<130;i++){const d=new Date(Date.UTC(2019,10,1+i)),date=d.toISOString().slice(0,10),value=date<'2020-01-24'?1.6:Math.max(.2,1.6-(i-83)*.045);rows.push({time:date,value});}
-  const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),pivot=path.pivots.find(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling');
-  assert.ok(pivot);assert.match(pivot.pivotDate,/^2020-01-2/);assert.equal(pivot.requiredMinimumDays,31);
+  const a=analysis(),rows=[];for(let i=0;i<213;i++){const d=new Date(Date.UTC(2019,8,1+i)),date=d.toISOString().slice(0,10);let value;if(date<='2019-10-01')value=1.8-i*.004;else if(date<'2020-01-24')value=1.56+(i%7)*.001;else value=Math.max(.2,1.56-(i-145)*.035);rows.push({time:date,value});}
+  const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),pivot=path.pivots.filter(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling').at(-1);
+  assert.ok(path.pivots.some(x=>x.previousRegime==='falling'&&x.nextRegime==='sideways'));assert.ok(pivot);assert.match(pivot.pivotDate,/^2020-01-2/);assert.equal(pivot.requiredMinimumDays,31);
 });
 
 test('2022 US2Y rising path does not invent a May 2021 pivot',()=>{

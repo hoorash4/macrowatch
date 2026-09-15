@@ -35,10 +35,10 @@
     for(let index=initialConfirmationIndex+1;index<data.length;index++){
       const current=value(index),date=data[index].time;
       if(active.type==='rising'){
-        if(current>value(active.extremeIndex)){if(pending)invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'higher_high',replacedBy:date});active.extremeIndex=index;pending=null;continue;}
+        if(pending&&current>value(active.extremeIndex)+threshold){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'higher_high',replacedBy:date});active.extremeIndex=index;pending=null;continue;}if(!pending&&current>value(active.extremeIndex)){active.extremeIndex=index;continue;}
         const stalled=daysBetween(data[active.extremeIndex].time,date)>=minimumRegimeDays,decline=value(active.extremeIndex)-current;if(!pending&&(decline>0||stalled))pending={nextType:decline>=threshold?'falling':'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index};
       }else if(active.type==='falling'){
-        if(current<value(active.extremeIndex)){if(pending)invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'lower_low',replacedBy:date});active.extremeIndex=index;pending=null;continue;}
+        if(pending&&current<value(active.extremeIndex)-threshold){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'lower_low',replacedBy:date});active.extremeIndex=index;pending=null;continue;}if(!pending&&current<value(active.extremeIndex)){active.extremeIndex=index;continue;}
         const stalled=daysBetween(data[active.extremeIndex].time,date)>=minimumRegimeDays,rally=current-value(active.extremeIndex);if(!pending&&(rally>0||stalled))pending={nextType:rally>=threshold?'rising':'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index};
       }else if(!pending){
         if(current>active.bandHigh)pending={nextType:'rising',boundaryIndex:index,startedIndex:index,extremeIndex:index};else if(current<active.bandLow)pending={nextType:'falling',boundaryIndex:index,startedIndex:index,extremeIndex:index};else active.extremeIndex=index;
