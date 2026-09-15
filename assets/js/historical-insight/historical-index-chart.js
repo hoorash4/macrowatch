@@ -10,20 +10,20 @@
     renderer(){return this.rendererInstance;}
     zOrder(){return 'top';}
   }
-  class PivotTimeAxisView {
-    constructor(paneView,date,color){this.paneView=paneView;this.date=date;this.color=color;}
-    coordinate(){return this.paneView.x??0;}
-    text(){return this.date;}
-    textColor(){return '#fff';}
-    backColor(){return this.color;}
-    visible(){return this.paneView.x!==null;}
-    tickVisible(){return true;}
+  class PivotTimeAxisRenderer {
+    constructor(view){this.view=view;}
+    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelTop=scope.bitmapSize.height-labelHeight-3*v,padX=5*h;ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle='#fff';ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();});}
+  }
+  class PivotTimeAxisPaneView {
+    constructor(paneView,date,color){this.paneView=paneView;this.date=date;this.color=color;this.rendererInstance=new PivotTimeAxisRenderer(this);}
+    renderer(){return this.rendererInstance;}
+    zOrder(){return 'top';}
   }
   class PivotLinePrimitive {
-    constructor(chart,time,color){this.view=new PivotLineView(chart,time,color);this.timeAxisView=new PivotTimeAxisView(this.view,time,color);}
+    constructor(chart,time,color){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color);}
     updateAllViews(){this.view.update();}
     paneViews(){return [this.view];}
-    timeAxisViews(){return [this.timeAxisView];}
+    timeAxisPaneViews(){return [this.timeAxisPaneView];}
   }
   // 공통 frontend-core가 테마/등록/해제를, 차트 라이브러리가 크기 관찰을 담당합니다.
   function create(host) {
@@ -44,7 +44,7 @@
         localization: { locale: 'ko-KR', dateFormat: 'yyyy. MM. dd.' },
         rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
         leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false, minimumWidth: 34 },
-        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 48 },
+        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 58 },
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
         handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },

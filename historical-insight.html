@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=19">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=20">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -78,10 +78,10 @@
               </details>
             </section>
           </div>
-          <details id="historical-indicator-accordion" class="historical-indicator-accordion" open>
-            <summary><span>비교 지표</span></summary>
+          <section id="historical-indicator-section" class="historical-indicator-section">
+            <div class="historical-indicator-heading"><strong>비교 지표</strong><button type="button" id="historical-indicator-clear" disabled>지표 클리어</button></div>
             <div id="historical-indicator-list" class="historical-indicator-list" aria-label="비교 지표 선택"><p class="historical-indicator-empty">지표 분석 중</p></div>
-          </details>
+          </section>
         </aside>
         <div class="historical-workspace">
           <header class="historical-toolbar">
@@ -142,8 +142,8 @@
   <script src="assets/js/historical-insight/historical-indicator-data.js?v=4"></script>
   <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=19"></script>
   <script src="assets/js/historical-insight/historical-indicator-selection.js?v=4"></script>
-  <script src="assets/js/historical-insight/historical-index-chart.js?v=12"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=25"></script>
+  <script src="assets/js/historical-insight/historical-index-chart.js?v=13"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=26"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>
