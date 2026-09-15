@@ -1,0 +1,95 @@
+name: Rebuild index research navigation grouping
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-index-research-nav-layout-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Rebuild research navigation as one isolated group
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index = Path('index.html')
+          text = index.read_text(encoding='utf-8')
+          old = '''          <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적 알림</span></button>
+          <span class="dashboard-nav-tool-divider" aria-hidden="true"></span>
+          <a class="dashboard-nav-item dashboard-nav-tool" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>
+          <a class="dashboard-nav-item dashboard-nav-tool" href="historical-insight.html"><i class="fa-solid fa-clock-rotate-left"></i><span>히스토리컬 인사이트</span></a>'''
+          new = '''          <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적 알림</span></button>
+          <span class="dashboard-research-tools">
+            <a class="dashboard-nav-item dashboard-nav-tool" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>
+            <a class="dashboard-nav-item dashboard-nav-tool" href="historical-insight.html"><i class="fa-solid fa-clock-rotate-left"></i><span>히스토리컬 인사이트</span></a>
+          </span>'''
+          if old not in text:
+              raise SystemExit('current research navigation block not found')
+          text = text.replace(old, new, 1)
+          import re
+          text = re.sub(r'assets/css/styles\.css\?v=\d+', 'assets/css/styles.css?v=193', text, count=1)
+          index.write_text(text, encoding='utf-8')
+
+          styles = Path('assets/css/styles.css')
+          css = styles.read_text(encoding='utf-8')
+          marker = '/* Final isolated research navigation group: divider is mathematically centered. */'
+          rule = r'''
+
+/* Final isolated research navigation group: divider is mathematically centered. */
+.dashboard-research-tools {
+  --research-nav-gap: clamp(.7rem, 1.35vw, 1.35rem);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--research-nav-gap);
+  padding-left: var(--research-nav-gap);
+}
+.dashboard-research-tools::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 1px;
+  height: 1.2rem;
+  content: "";
+  background: rgba(20,36,51,.18);
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+}
+.dashboard-research-tools .dashboard-nav-tool {
+  margin: 0 !important;
+  padding: .42rem 0 !important;
+}
+.dashboard-research-tools .dashboard-nav-tool::after {
+  left: 0 !important;
+  right: 0 !important;
+}
+/* Neutralize every previous divider implementation so it cannot affect layout. */
+.dashboard-nav-tool-divider { display: none !important; }
+.dashboard-nav-tool-group-start { margin-left: 0 !important; padding-left: 0 !important; }
+.dashboard-nav-tool-group-start::before { display: none !important; }
+.dashboard-nav-tool-group-start::after { left: 0 !important; }
+html[data-theme="dark"] .dashboard-research-tools::before { background: rgba(203,213,225,.22); }
+@media(max-width:1180px) {
+  .dashboard-research-tools { --research-nav-gap: clamp(.55rem,1vw,.9rem); }
+}
+'''
+          if marker not in css:
+              styles.write_text(css + rule, encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "MacroWatch Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html assets/css/styles.css
+          git diff --cached --quiet && exit 0
+          git commit -m "Isolate and center research navigation group"
+          git push origin main
