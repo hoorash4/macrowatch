@@ -141,9 +141,13 @@ test('cycle summary gives market context and performance figures strong visual h
   assert.match(css,/\.historical-cycle-description \{[^}]*font-size: 13px/);
   assert.match(css,/\.historical-cycle-performance strong \{[^}]*font-size: 25px/);
   assert.match(css,/\.historical-cycle-performance \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css,/\.historical-cycle-performance article \{[^}]*grid-template-columns: auto 1fr[^}]*min-height: 72px/);
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #dc2626/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #2563eb/);
   assert.match(css,/\.historical-cycle-performance b \{[^}]*font-size: 15px/);
+  assert.match(css,/\.historical-cycle-points article \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/);
+  assert.match(css,/\.historical-cycle-points strong \{[^}]*font-size: 17px/);
+  assert.match(css,/\.historical-cycle-points span \{[^}]*font-size: 15px/);
 });
 test('analysis tabs separate current regime from the historical case list and enlarge their labels', () => {
   const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');

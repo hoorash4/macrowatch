@@ -31,29 +31,29 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-cycle-heading > span { color: var(--theme-text-secondary); font-size: 11px; font-weight: 650; }
 .historical-cycle-description { max-width: 980px; margin: 10px 0 18px; color: var(--theme-text-primary); font-size: 13px; font-weight: 550; line-height: 1.65; }
 .historical-cycle-points { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.historical-cycle-points article { position: relative; padding: 13px 14px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; background: var(--theme-surface); box-shadow: 0 3px 10px rgba(15,23,42,.04); }
+.historical-cycle-points article { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 7px; padding: 11px 14px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; background: var(--theme-surface); box-shadow: 0 3px 10px rgba(15,23,42,.04); }
 .historical-cycle-points article::before { position: absolute; inset: 0 0 auto; height: 3px; content: ''; }
 .historical-cycle-points article[data-cycle-point="start"]::before { background: #16a34a; }
 .historical-cycle-points article[data-cycle-point="peak"]::before { background: #dc2626; }
 .historical-cycle-points article[data-cycle-point="trough"]::before { background: #2563eb; }
-.historical-cycle-points small { display: block; font-size: 9px; font-weight: 900; letter-spacing: .1em; }
+.historical-cycle-points small { grid-column: 1 / -1; display: block; font-size: 10px; font-weight: 900; letter-spacing: .1em; }
 .historical-cycle-points article[data-cycle-point="start"] small { color: #15803d; }
 .historical-cycle-points article[data-cycle-point="peak"] small { color: #b91c1c; }
 .historical-cycle-points article[data-cycle-point="trough"] small { color: #2563eb; }
-.historical-cycle-points strong { display: block; margin-top: 7px; font-size: 14px; letter-spacing: -.01em; }
-.historical-cycle-points span { display: block; margin-top: 3px; color: var(--theme-text-secondary); font-size: 12px; font-weight: 650; }
+.historical-cycle-points strong { display: block; font-size: 17px; line-height: 1.15; letter-spacing: -.015em; }
+.historical-cycle-points span { display: block; color: var(--theme-text-secondary); font-size: 15px; font-weight: 750; }
 .historical-cycle-performance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
-.historical-cycle-performance article { position: relative; min-height: 98px; padding: 15px 18px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; }
+.historical-cycle-performance article { position: relative; display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 16px; row-gap: 7px; min-height: 72px; padding: 11px 18px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; }
 .historical-cycle-performance article::after { position: absolute; right: -17px; bottom: -28px; width: 80px; height: 80px; border-radius: 50%; content: ''; opacity: .14; }
 .historical-cycle-performance .is-rise { border-color: rgba(220,38,38,.3); background: rgba(220,38,38,.06); }
 .historical-cycle-performance .is-rise::after { background: #dc2626; }
 .historical-cycle-performance .is-fall { border-color: rgba(37,99,235,.3); background: rgba(37,99,235,.065); }
 .historical-cycle-performance .is-fall::after { background: #2563eb; }
-.historical-cycle-performance span { display: block; color: var(--theme-text-secondary); font-size: 11px; font-weight: 800; }
-.historical-cycle-performance strong { display: block; margin-top: 4px; font-size: 25px; font-weight: 900; line-height: 1.1; letter-spacing: -.04em; }
+.historical-cycle-performance span { grid-column: 1 / -1; display: block; color: var(--theme-text-secondary); font-size: 11px; font-weight: 800; }
+.historical-cycle-performance strong { display: block; font-size: 25px; font-weight: 900; line-height: 1.1; letter-spacing: -.04em; }
 .historical-cycle-performance .is-rise strong { color: #dc2626; }
 .historical-cycle-performance .is-fall strong { color: #2563eb; }
-.historical-cycle-performance small { display: block; margin-top: 10px; color: var(--theme-text-secondary); font-size: 13px; font-weight: 700; }
+.historical-cycle-performance small { display: block; color: var(--theme-text-secondary); font-size: 13px; font-weight: 700; }
 .historical-cycle-performance b { color: var(--theme-text-primary); font-size: 15px; font-weight: 850; }
 .historical-cycle-editor { margin-top: 10px; border-top: 1px solid var(--theme-border); padding-top: 9px; }
 .historical-cycle-editor summary { color: var(--theme-text-secondary); font-size: 9px; font-weight: 750; cursor: pointer; }
@@ -69,7 +69,7 @@ html[data-theme="dark"] .historical-cycle-market { border-color: #475569; color:
 html[data-theme="dark"] .historical-cycle-performance .is-rise strong { color: #f87171; }
 html[data-theme="dark"] .historical-cycle-performance .is-fall strong { color: #60a5fa; }
 html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; color: #071b42; }
-@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:82px}}
+@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:72px}}
 
 /* 과거 사례와 현재 국면은 서로 다른 분석 화면으로 운용한다. */
 .historical-analysis-tabs { display: inline-flex; gap: 6px; margin-top: 14px; padding: 4px; border: 1px solid var(--theme-border); border-radius: 10px; background: var(--theme-surface-elevated); }
