@@ -80,9 +80,10 @@ test('selection enforces five, blocks six, clears all, and promotes the highest-
 });
 
 test('market scope metadata drives KOSPI and US catalog membership',()=>{
-  const registry={allSeries:[{code:'US2Y',marketScope:'US'},{code:'KR3Y',marketScope:'KR'},{code:'WTI',marketScope:'GLOBAL'}]},window={MacroWatchEconomicSeriesRegistry:registry};
+  const registry={allSeries:[{code:'US2Y',marketScope:'US'},{code:'US_POLICY_RATE_MID',title:'미국 기준금리 (약 6주 간격)',marketScope:'US'},{code:'KR3Y',marketScope:'KR'},{code:'KR_POLICY_RATE',title:'한국 기준금리 (1개월 간격)',marketScope:'KR'},{code:'KR_CORE_CPI',title:'Core CPI (식료품·에너지 제외)',marketScope:'KR'},{code:'WTI',marketScope:'GLOBAL'}]},window={MacroWatchEconomicSeriesRegistry:registry};
   const api=load('assets/js/historical-insight/historical-indicator-data.js','MacroWatchHistoricalIndicators',window),repo=api.createRepository({});
-  assert.deepEqual(Array.from(repo.catalog('SP500'),x=>x.code),['US2Y','WTI']);assert.deepEqual(Array.from(repo.catalog('NASDAQ_COMPOSITE'),x=>x.code),['US2Y','WTI']);assert.deepEqual(Array.from(repo.catalog('KOSPI'),x=>x.code),['US2Y','KR3Y','WTI']);
+  assert.deepEqual(Array.from(repo.catalog('SP500'),x=>x.code),['US2Y','US_POLICY_RATE_MID','WTI']);assert.deepEqual(Array.from(repo.catalog('NASDAQ_COMPOSITE'),x=>x.code),['US2Y','US_POLICY_RATE_MID','WTI']);assert.deepEqual(Array.from(repo.catalog('KOSPI'),x=>x.code),['US2Y','US_POLICY_RATE_MID','KR3Y','KR_POLICY_RATE','KR_CORE_CPI','WTI']);
+  assert.deepEqual(Array.from(repo.catalog('KOSPI').filter(x=>['US_POLICY_RATE_MID','KR_POLICY_RATE','KR_CORE_CPI'].includes(x.code)),x=>x.title),['미국 기준금리','한국 기준금리','한국 Core CPI']);
 });
 
 test('indicator data spans twenty-four months without changing chart viewport',()=>{
@@ -91,9 +92,9 @@ test('indicator data spans twenty-four months without changing chart viewport',(
   assert.doesNotMatch(controller,/checked\.length\)chart\?\.focus/);assert.match(chart,/getVisibleRange/);assert.match(chart,/setVisibleRange/);
 });
 
-test('UI exposes badges, max selection, clear all, normalized left scale and faded inactive series',()=>{
+test('UI right-aligns score-only labels, limits selection, and keeps chart comparison behavior',()=>{
   const html=read('historical-insight.html'),css=read('assets/css/historical-insight.css'),chart=read('assets/js/historical-insight/historical-index-chart.js'),controller=read('assets/js/historical-insight/historical-insight.js');
-  assert.match(html,/historical-indicator-clear/);assert.doesNotMatch(html,/data-indicator-strength/);assert.match(css,/data-reference="START"/);assert.match(css,/data-reference="PEAK"/);assert.match(css,/data-reference="TROUGH"/);
+  assert.match(html,/historical-indicator-clear/);assert.doesNotMatch(html,/data-indicator-strength/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.doesNotMatch(css,/historical-reference-badge/);assert.doesNotMatch(controller,/종합 \$\{Math\.round\(item\.overallScore\)\}점/);
   assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/rgba\(color,\.3\)/);assert.match(chart,/subscribeClick/);assert.match(controller,/최대 5개/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
