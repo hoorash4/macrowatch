@@ -43,6 +43,8 @@ Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 
 
 경제지표 metadata는 `economic-series-catalog.js`가 코드·표시명·범주·주기·단위의 단일 기준점이다. Historical Insight의 지표 사용 가능 여부는 canonical `economic_chart_series_points`를 집계한 `economic_chart_series_coverage`의 실제 최초·최종 관측일로 판정한다. 피봇과 추세 일관도는 raw 값으로 계산하고, 차트 오버레이에만 분석 구간별 0~100 정규화를 사용한다.
 
+현재국면 분석은 완결된 과거사례와 별도로 항상 사용할 수 있다. 과거 사례에서 한 번이라도 약함 기준 이상의 유효한 선행·동행 이력이 있었던 지표 전체를 상시 목록으로 유지하고, 최신 canonical 관측값으로 최근 피봇의 `active / forming / watching / invalidated` 상태를 다시 계산한다. 주가 피봇 가능성은 활성 피봇 누적 가중치로 상승하고 약화된 피봇 가중치로 하락하는 결정론적 화면 지표이며 통계적 예측 확률이 아니다. 현재 진행 중인 사례가 없으면 이름은 `historical_current_settings`의 기본값인 `현재 국면 관찰 중`을 사용한다. 진행 중 사례 이름과 기본 이름은 관리자만 수정할 수 있다.
+
 ### Python
 
 - `backend/common.py`: 환경변수, FRED, Supabase, 알림 공통 처리

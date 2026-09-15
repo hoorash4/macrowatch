@@ -1,6 +1,8 @@
 (() => {
   'use strict';
   const FILTER_THRESHOLDS=Object.freeze({strong:80,standard:65,weak:40});
+  const CURRENT_SIGNAL_POLICY=Object.freeze({historicalThreshold:FILTER_THRESHOLDS.weak,activeThreshold:FILTER_THRESHOLDS.standard,invalidThreshold:FILTER_THRESHOLDS.weak,priorWeight:4,
+    horizonDays:Object.freeze({D:120,W:210,T:210,M:450,Q:730,E:450})});
   const FREQUENCY_RULES=Object.freeze({
     D:{window:10,lookbackDays:730,minPoints:12},W:{window:4,lookbackDays:1095,minPoints:8},T:{window:3,lookbackDays:1095,minPoints:6},
     M:{window:2,lookbackDays:1460,minPoints:5},Q:{window:1,lookbackDays:2190,minPoints:4},E:{window:2,lookbackDays:1460,minPoints:4}
@@ -51,9 +53,22 @@
   }
   function analyzeCurrent(meta,rows,startDate,endDate){
     const data=validRows(rows).filter(row=>row.time>=startDate&&row.time<=endDate),pivots=detectPivots(data,meta.frequency),rule=FREQUENCY_RULES[meta.frequency]||FREQUENCY_RULES.M;
-    const recent=pivots.filter(pivot=>daysBetween(pivot.date,endDate)>=0&&daysBetween(pivot.date,endDate)<=rule.lookbackDays).sort((a,b)=>b.date.localeCompare(a.date));
-    let result=null;for(const pivot of recent){const trendRows=data.filter(row=>row.time>=pivot.date),trend=regression(trendRows),direction=pivot.pivotType==='local_low'?'rising':'falling';if(trendRows.length<rule.minPoints||(direction==='rising'?trend.slope<=0:trend.slope>=0))continue;result=Object.freeze({referenceType:'CURRENT',referenceDate:endDate,pivotDate:pivot.date,pivotValue:pivot.value,pivotType:pivot.pivotType,timingType:'leading',leadDays:daysBetween(pivot.date,endDate),trendDirection:direction,trendConsistency:trend.consistency});break;}
-    return Object.freeze({meta,rows:data,results:Object.freeze(result?[result]:[])});
+    const horizon=CURRENT_SIGNAL_POLICY.horizonDays[meta.frequency]||CURRENT_SIGNAL_POLICY.horizonDays.M,pivot=pivots.filter(item=>daysBetween(item.date,endDate)>=0&&daysBetween(item.date,endDate)<=horizon).sort((a,b)=>b.date.localeCompare(a.date))[0];
+    if(!pivot)return Object.freeze({meta,rows:data,results:Object.freeze([]),evidence:Object.freeze({status:'watching'})});
+    const trendRows=data.filter(row=>row.time>=pivot.date),trend=regression(trendRows),direction=pivot.pivotType==='local_low'?'rising':'falling',directionMatches=direction==='rising'?trend.slope>0:trend.slope<0;
+    const result=Object.freeze({referenceType:'CURRENT',referenceDate:endDate,pivotDate:pivot.date,pivotValue:pivot.value,pivotType:pivot.pivotType,timingType:'leading',leadDays:daysBetween(pivot.date,endDate),trendDirection:direction,trendConsistency:trend.consistency});
+    const status=trendRows.length<rule.minPoints?'forming':directionMatches&&trend.consistency>=CURRENT_SIGNAL_POLICY.activeThreshold?'active':!directionMatches||trend.consistency<CURRENT_SIGNAL_POLICY.invalidThreshold?'invalidated':'watching';
+    const evidence=Object.freeze({status,result});
+    return Object.freeze({meta,rows:data,results:Object.freeze(status==='active'?[result]:[]),evidence});
+  }
+  function currentPivotProbability(analyses){
+    let positive=0,negative=0,activeCount=0,invalidatedCount=0;
+    for(const item of analyses){const evidence=item.evidence;if(!evidence?.result)continue;const historical=Math.max(0,Math.min(1,(item.pastConsistency||0)/100)),age=evidence.result.leadDays||0,horizon=CURRENT_SIGNAL_POLICY.horizonDays[item.meta.frequency]||CURRENT_SIGNAL_POLICY.horizonDays.M,recency=Math.max(.25,1-age/horizon);
+      if(evidence.status==='active'){positive+=historical*(evidence.result.trendConsistency/100)*recency;activeCount++;}
+      if(evidence.status==='invalidated'){negative+=historical*Math.max(.4,evidence.result.trendConsistency/100)*recency;invalidatedCount++;}
+    }
+    const probability=positive?Math.round(100*positive/(positive+negative+CURRENT_SIGNAL_POLICY.priorWeight)):0;
+    return Object.freeze({probability,activeCount,invalidatedCount,positiveWeight:positive,negativeWeight:negative});
   }
   function normalizeForDisplay(rows,from,to){
     const data=validRows(rows).filter(row=>row.time>=from&&row.time<=to);if(!data.length)return [];
@@ -61,5 +76,5 @@
     return data.map(row=>Object.freeze({time:row.time,value:span?(row.value-min)/span*100:50,rawValue:row.value}));
   }
   const qualifies=(analysis,strength)=>analysis.results.some(result=>result.timingType!=='lagging'&&result.trendConsistency>=FILTER_THRESHOLDS[strength]);
-  window.MacroWatchHistoricalIndicatorAnalysis=Object.freeze({FILTER_THRESHOLDS,FREQUENCY_RULES,detectPivots,regression,analyzeHistorical,analyzeCurrent,normalizeForDisplay,qualifies,analysisEnd});
+  window.MacroWatchHistoricalIndicatorAnalysis=Object.freeze({FILTER_THRESHOLDS,CURRENT_SIGNAL_POLICY,FREQUENCY_RULES,detectPivots,regression,analyzeHistorical,analyzeCurrent,currentPivotProbability,normalizeForDisplay,qualifies,analysisEnd});
 })();

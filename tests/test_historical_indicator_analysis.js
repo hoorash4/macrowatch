@@ -10,7 +10,20 @@ function load(file,name){const window={};vm.runInNewContext(read(file),{window})
 test('indicator thresholds and frequency pivot rules are centralized',()=>{
   const api=load('assets/js/historical-insight/historical-indicator-analysis.js','MacroWatchHistoricalIndicatorAnalysis');
   assert.deepEqual({...api.FILTER_THRESHOLDS},{strong:80,standard:65,weak:40});
+  assert.equal(api.CURRENT_SIGNAL_POLICY.activeThreshold,65);
+  assert.equal(api.CURRENT_SIGNAL_POLICY.invalidThreshold,40);
   assert.equal(api.FREQUENCY_RULES.M.window,2);
+});
+
+test('current pivot probability rises with active pivots and falls with invalidated pivots',()=>{
+  const api=load('assets/js/historical-insight/historical-indicator-analysis.js','MacroWatchHistoricalIndicatorAnalysis');
+  const result={leadDays:10,trendConsistency:90},item=(status,code)=>({meta:{code,frequency:'D'},pastConsistency:90,evidence:{status,result}});
+  const one=api.currentPivotProbability([item('active','A')]);
+  const two=api.currentPivotProbability([item('active','A'),item('active','B')]);
+  const weakened=api.currentPivotProbability([item('active','A'),item('invalidated','B')]);
+  assert.ok(two.probability>one.probability);
+  assert.ok(weakened.probability<two.probability);
+  assert.deepEqual({active:weakened.activeCount,invalidated:weakened.invalidatedCount},{active:1,invalidated:1});
 });
 
 test('pivot analysis uses raw values and reports a prior local low as a rising lead',()=>{
@@ -47,11 +60,22 @@ test('coverage view is canonical, security-invoker, and read-only for authentica
   assert.match(sql,/grant select[^;]*authenticated, service_role/);
 });
 
-test('historical indicator UI exposes one accordion, one global filter, dual axes, and current signal',()=>{
+test('historical indicator UI exposes one accordion, a historical filter, dual axes, and accumulating current signal',()=>{
   const html=read('historical-insight.html'),chart=read('assets/js/historical-insight/historical-index-chart.js'),controller=read('assets/js/historical-insight/historical-insight.js');
   assert.equal((html.match(/id="historical-indicator-accordion"/g)||[]).length,1);
   assert.match(html,/data-indicator-strength="strong"[\s\S]*data-indicator-strength="standard"[\s\S]*data-indicator-strength="weak"/);
   assert.match(chart,/priceScaleId:'left'/);assert.match(chart,/leftPriceScale: \{ visible: true/);
-  assert.match(controller,/새로운 사이클 시작 가능성|historical-cycle-signal/);
-  assert.match(controller,/과거에 선행·동행했던 전체 지표를 감시합니다/);
+  assert.match(controller,/주가 피봇 가능성|historical-cycle-signal/);
+  assert.match(controller,/과거에 한 번이라도 유효했던 선행·동행 지표 전체를 매일 감시합니다/);
+  assert.match(controller,/historical-filter'\)\.hidden=currentMode/);
+});
+
+test('current regime title setting is authenticated read and administrator update only',()=>{
+  const sql=read('supabase/migrations/20260915151000_add_historical_current_settings.sql');
+  assert.match(sql,/current_name text not null default '현재 국면 관찰 중'/);
+  assert.match(sql,/Authenticated users read historical current settings/);
+  assert.match(sql,/Administrators update historical current settings/);
+  assert.match(sql,/revoke all[^;]*anon, authenticated/);
+  assert.match(sql,/grant select, update[^;]*authenticated/);
+  assert.doesNotMatch(sql,/grant insert[^;]*authenticated/);
 });
