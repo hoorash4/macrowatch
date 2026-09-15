@@ -1,0 +1,40 @@
+name: Center research navigation divider
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/center-research-nav-divider-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Center divider exactly between menu items
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('assets/css/styles.css')
+          css = path.read_text(encoding='utf-8')
+          marker = '/* Center research divider using the nav gap only. */'
+          rule = '''\n\n/* Center research divider using the nav gap only. */\n.dashboard-nav-tool-divider {\n  align-self:center;\n  width:1px;\n  height:1.2rem;\n  flex:0 0 1px;\n  margin:0 !important;\n  padding:0 !important;\n}\n@media(max-width:1180px){ .dashboard-nav-tool-divider { margin:0 !important; } }\n'''
+          if marker not in css:
+              path.write_text(css + rule, encoding='utf-8')
+
+          index = Path('index.html')
+          text = index.read_text(encoding='utf-8')
+          text = text.replace('assets/css/styles.css?v=192', 'assets/css/styles.css?v=193')
+          index.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "MacroWatch Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html assets/css/styles.css
+          git diff --cached --quiet && exit 0
+          git commit -m "Center research navigation divider"
+          git push origin main
