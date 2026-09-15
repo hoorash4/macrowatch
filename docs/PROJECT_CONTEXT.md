@@ -143,7 +143,7 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 
 - Phase 1: 실제 지수 데이터 렌더링 및 지수 전환
 - Phase 2~6: 10개 사례의 관찰 구간, START/PEAK/TROUGH 마커, canonical 종가 기반 파생값, 관리자 편집, Historical Case 영속 저장 구조
-- Phase 7: 팩트 추출
+- Phase 7: 시장별 START/PEAK/TROUGH 기준점 이전에 공개 가능했던 canonical 최신 관측값을 결정론적으로 연결하는 팩트 추출
 - Phase 8: 구간 파생값
 - Phase 9: 현재 vs 과거 유사도 비교
 - Phase 10: 사례 탐색·현재 비교·팩트 시트·전환 신호 통합
@@ -158,6 +158,7 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 - 2026-09-15 S&P 500, Nasdaq Composite, KOSPI의 1990년 이후 일봉 백필을 `market_index_prices`에 구성했고, Historical Insight는 이 canonical 지수를 사용한다.
 - Historical Insight Phase 1은 원천 조회·차트·화면 상태를 분리하여 실제 지수 렌더링, 지수 전환, 전체 기간 복귀, 로딩/빈 데이터/오류 재시도를 구현했다.
 - 10개 Historical Case의 설명·관찰 범위는 `historical_cases`, 사례 × 시장별 확정 날짜는 `historical_case_market_cycles`에 저장한다. 지수 탭을 전환하면 해당 시장의 START/PEAK/TROUGH와 파생 성과가 함께 전환된다. 종가·상승률·하락률·drawdown·기간은 canonical 지수에서 계산하며, 진행 중인 AI/반도체 상승장의 시장별 미확정 peak/trough는 null로 유지한다. 한국 IT버블은 닷컴버블의 KOSPI 비교로 포함하고 별도 사례로 만들지 않는다.
+- Phase 7 기준점 팩트는 `historical_case_anchor_facts` 보안 호출자 뷰에서 원천값을 복제하지 않고 `economic_chart_series_points`에 연결한다. 일·주·월 지표별 공개 지연과 최대 허용 이력을 적용해 기준일 이후 정보가 섞이지 않게 하며, 미확정 기준점에는 팩트를 만들지 않는다.
 
 현재 상태를 판단할 때는 항상 `main`의 최신 커밋과 실제 GitHub Actions/Supabase 상태를 다시 확인한다. 이 문서의 날짜나 과거 실행 번호를 현재 상태로 간주하지 않는다.
 

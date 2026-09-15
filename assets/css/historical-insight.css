@@ -57,6 +57,39 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-cycle-performance .is-drawdown strong { color: #b45309; }
 .historical-cycle-performance small { display: block; margin-top: 7px; color: var(--theme-text-secondary); font-size: 10px; font-weight: 650; }
 .historical-cycle-performance b { color: var(--theme-text-primary); font-size: 11px; }
+.historical-fact-panel { margin-top: 16px; padding: 16px; border: 1px solid var(--theme-border); border-radius: 12px; background: var(--theme-surface); }
+.historical-fact-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+.historical-fact-heading > div { display: flex; align-items: center; gap: 8px; }
+.historical-fact-heading small { padding: 4px 7px; border-radius: 999px; background: #fff7ed; color: #c2410c; font-size: 9px; font-weight: 900; letter-spacing: .07em; }
+.historical-fact-heading strong { font-size: 16px; letter-spacing: -.02em; }
+.historical-fact-heading p { margin: 0; color: var(--theme-text-secondary); font-size: 11px; line-height: 1.45; }
+.historical-fact-scroll { margin-top: 13px; overflow-x: auto; }
+.historical-fact-grid { display: grid; grid-template-columns: minmax(170px, 1.15fr) repeat(3, minmax(150px, 1fr)); min-width: 690px; border: 1px solid var(--theme-border); border-radius: 10px; overflow: hidden; background: var(--theme-surface-elevated); }
+.historical-fact-row { display: contents; }
+.historical-fact-row > * { min-width: 0; border-right: 1px solid var(--theme-border); border-bottom: 1px solid var(--theme-border); }
+.historical-fact-row > :last-child { border-right: 0; }
+.historical-fact-row:last-child > * { border-bottom: 0; }
+.historical-fact-corner,.historical-fact-anchor { padding: 10px 12px; background: rgba(148,163,184,.08); }
+.historical-fact-corner { color: var(--theme-text-muted); font-size: 9px; font-weight: 850; letter-spacing: .08em; }
+.historical-fact-anchor { display: grid; gap: 3px; }
+.historical-fact-anchor strong { font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.historical-fact-anchor small { color: var(--theme-text-secondary); font-size: 9px; font-weight: 700; }
+.historical-fact-anchor[data-anchor="start"] strong { color: #15803d; }
+.historical-fact-anchor[data-anchor="peak"] strong { color: #dc2626; }
+.historical-fact-anchor[data-anchor="trough"] strong { color: #2563eb; }
+.historical-fact-label,.historical-fact-value { min-height: 73px; padding: 11px 12px; }
+.historical-fact-label { position: relative; padding-left: 15px; }
+.historical-fact-label::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: #2563eb; content: ''; }
+.historical-fact-label[data-category="물가"]::before { background: #dc2626; }
+.historical-fact-label[data-category="금융여건"]::before,.historical-fact-label[data-category="한국 신용"]::before { background: #d97706; }
+.historical-fact-label[data-category="환율"]::before { background: #7c3aed; }
+.historical-fact-label[data-category="밸류에이션"]::before { background: #0891b2; }
+.historical-fact-label small { display: block; color: var(--theme-text-secondary); font-size: 9px; font-weight: 750; }
+.historical-fact-label strong { display: block; margin-top: 5px; color: var(--theme-text-primary); font-size: 12px; font-weight: 850; }
+.historical-fact-value strong { display: block; color: #0f172a; font-size: 17px; font-weight: 900; line-height: 1.15; letter-spacing: -.025em; }
+.historical-fact-value p { margin: 7px 0 0; color: var(--theme-text-muted); font-size: 8px; line-height: 1.35; }
+.historical-fact-value.is-missing strong,.historical-fact-value.is-unconfirmed strong { color: var(--theme-text-muted); font-size: 13px; }
+.historical-fact-status { min-height: 14px; margin: 8px 0 0; color: var(--theme-text-secondary); font-size: 10px; }
 .historical-cycle-editor { margin-top: 10px; border-top: 1px solid var(--theme-border); padding-top: 9px; }
 .historical-cycle-editor summary { color: var(--theme-text-secondary); font-size: 9px; font-weight: 750; cursor: pointer; }
 .historical-cycle-editor form { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -72,4 +105,9 @@ html[data-theme="dark"] .historical-cycle-performance .is-rise strong { color: #
 html[data-theme="dark"] .historical-cycle-performance .is-fall strong { color: #f87171; }
 html[data-theme="dark"] .historical-cycle-performance .is-drawdown strong { color: #fbbf24; }
 html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; color: #071b42; }
-@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:82px}}
+html[data-theme="dark"] .historical-fact-panel,html[data-theme="dark"] .historical-fact-grid { border-color: #334155; background: #0f172a; }
+html[data-theme="dark"] .historical-fact-heading small { background: #4a2511; color: #fdba74; }
+html[data-theme="dark"] .historical-fact-row > * { border-color: #334155; }
+html[data-theme="dark"] .historical-fact-corner,html[data-theme="dark"] .historical-fact-anchor { background: #111c2f; }
+html[data-theme="dark"] .historical-fact-value strong { color: #f8fafc; }
+@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading,.historical-fact-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:82px}}

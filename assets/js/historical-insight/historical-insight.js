@@ -7,9 +7,9 @@
   const status = $('historical-chart-status'), meta = $('historical-chart-meta'), message = $('historical-chart-message');
   const retry = $('historical-chart-retry'), fullRange = $('historical-chart-full-range'), caseRange = $('historical-chart-case-range');
   const marketButtons = [...document.querySelectorAll('[data-historical-index]')];
-  const indexData = window.MacroWatchHistoricalData, cycleData = window.MacroWatchHistoricalCycles;
+  const indexData = window.MacroWatchHistoricalData, cycleData = window.MacroWatchHistoricalCycles, factData = window.MacroWatchHistoricalFacts;
   let activeCode = 'NASDAQ_COMPOSITE', activeCase = null, cases = [], requestToken = 0;
-  let indexRepository, caseRepository, chart, activeRows = [], currentUser = null, isAdmin = false;
+  let indexRepository, caseRepository, factRepository, chart, activeRows = [], currentUser = null, isAdmin = false;
 
   function state(kind, text) {
     host.dataset.state = kind;
@@ -36,6 +36,52 @@
   }
   const percentage = (value, absolute = false) => value == null ? '—' : `${absolute ? '' : value > 0 ? '+' : ''}${window.MacroWatchFrontend.formatDisplayNumber(absolute ? Math.abs(value) : value, { maximumFractionDigits: 1 })}%`;
   const duration = value => value == null ? '—' : `${window.MacroWatchFrontend.formatDisplayNumber(value)}일`;
+  function formatFactValue(fact) {
+    if (fact.value == null) return '이력 없음';
+    const number = window.MacroWatchFrontend.formatDisplayNumber(fact.value, {
+      minimumFractionDigits: fact.decimals, maximumFractionDigits: fact.decimals,
+    });
+    return fact.unit ? `${number} ${fact.unit}` : number;
+  }
+  function renderFacts(cycle, result) {
+    const grid = $('historical-fact-grid'), kinds = ['start', 'peak', 'trough'];
+    grid.replaceChildren();
+    const headerRow = document.createElement('div'); headerRow.className = 'historical-fact-row is-header'; headerRow.setAttribute('role', 'row');
+    const corner = document.createElement('div'); corner.className = 'historical-fact-corner'; corner.textContent = 'INDICATOR'; corner.setAttribute('role', 'columnheader'); headerRow.append(corner);
+    for (const kind of kinds) {
+      const header = document.createElement('div'), name = document.createElement('strong'), date = document.createElement('small');
+      header.className = 'historical-fact-anchor'; header.dataset.anchor = kind;
+      header.setAttribute('role', 'columnheader');
+      name.textContent = kind.toUpperCase(); date.textContent = cycle[`${kind}Date`] || '미확정';
+      header.append(name, date); headerRow.append(header);
+    }
+    grid.append(headerRow);
+    const definitions = [...new Map(result.rows.map(fact => [fact.seriesCode, fact])).values()].sort((a, b) => a.order - b.order);
+    for (const definition of definitions) {
+      const row = document.createElement('div'); row.className = 'historical-fact-row'; row.setAttribute('role', 'row');
+      const label = document.createElement('div'), category = document.createElement('small'), title = document.createElement('strong');
+      label.className = 'historical-fact-label'; label.dataset.category = definition.category;
+      label.setAttribute('role', 'rowheader'); category.textContent = definition.category; title.textContent = definition.label; label.append(category, title); row.append(label);
+      for (const kind of kinds) {
+        const cell = document.createElement('div'), value = document.createElement('strong'), date = document.createElement('p');
+        const fact = result.rows.find(item => item.seriesCode === definition.seriesCode && item.anchorType === kind);
+        const confirmed = Boolean(cycle[`${kind}Date`]);
+        cell.className = `historical-fact-value${!confirmed ? ' is-unconfirmed' : fact?.value == null ? ' is-missing' : ''}`;
+        cell.setAttribute('role', 'cell');
+        value.textContent = !confirmed ? '미확정' : fact ? formatFactValue(fact) : '이력 없음';
+        date.textContent = !confirmed ? '기준점 확정 후 연결' : fact?.value == null ? '허용 범위 내 관측값 없음'
+          : fact.availableDate === fact.observationDate ? `관측 ${fact.observationDate}`
+            : `관측 ${fact.observationDate} · 공개 ${fact.availableDate}`;
+        cell.append(value, date); row.append(cell);
+      }
+      grid.append(row);
+    }
+    $('historical-fact-status').textContent = definitions.length ? `${definitions.length}개 지표 · 기준일 이후 관측값 제외` : '표시할 기준점 팩트가 없습니다.';
+    if (result.error) {
+      $('historical-fact-status').textContent = '기준점 팩트를 불러오지 못했습니다.';
+      console.error('[Historical Insight facts]', result.error);
+    }
+  }
   function showCycle(item, cycle, metrics) {
     $('historical-cycle-panel').hidden = false;
     $('historical-cycle-state').textContent = cycle.status === 'confirmed' ? 'CONFIRMED CYCLE' : cycle.status === 'in_progress' ? 'IN PROGRESS' : 'DRAFT';
@@ -88,10 +134,13 @@
     meta.textContent = `${activeCase?.name || 'Historical Case'} · ${indexData?.indices[code] || code}`;
     state('loading', '사이클 데이터 불러오는 중');
     try {
-      if (!indexData || !cycleData || !window.MacroWatchHistoricalChart || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
+      if (!indexData || !cycleData || !factData || !window.MacroWatchHistoricalChart || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
       if (!chart) chart = window.MacroWatchHistoricalChart.create(host);
       chart.setData([]);
-      const rows = await indexRepository.load(code);
+      const [rows, factResult] = await Promise.all([
+        indexRepository.load(code),
+        factRepository.load(activeCase.code, code).then(rows => ({ rows, error: null })).catch(error => ({ rows: [], error })),
+      ]);
       if (token !== requestToken) return;
       const activeCycle = cycleData.marketCycle(activeCase, code);
       const metrics = cycleData.calculate(activeCase, activeCycle, rows);
@@ -101,6 +150,7 @@
       chart.setCycle(cycleData.chartPoints(activeCycle, rows));
       focusCase();
       showCycle(activeCase, activeCycle, metrics);
+      renderFacts(activeCycle, factResult);
       const count = window.MacroWatchFrontend.formatDisplayNumber(rows.length, { locale: 'ko-KR' });
       state('ready', `${count}개 · ${rows[0].time} ~ ${rows.at(-1).time}`);
     } catch (error) {
@@ -118,11 +168,11 @@
   }
   async function initialize() {
     try {
-      if (!indexData || !cycleData || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
+      if (!indexData || !cycleData || !factData || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
       const client = window.macroWatchSupabase || window.MacroWatchFrontend.createSupabaseClient();
       if (!client) throw new Error('데이터 연결을 확인해 주세요.');
       window.macroWatchSupabase = client;
-      indexRepository = indexData.createRepository(client); caseRepository = cycleData.createRepository(client);
+      indexRepository = indexData.createRepository(client); caseRepository = cycleData.createRepository(client); factRepository = factData.createRepository(client);
       const { data: authData, error: authError } = await client.auth.getSession();
       if (authError) throw authError;
       currentUser = authData.session?.user || null;

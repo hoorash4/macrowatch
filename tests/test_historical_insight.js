@@ -9,7 +9,9 @@ function api(client) {
   vm.runInNewContext(read('assets/js/core/frontend-core.js'), ctx);
   vm.runInNewContext(read('assets/js/historical-insight/historical-index-data.js'), ctx);
   vm.runInNewContext(read('assets/js/historical-insight/historical-cycle-data.js'), ctx);
-  return { ...ctx.window.MacroWatchHistoricalData, cycles: ctx.window.MacroWatchHistoricalCycles, core: ctx.window.MacroWatchFrontend };
+  vm.runInNewContext(read('assets/js/historical-insight/historical-fact-data.js'), ctx);
+  return { ...ctx.window.MacroWatchHistoricalData, cycles: ctx.window.MacroWatchHistoricalCycles,
+    facts: ctx.window.MacroWatchHistoricalFacts, core: ctx.window.MacroWatchFrontend };
 }
 function database(pages) {
   const calls = [];
@@ -105,6 +107,30 @@ test('administrator save updates only the selected market cycle and refreshes ca
   assert.equal(Object.hasOwn(payload,'cycle_status'),false); assert.equal(payload.peak_date,null); assert.equal(payload.updated_by,'user-1');
   assert.equal(saved.status,'in_progress'); assert.equal((await repo.load())[0].markets.NASDAQ_COMPOSITE.peakDate,null);
 });
+test('anchor facts query one case and market and reject future or malformed values', async () => {
+  const a=api(), db=database([{data:[{case_code:'dotcom',index_code:'NASDAQ_COMPOSITE',anchor_type:'start',anchor_order:1,
+    anchor_date:'1994-06-24',series_code:'US_CPI',fact_label:'미국 CPI',category:'물가',unit:'% YoY',decimals:2,
+    display_order:3,observation_date:'1994-05-01',available_date:'1994-06-15',value:'2.34',observation_age_days:54}]}]);
+  const facts=await a.facts.createRepository(db).load('dotcom','NASDAQ_COMPOSITE');
+  assert.equal(facts[0].value,2.34); assert.equal(facts[0].availableDate,'1994-06-15');
+  assert.deepEqual(db.calls[0].filters,[['case_code','dotcom'],['index_code','NASDAQ_COMPOSITE']]);
+  assert.throws(()=>a.facts.normalize({case_code:'dotcom',index_code:'SP500',anchor_type:'start',anchor_order:1,
+    anchor_date:'2000-01-01',series_code:'US_CPI',fact_label:'CPI',category:'물가',unit:'%',decimals:2,display_order:1,
+    observation_date:'1999-12-01',available_date:'2000-01-15',value:1,observation_age_days:31}),/데이터를 확인/);
+});
+test('fact view resolves canonical values without look-ahead and protects anonymous access', () => {
+  const sql=read('supabase/migrations/20260915140000_add_historical_anchor_facts.sql');
+  const expanded=read('supabase/migrations/20260915141500_expand_historical_anchor_rate_facts.sql');
+  assert.match(sql,/historical_case_anchor_facts\s*\n\+?with \(security_invoker = true\)/);
+  assert.match(sql,/economic_chart_series_points/);
+  assert.match(sql,/observation_date \+ facts\.release_lag_days::integer <= anchors\.anchor_date/);
+  assert.match(sql,/\('ALL', 'US_CPI',[^\n]*, 45, 120\)/);
+  assert.match(sql,/revoke all on table public\.historical_case_anchor_facts from public, anon, authenticated/);
+  assert.match(sql,/grant select on table public\.historical_case_anchor_facts to authenticated, service_role/);
+  assert.match(expanded,/\('ALL', 'US2Y',/);
+  assert.match(expanded,/\('ALL', 'US10Y',/);
+  assert.match(expanded,/observation_date \+ facts\.release_lag_days::integer <= anchors\.anchor_date/);
+});
 test('migration stores thirty market-specific cycles with protected access', () => {
   const sql=read('supabase/migrations/20260915023946_add_historical_cycle_definitions.sql');
   const marketSql=read('supabase/migrations/20260915030500_split_historical_cycles_by_market.sql');
@@ -127,6 +153,14 @@ test('cycle summary gives market context and performance figures strong visual h
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #15803d/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #dc2626/);
 });
+test('fact sheet exposes a start peak trough comparison matrix and observation provenance', () => {
+  const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css');
+  assert.match(html,/id="historical-fact-panel"/);
+  assert.match(html,/role="table"/);
+  assert.match(html,/historical-fact-data\.js\?v=1/);
+  assert.match(css,/\.historical-fact-grid \{[^}]*grid-template-columns:[^}]*repeat\(3/);
+  assert.match(css,/\.historical-fact-value strong \{[^}]*font-size: 17px/);
+});
 test('case range keeps the line continuous while placing cycle markers inside both chart edges', () => {
   const controller=read('assets/js/historical-insight/historical-insight.js');
   const chart=read('assets/js/historical-insight/historical-index-chart.js');
@@ -144,6 +178,7 @@ function ui() {
     append(...items){this.children.push(...items);}, querySelector(){return null;}});
   for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
   for (const id of ['case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
+  for (const id of ['fact-panel','fact-grid','fact-status']) nodes.set(`historical-${id}`,make());
   const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
   const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
   const caseButtons=[];
@@ -154,6 +189,7 @@ function ui() {
   const w={MacroWatchHistoricalData:{indices:{SP500:'S&P 500',NASDAQ_COMPOSITE:'NASDAQ Composite',KOSPI:'KOSPI'},
     createRepository:()=>{const cache=new Map();return{load:code=>{if(!cache.has(code)){const promise=new Promise((resolve,reject)=>pending.push({code,resolve,reject}));cache.set(code,promise);promise.catch(()=>cache.delete(code));}return cache.get(code);}};}},
     MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[definition]}),marketCycle:(item,code)=>item.markets[code],calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
+    MacroWatchHistoricalFacts:{createRepository:()=>({load:async()=>[{caseCode:'dotcom',indexCode:'NASDAQ_COMPOSITE',anchorType:'start',anchorDate:'1994-06-24',seriesCode:'US_CPI',label:'미국 CPI',category:'물가',unit:'%',decimals:2,order:1,observationDate:'1994-05-01',availableDate:'1994-06-15',value:2.3,ageDays:54}]})},
     MacroWatchFrontend:{createSupabaseClient:()=>client,formatDisplayNumber:String},
     MacroWatchHistoricalChart:{create:()=>({setData:rows=>drawn.push(rows),setCycle(){},focus(){},fit(){},destroy(){destroyed++;}})},
     addEventListener(){}};
