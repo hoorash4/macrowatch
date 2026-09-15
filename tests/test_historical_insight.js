@@ -175,11 +175,15 @@ test('case range keeps the line continuous while placing cycle markers inside bo
   assert.match(controller,/await refreshIndicators\(token\);if\(token===requestToken\)focusCase\(\)/);
 });
 test('indicator toggles preserve the visible calendar range and keep legend controls clear of the plot', () => {
+  const controller=read('assets/js/historical-insight/historical-insight.js');
   const chart=read('assets/js/historical-insight/historical-index-chart.js');
   const css=read('assets/css/historical-insight.css');
   assert.match(chart,/const visibleRange=chart\?\.timeScale\(\)\.getVisibleRange\(\)/);
   assert.match(chart,/if\(visibleRange\)chart\.timeScale\(\)\.setVisibleRange\(visibleRange\)/);
   assert.match(css,/\.historical-indicator-legend \{[^}]*padding: 8px 16px 12px/);
+  assert.match(controller,/const caseChanged=Boolean\(activeCase&&activeCase\.code!==item\.code\);if\(caseChanged\)\{clearIndicatorSelection\(\);activeIndicatorContext=null;visibleIndicators=\[\];\}/);
+  assert.match(controller,/historical-indicator-clear'\)\.addEventListener\('click',\(\)=>clearIndicatorSelection\(true\)\)/);
+  assert.match(controller,/if\(renderList&&activeIndicatorContext\)renderIndicators\(activeIndicatorContext\)/);
 });
 function ui() {
   const nodes=new Map();
