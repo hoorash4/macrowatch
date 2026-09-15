@@ -9,6 +9,7 @@ function load(file,name,window={}){vm.runInNewContext(read(file),{window});retur
 const analysis=()=>load('assets/js/historical-insight/historical-indicator-analysis.js','MacroWatchHistoricalIndicatorAnalysis');
 const month=(index,value)=>{const d=new Date(Date.UTC(2000,index,1));return{time:d.toISOString().slice(0,10),value};};
 const segments=(defs)=>{let n=0,value=100,out=[];for(const [months,delta] of defs){for(let i=0;i<months;i++){out.push(month(n++,value));value+=delta;}}return out;};
+const dailySegments=(defs)=>{let n=0,value=100,out=[];for(const [days,delta] of defs){for(let i=0;i<days;i++){const d=new Date(Date.UTC(2000,0,1+n++));out.push({time:d.toISOString().slice(0,10),value});value+=delta;}}return out;};
 
 test('regime, relevance, scale, and scoring policies are centralized without obsolete rules',()=>{
   const a=analysis(),source=read('assets/js/historical-insight/historical-indicator-analysis.js');
@@ -81,9 +82,9 @@ test('historical validation uses observations beyond the case search range',()=>
   assert.ok(result.byReference.START);assert.ok(result.byReference.START.confirmationDate>item.searchEnd);
 });
 
-test('a provisional reversal that resumes the old trend remains a technical candidate and is not market relevant',()=>{
+test('a provisional reversal that resumes the old trend is excluded before market relevance matching',()=>{
   const a=analysis(),rows=segments([[8,5],[4,-1],[10,5]]),referenceDate=rows[8].time,cycle={startDate:referenceDate,peakDate:rows.at(-1).time,troughDate:null},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'M',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'M'},'START',referenceDate,cycle);
-  assert.ok(discovery.candidates.length>0);assert.equal(result.result,null);
+  assert.equal(discovery.candidates.length,0);assert.ok(discovery.path.technicalCandidates.length>0);assert.equal(result.result,null);
 });
 
 test('historical analysis separates technical pivots from market-relevant pivots and leaves unmatched anchors null',()=>{
@@ -119,10 +120,10 @@ test('watch can retain a recent structural-only signal without treating it as ma
   assert.equal(current.evidence.status,'watch');assert.ok(current.evidence.retainedPivot);assert.equal(current.evidence.signalState,'structural_only');assert.ok(current.evidence.contribution>0&&current.evidence.contribution<1);assert.equal(probability.marketRelevantCount,0);assert.equal(probability.structuralOnlyCount,1);
 });
 
-test('a long low-volatility plateau before a new low is folded into the fall and only the final range remains sideways',()=>{
+test('a final range shorter than the requested duration does not become a retrospective regime',()=>{
   const a=analysis(),rows=[];for(let i=0;i<213;i++){const d=new Date(Date.UTC(2000,0,1+i));let value;if(i<31)value=1.8-i*.004;else if(i<145)value=1.56+(i%7)*.001;else value=Math.max(.2,1.56-(i-145)*.035);rows.push({time:d.toISOString().slice(0,10),value});}
   const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31});
-  assert.deepEqual(Array.from(path.regimes,item=>item.type),['falling','sideways']);assert.equal(path.pivots.length,1);assert.equal(path.pivots[0].pivotValue,Math.min(...rows.map(row=>row.value)));
+  assert.deepEqual(Array.from(path.regimes,item=>item.type),['falling']);assert.equal(path.pivots.length,0);
 });
 
 test('a monotonic monthly rise stays one regime without intermediate pivots',()=>{
@@ -196,9 +197,19 @@ test('a resumed trend removes the old candidate and a later reversal uses the re
   assert.ok(replacement);assert.ok(pivot);assert.equal(pivot.pivotDate,replacement.replacedBy);assert.equal(pivot.pivotValue,Math.max(...rows.map(row=>row.value)));assert.equal(pivot.structuralStatus,'structural_confirmed');
 });
 
-test('market-specific minimum validity does not resegment the indicator big structure',()=>{
-  const a=analysis(),rows=segments([[7,4],[4,-9],[7,8]]),short=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31}),long=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:92});
-  assert.deepEqual(Array.from(short.regimes,item=>`${item.type}:${item.startDate}`),Array.from(long.regimes,item=>`${item.type}:${item.startDate}`));assert.deepEqual(Array.from(short.pivots,item=>item.pivotDate),Array.from(long.pivots,item=>item.pivotDate));
+test('market-specific minimum duration is applied while segmenting the full retrospective structure',()=>{
+  const a=analysis(),rows=dailySegments([[120,1],[45,-2],[120,2]]),short=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),long=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:92});
+  assert.ok(short.pivots.length>long.pivots.length);assert.ok(short.regimes.length>long.regimes.length);assert.ok(long.regimes.every(item=>item.requiredMinimumDays===92));
+});
+
+test('an actual trend extreme outside the relevance window cannot be replaced by an earlier local extreme',()=>{
+  const a=analysis(),rows=dailySegments([[120,1],[45,-2],[120,2],[120,-2]]),localPeak=rows[119].time,cycle={startDate:rows[0].time,peakDate:localPeak,troughDate:rows.at(-1).time},discovery=a.discoverReferenceCandidates(rows,localPeak,{frequency:'D',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',localPeak,cycle),actualPeak=discovery.path.pivots.find(pivot=>pivot.previousRegime==='rising');
+  assert.ok(actualPeak);assert.equal(actualPeak.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(actualPeak.pivotDate>discovery.window.to);assert.equal(discovery.candidates.length,0);assert.equal(result.result,null);
+});
+
+test('multiple confirmed structural pivots in one relevance window remain ambiguous instead of being ranked to fill the anchor',()=>{
+  const a=analysis(),rows=dailySegments([[70,1],[45,-2],[45,2],[45,-2],[60,2]]),referenceDate=rows[135].time,cycle={startDate:rows[0].time,peakDate:referenceDate,troughDate:rows[195].time},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'D',minimumRegimeDays:31}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',referenceDate,cycle);
+  assert.ok(discovery.candidates.length>1);assert.equal(result.result,null);assert.ok(result.diagnostics.some(item=>item.rejectionReason==='ambiguous_structural_pivots'));
 });
 
 test('retrospective and online state engines are physically separate and expose date diagnostics',()=>{
