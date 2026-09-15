@@ -39,10 +39,10 @@
     const lows=pivots.filter(item=>item.type==='low');
     chart=new Chart(elements.canvas.getContext('2d'),{
       type:'line',
-      data:{datasets:[
-        {label:meta.title,data:points.map(row=>({x:row.time,y:row.value})),borderWidth:1.6,pointRadius:0,tension:0,parsing:false},
-        {type:'scatter',label:'HIGH',data:highs.map(row=>({x:row.date,y:row.value})),pointRadius:6,pointHoverRadius:8,parsing:false},
-        {type:'scatter',label:'LOW',data:lows.map(row=>({x:row.date,y:row.value})),pointRadius:6,pointHoverRadius:8,parsing:false}
+      data:{labels:points.map(row=>row.time),datasets:[
+        {label:meta.title,data:points.map(row=>row.value),borderWidth:1.6,pointRadius:0,tension:0},
+        {type:'scatter',label:'HIGH',data:highs.map(row=>({x:row.date,y:row.value})),pointRadius:6,pointHoverRadius:8},
+        {type:'scatter',label:'LOW',data:lows.map(row=>({x:row.date,y:row.value})),pointRadius:6,pointHoverRadius:8}
       ]},
       options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'nearest',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label(ctx){return `${ctx.dataset.label}: ${formatValue(ctx.parsed.y,meta.decimals)}`;}}}},scales:{x:{type:'category',grid:{display:false},ticks:{maxTicksLimit:12}},y:{grid:{color:'rgba(148,163,184,.12)'},ticks:{callback:value=>formatValue(value,meta.decimals)}}}}
     });
@@ -54,9 +54,10 @@
     elements.title.textContent=meta.title;elements.meta.textContent=`${meta.code} · ${meta.frequencyLabel} · ${meta.category} · ${meta.unit}`;
     elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 확인 중';setStatus('전체 시계열을 불러오는 중입니다.');
     try{
-      const [{data:{session}},points,pivots]=await Promise.all([client.auth.getSession(),fetchAllPoints(code),fetchPivots(code)]);
-      if(token!==loadToken)return;
+      const {data:{session}}=await client.auth.getSession();
       if(!session)throw new Error('로그인이 필요합니다. MacroWatch에 로그인한 뒤 이 페이지를 다시 열어 주세요.');
+      const [points,pivots]=await Promise.all([fetchAllPoints(code),fetchPivots(code)]);
+      if(token!==loadToken)return;
       elements.pointCount.textContent=`데이터 ${points.length.toLocaleString('ko-KR')}개`;
       elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
       if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);if(chart){chart.destroy();chart=null;}return;}
