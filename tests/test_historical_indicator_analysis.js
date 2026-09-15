@@ -18,6 +18,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   assert.deepEqual({...a.ANALYSIS_POLICY.correction},{maximumRetracementFraction:.5,maximumVolatilityUnits:3});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{structural:.45,timing:.35,duration:.2});
   assert.deepEqual({...a.ANALYSIS_POLICY.pivotSelection},{structuralSimilarityPoints:5});
+  assert.deepEqual({...a.ANALYSIS_POLICY.coverageBonusByCount},{1:0,2:12,3:25});
   assert.equal(a.ANALYSIS_POLICY.relationship.maximumBonus,10);
   assert.doesNotMatch(source,/shortBefore|longBefore|beforeMonths|relevanceDays/);
   assert.doesNotMatch(source,/candidateRange/);
@@ -104,9 +105,19 @@ test('historical analysis separates technical pivots from market-relevant pivots
   assert.ok(result.technicalPivots.length>0);assert.ok(result.technicalPivots.every(pivot=>pivot.pivotRole==='technical'));assert.ok(result.marketRelevantPivots.every(pivot=>pivot.pivotRole==='market-relevant'));assert.equal(result.marketRelevantPivots.length,1);assert.equal(result.byReference.PEAK,null);assert.equal(result.byReference.TROUGH,null);
 });
 
-test('duration scoring caps at one hundred and overall scoring does not punish one strong reference',()=>{
+test('duration scoring caps at one hundred and weak pivot counts cannot overpower quality',()=>{
   const a=analysis();assert.equal(Math.round(a.durationScore(4,12)),33);assert.equal(Math.round(a.durationScore(10,12)),83);assert.equal(a.durationScore(12,12),100);assert.equal(a.durationScore(18,12),100);
   assert.ok(a.overallScore([{score:90}])>a.overallScore([{score:30},{score:30},{score:30}]));
+});
+
+test('two and three distinct aligned references receive strong coverage rewards',()=>{
+  const a=analysis(),pivot=(referenceType,pivotDate,score,previousRegime,nextRegime)=>({referenceType,pivotDate,regimeBoundaryDate:pivotDate,pivotRole:'market-relevant',score,previousRegime,nextRegime,nativeRelationship:'positive',relationship:'positive',cycleRelationship:'positive',relationshipStatus:'aligned'}),start=pivot('START','2020-01-01',85,'falling','rising'),peak=pivot('PEAK','2020-06-01',85,'rising','falling'),trough=pivot('TROUGH','2020-12-01',75,'falling','rising'),single=pivot('START','2021-01-01',95,'falling','rising'),two=[start,peak],three=[{...start,score:75},{...peak,score:75},trough];
+  const oneCoverage=a.referenceCoverage([single]),twoCoverage=a.referenceCoverage(two),threeCoverage=a.referenceCoverage(three);assert.deepEqual({count:oneCoverage.count,bonus:oneCoverage.bonus,references:Array.from(oneCoverage.references)},{count:1,bonus:0,references:['START']});assert.deepEqual({count:twoCoverage.count,bonus:twoCoverage.bonus,references:Array.from(twoCoverage.references)},{count:2,bonus:12,references:['START','PEAK']});assert.deepEqual({count:threeCoverage.count,bonus:threeCoverage.bonus,references:Array.from(threeCoverage.references)},{count:3,bonus:25,references:['START','PEAK','TROUGH']});assert.ok(a.overallScore(two)>a.overallScore([single]));assert.ok(a.overallScore(three)>a.overallScore([single]));
+});
+
+test('duplicate conflict unresolved and technical pivots do not inflate coverage',()=>{
+  const a=analysis(),base={pivotRole:'market-relevant',score:90,nativeRelationship:'positive',relationship:'positive',cycleRelationship:'positive',relationshipStatus:'aligned'},start={...base,referenceType:'START',pivotDate:'2020-01-01',regimeBoundaryDate:'2020-01-01',previousRegime:'falling',nextRegime:'rising'},duplicatePeak={...base,referenceType:'PEAK',pivotDate:'2020-01-01',regimeBoundaryDate:'2020-01-01',previousRegime:'rising',nextRegime:'falling'},conflict={...base,referenceType:'TROUGH',pivotDate:'2020-12-01',regimeBoundaryDate:'2020-12-01',previousRegime:'falling',nextRegime:'rising',relationshipStatus:'conflict'},technical={...base,referenceType:'PEAK',pivotDate:'2020-06-01',regimeBoundaryDate:'2020-06-01',previousRegime:'rising',nextRegime:'falling',pivotRole:'technical'},unresolved={...conflict,relationshipStatus:'unresolved',cycleRelationship:'unresolved'};
+  const coverage=a.referenceCoverage([start,duplicatePeak,conflict,technical,unresolved]);assert.equal(coverage.count,1);assert.equal(coverage.bonus,0);assert.deepEqual(Array.from(coverage.references),['START']);
 });
 
 test('current engine exposes watch, candidate, structural-only, and continuation invalidation',()=>{
