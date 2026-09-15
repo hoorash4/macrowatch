@@ -13,8 +13,9 @@ const segments=(defs)=>{let n=0,value=100,out=[];for(const [months,delta] of def
 test('regime, relevance, scale, and scoring policies are centralized without obsolete rules',()=>{
   const a=analysis(),source=read('assets/js/historical-insight/historical-indicator-analysis.js');
   assert.deepEqual({...a.ANALYSIS_POLICY.minimumRegimeDays},{short:31,medium:61,long:92});
-  assert.deepEqual({...a.ANALYSIS_POLICY.relevanceDays},{shortBefore:92,longBefore:183,after:31});
+  assert.deepEqual({...a.ANALYSIS_POLICY.relevanceMonths},{before:3,after:1});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{timing:.6,duration:.4});
+  assert.doesNotMatch(source,/shortBefore|longBefore|beforeMonths|relevanceDays/);
   assert.doesNotMatch(source,/monthlySamples|stateStarts|extremeForBoundary|directionalChangeThreshold|\.025/);
   assert.doesNotMatch(source,/COVID|US2Y|RETAIL|2020-|2021-|2022-|코로나|소매/);
 });
@@ -39,11 +40,31 @@ test('market trend duration selects one, two, or three-month indicator regimes i
   const a=analysis();assert.equal(a.requiredMinimumRegimeDays(60),31);assert.equal(a.requiredMinimumRegimeDays(120),61);assert.equal(a.requiredMinimumRegimeDays(240),92);
 });
 
-test('short and long relevance windows allow three or six months before and one month after',()=>{
-  const a=analysis(),pivot={pivotDate:'2020-03-01',pivotValue:1,previousRegime:'falling',nextRegime:'rising',confirmationDate:'2020-04-01',durationBefore:120,durationAfter:120,confirmed:true};
-  const shortCycle={startDate:'2020-06-01',peakDate:'2020-08-01',troughDate:'2020-10-01'},longCycle={startDate:'2020-09-01',peakDate:'2021-10-01',troughDate:'2022-01-01'};
-  assert.ok(a.resultForReference([pivot],'START','2020-06-01',shortCycle));assert.equal(a.resultForReference([{...pivot,pivotDate:'2020-02-01'}],'START','2020-06-01',shortCycle),null);
-  assert.ok(a.resultForReference([pivot],'START','2020-09-01',longCycle));assert.ok(a.resultForReference([{...pivot,pivotDate:'2020-10-01'}],'START','2020-09-01',longCycle));
+test('every market anchor uses exactly three months before and one month after',()=>{
+  const a=analysis(),expected={from:'2020-03-15',to:'2020-07-15',before:92,after:30};
+  for(const type of a.REFERENCE_ORDER)assert.deepEqual({...a.relevanceWindow('2020-06-15')},expected,type);
+});
+
+test('reference candidates are searched inside the anchor window and validated against the broad retrospective path',()=>{
+  const a=analysis(),rows=segments([[10,-4],[10,5]]),referenceDate=rows[10].time,cycle={startDate:referenceDate,peakDate:rows.at(-1).time,troughDate:null};
+  const result=a.resultForReference(rows,{frequency:'M'},'START',referenceDate,cycle),outside=a.resultForReference(rows,{frequency:'M'},'START',rows.at(-1).time,{...cycle,startDate:rows.at(-1).time});
+  assert.ok(result.result);assert.equal(result.result.pivotRole,'market-relevant');assert.ok(result.result.confirmationDate>a.relevanceWindow(referenceDate).to);
+  assert.equal(outside.result,null);assert.ok(result.technicalPivots.length>0);
+});
+
+test('historical validation uses observations beyond the case search range',()=>{
+  const a=analysis(),rows=segments([[10,-4],[10,5]]),cycle={startDate:rows[10].time,peakDate:rows.at(-1).time,troughDate:null},item={searchStart:rows[3].time,searchEnd:rows[11].time},result=a.analyzeHistorical({code:'X',title:'X',frequency:'M'},rows,item,cycle);
+  assert.ok(result.byReference.START);assert.ok(result.byReference.START.confirmationDate>item.searchEnd);
+});
+
+test('a provisional reversal that resumes the old trend remains a technical candidate and is not market relevant',()=>{
+  const a=analysis(),rows=segments([[6,4],[2,-3],[5,5]]),referenceDate=rows[6].time,cycle={startDate:referenceDate,peakDate:rows.at(-1).time,troughDate:null},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'M',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'M'},'START',referenceDate,cycle);
+  assert.ok(discovery.candidates.length>0);assert.equal(result.result,null);
+});
+
+test('historical analysis separates technical pivots from market-relevant pivots and leaves unmatched anchors null',()=>{
+  const a=analysis(),rows=segments([[6,-4],[6,5]]),cycle={startDate:rows[7].time,peakDate:rows.at(-1).time,troughDate:null},item={searchStart:rows[0].time,searchEnd:rows.at(-1).time},result=a.analyzeHistorical({code:'X',title:'X',frequency:'M'},rows,item,cycle);
+  assert.ok(result.technicalPivots.length>0);assert.ok(result.technicalPivots.every(pivot=>pivot.pivotRole==='technical'));assert.ok(result.marketRelevantPivots.every(pivot=>pivot.pivotRole==='market-relevant'));assert.equal(result.marketRelevantPivots.length,1);assert.equal(result.byReference.PEAK,null);assert.equal(result.byReference.TROUGH,null);
 });
 
 test('duration scoring caps at one hundred and overall scoring does not punish one strong reference',()=>{
