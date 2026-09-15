@@ -2565,3 +2565,18 @@ body.is-pointer-dragging {
 /* Fix research tool underline so it does not cross the group divider. */
 .dashboard-nav-tool-group-start::after { left: 1rem; }
 @media (max-width:1180px) { .dashboard-nav-tool-group-start::after { left: .8rem; } }
+
+
+/* Research navigation divider is a separate element, never part of a link underline. */
+.dashboard-nav-tool-divider {
+  width:1px;
+  height:1.2rem;
+  flex:0 0 1px;
+  margin:0 .15rem;
+  background:rgba(20,36,51,.18);
+}
+.dashboard-nav-tool-group-start { margin-left:0; padding-left:0; }
+.dashboard-nav-tool-group-start::before { display:none !important; }
+.dashboard-nav-tool-group-start::after { left:0 !important; }
+html[data-theme="dark"] .dashboard-nav-tool-divider { background:rgba(203,213,225,.22); }
+@media(max-width:1180px){ .dashboard-nav-tool-divider { margin:0 .1rem; } }
