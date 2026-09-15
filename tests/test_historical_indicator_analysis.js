@@ -10,39 +10,39 @@ const analysis=()=>load('assets/js/historical-insight/historical-indicator-analy
 const month=(index,value)=>{const d=new Date(Date.UTC(2000,index,1));return{time:d.toISOString().slice(0,10),value};};
 const segments=(defs)=>{let n=0,value=100,out=[];for(const [months,delta] of defs){for(let i=0;i<months;i++){out.push(month(n++,value));value+=delta;}}return out;};
 
-test('regime and scoring policies are centralized',()=>{
-  const a=analysis();assert.equal(a.ANALYSIS_POLICY.minimumRegimeDays,90);assert.equal(a.ANALYSIS_POLICY.extremeValidityDays,90);
-  assert.equal(a.ANALYSIS_POLICY.relevanceBeforeDays,183);assert.equal(a.ANALYSIS_POLICY.relevanceAfterDays,31);
+test('regime, relevance, scale, and scoring policies are centralized without obsolete rules',()=>{
+  const a=analysis(),source=read('assets/js/historical-insight/historical-indicator-analysis.js');
+  assert.deepEqual({...a.ANALYSIS_POLICY.minimumRegimeDays},{short:31,medium:61,long:92});
+  assert.deepEqual({...a.ANALYSIS_POLICY.relevanceDays},{shortBefore:92,longBefore:183,after:31});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{timing:.6,duration:.4});
+  assert.doesNotMatch(source,/monthlySamples|stateStarts|extremeForBoundary|directionalChangeThreshold|\.025/);
 });
 
-test('short correction does not become a regime, while four-month flat and falling sections do',()=>{
-  const a=analysis(),noise=segments([[5,3],[1,-1],[4,3]]),flat=segments([[6,3],[4,0]]),fall=segments([[5,0],[4,-3]]);
-  assert.equal(a.detectRegimes(noise).filter(x=>x.type==='falling').length,0);
-  assert.ok(a.detectRegimes(flat).some(x=>x.type==='sideways'));
-  assert.ok(a.detectRegimes(fall).some(x=>x.type==='falling'));
+test('six-month rise, one-month correction, and a new high remain one rising regime',()=>{
+  const a=analysis(),path=a.detectRetrospectiveRegimes(segments([[6,3],[1,-2],[4,3]]),{frequency:'M',minimumRegimeDays:92});
+  assert.deepEqual(Array.from(path.regimes,x=>x.type),['rising']);assert.equal(path.pivots.length,0);assert.equal(path.pending,null);
 });
 
-test('falling into three-month sideways and long cycles retain intermediate boundaries',()=>{
-  const a=analysis(),fallFlat=segments([[7,-3],[4,0]]),long=segments([[6,3],[4,0],[7,3]]);
-  assert.ok(a.detectPivots(fallFlat).some(x=>x.previousRegime==='falling'&&x.nextRegime==='sideways'));
-  assert.ok(a.detectRegimes(long).some(x=>x.type==='sideways'));
-  assert.ok(a.detectPivots(long).length>=2);
-  assert.ok(a.detectRegimes(long).every(x=>x.durationDays>=a.ANALYSIS_POLICY.minimumRegimeDays));
+test('six-month fall, one-month rebound, and a new low remain one falling regime',()=>{
+  const a=analysis(),path=a.detectRetrospectiveRegimes(segments([[6,-3],[1,2],[4,-3]]),{frequency:'M',minimumRegimeDays:92});
+  assert.deepEqual(Array.from(path.regimes,x=>x.type),['falling']);assert.equal(path.pivots.length,0);
 });
 
-test('a lower low or higher high inside validity window replaces the earlier extreme',()=>{
-  const a=analysis(),low=segments([[4,-3],[1,2],[1,-4],[5,3]]),high=segments([[4,3],[1,-2],[1,4],[5,-3]]);
-  const lows=a.detectPivots(low),highs=a.detectPivots(high);
-  assert.ok(lows.some(x=>x.pivotValue===Math.min(...low.map(r=>r.value))));
-  assert.ok(highs.some(x=>x.pivotValue===Math.max(...high.map(r=>r.value))));
+test('sustained boxes form rising-to-sideways and falling-to-sideways boundary pivots',()=>{
+  const a=analysis(),rising=a.detectRetrospectiveRegimes(segments([[6,3],[5,0]]),{frequency:'M',minimumRegimeDays:92}),falling=a.detectRetrospectiveRegimes(segments([[5,-3],[5,0]]),{frequency:'M',minimumRegimeDays:92});
+  for(const path of [rising,falling]){assert.equal(path.pivots.length,1);assert.equal(path.pivots[0].nextRegime,'sideways');assert.equal(path.pivots[0].pivotType,'boundary');}
+  assert.equal(rising.pivots[0].previousRegime,'rising');assert.equal(falling.pivots[0].previousRegime,'falling');
 });
 
-test('reference relevance includes five months before and twenty days after, but excludes seven months before',()=>{
-  const a=analysis(),pivot={pivotDate:'2020-01-01',pivotValue:1,previousRegime:'falling',nextRegime:'rising',confirmationDate:'2020-04-01',durationBefore:120,durationAfter:120,confirmed:true},cycle={startDate:'2020-06-01',peakDate:'2020-08-01',troughDate:'2020-10-01'};
-  assert.ok(a.resultForReference([pivot],'START','2020-06-01',cycle));
-  assert.equal(a.resultForReference([pivot],'PEAK','2020-08-01',cycle),null);
-  assert.ok(a.resultForReference([{...pivot,pivotDate:'2020-10-21'}],'TROUGH','2020-10-01',cycle));
+test('market trend duration selects one, two, or three-month indicator regimes independently',()=>{
+  const a=analysis();assert.equal(a.requiredMinimumRegimeDays(60),31);assert.equal(a.requiredMinimumRegimeDays(120),61);assert.equal(a.requiredMinimumRegimeDays(240),92);
+});
+
+test('short and long relevance windows allow three or six months before and one month after',()=>{
+  const a=analysis(),pivot={pivotDate:'2020-03-01',pivotValue:1,previousRegime:'falling',nextRegime:'rising',confirmationDate:'2020-04-01',durationBefore:120,durationAfter:120,confirmed:true};
+  const shortCycle={startDate:'2020-06-01',peakDate:'2020-08-01',troughDate:'2020-10-01'},longCycle={startDate:'2020-09-01',peakDate:'2021-10-01',troughDate:'2022-01-01'};
+  assert.ok(a.resultForReference([pivot],'START','2020-06-01',shortCycle));assert.equal(a.resultForReference([{...pivot,pivotDate:'2020-02-01'}],'START','2020-06-01',shortCycle),null);
+  assert.ok(a.resultForReference([pivot],'START','2020-09-01',longCycle));assert.ok(a.resultForReference([{...pivot,pivotDate:'2020-10-01'}],'START','2020-09-01',longCycle));
 });
 
 test('duration scoring caps at one hundred and overall scoring does not punish one strong reference',()=>{
@@ -50,15 +50,33 @@ test('duration scoring caps at one hundred and overall scoring does not punish o
   assert.ok(a.overallScore([{score:90}])>a.overallScore([{score:30},{score:30},{score:30}]));
 });
 
-test('current analysis separates a recent unconfirmed turn from confirmed pivots',()=>{
-  const a=analysis(),rows=segments([[7,3],[2,-4]]),result=a.analyzeCurrent({code:'X'},rows,rows[0].time,rows.at(-1).time);
-  assert.equal(result.evidence.status,'candidate');assert.equal(result.evidence.regime.confirmed,false);
+test('current engine exposes watch, candidate, confirmation, and continuation invalidation',()=>{
+  const a=analysis(),watchRows=segments([[6,3],[2,-4]]),candidateRows=segments([[6,3],[3,-4]]),resumedRows=segments([[6,3],[2,-4],[2,20]]),confirmedRows=segments([[6,-3],[4,4]]);
+  const run=rows=>a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time);
+  assert.equal(run(watchRows).evidence.status,'watch');assert.equal(run(candidateRows).evidence.status,'candidate');
+  const resumed=run(resumedRows);assert.deepEqual(Array.from(resumed.regimes,x=>x.type),['rising']);assert.equal(resumed.evidence.status,'watching');assert.equal(resumed.evidence.contribution,0);assert.ok(resumed.evidence.invalidations.some(x=>x.reason==='higher_high'));
+  const confirmed=run(confirmedRows);assert.equal(confirmed.evidence.status,'confirmed');assert.equal(confirmed.results.length,1);
 });
 
-test('current probability counts only recent confirmed pivots and drops stale evidence',()=>{
-  const a=analysis(),recentRows=segments([[5,-3],[5,3]]),recent=a.analyzeCurrent({code:'X'},recentRows,recentRows[0].time,recentRows.at(-1).time),extended=[...recentRows,...segments([[8,2]]).map((row,index)=>month(recentRows.length+index,row.value))],stale=a.analyzeCurrent({code:'X'},extended,extended[0].time,extended.at(-1).time);
-  assert.equal(recent.evidence.status,'confirmed');assert.equal(recent.results.length,1);assert.equal(stale.evidence.status,'watching');
-  assert.ok(a.currentPivotProbability([recent]).probability>a.currentPivotProbability([stale]).probability);
+test('watch retains a recent confirmed contribution and probability rolls provisional evidence back once',()=>{
+  const a=analysis(),rows=segments([[5,-3],[4,4],[2,-8]]),current=a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time),probability=a.currentPivotProbability([current]);
+  assert.equal(current.evidence.status,'watch');assert.ok(current.evidence.retainedPivot);assert.equal(current.evidence.contribution,a.ANALYSIS_POLICY.contribution.watchRetained);assert.equal(probability.probability,100);
+});
+
+test('COVID US2Y can detect a late-January sideways-to-falling boundary with a one-month minimum',()=>{
+  const a=analysis(),rows=[];for(let i=0;i<130;i++){const d=new Date(Date.UTC(2019,10,1+i)),date=d.toISOString().slice(0,10),value=date<'2020-01-24'?1.6:Math.max(.2,1.6-(i-83)*.045);rows.push({time:date,value});}
+  const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),pivot=path.pivots.find(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling');
+  assert.ok(pivot);assert.match(pivot.pivotDate,/^2020-01-2/);assert.equal(pivot.requiredMinimumDays,31);
+});
+
+test('2022 US2Y rising path does not invent a May 2021 pivot',()=>{
+  const a=analysis(),rows=[];for(let i=0;i<20;i++)rows.push({time:new Date(Date.UTC(2021,i,1)).toISOString().slice(0,10),value:.15+i*.12});
+  const path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:92});assert.equal(path.pivots.some(x=>x.pivotDate.startsWith('2021-05')),false);assert.deepEqual(Array.from(path.regimes,x=>x.type),['rising']);
+});
+
+test('2021 retail sales marks April decline and September trough without a July pivot',()=>{
+  const a=analysis(),values=[100,100,100,96,92,88,84,80,76,82,88,94],rows=values.map((value,index)=>({time:new Date(Date.UTC(2021,index,1)).toISOString().slice(0,10),value})),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31});
+  assert.ok(path.pivots.some(x=>x.pivotDate==='2021-04-01'&&x.nextRegime==='falling'));assert.ok(path.pivots.some(x=>x.pivotDate==='2021-09-01'&&x.previousRegime==='falling'));assert.equal(path.pivots.some(x=>x.pivotDate==='2021-07-01'),false);
 });
 
 test('low-scoring meaningful indicators remain visible and sort by score with deterministic ties',()=>{
@@ -97,6 +115,7 @@ test('UI right-aligns score-only labels, limits selection, and keeps chart compa
   assert.match(html,/historical-indicator-clear/);assert.doesNotMatch(html,/data-indicator-strength/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.match(css,/historical-reference-badge\[data-reference="START"\]/);assert.match(css,/historical-reference-badge\[data-reference="PEAK"\]/);assert.match(css,/historical-reference-badge\[data-reference="TROUGH"\]/);assert.doesNotMatch(controller,/종합 \$\{Math\.round\(item\.overallScore\)\}점/);
   assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/rgba\(color,\.3\)/);assert.match(chart,/subscribeClick/);assert.match(controller,/최대 5개/);
   assert.match(css,/\.historical-indicator-result-grid strong \{[^}]*font-size: 14px/);assert.match(css,/\.historical-indicator-result-grid p \{[^}]*font-size: 13px/);assert.match(controller,/card\.classList\.toggle\('is-empty',!result\)/);
+  assert.match(controller,/CANDIDATE · 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/최소 추세기간/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
 

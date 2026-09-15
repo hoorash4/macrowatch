@@ -15,6 +15,7 @@
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
     const rgba=(hex,alpha)=>{const value=hex.replace('#','');return `rgba(${parseInt(value.slice(0,2),16)},${parseInt(value.slice(2,4),16)},${parseInt(value.slice(4,6),16)},${alpha})`;};
     const timingText=result=>result.offsetDays===0?'기준점 당일':`기준점 ${Math.abs(result.offsetDays)}일 ${result.offsetDays<0?'전':'후'}`;
+    const pivotText=result=>result.markerStatus==='candidate'?'CANDIDATE 피봇 후보':result.markerStatus==='watch'?'WATCH 조정 감시':result.referenceType==='CURRENT'?'CONFIRMED 최근 피봇':`${result.referenceType} ${timingText(result)}`;
     function renderPivotLines(){
       if(!pivotLayer||!chart)return;
       pivotLayer.replaceChildren();
@@ -76,7 +77,7 @@
           const color=indicatorColors[index%indicatorColors.length];
           const active=item.meta.code===activeCode,line=chart.addLineSeries({priceScaleId:'left',color:active?color:rgba(color,.3),lineWidth:active?3:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          for(const result of item.results)pivotDefinitions.push({time:result.pivotDate,color:active?color:rgba(color,.3),label:`${result.referenceType==='CURRENT'?'최근':result.referenceType} ${timingText(result)}`});
+          for(const result of item.displayPivots||item.results)pivotDefinitions.push({time:result.pivotDate,color:active?color:rgba(color,.3),label:pivotText(result)});
           indicatorSeries.set(item.meta.code,{series:line,color});
         });
         if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);

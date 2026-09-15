@@ -127,6 +127,8 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-indicator-detail-heading strong { font-size: 18px; }
 .historical-indicator-detail-heading span { color: var(--theme-text-muted); font-size: 12px; font-weight:650; }
 .historical-indicator-result-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+.historical-indicator-result-grid.is-current { grid-template-columns:minmax(0,1fr); }
+.historical-indicator-result-grid.is-current article { max-width:none; }
 .historical-indicator-result-grid article { padding: 14px 15px; border-left: 3px solid #2563eb; border-radius: 8px; background: var(--theme-surface); }
 .historical-indicator-result-grid article.is-invalidated { border-left-color: #dc2626; }
 .historical-indicator-result-grid article.is-invalidated strong { color: #dc2626; }
