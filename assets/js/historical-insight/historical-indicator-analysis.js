@@ -4,7 +4,7 @@
   const ANALYSIS_POLICY=Object.freeze({
     minimumRegimeDays:Object.freeze({short:31,medium:61,long:92}),marketDurationDays:Object.freeze({shortMax:92,mediumMax:183,shortCycle:365}),
     relevanceDays:Object.freeze({shortBefore:92,longBefore:183,after:31}),current:Object.freeze({minimumRegimeDays:92,candidateFraction:.5,recentSignalDays:183}),
-    scale:Object.freeze({noiseMultiplier:2.5,rangeFraction:.015,minimumFraction:.002}),smoothingPoints:Object.freeze({D:5,W:3,T:3,M:2,Q:1,E:2}),
+    scale:Object.freeze({noiseMultiplier:2.5,rangeFraction:.015,minimumFraction:.002,sidewaysEfficiency:.35}),smoothingPoints:Object.freeze({D:5,W:3,T:3,M:2,Q:1,E:2}),
     referenceWeights:Object.freeze({timing:.6,duration:.4}),overallWeights:Object.freeze({best:.7,mean:.3}),repeatBonusPerReference:5,maxRepeatBonus:10,
     contribution:Object.freeze({confirmed:1,candidate:.35,watchRetained:1,watch:.1})
   });
@@ -29,11 +29,13 @@
     const initialValues=data.slice(0,initialConfirmationIndex+1).map(row=>row.smoothedValue);
     let active={type:initialType,startIndex:0,confirmationIndex:initialConfirmationIndex,extremeIndex:initialType==='rising'?initialValues.indexOf(Math.max(...initialValues)):initialType==='falling'?initialValues.indexOf(Math.min(...initialValues)):initialConfirmationIndex,bandLow:Math.min(...initialValues),bandHigh:Math.max(...initialValues)},pending=null;
     const value=index=>data[index].smoothedValue,rawPoint=index=>raw[index]||data[index],pivotType=(previous,next)=>previous!=='sideways'&&next!=='sideways'?'extreme':'boundary';
+    function trailingStructure(endIndex){let startIndex=endIndex;while(startIndex>active.startIndex&&daysBetween(data[startIndex].time,data[endIndex].time)<minimumRegimeDays)startIndex--;if(startIndex===endIndex||daysBetween(data[startIndex].time,data[endIndex].time)<minimumRegimeDays)return null;const values=data.slice(startIndex,endIndex+1).map(row=>row.smoothedValue),travel=values.slice(1).reduce((sum,item,index)=>sum+Math.abs(item-values[index]),0),efficiency=travel?Math.abs(values.at(-1)-values[0])/travel:0;return{startIndex,sideways:efficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency};}
     function appendRegime(type,startIndex,confirmationIndex){const previous=regimes.at(-1);if(previous&&previous.type===type)return;if(previous)previous.endIndex=startIndex;regimes.push({type,startIndex,endIndex:data.length-1,confirmationIndex,requiredMinimumDays:minimumRegimeDays});}
     function confirm(nextType,boundaryIndex,confirmationIndex){if(!regimes.length)appendRegime(active.type,active.startIndex,active.confirmationIndex);const previous=regimes.at(-1),kind=pivotType(previous.type,nextType),pivotIndex=kind==='extreme'?active.extremeIndex:boundaryIndex;previous.endIndex=pivotIndex;appendRegime(nextType,pivotIndex,confirmationIndex);const point=rawPoint(pivotIndex);pivots.push({pivotDate:point.time,pivotValue:point.value,previousRegime:previous.type,nextRegime:nextType,confirmationDate:rawPoint(confirmationIndex).time,pivotType:kind,requiredMinimumDays:minimumRegimeDays,confirmed:true});active={type:nextType,startIndex:pivotIndex,confirmationIndex,extremeIndex:pivotIndex,bandLow:value(pivotIndex),bandHigh:value(pivotIndex)};pending=null;}
     appendRegime(initialType,0,initialConfirmationIndex);
     for(let index=initialConfirmationIndex+1;index<data.length;index++){
       const current=value(index),date=data[index].time;
+      const trailing=!pending&&active.type!=='sideways'?trailingStructure(index):null;if(trailing?.sideways)pending={nextType:'sideways',boundaryIndex:trailing.startIndex,startedIndex:index,extremeIndex:index};
       if(active.type==='rising'){
         if(pending&&current>value(active.extremeIndex)+threshold){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'higher_high',replacedBy:date});active.extremeIndex=index;pending=null;continue;}if(!pending&&current>value(active.extremeIndex)){active.extremeIndex=index;continue;}
         const stalled=daysBetween(data[active.extremeIndex].time,date)>=minimumRegimeDays,decline=value(active.extremeIndex)-current;if(!pending&&(decline>0||stalled))pending={nextType:decline>=threshold?'falling':'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index};
