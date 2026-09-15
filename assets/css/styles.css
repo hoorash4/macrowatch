@@ -2580,3 +2580,15 @@ body.is-pointer-dragging {
 .dashboard-nav-tool-group-start::after { left:0 !important; }
 html[data-theme="dark"] .dashboard-nav-tool-divider { background:rgba(203,213,225,.22); }
 @media(max-width:1180px){ .dashboard-nav-tool-divider { margin:0 .1rem; } }
+
+
+/* Center research divider using the nav gap only. */
+.dashboard-nav-tool-divider {
+  align-self:center;
+  width:1px;
+  height:1.2rem;
+  flex:0 0 1px;
+  margin:0 !important;
+  padding:0 !important;
+}
+@media(max-width:1180px){ .dashboard-nav-tool-divider { margin:0 !important; } }
