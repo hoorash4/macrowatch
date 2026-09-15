@@ -1,204 +1,36 @@
 (() => {
   'use strict';
-  // 사례 정의, 원시 지수, 차트 어댑터를 조합하는 화면 컨트롤러입니다.
-  const $ = id => document.getElementById(id);
-  const host = $('historical-chart-host');
-  if (!host) return;
-  const status = $('historical-chart-status'), meta = $('historical-chart-meta'), message = $('historical-chart-message');
-  const retry = $('historical-chart-retry'), fullRange = $('historical-chart-full-range'), caseRange = $('historical-chart-case-range');
-  const marketButtons = [...document.querySelectorAll('[data-historical-index]')];
-  const modeButtons = [...document.querySelectorAll('[data-historical-mode]')];
-  const indexData = window.MacroWatchHistoricalData, cycleData = window.MacroWatchHistoricalCycles;
-  let activeCode = 'NASDAQ_COMPOSITE', activeCase = null, activeMode = 'history', activeHistoricalCode = null, cases = [], requestToken = 0;
-  let indexRepository, caseRepository, chart, activeRows = [], currentUser = null, isAdmin = false;
+  const $=id=>document.getElementById(id),host=$('historical-chart-host');if(!host)return;
+  const status=$('historical-chart-status'),meta=$('historical-chart-meta'),message=$('historical-chart-message'),retry=$('historical-chart-retry'),fullRange=$('historical-chart-full-range'),caseRange=$('historical-chart-case-range');
+  const marketButtons=[...document.querySelectorAll('[data-historical-index]')],modeButtons=[...document.querySelectorAll('[data-historical-mode]')],strengthButtons=[...document.querySelectorAll('[data-indicator-strength]')];
+  const indexData=window.MacroWatchHistoricalData,cycleData=window.MacroWatchHistoricalCycles,indicatorData=window.MacroWatchHistoricalIndicators,indicatorAnalysis=window.MacroWatchHistoricalIndicatorAnalysis,selectionApi=window.MacroWatchHistoricalIndicatorSelection;
+  let activeCode='NASDAQ_COMPOSITE',activeCase=null,activeMode='history',activeHistoricalCode=null,cases=[],requestToken=0,indexRepository,caseRepository,indicatorRepository,chart,activeRows=[],currentUser=null,isAdmin=false;
+  let strength='standard',analysisCache=new Map(),visibleIndicators=[],selection=selectionApi?.create();
 
-  function state(kind, text) {
-    host.dataset.state = kind;
-    host.setAttribute('aria-busy', String(kind === 'loading'));
-    status.textContent = text;
-    message.textContent = kind === 'ready' ? '' : text;
-    message.hidden = kind === 'ready';
-    retry.hidden = kind !== 'error';
-    fullRange.disabled = caseRange.disabled = kind !== 'ready';
-  }
-  function setMarket(code) {
-    activeCode = code;
-    for (const button of marketButtons) {
-      const selected = button.dataset.historicalIndex === code;
-      button.classList.toggle('is-active', selected);
-      button.setAttribute('aria-selected', String(selected));
-    }
-  }
-  function formatPoint(kind, point) {
-    const card = document.querySelector(`[data-cycle-point="${kind}"]`);
-    if (!card) return;
-    card.querySelector('strong').textContent = point ? point.time : '미확정';
-    card.querySelector('span').textContent = point ? window.MacroWatchFrontend.formatDisplayNumber(point.value) : '—';
-  }
-  const percentage = (value, absolute = false) => value == null ? '—' : `${absolute ? '' : value > 0 ? '+' : ''}${window.MacroWatchFrontend.formatDisplayNumber(absolute ? Math.abs(value) : value, { maximumFractionDigits: 1 })}%`;
-  const duration = value => value == null ? '—' : `${window.MacroWatchFrontend.formatDisplayNumber(value)}일`;
-  function showCycle(item, cycle, metrics) {
-    $('historical-cycle-panel').hidden = false;
-    $('historical-cycle-state').textContent = cycle.status === 'confirmed' ? 'CONFIRMED CYCLE' : cycle.status === 'in_progress' ? 'IN PROGRESS' : 'DRAFT';
-    $('historical-cycle-name').textContent = item.name;
-    $('historical-cycle-market').textContent = indexData.indices[cycle.indexCode] || cycle.indexCode;
-    $('historical-search-range').textContent = `관찰 범위 ${item.searchStart} ~ ${item.searchEnd || '현재'}`;
-    $('historical-cycle-description').textContent = item.summary;
-    formatPoint('start', metrics.start); formatPoint('peak', metrics.peak); formatPoint('trough', metrics.trough);
-    $('historical-rise').textContent = percentage(metrics.rise);
-    $('historical-fall').textContent = percentage(metrics.fall);
-    $('historical-drawdown').textContent = percentage(metrics.drawdown, true);
-    $('historical-rise-days').textContent = duration(metrics.riseDays);
-    $('historical-fall-days').textContent = duration(metrics.fallDays);
-    if (isAdmin) {
-      $('historical-cycle-editor').hidden = false;
-      $('historical-start-date').value = cycle.startDate || '';
-      $('historical-peak-date').value = cycle.peakDate || '';
-      $('historical-trough-date').value = cycle.troughDate || '';
-      $('historical-cycle-save-status').textContent = '';
-    }
-  }
-  function renderCaseList() {
-    const root = $('historical-case-list');
-    root.replaceChildren();
-    for (const item of cases.filter(item => !isCurrentCase(item))) {
-      const button = document.createElement('button');
-      button.type = 'button'; button.className = 'historical-case'; button.dataset.historicalCase = item.code;
-      const label = document.createElement('span'), badge = document.createElement('small');
-      label.textContent = item.name;
-      const status = cycleData.marketCycle(item, item.primaryIndex).status;
-      badge.textContent = status === 'confirmed' ? '확정' : status === 'in_progress' ? '진행 중' : '초안';
-      button.append(label, badge);
-      button.addEventListener('click', () => selectCase(item.code));
-      root.append(button);
-    }
-  }
-  function isCurrentCase(item) {
-    return Object.values(item.markets).some(cycle => cycle.status !== 'confirmed');
-  }
-  function activeCaseButton() {
-    document.querySelectorAll('[data-historical-case]').forEach(button => button.classList.toggle('is-active', button.dataset.historicalCase === activeCase?.code));
-  }
-  function focusCase() {
-    if (!chart || !activeRows.length || !activeCase) return;
-    const cycle = cycleData.marketCycle(activeCase, activeCode);
-    const from = cycle.startDate || activeCase.searchStart;
-    const to = cycle.troughDate || cycle.peakDate || activeRows.at(-1).time;
-    chart.focus(from, to, .12);
-  }
-  async function render(code) {
-    const token = ++requestToken;
-    setMarket(code);
-    meta.textContent = `${activeCase?.name || 'Historical Case'} · ${indexData?.indices[code] || code}`;
-    state('loading', '사이클 데이터 불러오는 중');
-    try {
-      if (!indexData || !cycleData || !window.MacroWatchHistoricalChart || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
-      if (!chart) chart = window.MacroWatchHistoricalChart.create(host);
-      chart.setData([]);
-      const rows = await indexRepository.load(code);
-      if (token !== requestToken) return;
-      const activeCycle = cycleData.marketCycle(activeCase, code);
-      const metrics = cycleData.calculate(activeCase, activeCycle, rows);
-      activeRows = rows;
-      chart.setData(rows);
-      if (!rows.length) { state('empty', '저장된 지수 데이터가 없습니다.'); return; }
-      chart.setCycle(cycleData.chartPoints(activeCycle, rows));
-      focusCase();
-      showCycle(activeCase, activeCycle, metrics);
-      const count = window.MacroWatchFrontend.formatDisplayNumber(rows.length, { locale: 'ko-KR' });
-      state('ready', `${count}개 · ${rows[0].time} ~ ${rows.at(-1).time}`);
-    } catch (error) {
-      if (token !== requestToken) return;
-      chart?.destroy(); chart = null; activeRows = [];
-      state('error', '사이클 데이터를 불러오지 못했습니다. 다시 시도해 주세요.');
-      console.error('[Historical Insight]', error);
-    }
-  }
-  function selectCase(code) {
-    const item = cases.find(candidate => candidate.code === code);
-    if (!item) return;
-    if (!isCurrentCase(item)) activeHistoricalCode = item.code;
-    activeCase = item; activeCaseButton();
-    return render(item.primaryIndex);
-  }
-  function updateModeAvailability() {
-    const hasHistorical = cases.some(item => !isCurrentCase(item));
-    const hasCurrent = cases.some(isCurrentCase);
-    for (const button of modeButtons) button.disabled = button.dataset.historicalMode === 'current' ? !hasCurrent : !hasHistorical;
-  }
-  function setMode(mode) {
-    const currentCases = cases.filter(isCurrentCase);
-    const historicalCases = cases.filter(item => !isCurrentCase(item));
-    const available = mode === 'current' ? currentCases : historicalCases;
-    if (!available.length) return;
-    activeMode = mode;
-    for (const button of modeButtons) {
-      const selected = button.dataset.historicalMode === mode;
-      button.classList.toggle('is-active', selected);
-      button.setAttribute('aria-selected', String(selected));
-    }
-    const currentMode = mode === 'current';
-    $('historical-stage').classList.toggle('is-current-mode', currentMode);
-    $('historical-past-sidebar').hidden = currentMode;
-    $('historical-current-sidebar').hidden = !currentMode;
-    $('historical-toolbar-title').textContent = currentMode ? '현재 국면 차트' : '과거 국면 차트';
-    const desired = currentMode ? available[0] : available.find(item => item.code === activeHistoricalCode) || available[0];
-    if (currentMode) $('historical-current-case-name').textContent = desired.name;
-    return selectCase(desired.code);
-  }
-  async function initialize() {
-    try {
-      if (!indexData || !cycleData || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
-      const client = window.macroWatchSupabase || window.MacroWatchFrontend.createSupabaseClient();
-      if (!client) throw new Error('데이터 연결을 확인해 주세요.');
-      window.macroWatchSupabase = client;
-      indexRepository = indexData.createRepository(client); caseRepository = cycleData.createRepository(client);
-      const { data: authData, error: authError } = await client.auth.getSession();
-      if (authError) throw authError;
-      currentUser = authData.session?.user || null;
-      if (!currentUser) throw new Error('로그인이 필요합니다.');
-      const [{ data: account, error: accountError }, loadedCases] = await Promise.all([
-        client.from('user_accounts').select('is_admin').eq('user_id', currentUser.id).maybeSingle(), caseRepository.load(),
-      ]);
-      isAdmin = !accountError && account?.is_admin === true;
-      cases = loadedCases;
-      if (!cases.length) { state('empty', '저장된 Historical Case가 없습니다.'); return; }
-      renderCaseList();
-      const historicalCases = cases.filter(item => !isCurrentCase(item));
-      updateModeAvailability();
-      setMode(historicalCases.length ? 'history' : 'current');
-    } catch (error) {
-      state('error', 'Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');
-      console.error('[Historical Insight]', error);
-    }
-  }
-  modeButtons.forEach(button => button.addEventListener('click', () => setMode(button.dataset.historicalMode)));
-  marketButtons.forEach(button => button.addEventListener('click', () => activeCase && render(button.dataset.historicalIndex)));
-  $('historical-cycle-form').addEventListener('submit', async event => {
-    event.preventDefault();
-    if (!isAdmin || !activeCase) return;
-    const output = $('historical-cycle-save-status');
-    output.textContent = '저장 중';
-    try {
-      const values = { startDate: $('historical-start-date').value, peakDate: $('historical-peak-date').value,
-        troughDate: $('historical-trough-date').value };
-      const rows = await indexRepository.load(activeCode);
-      cycleData.calculate(activeCase, { ...cycleData.marketCycle(activeCase, activeCode), ...values }, rows);
-      await caseRepository.save(activeCase.code, activeCode, values, currentUser.id);
-      cases = await caseRepository.load();
-      activeCase = cases.find(item => item.code === activeCase.code);
-      renderCaseList(); updateModeAvailability();
-      if (!isCurrentCase(activeCase)) activeHistoricalCode = activeCase.code;
-      await setMode(isCurrentCase(activeCase) ? activeMode : 'history');
-      output.textContent = '저장 완료';
-    } catch (error) {
-      output.textContent = `저장 오류: ${error?.message || '알 수 없는 오류'}`;
-    }
-  });
-  retry.addEventListener('click', () => activeCase ? render(activeCode) : initialize());
-  fullRange.addEventListener('click', () => chart?.fit());
-  caseRange.addEventListener('click', focusCase);
-  window.addEventListener('pagehide', () => { ++requestToken; chart?.destroy(); chart = null; });
-  window.addEventListener('pageshow', event => { if (event.persisted) activeCase ? render(activeCode) : initialize(); });
-  initialize();
+  function state(kind,text){host.dataset.state=kind;host.setAttribute('aria-busy',String(kind==='loading'));status.textContent=text;message.textContent=kind==='ready'?'':text;message.hidden=kind==='ready';retry.hidden=kind!=='error';fullRange.disabled=caseRange.disabled=kind!=='ready';}
+  function setMarket(code){activeCode=code;for(const button of marketButtons){const selected=button.dataset.historicalIndex===code;button.classList.toggle('is-active',selected);button.setAttribute('aria-selected',String(selected));}}
+  function formatPoint(kind,point){const card=document.querySelector(`[data-cycle-point="${kind}"]`);if(!card)return;card.querySelector('strong').textContent=point?point.time:'미확정';card.querySelector('span').textContent=point?window.MacroWatchFrontend.formatDisplayNumber(point.value):'—';}
+  const percentage=(value,absolute=false)=>value==null?'—':`${absolute?'':value>0?'+':''}${window.MacroWatchFrontend.formatDisplayNumber(absolute?Math.abs(value):value,{maximumFractionDigits:1})}%`,duration=value=>value==null?'—':`${window.MacroWatchFrontend.formatDisplayNumber(value)}일`;
+  function showCycle(item,cycle,metrics){const panel=$('historical-cycle-panel');panel.hidden=activeMode==='current';$('historical-cycle-state').textContent=cycle.status==='confirmed'?'CONFIRMED CYCLE':cycle.status==='in_progress'?'IN PROGRESS':'DRAFT';$('historical-cycle-name').textContent=item.name;$('historical-cycle-market').textContent=indexData.indices[cycle.indexCode]||cycle.indexCode;$('historical-search-range').textContent=`관찰 범위 ${item.searchStart} ~ ${item.searchEnd||'현재'}`;$('historical-cycle-description').textContent=item.summary;formatPoint('start',metrics.start);formatPoint('peak',metrics.peak);formatPoint('trough',metrics.trough);$('historical-rise').textContent=percentage(metrics.rise);$('historical-fall').textContent=percentage(metrics.fall);$('historical-drawdown').textContent=percentage(metrics.drawdown,true);$('historical-rise-days').textContent=duration(metrics.riseDays);$('historical-fall-days').textContent=duration(metrics.fallDays);if(isAdmin){$('historical-cycle-editor').hidden=activeMode==='current';$('historical-start-date').value=cycle.startDate||'';$('historical-peak-date').value=cycle.peakDate||'';$('historical-trough-date').value=cycle.troughDate||'';$('historical-cycle-save-status').textContent='';}}
+  const isCurrentCase=item=>Object.values(item.markets).some(cycle=>cycle.status!=='confirmed');
+  function renderCaseList(){const root=$('historical-case-list');root.replaceChildren();for(const item of cases.filter(item=>!isCurrentCase(item))){const button=document.createElement('button');button.type='button';button.className='historical-case';button.dataset.historicalCase=item.code;const label=document.createElement('span'),badge=document.createElement('small');label.textContent=item.name;badge.textContent='확정';button.append(label,badge);button.addEventListener('click',()=>selectCase(item.code));root.append(button);}}
+  function activeCaseButton(){document.querySelectorAll('[data-historical-case]').forEach(button=>button.classList.toggle('is-active',button.dataset.historicalCase===activeCase?.code));}
+  function focusCase(){if(!chart||!activeRows.length||!activeCase)return;const cycle=cycleData.marketCycle(activeCase,activeCode);const from=cycle.startDate||activeCase.searchStart;const to=cycle.troughDate || cycle.peakDate || activeRows.at(-1).time;chart.focus(from,to,.12);}
+  function indicatorLoading(text='비교 지표 분석 중'){const count=$('historical-indicator-count'),root=$('historical-indicator-list');if(count)count.textContent='분석 중';if(root){root.replaceChildren();const p=document.createElement('p');p.className='historical-indicator-empty';p.textContent=text;root.append(p);}}
+  async function mapSeries(metadata,worker){const out=[];for(let i=0;i<metadata.length;i+=6){const batch=await Promise.all(metadata.slice(i,i+6).map(worker));out.push(...batch.filter(Boolean));}return out;}
+  async function calculateIndicatorContext(){const key=`${activeMode}:${activeCase.code}:${activeCode}`;if(analysisCache.has(key))return analysisCache.get(key);const coverage=await indicatorRepository.loadCoverage(),catalog=indicatorRepository.catalog(),cycle=cycleData.marketCycle(activeCase,activeCode),end=indicatorAnalysis.analysisEnd(activeCase,cycle);if(activeMode==='history'){const eligible=catalog.filter(item=>{const c=coverage.get(item.code);return c&&c.firstDate<=activeCase.searchStart&&c.lastDate>=end;}),analyses=await mapSeries(eligible,async item=>indicatorAnalysis.analyzeHistorical(item,await indicatorRepository.load(item.code,activeCase.searchStart,end),activeCase,cycle)),value=Object.freeze({mode:'history',analyses,end});analysisCache.set(key,value);return value;}const historicalCases=cases.filter(item=>!isCurrentCase(item)),usable=catalog.filter(item=>coverage.has(item.code)),historyStart=historicalCases.reduce((date,item)=>date<item.searchStart?date:item.searchStart,activeCase.searchStart),latest=activeRows.at(-1)?.time||end;const history=await mapSeries(usable,async item=>{const rows=await indicatorRepository.load(item.code,historyStart,latest);let best=0;for(const past of historicalCases){for(const pastCycle of Object.values(past.markets)){const pastEnd=indicatorAnalysis.analysisEnd(past,pastCycle),c=coverage.get(item.code);if(c.firstDate>past.searchStart||c.lastDate<pastEnd)continue;const analysis=indicatorAnalysis.analyzeHistorical(item,rows,past,pastCycle);for(const result of analysis.results)best=Math.max(best,result.trendConsistency);}}return{item,rows,best};});const analyses=history.map(entry=>({...indicatorAnalysis.analyzeCurrent(entry.item,entry.rows,activeCase.searchStart,latest),pastConsistency:entry.best})),value=Object.freeze({mode:'current',analyses,end:latest});analysisCache.set(key,value);return value;}
+  function candidatesFor(context){const threshold=indicatorAnalysis.FILTER_THRESHOLDS[strength];if(context.mode==='history')return{items:context.analyses.filter(item=>indicatorAnalysis.qualifies(item,strength)),watchlist:false,signal:false};const history=context.analyses.filter(item=>item.pastConsistency>=threshold),valid=history.filter(item=>indicatorAnalysis.qualifies(item,strength));return{items:valid.length?valid:history,watchlist:!valid.length,signal:valid.length>0};}
+  function displayItem(item,context){return{...item,displayRows:indicatorAnalysis.normalizeForDisplay(item.rows,activeCase.searchStart,context.end)};}
+  function renderIndicators(context){const group=candidatesFor(context);visibleIndicators=group.items;const snapshot=selection.reconcile(visibleIndicators,!group.watchlist),root=$('historical-indicator-list');root.replaceChildren();$('historical-indicator-count').textContent=group.watchlist?`${visibleIndicators.length}개 감시`:`${visibleIndicators.length}개`;if(!visibleIndicators.length){const p=document.createElement('p');p.className='historical-indicator-empty';p.textContent=activeMode==='history'?'이 국면에서 현재 필터 기준을 만족하는 유효한 선행·동행 지표가 없습니다.':'과거 선행·동행 이력이 있는 지표가 없습니다.';root.append(p);}else{if(group.watchlist){const p=document.createElement('p');p.className='historical-indicator-note';p.textContent='현재 유효한 피봇은 없습니다. 과거에 선행·동행했던 전체 지표를 감시합니다.';root.append(p);}for(const item of visibleIndicators){const label=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span'),badge=document.createElement('small');input.type='checkbox';input.checked=snapshot.checked.includes(item.meta.code);input.addEventListener('change',()=>{selection.toggle(item.meta.code,input.checked);drawIndicators(context);});name.textContent=item.meta.title;badge.textContent=item.results.length?`${Math.round(Math.max(...item.results.map(r=>r.trendConsistency)))}%`:'감시';label.append(input,name,badge);root.append(label);}}const signal=$('historical-cycle-signal');signal.hidden=activeMode!=='current'||!group.signal;if(group.signal)$('historical-cycle-signal-text').textContent=`${group.items.length}개 지표에서 최근 유효 피봇과 지속 추세가 확인됐습니다.`;drawIndicators(context);}
+  function drawIndicators(context){const snapshot=selection.snapshot(),checked=visibleIndicators.filter(item=>snapshot.checked.includes(item.meta.code)).map(item=>displayItem(item,context));chart?.setIndicators?.(checked,snapshot.active);const legend=$('historical-indicator-legend');legend.replaceChildren();legend.hidden=!checked.length;const colors=chart?.indicatorColors?.()||new Map();for(const item of checked){const button=document.createElement('button');button.type='button';button.className=item.meta.code===snapshot.active?'is-active':'';button.style?.setProperty('--indicator-color',colors.get(item.meta.code));button.textContent=item.meta.title;button.addEventListener('click',()=>{selection.activate(item.meta.code);drawIndicators(context);});legend.append(button);}renderDetail(checked.find(item=>item.meta.code===snapshot.active));}
+  function renderDetail(item){const root=$('historical-indicator-detail');if(!item){root.hidden=true;root.replaceChildren();return;}root.hidden=false;root.replaceChildren();const heading=document.createElement('div');heading.className='historical-indicator-detail-heading';const title=document.createElement('strong'),metaLine=document.createElement('span');title.textContent=item.meta.title;metaLine.textContent=`${item.meta.category} · ${item.meta.frequencyLabel} · ${item.meta.unit}`;heading.append(title,metaLine);root.append(heading);if(!item.results.length){const p=document.createElement('p');p.className='historical-indicator-empty';p.textContent='현재 분석 구간에서 유효한 최근 피봇을 기다리고 있습니다.';root.append(p);return;}const grid=document.createElement('div');grid.className='historical-indicator-result-grid';for(const result of item.results.filter(result=>result.timingType!=='lagging')){const card=document.createElement('article'),label=document.createElement('strong'),body=document.createElement('p');label.textContent=result.referenceType==='CURRENT'?'최근 피봇':result.referenceType;body.textContent=`${result.pivotDate} · ${window.MacroWatchFrontend.formatDisplayNumber(result.pivotValue,{maximumFractionDigits:item.meta.decimals})} ${item.meta.unit} · ${result.timingType==='coincident'?'동행':`${result.leadDays}일 선행`} · ${result.trendDirection==='rising'?'상승 전환':'하락 전환'} · 추세 일관도 ${Math.round(result.trendConsistency)}%`;card.append(label,body);grid.append(card);}root.append(grid);}
+  async function refreshIndicators(token){if(!indicatorRepository||!selection)return;indicatorLoading();try{const context=await calculateIndicatorContext();if(token!==requestToken)return;renderIndicators(context);}catch(error){if(token!==requestToken)return;indicatorLoading('비교 지표를 불러오지 못했습니다.');console.error('[Historical indicators]',error);}}
+  async function render(code){const token=++requestToken;setMarket(code);meta.textContent=`${activeCase?.name||'Historical Case'} · ${indexData?.indices[code]||code}`;state('loading','사이클 데이터 불러오는 중');chart?.setIndicators?.([],null);try{if(!indexData||!cycleData||!window.MacroWatchHistoricalChart||!window.MacroWatchFrontend)throw new Error('화면 모듈을 불러오지 못했습니다.');if(!chart)chart=window.MacroWatchHistoricalChart.create(host);chart.setData([]);const rows=await indexRepository.load(code);if(token!==requestToken)return;const activeCycle=cycleData.marketCycle(activeCase,code),metrics=cycleData.calculate(activeCase,activeCycle,rows);activeRows=rows;chart.setData(rows);if(!rows.length){state('empty','저장된 지수 데이터가 없습니다.');return;}chart.setCycle(cycleData.chartPoints(activeCycle,rows));focusCase();showCycle(activeCase,activeCycle,metrics);const count=window.MacroWatchFrontend.formatDisplayNumber(rows.length,{locale:'ko-KR'});state('ready',`${count}개 · ${rows[0].time} ~ ${rows.at(-1).time}`);await refreshIndicators(token);}catch(error){if(token!==requestToken)return;chart?.destroy();chart=null;activeRows=[];state('error','사이클 데이터를 불러오지 못했습니다. 다시 시도해 주세요.');console.error('[Historical Insight]',error);}}
+  function selectCase(code){const item=cases.find(candidate=>candidate.code===code);if(!item)return;if(!isCurrentCase(item))activeHistoricalCode=item.code;activeCase=item;activeCaseButton();return render(item.primaryIndex);}
+  function updateModeAvailability(){const hasHistorical=cases.some(item=>!isCurrentCase(item)),hasCurrent=cases.some(isCurrentCase);for(const button of modeButtons)button.disabled=button.dataset.historicalMode==='current'?!hasCurrent:!hasHistorical;}
+  function setMode(mode){const available=mode==='current'?cases.filter(isCurrentCase):cases.filter(item=>!isCurrentCase(item));if(!available.length)return;activeMode=mode;for(const button of modeButtons){const selected=button.dataset.historicalMode===mode;button.classList.toggle('is-active',selected);button.setAttribute('aria-selected',String(selected));}const currentMode=mode==='current';$('historical-stage').classList.toggle('is-current-mode',currentMode);$('historical-past-sidebar').hidden=currentMode;$('historical-current-sidebar').hidden=!currentMode;$('historical-toolbar-title').textContent=currentMode?'현재 국면 차트':'과거 국면 차트';const desired=currentMode?available[0]:available.find(item=>item.code===activeHistoricalCode)||available[0];if(currentMode)$('historical-current-case-name').textContent=desired.name;return selectCase(desired.code);}
+  async function initialize(){try{if(!indexData||!cycleData||!window.MacroWatchFrontend)throw new Error('화면 모듈을 불러오지 못했습니다.');const client=window.macroWatchSupabase||window.MacroWatchFrontend.createSupabaseClient();if(!client)throw new Error('데이터 연결을 확인해 주세요.');window.macroWatchSupabase=client;indexRepository=indexData.createRepository(client);caseRepository=cycleData.createRepository(client);if(indicatorData)indicatorRepository=indicatorData.createRepository(client);const {data:authData,error:authError}=await client.auth.getSession();if(authError)throw authError;currentUser=authData.session?.user||null;if(!currentUser)throw new Error('로그인이 필요합니다.');const [{data:account,error:accountError},loadedCases]=await Promise.all([client.from('user_accounts').select('is_admin').eq('user_id',currentUser.id).maybeSingle(),caseRepository.load()]);isAdmin=!accountError&&account?.is_admin===true;cases=loadedCases;if(!cases.length){state('empty','저장된 Historical Case가 없습니다.');return;}renderCaseList();const historicalCases=cases.filter(item=>!isCurrentCase(item));updateModeAvailability();setMode(historicalCases.length?'history':'current');}catch(error){state('error','Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');console.error('[Historical Insight]',error);}}
+  modeButtons.forEach(button=>button.addEventListener('click',()=>setMode(button.dataset.historicalMode)));marketButtons.forEach(button=>button.addEventListener('click',()=>activeCase&&render(button.dataset.historicalIndex)));strengthButtons.forEach(button=>button.addEventListener('click',()=>{strength=button.dataset.indicatorStrength;strengthButtons.forEach(item=>item.classList.toggle('is-active',item===button));const context=analysisCache.get(`${activeMode}:${activeCase.code}:${activeCode}`);if(context)renderIndicators(context);}));
+  $('historical-cycle-form').addEventListener('submit',async event=>{event.preventDefault();if(!isAdmin||!activeCase)return;const output=$('historical-cycle-save-status');output.textContent='저장 중';try{const values={startDate:$('historical-start-date').value,peakDate:$('historical-peak-date').value,troughDate:$('historical-trough-date').value},rows=await indexRepository.load(activeCode);cycleData.calculate(activeCase,{...cycleData.marketCycle(activeCase,activeCode),...values},rows);await caseRepository.save(activeCase.code,activeCode,values,currentUser.id);cases=await caseRepository.load();activeCase=cases.find(item=>item.code===activeCase.code);analysisCache.clear();renderCaseList();updateModeAvailability();if(!isCurrentCase(activeCase))activeHistoricalCode=activeCase.code;await setMode(isCurrentCase(activeCase)?activeMode:'history');output.textContent='저장 완료';}catch(error){output.textContent=`저장 오류: ${error?.message||'알 수 없는 오류'}`;}});
+  retry.addEventListener('click',()=>activeCase?render(activeCode):initialize());fullRange.addEventListener('click',()=>chart?.fit());caseRange.addEventListener('click',focusCase);window.addEventListener('pagehide',()=>{++requestToken;chart?.destroy();chart=null;});window.addEventListener('pageshow',event=>{if(event.persisted)activeCase?render(activeCode):initialize();});initialize();
 })();

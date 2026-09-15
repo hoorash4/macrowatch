@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=7">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=8">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -53,14 +53,11 @@
           <div id="historical-current-sidebar" hidden>
             <p class="historical-panel-label">CURRENT REGIME</p>
             <div class="historical-current-case"><strong id="historical-current-case-name">현재국면</strong><small>진행 중</small></div>
-            <p class="historical-panel-label historical-indicator-heading">CHART INDICATORS</p>
-            <div class="historical-indicator-list" aria-label="차트 추가 지표 샘플">
-              <label><input type="checkbox" disabled><span>미국 10년물 금리</span><small>샘플</small></label>
-              <label><input type="checkbox" disabled><span>NFCI Credit</span><small>샘플</small></label>
-              <label><input type="checkbox" disabled><span>미국 CPI</span><small>샘플</small></label>
-              <label><input type="checkbox" disabled><span>USD/KRW</span><small>샘플</small></label>
-            </div>
           </div>
+          <details id="historical-indicator-accordion" class="historical-indicator-accordion" open>
+            <summary><span>비교 지표</span><small id="historical-indicator-count">분석 중</small></summary>
+            <div id="historical-indicator-list" class="historical-indicator-list" aria-label="비교 지표 선택"><p class="historical-indicator-empty">지표 분석 중</p></div>
+          </details>
         </aside>
         <div class="historical-workspace">
           <header class="historical-toolbar">
@@ -69,6 +66,7 @@
               <div id="historical-chart-meta" class="economic-chart-meta">사례와 지수 데이터 불러오는 중</div>
             </div>
             <div class="historical-toolbar-right">
+              <div class="historical-filter" role="group" aria-label="지표 필터 강도"><span>지표 필터</span><button type="button" data-indicator-strength="strong">강함</button><button type="button" class="is-active" data-indicator-strength="standard">기본</button><button type="button" data-indicator-strength="weak">약함</button></div>
               <span id="historical-chart-status" role="status" aria-live="polite" class="historical-chart-status">지수 데이터 불러오는 중</span>
               <div class="historical-range-tools"><button type="button" id="historical-chart-case-range" disabled>사례 범위</button><button type="button" id="historical-chart-full-range" disabled>전체 이력</button><button type="button" id="historical-chart-retry" hidden>다시 시도</button></div>
               <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택">
@@ -78,6 +76,8 @@
               </div>
             </div>
           </header>
+          <div id="historical-cycle-signal" class="historical-cycle-signal" hidden><strong>새로운 사이클 시작 가능성</strong><span id="historical-cycle-signal-text"></span></div>
+          <div id="historical-indicator-legend" class="historical-indicator-legend" aria-label="선택 지표 범례" hidden></div>
           <div class="historical-chart-region"><div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div><p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p></div>
           <section id="historical-cycle-panel" class="historical-cycle-panel" aria-label="선택 사례 사이클 요약" hidden>
             <div class="historical-cycle-heading"><div><small id="historical-cycle-state">CYCLE</small><strong id="historical-cycle-name">—</strong><span id="historical-cycle-market" class="historical-cycle-market">—</span></div><span id="historical-search-range">—</span></div>
@@ -103,6 +103,7 @@
               </form>
             </details>
           </section>
+          <section id="historical-indicator-detail" class="historical-indicator-detail" aria-label="활성 비교 지표 상세" hidden></section>
           <div class="historical-summary">
             <article><small>CYCLE STANDARD</small><strong>START → PEAK → TROUGH</strong><p>관찰 범위와 성과 계산 기준점을 분리해 관리합니다.</p></article>
             <article><small>HISTORICAL FACTS</small><strong>국면 팩트</strong><p>금리·스프레드·밸류에이션 등 시점별 사실을 연결합니다.</p></article>
@@ -113,10 +114,14 @@
     </main>
   </div>
 
+  <script src="assets/js/charts/economic-series-catalog.js?v=1"></script>
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
   <script src="assets/js/historical-insight/historical-cycle-data.js?v=4"></script>
-  <script src="assets/js/historical-insight/historical-index-chart.js?v=3"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=6"></script>
+  <script src="assets/js/historical-insight/historical-indicator-data.js?v=1"></script>
+  <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=1"></script>
+  <script src="assets/js/historical-insight/historical-indicator-selection.js?v=1"></script>
+  <script src="assets/js/historical-insight/historical-index-chart.js?v=4"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=7"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>

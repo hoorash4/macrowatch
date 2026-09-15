@@ -41,6 +41,8 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 
 Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 숫자 포맷, 전체 페이지 조회(`queryAll`), 차트 테마·등록/해제는 `frontend-core`를 재사용한다. 경제지표 차트도 동일한 페이지 조회 함수를 사용한다. Historical Insight의 크기 관찰은 Lightweight Charts의 `autoSize`로 처리한다. 사이클 정의의 세부 계약과 현재 확정 기준점은 `HISTORICAL_CYCLE_DEFINITION.md`를 기준으로 한다.
 
+경제지표 metadata는 `economic-series-catalog.js`가 코드·표시명·범주·주기·단위의 단일 기준점이다. Historical Insight의 지표 사용 가능 여부는 canonical `economic_chart_series_points`를 집계한 `economic_chart_series_coverage`의 실제 최초·최종 관측일로 판정한다. 피봇과 추세 일관도는 raw 값으로 계산하고, 차트 오버레이에만 분석 구간별 0~100 정규화를 사용한다.
+
 ### Python
 
 - `backend/common.py`: 환경변수, FRED, Supabase, 알림 공통 처리
@@ -160,6 +162,7 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 - 10개 Historical Case의 설명·관찰 범위는 `historical_cases`, 사례 × 시장별 확정 날짜는 `historical_case_market_cycles`에 저장한다. 지수 탭을 전환하면 해당 시장의 START/PEAK/TROUGH와 파생 성과가 함께 전환된다. 종가·상승률·하락률·drawdown·기간은 canonical 지수에서 계산하며, 진행 중인 AI/반도체 상승장의 시장별 미확정 peak/trough는 null로 유지한다. 한국 IT버블은 닷컴버블의 KOSPI 비교로 포함하고 별도 사례로 만들지 않는다.
 - Phase 7 기준점 팩트는 `historical_case_anchor_facts` 보안 호출자 뷰에서 원천값을 복제하지 않고 `economic_chart_series_points`에 연결한다. 일·주·월 지표별 공개 지연과 최대 허용 이력을 적용해 기준일 이후 정보가 섞이지 않게 하며, 미확정 기준점에는 팩트를 만들지 않는다. 기준점 팩트는 내부 후속 분석용이며 현재 프론트엔드에는 직접 표시하지 않는다.
 - Historical Insight 화면은 `과거사례 분석`과 `현재국면 분석` 탭으로 분리하되 동일한 화면 골격을 공유한다. 진행 중인 사례는 과거 목록에서 제외하고 현재국면 왼쪽 패널에는 현재국면 제목과 차트 추가 지표 목록을 둔다. 각 시장의 TROUGH 저장 시 해당 사이클을 확정하며, 모든 시장 사이클이 확정된 사례는 과거사례 목록으로 이동한다.
+- 비교 지표는 하나의 통합 아코디언에서 관리한다. 과거 사례는 전체 관찰 구간 coverage와 선행·동행 피봇의 추세 일관도를 적용하고, 현재국면은 과거 어느 시장에서든 선행·동행 이력이 있으면서 최근 유효 피봇이 지속되는 지표를 우선 표시한다. 현재 유효 후보가 없으면 과거 선행·동행 이력이 있는 전체 지표를 감시 목록으로 유지하며, 하나라도 유효해지면 새 사이클 시작 가능성을 표시한다. 강함·기본·약함 필터는 계산 결과를 바꾸지 않고 후보 노출 기준만 바꾼다.
 
 현재 상태를 판단할 때는 항상 `main`의 최신 커밋과 실제 GitHub Actions/Supabase 상태를 다시 확인한다. 이 문서의 날짜나 과거 실행 번호를 현재 상태로 간주하지 않는다.
 

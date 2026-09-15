@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const test = require('node:test');
 
 const chart = fs.readFileSync('assets/js/charts/economic-charts.js', 'utf8');
+const seriesCatalog = fs.readFileSync('assets/js/charts/economic-series-catalog.js', 'utf8');
 const css = fs.readFileSync('assets/css/economic-charts.css', 'utf8');
 const html = fs.readFileSync('economic-charts.html', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260911161000_add_economic_chart_preferences.sql', 'utf8');
@@ -72,12 +73,12 @@ test('administrator category order is stored globally and category titles are th
 });
 
 test('rates and market credit use separate centralized categories without losing saved order', () => {
-  assert.match(chart, /RATE_CATEGORY='금리',FINANCIAL_CREDIT_CATEGORY='금융신용'/);
+  assert.match(seriesCatalog, /RATE_CATEGORY='금리',FINANCIAL_CREDIT_CATEGORY='금융신용'/);
   for (const code of ['HY_OAS','NFCI_CREDIT','EM_OAS']) {
-    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+category:FINANCIAL_CREDIT_CATEGORY`));
+    assert.match(seriesCatalog, new RegExp(`code:'${code}'[^\\n]+category:FINANCIAL_CREDIT_CATEGORY`));
   }
   for (const code of ['US2Y','US10Y','US10Y_REAL','US10Y2Y','US_POLICY_RATE_MID','KR3Y','KR10Y','KR10Y3Y']) {
-    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+category:RATE_CATEGORY`));
+    assert.match(seriesCatalog, new RegExp(`code:'${code}'[^\\n]+category:RATE_CATEGORY`));
   }
   assert.match(chart, /function normalizeCategoryOrder\(value\)/);
   assert.match(chart, /function normalizeSeriesOrder\(value\)/);
@@ -87,10 +88,10 @@ test('rates and market credit use separate centralized categories without losing
 });
 
 test('business distress replaces the legacy business credit category in UI and saved order', () => {
-  assert.match(chart, /BUSINESS_DISTRESS_CATEGORY='기업부실'/);
-  assert.match(chart, /LEGACY_BUSINESS_CREDIT_CATEGORY='기업신용'/);
+  assert.match(seriesCatalog, /BUSINESS_DISTRESS_CATEGORY='기업부실'/);
+  assert.match(seriesCatalog, /LEGACY_BUSINESS_CREDIT_CATEGORY='기업신용'/);
   for (const code of ['US_SBDI_31_180','DRALACBS','US_SBDFI','US_COMMERCIAL_CH11','KR_CORP_DELINQ','KR_DEFAULT_COMPANIES','KR_CORP_REHAB']) {
-    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+category:BUSINESS_DISTRESS_CATEGORY`));
+    assert.match(seriesCatalog, new RegExp(`code:'${code}'[^\\n]+category:BUSINESS_DISTRESS_CATEGORY`));
   }
   assert.match(businessDistressMigration, /economic_chart_catalog_settings/);
   assert.match(businessDistressMigration, /economic_chart_preferences/);
@@ -98,16 +99,16 @@ test('business distress replaces the legacy business credit category in UI and s
 
 test('every paired chart defaults moving averages off from one common rule', () => {
   for (const code of ['US_CPI','US_PPI','US_PCE','KR_CPI','KR_PPI']) {
-    assert.match(chart, new RegExp(`code:'${code}'[^\\n]+compareCode:`));
+    assert.match(seriesCatalog, new RegExp(`code:'${code}'[^\\n]+compareCode:`));
   }
-  assert.match(chart, /compareCode:'US_CORE_CPI'/);
-  assert.match(chart, /compareCode:'US_CORE_PPI'/);
-  assert.match(chart, /compareCode:'US_CORE_PCE'/);
-  assert.match(chart, /compareCode:'KR_CORE_CPI'/);
-  assert.match(chart, /compareCode:'KR_IMPORT_PRICE'/);
+  assert.match(seriesCatalog, /compareCode:'US_CORE_CPI'/);
+  assert.match(seriesCatalog, /compareCode:'US_CORE_PPI'/);
+  assert.match(seriesCatalog, /compareCode:'US_CORE_PCE'/);
+  assert.match(seriesCatalog, /compareCode:'KR_CORE_CPI'/);
+  assert.match(seriesCatalog, /compareCode:'KR_IMPORT_PRICE'/);
   assert.match(html, /id="economic-ma-toggle"/);
   assert.match(chart, /function applyMaVisibility\(\)/);
   assert.match(chart, /!m\.compareCode&&m\.defaultMa!==false/);
-  assert.match(chart, /code:'US_POLICY_RATE_MID',compareCode:'KR_POLICY_RATE'/);
-  assert.match(chart, /title:'미국 PCE 가격지수'/);
+  assert.match(seriesCatalog, /code:'US_POLICY_RATE_MID',compareCode:'KR_POLICY_RATE'/);
+  assert.match(seriesCatalog, /title:'미국 PCE 가격지수'/);
 });

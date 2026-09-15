@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const ROOT = path.resolve(__dirname, '..');
 const chart = fs.readFileSync(path.join(ROOT, 'assets/js/charts/economic-charts.js'), 'utf8');
+const catalog = fs.readFileSync(path.join(ROOT, 'assets/js/charts/economic-series-catalog.js'), 'utf8');
 const manager = fs.readFileSync(path.join(ROOT, 'assets/js/charts/economic-series-manager.js'), 'utf8');
 const automatic = fs.readFileSync(path.join(ROOT, 'backend/signals/economic_chart_automatic.py'), 'utf8');
 const html = fs.readFileSync(path.join(ROOT, 'economic-charts.html'), 'utf8');
@@ -27,7 +28,9 @@ test('existing series add UI offers only hidden series and removes selected code
 });
 
 test('series manager catalog cannot silently drift from the economic chart catalog', () => {
-  assert.match(chart, /window\.MacroWatchEconomicSeriesCatalog=Object\.freeze\(SERIES\.map/);
+  assert.match(catalog, /window\.MacroWatchEconomicSeriesCatalog=Object\.freeze\(primary\.map/);
+  assert.match(chart, /const registry=window\.MacroWatchEconomicSeriesRegistry/);
+  assert.match(html, /economic-series-catalog\.js\?v=\d+[\s\S]*economic-charts\.js\?v=\d+/);
   assert.match(manager, /const SERIES_CATALOG = window\.MacroWatchEconomicSeriesCatalog \|\| \[\]/);
   assert.doesNotMatch(manager, /code:'US2Y'|category:'기업신용'|category:'금리 · 신용'/);
 });

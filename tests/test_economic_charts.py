@@ -2,6 +2,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+CATALOG = (ROOT / 'assets/js/charts/economic-series-catalog.js').read_text(encoding='utf-8')
 
 
 class EconomicChartFeatureTests(unittest.TestCase):
@@ -83,7 +84,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('horizontal_lines', script)
         self.assertIn('savePlainLinesFromChart()', script)
         self.assertIn('restorePlainLines()', script)
-        self.assertIn('assets/js/charts/economic-charts.js?v=26', html)
+        self.assertIn('assets/js/charts/economic-charts.js?v=27', html)
         self.assertIn('MIN_BAR_SPACING=.01', script)
         self.assertIn('minBarSpacing:MIN_BAR_SPACING', script)
         self.assertIn('MIN_DATA_SCREEN_RATIO=.5', script)
@@ -140,7 +141,7 @@ class EconomicChartFeatureTests(unittest.TestCase):
         self.assertIn('lastValueVisible:true,priceLineVisible:true', script)
 
     def test_chart_catalog_keeps_raw_series_and_adds_verified_requested_items(self):
-        script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
+        script = CATALOG
         for removed in ('POLICY_EXPECTATION', 'EM_CAPACITY', 'US_SME_RISK', 'KR_SME_RISK', 'US_INFLATION'):
             self.assertNotIn(removed, script)
         for raw in ('US2Y', 'US10Y', 'HY_OAS', 'NFCI_CREDIT', 'NFCI_RISK', 'EM_OAS', 'KR3Y', 'KR10Y', 'WTI', 'USDKRW', 'WEI', 'RRP', 'TGA', 'EMRATIO', 'KOSPI_PER', 'KOSPI_PBR', 'US_RETAIL_SALES', 'KR_EXPORT_DAILY_AVG'):
@@ -175,13 +176,14 @@ class EconomicChartFeatureTests(unittest.TestCase):
 
     def test_chart_reads_full_primary_history_and_merges_legacy_fallback_only_as_gap_cover(self):
         script = (ROOT / 'assets/js/charts/economic-charts.js').read_text(encoding='utf-8')
+        frontend = script + CATALOG
         pipeline = (ROOT / 'backend/signals/economic_chart_pipeline.py').read_text(encoding='utf-8')
         self.assertIn('"US10Y": ("DGS10", "D")', pipeline)
         self.assertIn('new Map([...fallbackRows,...primaryRows].map', script)
         self.assertIn("economic_chart_series_points", script)
-        self.assertIn("US_POLICY_RATE_MID", script)
-        self.assertIn("KR_POLICY_RATE", script)
-        self.assertIn("lineType:'steps'", script)
+        self.assertIn("US_POLICY_RATE_MID", frontend)
+        self.assertIn("KR_POLICY_RATE", frontend)
+        self.assertIn("lineType:'steps'", frontend)
         self.assertIn("window.LightweightCharts.LineType.WithSteps", script)
 
     def test_us_policy_rate_is_stored_as_decision_events_not_daily_rows(self):

@@ -147,7 +147,8 @@ class KospiValuationContractTests(unittest.TestCase):
         self.assertIn("KRX_PW: ${{ secrets.KRX_PW }}", workflow)
 
     def test_frontend_per_pbr_and_existing_moving_averages_are_unchanged(self):
-        chart = (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8")
+        chart = ((ROOT / "assets/js/charts/economic-series-catalog.js").read_text(encoding="utf-8")
+                 + (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8"))
         self.assertIn("KOSPI_PER", chart)
         self.assertIn("KOSPI_PBR", chart)
         self.assertIn("D:[5,20,'5일','20일']", chart)

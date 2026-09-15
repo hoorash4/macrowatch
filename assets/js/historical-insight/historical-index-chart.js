@@ -5,6 +5,8 @@
     let chart = null;
     let series = null;
     let data = [];
+    const indicatorSeries = new Map();
+    const indicatorColors=['#2563eb','#d97706','#059669','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c'];
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     function ensure() {
@@ -15,6 +17,7 @@
         layout: { fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 11, attributionLogo: false },
         localization: { locale: 'ko-KR', dateFormat: 'yyyy. MM. dd.' },
         rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
+        leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: true },
         timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01 },
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
@@ -43,6 +46,19 @@
         series.setMarkers(points.map(point => ({ time: point.row.time, ...style[point.type],
           text: `${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}` })));
       },
+      setIndicators(items,activeCode) {
+        if(!chart&&items.length)ensure();
+        for(const entry of indicatorSeries.values())chart?.removeSeries(entry.series);
+        indicatorSeries.clear();
+        items.forEach((item,index)=>{
+          const color=indicatorColors[index%indicatorColors.length];
+          const line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:item.meta.code===activeCode?3:2,priceLineVisible:false,lastValueVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
+          line.setData(item.displayRows);
+          line.setMarkers(item.results.filter(result=>result.timingType!=='lagging').map(result=>({time:result.pivotDate,position:result.pivotType==='local_low'?'belowBar':'aboveBar',shape:result.timingType==='coincident'?'square':'circle',color,text:result.timingType==='coincident'?'동행':'선행'})));
+          indicatorSeries.set(item.meta.code,{series:line,color});
+        });
+      },
+      indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
       focus(from, to, markerInset = .12) {
         if (!chart || !from || !to || !data.length) return;
         const startIndex = data.findIndex(row => row.time >= from);
@@ -61,6 +77,7 @@
         chart?.remove();
         chart = null;
         series = null;
+        indicatorSeries.clear();
         data = [];
       },
     });

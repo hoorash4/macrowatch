@@ -78,7 +78,8 @@ class CensusRetailSalesTests(unittest.TestCase):
 
     def test_automatic_workflow_and_frontend_include_census_retail_yoy_contract(self):
         automatic = (ROOT / ".github/workflows/economic-chart-data.yml").read_text(encoding="utf-8")
-        chart = (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8")
+        chart = ((ROOT / "assets/js/charts/economic-series-catalog.js").read_text(encoding="utf-8")
+                 + (ROOT / "assets/js/charts/economic-charts.js").read_text(encoding="utf-8"))
         self.assertIn("CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}", automatic)
         self.assertIn("signals.economic_chart_automatic", automatic)
         self.assertFalse((ROOT / ".github/workflows/economic-chart-backfill-once.yml").exists())

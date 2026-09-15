@@ -13,8 +13,9 @@ HTML 진입점은 `index.html`과 `admin.html`이다. 함수 URL, DB 계약, 예
 | `assets/js/dashboard/script.js` | 화면 탐색, 로더 등록, 지표 검색·추적·드래그·CRUD |
 | `assets/js/dashboard/dashboard-charts.js` | 뉴스·스트레스·신용위험·섹터 조회와 렌더링 |
 | `assets/js/charts/analysis-chart-utils.js` | 보간, 축 범위, 스크롤 공통 처리 |
+| `assets/js/charts/economic-series-catalog.js` | 경제지표 코드·표시명·범주·주기·단위의 공통 metadata SSOT |
 | `assets/js/charts/*-chart.js` | 기능별 차트 조회와 렌더링 |
-| `assets/js/historical-insight` | 지수 원천 조회, 사례 × 시장별 사이클 계약·파생값, 마커 차트, 페이지 상태 |
+| `assets/js/historical-insight` | 지수·경제지표 원천 조회, coverage, 사례 × 시장별 사이클, 피봇·선행·추세 분석, 선택 상태, 이중축 차트, 페이지 상태 |
 | `assets/js/admin` | 관리자 화면, 정책 검토, 카드 순서 |
 | `assets/js/policy` | FOMC 브리핑 |
 | `assets/css/styles.css` | 기존 규칙 순서를 유지한 스타일 |

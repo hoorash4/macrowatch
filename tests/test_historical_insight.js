@@ -148,16 +148,17 @@ test('analysis tabs separate current regime from the historical case list and en
   assert.match(html,/data-historical-mode="current">현재국면 분석<\/button>/);
   assert.match(css,/\.historical-analysis-tabs button \{[^}]*font-size: 14px/);
   assert.match(html,/id="historical-current-case-name"/);
-  assert.match(html,/aria-label="차트 추가 지표 샘플"[\s\S]*미국 10년물 금리[\s\S]*NFCI Credit/);
+  assert.match(html,/id="historical-indicator-accordion"[\s\S]*aria-label="비교 지표 선택"/);
+  assert.doesNotMatch(html,/차트 추가 지표 샘플|샘플<\/small>/);
   assert.doesNotMatch(css,/\.historical-stage\.is-current-mode \.historical-summary \{ display: none/);
-  assert.match(controller,/cases\.filter\(item => !isCurrentCase\(item\)\)/);
-  assert.match(controller,/Object\.values\(item\.markets\)\.some\(cycle => cycle\.status !== 'confirmed'\)/);
+  assert.match(controller,/cases\.filter\(item\s*=>\s*!isCurrentCase\(item\)\)/);
+  assert.match(controller,/Object\.values\(item\.markets\)\.some\(cycle\s*=>\s*cycle\.status\s*!==\s*'confirmed'\)/);
 });
 test('case range keeps the line continuous while placing cycle markers inside both chart edges', () => {
   const controller=read('assets/js/historical-insight/historical-insight.js');
   const chart=read('assets/js/historical-insight/historical-index-chart.js');
   assert.match(controller,/cycle\.troughDate \|\| cycle\.peakDate \|\| activeRows\.at\(-1\)\.time/);
-  assert.match(controller,/chart\.focus\(from, to, \.12\)/);
+  assert.match(controller,/chart\.focus\(from,\s*to,\s*\.12\)/);
   assert.match(chart,/span \* markerInset \/ \(1 - markerInset \* 2\)/);
   assert.match(chart,/from: Math\.max\(0, startIndex - context\)/);
   assert.match(chart,/to: Math\.min\(data\.length - 1, endIndex \+ context\)/);
@@ -227,7 +228,7 @@ test('current mode keeps the common analysis layout and replaces the left list w
   assert.equal(f.nodes.get('historical-past-sidebar').hidden,true);
   assert.equal(f.nodes.get('historical-current-sidebar').hidden,false);
   assert.equal(f.nodes.get('historical-current-case-name').textContent,'AI/반도체 상승장');
-  assert.equal(f.nodes.get('historical-cycle-panel').hidden,false);
+  assert.equal(f.nodes.get('historical-cycle-panel').hidden,true);
   assert.equal(f.nodes.get('historical-toolbar-title').textContent,'현재 국면 차트');
   assert.match(f.nodes.get('historical-chart-meta').textContent,/AI\/반도체 상승장/);
   assert.equal(f.nodes.get('historical-stage').classList.contains('is-current-mode'),true);
