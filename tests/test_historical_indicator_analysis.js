@@ -186,6 +186,11 @@ test('a replaced candidate date builds a new synergy group from that date',()=>{
   assert.equal(before[0].evidence.synergyGroup.length,1);assert.equal(after[0].evidence.synergyGroup.length,0);assert.equal(after[1].evidence.synergyGroup.length,0);
 });
 
+test('confirmed and provisional evidence for one indicator are alternatives rather than duplicate contributions',()=>{
+  const a=analysis(),confirmed={meta:{code:'A',title:'A'},confirmedReferences:[{score:80}],evidence:{signalState:'candidate',signalDate:'2024-01-15',synergyEligible:true,provisionalBaseScore:30,confirmedBaseScore:80,baseScore:80,score:80,contribution:.8,invalidations:[]}},peer={meta:{code:'B',title:'B'},confirmedReferences:[],evidence:{signalState:'candidate',signalDate:'2024-02-10',synergyEligible:true,provisionalBaseScore:30,confirmedBaseScore:0,baseScore:30,score:30,contribution:.3,invalidations:[]}},scored=a.applyCurrentSynergy([confirmed,peer]),summary=a.currentPivotProbability(scored);
+  assert.equal(scored[0].evidence.synergyBonus,6);assert.equal(scored[0].evidence.score,80);assert.equal(summary.marketRelevantCount,1);
+});
+
 test('a resumed trend removes the old candidate and a later reversal uses the replacement extreme',()=>{
   const a=analysis(),rows=segments([[6,3],[2,-10],[2,20],[4,-15]]),path=a.detectOnlineState(rows,{frequency:'M',minimumRegimeDays:92}),replacement=path.invalidations.find(item=>item.reason==='replaced_by_new_extreme'),pivot=path.pivots.at(-1);
   assert.ok(replacement);assert.ok(pivot);assert.equal(pivot.pivotDate,replacement.replacedBy);assert.equal(pivot.pivotValue,Math.max(...rows.map(row=>row.value)));assert.equal(pivot.structuralStatus,'structural_confirmed');
