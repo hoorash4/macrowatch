@@ -151,10 +151,18 @@ test('reference timing rewards earlier leading pivots across the full relevance 
   const a=analysis();assert.equal(a.timingScore(-92),100);assert.equal(Math.round(a.timingScore(0)),25);assert.equal(a.timingScore(31),0);assert.ok(a.timingScore(-60)>a.timingScore(-30));assert.ok(a.timingScore(-30)>a.timingScore(0));assert.ok(a.timingScore(0)>a.timingScore(15));const base=a.referenceScore(80,70,90);assert.equal(base,82.5);assert.ok(base+a.ANALYSIS_POLICY.relationship.maximumBonus<100);
 });
 
-test('local multi-lag evidence distinguishes positive, inverse, and unclear without penalizing unclear',()=>{
+test('structural direction decides relationship while correlation only controls confidence and bonus',()=>{
   const a=analysis(),market=Array.from({length:25},(_,index)=>month(index,100+index*index)),positive=market.map(row=>({...row})),inverse=market.map(row=>({...row,value:300-row.value})),flat=market.map(row=>({...row,value:10})),referenceDate=market[12].time;
-  const positiveResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{nextRegime:'rising'}),inverseResult=a.relationshipForReference(inverse,market,{frequency:'M'},'START',referenceDate,{nextRegime:'falling'}),unclearResult=a.relationshipForReference(flat,market,{frequency:'M'},'START',referenceDate,{nextRegime:'rising'});
-  assert.equal(positiveResult.relationship,'positive');assert.ok(positiveResult.bonus>0);assert.equal(inverseResult.relationship,'inverse');assert.ok(inverseResult.bonus>0);assert.equal(unclearResult.relationship,'unclear');assert.equal(unclearResult.bonus,0);
+  const positiveResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{previousRegime:'sideways',nextRegime:'rising'}),inverseResult=a.relationshipForReference(inverse,market,{frequency:'M'},'START',referenceDate,{nextRegime:'falling'}),weakResult=a.relationshipForReference(flat,market,{frequency:'M'},'START',referenceDate,{nextRegime:'rising'}),conflictingResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{nextRegime:'falling'}),unclearResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{nextRegime:'sideways'});
+  assert.equal(positiveResult.relationship,'positive');assert.ok(positiveResult.bonus>0);assert.equal(inverseResult.relationship,'inverse');assert.ok(inverseResult.bonus>0);
+  assert.equal(weakResult.relationship,'positive');assert.equal(weakResult.confidence,0);assert.equal(weakResult.bonus,0);
+  assert.equal(conflictingResult.relationship,'inverse');assert.equal(conflictingResult.confidence,0);assert.equal(conflictingResult.bonus,0);
+  assert.equal(unclearResult.relationship,'unclear');assert.equal(unclearResult.bonus,0);
+});
+
+test('missing correlation data does not downgrade a confirmed structural relationship',()=>{
+  const a=analysis(),rows=[month(0,10),month(1,20)],result=a.relationshipForReference(rows,[],{frequency:'M'},'PEAK',rows[1].time,{confirmed:true,nextRegime:'rising'}),ambiguous=a.relationshipForReference(rows,rows,{frequency:'M'},'START',rows[1].time,{confirmed:true,nextRegime:'rising',structuralAmbiguity:true});
+  assert.equal(result.relationship,'inverse');assert.equal(result.confidence,0);assert.equal(result.bonus,0);assert.equal(ambiguous.relationship,'unclear');
 });
 
 test('START PEAK and TROUGH are evaluated independently and one indicator can retain all three',()=>{
