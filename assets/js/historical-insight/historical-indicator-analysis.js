@@ -117,7 +117,7 @@
   function detectOnlineState(rows,options={}){return onlineTrendPath(rows,options);}
   function detectRegimes(rows,options={}){return detectRetrospectiveRegimes(rows,options).regimes;}
   function detectPivots(rows,options={}){return detectRetrospectiveRegimes(rows,options).pivots;}
-  function timingScore(offsetDays,window={before:92,after:31}){if(offsetDays<-window.before||offsetDays>window.after)return 0;const span=offsetDays<0?window.before:window.after;return Math.max(0,Math.min(100,(1-Math.abs(offsetDays)/Math.max(1,span))*100));}
+  function timingScore(offsetDays,window={before:92,after:31}){if(offsetDays<-window.before||offsetDays>window.after)return 0;const span=Math.max(1,window.before+window.after),elapsed=offsetDays+window.before;return Math.max(0,Math.min(100,(1-elapsed/span)*100));}
   function durationScore(indicatorDays,marketDays){if(!Number.isFinite(marketDays)||marketDays<=0)return null;let score=Math.min(indicatorDays/marketDays,1)*100;if(marketDays<ANALYSIS_POLICY.marketDurationDays.shortCycle&&indicatorDays>marketDays*2)score*=Math.max(.7,marketDays*2/indicatorDays);return Math.min(100,score);}
   function structuralScore(pivot,threshold){const move=Math.abs((pivot.nextRegimeValue??pivot.pivotValue)-pivot.pivotValue),scale=Math.max(threshold||0,1e-9),magnitude=Math.min(100,move/scale*35),persistence=Math.min(100,(pivot.durationAfter||0)/Math.max(1,pivot.requiredMinimumDays||1)*60);return Math.min(100,40+magnitude*.35+persistence*.25);}
   function referenceScore(timing,duration,structural=100){const w=ANALYSIS_POLICY.referenceWeights,validDuration=duration==null?100:duration;return structural*w.structural+timing*w.timing+validDuration*w.duration;}

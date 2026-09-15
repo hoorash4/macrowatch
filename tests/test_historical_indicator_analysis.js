@@ -135,8 +135,8 @@ test('an initial range breaks into a fall and the later trough uses the raw mini
   const breakdown=path.pivots.find(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling'),trough=path.pivots.find(x=>x.previousRegime==='falling');assert.ok(breakdown);assert.ok(breakdown.pivotDate>=rows[3].time);assert.ok(trough);assert.equal(trough.pivotValue,Math.min(...rows.map(row=>row.value)));assert.notEqual(trough.pivotDate,trough.confirmationDate);
 });
 
-test('reference timing peaks at the anchor and structural validity is scored before relationship bonus',()=>{
-  const a=analysis();assert.equal(a.timingScore(0),100);assert.equal(a.timingScore(-92),0);assert.equal(a.timingScore(31),0);const base=a.referenceScore(80,70,90);assert.equal(base,82.5);assert.ok(base+a.ANALYSIS_POLICY.relationship.maximumBonus<100);
+test('reference timing rewards earlier leading pivots across the full relevance window',()=>{
+  const a=analysis();assert.equal(a.timingScore(-92),100);assert.equal(Math.round(a.timingScore(0)),25);assert.equal(a.timingScore(31),0);assert.ok(a.timingScore(-60)>a.timingScore(-30));assert.ok(a.timingScore(-30)>a.timingScore(0));assert.ok(a.timingScore(0)>a.timingScore(15));const base=a.referenceScore(80,70,90);assert.equal(base,82.5);assert.ok(base+a.ANALYSIS_POLICY.relationship.maximumBonus<100);
 });
 
 test('local multi-lag evidence distinguishes positive, inverse, and unclear without penalizing unclear',()=>{
