@@ -86,7 +86,7 @@ test('every market anchor uses exactly three months before and one month after',
 test('reference candidates are searched inside the anchor window and validated against the broad retrospective path',()=>{
   const a=analysis(),rows=segments([[10,-4],[10,5]]),referenceDate=rows[10].time,cycle={startDate:referenceDate,peakDate:rows.at(-1).time,troughDate:null};
   const result=a.resultForReference(rows,{frequency:'M'},'START',referenceDate,cycle),outside=a.resultForReference(rows,{frequency:'M'},'START',rows.at(-1).time,{...cycle,startDate:rows.at(-1).time});
-  assert.ok(result.result);assert.equal(result.result.pivotRole,'market-relevant');assert.ok(result.result.confirmationDate>a.relevanceWindow(referenceDate).to);
+  assert.ok(result.result);assert.equal(result.result.pivotRole,'market-relevant');assert.ok(result.result.confirmationDate>a.relevanceWindow(referenceDate).to);assert.equal(result.result.indicatorTrendDays,result.result.structuralPersistenceDays);assert.ok(result.result.structuralPersistenceEndDate>=result.result.pivotDate);
   assert.equal(outside.result,null);assert.ok(result.technicalPivots.length>0);
 });
 
@@ -107,7 +107,23 @@ test('historical analysis separates technical pivots from market-relevant pivots
 
 test('duration scoring caps at one hundred and weak pivot counts cannot overpower quality',()=>{
   const a=analysis();assert.equal(Math.round(a.durationScore(4,12)),33);assert.equal(Math.round(a.durationScore(10,12)),83);assert.equal(a.durationScore(12,12),100);assert.equal(a.durationScore(18,12),100);
+  assert.ok(a.durationScore(243,365)>a.durationScore(365,1095));
   assert.ok(a.overallScore([{score:90}])>a.overallScore([{score:30},{score:30},{score:30}]));
+});
+
+test('structural persistence continues through sideways and same-direction resumption until an opposite structure',()=>{
+  const a=analysis(),pivot={pivotDate:'2020-01-01',confirmationDate:'2020-02-01',previousRegime:'falling',nextRegime:'rising',durationAfter:152},pivots=[pivot,{pivotDate:'2020-06-01',previousRegime:'rising',nextRegime:'sideways'},{pivotDate:'2020-09-01',previousRegime:'sideways',nextRegime:'rising'},{pivotDate:'2021-01-01',previousRegime:'rising',nextRegime:'falling'}],result=a.structuralPersistence(pivot,pivots,'2021-06-01');
+  assert.equal(result.endDate,'2021-01-01');assert.equal(result.terminatedBy,'falling');assert.equal(result.durationDays,366);
+});
+
+test('structural persistence keeps a preserved direction through a final sideways range',()=>{
+  const a=analysis(),pivot={pivotDate:'2020-01-01',confirmationDate:'2020-02-01',previousRegime:'rising',nextRegime:'falling',durationAfter:152},pivots=[pivot,{pivotDate:'2020-06-01',previousRegime:'falling',nextRegime:'sideways'}],result=a.structuralPersistence(pivot,pivots,'2021-01-01');
+  assert.equal(result.endDate,'2021-01-01');assert.equal(result.terminatedBy,null);assert.equal(result.durationDays,366);
+});
+
+test('trend strength and structural persistence remain separate score components',()=>{
+  const a=analysis(),weakLong={pivotValue:100,nextRegimeValue:101,durationAfter:31,structuralPersistenceDays:365,requiredMinimumDays:92},strongShort={pivotValue:100,nextRegimeValue:120,durationAfter:31,structuralPersistenceDays:31,requiredMinimumDays:92};
+  assert.ok(a.trendStrengthScore(strongShort,5)>a.trendStrengthScore(weakLong,5));assert.ok(a.structuralPersistenceScore(weakLong)>a.structuralPersistenceScore(strongShort));
 });
 
 test('two and three distinct aligned references receive strong coverage rewards',()=>{
