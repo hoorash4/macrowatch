@@ -7,13 +7,11 @@
     let data = [];
     let pivotLayer = null;
     let pivotDefinitions = [];
-    let activationHandler = null;
     const indicatorSeries = new Map();
-    const indicatorColors=['#2563eb','#d97706','#059669','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c'];
+    const indicatorColor='#c026d3';
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
-    const rgba=(hex,alpha)=>{const value=hex.replace('#','');return `rgba(${parseInt(value.slice(0,2),16)},${parseInt(value.slice(2,4),16)},${parseInt(value.slice(4,6),16)},${alpha})`;};
     const timingText=result=>result.offsetDays===0?'기준점 당일':`기준점 ${Math.abs(result.offsetDays)}일 ${result.offsetDays<0?'전':'후'}`;
     const pivotText=result=>result.markerStatus==='candidate'?'CANDIDATE 피봇 후보':result.markerStatus==='watch'?'WATCH 조정 감시':result.referenceType==='CURRENT'?'CONFIRMED 최근 피봇':`${result.referenceType} ${timingText(result)}`;
     function renderPivotLines(){
@@ -44,7 +42,6 @@
           formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value) } });
       pivotLayer=document.createElement('div');pivotLayer.className='historical-indicator-pivots';host.append(pivotLayer);
       chart.timeScale().subscribeVisibleLogicalRangeChange(renderPivotLines);
-      chart.subscribeClick(param=>{if(!activationHandler||!param?.seriesData)return;for(const [code,entry] of indicatorSeries){if(param.seriesData.has(entry.series)){activationHandler(code);break;}}});
       window.addEventListener('macrowatch:themechange', updateLine);
     }
     return Object.freeze({
@@ -65,7 +62,7 @@
         series.setMarkers(points.map(point => ({ time: point.row.time, ...style[point.type],
           text: `${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}` })));
       },
-      setIndicators(items,activeCode) {
+      setIndicators(items) {
         if(!chart&&items.length)ensure();
         // 지표마다 다른 관측일이 시간축에 추가되므로 논리 인덱스가 달라질 수 있습니다.
         // 사용자가 보고 있던 실제 날짜 범위를 보존해 지표 선택 시 축이 압축되거나 밀리지 않게 합니다.
@@ -73,18 +70,16 @@
         for(const entry of indicatorSeries.values())chart?.removeSeries(entry.series);
         indicatorSeries.clear();
         pivotDefinitions=[];
-        items.forEach((item,index)=>{
-          const color=indicatorColors[index%indicatorColors.length];
-          const active=item.meta.code===activeCode,line=chart.addLineSeries({priceScaleId:'left',color:active?color:rgba(color,.3),lineWidth:active?3:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
+        items.forEach(item=>{
+          const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          for(const result of item.displayPivots||item.results)pivotDefinitions.push({time:result.pivotDate,color:active?color:rgba(color,.3),label:pivotText(result)});
+          for(const result of item.displayPivots||item.results)pivotDefinitions.push({time:result.pivotDate,color,label:pivotText(result)});
           indicatorSeries.set(item.meta.code,{series:line,color});
         });
         if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
         renderPivotLines();
       },
       indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
-      onIndicatorActivate(handler){activationHandler=handler;},
       focus(from, to, markerInset = .12) {
         if (!chart || !from || !to || !data.length) return;
         const startIndex = data.findIndex(row => row.time >= from);

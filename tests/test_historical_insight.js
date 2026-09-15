@@ -174,7 +174,7 @@ test('case range keeps the line continuous while placing cycle markers inside bo
   assert.match(chart,/TROUGH: \{ position: 'belowBar', shape: 'arrowUp'/);
   assert.match(controller,/await refreshIndicators\(token\);if\(token===requestToken\)focusCase\(\)/);
 });
-test('indicator toggles preserve the visible calendar range and keep legend controls clear of the plot', () => {
+test('single indicator selection preserves the visible calendar range and keeps its legend clear of the plot', () => {
   const controller=read('assets/js/historical-insight/historical-insight.js');
   const chart=read('assets/js/historical-insight/historical-index-chart.js');
   const css=read('assets/css/historical-insight.css');
@@ -182,8 +182,8 @@ test('indicator toggles preserve the visible calendar range and keep legend cont
   assert.match(chart,/if\(visibleRange\)chart\.timeScale\(\)\.setVisibleRange\(visibleRange\)/);
   assert.match(css,/\.historical-indicator-legend \{[^}]*padding: 8px 16px 12px/);
   assert.match(controller,/const caseChanged=Boolean\(activeCase&&activeCase\.code!==item\.code\);if\(caseChanged\)\{clearIndicatorSelection\(\);activeIndicatorContext=null;visibleIndicators=\[\];\}/);
-  assert.match(controller,/historical-indicator-clear'\)\.addEventListener\('click',\(\)=>clearIndicatorSelection\(true\)\)/);
-  assert.match(controller,/if\(renderList&&activeIndicatorContext\)renderIndicators\(activeIndicatorContext\)/);
+  assert.match(controller,/input\.type='radio'/);
+  assert.doesNotMatch(controller,/historical-indicator-clear|최대 5개/);
   assert.match(controller,/badge\.className='historical-reference-badge'/);
   assert.match(controller,/activeMode==='history'\?`\$\{Math\.round\(item\.overallScore\)\}점`/);
 });

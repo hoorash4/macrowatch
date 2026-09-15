@@ -92,10 +92,9 @@ test('display normalization stays separate from raw values',()=>{
   assert.deepEqual(Array.from(normalized,row=>Math.round(row.value)),[0,50,100]);assert.deepEqual(Array.from(normalized,row=>row.rawValue),[10,20,30]);
 });
 
-test('selection enforces five, blocks six, clears all, and promotes the highest-ranked remaining item',()=>{
+test('indicator selection keeps exactly one selected series and can reset between cases',()=>{
   const api=load('assets/js/historical-insight/historical-indicator-selection.js','MacroWatchHistoricalIndicatorSelection'),state=api.create(),items=['A','B','C','D','E','F'].map(code=>({meta:{code}}));state.reconcile(items);
-  for(const code of ['A','B','C','D','E'])assert.equal(state.toggle(code,true).blocked,false);
-  assert.equal(state.toggle('F',true).blocked,true);state.activate('C');state.toggle('C',false);assert.equal(state.snapshot().active,'A');assert.equal(state.clear().checked.length,0);
+  assert.equal(state.select('A').selected,'A');assert.equal(state.select('F').selected,'F');assert.equal(state.clear().selected,null);
 });
 
 test('market scope metadata drives KOSPI and US catalog membership',()=>{
@@ -111,10 +110,10 @@ test('indicator data spans twenty-four months without changing chart viewport',(
   assert.doesNotMatch(controller,/checked\.length\)chart\?\.focus/);assert.match(chart,/getVisibleRange/);assert.match(chart,/setVisibleRange/);
 });
 
-test('UI right-aligns score-only labels, limits selection, and keeps chart comparison behavior',()=>{
+test('UI uses one radio-selected magenta indicator without dimming other series',()=>{
   const html=read('historical-insight.html'),css=read('assets/css/historical-insight.css'),chart=read('assets/js/historical-insight/historical-index-chart.js'),controller=read('assets/js/historical-insight/historical-insight.js');
-  assert.match(html,/historical-indicator-clear/);assert.doesNotMatch(html,/data-indicator-strength/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.match(css,/historical-reference-badge\[data-reference="START"\]/);assert.match(css,/historical-reference-badge\[data-reference="PEAK"\]/);assert.match(css,/historical-reference-badge\[data-reference="TROUGH"\]/);assert.doesNotMatch(controller,/종합 \$\{Math\.round\(item\.overallScore\)\}점/);
-  assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/rgba\(color,\.3\)/);assert.match(chart,/subscribeClick/);assert.match(controller,/최대 5개/);
+  assert.doesNotMatch(html,/historical-indicator-clear|historical-indicator-count|historical-indicator-selection-message/);assert.match(controller,/input\.type='radio'/);assert.match(controller,/input\.name='historical-indicator'/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/accent-color: var\(--historical-indicator-color\)/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.match(css,/historical-reference-badge\[data-reference="START"\]/);assert.match(css,/historical-reference-badge\[data-reference="PEAK"\]/);assert.match(css,/historical-reference-badge\[data-reference="TROUGH"\]/);
+  assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/const indicatorColor='#c026d3'/);assert.doesNotMatch(chart,/rgba\(color|subscribeClick|onIndicatorActivate/);assert.doesNotMatch(controller,/최대 5개|snapshot\.active|snapshot\.checked/);
   assert.match(css,/\.historical-indicator-result-grid strong \{[^}]*font-size: 14px/);assert.match(css,/\.historical-indicator-result-grid p \{[^}]*font-size: 13px/);assert.match(controller,/card\.classList\.toggle\('is-empty',!result\)/);
   assert.match(controller,/CANDIDATE · 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/최소 추세기간/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
