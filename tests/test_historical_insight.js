@@ -188,7 +188,7 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(chart,/timeAxisPaneViews\(\)\{return \[this\.timeAxisPaneView\];\}/);
   assert.match(chart,/labelTop=scope\.bitmapSize\.height-labelHeight-3\*v/);
   assert.match(chart,/ctx\.lineTo\(px,labelTop\)/);
-  assert.match(chart,/minimumHeight: 58/);
+  assert.match(chart,/minimumHeight: 46/);
   assert.doesNotMatch(chart,/pivotText|timingText|fillText\(this\.view\.label/);
   assert.doesNotMatch(chart,/historical-indicator-pivot-line|timeScale\(\)\.subscribeVisible/);
   assert.match(css,/\.historical-indicator-legend \{[^}]*padding: 8px 16px 12px/);
