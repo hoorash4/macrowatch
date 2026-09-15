@@ -136,11 +136,14 @@ test('migration stores thirty market-specific cycles with protected access', () 
 test('cycle summary gives market context and performance figures strong visual hierarchy', () => {
   const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css');
   assert.match(html,/id="historical-cycle-market"/);
-  assert.match(html,/class="is-rise"[\s\S]*class="is-fall"[\s\S]*class="is-drawdown"/);
+  assert.match(html,/class="is-rise"[\s\S]*class="is-fall"/);
+  assert.doesNotMatch(html,/historical-drawdown|is-drawdown|고점 대비 낙폭/);
   assert.match(css,/\.historical-cycle-description \{[^}]*font-size: 13px/);
   assert.match(css,/\.historical-cycle-performance strong \{[^}]*font-size: 25px/);
-  assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #15803d/);
-  assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #dc2626/);
+  assert.match(css,/\.historical-cycle-performance \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #dc2626/);
+  assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #2563eb/);
+  assert.match(css,/\.historical-cycle-performance b \{[^}]*font-size: 15px/);
 });
 test('analysis tabs separate current regime from the historical case list and enlarge their labels', () => {
   const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');

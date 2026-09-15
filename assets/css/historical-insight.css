@@ -42,22 +42,19 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-cycle-points article[data-cycle-point="trough"] small { color: #2563eb; }
 .historical-cycle-points strong { display: block; margin-top: 7px; font-size: 14px; letter-spacing: -.01em; }
 .historical-cycle-points span { display: block; margin-top: 3px; color: var(--theme-text-secondary); font-size: 12px; font-weight: 650; }
-.historical-cycle-performance { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-.historical-cycle-performance article { position: relative; min-height: 91px; padding: 13px 15px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; }
+.historical-cycle-performance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.historical-cycle-performance article { position: relative; min-height: 98px; padding: 15px 18px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; }
 .historical-cycle-performance article::after { position: absolute; right: -17px; bottom: -28px; width: 80px; height: 80px; border-radius: 50%; content: ''; opacity: .14; }
-.historical-cycle-performance .is-rise { border-color: rgba(22,163,74,.3); background: rgba(22,163,74,.065); }
-.historical-cycle-performance .is-rise::after { background: #16a34a; }
-.historical-cycle-performance .is-fall { border-color: rgba(220,38,38,.3); background: rgba(220,38,38,.06); }
-.historical-cycle-performance .is-fall::after { background: #dc2626; }
-.historical-cycle-performance .is-drawdown { border-color: rgba(217,119,6,.32); background: rgba(245,158,11,.075); }
-.historical-cycle-performance .is-drawdown::after { background: #d97706; }
+.historical-cycle-performance .is-rise { border-color: rgba(220,38,38,.3); background: rgba(220,38,38,.06); }
+.historical-cycle-performance .is-rise::after { background: #dc2626; }
+.historical-cycle-performance .is-fall { border-color: rgba(37,99,235,.3); background: rgba(37,99,235,.065); }
+.historical-cycle-performance .is-fall::after { background: #2563eb; }
 .historical-cycle-performance span { display: block; color: var(--theme-text-secondary); font-size: 11px; font-weight: 800; }
 .historical-cycle-performance strong { display: block; margin-top: 4px; font-size: 25px; font-weight: 900; line-height: 1.1; letter-spacing: -.04em; }
-.historical-cycle-performance .is-rise strong { color: #15803d; }
-.historical-cycle-performance .is-fall strong { color: #dc2626; }
-.historical-cycle-performance .is-drawdown strong { color: #b45309; }
-.historical-cycle-performance small { display: block; margin-top: 7px; color: var(--theme-text-secondary); font-size: 10px; font-weight: 650; }
-.historical-cycle-performance b { color: var(--theme-text-primary); font-size: 11px; }
+.historical-cycle-performance .is-rise strong { color: #dc2626; }
+.historical-cycle-performance .is-fall strong { color: #2563eb; }
+.historical-cycle-performance small { display: block; margin-top: 10px; color: var(--theme-text-secondary); font-size: 13px; font-weight: 700; }
+.historical-cycle-performance b { color: var(--theme-text-primary); font-size: 15px; font-weight: 850; }
 .historical-cycle-editor { margin-top: 10px; border-top: 1px solid var(--theme-border); padding-top: 9px; }
 .historical-cycle-editor summary { color: var(--theme-text-secondary); font-size: 9px; font-weight: 750; cursor: pointer; }
 .historical-cycle-editor form { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -69,9 +66,8 @@ html[data-theme="dark"] .historical-cycle-panel { background: #111c2f; border-co
 html[data-theme="dark"] .historical-cycle-points article { background: #0f172a; border-color: #334155; }
 html[data-theme="dark"] .historical-cycle-heading small { background: #173363; color: #93c5fd; }
 html[data-theme="dark"] .historical-cycle-market { border-color: #475569; color: #cbd5e1; }
-html[data-theme="dark"] .historical-cycle-performance .is-rise strong { color: #4ade80; }
-html[data-theme="dark"] .historical-cycle-performance .is-fall strong { color: #f87171; }
-html[data-theme="dark"] .historical-cycle-performance .is-drawdown strong { color: #fbbf24; }
+html[data-theme="dark"] .historical-cycle-performance .is-rise strong { color: #f87171; }
+html[data-theme="dark"] .historical-cycle-performance .is-fall strong { color: #60a5fa; }
 html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; color: #071b42; }
 @media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:82px}}
 
