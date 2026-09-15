@@ -1,0 +1,52 @@
+# Historical Insight 사이클 정의 계약
+
+업데이트 기준: 2026-09-15 KST
+
+## 기준
+
+Historical Case의 가격 구간은 `START → PEAK → TROUGH`로 통일한다.
+
+- `search_start`, `search_end`: 기준점을 찾고 검토하는 관찰 범위다. 성과 계산에는 쓰지 않는다.
+- `start_date`: 상승 사이클이 시작된 확정 거래일이다.
+- `peak_date`: 상승 구간의 최고점이자 하락 구간의 시작점인 확정 거래일이다.
+- `trough_date`: peak 이후 하락이 끝난 확정 거래일이다.
+- 미확정 날짜는 `null`로 유지한다. 진행 중인 사이클의 peak와 trough를 임의로 채우지 않는다.
+
+날짜만 `historical_cases`에 저장한다. 종가, 상승률, 하락률, drawdown, 상승·하락 기간은 `market_index_prices`의 canonical 종가에서 읽을 때 계산한다. 기간은 두 확정 거래일 사이의 달력 일수다.
+
+## 초기 사례와 확정 기준점
+
+| 순서 | 사례 | 핵심 지수 | START | PEAK | TROUGH | 상태 |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 1 | 닷컴버블 | Nasdaq Composite | 1994-06-24 | 2000-03-10 | 2002-10-09 | 확정 |
+| 2 | 카드대란 | KOSPI | 2001-09-17 | 2002-04-18 | 2003-03-17 | 확정 |
+| 3 | 중국 산업재 버블 | KOSPI | 2003-03-17 | 2007-10-31 | 2008-10-24 | 확정 |
+| 4 | 글로벌 금융위기 | S&P 500 | 2002-10-09 | 2007-10-09 | 2009-03-09 | 확정 |
+| 5 | 2009~2011 유동성장 | KOSPI | 2008-10-24 | 2011-05-02 | 2011-09-26 | 확정 |
+| 6 | 2012~2014 미국 유동성장 | S&P 500 | 2011-10-03 | 2015-05-21 | 2016-02-11 | 확정 |
+| 7 | 메모리 슈퍼사이클 | KOSPI | 2016-02-12 | 2018-01-29 | 2019-01-03 | 확정 |
+| 8 | 코로나 충격 | S&P 500 | 2018-12-24 | 2020-02-19 | 2020-03-23 | 확정 |
+| 9 | 2022 금리인상/긴축장 | Nasdaq Composite | 2020-03-23 | 2021-11-19 | 2022-12-28 | 확정 |
+| 10 | AI/반도체 상승장 | Nasdaq Composite | 2022-12-28 | 미확정 | 미확정 | 진행 중 |
+
+각 과거 사례의 기준점은 해당 관찰 범위에서 실제 일봉 종가의 상승 전 저점, 상승 최고점, peak 이후 저점과 일치하는지 확인했다. 시장 날짜를 뉴스 발표일로 대체하지 않았다.
+
+## 해석 근거
+
+가격 기준점은 원시 지수 흐름에서 정하고, 아래 자료는 사이클의 원인을 해석하고 관찰 범위를 검토하는 데 사용한다.
+
+- 카드대란: BIS의 한국 신용카드 대출 분석은 1999~2002년의 대출 팽창과 2003년의 부실·유동성 위기를 하나의 boom-bust로 설명한다. <https://www.bis.org/publ/bppdf/bispap46k.pdf>
+- 중국 산업재: IMF는 2003년부터 2008년 중반까지의 원자재 호황과 중국의 금속 수요 기여, 2008년 금융불안 이후 가격 붕괴를 설명한다. <https://www.imf.org/external/pubs/ft/fandd/2008/12/web_helbling.htm>
+- 글로벌 금융위기: Federal Reserve History는 S&P 500의 2007년 10월 peak부터 2009년 3월 trough까지 약 57% 하락을 기록한다. <https://www.federalreservehistory.org/essays/great-recession-of-200709>
+- 2012~2014 미국 유동성장: 2012년 9월 FOMC는 월 400억 달러 규모의 MBS 매입과 장기간의 완화 기조를 발표했다. <https://www.federalreserve.gov/newsevents/pressreleases/monetary20120913a.htm>
+- 메모리 슈퍼사이클: 삼성전자의 2018년 2분기 자료는 데이터센터 중심의 고용량 메모리 수요를, 4분기 자료는 외부 불확실성과 고객 재고조정에 따른 수요 감소를 기록한다. <https://images.samsung.com/is/content/samsung/p5/global/ir/docs/2018_2Q_conference_eng.pdf> · <https://images.samsung.com/is/content/samsung/p5/global/ir/docs/2018_4Q_conference_eng.pdf>
+- 코로나 충격과 이후 유동성장: 2020년 3월 23일 FOMC는 시장 기능을 지원하기 위한 국채·MBS 매입 확대를 발표했다. <https://www.federalreserve.gov/newsevents/pressreleases/monetary20200323a.htm>
+- 2022 긴축장: 연준 자료는 2022년 3월 금리 인상 시작과 이후 대차대조표 축소를 함께 설명한다. <https://www.federalreserve.gov/econres/notes/feds-notes/substitutability-between-balance-sheet-reductions-and-policy-rate-hikes-some-illustrations-20220603.html>
+
+## 편집과 권한
+
+- 로그인 사용자는 사례 정의와 시장지수 종가를 읽을 수 있다.
+- 관리자만 기준점 날짜를 저장할 수 있다.
+- 날짜 입력을 비우면 미확정 상태로 저장한다. START만 있으면 `in_progress`, 세 기준점이 모두 있으면 `confirmed`, START도 없으면 `draft`다.
+- DB 제약이 관찰 범위와 `START ≤ PEAK ≤ TROUGH` 순서를 검증한다.
+- 종가와 파생값은 별도 저장하지 않으므로 중복 원천이 생기지 않는다.

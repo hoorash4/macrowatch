@@ -8,7 +8,8 @@ function api(client) {
   const ctx = { window: { MACROWATCH_CONFIG: { supabaseUrl: '', supabasePublishableKey: '' } } };
   vm.runInNewContext(read('assets/js/core/frontend-core.js'), ctx);
   vm.runInNewContext(read('assets/js/historical-insight/historical-index-data.js'), ctx);
-  return { ...ctx.window.MacroWatchHistoricalData, core: ctx.window.MacroWatchFrontend };
+  vm.runInNewContext(read('assets/js/historical-insight/historical-cycle-data.js'), ctx);
+  return { ...ctx.window.MacroWatchHistoricalData, cycles: ctx.window.MacroWatchHistoricalCycles, core: ctx.window.MacroWatchFrontend };
 }
 function database(pages) {
   const calls = [];
@@ -51,29 +52,85 @@ test('empty data stays empty and invalid source rows never become zero or disapp
   }
   await assert.rejects(a.createRepository(database([])).load('NASDAQ100'), /지원하지/);
 });
+const caseRow = overrides => ({ case_code:'dotcom', display_order:1, case_name:'닷컴버블', primary_index_code:'NASDAQ_COMPOSITE',
+  comparison_index_codes:['SP500','KOSPI'], search_start:'1994-01-01', search_end:'2003-03-31', start_date:'1994-06-24',
+  peak_date:'2000-03-10', trough_date:'2002-10-09', cycle_status:'confirmed', cycle_summary:'기술주 사이클', ...overrides });
+test('case definitions keep observation bounds separate and derive prices, returns, and calendar durations', async () => {
+  const a=api(), db=database([{data:[caseRow()]}]);
+  const cases=await a.cycles.createRepository(db).load();
+  assert.equal(cases[0].searchStart,'1994-01-01');
+  assert.deepEqual(Array.from(cases[0].comparisons),['SP500','KOSPI']);
+  const prices=[{time:'1994-06-24',value:693.79},{time:'2000-03-10',value:5048.6201},{time:'2002-10-09',value:1114.11}];
+  const metrics=a.cycles.calculate(cases[0],prices);
+  assert.ok(Math.abs(metrics.rise-627.68)<.01);
+  assert.ok(Math.abs(metrics.fall+77.93)<.01);
+  assert.equal(metrics.drawdown,Math.abs(metrics.fall));
+  assert.equal(metrics.riseDays,2086);
+  assert.equal(metrics.fallDays,943);
+  assert.equal(db.calls[0].table,'historical_cases');
+  assert.equal(JSON.stringify(db.calls[0].order),JSON.stringify(['display_order',{ascending:true}]));
+});
+test('in-progress cycles allow unconfirmed peak and trough while malformed definitions and missing closes fail', () => {
+  const a=api(), progress=a.cycles.normalize(caseRow({case_code:'ai',case_name:'AI',search_start:'2022-06-01',search_end:null,
+    start_date:'2022-12-28',peak_date:null,trough_date:null,cycle_status:'in_progress'}));
+  const metrics=a.cycles.calculate(progress,[{time:'2022-12-28',value:10213.29}]);
+  assert.equal(metrics.start.value,10213.29); assert.equal(metrics.peak,null); assert.equal(metrics.rise,null);
+  assert.throws(()=>a.cycles.normalize(caseRow({peak_date:'1993-01-01'})),/정의를 확인/);
+  assert.throws(()=>a.cycles.calculate(a.cycles.normalize(caseRow()),[]),/기준일/);
+  assert.throws(()=>a.cycles.calculate({...progress,peakDate:'2022-01-01'},[{time:'2022-01-01',value:1},{time:'2022-12-28',value:2}]),/START → PEAK/);
+});
+test('administrator save stores dates and status only, then refreshes the repository cache', async () => {
+  const a=api(); let payload=null;
+  const client={from(){let updating=false;const q={select(){return q;},order(){return q;},range(){return q;},eq(){return q;},
+    update(value){updating=true;payload=value;return q;},single:async()=>({data:caseRow({peak_date:null,trough_date:null,cycle_status:'in_progress'}),error:null}),
+    then(resolve,reject){if(updating)return Promise.resolve({data:null,error:null}).then(resolve,reject);return Promise.resolve({data:[caseRow()]}).then(resolve,reject);}};return q;}};
+  const repo=a.cycles.createRepository(client); await repo.load();
+  const saved=await repo.save('dotcom',{startDate:'1994-06-24',peakDate:'',troughDate:''},'user-1');
+  assert.equal(payload.cycle_status,'in_progress'); assert.equal(payload.peak_date,null); assert.equal(payload.updated_by,'user-1');
+  assert.equal(saved.status,'in_progress'); assert.equal((await repo.load())[0].peakDate,null);
+});
+test('migration seeds the ten approved cases without a separate Korea IT bubble and derives closes at runtime', () => {
+  const sql=read('supabase/migrations/20260915023946_add_historical_cycle_definitions.sql');
+  assert.equal((sql.match(/^\s*\('[a-z0-9_]+', \d+,/gm)||[]).length,10);
+  assert.match(sql,/AI\/반도체 상승장[\s\S]*null, null, 'in_progress'/);
+  assert.doesNotMatch(sql,/한국 IT버블/);
+  assert.match(sql,/revoke all on table public\.historical_cases from anon, authenticated/);
+  assert.match(sql,/grant select, insert, update on table public\.historical_cases to authenticated/);
+  assert.doesNotMatch(sql,/grant delete[^;]* to authenticated/);
+  assert.match(sql,/on conflict \(case_code\) do nothing/);
+  assert.doesNotMatch(sql,/on conflict \(case_code\) do update/);
+});
 function ui() {
   const nodes=new Map();
   const make = () => ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',
-    events:{}, classList:{toggle(){}}, setAttribute(k,v){this.attrs[k]=v;},
-    getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}});
-  for (const id of ['host','status','meta','message','retry','full-range']) nodes.set('historical-chart-'+id,make());
+    value:'',events:{}, children:[], classList:{toggle(){}}, setAttribute(k,v){this.attrs[k]=v;},
+    getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}, replaceChildren(){this.children=[];},
+    append(...items){this.children.push(...items);}, querySelector(){return null;}});
+  for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
+  for (const id of ['case-list','cycle-panel','cycle-state','cycle-name','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
+  const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
   const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
+  const caseButtons=[];
   const pending=[]; const drawn=[]; let destroyed=0;
+  const client={auth:{getSession:async()=>({data:{session:{user:{id:'user-1'}}},error:null})},from:()=>{const q={select(){return q;},eq(){return q;},maybeSingle:async()=>({data:{is_admin:false},error:null})};return q;}};
+  const definition={code:'dotcom',order:1,name:'닷컴버블',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'1994-01-01',searchEnd:'2003-03-31',startDate:'1994-06-24',peakDate:'2000-03-10',troughDate:'2002-10-09',status:'confirmed',summary:'기술주 사이클'};
   const w={MacroWatchHistoricalData:{indices:{SP500:'S&P 500',NASDAQ_COMPOSITE:'NASDAQ Composite',KOSPI:'KOSPI'},
-    createRepository:()=>({load:code=>new Promise((resolve,reject)=>pending.push({code,resolve,reject}))})},
-    MacroWatchFrontend:{createSupabaseClient:()=>({}),formatDisplayNumber:String},
-    MacroWatchHistoricalChart:{create:()=>({setData:rows=>drawn.push(rows),fit(){},destroy(){destroyed++;}})},
+    createRepository:()=>{const cache=new Map();return{load:code=>{if(!cache.has(code)){const promise=new Promise((resolve,reject)=>pending.push({code,resolve,reject}));cache.set(code,promise);promise.catch(()=>cache.delete(code));}return cache.get(code);}};}},
+    MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[definition]}),calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
+    MacroWatchFrontend:{createSupabaseClient:()=>client,formatDisplayNumber:String},
+    MacroWatchHistoricalChart:{create:()=>({setData:rows=>drawn.push(rows),setCycle(){},focus(){},fit(){},destroy(){destroyed++;}})},
     addEventListener(){}};
   vm.runInNewContext(read('assets/js/historical-insight/historical-insight.js'),{
-    window:w,document:{getElementById:id=>nodes.get(id),querySelectorAll:()=>buttons},console:{error(){}}});
-  return {nodes,buttons,pending,drawn,destroyed:()=>destroyed};
+    window:w,document:{getElementById:id=>nodes.get(id),querySelectorAll:s=>s==='[data-historical-index]'?buttons:caseButtons,
+      querySelector:s=>pointCards[s.match(/"(start|peak|trough)"/)?.[1]],createElement:()=>{const item=make();const append=item.append;item.append=(...values)=>{append.call(item,...values);if(values.length===2&&values[0].textContent)caseButtons.push(item);};return item;}},console:{error(){}}});
+  return {nodes,buttons,caseButtons,pending,drawn,destroyed:()=>destroyed};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 test('rapid switching ignores stale responses and clears previous data',async()=>{
-  const f=ui();
+  const f=ui(); await settle();
   f.buttons[2].events.click();
+  f.pending[0].resolve([{time:'1990-01-02',value:999}]);
   f.pending[1].resolve([{time:'1990-01-04',value:10}]); await settle();
-  f.pending[0].resolve([{time:'1990-01-02',value:999}]); await settle();
   assert.equal(f.drawn.at(-1)[0].value,10);
   assert.equal(f.nodes.get('historical-chart-host').dataset.state,'ready');
   assert.match(f.nodes.get('historical-chart-meta').textContent,/KOSPI/);
@@ -85,7 +142,7 @@ test('rapid switching ignores stale responses and clears previous data',async()=
   assert.equal(f.nodes.get('historical-chart-full-range').disabled,true);
 });
 test('request failure exposes retry and recovery restores the selected chart',async()=>{
-  const f=ui(); f.pending[0].reject(new Error('offline')); await settle();
+  const f=ui(); await settle(); f.pending[0].reject(new Error('offline')); await settle();
   assert.equal(f.nodes.get('historical-chart-host').dataset.state,'error');
   assert.equal(f.nodes.get('historical-chart-retry').hidden,false);
   assert.equal(f.destroyed(),1);

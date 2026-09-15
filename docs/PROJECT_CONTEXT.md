@@ -39,7 +39,7 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - `assets/css`: 실제 스타일 소스
 - 루트에 JS/CSS 실소스를 중복 저장하지 않는다. 이전 공개 URL 호환은 빌드 결과에서만 생성한다.
 
-Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 숫자 포맷, 전체 페이지 조회(`queryAll`), 차트 테마·등록/해제는 `frontend-core`를 재사용한다. 경제지표 차트도 동일한 페이지 조회 함수를 사용한다. Historical Insight의 크기 관찰은 Lightweight Charts의 `autoSize`로 처리한다.
+Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 숫자 포맷, 전체 페이지 조회(`queryAll`), 차트 테마·등록/해제는 `frontend-core`를 재사용한다. 경제지표 차트도 동일한 페이지 조회 함수를 사용한다. Historical Insight의 크기 관찰은 Lightweight Charts의 `autoSize`로 처리한다. 사이클 정의의 세부 계약과 현재 확정 기준점은 `HISTORICAL_CYCLE_DEFINITION.md`를 기준으로 한다.
 
 ### Python
 
@@ -129,24 +129,20 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 
 1. 주요 역사적 시장 사례 정의
 2. 각 사례의 관찰 구간 표시
-3. `start / peak / trough / end` 기준점 확정
+3. `start / peak / trough` 기준점 확정
 4. 기준점·구간별 주요 거시·시장 팩트 추출
 5. 상승률·하락률·drawdown·금리·스프레드 등 파생값 계산
 6. 현재 시장 상태와 과거 사례 비교
 7. 유사 과거 국면과 전환 신호 표시
 
-초기 사례 후보에는 닷컴 버블, 한국 IT 버블, 중국 산업재 버블, 글로벌 금융위기, 2009~2011 유동성장, 코로나 충격, 2022 긴축장, AI/반도체 상승장 등이 있다. 사례명과 기간은 확정 전이므로 화면 로직에 깊게 하드코딩하지 않는다.
+초기 사례는 닷컴버블, 카드대란, 중국 산업재 버블, 글로벌 금융위기, 2009~2011 유동성장, 2012~2014 미국 유동성장, 메모리 슈퍼사이클, 코로나 충격, 2022 금리인상/긴축장, AI/반도체 상승장 등 10개다. 한국 IT버블은 닷컴버블의 KOSPI 보조 비교로 다룬다. 사례와 기간은 화면에 하드코딩하지 않고 DB 정의에서 읽는다.
 
 현재 구현 원칙은 한 번에 전체 기능을 완성하지 않고 단계별로 진행하는 것이다. 각 단계는 구현 → 테스트 → 실제 화면/데이터 검증 후 다음 단계로 넘어간다.
 
-현재 단계 순서는 대략 다음과 같다.
+현재 단계 순서는 다음과 같다.
 
 - Phase 1: 실제 지수 데이터 렌더링 및 지수 전환
-- Phase 2: 사례별 관찰 구간 연결
-- Phase 3: 시작점 마커
-- Phase 4: peak/trough deterministic 계산
-- Phase 5: 종료점 및 편집 UX
-- Phase 6: Historical Case 영속 저장 구조
+- Phase 2~6: 10개 사례의 관찰 구간, START/PEAK/TROUGH 마커, canonical 종가 기반 파생값, 관리자 편집, Historical Case 영속 저장 구조
 - Phase 7: 팩트 추출
 - Phase 8: 구간 파생값
 - Phase 9: 현재 vs 과거 유사도 비교
@@ -159,8 +155,9 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 - 2026-09-08 구조 및 내부 리팩터링이 두 단계로 완료되었고, UI·수치·API/DB 계약·스케줄을 보존하는 검증 기록은 각각 `REFACTOR_20260908.md`, `INTERNAL_REFACTOR_20260908.md`에 남아 있다.
 - 2026-09-13 운영 DB의 중복 원천 저장소 정리와 canonical source 전환이 수행되었고, 상세 결과는 `database-data-inventory.md`에 기록되어 있다.
 - 2026-09-15 `Historical Insight` 별도 페이지와 리서치 툴 내비게이션 구조가 추가되었다.
-- 2026-09-15 S&P 500, Nasdaq Composite, KOSPI의 1990년 이후 일봉 백필을 `market_index_prices`에 구성했고, Historical Insight는 이 canonical 지수를 사용하도록 진행 중이다.
-- Historical Insight는 최종 기능 전체를 한 번에 구현하지 않고, Phase 1은 원천 조회·차트·화면 상태를 분리하여 실제 지수 렌더링, 지수 전환, 전체 기간 복귀, 로딩/빈 데이터/오류 재시도를 구현한다. Phase 2는 별도 단계로 진행한다.
+- 2026-09-15 S&P 500, Nasdaq Composite, KOSPI의 1990년 이후 일봉 백필을 `market_index_prices`에 구성했고, Historical Insight는 이 canonical 지수를 사용한다.
+- Historical Insight Phase 1은 원천 조회·차트·화면 상태를 분리하여 실제 지수 렌더링, 지수 전환, 전체 기간 복귀, 로딩/빈 데이터/오류 재시도를 구현했다.
+- 10개 Historical Case는 `historical_cases`에 관찰 범위와 확정 날짜만 저장한다. 종가·상승률·하락률·drawdown·기간은 canonical 지수에서 계산하며, 진행 중인 AI/반도체 상승장의 미확정 peak/trough는 null로 유지한다. 한국 IT버블은 닷컴버블의 보조 비교로 포함하고 별도 사례로 만들지 않는다.
 
 현재 상태를 판단할 때는 항상 `main`의 최신 커밋과 실제 GitHub Actions/Supabase 상태를 다시 확인한다. 이 문서의 날짜나 과거 실행 번호를 현재 상태로 간주하지 않는다.
 

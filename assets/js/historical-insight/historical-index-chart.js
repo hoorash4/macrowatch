@@ -26,11 +26,22 @@
     }
     return Object.freeze({
       setData(rows) {
-        if (!rows.length) { series?.setData([]); return; }
+        if (!rows.length) { series?.setData([]); series?.setMarkers([]); return; }
         ensure();
         series.setData(rows);
         chart.timeScale().fitContent();
       },
+      setCycle(points) {
+        if (!series) return;
+        const style = {
+          START: { position: 'belowBar', shape: 'arrowUp', color: '#15803d' },
+          PEAK: { position: 'aboveBar', shape: 'arrowDown', color: '#b91c1c' },
+          TROUGH: { position: 'belowBar', shape: 'circle', color: '#2563eb' },
+        };
+        series.setMarkers(points.map(point => ({ time: point.row.time, ...style[point.type],
+          text: `${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}` })));
+      },
+      focus(from, to) { if (chart && from && to) chart.timeScale().setVisibleRange({ from, to }); },
       fit() { chart?.timeScale().fitContent(); },
       destroy() {
         window.removeEventListener('macrowatch:themechange', updateLine);

@@ -9,3 +9,38 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-range-tools { display: flex; gap: 6px; }
 .historical-range-tools button { padding: 6px 9px; border: 1px solid var(--theme-border); border-radius: 7px; background: var(--theme-surface-elevated); color: var(--theme-text-secondary); font-size: 10px; cursor: pointer; }
 .historical-range-tools button:disabled { opacity: .5; cursor: default; }
+
+/* Historical Case: 관찰 범위와 확정 기준점 */
+.historical-workspace { grid-template-rows: auto minmax(340px, 1fr) auto auto; }
+.historical-case-loading { padding: 9px 10px; color: var(--theme-text-muted); font-size: 11px; }
+.historical-case { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+.historical-case small { color: #9ca3af; font-size: 8px; font-weight: 750; white-space: nowrap; }
+.historical-case.is-active small { color: #d1d5db; }
+.historical-cycle-panel { padding: 14px 16px; border-top: 1px solid var(--theme-border); background: var(--theme-surface-elevated); }
+.historical-cycle-panel[hidden] { display: none; }
+.historical-cycle-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.historical-cycle-heading small { display: block; margin-bottom: 4px; color: #9a6f2c; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.historical-cycle-heading strong { font-size: 15px; }
+.historical-cycle-heading > span { color: var(--theme-text-muted); font-size: 9px; }
+.historical-cycle-description { margin: 7px 0 11px; color: var(--theme-text-secondary); font-size: 10px; line-height: 1.5; }
+.historical-cycle-points { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.historical-cycle-points article { padding: 9px 10px; border: 1px solid var(--theme-border); border-radius: 8px; background: var(--theme-surface); }
+.historical-cycle-points small { display: block; font-size: 8px; font-weight: 850; letter-spacing: .08em; }
+.historical-cycle-points article[data-cycle-point="start"] small { color: #15803d; }
+.historical-cycle-points article[data-cycle-point="peak"] small { color: #b91c1c; }
+.historical-cycle-points article[data-cycle-point="trough"] small { color: #2563eb; }
+.historical-cycle-points strong { display: block; margin-top: 5px; font-size: 11px; }
+.historical-cycle-points span { display: block; margin-top: 2px; color: var(--theme-text-secondary); font-size: 10px; }
+.historical-cycle-performance { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--theme-text-secondary); font-size: 9px; }
+.historical-cycle-performance strong { margin-left: 3px; color: var(--theme-text-primary); font-size: 10px; }
+.historical-cycle-editor { margin-top: 10px; border-top: 1px solid var(--theme-border); padding-top: 9px; }
+.historical-cycle-editor summary { color: var(--theme-text-secondary); font-size: 9px; font-weight: 750; cursor: pointer; }
+.historical-cycle-editor form { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.historical-cycle-editor label { display: grid; gap: 3px; color: var(--theme-text-muted); font-size: 8px; font-weight: 750; }
+.historical-cycle-editor input { padding: 6px 7px; border: 1px solid var(--theme-border); border-radius: 6px; background: var(--theme-surface); color: var(--theme-text-primary); font: inherit; }
+.historical-cycle-editor button { padding: 7px 10px; border: 0; border-radius: 6px; background: #111827; color: #fff; font-size: 9px; font-weight: 750; cursor: pointer; }
+#historical-cycle-save-status { color: var(--theme-text-secondary); font-size: 9px; }
+html[data-theme="dark"] .historical-cycle-panel { background: #111c2f; border-color: #334155; }
+html[data-theme="dark"] .historical-cycle-points article { background: #0f172a; border-color: #334155; }
+html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; color: #071b42; }
+@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}

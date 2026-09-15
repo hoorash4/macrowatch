@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=3">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=4">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -44,24 +44,17 @@
       <section class="historical-stage" aria-label="히스토리컬 인사이트 작업영역">
         <aside class="historical-case-panel">
           <p class="historical-panel-label">HISTORICAL CASES</p>
-          <div class="historical-case-list">
-            <button type="button" class="historical-case is-active">닷컴 버블</button>
-            <button type="button" class="historical-case" disabled>한국 IT 버블</button>
-            <button type="button" class="historical-case" disabled>중국 산업재 버블</button>
-            <button type="button" class="historical-case" disabled>글로벌 금융위기</button>
-            <button type="button" class="historical-case" disabled>코로나 충격</button>
-            <button type="button" class="historical-case" disabled>2022 긴축장</button>
-          </div>
+          <div id="historical-case-list" class="historical-case-list" aria-label="Historical Case 목록"><span class="historical-case-loading">사례 불러오는 중</span></div>
         </aside>
         <div class="historical-workspace">
           <header class="historical-toolbar">
             <div>
               <strong>국면 차트</strong>
-              <div id="historical-chart-meta" class="economic-chart-meta">NASDAQ Composite · 1990년 이후 일간 종가</div>
+              <div id="historical-chart-meta" class="economic-chart-meta">사례와 지수 데이터 불러오는 중</div>
             </div>
             <div class="historical-toolbar-right">
               <span id="historical-chart-status" role="status" aria-live="polite" class="historical-chart-status">지수 데이터 불러오는 중</span>
-              <div class="historical-range-tools"><button type="button" id="historical-chart-full-range" disabled>전체 기간</button><button type="button" id="historical-chart-retry" hidden>다시 시도</button></div>
+              <div class="historical-range-tools"><button type="button" id="historical-chart-case-range" disabled>사례 범위</button><button type="button" id="historical-chart-full-range" disabled>전체 이력</button><button type="button" id="historical-chart-retry" hidden>다시 시도</button></div>
               <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택">
                 <button type="button" role="tab" aria-selected="false" data-historical-index="SP500">S&amp;P500</button>
                 <button type="button" role="tab" aria-selected="true" class="is-active" data-historical-index="NASDAQ_COMPOSITE">NASDAQ Composite</button>
@@ -70,8 +63,32 @@
             </div>
           </header>
           <div class="historical-chart-region"><div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div><p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p></div>
+          <section id="historical-cycle-panel" class="historical-cycle-panel" aria-label="선택 사례 사이클 요약" hidden>
+            <div class="historical-cycle-heading"><div><small id="historical-cycle-state">CYCLE</small><strong id="historical-cycle-name">—</strong></div><span id="historical-search-range">—</span></div>
+            <p id="historical-cycle-description" class="historical-cycle-description"></p>
+            <div class="historical-cycle-points">
+              <article data-cycle-point="start"><small>START</small><strong>미확정</strong><span>—</span></article>
+              <article data-cycle-point="peak"><small>PEAK</small><strong>미확정</strong><span>—</span></article>
+              <article data-cycle-point="trough"><small>TROUGH</small><strong>미확정</strong><span>—</span></article>
+            </div>
+            <div class="historical-cycle-performance">
+              <span>상승률 <strong id="historical-rise">—</strong></span><span>상승 기간 <strong id="historical-rise-days">—</strong></span>
+              <span>하락률 <strong id="historical-fall">—</strong></span><span>하락 기간 <strong id="historical-fall-days">—</strong></span>
+              <span>Peak-to-Trough Drawdown <strong id="historical-drawdown">—</strong></span>
+            </div>
+            <details id="historical-cycle-editor" class="historical-cycle-editor" hidden>
+              <summary>기준점 편집</summary>
+              <form id="historical-cycle-form">
+                <label>START<input id="historical-start-date" type="date"></label>
+                <label>PEAK<input id="historical-peak-date" type="date"></label>
+                <label>TROUGH<input id="historical-trough-date" type="date"></label>
+                <button type="submit">확정점 저장</button>
+                <span id="historical-cycle-save-status" role="status" aria-live="polite"></span>
+              </form>
+            </details>
+          </section>
           <div class="historical-summary">
-            <article><small>PHASE MARKERS</small><strong>시작 · 고점 · 저점 · 종료</strong><p>차트에서 각 기준점을 확인하고 저장하는 구조입니다.</p></article>
+            <article><small>CYCLE STANDARD</small><strong>START → PEAK → TROUGH</strong><p>관찰 범위와 성과 계산 기준점을 분리해 관리합니다.</p></article>
             <article><small>HISTORICAL FACTS</small><strong>국면 팩트</strong><p>금리·스프레드·밸류에이션 등 시점별 사실을 연결합니다.</p></article>
             <article><small>CURRENT COMPARISON</small><strong>현재 유사도</strong><p>확정된 과거 국면과 현재를 비교하는 최종 확장 영역입니다.</p></article>
           </div>
@@ -81,8 +98,9 @@
   </div>
 
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
-  <script src="assets/js/historical-insight/historical-index-chart.js?v=1"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=1"></script>
+  <script src="assets/js/historical-insight/historical-cycle-data.js?v=1"></script>
+  <script src="assets/js/historical-insight/historical-index-chart.js?v=2"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=2"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>
