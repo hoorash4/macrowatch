@@ -36,10 +36,11 @@
   }
   const percentage = (value, absolute = false) => value == null ? '—' : `${absolute ? '' : value > 0 ? '+' : ''}${window.MacroWatchFrontend.formatDisplayNumber(absolute ? Math.abs(value) : value, { maximumFractionDigits: 1 })}%`;
   const duration = value => value == null ? '—' : `${window.MacroWatchFrontend.formatDisplayNumber(value)}일`;
-  function showCycle(item, metrics) {
+  function showCycle(item, cycle, metrics) {
     $('historical-cycle-panel').hidden = false;
-    $('historical-cycle-state').textContent = item.status === 'confirmed' ? 'CONFIRMED CYCLE' : item.status === 'in_progress' ? 'IN PROGRESS' : 'DRAFT';
+    $('historical-cycle-state').textContent = cycle.status === 'confirmed' ? 'CONFIRMED CYCLE' : cycle.status === 'in_progress' ? 'IN PROGRESS' : 'DRAFT';
     $('historical-cycle-name').textContent = item.name;
+    $('historical-cycle-market').textContent = indexData.indices[cycle.indexCode] || cycle.indexCode;
     $('historical-search-range').textContent = `관찰 범위 ${item.searchStart} ~ ${item.searchEnd || '현재'}`;
     $('historical-cycle-description').textContent = item.summary;
     formatPoint('start', metrics.start); formatPoint('peak', metrics.peak); formatPoint('trough', metrics.trough);
@@ -50,9 +51,9 @@
     $('historical-fall-days').textContent = duration(metrics.fallDays);
     if (isAdmin) {
       $('historical-cycle-editor').hidden = false;
-      $('historical-start-date').value = item.startDate || '';
-      $('historical-peak-date').value = item.peakDate || '';
-      $('historical-trough-date').value = item.troughDate || '';
+      $('historical-start-date').value = cycle.startDate || '';
+      $('historical-peak-date').value = cycle.peakDate || '';
+      $('historical-trough-date').value = cycle.troughDate || '';
       $('historical-cycle-save-status').textContent = '';
     }
   }
@@ -64,7 +65,8 @@
       button.type = 'button'; button.className = 'historical-case'; button.dataset.historicalCase = item.code;
       const label = document.createElement('span'), badge = document.createElement('small');
       label.textContent = item.name;
-      badge.textContent = item.status === 'confirmed' ? '확정' : item.status === 'in_progress' ? '진행 중' : '초안';
+      const status = cycleData.marketCycle(item, item.primaryIndex).status;
+      badge.textContent = status === 'confirmed' ? '확정' : status === 'in_progress' ? '진행 중' : '초안';
       button.append(label, badge);
       button.addEventListener('click', () => selectCase(item.code));
       root.append(button);
@@ -87,15 +89,16 @@
       if (!indexData || !cycleData || !window.MacroWatchHistoricalChart || !window.MacroWatchFrontend) throw new Error('화면 모듈을 불러오지 못했습니다.');
       if (!chart) chart = window.MacroWatchHistoricalChart.create(host);
       chart.setData([]);
-      const [rows, primaryRows] = await Promise.all([indexRepository.load(code), indexRepository.load(activeCase.primaryIndex)]);
+      const rows = await indexRepository.load(code);
       if (token !== requestToken) return;
-      const metrics = cycleData.calculate(activeCase, primaryRows);
+      const activeCycle = cycleData.marketCycle(activeCase, code);
+      const metrics = cycleData.calculate(activeCase, activeCycle, rows);
       activeRows = rows;
       chart.setData(rows);
       if (!rows.length) { state('empty', '저장된 지수 데이터가 없습니다.'); return; }
-      chart.setCycle(cycleData.chartPoints(activeCase, rows));
+      chart.setCycle(cycleData.chartPoints(activeCycle, rows));
       focusCase();
-      showCycle(activeCase, metrics);
+      showCycle(activeCase, activeCycle, metrics);
       const count = window.MacroWatchFrontend.formatDisplayNumber(rows.length, { locale: 'ko-KR' });
       state('ready', `${count}개 · ${rows[0].time} ~ ${rows.at(-1).time}`);
     } catch (error) {
@@ -143,10 +146,12 @@
     try {
       const values = { startDate: $('historical-start-date').value, peakDate: $('historical-peak-date').value,
         troughDate: $('historical-trough-date').value };
-      cycleData.calculate({ ...activeCase, ...values }, await indexRepository.load(activeCase.primaryIndex));
-      const saved = await caseRepository.save(activeCase.code, values, currentUser.id);
-      cases = cases.map(item => item.code === saved.code ? saved : item);
-      activeCase = saved; renderCaseList(); activeCaseButton(); await render(activeCode);
+      const rows = await indexRepository.load(activeCode);
+      cycleData.calculate(activeCase, { ...cycleData.marketCycle(activeCase, activeCode), ...values }, rows);
+      await caseRepository.save(activeCase.code, activeCode, values, currentUser.id);
+      cases = await caseRepository.load();
+      activeCase = cases.find(item => item.code === activeCase.code);
+      renderCaseList(); activeCaseButton(); await render(activeCode);
       output.textContent = '저장 완료';
     } catch (error) {
       output.textContent = `저장 오류: ${error?.message || '알 수 없는 오류'}`;

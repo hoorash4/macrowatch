@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=4">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=5">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -64,17 +64,17 @@
           </header>
           <div class="historical-chart-region"><div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div><p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p></div>
           <section id="historical-cycle-panel" class="historical-cycle-panel" aria-label="선택 사례 사이클 요약" hidden>
-            <div class="historical-cycle-heading"><div><small id="historical-cycle-state">CYCLE</small><strong id="historical-cycle-name">—</strong></div><span id="historical-search-range">—</span></div>
+            <div class="historical-cycle-heading"><div><small id="historical-cycle-state">CYCLE</small><strong id="historical-cycle-name">—</strong><span id="historical-cycle-market" class="historical-cycle-market">—</span></div><span id="historical-search-range">—</span></div>
             <p id="historical-cycle-description" class="historical-cycle-description"></p>
             <div class="historical-cycle-points">
               <article data-cycle-point="start"><small>START</small><strong>미확정</strong><span>—</span></article>
               <article data-cycle-point="peak"><small>PEAK</small><strong>미확정</strong><span>—</span></article>
               <article data-cycle-point="trough"><small>TROUGH</small><strong>미확정</strong><span>—</span></article>
             </div>
-            <div class="historical-cycle-performance">
-              <span>상승률 <strong id="historical-rise">—</strong></span><span>상승 기간 <strong id="historical-rise-days">—</strong></span>
-              <span>하락률 <strong id="historical-fall">—</strong></span><span>하락 기간 <strong id="historical-fall-days">—</strong></span>
-              <span>Peak-to-Trough Drawdown <strong id="historical-drawdown">—</strong></span>
+            <div class="historical-cycle-performance" aria-label="선택 시장 사이클 성과">
+              <article class="is-rise"><span>상승 구간</span><strong id="historical-rise">—</strong><small>상승 기간 <b id="historical-rise-days">—</b></small></article>
+              <article class="is-fall"><span>하락 구간</span><strong id="historical-fall">—</strong><small>하락 기간 <b id="historical-fall-days">—</b></small></article>
+              <article class="is-drawdown"><span>고점 대비 낙폭</span><strong id="historical-drawdown">—</strong><small>PEAK → TROUGH</small></article>
             </div>
             <details id="historical-cycle-editor" class="historical-cycle-editor" hidden>
               <summary>기준점 편집</summary>
@@ -98,9 +98,9 @@
   </div>
 
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
-  <script src="assets/js/historical-insight/historical-cycle-data.js?v=1"></script>
+  <script src="assets/js/historical-insight/historical-cycle-data.js?v=2"></script>
   <script src="assets/js/historical-insight/historical-index-chart.js?v=2"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=2"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=3"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>

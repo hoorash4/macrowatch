@@ -16,7 +16,7 @@ function database(pages) {
   return { calls, from(table) {
     const call = { table }; calls.push(call);
     const q = { select(v) { call.select = v; return q; }, order(v, options) { call.order = [v,options]; return q; },
-      range(a,b) { call.range = [a,b]; return q; }, eq(k,v) { call.filter = [k,v]; return q; },
+      range(a,b) { call.range = [a,b]; return q; }, eq(k,v) { (call.filters ||= []).push([k,v]); return q; },
       gte(k,v) { call.lower = [k,v]; return q; }, then(resolve,reject) { return Promise.resolve(pages.shift()).then(resolve,reject); } };
     return q;
   } };
@@ -33,7 +33,7 @@ test('all pages use the canonical index filter and start boundary; cache avoids 
   assert.deepEqual(db.calls.map(c=>c.range),[[0,999],[1000,1999]]);
   for (const c of db.calls) {
     assert.equal(c.table,'market_index_prices');
-    assert.deepEqual(c.filter,['index_code','SP500']);
+    assert.deepEqual(c.filters,[['index_code','SP500']]);
     assert.deepEqual(c.lower,['market_date','1990-01-01']);
   }
 });
@@ -53,15 +53,19 @@ test('empty data stays empty and invalid source rows never become zero or disapp
   await assert.rejects(a.createRepository(database([])).load('NASDAQ100'), /지원하지/);
 });
 const caseRow = overrides => ({ case_code:'dotcom', display_order:1, case_name:'닷컴버블', primary_index_code:'NASDAQ_COMPOSITE',
-  comparison_index_codes:['SP500','KOSPI'], search_start:'1994-01-01', search_end:'2003-03-31', start_date:'1994-06-24',
-  peak_date:'2000-03-10', trough_date:'2002-10-09', cycle_status:'confirmed', cycle_summary:'기술주 사이클', ...overrides });
-test('case definitions keep observation bounds separate and derive prices, returns, and calendar durations', async () => {
-  const a=api(), db=database([{data:[caseRow()]}]);
+  comparison_index_codes:['SP500','KOSPI'], search_start:'1994-01-01', search_end:'2003-03-31', cycle_summary:'기술주 사이클', ...overrides });
+const marketRow = overrides => ({case_code:'dotcom',index_code:'NASDAQ_COMPOSITE',start_date:'1994-06-24',
+  peak_date:'2000-03-10',trough_date:'2002-10-09',cycle_status:'confirmed',...overrides});
+test('case definitions keep separate market cycles and derive each market performance', async () => {
+  const a=api(), db=database([{data:[caseRow()]},{data:[
+    marketRow(),marketRow({index_code:'KOSPI',start_date:'1998-06-16',peak_date:'2000-01-04',trough_date:'2001-09-17'})
+  ]}]);
   const cases=await a.cycles.createRepository(db).load();
   assert.equal(cases[0].searchStart,'1994-01-01');
   assert.deepEqual(Array.from(cases[0].comparisons),['SP500','KOSPI']);
+  assert.equal(a.cycles.marketCycle(cases[0],'KOSPI').startDate,'1998-06-16');
   const prices=[{time:'1994-06-24',value:693.79},{time:'2000-03-10',value:5048.6201},{time:'2002-10-09',value:1114.11}];
-  const metrics=a.cycles.calculate(cases[0],prices);
+  const metrics=a.cycles.calculate(cases[0],a.cycles.marketCycle(cases[0],'NASDAQ_COMPOSITE'),prices);
   assert.ok(Math.abs(metrics.rise-627.68)<.01);
   assert.ok(Math.abs(metrics.fall+77.93)<.01);
   assert.equal(metrics.drawdown,Math.abs(metrics.fall));
@@ -69,36 +73,50 @@ test('case definitions keep observation bounds separate and derive prices, retur
   assert.equal(metrics.fallDays,943);
   assert.equal(db.calls[0].table,'historical_cases');
   assert.equal(JSON.stringify(db.calls[0].order),JSON.stringify(['display_order',{ascending:true}]));
+  assert.equal(db.calls[1].table,'historical_case_market_cycles');
 });
 test('in-progress cycles allow unconfirmed peak and trough while malformed definitions and missing closes fail', () => {
-  const a=api(), progress=a.cycles.normalize(caseRow({case_code:'ai',case_name:'AI',search_start:'2022-06-01',search_end:null,
-    start_date:'2022-12-28',peak_date:null,trough_date:null,cycle_status:'in_progress'}));
-  const metrics=a.cycles.calculate(progress,[{time:'2022-12-28',value:10213.29}]);
+  const a=api(), item=a.cycles.normalizeCase(caseRow({case_code:'ai',case_name:'AI',search_start:'2022-06-01',search_end:null}),[
+    a.cycles.normalizeMarket(marketRow({case_code:'ai',start_date:'2022-12-28',peak_date:null,trough_date:null,cycle_status:'in_progress'}))
+  ]), progress=a.cycles.marketCycle(item,'NASDAQ_COMPOSITE');
+  const metrics=a.cycles.calculate(item,progress,[{time:'2022-12-28',value:10213.29}]);
   assert.equal(metrics.start.value,10213.29); assert.equal(metrics.peak,null); assert.equal(metrics.rise,null);
-  assert.throws(()=>a.cycles.normalize(caseRow({peak_date:'1993-01-01'})),/정의를 확인/);
-  assert.throws(()=>a.cycles.calculate(a.cycles.normalize(caseRow()),[]),/기준일/);
-  assert.throws(()=>a.cycles.calculate({...progress,peakDate:'2022-01-01'},[{time:'2022-01-01',value:1},{time:'2022-12-28',value:2}]),/START → PEAK/);
+  assert.throws(()=>a.cycles.normalizeMarket(marketRow({start_date:'2000-01-01',peak_date:'1993-01-01'})),/정의를 확인/);
+  assert.throws(()=>a.cycles.calculate(item,{...progress,peakDate:'2022-01-01'},[{time:'2022-01-01',value:1},{time:'2022-12-28',value:2}]),/START → PEAK/);
+  assert.throws(()=>a.cycles.calculate(item,{...progress,peakDate:'2023-01-01'},[{time:'2022-12-28',value:2}]),/기준일/);
 });
-test('administrator save stores dates and status only, then refreshes the repository cache', async () => {
+test('administrator save updates only the selected market cycle and refreshes cache', async () => {
   const a=api(); let payload=null;
-  const client={from(){let updating=false;const q={select(){return q;},order(){return q;},range(){return q;},eq(){return q;},
-    update(value){updating=true;payload=value;return q;},single:async()=>({data:caseRow({peak_date:null,trough_date:null,cycle_status:'in_progress'}),error:null}),
-    then(resolve,reject){if(updating)return Promise.resolve({data:null,error:null}).then(resolve,reject);return Promise.resolve({data:[caseRow()]}).then(resolve,reject);}};return q;}};
+  const reads=[[caseRow()],[marketRow()]];
+  const client={from(table){let updating=false;const q={select(){return q;},order(){return q;},range(){return q;},eq(k,v){(q.filters ||= []).push([k,v]);return q;},
+    update(value){updating=true;payload=value;return q;},single:async()=>({data:marketRow({peak_date:null,trough_date:null,cycle_status:'in_progress'}),error:null}),
+    then(resolve,reject){if(updating)return Promise.resolve({data:null,error:null}).then(resolve,reject);return Promise.resolve({data:reads.shift()||[]}).then(resolve,reject);}};q.table=table;return q;}};
   const repo=a.cycles.createRepository(client); await repo.load();
-  const saved=await repo.save('dotcom',{startDate:'1994-06-24',peakDate:'',troughDate:''},'user-1');
-  assert.equal(payload.cycle_status,'in_progress'); assert.equal(payload.peak_date,null); assert.equal(payload.updated_by,'user-1');
-  assert.equal(saved.status,'in_progress'); assert.equal((await repo.load())[0].peakDate,null);
+  const saved=await repo.save('dotcom','NASDAQ_COMPOSITE',{startDate:'1994-06-24',peakDate:'',troughDate:''},'user-1');
+  assert.equal(Object.hasOwn(payload,'cycle_status'),false); assert.equal(payload.peak_date,null); assert.equal(payload.updated_by,'user-1');
+  assert.equal(saved.status,'in_progress'); assert.equal((await repo.load())[0].markets.NASDAQ_COMPOSITE.peakDate,null);
 });
-test('migration seeds the ten approved cases without a separate Korea IT bubble and derives closes at runtime', () => {
+test('migration stores thirty market-specific cycles with protected access', () => {
   const sql=read('supabase/migrations/20260915023946_add_historical_cycle_definitions.sql');
+  const marketSql=read('supabase/migrations/20260915030500_split_historical_cycles_by_market.sql');
   assert.equal((sql.match(/^\s*\('[a-z0-9_]+', \d+,/gm)||[]).length,10);
-  assert.match(sql,/AI\/반도체 상승장[\s\S]*null, null, 'in_progress'/);
   assert.doesNotMatch(sql,/한국 IT버블/);
-  assert.match(sql,/revoke all on table public\.historical_cases from anon, authenticated/);
-  assert.match(sql,/grant select, insert, update on table public\.historical_cases to authenticated/);
-  assert.doesNotMatch(sql,/grant delete[^;]* to authenticated/);
-  assert.match(sql,/on conflict \(case_code\) do nothing/);
-  assert.doesNotMatch(sql,/on conflict \(case_code\) do update/);
+  assert.equal((marketSql.match(/^\s*\('[a-z0-9_]+', '(?:SP500|NASDAQ_COMPOSITE|KOSPI)'/gm)||[]).length,30);
+  assert.match(marketSql,/\('dotcom', 'KOSPI', '1998-06-16', '2000-01-04', '2001-09-17'\)/);
+  assert.match(marketSql,/\('ai_semiconductor', 'SP500', '2022-10-12', null, null\)/);
+  assert.match(marketSql,/revoke all on table public\.historical_case_market_cycles from anon, authenticated/);
+  assert.match(marketSql,/grant select, insert, update on table public\.historical_case_market_cycles to authenticated/);
+  assert.doesNotMatch(marketSql,/grant delete[^;]* to authenticated/);
+  assert.match(marketSql,/on conflict \(case_code, index_code\) do nothing/);
+});
+test('cycle summary gives market context and performance figures strong visual hierarchy', () => {
+  const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css');
+  assert.match(html,/id="historical-cycle-market"/);
+  assert.match(html,/class="is-rise"[\s\S]*class="is-fall"[\s\S]*class="is-drawdown"/);
+  assert.match(css,/\.historical-cycle-description \{[^}]*font-size: 13px/);
+  assert.match(css,/\.historical-cycle-performance strong \{[^}]*font-size: 25px/);
+  assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #15803d/);
+  assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #dc2626/);
 });
 function ui() {
   const nodes=new Map();
@@ -107,16 +125,17 @@ function ui() {
     getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}, replaceChildren(){this.children=[];},
     append(...items){this.children.push(...items);}, querySelector(){return null;}});
   for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
-  for (const id of ['case-list','cycle-panel','cycle-state','cycle-name','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
+  for (const id of ['case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status']) nodes.set(`historical-${id}`,make());
   const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
   const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
   const caseButtons=[];
   const pending=[]; const drawn=[]; let destroyed=0;
   const client={auth:{getSession:async()=>({data:{session:{user:{id:'user-1'}}},error:null})},from:()=>{const q={select(){return q;},eq(){return q;},maybeSingle:async()=>({data:{is_admin:false},error:null})};return q;}};
-  const definition={code:'dotcom',order:1,name:'닷컴버블',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'1994-01-01',searchEnd:'2003-03-31',startDate:'1994-06-24',peakDate:'2000-03-10',troughDate:'2002-10-09',status:'confirmed',summary:'기술주 사이클'};
+  const markets=Object.fromEntries(['SP500','NASDAQ_COMPOSITE','KOSPI'].map(indexCode=>[indexCode,{caseCode:'dotcom',indexCode,startDate:'1994-06-24',peakDate:'2000-03-10',troughDate:'2002-10-09',status:'confirmed'}]));
+  const definition={code:'dotcom',order:1,name:'닷컴버블',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'1994-01-01',searchEnd:'2003-03-31',summary:'기술주 사이클',markets};
   const w={MacroWatchHistoricalData:{indices:{SP500:'S&P 500',NASDAQ_COMPOSITE:'NASDAQ Composite',KOSPI:'KOSPI'},
     createRepository:()=>{const cache=new Map();return{load:code=>{if(!cache.has(code)){const promise=new Promise((resolve,reject)=>pending.push({code,resolve,reject}));cache.set(code,promise);promise.catch(()=>cache.delete(code));}return cache.get(code);}};}},
-    MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[definition]}),calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
+    MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[definition]}),marketCycle:(item,code)=>item.markets[code],calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
     MacroWatchFrontend:{createSupabaseClient:()=>client,formatDisplayNumber:String},
     MacroWatchHistoricalChart:{create:()=>({setData:rows=>drawn.push(rows),setCycle(){},focus(){},fit(){},destroy(){destroyed++;}})},
     addEventListener(){}};
