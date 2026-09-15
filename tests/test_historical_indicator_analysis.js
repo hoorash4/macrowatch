@@ -16,6 +16,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   assert.deepEqual({...a.ANALYSIS_POLICY.minimumRegimeDays},{short:31,medium:61,long:92});
   assert.deepEqual({...a.ANALYSIS_POLICY.relevanceMonths},{before:3,after:1});
   assert.deepEqual({...a.ANALYSIS_POLICY.correction},{maximumRetracementFraction:.5,maximumVolatilityUnits:3});
+  assert.deepEqual({...a.ANALYSIS_POLICY.resumption},{minimumDurationRatio:2,minimumMoveRatio:1.5});
   assert.deepEqual({...a.ANALYSIS_POLICY.transient},{maximumDurationShare:.25,minimumProminenceUnits:1});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{structural:.45,timing:.35,duration:.2});
   assert.deepEqual({...a.ANALYSIS_POLICY.pivotSelection},{structuralSimilarityPoints:5});
@@ -55,6 +56,16 @@ test('a brief isolated excursion that returns to a sideways range is not a struc
 test('a volatility-scaled deep reversal remains an independent retrospective regime',()=>{
   const a=analysis(),path=a.detectRetrospectiveRegimes(segments([[8,5],[4,-10],[7,8]]),{frequency:'M',minimumRegimeDays:92});
   assert.ok(path.regimes.some(regime=>regime.type==='falling'));assert.ok(path.pivots.some(pivot=>pivot.previousRegime==='rising'&&pivot.nextRegime==='falling'));
+});
+
+test('a deep temporary reversal is internal when the original trend resumes much longer and stronger',()=>{
+  const a=analysis(),options={frequency:'D',minimumRegimeDays:31},cases=[[[[120,1],[45,-2],[240,1.5]],'rising'],[[[120,-1],[45,2],[240,-1.5]],'falling']];
+  for(const [segmentsDefinition,direction] of cases){const rows=dailySegments(segmentsDefinition),path=a.detectRetrospectiveRegimes(rows,options),major=a.majorStructuralPivots(rows,options,path),discovery=a.discoverReferenceCandidates(rows,rows[120].time,options);assert.deepEqual(Array.from(path.regimes,item=>item.type),[direction]);assert.equal(path.pivots.length,0);assert.equal(major.length,0);assert.equal(discovery.candidates.length,0);assert.equal(path.invalidations.filter(item=>item.structuralClassification==='internal_swing').length,2);}
+});
+
+test('a comparable reversal and resumption remain separate structural regimes',()=>{
+  const a=analysis(),rows=dailySegments([[120,1],[90,-2],[120,1.5]]),options={frequency:'D',minimumRegimeDays:31},path=a.detectRetrospectiveRegimes(rows,options),major=a.majorStructuralPivots(rows,options,path);
+  assert.deepEqual(Array.from(path.regimes,item=>item.type),['rising','falling','rising']);assert.equal(path.pivots.length,2);assert.equal(major.length,2);
 });
 
 test('a short but deep move becomes a new regime once the minimum duration is met',()=>{
@@ -304,7 +315,7 @@ test('a resumed trend removes the old candidate and a later reversal uses the re
 });
 
 test('market-specific minimum duration is applied while segmenting the full retrospective structure',()=>{
-  const a=analysis(),rows=dailySegments([[120,1],[45,-2],[120,2]]),short=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),long=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:92});
+  const a=analysis(),rows=dailySegments([[120,1],[45,-2],[60,2],[120,-2]]),short=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),long=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:92});
   assert.ok(short.pivots.length>long.pivots.length);assert.ok(short.regimes.length>long.regimes.length);assert.ok(long.regimes.every(item=>item.requiredMinimumDays===92));
 });
 
