@@ -9,10 +9,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="assets/css/styles.css?v=191">
+  <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=1">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=2">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
   <script src="assets/js/core/frontend-core.js?v=9"></script>
 </head>
@@ -54,10 +55,20 @@
         </aside>
         <div class="historical-workspace">
           <header class="historical-toolbar">
-            <div><strong>국면 차트</strong><div class="economic-chart-meta">시작점 · 고점 · 저점 · 종료점을 검증하는 영역</div></div>
-            <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택"><button type="button">S&amp;P500</button><button type="button" class="is-active">NASDAQ Composite</button><button type="button">KOSPI</button></div>
+            <div>
+              <strong>국면 차트</strong>
+              <div id="historical-chart-meta" class="economic-chart-meta">NASDAQ Composite · 1990년 이후 일간 종가</div>
+            </div>
+            <div class="historical-toolbar-right">
+              <span id="historical-chart-status" class="historical-chart-status">지수 데이터 불러오는 중</span>
+              <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택">
+                <button type="button" role="tab" aria-selected="false" data-historical-index="SP500">S&amp;P500</button>
+                <button type="button" role="tab" aria-selected="true" class="is-active" data-historical-index="NASDAQ_COMPOSITE">NASDAQ Composite</button>
+                <button type="button" role="tab" aria-selected="false" data-historical-index="KOSPI">KOSPI</button>
+              </div>
+            </div>
           </header>
-          <div class="historical-chart-placeholder"><div class="historical-placeholder-copy">차트와 국면 마커는 다음 단계에서 연결됩니다.</div></div>
+          <div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div>
           <div class="historical-summary">
             <article><small>PHASE MARKERS</small><strong>시작 · 고점 · 저점 · 종료</strong><p>차트에서 각 기준점을 확인하고 저장하는 구조입니다.</p></article>
             <article><small>HISTORICAL FACTS</small><strong>국면 팩트</strong><p>금리·스프레드·밸류에이션 등 시점별 사실을 연결합니다.</p></article>
@@ -68,6 +79,7 @@
     </main>
   </div>
 
+  <script src="assets/js/charts/historical-insight-chart.js?v=1"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>
