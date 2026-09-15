@@ -15,6 +15,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   const a=analysis(),source=read('assets/js/historical-insight/historical-indicator-analysis.js');
   assert.deepEqual({...a.ANALYSIS_POLICY.minimumRegimeDays},{short:31,medium:61,long:92});
   assert.deepEqual({...a.ANALYSIS_POLICY.relevanceMonths},{before:3,after:1});
+  assert.deepEqual({...a.ANALYSIS_POLICY.nearMiss},{enabled:true,before:6,after:2});
   assert.deepEqual({...a.ANALYSIS_POLICY.correction},{maximumRetracementFraction:.5,maximumVolatilityUnits:3});
   assert.deepEqual({...a.ANALYSIS_POLICY.resumption},{minimumDurationRatio:2,minimumMoveRatio:1.5});
   assert.deepEqual({...a.ANALYSIS_POLICY.transient},{maximumDurationShare:.25,minimumProminenceUnits:1});
@@ -103,6 +104,22 @@ test('market trend duration selects one, two, or three-month indicator regimes i
 test('every market anchor uses exactly three months before and one month after',()=>{
   const a=analysis(),expected={from:'2020-03-15',to:'2020-07-15',before:92,after:30};
   for(const type of a.REFERENCE_ORDER)assert.deepEqual({...a.relevanceWindow('2020-06-15')},expected,type);
+  assert.deepEqual({...a.nearMissWindow('2020-06-15')},{from:'2019-12-15',to:'2020-08-15',before:183,after:61});
+});
+
+test('major pivots only in the expanded observation band remain visible as zero-score near misses',()=>{
+  const a=analysis(),rows=segments([[6,-5],[6,5]]),item={searchStart:rows[0].time,searchEnd:rows.at(-1).time};
+  for(const referenceDate of [rows[4].time,rows[10].time]){
+    const cycle={startDate:referenceDate,peakDate:null,troughDate:null},result=a.analyzeHistorical({code:'X',title:'X',frequency:'M'},rows,item,cycle,rows),pivot=result.nearMissPivots[0];
+    assert.equal(result.results.length,0);assert.equal(result.meaningfulReferenceCount,0);assert.equal(result.referenceCoverageCount,0);assert.equal(result.overallScore,0);assert.equal(result.visible,true);
+    assert.ok(pivot);assert.equal(pivot.referenceType,'START');assert.equal(pivot.pivotDate,rows[6].time);assert.equal(pivot.score,0);assert.equal(pivot.timingScore,0);assert.equal(pivot.relationshipBonus,0);assert.equal(pivot.pivotRole,'near-miss');assert.equal(pivot.markerStatus,'near_miss');
+    const official=a.relevanceWindow(referenceDate),expanded=a.nearMissWindow(referenceDate);assert.ok(pivot.pivotDate>=expanded.from&&pivot.pivotDate<=expanded.to);assert.ok(pivot.pivotDate<official.from||pivot.pivotDate>official.to);
+  }
+});
+
+test('official pivots are never duplicated as zero-score near misses',()=>{
+  const a=analysis(),rows=segments([[6,-5],[6,5]]),referenceDate=rows[6].time,cycle={startDate:referenceDate,peakDate:null,troughDate:null},item={searchStart:rows[0].time,searchEnd:rows.at(-1).time},result=a.analyzeHistorical({code:'X',title:'X',frequency:'M'},rows,item,cycle,rows);
+  assert.equal(result.results.length,1);assert.equal(result.nearMissPivots.length,0);assert.ok(result.overallScore>0);assert.equal(result.meaningfulReferenceCount,1);
 });
 
 test('reference candidates are searched inside the anchor window and validated against the broad retrospective path',()=>{
@@ -416,6 +433,8 @@ test('UI uses one radio-selected magenta indicator without dimming other series'
   assert.match(controller,/unclear:'정\/역 관계 불명확'/);assert.match(controller,/positive:'정 관계'/);assert.match(controller,/inverse:'역 관계'/);
   assert.doesNotMatch(controller,/피봇 확인 \$\{result\.confirmationDate\}|관계 \$\{result\.relationship\}.*최종/);
   assert.match(controller,/CANDIDATE · 구조 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/구조 품질/);assert.match(controller,/MARKET RELEVANT · 시장 기준점 관련 확정/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
+  assert.match(controller,/0점 · 범위 근접/);assert.match(controller,/item\.nearMissPivots/);assert.match(controller,/analysis\.meaningfulReferenceCount>0/);assert.match(controller,/activeMode==='history'&&!item\.results\?\.length/);
+  assert.match(chart,/result\.markerStatus==='near_miss'/);assert.match(chart,/--historical-near-miss-color/);assert.match(css,/\.historical-reference-badge\.is-near-miss/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
 

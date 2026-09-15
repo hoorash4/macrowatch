@@ -197,7 +197,7 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(controller,/input\.type='radio'/);
   assert.match(controller,/historical-indicator-clear/);assert.doesNotMatch(controller,/최대 5개/);
   assert.match(controller,/badge\.className='historical-reference-badge'/);
-  assert.match(controller,/activeMode==='history'\?`\$\{Math\.round\(item\.overallScore\)\}점`/);
+  assert.match(controller,/activeMode==='history'\?\(item\.results\?\.length\?`\$\{Math\.round\(item\.overallScore\)\}점`:'0점 · 범위 근접'\)/);
 });
 test('current market anchors use the persisted cycle path and force a complete signal recalculation',()=>{
   const html=read('historical-insight.html'),controller=read('assets/js/historical-insight/historical-insight.js');
@@ -275,8 +275,8 @@ test('current mode keeps the common analysis layout and replaces the left list w
   assert.match(f.nodes.get('historical-chart-meta').textContent,/AI\/반도체 상승장/);
   assert.equal(f.nodes.get('historical-stage').classList.contains('is-current-mode'),true);
 });
-test('current screening bounds retrospective validation and stops after the first meaningful case',()=>{
+test('current screening bounds retrospective validation and ignores zero-score near misses',()=>{
   const source=read('assets/js/historical-insight/historical-insight.js');
   assert.match(source,/pastWindow=indicatorAnalysis\.displayWindow\(past,pastCycle,pastEnd\),pastRows=rows\.filter/);
-  assert.match(source,/if\(analysis\.visible\)return\{item,rows,historicalScore:analysis\.overallScore,meaningful:true\}/);
+  assert.match(source,/if\(analysis\.meaningfulReferenceCount>0\)return\{item,rows,historicalScore:analysis\.overallScore,meaningful:true\}/);
 });

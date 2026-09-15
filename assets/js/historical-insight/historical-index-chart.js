@@ -12,15 +12,15 @@
   }
   class PivotTimeAxisRenderer {
     constructor(view){this.view=view;}
-    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelTop=scope.bitmapSize.height-labelHeight-3*v,padX=5*h;ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle='#fff';ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();});}
+    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelTop=scope.bitmapSize.height-labelHeight-3*v,padX=5*h;ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle=this.view.textColor;ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();});}
   }
   class PivotTimeAxisPaneView {
-    constructor(paneView,date,color){this.paneView=paneView;this.date=date;this.color=color;this.rendererInstance=new PivotTimeAxisRenderer(this);}
+    constructor(paneView,date,color,textColor){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.rendererInstance=new PivotTimeAxisRenderer(this);}
     renderer(){return this.rendererInstance;}
     zOrder(){return 'top';}
   }
   class PivotLinePrimitive {
-    constructor(chart,time,color){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color);}
+    constructor(chart,time,color,textColor='#fff'){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor);}
     updateAllViews(){this.view.update();}
     paneViews(){return [this.view];}
     timeAxisPaneViews(){return [this.timeAxisPaneView];}
@@ -35,6 +35,7 @@
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
+    const nearMissStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim(),textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()});
     function ensure() {
       if (chart) return;
       if (!window.LightweightCharts) throw new Error('차트 라이브러리를 불러오지 못했습니다.');
@@ -82,7 +83,7 @@
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const primitives=(item.displayPivots||item.results).map(result=>new PivotLinePrimitive(chart,result.pivotDate,color));
+          const primitives=(item.displayPivots||item.results).map(result=>{const style=result.markerStatus==='near_miss'?nearMissStyle():{color,textColor:'#fff'};return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives});
         });
