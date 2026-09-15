@@ -165,6 +165,22 @@ test('missing correlation data does not downgrade a confirmed structural relatio
   assert.equal(result.relationship,'inverse');assert.equal(result.confidence,0);assert.equal(result.bonus,0);assert.equal(ambiguous.relationship,'unclear');
 });
 
+test('one cycle keeps the first clear relationship and records later conflicts without changing pivots',()=>{
+  const a=analysis(),result=(referenceType,pivotDate,relationship,baseScore=70,relationshipBonus=5)=>({referenceType,pivotDate,regimeBoundaryDate:pivotDate,relationship,relationshipConfidence:.8,relationshipBonus,baseScore,score:baseScore+relationshipBonus,structuralScore:90,timingScore:80}),start=result('START','2020-01-01','unclear'),peak=result('PEAK','2020-06-01','inverse'),trough=result('TROUGH','2020-12-01','positive'),normalized=a.applyCycleRelationship({START:start,PEAK:peak,TROUGH:trough});
+  assert.equal(normalized.cycleRelationship,'inverse');assert.deepEqual(Array.from(normalized.results,item=>item.relationship),['inverse','inverse','inverse']);assert.deepEqual(Array.from(normalized.results,item=>item.pivotDate),[start.pivotDate,peak.pivotDate,trough.pivotDate]);
+  assert.equal(normalized.byReference.START.relationshipStatus,'unresolved_evidence');assert.equal(normalized.byReference.START.relationshipBonus,0);assert.equal(normalized.byReference.PEAK.relationshipStatus,'aligned');assert.equal(normalized.byReference.PEAK.relationshipBonus,5);assert.equal(normalized.byReference.TROUGH.relationshipStatus,'conflict');assert.equal(normalized.byReference.TROUGH.nativeRelationship,'positive');assert.equal(normalized.byReference.TROUGH.relationshipBonus,0);assert.equal(normalized.byReference.TROUGH.score,trough.baseScore);
+});
+
+test('an unresolved cycle keeps every structural pivot without relationship penalties',()=>{
+  const a=analysis(),pivot=(type,date)=>({referenceType:type,pivotDate:date,regimeBoundaryDate:date,relationship:'unclear',relationshipConfidence:0,relationshipBonus:0,baseScore:65,score:65,structuralScore:90,timingScore:80}),normalized=a.applyCycleRelationship({START:null,PEAK:pivot('PEAK','2020-06-01'),TROUGH:pivot('TROUGH','2020-12-01')});
+  assert.equal(normalized.cycleRelationship,'unresolved');assert.equal(normalized.results.length,2);assert.ok(normalized.results.every(item=>item.relationship==='unclear'&&item.score===item.baseScore));
+});
+
+test('pivot assignment is independent from relationship bonus',()=>{
+  const a=analysis(),base={referenceType:'START',pivotDate:'2020-01-01',regimeBoundaryDate:'2020-01-01',baseScore:80,score:80,structuralScore:80,timingScore:80},bonus={...base,pivotDate:'2020-01-02',regimeBoundaryDate:'2020-01-02',baseScore:70,score:80,relationshipBonus:10},assigned=a.assignReferencePivots({START:{candidates:[bonus,base]}});
+  assert.equal(assigned.START.pivotDate,base.pivotDate);
+});
+
 test('START PEAK and TROUGH are evaluated independently and one indicator can retain all three',()=>{
   const a=analysis(),rows=segments([[6,-4],[6,5],[6,-5],[8,5]]),cycle={startDate:rows[6].time,peakDate:rows[12].time,troughDate:rows[18].time},item={searchStart:rows[0].time,searchEnd:rows.at(-1).time},result=a.analyzeHistorical({code:'X',title:'X',frequency:'M'},rows,item,cycle,rows);
   assert.deepEqual(Array.from(result.results,item=>item.referenceType),['START','PEAK','TROUGH']);assert.equal(new Set(result.results.map(item=>item.pivotDate)).size,3);assert.ok(result.results.every(item=>item.pivotDate>=a.relevanceWindow(item.referenceDate).from&&item.pivotDate<=a.relevanceWindow(item.referenceDate).to));
