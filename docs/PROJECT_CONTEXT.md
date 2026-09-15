@@ -1,6 +1,6 @@
 # MacroWatch 프로젝트 컨텍스트
 
-업데이트 기준: 2026-09-14 KST
+업데이트 기준: 2026-09-15 KST
 
 이 문서는 새 채팅이나 새 작업 세션에서 MacroWatch의 현재 구조와 핵심 운영 경계를 빠르게 복원하기 위한 요약 문서다. 세부 구현·복구 기록을 모두 복제하지 않고, 현재 상태를 이해하는 데 필요한 진입점과 변경 규칙만 유지한다.
 
@@ -22,6 +22,7 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - 자동 실행: GitHub Actions와 명시적으로 범위가 정해진 Supabase cron
 - 사용자/관리자 진입점: `index.html`, `admin.html`
 - 경제지표 전용 화면: `economic-charts.html`
+- 과거 시장 국면 분석 전용 화면: `historical-insight.html`
 
 자동수집, 수동 재계산, 과거 백필, 복구, 유지보수, 헬스체크, 배포는 서로 다른 책임으로 분리한다. 예약 수집이 과거 데이터 재작성이나 무관한 유지보수를 부수효과로 수행하면 안 된다.
 
@@ -34,8 +35,11 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - `assets/js/charts`: 공통 차트 유틸과 기능별 차트
 - `assets/js/admin`: 관리자 화면과 운영 제어
 - `assets/js/policy`: FOMC/정책 브리핑
+- `assets/js/historical-insight`: Historical Insight의 데이터 조회·차트·향후 사례/국면 로직을 기능 책임별로 분리하는 영역
 - `assets/css`: 실제 스타일 소스
 - 루트에 JS/CSS 실소스를 중복 저장하지 않는다. 이전 공개 URL 호환은 빌드 결과에서만 생성한다.
+
+Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 날짜/숫자 포맷, 차트 테마·수명주기 등은 기존 공통 모듈을 우선 재사용한다.
 
 ### Python
 
@@ -69,19 +73,42 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - 합성지수, 모델 최종값, 뉴스 분석, 사용자 설정, 작업 상태는 목적별 결과 테이블에 둔다.
 - 기능별 파생 테이블에 재사용 가능한 원천값 복사본을 만들지 않는다.
 
-새 수집기는 동일한 관측값이면 기존 `series_code`를 재사용한다. 새 raw/source/cache/observation 테이블은 명시적인 구조적 예외가 있어야 한다.
+시장지수 일봉 OHLC의 canonical 저장소는 `market_index_prices`다.
 
-## 5. 자동수집과 백필 경계
+현재 기본 지수는 다음 3개다.
+
+- `SP500` — S&P 500
+- `NASDAQ_COMPOSITE` — Nasdaq Composite
+- `KOSPI` — KOSPI
+
+이 3개 지수는 1990년부터의 과거 분석과 Historical Insight의 기본 시장 원천으로 사용한다. 수익률, 이동평균, 이격도, drawdown, 변동성, rebasing, 비율·상대강도 등 원시 지수에서 계산 가능한 값은 별도 외부 수집 없이 내부 파생값으로 계산한다.
+
+새 수집기는 동일한 관측값이면 기존 `series_code` 또는 canonical 테이블을 재사용한다. 새 raw/source/cache/observation 테이블은 명시적인 구조적 예외가 있어야 한다.
+
+## 5. 시장지수 수집 정책
+
+`backend/signals/market_index_collection.py`가 S&P 500, Nasdaq Composite, KOSPI 일봉 수집의 기준 경로다.
+
+백필과 자동수집은 의도적으로 분리한다.
+
+- 백필: 장기 이력 확보를 위해 Yahoo 일봉 사용을 허용한다.
+- 미국 자동수집: Yahoo를 당일 잠정 OHLC로 사용하고, 이후 한 번의 미국 거래 세션이 지난 뒤 FRED 종가로 검증·승격한다.
+- KOSPI 자동수집: KRX 직접 수집을 canonical 경로로 사용한다.
+- 최근 구간은 잠정값 승격과 정정 반영을 위해 자동수집 시 제한된 lookback 범위 내에서만 upsert한다.
+
+Historical Insight와 기타 downstream 계산은 동일한 `market_index_prices` 원시행을 기준으로 사용하고, 동일 지수를 별도 경로에서 중복 수집하지 않는다.
+
+## 6. 자동수집과 백필 경계
 
 자동수집은 자신의 현재 발표·수집 구간만 처리한다.
 
-- 확정된 과거 행을 예약 수집이 다시 쓰지 않는다.
-- lookback은 현재값 계산을 위한 조회 범위일 뿐 과거 재작성 권한이 아니다.
+- 확정된 과거 행을 예약 수집이 임의로 전체 재작성하지 않는다.
+- lookback은 최신 잠정값 검증·정정과 현재값 계산을 위한 제한된 조회 범위다.
 - 백필·복구·대량 재계산은 명시적 수동 작업이다.
 - backend-only 변경이 Pages 배포를 유발하지 않도록 한다.
 - Supabase 변경은 새 migration과 실제 영향받는 Edge Function만 배포하는 것이 원칙이다.
 
-## 6. 주요 기능 영역
+## 7. 주요 기능 영역
 
 현재 프로젝트는 다음 기능군을 포함한다.
 
@@ -93,20 +120,51 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - 중앙은행 정책/FOMC 분석과 브리핑
 - 뉴스 수집·분류·중복 사건 식별·결정적 뉴스 감지
 - 경제지표 차트와 사용자 추적/알림
+- Historical Insight: 과거 시장 국면을 이용해 현재 시장을 해석하는 분석 기능
 - 관리자 운영 제어, 백업, 상태 점검
+
+### Historical Insight 최종 방향
+
+Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 목표로 한다.
+
+1. 주요 역사적 시장 사례 정의
+2. 각 사례의 관찰 구간 표시
+3. `start / peak / trough / end` 기준점 확정
+4. 기준점·구간별 주요 거시·시장 팩트 추출
+5. 상승률·하락률·drawdown·금리·스프레드 등 파생값 계산
+6. 현재 시장 상태와 과거 사례 비교
+7. 유사 과거 국면과 전환 신호 표시
+
+초기 사례 후보에는 닷컴 버블, 한국 IT 버블, 중국 산업재 버블, 글로벌 금융위기, 2009~2011 유동성장, 코로나 충격, 2022 긴축장, AI/반도체 상승장 등이 있다. 사례명과 기간은 확정 전이므로 화면 로직에 깊게 하드코딩하지 않는다.
+
+현재 구현 원칙은 한 번에 전체 기능을 완성하지 않고 단계별로 진행하는 것이다. 각 단계는 구현 → 테스트 → 실제 화면/데이터 검증 후 다음 단계로 넘어간다.
+
+현재 단계 순서는 대략 다음과 같다.
+
+- Phase 1: 실제 지수 데이터 렌더링 및 지수 전환
+- Phase 2: 사례별 관찰 구간 연결
+- Phase 3: 시작점 마커
+- Phase 4: peak/trough deterministic 계산
+- Phase 5: 종료점 및 편집 UX
+- Phase 6: Historical Case 영속 저장 구조
+- Phase 7: 팩트 추출
+- Phase 8: 구간 파생값
+- Phase 9: 현재 vs 과거 유사도 비교
+- Phase 10: 사례 탐색·현재 비교·팩트 시트·전환 신호 통합
 
 세부 산식·정책은 각 구현과 기능별 문서를 기준으로 하며, 이 문서만 보고 임의로 통일하거나 재설계하지 않는다.
 
-## 7. 최근 상태
+## 8. 최근 상태
 
 - 2026-09-08 구조 및 내부 리팩터링이 두 단계로 완료되었고, UI·수치·API/DB 계약·스케줄을 보존하는 검증 기록은 각각 `REFACTOR_20260908.md`, `INTERNAL_REFACTOR_20260908.md`에 남아 있다.
 - 2026-09-13 운영 DB의 중복 원천 저장소 정리와 canonical source 전환이 수행되었고, 상세 결과는 `database-data-inventory.md`에 기록되어 있다.
-- 최근 main 변경은 뉴스의 결정적 사건 식별·중복 제거 규칙 보강이다.
-- 한국 신용스프레드 과거 백필은 완료 후 전용 백필 변경이 제거된 상태다.
+- 2026-09-15 `Historical Insight` 별도 페이지와 리서치 툴 내비게이션 구조가 추가되었다.
+- 2026-09-15 S&P 500, Nasdaq Composite, KOSPI의 1990년 이후 일봉 백필을 `market_index_prices`에 구성했고, Historical Insight는 이 canonical 지수를 사용하도록 진행 중이다.
+- Historical Insight는 최종 기능 전체를 한 번에 구현하지 않고, 현재 Phase 1부터 순차 구현한다.
 
 현재 상태를 판단할 때는 항상 `main`의 최신 커밋과 실제 GitHub Actions/Supabase 상태를 다시 확인한다. 이 문서의 날짜나 과거 실행 번호를 현재 상태로 간주하지 않는다.
 
-## 8. 테스트와 검증
+## 9. 테스트와 검증
 
 - Python/Node 테스트로 계산·상태·브라우저 계약을 검증한다.
 - Edge Function 변경은 Deno 타입 검사와 관련 계약 테스트를 확인한다.
@@ -114,7 +172,7 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 - DB·자동수집·배포를 변경했으면 코드 테스트만으로 완료 처리하지 않고 실제 운영 경계까지 확인한다.
 - 유료 AI 호출, 실제 알림 발송, 대규모 백필은 단순 회귀 테스트 목적으로 실행하지 않는다.
 
-## 9. 이 문서의 갱신 규칙
+## 10. 이 문서의 갱신 규칙
 
 다음 변경이 발생하면 같은 작업에서 `PROJECT_CONTEXT.md`도 갱신한다.
 
