@@ -7,6 +7,8 @@
     let data = [];
     let pivotLayer = null;
     let pivotDefinitions = [];
+    let pivotRenderFrame = null;
+    let pivotResizeObserver = null;
     const indicatorSeries = new Map();
     const indicatorColor='#c026d3';
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
@@ -22,6 +24,11 @@
         const line=document.createElement('div'),label=document.createElement('span');
         line.className='historical-indicator-pivot-line';line.style.left=`${x}px`;line.style.setProperty('--indicator-color',item.color);label.style.top=`${8+(index%3)*18}px`;label.textContent=item.label;line.append(label);pivotLayer.append(line);
       }
+    }
+    function schedulePivotLines(){
+      renderPivotLines();
+      if(pivotRenderFrame!==null)cancelAnimationFrame(pivotRenderFrame);
+      pivotRenderFrame=requestAnimationFrame(()=>{pivotRenderFrame=null;renderPivotLines();});
     }
     function ensure() {
       if (chart) return;
@@ -41,7 +48,10 @@
         lastValueVisible: true, priceFormat: { type: 'custom', minMove: .01,
           formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value) } });
       pivotLayer=document.createElement('div');pivotLayer.className='historical-indicator-pivots';host.append(pivotLayer);
-      chart.timeScale().subscribeVisibleLogicalRangeChange(renderPivotLines);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(schedulePivotLines);
+      chart.timeScale().subscribeVisibleTimeRangeChange(schedulePivotLines);
+      pivotResizeObserver=new ResizeObserver(schedulePivotLines);
+      pivotResizeObserver.observe(host);
       window.addEventListener('macrowatch:themechange', updateLine);
     }
     return Object.freeze({
@@ -77,7 +87,7 @@
           indicatorSeries.set(item.meta.code,{series:line,color});
         });
         if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
-        renderPivotLines();
+        schedulePivotLines();
       },
       indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
       focus(from, to, markerInset = .12) {
@@ -92,14 +102,19 @@
           to: data[Math.ceil(Math.min(data.length - 1, endIndex + context))].time,
         });
       },
-      fit() { chart?.timeScale().fitContent(); },
+      fit() { chart?.timeScale().fitContent();schedulePivotLines(); },
       destroy() {
         window.removeEventListener('macrowatch:themechange', updateLine);
+        if(chart){chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedulePivotLines);chart.timeScale().unsubscribeVisibleTimeRangeChange(schedulePivotLines);}
+        pivotResizeObserver?.disconnect();
+        if(pivotRenderFrame!==null)cancelAnimationFrame(pivotRenderFrame);
         chart?.remove();
         chart = null;
         series = null;
         pivotLayer = null;
         pivotDefinitions = [];
+        pivotRenderFrame = null;
+        pivotResizeObserver = null;
         indicatorSeries.clear();
         data = [];
       },

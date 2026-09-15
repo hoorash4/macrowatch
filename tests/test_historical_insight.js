@@ -180,6 +180,10 @@ test('single indicator selection preserves the visible calendar range and keeps 
   const css=read('assets/css/historical-insight.css');
   assert.match(chart,/const visibleRange=chart\?\.timeScale\(\)\.getVisibleRange\(\)/);
   assert.match(chart,/if\(visibleRange\)chart\.timeScale\(\)\.setVisibleRange\(visibleRange\)/);
+  assert.match(chart,/subscribeVisibleLogicalRangeChange\(schedulePivotLines\)/);
+  assert.match(chart,/subscribeVisibleTimeRangeChange\(schedulePivotLines\)/);
+  assert.match(chart,/new ResizeObserver\(schedulePivotLines\)/);
+  assert.match(chart,/requestAnimationFrame\(\(\)=>\{pivotRenderFrame=null;renderPivotLines\(\);\}\)/);
   assert.match(css,/\.historical-indicator-legend \{[^}]*padding: 8px 16px 12px/);
   assert.match(controller,/const caseChanged=Boolean\(activeCase&&activeCase\.code!==item\.code\);if\(caseChanged\)\{clearIndicatorSelection\(\);activeIndicatorContext=null;visibleIndicators=\[\];\}/);
   assert.match(controller,/input\.type='radio'/);
