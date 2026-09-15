@@ -75,6 +75,15 @@ test('case definitions keep separate market cycles and derive each market perfor
   assert.equal(JSON.stringify(db.calls[0].order),JSON.stringify(['display_order',{ascending:true}]));
   assert.equal(db.calls[1].table,'historical_case_market_cycles');
 });
+test('case catalog displays the most recent market regime first', async () => {
+  const a=api(), db=database([{data:[
+    caseRow(),caseRow({case_code:'ai_semiconductor',display_order:10,case_name:'AI/반도체 상승장',search_start:'2022-06-01',search_end:null})
+  ]},{data:[
+    marketRow(),marketRow({case_code:'ai_semiconductor',start_date:'2022-12-28',peak_date:null,trough_date:null,cycle_status:'in_progress'})
+  ]}]);
+  const cases=await a.cycles.createRepository(db).load();
+  assert.deepEqual(Array.from(cases, item => item.code),['ai_semiconductor','dotcom']);
+});
 test('in-progress cycles allow unconfirmed peak and trough while malformed definitions and missing closes fail', () => {
   const a=api(), item=a.cycles.normalizeCase(caseRow({case_code:'ai',case_name:'AI',search_start:'2022-06-01',search_end:null}),[
     a.cycles.normalizeMarket(marketRow({case_code:'ai',start_date:'2022-12-28',peak_date:null,trough_date:null,cycle_status:'in_progress'}))

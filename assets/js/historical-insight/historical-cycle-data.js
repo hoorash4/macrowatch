@@ -55,7 +55,7 @@
           window.MacroWatchFrontend.queryAll(client, 'historical_case_market_cycles', marketFields, 'case_code'),
         ]).then(([caseRows, rawMarkets]) => {
           const markets = rawMarkets.map(normalizeMarket);
-          return caseRows.map(row => normalizeCase(row, markets));
+          return caseRows.map(row => normalizeCase(row, markets)).sort((left, right) => right.order - left.order);
         }).catch(error => { cache = null; throw error; });
         return cache;
       },
