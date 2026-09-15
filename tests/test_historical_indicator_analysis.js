@@ -218,9 +218,19 @@ test('an actual trend extreme outside the relevance window cannot be replaced by
   assert.ok(actualPeak);assert.equal(actualPeak.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(actualPeak.pivotDate>discovery.window.to);assert.equal(discovery.candidates.length,0);assert.equal(result.result,null);
 });
 
-test('multiple confirmed structural pivots in one relevance window remain ambiguous instead of being ranked to fill the anchor',()=>{
+test('multiple structural pivots in one relevance window remain available for the final assignment stage',()=>{
   const a=analysis(),rows=dailySegments([[70,1],[45,-2],[45,2],[45,-2],[60,2]]),referenceDate=rows[135].time,cycle={startDate:rows[0].time,peakDate:referenceDate,troughDate:rows[195].time},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'D',minimumRegimeDays:31}),result=a.resultForReference(rows,{frequency:'D'},'PEAK',referenceDate,cycle);
-  assert.ok(discovery.candidates.length>1);assert.equal(result.result,null);assert.ok(result.diagnostics.some(item=>item.rejectionReason==='ambiguous_structural_pivots'));
+  assert.ok(discovery.candidates.length>1);assert.equal(result.result,null);assert.equal(result.candidates.length,discovery.candidates.length);
+});
+
+test('global assignment maximizes valid references without sharing a pivot and is independent of input order',()=>{
+  const a=analysis(),candidate=(referenceType,pivotDate,score,regimeBoundaryDate=pivotDate)=>({referenceType,pivotDate,regimeBoundaryDate,score,structuralScore:score,timingScore:score}),sharedStart=candidate('START','2020-01-10',90),startAlternative=candidate('START','2019-12-01',50),sharedPeak=candidate('PEAK','2020-01-10',95),trough=candidate('TROUGH','2020-06-01',70),references={START:{candidates:[sharedStart,startAlternative]},PEAK:{candidates:[sharedPeak]},TROUGH:{candidates:[trough]}},reversed={TROUGH:references.TROUGH,PEAK:references.PEAK,START:references.START},assigned=a.assignReferencePivots(references),assignedReversed=a.assignReferencePivots(reversed);
+  assert.equal(assigned.START.pivotDate,startAlternative.pivotDate);assert.equal(assigned.PEAK.pivotDate,sharedPeak.pivotDate);assert.equal(assigned.TROUGH.pivotDate,trough.pivotDate);assert.deepEqual(JSON.parse(JSON.stringify(assignedReversed)),JSON.parse(JSON.stringify(assigned)));assert.equal(new Set(Object.values(assigned).filter(Boolean).map(item=>item.pivotDate)).size,3);
+});
+
+test('same structural boundary conflicts even when candidate pivot dates differ',()=>{
+  const a=analysis(),start={referenceType:'START',pivotDate:'2020-01-01',regimeBoundaryDate:'2020-01-15',score:80,structuralScore:80,timingScore:80},peak={referenceType:'PEAK',pivotDate:'2020-01-05',regimeBoundaryDate:'2020-01-15',score:90,structuralScore:90,timingScore:90},assigned=a.assignReferencePivots({START:{candidates:[start]},PEAK:{candidates:[peak]}});
+  assert.equal(assigned.START,null);assert.equal(assigned.PEAK,peak);assert.equal(assigned.TROUGH,null);
 });
 
 test('retrospective and online state engines are physically separate and expose date diagnostics',()=>{
