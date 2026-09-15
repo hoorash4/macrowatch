@@ -2592,3 +2592,16 @@ html[data-theme="dark"] .dashboard-nav-tool-divider { background:rgba(203,213,22
   padding:0 !important;
 }
 @media(max-width:1180px){ .dashboard-nav-tool-divider { margin:0 !important; } }
+
+
+/* Final isolated research navigation group: divider is mathematically centered. */
+.dashboard-research-tools{--research-nav-gap:clamp(.7rem,1.35vw,1.35rem);position:relative;display:flex;align-items:center;gap:var(--research-nav-gap);padding-left:var(--research-nav-gap)}
+.dashboard-research-tools::before{position:absolute;top:50%;left:0;width:1px;height:1.2rem;content:"";background:rgba(20,36,51,.18);transform:translate(-50%,-50%);pointer-events:none}
+.dashboard-research-tools .dashboard-nav-tool{margin:0!important;padding:.42rem 0!important}
+.dashboard-research-tools .dashboard-nav-tool::after{left:0!important;right:0!important}
+.dashboard-nav-tool-divider{display:none!important}
+.dashboard-nav-tool-group-start{margin-left:0!important;padding-left:0!important}
+.dashboard-nav-tool-group-start::before{display:none!important}
+.dashboard-nav-tool-group-start::after{left:0!important}
+html[data-theme="dark"] .dashboard-research-tools::before{background:rgba(203,213,225,.22)}
+@media(max-width:1180px){.dashboard-research-tools{--research-nav-gap:clamp(.55rem,1vw,.9rem)}}

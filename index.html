@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   
-  <link rel="stylesheet" href="assets/css/styles.css?v=193">
+  <link rel="stylesheet" href="assets/css/styles.css?v=194">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
@@ -143,9 +143,10 @@
           <button type="button" class="dashboard-nav-item" data-dashboard-view="earnings"><i class="fa-solid fa-chart-column"></i><span>기업 이익 시그널</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="stress"><i class="fa-solid fa-wave-square"></i><span>스트레스 지수</span></button>
           <button type="button" class="dashboard-nav-item" data-dashboard-view="tracker"><i class="fa-solid fa-bell"></i><span>지표 추적 알림</span></button>
-          <span class="dashboard-nav-tool-divider" aria-hidden="true"></span>
-          <a class="dashboard-nav-item dashboard-nav-tool" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>
-          <a class="dashboard-nav-item dashboard-nav-tool" href="historical-insight.html"><i class="fa-solid fa-clock-rotate-left"></i><span>히스토리컬 인사이트</span></a>
+          <span class="dashboard-research-tools">
+            <a class="dashboard-nav-item dashboard-nav-tool" href="economic-charts.html"><i class="fa-solid fa-chart-line"></i><span>경제지표 챠트</span></a>
+            <a class="dashboard-nav-item dashboard-nav-tool" href="historical-insight.html"><i class="fa-solid fa-clock-rotate-left"></i><span>히스토리컬 인사이트</span></a>
+          </span>
           <div class="dashboard-nav-actions">
             <div id="db-status" class="hidden">DB 연결 확인 중...</div>
             <button id="profile-button" type="button" aria-label="개인 설정" title="개인 설정"><i class="fa-solid fa-user"></i></button>
