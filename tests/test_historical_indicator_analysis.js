@@ -14,6 +14,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   const a=analysis(),source=read('assets/js/historical-insight/historical-indicator-analysis.js');
   assert.deepEqual({...a.ANALYSIS_POLICY.minimumRegimeDays},{short:31,medium:61,long:92});
   assert.deepEqual({...a.ANALYSIS_POLICY.relevanceMonths},{before:3,after:1});
+  assert.deepEqual({...a.ANALYSIS_POLICY.correction},{maximumRetracementFraction:.5,maximumVolatilityUnits:3});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{timing:.6,duration:.4});
   assert.doesNotMatch(source,/shortBefore|longBefore|beforeMonths|relevanceDays/);
   assert.doesNotMatch(source,/monthlySamples|stateStarts|extremeForBoundary|directionalChangeThreshold|\.025/);
@@ -30,10 +31,32 @@ test('six-month fall, one-month rebound, and a new low remain one falling regime
   assert.deepEqual(Array.from(path.regimes,x=>x.type),['falling']);assert.equal(path.pivots.length,0);
 });
 
+test('a long shallow correction that makes a new high remains one retrospective rising regime',()=>{
+  const a=analysis(),rows=segments([[8,5],[4,-1],[10,5]]),past=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:92}),online=a.detectOnlineState(rows,{frequency:'M',minimumRegimeDays:92});
+  assert.deepEqual(Array.from(past.regimes,x=>x.type),['rising']);assert.equal(past.pivots.length,0);assert.equal(online.pivots.length,0);assert.ok(online.invalidations.some(item=>item.reason==='higher_high'));
+});
+
+test('a volatility-scaled deep reversal remains an independent retrospective regime',()=>{
+  const a=analysis(),path=a.detectRetrospectiveRegimes(segments([[8,5],[4,-10],[7,8]]),{frequency:'M',minimumRegimeDays:92});
+  assert.ok(path.regimes.some(regime=>regime.type==='falling'));assert.ok(path.pivots.some(pivot=>pivot.previousRegime==='rising'&&pivot.nextRegime==='falling'));
+});
+
+test('a short but deep move becomes a new regime once the minimum duration is met',()=>{
+  const a=analysis(),rows=segments([[6,5],[2,-15],[3,-5]]),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31}),pivot=path.pivots.find(item=>item.previousRegime==='rising'&&item.nextRegime==='falling');
+  assert.ok(pivot);assert.equal(pivot.pivotValue,Math.max(...rows.map(row=>row.value)));assert.ok(pivot.durationAfter>=31);
+});
+
 test('sustained boxes form rising-to-sideways and falling-to-sideways boundary pivots',()=>{
-  const a=analysis(),rising=a.detectRetrospectiveRegimes(segments([[6,3],[5,0]]),{frequency:'M',minimumRegimeDays:92}),falling=a.detectRetrospectiveRegimes(segments([[5,-3],[5,0]]),{frequency:'M',minimumRegimeDays:92});
+  const a=analysis(),risingRows=segments([[6,3],[5,0]]),fallingRows=segments([[5,-3],[5,0]]),rising=a.detectRetrospectiveRegimes(risingRows,{frequency:'M',minimumRegimeDays:92}),falling=a.detectRetrospectiveRegimes(fallingRows,{frequency:'M',minimumRegimeDays:92});
   for(const path of [rising,falling]){assert.equal(path.pivots.length,1);assert.equal(path.pivots[0].nextRegime,'sideways');assert.equal(path.pivots[0].pivotType,'boundary');}
   assert.equal(rising.pivots[0].previousRegime,'rising');assert.equal(falling.pivots[0].previousRegime,'falling');
+  assert.equal(rising.pivots[0].pivotValue,Math.max(...risingRows.map(row=>row.value)));assert.equal(falling.pivots[0].pivotValue,Math.min(...fallingRows.map(row=>row.value)));
+  const risingCandidate=rising.technicalCandidates.find(item=>item.previousRegime==='rising'&&item.nextRegime==='sideways');assert.equal(risingCandidate.pivotDate,rising.pivots[0].pivotDate);
+});
+
+test('a sideways regime pivots at the structural range breakout',()=>{
+  const a=analysis(),rows=segments([[5,0],[6,5]]),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:61}),pivot=path.pivots.find(item=>item.previousRegime==='sideways'&&item.nextRegime==='rising');
+  assert.ok(pivot);assert.equal(pivot.pivotType,'boundary');assert.ok(pivot.pivotDate>=rows[5].time);
 });
 
 test('market trend duration selects one, two, or three-month indicator regimes independently',()=>{
@@ -58,7 +81,7 @@ test('historical validation uses observations beyond the case search range',()=>
 });
 
 test('a provisional reversal that resumes the old trend remains a technical candidate and is not market relevant',()=>{
-  const a=analysis(),rows=segments([[6,4],[2,-3],[5,5]]),referenceDate=rows[6].time,cycle={startDate:referenceDate,peakDate:rows.at(-1).time,troughDate:null},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'M',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'M'},'START',referenceDate,cycle);
+  const a=analysis(),rows=segments([[8,5],[4,-1],[10,5]]),referenceDate=rows[8].time,cycle={startDate:referenceDate,peakDate:rows.at(-1).time,troughDate:null},discovery=a.discoverReferenceCandidates(rows,referenceDate,{frequency:'M',minimumRegimeDays:92}),result=a.resultForReference(rows,{frequency:'M'},'START',referenceDate,cycle);
   assert.ok(discovery.candidates.length>0);assert.equal(result.result,null);
 });
 
@@ -73,22 +96,32 @@ test('duration scoring caps at one hundred and overall scoring does not punish o
 });
 
 test('current engine exposes watch, candidate, confirmation, and continuation invalidation',()=>{
-  const a=analysis(),watchRows=segments([[6,3],[2,-4]]),candidateRows=segments([[6,3],[3,-4]]),resumedRows=segments([[6,3],[2,-4],[2,30]]),confirmedRows=segments([[6,-3],[4,4]]);
+  const a=analysis(),watchRows=segments([[6,3],[6,-1]]),candidateRows=segments([[6,3],[3,-20]]),resumedRows=segments([[6,3],[2,-4],[2,30]]),confirmedRows=segments([[6,-3],[4,15]]);
   const run=rows=>a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time);
   assert.equal(run(watchRows).evidence.status,'watch');assert.equal(run(candidateRows).evidence.status,'candidate');
   const resumed=run(resumedRows);assert.deepEqual(Array.from(resumed.regimes,x=>x.type),['rising']);assert.equal(resumed.evidence.status,'watching');assert.equal(resumed.evidence.contribution,0);assert.ok(resumed.evidence.invalidations.some(x=>x.reason==='higher_high'));
   const confirmed=run(confirmedRows);assert.equal(confirmed.evidence.status,'confirmed');assert.equal(confirmed.results.length,1);
 });
 
+test('elapsed time alone neither ends an online trend nor confirms a pivot',()=>{
+  const a=analysis(),flatAfterHigh=segments([[6,3],[8,0]]),shallowCorrection=segments([[6,3],[8,-.5]]),flat=a.analyzeCurrent({code:'X',frequency:'M'},flatAfterHigh,flatAfterHigh[0].time,flatAfterHigh.at(-1).time),shallow=a.analyzeCurrent({code:'X',frequency:'M'},shallowCorrection,shallowCorrection[0].time,shallowCorrection.at(-1).time);
+  assert.equal(flat.evidence.status,'watching');assert.equal(flat.pivots.length,0);assert.equal(shallow.evidence.status,'watch');assert.equal(shallow.pivots.length,0);
+});
+
+test('online sideways state requires a structural range breakout before trend confirmation',()=>{
+  const a=analysis(),candidateRows=segments([[6,0],[3,20]]),confirmedRows=segments([[6,0],[5,10]]),candidate=a.analyzeCurrent({code:'X',frequency:'M'},candidateRows,candidateRows[0].time,candidateRows.at(-1).time),confirmed=a.analyzeCurrent({code:'X',frequency:'M'},confirmedRows,confirmedRows[0].time,confirmedRows.at(-1).time);
+  assert.equal(candidate.evidence.status,'candidate');assert.equal(candidate.evidence.pending.previousRegime,'sideways');assert.equal(confirmed.evidence.status,'confirmed');assert.equal(confirmed.evidence.pivot.previousRegime,'sideways');assert.equal(confirmed.evidence.pivot.nextRegime,'rising');
+});
+
 test('watch retains a recent confirmed contribution and probability rolls provisional evidence back once',()=>{
-  const a=analysis(),rows=segments([[5,-3],[4,4],[2,-8]]),current=a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time),probability=a.currentPivotProbability([current]);
+  const a=analysis(),rows=segments([[6,-5],[4,12],[3,-20]]),current=a.analyzeCurrent({code:'X',frequency:'M'},rows,rows[0].time,rows.at(-1).time),probability=a.currentPivotProbability([current]);
   assert.equal(current.evidence.status,'watch');assert.ok(current.evidence.retainedPivot);assert.equal(current.evidence.contribution,a.ANALYSIS_POLICY.contribution.watchRetained);assert.equal(probability.probability,100);
 });
 
-test('a daily low-volatility plateau confirms its falling boundary only after a scale-aware break',()=>{
+test('a long low-volatility plateau followed by a new low stays inside one retrospective fall',()=>{
   const a=analysis(),rows=[];for(let i=0;i<213;i++){const d=new Date(Date.UTC(2000,0,1+i));let value;if(i<31)value=1.8-i*.004;else if(i<145)value=1.56+(i%7)*.001;else value=Math.max(.2,1.56-(i-145)*.035);rows.push({time:d.toISOString().slice(0,10),value});}
-  const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),pivot=path.pivots.filter(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling').at(-1);
-  assert.ok(path.pivots.some(x=>x.previousRegime==='falling'&&x.nextRegime==='sideways'));assert.ok(pivot);assert.ok(pivot.pivotDate>rows[145].time);assert.equal(pivot.requiredMinimumDays,31);
+  const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31});
+  assert.deepEqual(Array.from(path.regimes,item=>item.type),['falling']);assert.equal(path.pivots.length,0);
 });
 
 test('a monotonic monthly rise stays one regime without intermediate pivots',()=>{
