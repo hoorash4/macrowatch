@@ -30,42 +30,88 @@
     return selected;
   }
 
+  function regressionStats(values){
+    const n=values.length;
+    if(n<3)return {slope:0,r2:0,efficiency:0,predictedSpan:0};
+    const meanX=(n-1)/2,meanY=values.reduce((sum,value)=>sum+value,0)/n;
+    let cov=0,varX=0,ssTot=0;
+    for(let index=0;index<n;index++){
+      const dx=index-meanX,dy=values[index]-meanY;
+      cov+=dx*dy;varX+=dx*dx;ssTot+=dy*dy;
+    }
+    const slope=varX?cov/varX:0,intercept=meanY-slope*meanX;
+    let ssRes=0,travel=0;
+    for(let index=0;index<n;index++){
+      const residual=values[index]-(intercept+slope*index);
+      ssRes+=residual*residual;
+      if(index)travel+=Math.abs(values[index]-values[index-1]);
+    }
+    const net=values.at(-1)-values[0];
+    const efficiency=travel?Math.abs(net)/travel:0;
+    return {slope,r2:ssTot?clamp(1-ssRes/ssTot,0,1):0,efficiency,predictedSpan:Math.abs(slope)*(n-1)};
+  }
+
+  function sameTypeRepresentative(last,item){
+    const better=item.type==='high'?item.value>last.value:item.value<last.value;
+    const threshold=Math.max(((last.requiredThreshold||0)+(item.requiredThreshold||0))/2,1e-12);
+    const similar=Math.abs(item.value-last.value)<=threshold*.42;
+    const sideways=(last.regimeState==='sideways'||item.regimeState==='sideways');
+    if(better||(similar&&sideways))return item;
+    return last;
+  }
+
   function normalizeAlternation(items){
     const out=[];
     for(const item of items){
       const last=out.at(-1);
       if(!last||last.type!==item.type){out.push(item);continue;}
-      const better=item.type==='high'?item.value>last.value:item.value<last.value;
-      if(better)out[out.length-1]=item;
+      out[out.length-1]=sameTypeRepresentative(last,item);
     }
     return out;
   }
 
-  function localRegime(smoothed,index,halfWidth,visibleRange,noise){
-    const from=Math.max(0,index-halfWidth),to=Math.min(smoothed.length-1,index+halfWidth);
-    const values=smoothed.slice(from,to+1);
-    if(values.length<3)return {confidence:0,state:'choppy',multiplier:.72,efficiency:0};
+  function localRegime(smoothed,index,coarseHalfWidth,fineHalfWidth,visibleRange,noise){
+    const coarseFrom=Math.max(0,index-coarseHalfWidth),coarseTo=Math.min(smoothed.length-1,index+coarseHalfWidth);
+    const fineFrom=Math.max(0,index-fineHalfWidth),fineTo=Math.min(smoothed.length-1,index+fineHalfWidth);
+    const coarse=smoothed.slice(coarseFrom,coarseTo+1),fine=smoothed.slice(fineFrom,fineTo+1);
+    if(coarse.length<5||fine.length<3)return {confidence:0,state:'choppy',direction:0,multiplier:.74,radiusMultiplier:.72,efficiency:0};
 
-    const net=values.at(-1)-values[0];
-    let travel=0;
-    for(let i=1;i<values.length;i++)travel+=Math.abs(values[i]-values[i-1]);
-    const efficiency=travel?Math.abs(net)/travel:0;
-    const localRange=Math.max(quantile(values,.9)-quantile(values,.1),noise*2,1e-12);
-    const directionalExtent=clamp(Math.abs(net)/(localRange*.7),0,1);
-    const directionalConfidence=clamp(efficiency*directionalExtent*1.2,0,1);
+    const stats=regressionStats(coarse);
+    const coarseRange=Math.max(quantile(coarse,.9)-quantile(coarse,.1),noise*2,1e-12);
+    const directionalExtent=clamp(stats.predictedSpan/Math.max(coarseRange*.72,noise*5,1e-12),0,1);
+    const third=Math.max(1,Math.floor(coarse.length/3));
+    const first=median(coarse.slice(0,third)),middle=median(coarse.slice(third,coarse.length-third)),last=median(coarse.slice(coarse.length-third));
+    const direction=stats.slope>0?1:stats.slope<0?-1:0;
+    const monotone=direction>0?(first<=middle&&middle<=last):direction<0?(first>=middle&&middle>=last):false;
+    const monotoneFactor=monotone?1:.68;
+    const trendConfidence=clamp((stats.r2*.58+stats.efficiency*.42)*directionalExtent*monotoneFactor*1.18,0,1);
 
-    const third=Math.max(1,Math.floor(values.length/3));
-    const thirds=[values.slice(0,third),values.slice(third,values.length-third),values.slice(values.length-third)].filter(part=>part.length);
-    const medians=thirds.map(median);
-    const medianDrift=medians.length>1?Math.max(...medians)-Math.min(...medians):0;
-    const bandStability=clamp(1-medianDrift/(localRange*.55),0,1);
-    const compression=clamp(1-localRange/Math.max(visibleRange*.48,noise*8,1e-12),0,1);
-    const sidewaysConfidence=clamp((1-efficiency)*Math.max(compression,bandStability*.72),0,1);
+    const fineRange=Math.max(quantile(fine,.9)-quantile(fine,.1),noise*2,1e-12);
+    const fineStats=regressionStats(fine);
+    const coarseMedians=[first,middle,last];
+    const medianDrift=Math.max(...coarseMedians)-Math.min(...coarseMedians);
+    const bandStability=clamp(1-medianDrift/Math.max(coarseRange*.58,noise*4,1e-12),0,1);
+    const compression=clamp(1-coarseRange/Math.max(visibleRange*.34,noise*10,1e-12),0,1);
+    const fineOscillation=clamp(1-fineStats.efficiency,0,1);
+    const sidewaysConfidence=clamp(fineOscillation*(compression*.58+bandStability*.42)*(1-trendConfidence*.55),0,1);
 
-    const confidence=Math.max(directionalConfidence,sidewaysConfidence);
-    const state=directionalConfidence>=.48&&directionalConfidence>=sidewaysConfidence?'trend':sidewaysConfidence>=.52?'sideways':'choppy';
-    const multiplier=clamp(.72+confidence*.95,.72,1.67);
-    return {confidence,state,multiplier,efficiency,localRange};
+    let state='choppy',confidence=Math.max(trendConfidence,sidewaysConfidence);
+    if(trendConfidence>=.5&&trendConfidence>=sidewaysConfidence*1.05)state='trend';
+    else if(sidewaysConfidence>=.54)state='sideways';
+
+    let multiplier,radiusMultiplier;
+    if(state==='trend'){
+      multiplier=clamp(1.05+confidence*.7,1.05,1.75);
+      radiusMultiplier=clamp(1.05+confidence*.55,1.05,1.6);
+    }else if(state==='sideways'){
+      multiplier=clamp(1.12+confidence*.62,1.12,1.72);
+      radiusMultiplier=clamp(1.1+confidence*.55,1.1,1.62);
+    }else{
+      const ambiguity=clamp(1-Math.max(trendConfidence,sidewaysConfidence),0,1);
+      multiplier=clamp(.88-ambiguity*.18,.7,.9);
+      radiusMultiplier=clamp(.88-ambiguity*.22,.62,.9);
+    }
+    return {confidence,state,direction:state==='trend'?direction:0,multiplier,radiusMultiplier,efficiency:stats.efficiency,localRange:fineRange,trendConfidence,sidewaysConfidence};
   }
 
   function transientSpike(rows,index,noise,robustRange){
@@ -76,11 +122,25 @@
     const baseline=(left+right)/2;
     const excursion=Math.abs(value-baseline);
     const sideGap=Math.abs(left-right);
-    const spikeFloor=Math.max(noise*6,robustRange*.075,1e-12);
-    return excursion>=spikeFloor&&sideGap<=excursion*.32;
+    const spikeFloor=Math.max(noise*5.5,robustRange*.065,1e-12);
+    return excursion>=spikeFloor&&sideGap<=excursion*.34;
   }
 
-  function simplify(items,minGap){
+  function continuationDirection(left,right){
+    if(left.type!==right.type)return 0;
+    if(left.type==='low'&&right.value<left.value)return -1;
+    if(left.type==='high'&&right.value>left.value)return 1;
+    return 0;
+  }
+
+  function tripletTrendSupport(left,current,right,direction){
+    if(!direction)return 0;
+    const items=[left,current,right].filter(item=>item.regimeState==='trend'&&item.regimeDirection===direction);
+    if(!items.length)return 0;
+    return items.reduce((sum,item)=>sum+item.regimeConfidence,0)/3;
+  }
+
+  function simplifyStructure(items){
     let out=normalizeAlternation(items);
     let changed=true;
     while(changed&&out.length>=3){
@@ -88,11 +148,28 @@
       for(let index=1;index<out.length-1;index++){
         const left=out[index-1],current=out[index],right=out[index+1];
         const leftMove=Math.abs(current.value-left.value),rightMove=Math.abs(right.value-current.value);
+        const excursion=Math.min(leftMove,rightMove),dominantMove=Math.max(leftMove,rightMove,1e-12);
+        const threshold=Math.max((left.requiredThreshold+current.requiredThreshold+right.requiredThreshold)/3,1e-12);
+        const localRadius=Math.max(2,Math.round((left.localRadius+current.localRadius+right.localRadius)/3));
         const leftGap=current.index-left.index,rightGap=right.index-current.index;
-        const threshold=(left.requiredThreshold+current.requiredThreshold+right.requiredThreshold)/3;
-        const weakMove=Math.min(leftMove,rightMove)<threshold;
-        const tooTight=Math.min(leftGap,rightGap)<minGap&&Math.min(leftMove,rightMove)<threshold*1.55;
-        if(!weakMove&&!tooTight)continue;
+        const minGap=Math.min(leftGap,rightGap);
+
+        const direction=continuationDirection(left,right);
+        const trendSupport=tripletTrendSupport(left,current,right,direction);
+        const correctionRatio=excursion/dominantMove;
+        const correctionFloor=.2+trendSupport*.22;
+        const trendContinuation=direction!==0&&trendSupport>=.34&&correctionRatio<correctionFloor&&excursion<threshold*(1.18+trendSupport*.45);
+
+        const outerLevelGap=Math.abs(right.value-left.value);
+        const sidewaysSupport=[left,current,right].reduce((sum,item)=>sum+(item.regimeState==='sideways'?item.regimeConfidence:0),0)/3;
+        const sidewaysOscillation=sidewaysSupport>=.28&&outerLevelGap<=threshold*.9&&excursion<threshold*(1.32+sidewaysSupport*.35);
+
+        const choppyContext=[left,current,right].filter(item=>item.regimeState==='choppy').length>=2;
+        const weakFloor=choppyContext?.72:1;
+        const weakMove=excursion<threshold*weakFloor;
+        const tooTight=minGap<localRadius*.62&&excursion<threshold*(choppyContext?1.08:1.42);
+
+        if(!trendContinuation&&!sidewaysOscillation&&!weakMove&&!tooTight)continue;
         out.splice(index,1);
         out=normalizeAlternation(out);
         changed=true;
@@ -109,12 +186,12 @@
     const visibleStart=clamp(Math.floor(startIndex),0,count-1);
     const visibleEnd=clamp(Math.ceil(endIndex==null?count-1:endIndex),visibleStart,count-1);
     const visibleCount=Math.max(1,visibleEnd-visibleStart+1);
-    const buffer=Math.max(3,Math.round(visibleCount*.22));
+    const buffer=Math.max(3,Math.round(visibleCount*.24));
     const workStart=Math.max(0,visibleStart-buffer),workEnd=Math.min(count-1,visibleEnd+buffer);
     const work=rows.slice(workStart,workEnd+1);
     const localVisibleStart=visibleStart-workStart,localVisibleEnd=visibleEnd-workStart;
 
-    const smoothingWidth=odd(clamp(Math.round(visibleCount*.018),1,31));
+    const smoothingWidth=odd(clamp(Math.round(visibleCount*.016),1,31));
     const rawValues=work.map(row=>row.value);
     const smoothed=centeredMedian(rawValues,smoothingWidth);
     const visibleValues=smoothed.slice(localVisibleStart,localVisibleEnd+1);
@@ -123,27 +200,30 @@
     const diffs=[];
     for(let index=localVisibleStart+1;index<=localVisibleEnd;index++)diffs.push(Math.abs(smoothed[index]-smoothed[index-1]));
     const noise=Math.max(median(diffs),1e-12);
-    const threshold=Math.max(robustRange*.052,noise*3.2,1e-12);
-    const radius=clamp(Math.round(visibleCount*.035),2,Math.max(2,Math.round(visibleCount*.12)));
+    const threshold=Math.max(robustRange*.048,noise*3.1,1e-12);
+    const radius=clamp(Math.round(visibleCount*.033),2,Math.max(2,Math.round(visibleCount*.11)));
     const rawRadius=Math.max(1,Math.floor(smoothingWidth/2));
-    const regimeHalfWidth=clamp(Math.round(visibleCount*.09),4,Math.max(4,Math.round(visibleCount*.2)));
-    const regimes=smoothed.map((_,index)=>localRegime(smoothed,index,regimeHalfWidth,robustRange,noise));
+    const coarseHalfWidth=clamp(Math.round(visibleCount*.14),6,Math.max(6,Math.round(visibleCount*.24)));
+    const fineHalfWidth=clamp(Math.round(visibleCount*.055),3,Math.max(3,Math.round(visibleCount*.11)));
+    const regimes=smoothed.map((_,index)=>localRegime(smoothed,index,coarseHalfWidth,fineHalfWidth,robustRange,noise));
     const candidates=[];
 
-    for(let index=radius;index<work.length-radius;index++){
+    for(let index=2;index<work.length-2;index++){
+      const regime=regimes[index];
+      const localRadius=clamp(Math.round(radius*regime.radiusMultiplier),2,Math.max(2,Math.round(radius*1.65)));
+      if(index<localRadius||index>=work.length-localRadius)continue;
       const value=smoothed[index];
-      const left=smoothed.slice(index-radius,index),right=smoothed.slice(index+1,index+radius+1);
+      const left=smoothed.slice(index-localRadius,index),right=smoothed.slice(index+1,index+localRadius+1);
       if(!left.length||!right.length)continue;
       const leftMax=Math.max(...left),rightMax=Math.max(...right),leftMin=Math.min(...left),rightMin=Math.min(...right);
       const high=value>=leftMax&&value>=rightMax;
       const low=value<=leftMin&&value<=rightMin;
       const highProminence=high?Math.min(value-leftMin,value-rightMin):0;
       const lowProminence=low?Math.min(leftMax-value,rightMax-value):0;
-      const regime=regimes[index];
       const localThreshold=threshold*regime.multiplier;
       let type=null;
-      if(highProminence>=localThreshold*.78&&highProminence>=lowProminence)type='high';
-      else if(lowProminence>=localThreshold*.78)type='low';
+      if(highProminence>=localThreshold*.76&&highProminence>=lowProminence)type='high';
+      else if(lowProminence>=localThreshold*.76)type='low';
       if(!type)continue;
 
       let rawIndex=rawExtremeIndex(work,index,rawRadius,type);
@@ -156,7 +236,8 @@
       candidates.push({
         type,index:absoluteIndex,date:point.time,value:point.value,
         prominence:type==='high'?highProminence:lowProminence,
-        requiredThreshold:localThreshold,regimeConfidence:regime.confidence,regimeState:regime.state
+        requiredThreshold:localThreshold,localRadius,
+        regimeConfidence:regime.confidence,regimeState:regime.state,regimeDirection:regime.direction
       });
     }
 
@@ -166,18 +247,19 @@
       const last=filtered.at(-1);
       if(!last){filtered.push(item);continue;}
       if(last.type===item.type){
-        const better=item.type==='high'?item.value>last.value:item.value<last.value;
-        if(better)filtered[filtered.length-1]=item;
+        filtered[filtered.length-1]=sameTypeRepresentative(last,item);
         continue;
       }
       const move=Math.abs(item.value-last.value),gap=item.index-last.index;
       const pairThreshold=(last.requiredThreshold+item.requiredThreshold)/2;
-      if(move<pairThreshold)continue;
-      if(gap<radius&&move<pairThreshold*1.45)continue;
+      const pairRadius=(last.localRadius+item.localRadius)/2;
+      const choppyPair=last.regimeState==='choppy'||item.regimeState==='choppy';
+      if(move<pairThreshold*(choppyPair?.82:1))continue;
+      if(gap<pairRadius*.62&&move<pairThreshold*(choppyPair?1.15:1.4))continue;
       filtered.push(item);
     }
 
-    filtered=simplify(filtered,Math.max(2,Math.round(radius*.75)));
+    filtered=simplifyStructure(filtered);
     filtered=filtered.filter(item=>item.index>=visibleStart&&item.index<=visibleEnd);
 
     const visibleRegimes=regimes.slice(localVisibleStart,localVisibleEnd+1);
