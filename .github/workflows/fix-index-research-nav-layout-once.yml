@@ -20,6 +20,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           index = Path('index.html')
           text = index.read_text(encoding='utf-8')
@@ -35,53 +36,52 @@ jobs:
           if old not in text:
               raise SystemExit('current research navigation block not found')
           text = text.replace(old, new, 1)
-          import re
           text = re.sub(r'assets/css/styles\.css\?v=\d+', 'assets/css/styles.css?v=193', text, count=1)
           index.write_text(text, encoding='utf-8')
 
           styles = Path('assets/css/styles.css')
           css = styles.read_text(encoding='utf-8')
           marker = '/* Final isolated research navigation group: divider is mathematically centered. */'
-          rule = r'''
+          rule = """
 
-/* Final isolated research navigation group: divider is mathematically centered. */
-.dashboard-research-tools {
-  --research-nav-gap: clamp(.7rem, 1.35vw, 1.35rem);
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--research-nav-gap);
-  padding-left: var(--research-nav-gap);
-}
-.dashboard-research-tools::before {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 1px;
-  height: 1.2rem;
-  content: "";
-  background: rgba(20,36,51,.18);
-  transform: translate(-50%,-50%);
-  pointer-events: none;
-}
-.dashboard-research-tools .dashboard-nav-tool {
-  margin: 0 !important;
-  padding: .42rem 0 !important;
-}
-.dashboard-research-tools .dashboard-nav-tool::after {
-  left: 0 !important;
-  right: 0 !important;
-}
-/* Neutralize every previous divider implementation so it cannot affect layout. */
-.dashboard-nav-tool-divider { display: none !important; }
-.dashboard-nav-tool-group-start { margin-left: 0 !important; padding-left: 0 !important; }
-.dashboard-nav-tool-group-start::before { display: none !important; }
-.dashboard-nav-tool-group-start::after { left: 0 !important; }
-html[data-theme="dark"] .dashboard-research-tools::before { background: rgba(203,213,225,.22); }
-@media(max-width:1180px) {
-  .dashboard-research-tools { --research-nav-gap: clamp(.55rem,1vw,.9rem); }
-}
-'''
+          /* Final isolated research navigation group: divider is mathematically centered. */
+          .dashboard-research-tools {
+            --research-nav-gap: clamp(.7rem, 1.35vw, 1.35rem);
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: var(--research-nav-gap);
+            padding-left: var(--research-nav-gap);
+          }
+          .dashboard-research-tools::before {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 1px;
+            height: 1.2rem;
+            content: "";
+            background: rgba(20,36,51,.18);
+            transform: translate(-50%,-50%);
+            pointer-events: none;
+          }
+          .dashboard-research-tools .dashboard-nav-tool {
+            margin: 0 !important;
+            padding: .42rem 0 !important;
+          }
+          .dashboard-research-tools .dashboard-nav-tool::after {
+            left: 0 !important;
+            right: 0 !important;
+          }
+          .dashboard-nav-tool-divider { display: none !important; }
+          .dashboard-nav-tool-group-start { margin-left: 0 !important; padding-left: 0 !important; }
+          .dashboard-nav-tool-group-start::before { display: none !important; }
+          .dashboard-nav-tool-group-start::after { left: 0 !important; }
+          html[data-theme="dark"] .dashboard-research-tools::before { background: rgba(203,213,225,.22); }
+          @media(max-width:1180px) {
+            .dashboard-research-tools { --research-nav-gap: clamp(.55rem,1vw,.9rem); }
+          }
+          """
+          rule = '\n'.join(line[10:] if line.startswith('          ') else line for line in rule.splitlines())
           if marker not in css:
               styles.write_text(css + rule, encoding='utf-8')
           PY
