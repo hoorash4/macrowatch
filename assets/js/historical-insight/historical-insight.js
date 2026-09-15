@@ -38,10 +38,6 @@
   const percentage = (value, absolute = false) => value == null ? '—' : `${absolute ? '' : value > 0 ? '+' : ''}${window.MacroWatchFrontend.formatDisplayNumber(absolute ? Math.abs(value) : value, { maximumFractionDigits: 1 })}%`;
   const duration = value => value == null ? '—' : `${window.MacroWatchFrontend.formatDisplayNumber(value)}일`;
   function showCycle(item, cycle, metrics) {
-    if (activeMode === 'current') {
-      $('historical-cycle-panel').hidden = true;
-      return;
-    }
     $('historical-cycle-panel').hidden = false;
     $('historical-cycle-state').textContent = cycle.status === 'confirmed' ? 'CONFIRMED CYCLE' : cycle.status === 'in_progress' ? 'IN PROGRESS' : 'DRAFT';
     $('historical-cycle-name').textContent = item.name;
@@ -78,7 +74,7 @@
     }
   }
   function isCurrentCase(item) {
-    return cycleData.marketCycle(item, item.primaryIndex).status === 'in_progress';
+    return Object.values(item.markets).some(cycle => cycle.status !== 'confirmed');
   }
   function activeCaseButton() {
     document.querySelectorAll('[data-historical-case]').forEach(button => button.classList.toggle('is-active', button.dataset.historicalCase === activeCase?.code));
@@ -123,7 +119,12 @@
     if (!item) return;
     if (!isCurrentCase(item)) activeHistoricalCode = item.code;
     activeCase = item; activeCaseButton();
-    render(item.primaryIndex);
+    return render(item.primaryIndex);
+  }
+  function updateModeAvailability() {
+    const hasHistorical = cases.some(item => !isCurrentCase(item));
+    const hasCurrent = cases.some(isCurrentCase);
+    for (const button of modeButtons) button.disabled = button.dataset.historicalMode === 'current' ? !hasCurrent : !hasHistorical;
   }
   function setMode(mode) {
     const currentCases = cases.filter(isCurrentCase);
@@ -138,11 +139,12 @@
     }
     const currentMode = mode === 'current';
     $('historical-stage').classList.toggle('is-current-mode', currentMode);
-    $('historical-case-panel').hidden = currentMode;
+    $('historical-past-sidebar').hidden = currentMode;
+    $('historical-current-sidebar').hidden = !currentMode;
     $('historical-toolbar-title').textContent = currentMode ? '현재 국면 차트' : '과거 국면 차트';
-    $('historical-cycle-panel').hidden = currentMode;
     const desired = currentMode ? available[0] : available.find(item => item.code === activeHistoricalCode) || available[0];
-    selectCase(desired.code);
+    if (currentMode) $('historical-current-case-name').textContent = desired.name;
+    return selectCase(desired.code);
   }
   async function initialize() {
     try {
@@ -163,8 +165,7 @@
       if (!cases.length) { state('empty', '저장된 Historical Case가 없습니다.'); return; }
       renderCaseList();
       const historicalCases = cases.filter(item => !isCurrentCase(item));
-      const currentCases = cases.filter(isCurrentCase);
-      for (const button of modeButtons) button.disabled = button.dataset.historicalMode === 'current' ? !currentCases.length : !historicalCases.length;
+      updateModeAvailability();
       setMode(historicalCases.length ? 'history' : 'current');
     } catch (error) {
       state('error', 'Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');
@@ -186,7 +187,9 @@
       await caseRepository.save(activeCase.code, activeCode, values, currentUser.id);
       cases = await caseRepository.load();
       activeCase = cases.find(item => item.code === activeCase.code);
-      renderCaseList(); activeCaseButton(); await render(activeCode);
+      renderCaseList(); updateModeAvailability();
+      if (!isCurrentCase(activeCase)) activeHistoricalCode = activeCase.code;
+      await setMode(isCurrentCase(activeCase) ? activeMode : 'history');
       output.textContent = '저장 완료';
     } catch (error) {
       output.textContent = `저장 오류: ${error?.message || '알 수 없는 오류'}`;

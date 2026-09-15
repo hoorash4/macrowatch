@@ -159,7 +159,7 @@ Historical Insight는 단순 과거 차트 조회가 아니라 다음 흐름을 
 - Historical Insight Phase 1은 원천 조회·차트·화면 상태를 분리하여 실제 지수 렌더링, 지수 전환, 전체 기간 복귀, 로딩/빈 데이터/오류 재시도를 구현했다.
 - 10개 Historical Case의 설명·관찰 범위는 `historical_cases`, 사례 × 시장별 확정 날짜는 `historical_case_market_cycles`에 저장한다. 지수 탭을 전환하면 해당 시장의 START/PEAK/TROUGH와 파생 성과가 함께 전환된다. 종가·상승률·하락률·drawdown·기간은 canonical 지수에서 계산하며, 진행 중인 AI/반도체 상승장의 시장별 미확정 peak/trough는 null로 유지한다. 한국 IT버블은 닷컴버블의 KOSPI 비교로 포함하고 별도 사례로 만들지 않는다.
 - Phase 7 기준점 팩트는 `historical_case_anchor_facts` 보안 호출자 뷰에서 원천값을 복제하지 않고 `economic_chart_series_points`에 연결한다. 일·주·월 지표별 공개 지연과 최대 허용 이력을 적용해 기준일 이후 정보가 섞이지 않게 하며, 미확정 기준점에는 팩트를 만들지 않는다. 기준점 팩트는 내부 후속 분석용이며 현재 프론트엔드에는 직접 표시하지 않는다.
-- Historical Insight 화면은 `과거사례 분석`과 `현재국면 분석` 탭으로 분리한다. 진행 중인 사례는 과거 목록에서 제외하며, 현재국면 화면에서는 미확정 PEAK/TROUGH를 포함하는 과거 사이클 현황을 표시하지 않는다.
+- Historical Insight 화면은 `과거사례 분석`과 `현재국면 분석` 탭으로 분리하되 동일한 화면 골격을 공유한다. 진행 중인 사례는 과거 목록에서 제외하고 현재국면 왼쪽 패널에는 현재국면 제목과 차트 추가 지표 목록을 둔다. 각 시장의 TROUGH 저장 시 해당 사이클을 확정하며, 모든 시장 사이클이 확정된 사례는 과거사례 목록으로 이동한다.
 
 현재 상태를 판단할 때는 항상 `main`의 최신 커밋과 실제 GitHub Actions/Supabase 상태를 다시 확인한다. 이 문서의 날짜나 과거 실행 번호를 현재 상태로 간주하지 않는다.
 
