@@ -153,7 +153,7 @@ test('reference timing rewards earlier leading pivots across the full relevance 
 
 test('structural direction decides relationship while correlation only controls confidence and bonus',()=>{
   const a=analysis(),market=Array.from({length:25},(_,index)=>month(index,100+index*index)),positive=market.map(row=>({...row})),inverse=market.map(row=>({...row,value:300-row.value})),flat=market.map(row=>({...row,value:10})),referenceDate=market[12].time;
-  const positiveResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{previousRegime:'sideways',nextRegime:'rising'}),inverseResult=a.relationshipForReference(inverse,market,{frequency:'M'},'START',referenceDate,{nextRegime:'falling'}),weakResult=a.relationshipForReference(flat,market,{frequency:'M'},'START',referenceDate,{nextRegime:'rising'}),conflictingResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{nextRegime:'falling'}),unclearResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{nextRegime:'sideways'});
+  const positiveResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{previousRegime:'sideways',nextRegime:'rising'}),inverseResult=a.relationshipForReference(inverse,market,{frequency:'M'},'START',referenceDate,{previousRegime:'rising',nextRegime:'falling'}),weakResult=a.relationshipForReference(flat,market,{frequency:'M'},'START',referenceDate,{previousRegime:'falling',nextRegime:'rising'}),conflictingResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{previousRegime:'rising',nextRegime:'falling'}),unclearResult=a.relationshipForReference(positive,market,{frequency:'M'},'START',referenceDate,{previousRegime:'rising',nextRegime:'sideways'});
   assert.equal(positiveResult.relationship,'positive');assert.ok(positiveResult.bonus>0);assert.equal(inverseResult.relationship,'inverse');assert.ok(inverseResult.bonus>0);
   assert.equal(weakResult.relationship,'positive');assert.equal(weakResult.confidence,0);assert.equal(weakResult.bonus,0);
   assert.equal(conflictingResult.relationship,'inverse');assert.equal(conflictingResult.confidence,0);assert.equal(conflictingResult.bonus,0);
@@ -161,14 +161,26 @@ test('structural direction decides relationship while correlation only controls 
 });
 
 test('missing correlation data does not downgrade a confirmed structural relationship',()=>{
-  const a=analysis(),rows=[month(0,10),month(1,20)],result=a.relationshipForReference(rows,[],{frequency:'M'},'PEAK',rows[1].time,{confirmed:true,nextRegime:'rising'}),ambiguous=a.relationshipForReference(rows,rows,{frequency:'M'},'START',rows[1].time,{confirmed:true,nextRegime:'rising',structuralAmbiguity:true});
+  const a=analysis(),rows=[month(0,10),month(1,20)],result=a.relationshipForReference(rows,[],{frequency:'M'},'PEAK',rows[1].time,{confirmed:true,previousRegime:'falling',nextRegime:'rising'}),ambiguous=a.relationshipForReference(rows,rows,{frequency:'M'},'START',rows[1].time,{confirmed:true,previousRegime:'falling',nextRegime:'rising',structuralAmbiguity:true});
   assert.equal(result.relationship,'inverse');assert.equal(result.confidence,0);assert.equal(result.bonus,0);assert.equal(ambiguous.relationship,'unclear');
 });
 
-test('one cycle keeps the first clear relationship and records later conflicts without changing pivots',()=>{
-  const a=analysis(),result=(referenceType,pivotDate,relationship,baseScore=70,relationshipBonus=5)=>({referenceType,pivotDate,regimeBoundaryDate:pivotDate,relationship,relationshipConfidence:.8,relationshipBonus,baseScore,score:baseScore+relationshipBonus,structuralScore:90,timingScore:80}),start=result('START','2020-01-01','unclear'),peak=result('PEAK','2020-06-01','inverse'),trough=result('TROUGH','2020-12-01','positive'),normalized=a.applyCycleRelationship({START:start,PEAK:peak,TROUGH:trough});
+test('reference relationships compare transition roles instead of only the next direction',()=>{
+  const a=analysis(),relation=(type,previousRegime,nextRegime)=>a.structuralRelationship(type,{previousRegime,nextRegime,confirmed:true});
+  assert.equal(relation('START','falling','rising'),'positive');assert.equal(relation('START','sideways','rising'),'positive');assert.equal(relation('START','rising','falling'),'inverse');assert.equal(relation('START','sideways','falling'),'inverse');assert.equal(relation('START','rising','sideways'),'unclear');
+  assert.equal(relation('PEAK','rising','falling'),'positive');assert.equal(relation('PEAK','sideways','falling'),'positive');assert.equal(relation('PEAK','falling','rising'),'inverse');
+  assert.equal(relation('TROUGH','falling','rising'),'positive');assert.equal(relation('TROUGH','falling','sideways'),'positive');assert.equal(relation('TROUGH','rising','falling'),'inverse');assert.equal(relation('TROUGH','rising','sideways'),'inverse');
+});
+
+test('one cycle compares both hypotheses globally and records conflicts without changing pivots',()=>{
+  const a=analysis(),result=(referenceType,pivotDate,relationship,baseScore=70,relationshipBonus=5)=>({referenceType,pivotDate,regimeBoundaryDate:pivotDate,relationship,relationshipConfidence:.8,relationshipBonus,baseScore,score:baseScore+relationshipBonus,structuralScore:90,timingScore:80}),start=result('START','2020-01-01','unclear'),peak=result('PEAK','2020-06-01','inverse',90),trough=result('TROUGH','2020-12-01','positive',50),normalized=a.applyCycleRelationship({START:start,PEAK:peak,TROUGH:trough});
   assert.equal(normalized.cycleRelationship,'inverse');assert.deepEqual(Array.from(normalized.results,item=>item.relationship),['inverse','inverse','inverse']);assert.deepEqual(Array.from(normalized.results,item=>item.pivotDate),[start.pivotDate,peak.pivotDate,trough.pivotDate]);
   assert.equal(normalized.byReference.START.relationshipStatus,'unresolved_evidence');assert.equal(normalized.byReference.START.relationshipBonus,0);assert.equal(normalized.byReference.PEAK.relationshipStatus,'aligned');assert.equal(normalized.byReference.PEAK.relationshipBonus,5);assert.equal(normalized.byReference.TROUGH.relationshipStatus,'conflict');assert.equal(normalized.byReference.TROUGH.nativeRelationship,'positive');assert.equal(normalized.byReference.TROUGH.relationshipBonus,0);assert.equal(normalized.byReference.TROUGH.score,trough.baseScore);
+});
+
+test('cycle hypothesis selection is not greedy on START and stays unresolved when neither side dominates',()=>{
+  const a=analysis(),result=(referenceType,pivotDate,relationship,baseScore)=>({referenceType,pivotDate,regimeBoundaryDate:pivotDate,relationship,relationshipConfidence:0,relationshipBonus:0,baseScore,score:baseScore,structuralScore:90,timingScore:80}),positive=a.applyCycleRelationship({START:result('START','2020-01-01','inverse',50),PEAK:result('PEAK','2020-06-01','positive',70),TROUGH:result('TROUGH','2020-12-01','positive',60)}),unresolved=a.applyCycleRelationship({START:null,PEAK:result('PEAK','2020-06-01','inverse',70),TROUGH:result('TROUGH','2020-12-01','positive',65)});
+  assert.equal(positive.cycleRelationship,'positive');assert.ok(positive.results.every(item=>item.relationship==='positive'));assert.equal(unresolved.cycleRelationship,'unresolved');assert.ok(unresolved.results.every(item=>item.relationship==='unclear'&&item.score===item.baseScore));
 });
 
 test('an unresolved cycle keeps every structural pivot without relationship penalties',()=>{
