@@ -51,12 +51,6 @@ test('selection starts with only the index chart and retains explicit indicator 
   assert.equal(state.reconcile(items).active,null);assert.equal(state.snapshot().checked.length,0);state.toggle('B',true);state.activate('B');assert.equal(state.snapshot().active,'B');state.reconcile(items.slice(1));assert.equal(state.snapshot().active,'B');
 });
 
-test('display window spans twenty-four months around a confirmed cycle and reaches latest for current',()=>{
-  const api=load('assets/js/historical-insight/historical-indicator-analysis.js','MacroWatchHistoricalIndicatorAnalysis'),item={searchStart:'2018-01-01'};
-  assert.deepEqual({...api.displayWindow(item,{startDate:'2020-03-31',troughDate:'2022-12-31'},'2026-09-15')},{from:'2018-03-31',to:'2024-12-31'});
-  assert.deepEqual({...api.displayWindow(item,{startDate:'2022-12-28',troughDate:null},'2026-09-15')},{from:'2020-12-28',to:'2026-09-15'});
-});
-
 test('US indices exclude Korea-only indicators while KOSPI keeps both countries',()=>{
   const ctx={window:{MacroWatchEconomicSeriesRegistry:{allSeries:[{code:'US2Y'},{code:'KR3Y'},{code:'KR_POLICY_RATE'},{code:'KOSPI_PBR'},{code:'USDKRW'}]}}};
   vm.runInNewContext(read('assets/js/historical-insight/historical-indicator-data.js'),ctx);
@@ -81,7 +75,7 @@ test('historical indicator UI hides the indicator axis and uses dashed pivot gui
   assert.match(chart,/priceScaleId:'left'/);assert.match(chart,/leftPriceScale: \{ visible: false/);
   assert.match(chart,/crosshairMarkerVisible:false/);assert.doesNotMatch(chart,/line\.setMarkers/);
   assert.match(chart,/historical-indicator-pivot-line/);assert.match(chart,/timeToCoordinate/);
-  assert.match(controller,/displayWindow/);assert.match(controller,/context\.displayRange\.from,context\.displayRange\.to,0/);
+  assert.doesNotMatch(controller,/displayWindow|displayRange/);
   assert.match(controller,/주가 피봇 가능성|historical-cycle-signal/);
   assert.match(controller,/과거에 한 번이라도 유효했던 선행·동행 지표 전체를 매일 감시합니다/);
   assert.match(controller,/historical-filter'\)\.hidden=currentMode/);

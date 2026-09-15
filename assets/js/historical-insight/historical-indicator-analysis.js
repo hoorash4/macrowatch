@@ -9,8 +9,6 @@
   });
   const dayNumber=value=>Math.floor(Date.parse(`${value}T00:00:00Z`)/86400000);
   const daysBetween=(a,b)=>dayNumber(b)-dayNumber(a);
-  function shiftMonths(value,amount){const [year,month,day]=value.split('-').map(Number),target=new Date(Date.UTC(year,month-1+amount,1)),lastDay=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();target.setUTCDate(Math.min(day,lastDay));return target.toISOString().slice(0,10);}
-  function displayWindow(item,cycle,latestDate){const start=cycle.startDate||item.searchStart,from=shiftMonths(start,-24),to=cycle.troughDate?shiftMonths(cycle.troughDate,24):(latestDate||cycle.peakDate||start);return Object.freeze({from,to});}
   const validRows=rows=>rows.filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.time)&&Number.isFinite(row.value)).sort((a,b)=>a.time.localeCompare(b.time));
   function detectPivots(rows,frequency){
     const data=validRows(rows),rule=FREQUENCY_RULES[frequency]||FREQUENCY_RULES.M,out=[];
@@ -48,10 +46,10 @@
   }
   function analysisEnd(item,cycle){return item.searchEnd||cycle.troughDate||cycle.peakDate||cycle.startDate;}
   function analyzeHistorical(meta,rows,item,cycle){
-    const source=validRows(rows),end=analysisEnd(item,cycle),data=source.filter(row=>row.time>=item.searchStart&&row.time<=end),pivots=detectPivots(data,meta.frequency);
+    const end=analysisEnd(item,cycle),data=validRows(rows).filter(row=>row.time>=item.searchStart&&row.time<=end),pivots=detectPivots(data,meta.frequency);
     const references=[['START',cycle.startDate,cycle.peakDate||end],['PEAK',cycle.peakDate,cycle.troughDate||end],['TROUGH',cycle.troughDate,end]];
     const results=references.map(args=>resultForReference(data,pivots,meta.frequency,...args)).filter(Boolean);
-    return Object.freeze({meta,rows:source,results:Object.freeze(results)});
+    return Object.freeze({meta,rows:data,results:Object.freeze(results)});
   }
   function analyzeCurrent(meta,rows,startDate,endDate){
     const data=validRows(rows).filter(row=>row.time>=startDate&&row.time<=endDate),pivots=detectPivots(data,meta.frequency),rule=FREQUENCY_RULES[meta.frequency]||FREQUENCY_RULES.M;
@@ -78,5 +76,5 @@
     return data.map(row=>Object.freeze({time:row.time,value:span?(row.value-min)/span*100:50,rawValue:row.value}));
   }
   const qualifies=(analysis,strength)=>analysis.results.some(result=>result.timingType!=='lagging'&&result.trendConsistency>=FILTER_THRESHOLDS[strength]);
-  window.MacroWatchHistoricalIndicatorAnalysis=Object.freeze({FILTER_THRESHOLDS,CURRENT_SIGNAL_POLICY,FREQUENCY_RULES,detectPivots,regression,analyzeHistorical,analyzeCurrent,currentPivotProbability,normalizeForDisplay,qualifies,analysisEnd,displayWindow});
+  window.MacroWatchHistoricalIndicatorAnalysis=Object.freeze({FILTER_THRESHOLDS,CURRENT_SIGNAL_POLICY,FREQUENCY_RULES,detectPivots,regression,analyzeHistorical,analyzeCurrent,currentPivotProbability,normalizeForDisplay,qualifies,analysisEnd});
 })();
