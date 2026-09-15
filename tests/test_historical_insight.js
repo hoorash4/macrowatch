@@ -262,3 +262,8 @@ test('current mode keeps the common analysis layout and replaces the left list w
   assert.match(f.nodes.get('historical-chart-meta').textContent,/AI\/반도체 상승장/);
   assert.equal(f.nodes.get('historical-stage').classList.contains('is-current-mode'),true);
 });
+test('current screening bounds retrospective validation and stops after the first meaningful case',()=>{
+  const source=read('assets/js/historical-insight/historical-insight.js');
+  assert.match(source,/pastWindow=indicatorAnalysis\.displayWindow\(past,pastCycle,pastEnd\),pastRows=rows\.filter/);
+  assert.match(source,/if\(analysis\.visible\)return\{item,rows,historicalScore:analysis\.overallScore,meaningful:true\}/);
+});
