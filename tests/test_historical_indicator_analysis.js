@@ -16,6 +16,7 @@ test('regime, relevance, scale, and scoring policies are centralized without obs
   assert.deepEqual({...a.ANALYSIS_POLICY.relevanceDays},{shortBefore:92,longBefore:183,after:31});
   assert.deepEqual({...a.ANALYSIS_POLICY.referenceWeights},{timing:.6,duration:.4});
   assert.doesNotMatch(source,/monthlySamples|stateStarts|extremeForBoundary|directionalChangeThreshold|\.025/);
+  assert.doesNotMatch(source,/COVID|US2Y|RETAIL|2020-|2021-|2022-|코로나|소매/);
 });
 
 test('six-month rise, one-month correction, and a new high remain one rising regime',()=>{
@@ -63,20 +64,20 @@ test('watch retains a recent confirmed contribution and probability rolls provis
   assert.equal(current.evidence.status,'watch');assert.ok(current.evidence.retainedPivot);assert.equal(current.evidence.contribution,a.ANALYSIS_POLICY.contribution.watchRetained);assert.equal(probability.probability,100);
 });
 
-test('COVID US2Y can detect a late-January sideways-to-falling boundary with a one-month minimum',()=>{
-  const a=analysis(),rows=[];for(let i=0;i<213;i++){const d=new Date(Date.UTC(2019,8,1+i)),date=d.toISOString().slice(0,10);let value;if(date<='2019-10-01')value=1.8-i*.004;else if(date<'2020-01-24')value=1.56+(i%7)*.001;else value=Math.max(.2,1.56-(i-145)*.035);rows.push({time:date,value});}
+test('a daily low-volatility plateau confirms its falling boundary only after a scale-aware break',()=>{
+  const a=analysis(),rows=[];for(let i=0;i<213;i++){const d=new Date(Date.UTC(2000,0,1+i));let value;if(i<31)value=1.8-i*.004;else if(i<145)value=1.56+(i%7)*.001;else value=Math.max(.2,1.56-(i-145)*.035);rows.push({time:d.toISOString().slice(0,10),value});}
   const path=a.detectRetrospectiveRegimes(rows,{frequency:'D',minimumRegimeDays:31}),pivot=path.pivots.filter(x=>x.previousRegime==='sideways'&&x.nextRegime==='falling').at(-1);
-  assert.ok(path.pivots.some(x=>x.previousRegime==='falling'&&x.nextRegime==='sideways'));assert.ok(pivot);assert.match(pivot.pivotDate,/^2020-01-2/);assert.equal(pivot.requiredMinimumDays,31);
+  assert.ok(path.pivots.some(x=>x.previousRegime==='falling'&&x.nextRegime==='sideways'));assert.ok(pivot);assert.ok(pivot.pivotDate>rows[145].time);assert.equal(pivot.requiredMinimumDays,31);
 });
 
-test('2022 US2Y rising path does not invent a May 2021 pivot',()=>{
-  const a=analysis(),rows=[];for(let i=0;i<20;i++)rows.push({time:new Date(Date.UTC(2021,i,1)).toISOString().slice(0,10),value:.15+i*.12});
-  const path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:92});assert.equal(path.pivots.some(x=>x.pivotDate.startsWith('2021-05')),false);assert.deepEqual(Array.from(path.regimes,x=>x.type),['rising']);
+test('a monotonic monthly rise stays one regime without intermediate pivots',()=>{
+  const a=analysis(),rows=[];for(let i=0;i<20;i++)rows.push({time:new Date(Date.UTC(2000,i,1)).toISOString().slice(0,10),value:.15+i*.12});
+  const path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:92});assert.equal(path.pivots.length,0);assert.deepEqual(Array.from(path.regimes,x=>x.type),['rising']);
 });
 
-test('2021 retail sales marks April decline and September trough without a July pivot',()=>{
-  const a=analysis(),values=[100,100,100,96,92,88,84,80,76,82,88,94],rows=values.map((value,index)=>({time:new Date(Date.UTC(2021,index,1)).toISOString().slice(0,10),value})),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31});
-  assert.ok(path.pivots.some(x=>x.pivotDate==='2021-04-01'&&x.nextRegime==='falling'));assert.ok(path.pivots.some(x=>x.pivotDate==='2021-09-01'&&x.previousRegime==='falling'));assert.equal(path.pivots.some(x=>x.pivotDate==='2021-07-01'),false);
+test('a monthly fall and sustained recovery use trend boundaries instead of a local midpoint',()=>{
+  const a=analysis(),values=[100,100,100,96,92,88,84,80,76,82,88,94],rows=values.map((value,index)=>({time:new Date(Date.UTC(2000,index,1)).toISOString().slice(0,10),value})),path=a.detectRetrospectiveRegimes(rows,{frequency:'M',minimumRegimeDays:31});
+  assert.ok(path.pivots.some(x=>x.pivotDate===rows[3].time&&x.nextRegime==='falling'));assert.ok(path.pivots.some(x=>x.pivotDate===rows[8].time&&x.previousRegime==='falling'));assert.equal(path.pivots.some(x=>x.pivotDate===rows[6].time),false);
 });
 
 test('low-scoring meaningful indicators remain visible and sort by score with deterministic ties',()=>{
