@@ -77,8 +77,10 @@
   }
   function focusCase() {
     if (!chart || !activeRows.length || !activeCase) return;
-    const inRange = activeRows.filter(row => row.time >= activeCase.searchStart && (!activeCase.searchEnd || row.time <= activeCase.searchEnd));
-    if (inRange.length) chart.focus(inRange[0].time, inRange.at(-1).time);
+    const cycle = cycleData.marketCycle(activeCase, activeCode);
+    const from = cycle.startDate || activeCase.searchStart;
+    const to = cycle.troughDate || cycle.peakDate || activeRows.at(-1).time;
+    chart.focus(from, to, .12);
   }
   async function render(code) {
     const token = ++requestToken;

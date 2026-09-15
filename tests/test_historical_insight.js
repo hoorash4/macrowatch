@@ -118,6 +118,15 @@ test('cycle summary gives market context and performance figures strong visual h
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #15803d/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #dc2626/);
 });
+test('case range keeps the line continuous while placing cycle markers inside both chart edges', () => {
+  const controller=read('assets/js/historical-insight/historical-insight.js');
+  const chart=read('assets/js/historical-insight/historical-index-chart.js');
+  assert.match(controller,/cycle\.troughDate \|\| cycle\.peakDate \|\| activeRows\.at\(-1\)\.time/);
+  assert.match(controller,/chart\.focus\(from, to, \.12\)/);
+  assert.match(chart,/span \* markerInset \/ \(1 - markerInset \* 2\)/);
+  assert.match(chart,/from: Math\.max\(0, startIndex - context\)/);
+  assert.match(chart,/to: Math\.min\(data\.length - 1, endIndex \+ context\)/);
+});
 function ui() {
   const nodes=new Map();
   const make = () => ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',

@@ -4,6 +4,7 @@
   function create(host) {
     let chart = null;
     let series = null;
+    let data = [];
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     function ensure() {
@@ -26,6 +27,7 @@
     }
     return Object.freeze({
       setData(rows) {
+        data = rows;
         if (!rows.length) { series?.setData([]); series?.setMarkers([]); return; }
         ensure();
         series.setData(rows);
@@ -41,13 +43,25 @@
         series.setMarkers(points.map(point => ({ time: point.row.time, ...style[point.type],
           text: `${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}` })));
       },
-      focus(from, to) { if (chart && from && to) chart.timeScale().setVisibleRange({ from, to }); },
+      focus(from, to, markerInset = .12) {
+        if (!chart || !from || !to || !data.length) return;
+        const startIndex = data.findIndex(row => row.time >= from);
+        let endIndex = data.findLastIndex(row => row.time <= to);
+        if (startIndex < 0 || endIndex < startIndex) return;
+        const span = Math.max(1, endIndex - startIndex);
+        const context = Math.max(1, span * markerInset / (1 - markerInset * 2));
+        chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, startIndex - context),
+          to: Math.min(data.length - 1, endIndex + context),
+        });
+      },
       fit() { chart?.timeScale().fitContent(); },
       destroy() {
         window.removeEventListener('macrowatch:themechange', updateLine);
         chart?.remove();
         chart = null;
         series = null;
+        data = [];
       },
     });
   }
