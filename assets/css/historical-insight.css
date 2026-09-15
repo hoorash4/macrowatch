@@ -96,10 +96,10 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-indicator-accordion summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--theme-text-primary); font-size: 13px; font-weight: 850; cursor: pointer; }
 .historical-indicator-accordion summary small { color: #2563eb; font-size: 10px; }
 .historical-indicator-list { display: grid; gap: 4px; margin-top: 9px; max-height: 410px; overflow: auto; }
-.historical-indicator-list label { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 8px 7px; border-radius: 7px; color: var(--theme-text-secondary); font-size: 11px; font-weight: 700; cursor: pointer; }
+.historical-indicator-list label { display: grid; grid-template-columns: 16px minmax(0,1fr); align-items: center; column-gap: 7px; row-gap: 2px; padding: 8px 7px; border-radius: 7px; color: var(--theme-text-secondary); font-size: 11px; font-weight: 700; cursor: pointer; }
 .historical-indicator-list label:hover { background: var(--theme-surface); color: var(--theme-text-primary); }
-.historical-indicator-list input { width: 14px; height: 14px; margin: 0; accent-color: #2563eb; }
-.historical-indicator-list small { color: #2563eb; font-size: 9px; font-weight: 800; }
+.historical-indicator-list input { grid-row: 1 / span 2; width: 14px; height: 14px; margin: 0; accent-color: #2563eb; }
+.historical-indicator-list small { grid-column: 2; color: #2563eb; font-size: 9px; font-weight: 800; line-height: 1.35; }
 .historical-indicator-list small[data-status="active"] { color: #15803d; }
 .historical-indicator-list small[data-status="invalidated"] { color: #dc2626; }
 .historical-indicator-list small[data-status="forming"] { color: #b45309; }
@@ -118,6 +118,9 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-indicator-legend button { padding: 5px 8px 5px 20px; border: 1px solid var(--theme-border); border-radius: 999px; background: var(--theme-surface-elevated); color: var(--theme-text-secondary); font-size: 10px; font-weight: 750; cursor: pointer; position: relative; }
 .historical-indicator-legend button::before { position: absolute; left: 8px; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--indicator-color); transform: translateY(-50%); content: ''; }
 .historical-indicator-legend button.is-active { border-color: var(--indicator-color); color: var(--theme-text-primary); box-shadow: 0 0 0 1px var(--indicator-color); }
+.historical-indicator-pivots { position: absolute!important; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
+.historical-indicator-pivot-line { position: absolute; top: 0; bottom: 26px; width: 0; border-left: 1px dashed var(--indicator-color); opacity: .8; }
+.historical-indicator-pivot-line span { position: absolute; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--indicator-color); color: #fff; font-size: 8px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
 .historical-indicator-detail { padding: 16px 20px; border-top: 1px solid var(--theme-border); background: var(--theme-surface-elevated); }
 .historical-indicator-detail[hidden] { display: none; }
 .historical-indicator-detail-heading { display: flex; align-items: baseline; gap: 10px; }

@@ -162,8 +162,9 @@ test('case range keeps the line continuous while placing cycle markers inside bo
   assert.match(controller,/cycle\.troughDate \|\| cycle\.peakDate \|\| activeRows\.at\(-1\)\.time/);
   assert.match(controller,/chart\.focus\(from,\s*to,\s*\.12\)/);
   assert.match(chart,/span \* markerInset \/ \(1 - markerInset \* 2\)/);
-  assert.match(chart,/from: Math\.max\(0, startIndex - context\)/);
-  assert.match(chart,/to: Math\.min\(data\.length - 1, endIndex \+ context\)/);
+  assert.match(chart,/from: data\[Math\.floor\(Math\.max\(0, startIndex - context\)\)\]\.time/);
+  assert.match(chart,/to: data\[Math\.ceil\(Math\.min\(data\.length - 1, endIndex \+ context\)\)\]\.time/);
+  assert.match(chart,/TROUGH: \{ position: 'belowBar', shape: 'arrowUp'/);
 });
 test('indicator toggles preserve the visible calendar range and keep legend controls clear of the plot', () => {
   const chart=read('assets/js/historical-insight/historical-index-chart.js');

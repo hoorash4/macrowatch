@@ -46,9 +46,23 @@ test('display normalization stays separate from raw values and does not invert d
   assert.deepEqual(Array.from(normalized,row=>row.rawValue),[10,20,30]);
 });
 
-test('selection removes filtered indicators and promotes the first remaining checked indicator',()=>{
+test('selection starts with only the index chart and retains explicit indicator choices',()=>{
   const api=load('assets/js/historical-insight/historical-indicator-selection.js','MacroWatchHistoricalIndicatorSelection'),state=api.create(),items=['A','B','C'].map(code=>({meta:{code}}));
-  assert.equal(state.reconcile(items).active,'A');state.toggle('B',true);state.activate('B');state.toggle('B',false);assert.equal(state.snapshot().active,'A');state.reconcile(items.slice(1));assert.equal(state.snapshot().active,'B');
+  assert.equal(state.reconcile(items).active,null);assert.equal(state.snapshot().checked.length,0);state.toggle('B',true);state.activate('B');assert.equal(state.snapshot().active,'B');state.reconcile(items.slice(1));assert.equal(state.snapshot().active,'B');
+});
+
+test('display window spans twenty-four months around a confirmed cycle and reaches latest for current',()=>{
+  const api=load('assets/js/historical-insight/historical-indicator-analysis.js','MacroWatchHistoricalIndicatorAnalysis'),item={searchStart:'2018-01-01'};
+  assert.deepEqual({...api.displayWindow(item,{startDate:'2020-03-31',troughDate:'2022-12-31'},'2026-09-15')},{from:'2018-03-31',to:'2024-12-31'});
+  assert.deepEqual({...api.displayWindow(item,{startDate:'2022-12-28',troughDate:null},'2026-09-15')},{from:'2020-12-28',to:'2026-09-15'});
+});
+
+test('US indices exclude Korea-only indicators while KOSPI keeps both countries',()=>{
+  const ctx={window:{MacroWatchEconomicSeriesRegistry:{allSeries:[{code:'US2Y'},{code:'KR3Y'},{code:'KR_POLICY_RATE'},{code:'KOSPI_PBR'},{code:'USDKRW'}]}}};
+  vm.runInNewContext(read('assets/js/historical-insight/historical-indicator-data.js'),ctx);
+  const repo=ctx.window.MacroWatchHistoricalIndicators.createRepository({});
+  assert.deepEqual(Array.from(repo.catalog('SP500'),item=>item.code),['US2Y']);
+  assert.deepEqual(Array.from(repo.catalog('KOSPI'),item=>item.code),['US2Y','KR3Y','KR_POLICY_RATE','KOSPI_PBR','USDKRW']);
 });
 
 test('coverage view is canonical, security-invoker, and read-only for authenticated users',()=>{
@@ -60,11 +74,14 @@ test('coverage view is canonical, security-invoker, and read-only for authentica
   assert.match(sql,/grant select[^;]*authenticated, service_role/);
 });
 
-test('historical indicator UI exposes one accordion, a historical filter, dual axes, and accumulating current signal',()=>{
+test('historical indicator UI hides the indicator axis and uses dashed pivot guides',()=>{
   const html=read('historical-insight.html'),chart=read('assets/js/historical-insight/historical-index-chart.js'),controller=read('assets/js/historical-insight/historical-insight.js');
   assert.equal((html.match(/id="historical-indicator-accordion"/g)||[]).length,1);
   assert.match(html,/data-indicator-strength="strong"[\s\S]*data-indicator-strength="standard"[\s\S]*data-indicator-strength="weak"/);
-  assert.match(chart,/priceScaleId:'left'/);assert.match(chart,/leftPriceScale: \{ visible: true/);
+  assert.match(chart,/priceScaleId:'left'/);assert.match(chart,/leftPriceScale: \{ visible: false/);
+  assert.match(chart,/crosshairMarkerVisible:false/);assert.doesNotMatch(chart,/line\.setMarkers/);
+  assert.match(chart,/historical-indicator-pivot-line/);assert.match(chart,/timeToCoordinate/);
+  assert.match(controller,/displayWindow/);assert.match(controller,/context\.displayRange\.from,context\.displayRange\.to,0/);
   assert.match(controller,/주가 피봇 가능성|historical-cycle-signal/);
   assert.match(controller,/과거에 한 번이라도 유효했던 선행·동행 지표 전체를 매일 감시합니다/);
   assert.match(controller,/historical-filter'\)\.hidden=currentMode/);
