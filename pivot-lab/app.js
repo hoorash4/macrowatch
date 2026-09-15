@@ -44,8 +44,21 @@
         {type:'scatter',label:'HIGH',data:highs.map(row=>({x:row.date,y:row.value})),pointRadius:6,pointHoverRadius:8},
         {type:'scatter',label:'LOW',data:lows.map(row=>({x:row.date,y:row.value})),pointRadius:6,pointHoverRadius:8}
       ]},
-      options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'nearest',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label(ctx){return `${ctx.dataset.label}: ${formatValue(ctx.parsed.y,meta.decimals)}`;}}}},scales:{x:{type:'category',grid:{display:false},ticks:{maxTicksLimit:12}},y:{grid:{color:'rgba(148,163,184,.12)'},ticks:{callback:value=>formatValue(value,meta.decimals)}}}}
+      options:{
+        responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'nearest',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label(ctx){return `${ctx.dataset.label}: ${formatValue(ctx.parsed.y,meta.decimals)}`;}}},
+          zoom:{
+            limits:{x:{min:'original',max:'original'}},
+            pan:{enabled:true,mode:'x'},
+            zoom:{wheel:{enabled:true,speed:.08},pinch:{enabled:true},mode:'x'}
+          }
+        },
+        scales:{x:{type:'category',grid:{display:false},ticks:{maxTicksLimit:12}},y:{grid:{color:'rgba(148,163,184,.12)'},ticks:{callback:value=>formatValue(value,meta.decimals)}}}
+      }
     });
+    elements.canvas.ondblclick=()=>chart?.resetZoom();
   }
 
   async function selectSeries(code){
@@ -62,7 +75,7 @@
       elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
       if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);if(chart){chart.destroy();chart=null;}return;}
       draw(meta,points,pivots);
-      setStatus(pivots.length?'임시 테이블에 저장된 HIGH/LOW를 표시했습니다.':'피봇은 아직 계산하지 않았습니다. 원시 시계열만 표시합니다.');
+      setStatus(pivots.length?'전체 시계열에 저장된 HIGH/LOW를 표시했습니다. 휠로 확대/축소할 수 있습니다.':'전체 시계열을 표시합니다. 휠로 확대/축소할 수 있고 더블클릭하면 전체 보기로 돌아옵니다.');
     }catch(error){if(token!==loadToken)return;setStatus(error?.message||String(error),true);elements.pointCount.textContent='데이터 -';elements.pivotCount.textContent='피봇 -';}
   }
 
