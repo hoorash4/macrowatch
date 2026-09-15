@@ -184,7 +184,7 @@ test('indicator toggles preserve the visible calendar range and keep legend cont
   assert.match(controller,/const caseChanged=Boolean\(activeCase&&activeCase\.code!==item\.code\);if\(caseChanged\)\{clearIndicatorSelection\(\);activeIndicatorContext=null;visibleIndicators=\[\];\}/);
   assert.match(controller,/historical-indicator-clear'\)\.addEventListener\('click',\(\)=>clearIndicatorSelection\(true\)\)/);
   assert.match(controller,/if\(renderList&&activeIndicatorContext\)renderIndicators\(activeIndicatorContext\)/);
-  assert.doesNotMatch(controller,/historical-reference-badge/);
+  assert.match(controller,/badge\.className='historical-reference-badge'/);
   assert.match(controller,/activeMode==='history'\?`\$\{Math\.round\(item\.overallScore\)\}점`/);
 });
 function ui() {

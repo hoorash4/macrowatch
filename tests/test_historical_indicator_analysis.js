@@ -94,8 +94,9 @@ test('indicator data spans twenty-four months without changing chart viewport',(
 
 test('UI right-aligns score-only labels, limits selection, and keeps chart comparison behavior',()=>{
   const html=read('historical-insight.html'),css=read('assets/css/historical-insight.css'),chart=read('assets/js/historical-insight/historical-index-chart.js'),controller=read('assets/js/historical-insight/historical-insight.js');
-  assert.match(html,/historical-indicator-clear/);assert.doesNotMatch(html,/data-indicator-strength/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.doesNotMatch(css,/historical-reference-badge/);assert.doesNotMatch(controller,/종합 \$\{Math\.round\(item\.overallScore\)\}점/);
+  assert.match(html,/historical-indicator-clear/);assert.doesNotMatch(html,/data-indicator-strength/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.match(css,/historical-reference-badge\[data-reference="START"\]/);assert.match(css,/historical-reference-badge\[data-reference="PEAK"\]/);assert.match(css,/historical-reference-badge\[data-reference="TROUGH"\]/);assert.doesNotMatch(controller,/종합 \$\{Math\.round\(item\.overallScore\)\}점/);
   assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/rgba\(color,\.3\)/);assert.match(chart,/subscribeClick/);assert.match(controller,/최대 5개/);
+  assert.match(css,/\.historical-indicator-result-grid strong \{[^}]*font-size: 14px/);assert.match(css,/\.historical-indicator-result-grid p \{[^}]*font-size: 13px/);assert.match(controller,/card\.classList\.toggle\('is-empty',!result\)/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
 
