@@ -1,269 +1,186 @@
 (() => {
   'use strict';
 
-  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
-  const median=values=>{if(!values.length)return 0;const a=[...values].sort((x,y)=>x-y),m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2;};
-  const quantile=(values,q)=>{if(!values.length)return 0;const a=[...values].sort((x,y)=>x-y),p=(a.length-1)*q,b=Math.floor(p),r=p-b;return a[b+1]===undefined?a[b]:a[b]+r*(a[b+1]-a[b]);};
-  const odd=v=>v%2?v:v+1;
-
-  function smooth(values,width){
-    if(width<=1)return [...values];
-    const h=Math.floor(width/2);
-    return values.map((_,i)=>median(values.slice(Math.max(0,i-h),Math.min(values.length,i+h+1))));
-  }
-
-  function minMaxSample(rows,maxPoints=1200){
-    if(rows.length<=maxPoints)return rows.map((row,index)=>({...row,originalIndex:index}));
-    const bucket=Math.max(2,Math.ceil(rows.length/(maxPoints/2)));
-    const out=[];
-    for(let start=0;start<rows.length;start+=bucket){
-      const end=Math.min(rows.length,start+bucket);
-      let minI=start,maxI=start;
-      for(let i=start+1;i<end;i++){
-        if(rows[i].value<rows[minI].value)minI=i;
-        if(rows[i].value>rows[maxI].value)maxI=i;
+  function buildMonthlyExtremes(rows){
+    const months=[];
+    let bucket=null;
+    for(let index=0;index<rows.length;index++){
+      const row=rows[index];
+      const month=String(row.time).slice(0,7);
+      if(!bucket||bucket.month!==month){
+        if(bucket)months.push(bucket);
+        bucket={month,high:{...row,index},low:{...row,index}};
+        continue;
       }
-      for(const i of [...new Set([minI,maxI])].sort((a,b)=>a-b))out.push({...rows[i],originalIndex:i});
+      if(row.value>bucket.high.value)bucket.high={...row,index};
+      if(row.value<bucket.low.value)bucket.low={...row,index};
     }
-    if(out[0]?.originalIndex!==0)out.unshift({...rows[0],originalIndex:0});
-    if(out.at(-1)?.originalIndex!==rows.length-1)out.push({...rows.at(-1),originalIndex:rows.length-1});
-    return out;
+    if(bucket)months.push(bucket);
+    return months;
   }
 
-  // Fixed visual coordinate system: the analysis sees the same whole-chart shape a person sees.
-  function normalizeScreen(sampled,values){
-    const ymin=Math.min(...values),ymax=Math.max(...values),yrange=Math.max(ymax-ymin,1e-12);
-    const aspect=2.15;
-    const last=Math.max(1,values.length-1);
-    return values.map((value,i)=>({x:(i/last)*aspect,y:(value-ymin)/yrange,sampleIndex:i,originalIndex:sampled[i].originalIndex}));
-  }
+  function classifyMonthlyMoves(months){
+    const moves=[];
+    for(let i=1;i<months.length;i++){
+      const prev=months[i-1],cur=months[i];
+      const highUp=cur.high.value>prev.high.value;
+      const highDown=cur.high.value<prev.high.value;
+      const lowUp=cur.low.value>prev.low.value;
+      const lowDown=cur.low.value<prev.low.value;
 
-  function pointLineDistance(p,a,b){
-    const dx=b.x-a.x,dy=b.y-a.y,den=Math.hypot(dx,dy);
-    if(den<=1e-12)return Math.hypot(p.x-a.x,p.y-a.y);
-    return Math.abs(dy*p.x-dx*p.y+b.x*a.y-b.y*a.x)/den;
-  }
+      let state='sideways';
+      if(highUp&&lowUp)state='up';
+      else if(highDown&&lowDown)state='down';
+      else if(lowDown&&!highUp)state='down';
+      else if(highUp&&!lowDown)state='up';
 
-  function rdpIndices(points,epsilon){
-    const keep=new Set([0,points.length-1]),stack=[[0,points.length-1]];
-    while(stack.length){
-      const [a,b]=stack.pop();
-      if(b-a<2)continue;
-      let best=-1,bestD=0;
-      for(let i=a+1;i<b;i++){
-        const d=pointLineDistance(points[i],points[a],points[b]);
-        if(d>bestD){bestD=d;best=i;}
-      }
-      if(best>=0&&bestD>epsilon){keep.add(best);stack.push([a,best],[best,b]);}
+      moves.push({monthIndex:i,state,highUp,highDown,lowUp,lowDown});
     }
-    return [...keep].sort((a,b)=>a-b);
+    return moves;
   }
 
-  function regressionSlope(points,from,to){
-    const n=to-from+1;if(n<2)return 0;
-    let mx=0,my=0;
-    for(let i=from;i<=to;i++){mx+=points[i].x;my+=points[i].y;}
-    mx/=n;my/=n;
-    let cov=0,varx=0;
-    for(let i=from;i<=to;i++){const dx=points[i].x-mx;cov+=dx*(points[i].y-my);varx+=dx*dx;}
-    return varx?cov/varx:0;
-  }
+  function smoothStates(moves){
+    if(!moves.length)return [];
+    const states=moves.map(m=>m.state);
 
-  // Long, visually flat areas are structural regimes. Keep both boundaries.
-  function detectPlateaus(points,values){
-    const n=points.length;
-    const half=clamp(Math.round(n*.022),3,Math.max(3,Math.round(n*.050)));
-    const minRun=Math.max(4,Math.round(n*.032));
-    const totalRange=Math.max(Math.max(...values)-Math.min(...values),1e-12);
-    const mask=new Array(n).fill(false);
-
-    for(let i=half;i<n-half;i++){
-      const slice=values.slice(i-half,i+half+1);
-      const range=(quantile(slice,.90)-quantile(slice,.10))/totalRange;
-      const drift=Math.abs(slice.at(-1)-slice[0])/totalRange;
-      const slope=Math.abs(regressionSlope(points,i-half,i+half));
-      mask[i]=range<=.052&&drift<=.030&&slope<=.045;
+    // One isolated contradictory month inside a sustained trend is treated as an internal wave.
+    for(let i=1;i<states.length-1;i++){
+      if(states[i-1]===states[i+1]&&states[i]!==states[i-1])states[i]=states[i-1];
     }
 
-    const zones=[];let start=null;
-    for(let i=0;i<=n;i++){
-      const active=i<n&&mask[i];
-      if(active&&start==null)start=i;
-      if(!active&&start!=null){
-        const end=i-1;
-        if(end-start+1>=minRun)zones.push({start:Math.max(1,start-half),end:Math.min(n-2,end+half)});
-        start=null;
-      }
-    }
-
-    const merged=[];
-    for(const z of zones){
-      const last=merged.at(-1);
-      if(last&&z.start<=last.end+Math.max(2,Math.round(half*.45)))last.end=Math.max(last.end,z.end);
-      else merged.push({...z});
-    }
-    return merged;
-  }
-
-  // Same-direction acceleration/deceleration can be a major bend even without a high/low.
-  // Only very large and sustained angle changes are admitted here.
-  function slopeChangeCandidates(points){
-    const n=points.length;
-    const w=clamp(Math.round(n*.035),4,Math.max(4,Math.round(n*.070)));
-    const candidates=[];
-    for(let i=w;i<n-w;i++){
-      const left=regressionSlope(points,i-w,i),right=regressionSlope(points,i,i+w);
-      const a1=Math.atan(left),a2=Math.atan(right),delta=Math.abs(a2-a1);
-      const localSpan=Math.abs(points[i+w].y-points[i-w].y);
-      const sameDirection=Math.sign(left)===Math.sign(right)&&Math.sign(left)!==0;
-      const strongSameDirection=sameDirection&&delta>=.88&&localSpan>=.075;
-      const strongReversal=!sameDirection&&delta>=.82&&localSpan>=.060;
-      if(strongSameDirection||strongReversal)candidates.push({index:i,score:delta+localSpan});
-    }
-    candidates.sort((a,b)=>b.score-a.score);
-    const chosen=[];
-    const spacing=Math.max(4,Math.round(n*.045));
-    for(const c of candidates){
-      if(chosen.some(x=>Math.abs(x.index-c.index)<spacing))continue;
-      chosen.push(c);
-    }
-    return chosen.map(c=>c.index).sort((a,b)=>a-b);
-  }
-
-  function maxDeviationBetween(points,a,b){
-    let best=0;
-    for(let i=a+1;i<b;i++)best=Math.max(best,pointLineDistance(points[i],points[a],points[b]));
-    return best;
-  }
-
-  // Remove visually small bends before any trend-structure reasoning.
-  function pruneWeakBends(points,indices,protectedSet,epsilon){
-    let out=[...new Set(indices)].sort((a,b)=>a-b),changed=true,guard=0;
-    while(changed&&guard++<100){
-      changed=false;
-      for(let i=1;i<out.length-1;i++){
-        const idx=out[i];
-        if(protectedSet.has(idx))continue;
-        const a=out[i-1],b=out[i+1];
-        const deviation=maxDeviationBetween(points,a,b);
-        const slope1=(points[idx].y-points[a].y)/Math.max(points[idx].x-points[a].x,1e-12);
-        const slope2=(points[b].y-points[idx].y)/Math.max(points[b].x-points[idx].x,1e-12);
-        const angleDelta=Math.abs(Math.atan(slope2)-Math.atan(slope1));
-        if(deviation<=epsilon*1.22&&angleDelta<.70){out.splice(i,1);changed=true;break;}
-      }
+    // Require two consecutive directional months to start a fresh directional regime.
+    // Until then, the interval belongs to sideways/transition rather than creating a tiny trend.
+    const out=[states[0]];
+    for(let i=1;i<states.length;i++){
+      const s=states[i];
+      const prev=out[i-1];
+      if(s===prev){out.push(s);continue;}
+      if(s==='sideways'){out.push('sideways');continue;}
+      const next=states[i+1];
+      out.push(next===s?s:'sideways');
     }
     return out;
   }
 
-  // Core structural rule learned from the marked examples:
-  // a lower-high/lower-low pair inside an established decline is only an internal wave;
-  // a higher-low/higher-high pair inside an established rise is only an internal wave.
-  // Such pairs disappear unless one of them is a protected plateau/slope-regime boundary.
-  // A wave that breaks the prior structural high/low survives naturally because the condition fails.
-  function collapseContinuationWaves(points,indices,protectedSet){
-    let out=[...indices],changed=true,guard=0;
-    while(changed&&guard++<100){
+  function buildRegimes(months,moves,states){
+    if(!states.length)return [];
+    const regimes=[];
+    let startMove=0,state=states[0];
+    for(let i=1;i<=states.length;i++){
+      if(i<states.length&&states[i]===state)continue;
+      regimes.push({
+        state,
+        startMonth:startMove,
+        endMonth:i,
+      });
+      if(i<states.length){startMove=i;state=states[i];}
+    }
+
+    // Merge very short sideways gaps sandwiched by the same directional regime.
+    let changed=true;
+    while(changed){
       changed=false;
-      for(let i=0;i<out.length-3;i++){
-        const a=out[i],b=out[i+1],c=out[i+2],d=out[i+3];
-        if(protectedSet.has(b)||protectedSet.has(c))continue;
-        const A=points[a].y,B=points[b].y,C=points[c].y,D=points[d].y;
-        const downZigzag=A>B&&B<C&&C>D;
-        const upZigzag=A<B&&B>C&&C<D;
-        const downContinuation=downZigzag&&C<A&&D<B;
-        const upContinuation=upZigzag&&C>A&&D>B;
-        if(downContinuation||upContinuation){
-          out.splice(i+1,2);
+      for(let i=1;i<regimes.length-1;i++){
+        const a=regimes[i-1],b=regimes[i],c=regimes[i+1];
+        const span=b.endMonth-b.startMonth;
+        if(b.state==='sideways'&&span<=1&&a.state===c.state&&a.state!=='sideways'){
+          a.endMonth=c.endMonth;
+          regimes.splice(i,2);
           changed=true;
           break;
         }
       }
     }
-    return out;
+    return regimes;
   }
 
-  function classifyAnchor(points,index,prevIndex,nextIndex){
-    const left=(points[index].y-points[prevIndex].y)/Math.max(points[index].x-points[prevIndex].x,1e-12);
-    const right=(points[nextIndex].y-points[index].y)/Math.max(points[nextIndex].x-points[index].x,1e-12);
-    if(left>=0&&right<=0)return 'high';
-    if(left<=0&&right>=0)return 'low';
-    return right-left<0?'high':'low';
-  }
-
-  function snapToRaw(rows,sampled,sampleIndex,type,rawRadius){
-    const center=sampled[sampleIndex].originalIndex;
-    const from=Math.max(0,center-rawRadius),to=Math.min(rows.length-1,center+rawRadius);
-    let pick=center;
-    for(let i=from;i<=to;i++){
-      if(type==='high'&&rows[i].value>rows[pick].value)pick=i;
-      if(type==='low'&&rows[i].value<rows[pick].value)pick=i;
+  function extremeInRegime(months,regime){
+    const from=Math.max(0,regime.startMonth);
+    const to=Math.min(months.length-1,regime.endMonth);
+    if(regime.state==='down'){
+      let best=months[from].low;
+      for(let i=from+1;i<=to;i++)if(months[i].low.value<best.value)best=months[i].low;
+      return {type:'low',point:best};
     }
-    return pick;
+    if(regime.state==='up'){
+      let best=months[from].high;
+      for(let i=from+1;i<=to;i++)if(months[i].high.value>best.value)best=months[i].high;
+      return {type:'high',point:best};
+    }
+    return null;
+  }
+
+  function boundaryPivot(months,left,right){
+    // A directional regime ending into sideways/opposite regime contributes its terminal extreme.
+    if(left.state==='down')return extremeInRegime(months,left);
+    if(left.state==='up')return extremeInRegime(months,left);
+
+    // Sideways ending into a new trend: use the first breakout month's relevant monthly extreme.
+    if(left.state==='sideways'&&right.state==='down'){
+      const m=months[Math.min(months.length-1,right.startMonth+1)];
+      return {type:'low',point:m.low};
+    }
+    if(left.state==='sideways'&&right.state==='up'){
+      const m=months[Math.min(months.length-1,right.startMonth+1)];
+      return {type:'high',point:m.high};
+    }
+    return null;
   }
 
   function detect(rows){
-    if(!Array.isArray(rows)||rows.length<6)return {pivots:[],path:[],diagnostics:{engineVersion:'screen-shape-v2',major:0,sidewaysZones:0,deviation:0}};
-
-    const sampled=minMaxSample(rows,1200);
-    const count=sampled.length;
-    const smoothingWidth=odd(clamp(Math.round(count*.010),1,17));
-    const values=smooth(sampled.map(r=>r.value),smoothingWidth);
-    const points=normalizeScreen(sampled,values);
-
-    // Coarser than v1 on purpose: the first pass should describe the whole chart, not every wiggle.
-    const epsilon=.074;
-    const rdp=rdpIndices(points,epsilon);
-    const plateaus=detectPlateaus(points,values);
-    const slopeChanges=slopeChangeCandidates(points);
-
-    const plateauSet=new Set();
-    for(const z of plateaus){plateauSet.add(z.start);plateauSet.add(z.end);}
-    const slopeSet=new Set(slopeChanges);
-    const protectedSet=new Set([...plateauSet,...slopeSet]);
-
-    let anchors=pruneWeakBends(points,[...rdp,...protectedSet],protectedSet,epsilon);
-    anchors=collapseContinuationWaves(points,anchors,protectedSet);
-    anchors=pruneWeakBends(points,anchors,protectedSet,epsilon*1.08);
-    anchors=anchors.filter(i=>i>0&&i<count-1);
-
-    const rawSnapRadius=Math.max(1,Math.round(rows.length*.004));
-    const pivots=[];
-    for(let pos=0;pos<anchors.length;pos++){
-      const idx=anchors[pos];
-      const prev=pos===0?0:anchors[pos-1];
-      const next=pos===anchors.length-1?count-1:anchors[pos+1];
-      const type=classifyAnchor(points,idx,prev,next);
-      const originalIndex=snapToRaw(rows,sampled,idx,type,rawSnapRadius);
-      if(originalIndex<=0||originalIndex>=rows.length-1)continue;
-      let source='structure',reason='screen-shape-turn';
-      if(plateauSet.has(idx)){source='sideways-boundary';reason='screen-relative-sideways';}
-      else if(slopeSet.has(idx)){source='slope-break';reason='large-screen-angle-change';}
-      pivots.push({type,index:originalIndex,date:rows[originalIndex].time,value:rows[originalIndex].value,source,reason});
+    if(!Array.isArray(rows)||rows.length<8){
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-regime-v1',major:0,sidewaysZones:0,deviation:0}};
     }
 
-    pivots.sort((a,b)=>a.index-b.index);
-    const deduped=[];
-    for(const p of pivots){
-      const last=deduped.at(-1);
-      if(last&&Math.abs(last.index-p.index)<=rawSnapRadius){
-        const rank=x=>x.source==='sideways-boundary'?3:x.source==='slope-break'?2:1;
-        if(rank(p)>rank(last))deduped[deduped.length-1]=p;
+    const months=buildMonthlyExtremes(rows);
+    if(months.length<4){
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-regime-v1',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
+    }
+
+    const moves=classifyMonthlyMoves(months);
+    const states=smoothStates(moves);
+    const regimes=buildRegimes(months,moves,states);
+
+    const candidates=[];
+    for(let i=0;i<regimes.length-1;i++){
+      const left=regimes[i],right=regimes[i+1];
+      const pivot=boundaryPivot(months,left,right);
+      if(!pivot)continue;
+      candidates.push({
+        type:pivot.type,
+        index:pivot.point.index,
+        date:pivot.point.time,
+        value:pivot.point.value,
+        source:'monthly-regime-boundary',
+        reason:`${left.state}-to-${right.state}`,
+      });
+    }
+
+    candidates.sort((a,b)=>a.index-b.index);
+    const pivots=[];
+    for(const p of candidates){
+      const last=pivots.at(-1);
+      if(last&&last.index===p.index)continue;
+      if(last&&last.type===p.type){
+        const better=p.type==='high'?p.value>last.value:p.value<last.value;
+        if(better)pivots[pivots.length-1]=p;
         continue;
       }
-      deduped.push(p);
+      pivots.push(p);
     }
 
+    const sidewaysZones=regimes.filter(r=>r.state==='sideways').length;
     return {
-      pivots:deduped,
-      path:deduped.map(p=>({date:p.date,value:p.value,virtual:false})),
+      pivots,
+      path:pivots.map(p=>({date:p.date,value:p.value,virtual:false})),
       diagnostics:{
-        engineVersion:'screen-shape-v2',
-        major:deduped.filter(p=>p.source==='structure'||p.source==='slope-break').length,
-        sidewaysZones:plateaus.length,
+        engineVersion:'monthly-regime-v1',
+        major:pivots.length,
+        sidewaysZones,
         deviation:0,
-        sampled:count,
+        monthly:months.length,
         raw:rows.length,
-        epsilon
+        regimes:regimes.length,
       }
     };
   }
