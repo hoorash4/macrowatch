@@ -27,6 +27,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/historical-pivot-ai-backfill.yml"
+      - "backend/historical_pivot_ai_backfill.py"
+      - "backend/historical_pivot_ai_score.py"
 
 permissions:
   contents: read
@@ -48,7 +50,7 @@ jobs:
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
           pip install --disable-pip-version-check matplotlib==3.10.6
-      - name: Analyze and persist historical pivots
+      - name: Analyze, score and persist historical pivots
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -72,5 +74,10 @@ jobs:
             LIMIT="$INPUT_LIMIT"
           fi
           args=(--case "$CASE_CODE" --series "$SERIES_CODE" --limit "$LIMIT")
-          if [[ -n "$INDEX_CODE" ]]; then args+=(--index "$INDEX_CODE"); fi
+          score_args=(--case "$CASE_CODE" --series "$SERIES_CODE")
+          if [[ -n "$INDEX_CODE" ]]; then
+            args+=(--index "$INDEX_CODE")
+            score_args+=(--index "$INDEX_CODE")
+          fi
           PYTHONPATH=backend python -m historical_pivot_ai_backfill "${args[@]}"
+          PYTHONPATH=backend python -m historical_pivot_ai_score "${score_args[@]}"
