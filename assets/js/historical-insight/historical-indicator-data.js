@@ -24,4 +24,59 @@
     return Object.freeze({catalog,loadCoverage,load,clearAnalysisData(){coverageCache=null;seriesCache.clear();}});
   }
   window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize});
+
+  // Historical Insight의 기존 피봇 엔진은 보존한다. 다만 Python이 AI 피봇을
+  // 분류·점수화한 저장 결과가 있으면 그 결과를 공식 historical 입력으로 사용한다.
+  const aiScoreCache=new Map();
+  function loadAiScores(caseCode,indexCode){
+    const key=`${caseCode}:${indexCode}`;
+    if(aiScoreCache.has(key))return aiScoreCache.get(key);
+    const config=window.MACROWATCH_CONFIG;
+    const map=new Map();
+    try{
+      if(!config?.supabaseUrl||!config?.supabasePublishableKey){aiScoreCache.set(key,map);return map;}
+      const params=new URLSearchParams({
+        select:'series_code,overall_score,meaningful_reference_count,max_reference_score,reference_coverage_count,coverage_bonus,cycle_relationship,by_reference,results,near_miss_pivots,ai_pivots,ai_regimes,ai_anomalies,scoring_version',
+        case_code:`eq.${caseCode}`,
+        index_code:`eq.${indexCode}`,
+        order:'overall_score.desc'
+      });
+      const xhr=new XMLHttpRequest();
+      xhr.open('GET',`${config.supabaseUrl}/rest/v1/historical_indicator_ai_scores?${params}`,false);
+      xhr.setRequestHeader('apikey',config.supabasePublishableKey);
+      xhr.setRequestHeader('Authorization',`Bearer ${config.supabasePublishableKey}`);
+      xhr.setRequestHeader('Accept','application/json');
+      xhr.send();
+      if(xhr.status>=200&&xhr.status<300){for(const row of JSON.parse(xhr.responseText||'[]'))map.set(String(row.series_code),row);}
+    }catch(error){console.warn('AI pivot score load failed; legacy pivot engine remains available.',error);}
+    aiScoreCache.set(key,map);return map;
+  }
+  const regimeType=value=>({uptrend:'rising',downtrend:'falling',sideways:'sideways'}[value]||value);
+  function aiAnalysis(row,meta,rows){
+    const results=Object.freeze([...(row.results||[])]),nearMissPivots=Object.freeze([...(row.near_miss_pivots||[])]),byReference=Object.freeze(row.by_reference||{});
+    const regimes=Object.freeze((row.ai_regimes||[]).map(item=>Object.freeze({type:regimeType(item.type),startDate:item.start_date,endDate:item.end_date,confidence:item.confidence})));
+    return Object.freeze({
+      meta,rows,regimes,pivots:Object.freeze([...(row.ai_pivots||[])]),technicalPivots:Object.freeze([...(row.ai_pivots||[])]),marketRelevantPivots:results,nearMissPivots,
+      cycleRelationship:row.cycle_relationship||'unresolved',byReference,results,diagnostics:Object.freeze([]),
+      overallScore:Number(row.overall_score||0),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),
+      meaningfulReferenceCount:Number(row.meaningful_reference_count||results.length),maxReferenceScore:Number(row.max_reference_score||0),
+      visible:results.length>0||nearMissPivots.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,
+      anomalies:Object.freeze([...(row.ai_anomalies||[])])
+    });
+  }
+  let analysisApi=null;
+  Object.defineProperty(window,'MacroWatchHistoricalIndicatorAnalysis',{
+    configurable:true,
+    get(){return analysisApi;},
+    set(value){
+      const legacyAnalyze=value.analyzeHistorical;
+      const wrapped=function(meta,rows,item,cycle,marketRows=[]){
+        const caseCode=item?.code||cycle?.caseCode,indexCode=cycle?.indexCode;
+        if(caseCode&&indexCode){const score=loadAiScores(caseCode,indexCode).get(meta.code);if(score)return aiAnalysis(score,meta,rows);}
+        return legacyAnalyze(meta,rows,item,cycle,marketRows);
+      };
+      analysisApi=Object.freeze({...value,analyzeHistorical:wrapped});
+      Object.defineProperty(window,'MacroWatchHistoricalIndicatorAnalysis',{value:analysisApi,writable:false,configurable:false,enumerable:true});
+    }
+  });
 })();
