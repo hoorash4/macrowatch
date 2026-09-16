@@ -19,149 +19,195 @@
     return months;
   }
 
-  function classifyMonthlyMoves(months){
-    const moves=[];
-    for(let i=1;i<months.length;i++){
-      const prev=months[i-1],cur=months[i];
-      const highUp=cur.high.value>prev.high.value;
-      const highDown=cur.high.value<prev.high.value;
-      const lowUp=cur.low.value>prev.low.value;
-      const lowDown=cur.low.value<prev.low.value;
-
-      let state='sideways';
-      if(highUp&&lowUp)state='up';
-      else if(highDown&&lowDown)state='down';
-      else if(lowDown&&!highUp)state='down';
-      else if(highUp&&!lowDown)state='up';
-
-      moves.push({monthIndex:i,state,highUp,highDown,lowUp,lowDown});
-    }
-    return moves;
+  function chartRange(months){
+    let hi=-Infinity,lo=Infinity;
+    for(const m of months){hi=Math.max(hi,m.high.value);lo=Math.min(lo,m.low.value);}
+    return Math.max(hi-lo,1e-12);
   }
 
-  function smoothStates(moves){
-    if(!moves.length)return [];
-    const states=moves.map(m=>m.state);
-
-    // One isolated contradictory month inside a sustained trend is treated as an internal wave.
-    for(let i=1;i<states.length-1;i++){
-      if(states[i-1]===states[i+1]&&states[i]!==states[i-1])states[i]=states[i-1];
+  function regressionSlope(values){
+    const n=values.length;
+    if(n<2)return 0;
+    const mx=(n-1)/2;
+    const my=values.reduce((s,v)=>s+v,0)/n;
+    let cov=0,varx=0;
+    for(let i=0;i<n;i++){
+      const dx=i-mx;
+      cov+=dx*(values[i]-my);
+      varx+=dx*dx;
     }
-
-    // Require two consecutive directional months to start a fresh directional regime.
-    // Until then, the interval belongs to sideways/transition rather than creating a tiny trend.
-    const out=[states[0]];
-    for(let i=1;i<states.length;i++){
-      const s=states[i];
-      const prev=out[i-1];
-      if(s===prev){out.push(s);continue;}
-      if(s==='sideways'){out.push('sideways');continue;}
-      const next=states[i+1];
-      out.push(next===s?s:'sideways');
-    }
-    return out;
+    return varx?cov/varx:0;
   }
 
-  function buildRegimes(months,moves,states){
-    if(!states.length)return [];
-    const regimes=[];
-    let startMove=0,state=states[0];
-    for(let i=1;i<=states.length;i++){
-      if(i<states.length&&states[i]===state)continue;
-      regimes.push({
-        state,
-        startMonth:startMove,
-        endMonth:i,
-      });
-      if(i<states.length){startMove=i;state=states[i];}
-    }
+  function trendEvidence(months,from,to,range){
+    if(to-from<2)return null;
+    const highs=months.slice(from,to+1).map(m=>m.high.value);
+    const lows=months.slice(from,to+1).map(m=>m.low.value);
+    const highNet=(highs.at(-1)-highs[0])/range;
+    const lowNet=(lows.at(-1)-lows[0])/range;
+    const highSlope=regressionSlope(highs)/range;
+    const lowSlope=regressionSlope(lows)/range;
 
-    // Merge very short sideways gaps sandwiched by the same directional regime.
-    let changed=true;
-    while(changed){
-      changed=false;
-      for(let i=1;i<regimes.length-1;i++){
-        const a=regimes[i-1],b=regimes[i],c=regimes[i+1];
-        const span=b.endMonth-b.startMonth;
-        if(b.state==='sideways'&&span<=1&&a.state===c.state&&a.state!=='sideways'){
-          a.endMonth=c.endMonth;
-          regimes.splice(i,2);
-          changed=true;
-          break;
+    const up=highNet>.025&&lowNet>.025&&highSlope>.004&&lowSlope>.004;
+    const down=highNet<-.025&&lowNet<-.025&&highSlope<-.004&&lowSlope<-.004;
+    if(up)return 'up';
+    if(down)return 'down';
+    return null;
+  }
+
+  function findTrendStart(months,from,range){
+    const maxLook=Math.min(months.length-1,from+8);
+    for(let end=from+2;end<=maxLook;end++){
+      const state=trendEvidence(months,from,end,range);
+      if(state)return {state,confirmMonth:end};
+    }
+    return null;
+  }
+
+  function highestHigh(months,from,to){
+    let best=months[from].high;
+    let monthIndex=from;
+    for(let i=from+1;i<=to;i++)if(months[i].high.value>best.value){best=months[i].high;monthIndex=i;}
+    return {point:best,monthIndex};
+  }
+
+  function lowestLow(months,from,to){
+    let best=months[from].low;
+    let monthIndex=from;
+    for(let i=from+1;i<=to;i++)if(months[i].low.value<best.value){best=months[i].low;monthIndex=i;}
+    return {point:best,monthIndex};
+  }
+
+  function extendTrend(months,startMonth,confirmMonth,state,range){
+    const meaningful=range*.018;
+    const maxPause=4;
+
+    if(state==='down'){
+      const start=highestHigh(months,startMonth,confirmMonth);
+      let terminal=lowestLow(months,startMonth,confirmMonth);
+      let lastBreakMonth=terminal.monthIndex;
+
+      for(let i=confirmMonth+1;i<months.length;i++){
+        if(months[i].low.value<terminal.point.value-meaningful){
+          terminal={point:months[i].low,monthIndex:i};
+          lastBreakMonth=i;
+          continue;
         }
+
+        if(i-lastBreakMonth<=maxPause)continue;
+
+        const lookTo=Math.min(months.length-1,i+2);
+        const opposite=trendEvidence(months,Math.max(terminal.monthIndex,i-2),lookTo,range)==='up';
+        const reboundHigh=highestHigh(months,terminal.monthIndex,lookTo).point.value;
+        const reboundMeaningful=reboundHigh>months[terminal.monthIndex].high.value+meaningful;
+        if(opposite||reboundMeaningful)break;
       }
+      return {state,start,terminal,endMonth:terminal.monthIndex};
     }
-    return regimes;
+
+    const start=lowestLow(months,startMonth,confirmMonth);
+    let terminal=highestHigh(months,startMonth,confirmMonth);
+    let lastBreakMonth=terminal.monthIndex;
+
+    for(let i=confirmMonth+1;i<months.length;i++){
+      if(months[i].high.value>terminal.point.value+meaningful){
+        terminal={point:months[i].high,monthIndex:i};
+        lastBreakMonth=i;
+        continue;
+      }
+
+      if(i-lastBreakMonth<=maxPause)continue;
+
+      const lookTo=Math.min(months.length-1,i+2);
+      const opposite=trendEvidence(months,Math.max(terminal.monthIndex,i-2),lookTo,range)==='down';
+      const pullbackLow=lowestLow(months,terminal.monthIndex,lookTo).point.value;
+      const pullbackMeaningful=pullbackLow<months[terminal.monthIndex].low.value-meaningful;
+      if(opposite||pullbackMeaningful)break;
+    }
+    return {state,start,terminal,endMonth:terminal.monthIndex};
   }
 
-  function extremeInRegime(months,regime){
-    const from=Math.max(0,regime.startMonth);
-    const to=Math.min(months.length-1,regime.endMonth);
-    if(regime.state==='down'){
-      let best=months[from].low;
-      for(let i=from+1;i<=to;i++)if(months[i].low.value<best.value)best=months[i].low;
-      return {type:'low',point:best};
+  function buildStructuralTrends(months){
+    const range=chartRange(months);
+    const trends=[];
+    let cursor=0;
+    let guard=0;
+
+    while(cursor<months.length-3&&guard++<200){
+      const found=findTrendStart(months,cursor,range);
+      if(!found){cursor++;continue;}
+
+      const trend=extendTrend(months,cursor,found.confirmMonth,found.state,range);
+      trends.push({...trend,confirmMonth:found.confirmMonth});
+
+      const nextCursor=Math.max(cursor+1,trend.endMonth);
+      if(nextCursor<=cursor)cursor++;
+      else cursor=nextCursor;
     }
-    if(regime.state==='up'){
-      let best=months[from].high;
-      for(let i=from+1;i<=to;i++)if(months[i].high.value>best.value)best=months[i].high;
-      return {type:'high',point:best};
+
+    // If two neighbouring detected trends have the same direction, the later extension wins.
+    // This is the retrospective cancellation rule: an earlier provisional endpoint is removed.
+    const merged=[];
+    for(const t of trends){
+      const last=merged.at(-1);
+      if(last&&last.state===t.state&&t.start.monthIndex<=last.endMonth+4){
+        if(t.state==='down'&&t.terminal.point.value<last.terminal.point.value){
+          last.terminal=t.terminal;
+          last.endMonth=t.endMonth;
+          last.confirmMonth=Math.max(last.confirmMonth,t.confirmMonth);
+        }else if(t.state==='up'&&t.terminal.point.value>last.terminal.point.value){
+          last.terminal=t.terminal;
+          last.endMonth=t.endMonth;
+          last.confirmMonth=Math.max(last.confirmMonth,t.confirmMonth);
+        }
+        continue;
+      }
+      merged.push(t);
     }
-    return null;
+    return {trends:merged,range};
   }
 
-  function boundaryPivot(months,left,right){
-    // A directional regime ending into sideways/opposite regime contributes its terminal extreme.
-    if(left.state==='down')return extremeInRegime(months,left);
-    if(left.state==='up')return extremeInRegime(months,left);
-
-    // Sideways ending into a new trend: use the first breakout month's relevant monthly extreme.
-    if(left.state==='sideways'&&right.state==='down'){
-      const m=months[Math.min(months.length-1,right.startMonth+1)];
-      return {type:'low',point:m.low};
-    }
-    if(left.state==='sideways'&&right.state==='up'){
-      const m=months[Math.min(months.length-1,right.startMonth+1)];
-      return {type:'high',point:m.high};
-    }
-    return null;
+  function pivotFrom(point,type,reason){
+    return {type,index:point.index,date:point.time,value:point.value,source:'monthly-structural-reference',reason};
   }
 
   function detect(rows){
     if(!Array.isArray(rows)||rows.length<8){
-      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-regime-v1',major:0,sidewaysZones:0,deviation:0}};
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-reference-v2',major:0,sidewaysZones:0,deviation:0}};
     }
 
     const months=buildMonthlyExtremes(rows);
     if(months.length<4){
-      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-regime-v1',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-reference-v2',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
     }
 
-    const moves=classifyMonthlyMoves(months);
-    const states=smoothStates(moves);
-    const regimes=buildRegimes(months,moves,states);
-
+    const {trends}=buildStructuralTrends(months);
     const candidates=[];
-    for(let i=0;i<regimes.length-1;i++){
-      const left=regimes[i],right=regimes[i+1];
-      const pivot=boundaryPivot(months,left,right);
-      if(!pivot)continue;
-      candidates.push({
-        type:pivot.type,
-        index:pivot.point.index,
-        date:pivot.point.time,
-        value:pivot.point.value,
-        source:'monthly-regime-boundary',
-        reason:`${left.state}-to-${right.state}`,
-      });
+
+    for(const trend of trends){
+      if(trend.state==='down'){
+        // Downtrend starts from the high-line and ends on the low-line.
+        candidates.push(pivotFrom(trend.start.point,'high','downtrend-start'));
+        candidates.push(pivotFrom(trend.terminal.point,'low','downtrend-end'));
+      }else{
+        // Uptrend starts from the low-line and ends on the high-line.
+        candidates.push(pivotFrom(trend.start.point,'low','uptrend-start'));
+        candidates.push(pivotFrom(trend.terminal.point,'high','uptrend-end'));
+      }
     }
 
     candidates.sort((a,b)=>a.index-b.index);
     const pivots=[];
     for(const p of candidates){
       const last=pivots.at(-1);
-      if(last&&last.index===p.index)continue;
+      if(last&&last.index===p.index){
+        if(last.reason.endsWith('-end')&&p.reason.endsWith('-start'))continue;
+        pivots[pivots.length-1]=p;
+        continue;
+      }
       if(last&&last.type===p.type){
+        // Same-type neighbouring anchors represent one unresolved structure.
+        // Keep only the structurally more extreme point; the earlier provisional point disappears.
         const better=p.type==='high'?p.value>last.value:p.value<last.value;
         if(better)pivots[pivots.length-1]=p;
         continue;
@@ -169,18 +215,18 @@
       pivots.push(p);
     }
 
-    const sidewaysZones=regimes.filter(r=>r.state==='sideways').length;
+    // Path uses only confirmed structural anchors; no synthetic endpoints and no monthly wiggles.
     return {
       pivots,
       path:pivots.map(p=>({date:p.date,value:p.value,virtual:false})),
       diagnostics:{
-        engineVersion:'monthly-regime-v1',
+        engineVersion:'monthly-reference-v2',
         major:pivots.length,
-        sidewaysZones,
+        sidewaysZones:Math.max(0,trends.length-1),
         deviation:0,
         monthly:months.length,
         raw:rows.length,
-        regimes:regimes.length,
+        trends:trends.length,
       }
     };
   }
