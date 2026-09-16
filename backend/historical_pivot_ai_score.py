@@ -1,4 +1,9 @@
-"""Score stored Pivot AI structures for Historical Insight without modifying AI pivots."""
+"""Score stored Pivot AI structures for Historical Insight.
+
+AI finds and grades structural pivot candidates. Python keeps A/B pivots, preserves
+anomalies, and filters C pivots so local waves do not overwhelm the higher-level
+trend used to match market START / PEAK / TROUGH.
+"""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +13,7 @@ from typing import Any
 
 from common import SupabaseRest
 
-SCORING_VERSION = "pivot-ai-score-v1"
+SCORING_VERSION = "pivot-ai-score-v2"
 REFERENCE_ORDER = ("START", "PEAK", "TROUGH")
 REFERENCE_WEIGHTS = {"structural": 0.45, "timing": 0.35, "duration": 0.20}
 OVERALL_WEIGHTS = {"best": 0.70, "mean": 0.30}
@@ -25,6 +30,7 @@ TRANSITION_ROLES = {
     ("falling", "sideways"): ("down_end",),
 }
 REGIME_MAP = {"uptrend": "rising", "downtrend": "falling", "sideways": "sideways"}
+MIN_C_FOLLOW_THROUGH_DAYS = 90
 
 
 def fetch_all(db: SupabaseRest, table: str, params: dict[str, str], page_size: int = 1000) -> list[dict[str, Any]]:
@@ -96,13 +102,25 @@ def transition_for(pivot: dict[str, Any], regimes: list[dict[str, Any]]) -> tupl
         return previous, next_regime
     ptype = str(pivot.get("type") or "")
     direction = str(pivot.get("direction") or "neutral")
-    if ptype in {"major_reversal", "local_reversal"}:
+    if ptype in {"major_reversal", "local_reversal", "anomaly"}:
         return ("rising", "falling") if direction == "high" else ("falling", "rising")
     if ptype == "sideways_entry":
         return ("rising", "sideways") if direction == "high" else ("falling", "sideways")
     if ptype == "sideways_exit":
         return ("sideways", "falling") if direction == "high" else ("sideways", "rising")
     return "sideways", "sideways"
+
+
+def pivot_new_direction(pivot: dict[str, Any], regimes: list[dict[str, Any]]) -> str | None:
+    _, next_regime = transition_for(pivot, regimes)
+    if next_regime in {"rising", "falling"}:
+        return next_regime
+    direction = str(pivot.get("direction") or "")
+    if direction == "high":
+        return "falling"
+    if direction == "low":
+        return "rising"
+    return None
 
 
 def structural_relationship(reference_type: str, previous: str, next_regime: str) -> str:
@@ -125,6 +143,105 @@ def persistence_days(pivot_date: str, next_regime: str, regimes: list[dict[str, 
     terminal = next((row for row in later if row["type"] == opposite), None)
     end = terminal["start"] if terminal else analysis_end
     return max(0, days_between(pivot_date, end))
+
+
+def nearest_extreme(pivots: list[dict[str, Any]], index: int, direction: str, step: int) -> dict[str, Any] | None:
+    cursor = index + step
+    while 0 <= cursor < len(pivots):
+        item = pivots[cursor]
+        if str(item.get("direction") or "") == direction:
+            return item
+        cursor += step
+    return None
+
+
+def c_has_follow_through(pivots: list[dict[str, Any]], index: int, new_direction: str, regimes: list[dict[str, Any]], analysis_end: str) -> bool:
+    """Confirm that a C pivot starts a real higher-level reversal, not a short wiggle."""
+    pivot = pivots[index]
+    pivot_date = str(pivot.get("date"))[:10]
+    persistence = persistence_days(pivot_date, new_direction, regimes, analysis_end)
+    if persistence < MIN_C_FOLLOW_THROUGH_DAYS:
+        return False
+
+    if new_direction == "falling":
+        previous_low = nearest_extreme(pivots, index, "low", -1)
+        later_low = nearest_extreme(pivots, index, "low", 1)
+        if previous_low and later_low:
+            return float(later_low["value"]) < float(previous_low["value"])
+    elif new_direction == "rising":
+        previous_high = nearest_extreme(pivots, index, "high", -1)
+        later_high = nearest_extreme(pivots, index, "high", 1)
+        if previous_high and later_high:
+            return float(later_high["value"]) > float(previous_high["value"])
+
+    # If there is not yet a comparable opposite extreme, keep only a sustained
+    # reversal. This also handles right-edge cases with limited future data.
+    return persistence >= MIN_C_FOLLOW_THROUGH_DAYS * 2
+
+
+def filter_pivots_for_scoring(pivots: list[dict[str, Any]], anomalies: list[dict[str, Any]], regimes: list[dict[str, Any]], analysis_end: str) -> list[dict[str, Any]]:
+    """Return the higher-level pivots that are eligible for market matching.
+
+    A/B are trusted AI structural points. D/angle-only points are stored but not
+    used. C points must oppose the current accepted higher-level direction and
+    demonstrate follow-through. Anomalies are independently preserved.
+    """
+    ordered = sorted((dict(item) for item in pivots), key=lambda item: str(item.get("date") or ""))
+    accepted: list[dict[str, Any]] = []
+    dominant_direction: str | None = None
+
+    for index, pivot in enumerate(ordered):
+        grade = str(pivot.get("grade") or "D").upper()
+        if grade in {"A", "B"}:
+            accepted.append(pivot)
+            next_direction = pivot_new_direction(pivot, regimes)
+            if next_direction:
+                dominant_direction = next_direction
+            continue
+        if grade != "C":
+            continue
+
+        new_direction = pivot_new_direction(pivot, regimes)
+        if not new_direction:
+            continue
+
+        # A C point that merely resumes the already-established higher-level
+        # direction is exactly the local zig-zag we want to suppress.
+        if dominant_direction and new_direction == dominant_direction:
+            continue
+
+        if not c_has_follow_through(ordered, index, new_direction, regimes, analysis_end):
+            continue
+
+        accepted.append(pivot)
+        dominant_direction = new_direction
+
+    # Preserve short but exceptional shocks (e.g. a COVID-like crash) as
+    # independent candidates. They do not redefine the dominant trend by
+    # themselves, but they remain eligible for START/PEAK/TROUGH matching.
+    existing_dates = {str(item.get("date"))[:10] for item in accepted}
+    for anomaly in anomalies or []:
+        anomaly_date = str(anomaly.get("date") or "")[:10]
+        if not anomaly_date or anomaly_date in existing_dates:
+            continue
+        anomaly_type = str(anomaly.get("type") or "")
+        if "down" in anomaly_type:
+            direction = "low"
+        elif "up" in anomaly_type:
+            direction = "high"
+        else:
+            direction = "neutral"
+        accepted.append({
+            "date": anomaly_date,
+            "value": float(anomaly.get("value") or 0.0),
+            "type": "anomaly",
+            "grade": "B",
+            "direction": direction,
+            "confidence": float(anomaly.get("confidence") or 0.0),
+            "anomaly_type": anomaly_type,
+        })
+
+    return sorted(accepted, key=lambda item: str(item.get("date") or ""))
 
 
 def market_duration(reference_type: str, cycle: dict[str, Any]) -> int | None:
@@ -174,7 +291,7 @@ def result_from_pivot(pivot: dict[str, Any], reference_type: str, reference_date
         "relationshipBonus": 0.0,
         "relationshipConfidence": 0.0,
         "pivotSelectionScore": structural,
-        "pivotRole": "market-relevant",
+        "pivotRole": "anomaly" if str(pivot.get("type")) == "anomaly" else "market-relevant",
         "markerStatus": "confirmed",
         "score": base_score,
     }
@@ -185,9 +302,11 @@ def same_pivot(left: dict[str, Any], right: dict[str, Any]) -> bool:
 
 
 def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]:
-    pivots = list(row.get("pivots") or [])
+    ai_pivots = list(row.get("pivots") or [])
+    ai_anomalies = list(row.get("anomalies") or [])
     regimes = normalized_regimes(list(row.get("regimes") or []))
     analysis_end = str(row.get("display_end") or cycle.get("trough_date") or cycle.get("peak_date") or cycle.get("start_date"))
+    pivots = filter_pivots_for_scoring(ai_pivots, ai_anomalies, regimes, analysis_end)
     candidates: dict[str, list[dict[str, Any]]] = {}
     near_miss_candidates: dict[str, list[dict[str, Any]]] = {}
     for reference_type in REFERENCE_ORDER:
@@ -281,9 +400,10 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
         "by_reference": normalized,
         "results": results,
         "near_miss_pivots": near_miss,
-        "ai_pivots": pivots,
+        "ai_pivots": ai_pivots,
+        "filtered_pivots": pivots,
         "ai_regimes": row.get("regimes") or [],
-        "ai_anomalies": row.get("anomalies") or [],
+        "ai_anomalies": ai_anomalies,
         "scoring_version": SCORING_VERSION,
         "source_analyzed_at": row["analyzed_at"],
     }
@@ -316,7 +436,7 @@ def score_rows(db: SupabaseRest, case_code: str | None = None, index_code: str |
         scored.append(score_analysis(row, cycle_cache[key]))
     db.upsert("historical_indicator_ai_scores", scored, conflict="case_code,index_code,series_code")
     for row in scored:
-        print(f"SCORED {row['case_code']}/{row['index_code']}/{row['series_code']}: {row['overall_score']:.1f} refs={row['meaningful_reference_count']}")
+        print(f"SCORED {row['case_code']}/{row['index_code']}/{row['series_code']}: {row['overall_score']:.1f} refs={row['meaningful_reference_count']} filtered={len(row['filtered_pivots'])}/{len(row['ai_pivots'])}")
     return len(scored)
 
 
