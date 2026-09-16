@@ -1,63 +1,82 @@
 (() => {
   'use strict';
 
-  const SOURCE_TABLE='economic_chart_series_points';
-  const PAGE_SIZE=1000;
+  const FUNCTION_NAME='pivot-lab-analyze';
+  const DEBOUNCE_MS=280;
   const config=window.MACROWATCH_CONFIG;
   const registry=window.MacroWatchEconomicSeriesRegistry;
-  const engine=window.PivotLabEngine;
-  if(!config?.supabaseUrl||!config?.supabasePublishableKey||!registry?.allSeries||!engine?.detect)throw new Error('Pivot Lab 초기화에 필요한 설정을 불러오지 못했습니다.');
+  if(!config?.supabaseUrl||!config?.supabasePublishableKey||!registry?.allSeries)throw new Error('Pivot Lab 초기화에 필요한 설정을 불러오지 못했습니다.');
 
   const client=window.supabase.createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const elements={list:document.getElementById('series-list'),search:document.getElementById('search'),count:document.getElementById('series-count'),title:document.getElementById('series-title'),meta:document.getElementById('series-meta'),status:document.getElementById('status'),pointCount:document.getElementById('point-count'),pivotCount:document.getElementById('pivot-count'),canvas:document.getElementById('chart')};
   const catalog=[...registry.allSeries];
-  let activeCode=null,chart=null,loadToken=0;
+  const cache=new Map();
+  let activeCode=null,chart=null,loadToken=0,recalcToken=0,recalcTimer=null,activePoints=[],activeMeta=null;
 
   const setStatus=(text,error=false)=>{elements.status.textContent=text;elements.status.classList.toggle('error',error);};
   const formatValue=(value,decimals=2)=>Number(value).toLocaleString('ko-KR',{maximumFractionDigits:decimals,minimumFractionDigits:0});
 
-  async function fetchAllPoints(code){
-    const rows=[];
-    for(let from=0;;from+=PAGE_SIZE){
-      const {data,error}=await client.from(SOURCE_TABLE).select('observation_date,value').eq('series_code',code).order('observation_date',{ascending:true}).range(from,from+PAGE_SIZE-1);
-      if(error)throw error;
-      rows.push(...(data||[]));
-      if(!data||data.length<PAGE_SIZE)break;
-    }
-    return rows.map(row=>({time:String(row.observation_date).slice(0,10),value:Number(row.value)})).filter(row=>Number.isFinite(row.value));
+  function cacheKey(code,startDate,endDate){return `${code}|${startDate||''}|${endDate||''}`;}
+
+  async function invokeAnalyzer(body){
+    const {data,error}=await client.functions.invoke(FUNCTION_NAME,{body});
+    if(error)throw error;
+    if(data?.error)throw new Error(data.error);
+    return data;
   }
 
-  function visibleBounds(instance,points){
+  function visibleDates(instance,points){
     const x=instance?.scales?.x;
-    if(!x)return {start:0,end:points.length-1};
-    const start=Number.isFinite(x.min)?Math.floor(x.min):0;
-    const end=Number.isFinite(x.max)?Math.ceil(x.max):points.length-1;
-    return {start:Math.max(0,start),end:Math.min(points.length-1,end)};
+    if(!x||!points.length)return {startDate:points[0]?.time||null,endDate:points.at(-1)?.time||null};
+    const start=Math.max(0,Math.floor(Number.isFinite(x.min)?x.min:0));
+    const end=Math.min(points.length-1,Math.ceil(Number.isFinite(x.max)?x.max:points.length-1));
+    return {startDate:points[start]?.time||points[0]?.time||null,endDate:points[end]?.time||points.at(-1)?.time||null};
   }
 
-  function refreshPivots(meta,points,instance=chart){
-    if(!instance||!points.length)return;
-    const bounds=visibleBounds(instance,points);
-    const result=engine.detect(points,{startIndex:bounds.start,endIndex:bounds.end});
-    const highs=result.pivots.filter(item=>item.type==='high');
-    const lows=result.pivots.filter(item=>item.type==='low');
-    const path=result.pivots.map(item=>({x:item.date,y:item.value}));
-
-    instance.data.datasets[1].data=path;
+  function applyPivots(result,meta,instance=chart){
+    if(!instance)return;
+    const pivots=Array.isArray(result?.pivots)?result.pivots:[];
+    const highs=pivots.filter(item=>item.type==='high');
+    const lows=pivots.filter(item=>item.type==='low');
+    instance.data.datasets[1].data=pivots.map(item=>({x:item.date,y:item.value}));
     instance.data.datasets[2].data=highs.map(item=>({x:item.date,y:item.value}));
     instance.data.datasets[3].data=lows.map(item=>({x:item.date,y:item.value}));
     instance.update('none');
-
-    elements.pivotCount.textContent=`피봇 ${result.pivots.length.toLocaleString('ko-KR')}개`;
-    const threshold=formatValue(result.threshold,meta.decimals);
-    setStatus(`현재 화면 ${result.startDate||'-'} ~ ${result.endDate||'-'} · 탐지반경 ${result.radius}포인트 · 유효변화 ${threshold}${meta.unit?` ${meta.unit}`:''} · 피봇 ${result.pivots.length}개`);
+    elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
+    const d=result?.diagnostics||{};
+    const parts=[`현재 화면 ${result?.startDate||'-'} ~ ${result?.endDate||'-'}`,`피봇 ${pivots.length}개`];
+    if(Number.isFinite(d.majorCount))parts.push(`주요 ${d.majorCount}`);
+    if(Number.isFinite(d.deviationAdditions))parts.push(`이격추가 ${d.deviationAdditions}`);
+    if(Array.isArray(d.sidewaysZones))parts.push(`횡보 ${d.sidewaysZones.length}`);
+    setStatus(parts.join(' · '));
   }
 
-  function scheduleRefresh(meta,points,instance){
-    requestAnimationFrame(()=>refreshPivots(meta,points,instance));
+  async function recalc(meta,points,instance=chart){
+    if(!instance||!points.length||!activeCode)return;
+    const {startDate,endDate}=visibleDates(instance,points);
+    const key=cacheKey(activeCode,startDate,endDate);
+    const cached=cache.get(key);
+    if(cached){applyPivots(cached,meta,instance);return;}
+
+    const token=++recalcToken;
+    setStatus(`현재 화면 ${startDate||'-'} ~ ${endDate||'-'} · 서버에서 피봇 계산 중…`);
+    try{
+      const result=await invokeAnalyzer({seriesCode:activeCode,startDate,endDate,includePoints:false});
+      if(token!==recalcToken||activeCode!==meta.code)return;
+      cache.set(key,result);
+      applyPivots(result,meta,instance);
+    }catch(error){
+      if(token!==recalcToken)return;
+      setStatus(error?.message||String(error),true);
+    }
   }
 
-  function draw(meta,points){
+  function scheduleRecalc(meta,points,instance=chart){
+    clearTimeout(recalcTimer);
+    recalcTimer=setTimeout(()=>recalc(meta,points,instance),DEBOUNCE_MS);
+  }
+
+  function draw(meta,points,initialResult){
     if(chart)chart.destroy();
     chart=new Chart(elements.canvas.getContext('2d'),{
       type:'line',
@@ -74,34 +93,41 @@
           tooltip:{callbacks:{label(ctx){return `${ctx.dataset.label}: ${formatValue(ctx.parsed.y,meta.decimals)}`;}}},
           zoom:{
             limits:{x:{min:'original',max:'original'}},
-            pan:{enabled:true,mode:'x',onPanComplete:({chart:instance})=>scheduleRefresh(meta,points,instance)},
-            zoom:{wheel:{enabled:true,speed:.08},pinch:{enabled:true},mode:'x',onZoomComplete:({chart:instance})=>scheduleRefresh(meta,points,instance)}
+            pan:{enabled:true,mode:'x',onPanComplete:({chart:instance})=>scheduleRecalc(meta,points,instance)},
+            zoom:{wheel:{enabled:true,speed:.08},pinch:{enabled:true},mode:'x',onZoomComplete:({chart:instance})=>scheduleRecalc(meta,points,instance)}
           }
         },
         scales:{x:{type:'category',grid:{display:false},ticks:{maxTicksLimit:12}},y:{grid:{color:'rgba(148,163,184,.12)'},ticks:{callback:value=>formatValue(value,meta.decimals)}}}
       }
     });
+    applyPivots(initialResult,meta,chart);
     elements.canvas.ondblclick=()=>{
       chart?.resetZoom();
-      scheduleRefresh(meta,points,chart);
+      scheduleRecalc(meta,points,chart);
     };
-    scheduleRefresh(meta,points,chart);
   }
 
   async function selectSeries(code){
     const meta=catalog.find(item=>item.code===code);if(!meta)return;
-    const token=++loadToken;activeCode=code;renderList(elements.search.value);
+    const token=++loadToken;
+    activeCode=code;activeMeta=meta;activePoints=[];recalcToken++;clearTimeout(recalcTimer);cache.clear();renderList(elements.search.value);
     elements.title.textContent=meta.title;elements.meta.textContent=`${meta.code} · ${meta.frequencyLabel} · ${meta.category} · ${meta.unit}`;
-    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('전체 시계열을 불러오는 중입니다.');
+    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('서버에서 시계열과 피봇을 계산 중입니다.');
     try{
       const {data:{session}}=await client.auth.getSession();
       if(!session)throw new Error('로그인이 필요합니다. MacroWatch에 로그인한 뒤 이 페이지를 다시 열어 주세요.');
-      const points=await fetchAllPoints(code);
-      if(token!==loadToken)return;
+      const result=await invokeAnalyzer({seriesCode:code,includePoints:true});
+      if(token!==loadToken||activeCode!==code)return;
+      const points=Array.isArray(result?.points)?result.points:[];
+      activePoints=points;
       elements.pointCount.textContent=`데이터 ${points.length.toLocaleString('ko-KR')}개`;
       if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);elements.pivotCount.textContent='피봇 -';if(chart){chart.destroy();chart=null;}return;}
-      draw(meta,points);
-    }catch(error){if(token!==loadToken)return;setStatus(error?.message||String(error),true);elements.pointCount.textContent='데이터 -';elements.pivotCount.textContent='피봇 -';}
+      cache.set(cacheKey(code,result.startDate,result.endDate),result);
+      draw(meta,points,result);
+    }catch(error){
+      if(token!==loadToken)return;
+      setStatus(error?.message||String(error),true);elements.pointCount.textContent='데이터 -';elements.pivotCount.textContent='피봇 -';
+    }
   }
 
   function renderList(query=''){
