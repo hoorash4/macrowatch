@@ -38,18 +38,19 @@
         </div>
       </header>
 
-      <div id="status" class="status">왼쪽에서 지표를 선택하면 서버에서 피봇을 계산합니다.</div>
+      <div id="status" class="status">왼쪽에서 지표를 선택하면 전체 기간 기준으로 한 번만 피봇을 계산합니다.</div>
       <div class="chart-wrap">
         <canvas id="chart"></canvas>
       </div>
       <div class="legend-note">
         <span><i class="dot high"></i>HIGH</span>
         <span><i class="dot low"></i>LOW</span>
-        <span>원시 시계열만 브라우저에서 표시 · 피봇/이격/횡보 계산은 백엔드 수행 · 휠 확대/축소 · 드래그 이동 · 더블클릭 전체 보기</span>
+        <span>전체 기간을 고정 분석 스케일로 1회 계산 · 확대/축소/이동은 보기 기능만 수행 · 피봇은 변하지 않음 · 더블클릭 전체 보기</span>
       </div>
     </section>
   </main>
 
-  <script src="./app.js?v=pivot-backend-20260916-3"></script>
+  <script src="./pivot-engine.js?v=fixed-scale-20260916-1"></script>
+  <script src="./app.js?v=fixed-scale-20260916-1"></script>
 </body>
 </html>
