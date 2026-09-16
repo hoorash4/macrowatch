@@ -78,4 +78,5 @@
   elements.count.textContent=String(catalog.length);
   elements.search.addEventListener('input',event=>renderList(event.target.value));
   renderList();
+  if(catalog.length)selectSeries(catalog[0].code);
 })();
