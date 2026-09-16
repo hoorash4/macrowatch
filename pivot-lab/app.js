@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const FUNCTION_NAME='pivot-lab-analyze';
+  const FUNCTION_NAME='pivot-lab-engine';
   const DEBOUNCE_MS=280;
   const config=window.MACROWATCH_CONFIG;
   const registry=window.MacroWatchEconomicSeriesRegistry;
@@ -11,18 +11,17 @@
   const elements={list:document.getElementById('series-list'),search:document.getElementById('search'),count:document.getElementById('series-count'),title:document.getElementById('series-title'),meta:document.getElementById('series-meta'),status:document.getElementById('status'),pointCount:document.getElementById('point-count'),pivotCount:document.getElementById('pivot-count'),canvas:document.getElementById('chart')};
   const catalog=[...registry.allSeries];
   const cache=new Map();
-  let activeCode=null,chart=null,loadToken=0,recalcToken=0,recalcTimer=null,activePoints=[],activeMeta=null;
+  let activeCode=null,chart=null,loadToken=0,recalcToken=0,recalcTimer=null;
 
   const setStatus=(text,error=false)=>{elements.status.textContent=text;elements.status.classList.toggle('error',error);};
   const formatValue=(value,decimals=2)=>Number(value).toLocaleString('ko-KR',{maximumFractionDigits:decimals,minimumFractionDigits:0});
+  const cacheKey=(code,startDate,endDate)=>`${code}|${startDate||''}|${endDate||''}`;
 
-  function cacheKey(code,startDate,endDate){return `${code}|${startDate||''}|${endDate||''}`;}
-
-  async function invokeAnalyzer(body){
-    const {data,error}=await client.functions.invoke(FUNCTION_NAME,{body});
+  async function invokeAnalyzer({seriesCode,startDate=null,endDate=null,includePoints=false}){
+    const {data,error}=await client.functions.invoke(FUNCTION_NAME,{body:{series_code:seriesCode,start_date:startDate,end_date:endDate,include_points:includePoints}});
     if(error)throw error;
     if(data?.error)throw new Error(data.error);
-    return data;
+    return {...(data||{}),startDate:data?.start_date||startDate||data?.points?.[0]?.time||null,endDate:data?.end_date||endDate||data?.points?.at?.(-1)?.time||null};
   }
 
   function visibleDates(instance,points){
@@ -45,10 +44,10 @@
     elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
     const d=result?.diagnostics||{};
     const parts=[`현재 화면 ${result?.startDate||'-'} ~ ${result?.endDate||'-'}`,`피봇 ${pivots.length}개`];
-    if(Number.isFinite(d.majorCount))parts.push(`주요 ${d.majorCount}`);
-    if(Number.isFinite(d.deviationAdditions))parts.push(`이격추가 ${d.deviationAdditions}`);
-    if(Array.isArray(d.sidewaysZones))parts.push(`횡보 ${d.sidewaysZones.length}`);
-    setStatus(parts.join(' · '));
+    if(Number.isFinite(d.major))parts.push(`주요 ${d.major}`);
+    if(Number.isFinite(d.deviation))parts.push(`이격 ${d.deviation}`);
+    if(Number.isFinite(d.sidewaysZones))parts.push(`횡보 ${d.sidewaysZones}`);
+    setStatus(`백엔드 계산 · ${parts.join(' · ')}`);
   }
 
   async function recalc(meta,points,instance=chart){
@@ -59,7 +58,7 @@
     if(cached){applyPivots(cached,meta,instance);return;}
 
     const token=++recalcToken;
-    setStatus(`현재 화면 ${startDate||'-'} ~ ${endDate||'-'} · 서버에서 피봇 계산 중…`);
+    setStatus(`현재 화면 ${startDate||'-'} ~ ${endDate||'-'} · 백엔드에서 피봇 계산 중…`);
     try{
       const result=await invokeAnalyzer({seriesCode:activeCode,startDate,endDate,includePoints:false});
       if(token!==recalcToken||activeCode!==meta.code)return;
@@ -101,25 +100,21 @@
       }
     });
     applyPivots(initialResult,meta,chart);
-    elements.canvas.ondblclick=()=>{
-      chart?.resetZoom();
-      scheduleRecalc(meta,points,chart);
-    };
+    elements.canvas.ondblclick=()=>{chart?.resetZoom();scheduleRecalc(meta,points,chart);};
   }
 
   async function selectSeries(code){
     const meta=catalog.find(item=>item.code===code);if(!meta)return;
     const token=++loadToken;
-    activeCode=code;activeMeta=meta;activePoints=[];recalcToken++;clearTimeout(recalcTimer);cache.clear();renderList(elements.search.value);
+    activeCode=code;recalcToken++;clearTimeout(recalcTimer);cache.clear();renderList(elements.search.value);
     elements.title.textContent=meta.title;elements.meta.textContent=`${meta.code} · ${meta.frequencyLabel} · ${meta.category} · ${meta.unit}`;
-    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('서버에서 시계열과 피봇을 계산 중입니다.');
+    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('백엔드에서 시계열과 피봇을 계산 중입니다.');
     try{
       const {data:{session}}=await client.auth.getSession();
       if(!session)throw new Error('로그인이 필요합니다. MacroWatch에 로그인한 뒤 이 페이지를 다시 열어 주세요.');
       const result=await invokeAnalyzer({seriesCode:code,includePoints:true});
       if(token!==loadToken||activeCode!==code)return;
-      const points=Array.isArray(result?.points)?result.points:[];
-      activePoints=points;
+      const points=Array.isArray(result?.points)?result.points.map(row=>({time:String(row.time),value:Number(row.value)})).filter(row=>Number.isFinite(row.value)):[];
       elements.pointCount.textContent=`데이터 ${points.length.toLocaleString('ko-KR')}개`;
       if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);elements.pivotCount.textContent='피봇 -';if(chart){chart.destroy();chart=null;}return;}
       cache.set(cacheKey(code,result.startDate,result.endDate),result);
