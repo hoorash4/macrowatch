@@ -22,12 +22,8 @@
   function localHighs(months){
     const out=[];
     for(let i=1;i<months.length-1;i++){
-      const prev=months[i-1].high.value;
-      const value=months[i].high.value;
-      const next=months[i+1].high.value;
-      if((value>=prev&&value>next)||(value>prev&&value>=next)){
-        out.push({type:'high',monthIndex:i,point:months[i].high,value});
-      }
+      const a=months[i-1].high.value,b=months[i].high.value,c=months[i+1].high.value;
+      if((b>=a&&b>c)||(b>a&&b>=c))out.push({type:'high',monthIndex:i,point:months[i].high,value:b});
     }
     return out;
   }
@@ -35,179 +31,180 @@
   function localLows(months){
     const out=[];
     for(let i=1;i<months.length-1;i++){
-      const prev=months[i-1].low.value;
-      const value=months[i].low.value;
-      const next=months[i+1].low.value;
-      if((value<=prev&&value<next)||(value<prev&&value<=next)){
-        out.push({type:'low',monthIndex:i,point:months[i].low,value});
-      }
+      const a=months[i-1].low.value,b=months[i].low.value,c=months[i+1].low.value;
+      if((b<=a&&b<c)||(b<a&&b<=c))out.push({type:'low',monthIndex:i,point:months[i].low,value:b});
     }
     return out;
   }
 
-  function buildSwingEvents(months){
+  function alternatingSwings(months){
     const raw=[...localHighs(months),...localLows(months)].sort((a,b)=>a.point.index-b.point.index);
-    const events=[];
-
-    for(const event of raw){
-      const last=events.at(-1);
-      if(!last||last.type!==event.type){
-        events.push(event);
-        continue;
-      }
-
-      const moreExtreme=event.type==='high'
-        ? event.value>=last.value
-        : event.value<=last.value;
-      if(moreExtreme)events[events.length-1]=event;
+    const out=[];
+    for(const e of raw){
+      const last=out.at(-1);
+      if(!last||last.type!==e.type){out.push(e);continue;}
+      const better=e.type==='high'?e.value>=last.value:e.value<=last.value;
+      if(better)out[out.length-1]=e;
     }
-    return events;
+    return out;
   }
 
-  function compare(a,b){
-    if(b>a)return 1;
-    if(b<a)return -1;
-    return 0;
-  }
+  function dir(a,b){return b>a?1:b<a?-1:0;}
 
-  function buildTrendEvidence(events){
-    const highs=[];
-    const lows=[];
-    const evidence=[];
-
-    for(const event of events){
-      if(event.type==='high'){
-        highs.push(event);
-        if(highs.length>2)highs.shift();
-      }else{
-        lows.push(event);
-        if(lows.length>2)lows.shift();
-      }
-
+  // A directional trend is not created by one move. It needs two highs and two lows.
+  // Higher high + higher low => up. Lower high + lower low => down.
+  function buildEvidence(swings){
+    const highs=[],lows=[],out=[];
+    for(const e of swings){
+      if(e.type==='high'){highs.push(e);if(highs.length>2)highs.shift();}
+      else{lows.push(e);if(lows.length>2)lows.shift();}
       if(highs.length<2||lows.length<2)continue;
 
-      const [h1,h2]=highs;
-      const [l1,l2]=lows;
-      const highDirection=compare(h1.value,h2.value);
-      const lowDirection=compare(l1.value,l2.value);
-
+      const [h1,h2]=highs,[l1,l2]=lows;
+      const hd=dir(h1.value,h2.value),ld=dir(l1.value,l2.value);
       let state=null;
-      if(highDirection===1&&lowDirection===1)state='up';
-      else if(highDirection===-1&&lowDirection===-1)state='down';
-      if(!state)continue;
+      if(hd===1&&ld===1)state='up';
+      else if(hd===-1&&ld===-1)state='down';
+      if(!state)continue; // mixed high/low directions stay unresolved/sideways
 
       const start=state==='up'?l1:h1;
       const terminal=state==='up'?h2:l2;
       if(start.point.index>=terminal.point.index)continue;
 
-      const last=evidence.at(-1);
+      const last=out.at(-1);
       if(last&&last.state===state&&last.start.point.index===start.point.index&&last.terminal.point.index===terminal.point.index)continue;
-
-      evidence.push({
-        state,
-        start,
-        terminal,
-        confirmedAt:event.point.index,
-        highPair:[h1,h2],
-        lowPair:[l1,l2],
-      });
+      out.push({state,start,terminal,confirmedAt:e.point.index});
     }
-    return evidence;
+    return out;
   }
 
-  function buildConfirmedTrends(evidence){
-    const trends=[];
-    let active=null;
+  function mergeSameDirection(evidence){
+    const out=[];
+    for(const e of evidence){
+      const last=out.at(-1);
+      if(!last||last.state!==e.state){out.push({...e});continue;}
 
-    for(const item of evidence){
-      if(!active){
-        active={state:item.state,start:item.start,terminal:item.terminal,confirmedAt:item.confirmedAt};
-        continue;
+      // Same directional evidence belongs to one trend. Keep the earliest structural start
+      // and extend only to a more extreme terminal.
+      if(e.state==='up'){
+        if(e.terminal.value>=last.terminal.value)last.terminal=e.terminal;
+      }else if(e.terminal.value<=last.terminal.value){
+        last.terminal=e.terminal;
       }
-
-      if(item.state===active.state){
-        // Ambiguous swings between two confirmations do not end a trend.
-        // If the same structural direction is confirmed again, the later, more meaningful
-        // terminal replaces the earlier provisional endpoint.
-        if(active.state==='up'){
-          if(item.terminal.value>=active.terminal.value)active.terminal=item.terminal;
-        }else if(item.terminal.value<=active.terminal.value){
-          active.terminal=item.terminal;
-        }
-        active.confirmedAt=Math.max(active.confirmedAt,item.confirmedAt);
-        continue;
-      }
-
-      trends.push(active);
-      active={state:item.state,start:item.start,terminal:item.terminal,confirmedAt:item.confirmedAt};
+      last.confirmedAt=Math.max(last.confirmedAt,e.confirmedAt);
     }
+    return out;
+  }
 
-    if(active)trends.push(active);
-    return trends;
+  function dominatesLaterSameDirection(a,c){
+    if(a.state!==c.state)return false;
+    if(a.state==='down')return c.terminal.value<a.terminal.value;
+    return c.terminal.value>a.terminal.value;
+  }
+
+  // Retrospective hierarchy:
+  // down -> short up -> down that makes a NEW lower low is still one larger downtrend.
+  // up -> short down -> up that makes a NEW higher high is still one larger uptrend.
+  // The middle countertrend is cancelled, not turned into pivots.
+  function absorbCountertrends(segments){
+    let out=segments.map(s=>({...s}));
+    let changed=true,guard=0;
+    while(changed&&guard++<200){
+      changed=false;
+      for(let i=0;i<out.length-2;i++){
+        const a=out[i],b=out[i+1],c=out[i+2];
+        if(a.state!==c.state||b.state===a.state)continue;
+        if(!dominatesLaterSameDirection(a,c))continue;
+
+        const merged={
+          state:a.state,
+          start:a.start,
+          terminal:a.state==='down'
+            ? (c.terminal.value<a.terminal.value?c.terminal:a.terminal)
+            : (c.terminal.value>a.terminal.value?c.terminal:a.terminal),
+          confirmedAt:Math.max(a.confirmedAt,c.confirmedAt),
+        };
+        out.splice(i,3,merged);
+        changed=true;
+        break;
+      }
+    }
+    return out;
+  }
+
+  function coalesceOverlaps(segments){
+    const out=[];
+    for(const s of segments){
+      const last=out.at(-1);
+      if(!last){out.push({...s});continue;}
+
+      if(last.state===s.state){
+        if(s.state==='up'&&s.terminal.value>=last.terminal.value)last.terminal=s.terminal;
+        if(s.state==='down'&&s.terminal.value<=last.terminal.value)last.terminal=s.terminal;
+        last.confirmedAt=Math.max(last.confirmedAt,s.confirmedAt);
+        continue;
+      }
+
+      // Opposite trend can start only from its own structural start. If that start lies
+      // inside the previous trend, keep it provisional until hierarchy absorption decides.
+      out.push({...s});
+    }
+    return out;
+  }
+
+  function buildHierarchicalTrends(swings){
+    const evidence=buildEvidence(swings);
+    let trends=mergeSameDirection(evidence);
+    trends=absorbCountertrends(trends);
+    trends=coalesceOverlaps(trends);
+    trends=absorbCountertrends(trends);
+    return {evidence,trends};
   }
 
   function pivotFrom(event,type,reason){
-    const point=event.point;
-    return {
-      type,
-      index:point.index,
-      date:point.time,
-      value:point.value,
-      source:'monthly-confirmed-trend',
-      reason,
-    };
+    const p=event.point;
+    return {type,index:p.index,date:p.time,value:p.value,source:'monthly-hierarchical-trend',reason};
   }
 
   function buildPivots(trends){
     const candidates=[];
-    for(const trend of trends){
-      if(trend.state==='down'){
-        // Downtrend: confirmed only after highs AND lows are both lower.
-        // Start is on the high-line, end is the last low that the confirmed decline extends to.
-        candidates.push(pivotFrom(trend.start,'high','downtrend-start'));
-        candidates.push(pivotFrom(trend.terminal,'low','downtrend-end'));
+    for(const t of trends){
+      if(t.state==='down'){
+        candidates.push(pivotFrom(t.start,'high','downtrend-start'));
+        candidates.push(pivotFrom(t.terminal,'low','downtrend-end'));
       }else{
-        // Uptrend: confirmed only after highs AND lows are both higher.
-        // Start is on the low-line, end is the last high that the confirmed rise extends to.
-        candidates.push(pivotFrom(trend.start,'low','uptrend-start'));
-        candidates.push(pivotFrom(trend.terminal,'high','uptrend-end'));
+        candidates.push(pivotFrom(t.start,'low','uptrend-start'));
+        candidates.push(pivotFrom(t.terminal,'high','uptrend-end'));
       }
     }
-
     candidates.sort((a,b)=>a.index-b.index);
-    const pivots=[];
+
+    const out=[];
     for(const p of candidates){
-      const last=pivots.at(-1);
-      if(last&&last.index===p.index){
-        // A reversal can legitimately share one structural point.
-        // Keep one copy; the date/value is identical.
-        continue;
-      }
+      const last=out.at(-1);
+      if(last&&last.index===p.index)continue;
       if(last&&last.type===p.type){
-        // Two same-type anchors without a confirmed opposite trend are one unresolved structure.
-        // Retrospectively keep only the later/more extreme structural endpoint.
         const better=p.type==='high'?p.value>=last.value:p.value<=last.value;
-        if(better)pivots[pivots.length-1]=p;
+        if(better)out[out.length-1]=p;
         continue;
       }
-      pivots.push(p);
+      out.push(p);
     }
-    return pivots;
+    return out;
   }
 
   function detect(rows){
     if(!Array.isArray(rows)||rows.length<8){
-      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-structure-v3',major:0,sidewaysZones:0,deviation:0}};
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-hierarchy-v4',major:0,sidewaysZones:0,deviation:0}};
     }
 
     const months=buildMonthlyExtremes(rows);
     if(months.length<4){
-      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-structure-v3',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-hierarchy-v4',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
     }
 
-    const events=buildSwingEvents(months);
-    const evidence=buildTrendEvidence(events);
-    const trends=buildConfirmedTrends(evidence);
+    const swings=alternatingSwings(months);
+    const {evidence,trends}=buildHierarchicalTrends(swings);
     const pivots=buildPivots(trends);
 
     let sidewaysZones=0;
@@ -219,13 +216,13 @@
       pivots,
       path:pivots.map(p=>({date:p.date,value:p.value,virtual:false})),
       diagnostics:{
-        engineVersion:'monthly-structure-v3',
+        engineVersion:'monthly-hierarchy-v4',
         major:pivots.length,
         sidewaysZones,
         deviation:0,
         monthly:months.length,
         raw:rows.length,
-        swings:events.length,
+        swings:swings.length,
         confirmations:evidence.length,
         trends:trends.length,
       }
