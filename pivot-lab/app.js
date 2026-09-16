@@ -35,9 +35,10 @@
   function applyPivots(result,meta,instance=chart){
     if(!instance)return;
     const pivots=Array.isArray(result?.pivots)?result.pivots:[];
+    const path=Array.isArray(result?.path)&&result.path.length?result.path:pivots;
     const highs=pivots.filter(item=>item.type==='high');
     const lows=pivots.filter(item=>item.type==='low');
-    instance.data.datasets[1].data=pivots.map(item=>({x:item.date,y:item.value}));
+    instance.data.datasets[1].data=path.map(item=>({x:item.date,y:item.value}));
     instance.data.datasets[2].data=highs.map(item=>({x:item.date,y:item.value}));
     instance.data.datasets[3].data=lows.map(item=>({x:item.date,y:item.value}));
     instance.update('none');
@@ -45,8 +46,9 @@
     const d=result?.diagnostics||{};
     const parts=[`현재 화면 ${result?.startDate||'-'} ~ ${result?.endDate||'-'}`,`피봇 ${pivots.length}개`];
     if(Number.isFinite(d.major))parts.push(`주요 ${d.major}`);
-    if(Number.isFinite(d.deviation))parts.push(`이격 ${d.deviation}`);
+    if(Number.isFinite(d.deviation))parts.push(`분할 ${d.deviation}`);
     if(Number.isFinite(d.sidewaysZones))parts.push(`횡보 ${d.sidewaysZones}`);
+    if(d.engineVersion)parts.push(d.engineVersion);
     setStatus(`백엔드 계산 · ${parts.join(' · ')}`);
   }
 
