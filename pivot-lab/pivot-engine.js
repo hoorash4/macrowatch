@@ -30,6 +30,7 @@
     return out;
   }
 
+  // Fixed visual coordinate system: the analysis sees the same whole-chart shape a person sees.
   function normalizeScreen(sampled,values){
     const ymin=Math.min(...values),ymax=Math.max(...values),yrange=Math.max(ymax-ymin,1e-12);
     const aspect=2.15;
@@ -68,10 +69,11 @@
     return varx?cov/varx:0;
   }
 
+  // Long, visually flat areas are structural regimes. Keep both boundaries.
   function detectPlateaus(points,values){
     const n=points.length;
-    const half=clamp(Math.round(n*.018),3,Math.max(3,Math.round(n*.045)));
-    const minRun=Math.max(4,Math.round(n*.028));
+    const half=clamp(Math.round(n*.022),3,Math.max(3,Math.round(n*.050)));
+    const minRun=Math.max(4,Math.round(n*.032));
     const totalRange=Math.max(Math.max(...values)-Math.min(...values),1e-12);
     const mask=new Array(n).fill(false);
 
@@ -80,7 +82,7 @@
       const range=(quantile(slice,.90)-quantile(slice,.10))/totalRange;
       const drift=Math.abs(slice.at(-1)-slice[0])/totalRange;
       const slope=Math.abs(regressionSlope(points,i-half,i+half));
-      mask[i]=range<=.060&&drift<=.035&&slope<=.055;
+      mask[i]=range<=.052&&drift<=.030&&slope<=.045;
     }
 
     const zones=[];let start=null;
@@ -97,31 +99,87 @@
     const merged=[];
     for(const z of zones){
       const last=merged.at(-1);
-      if(last&&z.start<=last.end+Math.max(2,Math.round(half*.5)))last.end=Math.max(last.end,z.end);
+      if(last&&z.start<=last.end+Math.max(2,Math.round(half*.45)))last.end=Math.max(last.end,z.end);
       else merged.push({...z});
     }
     return merged;
   }
 
+  // Same-direction acceleration/deceleration can be a major bend even without a high/low.
+  // Only very large and sustained angle changes are admitted here.
   function slopeChangeCandidates(points){
     const n=points.length;
-    const w=clamp(Math.round(n*.022),3,Math.max(3,Math.round(n*.055)));
+    const w=clamp(Math.round(n*.035),4,Math.max(4,Math.round(n*.070)));
     const candidates=[];
     for(let i=w;i<n-w;i++){
       const left=regressionSlope(points,i-w,i),right=regressionSlope(points,i,i+w);
-      const delta=Math.abs(Math.atan(right)-Math.atan(left));
-      if(delta<.48)continue;
+      const a1=Math.atan(left),a2=Math.atan(right),delta=Math.abs(a2-a1);
       const localSpan=Math.abs(points[i+w].y-points[i-w].y);
-      if(delta>=.75||localSpan>=.055)candidates.push({index:i,score:delta+localSpan});
+      const sameDirection=Math.sign(left)===Math.sign(right)&&Math.sign(left)!==0;
+      const strongSameDirection=sameDirection&&delta>=.88&&localSpan>=.075;
+      const strongReversal=!sameDirection&&delta>=.82&&localSpan>=.060;
+      if(strongSameDirection||strongReversal)candidates.push({index:i,score:delta+localSpan});
     }
     candidates.sort((a,b)=>b.score-a.score);
     const chosen=[];
-    const spacing=Math.max(3,Math.round(n*.025));
+    const spacing=Math.max(4,Math.round(n*.045));
     for(const c of candidates){
       if(chosen.some(x=>Math.abs(x.index-c.index)<spacing))continue;
       chosen.push(c);
     }
     return chosen.map(c=>c.index).sort((a,b)=>a-b);
+  }
+
+  function maxDeviationBetween(points,a,b){
+    let best=0;
+    for(let i=a+1;i<b;i++)best=Math.max(best,pointLineDistance(points[i],points[a],points[b]));
+    return best;
+  }
+
+  // Remove visually small bends before any trend-structure reasoning.
+  function pruneWeakBends(points,indices,protectedSet,epsilon){
+    let out=[...new Set(indices)].sort((a,b)=>a-b),changed=true,guard=0;
+    while(changed&&guard++<100){
+      changed=false;
+      for(let i=1;i<out.length-1;i++){
+        const idx=out[i];
+        if(protectedSet.has(idx))continue;
+        const a=out[i-1],b=out[i+1];
+        const deviation=maxDeviationBetween(points,a,b);
+        const slope1=(points[idx].y-points[a].y)/Math.max(points[idx].x-points[a].x,1e-12);
+        const slope2=(points[b].y-points[idx].y)/Math.max(points[b].x-points[idx].x,1e-12);
+        const angleDelta=Math.abs(Math.atan(slope2)-Math.atan(slope1));
+        if(deviation<=epsilon*1.22&&angleDelta<.70){out.splice(i,1);changed=true;break;}
+      }
+    }
+    return out;
+  }
+
+  // Core structural rule learned from the marked examples:
+  // a lower-high/lower-low pair inside an established decline is only an internal wave;
+  // a higher-low/higher-high pair inside an established rise is only an internal wave.
+  // Such pairs disappear unless one of them is a protected plateau/slope-regime boundary.
+  // A wave that breaks the prior structural high/low survives naturally because the condition fails.
+  function collapseContinuationWaves(points,indices,protectedSet){
+    let out=[...indices],changed=true,guard=0;
+    while(changed&&guard++<100){
+      changed=false;
+      for(let i=0;i<out.length-3;i++){
+        const a=out[i],b=out[i+1],c=out[i+2],d=out[i+3];
+        if(protectedSet.has(b)||protectedSet.has(c))continue;
+        const A=points[a].y,B=points[b].y,C=points[c].y,D=points[d].y;
+        const downZigzag=A>B&&B<C&&C>D;
+        const upZigzag=A<B&&B>C&&C<D;
+        const downContinuation=downZigzag&&C<A&&D<B;
+        const upContinuation=upZigzag&&C>A&&D>B;
+        if(downContinuation||upContinuation){
+          out.splice(i+1,2);
+          changed=true;
+          break;
+        }
+      }
+    }
+    return out;
   }
 
   function classifyAnchor(points,index,prevIndex,nextIndex){
@@ -143,48 +201,29 @@
     return pick;
   }
 
-  function maxDeviationBetween(points,a,b){
-    let best=0;
-    for(let i=a+1;i<b;i++)best=Math.max(best,pointLineDistance(points[i],points[a],points[b]));
-    return best;
-  }
-
-  function pruneAnchors(points,indices,protectedSet,epsilon){
-    let out=[...new Set(indices)].sort((a,b)=>a-b),changed=true,guard=0;
-    while(changed&&guard++<100){
-      changed=false;
-      for(let i=1;i<out.length-1;i++){
-        const idx=out[i];
-        if(protectedSet.has(idx))continue;
-        const a=out[i-1],b=out[i+1];
-        const deviation=maxDeviationBetween(points,a,b);
-        const slope1=(points[idx].y-points[a].y)/Math.max(points[idx].x-points[a].x,1e-12);
-        const slope2=(points[b].y-points[idx].y)/Math.max(points[b].x-points[idx].x,1e-12);
-        const angleDelta=Math.abs(Math.atan(slope2)-Math.atan(slope1));
-        if(deviation<=epsilon*1.12&&angleDelta<.52){out.splice(i,1);changed=true;break;}
-      }
-    }
-    return out;
-  }
-
   function detect(rows){
-    if(!Array.isArray(rows)||rows.length<6)return {pivots:[],path:[],diagnostics:{engineVersion:'screen-shape-v1',major:0,sidewaysZones:0,deviation:0}};
+    if(!Array.isArray(rows)||rows.length<6)return {pivots:[],path:[],diagnostics:{engineVersion:'screen-shape-v2',major:0,sidewaysZones:0,deviation:0}};
 
     const sampled=minMaxSample(rows,1200);
     const count=sampled.length;
-    const smoothingWidth=odd(clamp(Math.round(count*.008),1,15));
+    const smoothingWidth=odd(clamp(Math.round(count*.010),1,17));
     const values=smooth(sampled.map(r=>r.value),smoothingWidth);
     const points=normalizeScreen(sampled,values);
 
-    const epsilon=.047;
+    // Coarser than v1 on purpose: the first pass should describe the whole chart, not every wiggle.
+    const epsilon=.074;
     const rdp=rdpIndices(points,epsilon);
     const plateaus=detectPlateaus(points,values);
     const slopeChanges=slopeChangeCandidates(points);
 
-    const protectedSet=new Set();
-    for(const z of plateaus){protectedSet.add(z.start);protectedSet.add(z.end);}
+    const plateauSet=new Set();
+    for(const z of plateaus){plateauSet.add(z.start);plateauSet.add(z.end);}
+    const slopeSet=new Set(slopeChanges);
+    const protectedSet=new Set([...plateauSet,...slopeSet]);
 
-    let anchors=pruneAnchors(points,[...rdp,...slopeChanges,...protectedSet],protectedSet,epsilon);
+    let anchors=pruneWeakBends(points,[...rdp,...protectedSet],protectedSet,epsilon);
+    anchors=collapseContinuationWaves(points,anchors,protectedSet);
+    anchors=pruneWeakBends(points,anchors,protectedSet,epsilon*1.08);
     anchors=anchors.filter(i=>i>0&&i<count-1);
 
     const rawSnapRadius=Math.max(1,Math.round(rows.length*.004));
@@ -196,8 +235,10 @@
       const type=classifyAnchor(points,idx,prev,next);
       const originalIndex=snapToRaw(rows,sampled,idx,type,rawSnapRadius);
       if(originalIndex<=0||originalIndex>=rows.length-1)continue;
-      const source=protectedSet.has(idx)?'sideways-boundary':'structure';
-      pivots.push({type,index:originalIndex,date:rows[originalIndex].time,value:rows[originalIndex].value,source,reason:source==='sideways-boundary'?'screen-relative-sideways':'screen-shape-turn'});
+      let source='structure',reason='screen-shape-turn';
+      if(plateauSet.has(idx)){source='sideways-boundary';reason='screen-relative-sideways';}
+      else if(slopeSet.has(idx)){source='slope-break';reason='large-screen-angle-change';}
+      pivots.push({type,index:originalIndex,date:rows[originalIndex].time,value:rows[originalIndex].value,source,reason});
     }
 
     pivots.sort((a,b)=>a.index-b.index);
@@ -205,7 +246,8 @@
     for(const p of pivots){
       const last=deduped.at(-1);
       if(last&&Math.abs(last.index-p.index)<=rawSnapRadius){
-        if(last.source!=='sideways-boundary'&&p.source==='sideways-boundary')deduped[deduped.length-1]=p;
+        const rank=x=>x.source==='sideways-boundary'?3:x.source==='slope-break'?2:1;
+        if(rank(p)>rank(last))deduped[deduped.length-1]=p;
         continue;
       }
       deduped.push(p);
@@ -214,7 +256,15 @@
     return {
       pivots:deduped,
       path:deduped.map(p=>({date:p.date,value:p.value,virtual:false})),
-      diagnostics:{engineVersion:'screen-shape-v1',major:deduped.filter(p=>p.source==='structure').length,sidewaysZones:plateaus.length,deviation:0,sampled:count,raw:rows.length,epsilon}
+      diagnostics:{
+        engineVersion:'screen-shape-v2',
+        major:deduped.filter(p=>p.source==='structure'||p.source==='slope-break').length,
+        sidewaysZones:plateaus.length,
+        deviation:0,
+        sampled:count,
+        raw:rows.length,
+        epsilon
+      }
     };
   }
 
