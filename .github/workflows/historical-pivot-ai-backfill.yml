@@ -1,4 +1,5 @@
 name: Historical Pivot AI backfill
+# rerun after PIVOT_ANALYSIS_PROMPT update
 
 on:
   workflow_dispatch:
