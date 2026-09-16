@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun one GFC/SP500 indicator after PIVOT_ANALYSIS_PROMPT update
+# rerun US10Y2Y after latest PIVOT_ANALYSIS_PROMPT anomaly-rule update
 
 on:
   workflow_dispatch:
