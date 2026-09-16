@@ -1,0 +1,76 @@
+name: Historical Pivot AI backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_code:
+        description: "Historical case code"
+        required: true
+        default: "global_financial_crisis"
+        type: string
+      index_code:
+        description: "Market index code (blank = case primary index)"
+        required: false
+        default: "SP500"
+        type: string
+      series_code:
+        description: "Indicator series code or all"
+        required: true
+        default: "US2Y"
+        type: string
+      limit:
+        description: "When series_code=all, optional max indicator count (0 = all)"
+        required: true
+        default: "0"
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/historical-pivot-ai-backfill.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-pivot-ai-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib==3.10.6
+      - name: Analyze and persist historical pivots
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CASE: ${{ inputs.case_code }}
+          INPUT_INDEX: ${{ inputs.index_code }}
+          INPUT_SERIES: ${{ inputs.series_code }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            CASE_CODE="global_financial_crisis"
+            INDEX_CODE="SP500"
+            SERIES_CODE="US2Y"
+            LIMIT="0"
+          else
+            CASE_CODE="$INPUT_CASE"
+            INDEX_CODE="$INPUT_INDEX"
+            SERIES_CODE="$INPUT_SERIES"
+            LIMIT="$INPUT_LIMIT"
+          fi
+          args=(--case "$CASE_CODE" --series "$SERIES_CODE" --limit "$LIMIT")
+          if [[ -n "$INDEX_CODE" ]]; then args+=(--index "$INDEX_CODE"); fi
+          PYTHONPATH=backend python -m historical_pivot_ai_backfill "${args[@]}"
