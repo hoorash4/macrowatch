@@ -3,8 +3,7 @@
 
   const config=window.MACROWATCH_CONFIG;
   const registry=window.MacroWatchEconomicSeriesRegistry;
-  const engine=window.PivotLabEngine;
-  if(!config?.supabaseUrl||!config?.supabasePublishableKey||!registry?.allSeries||!engine?.detect)throw new Error('Pivot Lab 초기화에 필요한 설정을 불러오지 못했습니다.');
+  if(!config?.supabaseUrl||!config?.supabasePublishableKey||!registry?.allSeries)throw new Error('Pivot Lab 초기화에 필요한 설정을 불러오지 못했습니다.');
 
   const client=window.supabase.createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const elements={list:document.getElementById('series-list'),search:document.getElementById('search'),count:document.getElementById('series-count'),title:document.getElementById('series-title'),meta:document.getElementById('series-meta'),status:document.getElementById('status'),pointCount:document.getElementById('point-count'),pivotCount:document.getElementById('pivot-count'),canvas:document.getElementById('chart')};
@@ -25,59 +24,12 @@
     return rows.map(row=>({time:String(row.observation_date).slice(0,10),value:Number(row.value)})).filter(row=>Number.isFinite(row.value));
   }
 
-  function monthlyExtremes(points){
-    const months=[];let bucket=null;
-    for(const point of points){
-      const month=point.time.slice(0,7);
-      if(!bucket||bucket.month!==month){
-        if(bucket)months.push(bucket);
-        bucket={month,high:point,low:point};
-        continue;
-      }
-      if(point.value>bucket.high.value)bucket.high=point;
-      if(point.value<bucket.low.value)bucket.low=point;
-    }
-    if(bucket)months.push(bucket);
-    return {
-      highs:months.map(m=>({x:m.high.time,y:m.high.value})),
-      lows:months.map(m=>({x:m.low.time,y:m.low.value})),
-      count:months.length,
-    };
-  }
-
-  function applyPivots(result,meta,instance=chart){
-    if(!instance)return;
-    const pivots=Array.isArray(result?.pivots)?result.pivots:[];
-    const path=Array.isArray(result?.path)&&result.path.length?result.path:pivots;
-    const highs=pivots.filter(item=>item.type==='high');
-    const lows=pivots.filter(item=>item.type==='low');
-    instance.data.datasets[3].data=path.map(item=>({x:item.date,y:item.value}));
-    instance.data.datasets[4].data=highs.map(item=>({x:item.date,y:item.value}));
-    instance.data.datasets[5].data=lows.map(item=>({x:item.date,y:item.value}));
-    instance.update('none');
-    elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
-    const d=result?.diagnostics||{};
-    const parts=[`고정 스케일 1회 계산`,`피봇 ${pivots.length}개`];
-    if(Number.isFinite(d.major))parts.push(`주요 ${d.major}`);
-    if(Number.isFinite(d.deviation))parts.push(`이격 ${d.deviation}`);
-    if(Number.isFinite(d.sidewaysZones))parts.push(`횡보 ${d.sidewaysZones}`);
-    if(Number.isFinite(d.sampled)&&Number.isFinite(d.raw))parts.push(`계산 ${d.sampled}/${d.raw}`);
-    if(d.engineVersion)parts.push(d.engineVersion);
-    setStatus(parts.join(' · '));
-  }
-
-  function draw(meta,points,result){
+  function draw(meta,points){
     if(chart)chart.destroy();
-    const monthly=monthlyExtremes(points);
     chart=new Chart(elements.canvas.getContext('2d'),{
       type:'line',
       data:{labels:points.map(row=>row.time),datasets:[
-        {label:meta.title,data:points.map(row=>row.value),borderWidth:1,pointRadius:0,tension:0,borderColor:'rgba(56,169,244,.22)'},
-        {label:'월중 최저',data:monthly.lows,borderWidth:2.4,pointRadius:1.6,pointHoverRadius:5,tension:0,borderColor:'rgba(59,130,246,.95)',backgroundColor:'rgba(59,130,246,.10)',spanGaps:true},
-        {label:'월중 최고',data:monthly.highs,borderWidth:2.4,pointRadius:1.6,pointHoverRadius:5,tension:0,borderColor:'rgba(239,68,68,.95)',backgroundColor:'rgba(148,163,184,.12)',fill:{target:1},spanGaps:true},
-        {label:'Pivot path',data:[],borderWidth:3,pointRadius:0,tension:0,spanGaps:true,borderColor:'rgba(245,158,11,.68)'},
-        {type:'scatter',label:'HIGH',data:[],pointRadius:6,pointHoverRadius:8,backgroundColor:'#f59e0b',borderColor:'#f59e0b'},
-        {type:'scatter',label:'LOW',data:[],pointRadius:6,pointHoverRadius:8,backgroundColor:'#22c55e',borderColor:'#22c55e'}
+        {label:meta.title,data:points.map(row=>row.value),borderWidth:1.5,pointRadius:0,pointHoverRadius:4,tension:0,borderColor:'rgba(56,169,244,.95)'}
       ]},
       options:{
         responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'nearest',intersect:false},
@@ -89,8 +41,6 @@
         scales:{x:{type:'category',grid:{display:false},ticks:{maxTicksLimit:12}},y:{grid:{color:'rgba(148,163,184,.12)'},ticks:{callback:value=>formatValue(value,meta.decimals)}}}
       }
     });
-    applyPivots(result,meta,chart);
-    setStatus(`${elements.status.textContent} · 월 밴드 ${monthly.count}개월`);
     elements.canvas.ondblclick=()=>chart?.resetZoom();
   }
 
@@ -98,22 +48,19 @@
     const meta=catalog.find(item=>item.code===code);if(!meta)return;
     const token=++loadToken;activeCode=code;renderList(elements.search.value);
     elements.title.textContent=meta.title;elements.meta.textContent=`${meta.code} · ${meta.frequencyLabel} · ${meta.category} · ${meta.unit}`;
-    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('전체 기간 데이터를 불러온 뒤 브라우저에서 한 번만 계산합니다.');
+    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='원시값';setStatus('저장된 원시 시계열을 그대로 불러옵니다.');
     try{
       const {data:{session}}=await client.auth.getSession();
       if(!session)throw new Error('로그인이 필요합니다. MacroWatch에 로그인한 뒤 이 페이지를 다시 열어 주세요.');
       const points=await fetchSeries(code);
       if(token!==loadToken||activeCode!==code)return;
       elements.pointCount.textContent=`데이터 ${points.length.toLocaleString('ko-KR')}개`;
-      if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);elements.pivotCount.textContent='피봇 -';if(chart){chart.destroy();chart=null;}return;}
-      const started=performance.now();
-      const result=engine.detect(points);
-      const elapsed=Math.round(performance.now()-started);
-      draw(meta,points,result);
-      setStatus(`${elements.status.textContent} · ${elapsed.toLocaleString('ko-KR')}ms`);
+      if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);if(chart){chart.destroy();chart=null;}return;}
+      draw(meta,points);
+      setStatus('가공 없이 저장된 원시 시계열만 표시 중');
     }catch(error){
       if(token!==loadToken)return;
-      setStatus(error?.message||String(error),true);elements.pointCount.textContent='데이터 -';elements.pivotCount.textContent='피봇 -';
+      setStatus(error?.message||String(error),true);elements.pointCount.textContent='데이터 -';elements.pivotCount.textContent='원시값';
     }
   }
 
