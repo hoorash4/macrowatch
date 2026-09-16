@@ -10,6 +10,7 @@ on:
       - "*.js"
       - "assets/**"
       - "images/**"
+      - "pivot-lab/**"
       - "tools/build/**"
       - ".github/workflows/pages-build.yml"
       - ".github/workflows/pages-deploy.yml"
