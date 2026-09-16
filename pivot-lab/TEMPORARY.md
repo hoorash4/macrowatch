@@ -14,13 +14,17 @@ Current runtime split:
 - Browser: chart rendering, zoom/pan, series selection, request debounce/cache only.
 - Supabase Edge Function `pivot-lab-engine`: source-series query and all pivot calculations.
 
-Current backend flow (`explainability-v1`):
-1. Major skeleton
-2. Segment explainability check: can one straight line still explain the segment?
-3. Split only when there is a persistent direction change or persistent/very large deviation
-4. Preserve confirmed sideways entry/exit boundaries as structural pivots
-5. Rebuild HIGH/LOW alternation
-6. Final prune removes a pivot only when the merged outer segment is explainable
-7. Re-run explainability after pruning so every final adjacent segment satisfies the same rule
+Current backend flow (`major-anchor-v1`):
+1. Detect major pivots for the current analysis scale.
+2. Freeze those major pivots; later stages may not move, delete, or replace them.
+3. Detect broader sideways zones and create only entry/exit secondary candidates.
+4. For each interval between immutable major anchors, plus virtual start/end boundaries, evaluate only persistent/large deviation candidates.
+5. Add secondary candidates only when they fit the interval structure; secondary candidates lose conflicts against major pivots.
+6. Build the display path from virtual boundaries + immutable major pivots + accepted secondary pivots.
+
+Removed behavior:
+- No synthetic pivot creation merely to repair alternation.
+- No independent direction-change rule that directly creates pivots.
+- No pruning or reconstruction that can delete or replace major pivots.
 
 Obsolete browser pivot engines were removed. The frontend does not calculate pivots.
