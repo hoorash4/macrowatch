@@ -30,11 +30,11 @@
     return out;
   }
 
-  function efficiency(values){
-    if(values.length<2)return 0;
-    let travel=0;
-    for(let i=1;i<values.length;i++)travel+=Math.abs(values[i]-values[i-1]);
-    return travel?Math.abs(values.at(-1)-values[0])/travel:0;
+  function sampleIndexForOriginal(sampled,originalIndex){
+    let lo=0,hi=sampled.length-1;
+    while(lo<hi){const mid=Math.floor((lo+hi)/2);if(sampled[mid].originalIndex<originalIndex)lo=mid+1;else hi=mid;}
+    if(lo>0&&Math.abs(sampled[lo-1].originalIndex-originalIndex)<=Math.abs(sampled[lo].originalIndex-originalIndex))return lo-1;
+    return lo;
   }
 
   function snapToRaw(rows,sampled,sampleIndex,type,rawRadius){
@@ -49,18 +49,8 @@
   }
 
   function makePivot(rows,sampled,sampleIndex,type,source,strength,reason,ctx,extra={}){
-    const originalIndex=snapToRaw(rows,sampled,sampleIndex,type,ctx.rawSnapRadius);
-    return {type,index:originalIndex,date:rows[originalIndex].time,value:rows[originalIndex].value,source,strength,reason,...extra};
-  }
-
-  function sampleIndexForOriginal(sampled,originalIndex){
-    let lo=0,hi=sampled.length-1;
-    while(lo<hi){
-      const mid=Math.floor((lo+hi)/2);
-      if(sampled[mid].originalIndex<originalIndex)lo=mid+1;else hi=mid;
-    }
-    if(lo>0&&Math.abs(sampled[lo-1].originalIndex-originalIndex)<=Math.abs(sampled[lo].originalIndex-originalIndex))return lo-1;
-    return lo;
+    const index=snapToRaw(rows,sampled,sampleIndex,type,ctx.rawSnapRadius);
+    return {type,index,date:rows[index].time,value:rows[index].value,source,strength,reason,...extra};
   }
 
   function majorSkeleton(rows,sampled,values,ctx){
@@ -84,37 +74,46 @@
     return out;
   }
 
+  function regressionSlope(values){
+    const n=values.length;if(n<2)return 0;
+    const mx=(n-1)/2,my=values.reduce((s,v)=>s+v,0)/n;
+    let cov=0,varx=0;
+    for(let i=0;i<n;i++){const dx=i-mx;cov+=dx*(values[i]-my);varx+=dx*dx;}
+    return varx?cov/varx:0;
+  }
+
+  function efficiency(values){
+    if(values.length<2)return 0;
+    let travel=0;for(let i=1;i<values.length;i++)travel+=Math.abs(values[i]-values[i-1]);
+    return travel?Math.abs(values.at(-1)-values[0])/travel:0;
+  }
+
   function classifySidewaysWindow(w,ctx){
     const q10=quantile(w,.10),q90=quantile(w,.90),range=Math.max(q90-q10,1e-12);
     const net=Math.abs(w.at(-1)-w[0]);
+    const slope=Math.abs(regressionSlope(w))*(w.length-1);
+
+    const flatRange=Math.max(ctx.robustRange*.026,ctx.noise*4.0);
+    const flatDrift=Math.max(ctx.robustRange*.012,ctx.noise*2.8);
+    if(range<=flatRange&&net<=flatDrift&&slope<=flatDrift*1.15)return 'flat';
+
     const eff=efficiency(w);
-
-    // Flat sideways: near-zero amplitude and near-zero drift. Ratio tests are intentionally skipped.
-    const flatRange=Math.max(ctx.robustRange*.020,ctx.noise*3.4);
-    const flatDrift=Math.max(ctx.robustRange*.009,ctx.noise*2.4);
-    if(range<=flatRange&&net<=flatDrift)return 'flat';
-
-    // Oscillating sideways: wider box is allowed, but directional efficiency and net drift must stay low.
     const oscillatingRange=Math.max(ctx.robustRange*.30,ctx.noise*11);
     if(range<=oscillatingRange&&eff<=.44&&net/range<=.62)return 'oscillating';
     return null;
   }
 
   function detectSidewaysZones(values,ctx){
-    const half=clamp(Math.round(ctx.count*.028),3,Math.max(3,Math.round(ctx.count*.07)));
-    const minRun=Math.max(3,Math.round(ctx.count*.015));
+    const half=clamp(Math.round(ctx.count*.026),3,Math.max(3,Math.round(ctx.count*.065)));
+    const minRun=Math.max(3,Math.round(ctx.count*.013));
     const states=new Array(ctx.count).fill(null);
     for(let i=half;i<ctx.count-half;i++)states[i]=classifySidewaysWindow(values.slice(i-half,i+half+1),ctx);
 
-    const zones=[];
-    let start=null,type=null;
+    const zones=[];let start=null,type=null;
     for(let i=0;i<=ctx.count;i++){
       const state=i<ctx.count?states[i]:null;
       if(state&&start===null){start=i;type=state;continue;}
-      if(state&&start!==null){
-        if(type==='oscillating'&&state==='flat')type='flat';
-        continue;
-      }
+      if(state&&start!==null){if(state==='flat')type='flat';continue;}
       if(start!==null){
         const end=i-1;
         if(end-start+1>=minRun)zones.push({start:Math.max(0,start-half),end:Math.min(ctx.count-1,end+half),type});
@@ -123,42 +122,44 @@
     }
 
     const merged=[];
-    for(const zone of zones){
+    for(const z of zones){
       const last=merged.at(-1);
-      if(last&&zone.start<=last.end+Math.max(2,Math.round(half*.45))){
-        last.end=Math.max(last.end,zone.end);
-        if(zone.type==='flat')last.type='flat';
-      }else merged.push({...zone});
+      if(last&&z.start<=last.end+Math.max(2,Math.round(half*.4))){last.end=Math.max(last.end,z.end);if(z.type==='flat')last.type='flat';}
+      else merged.push({...z});
     }
     return merged;
   }
 
-  function sidewaysCandidates(rows,sampled,values,zones,ctx){
+  function sidewaysBoundaries(rows,sampled,values,zones,ctx){
     const out=[];
-    const look=Math.max(3,Math.round(ctx.count*.022));
-    const slopeFloor=Math.max(ctx.noise*1.6,ctx.robustRange*.006);
+    const look=Math.max(3,Math.round(ctx.count*.02));
+    const moveFloor=Math.max(ctx.noise*1.5,ctx.robustRange*.0055);
     for(const z of zones){
       const before=values.slice(Math.max(0,z.start-look),z.start+1);
       const after=values.slice(z.end,Math.min(ctx.count,z.end+look+1));
       const beforeMove=before.length>1?before.at(-1)-before[0]:0;
       const afterMove=after.length>1?after.at(-1)-after[0]:0;
-
       let entryType=null,exitType=null;
-      if(beforeMove<=-slopeFloor)entryType='low';
-      else if(beforeMove>=slopeFloor)entryType='high';
-      if(afterMove>=slopeFloor)exitType='low';
-      else if(afterMove<=-slopeFloor)exitType='high';
+      if(beforeMove<=-moveFloor)entryType='low';else if(beforeMove>=moveFloor)entryType='high';
+      if(afterMove>=moveFloor)exitType='low';else if(afterMove<=-moveFloor)exitType='high';
+      if(entryType)out.push(makePivot(rows,sampled,z.start,entryType,'sideways-boundary',1.2,`${z.type}-sideways-entry`,ctx,{zoneType:z.type}));
+      if(exitType)out.push(makePivot(rows,sampled,z.end,exitType,'sideways-boundary',1.2,`${z.type}-sideways-exit`,ctx,{zoneType:z.type}));
+    }
+    return out;
+  }
 
-      if(entryType)out.push(makePivot(rows,sampled,z.start,entryType,'sideways-boundary',1.3,`${z.type}-sideways-entry`,ctx,{zoneType:z.type}));
-      if(exitType)out.push(makePivot(rows,sampled,z.end,exitType,'sideways-boundary',1.3,`${z.type}-sideways-exit`,ctx,{zoneType:z.type}));
+  function lineResiduals(values,a,b){
+    const len=b-a,out=[];
+    for(let o=0;o<=len;o++){
+      const expected=values[a]+(values[b]-values[a])*(o/Math.max(1,len));
+      out.push(values[a+o]-expected);
     }
     return out;
   }
 
   function lineError(values,a,b,split=null){
-    const absError=(from,to)=>{
-      const len=to-from;
-      if(len<=0)return 0;
+    const part=(from,to)=>{
+      const len=to-from;if(len<=0)return 0;
       let total=0;
       for(let i=from;i<=to;i++){
         const expected=values[from]+(values[to]-values[from])*((i-from)/len);
@@ -166,190 +167,186 @@
       }
       return total;
     };
-    if(split==null)return absError(a,b);
-    return absError(a,split)+absError(split,b);
+    return split==null?part(a,b):part(a,split)+part(split,b);
+  }
+
+  function excursionRuns(residuals,band,edge){
+    const runs=[];let start=null,sign=0;
+    const close=end=>{
+      if(start==null||end<start)return;
+      let extreme=start;
+      for(let i=start+1;i<=end;i++){
+        if(sign>0&&residuals[i]>residuals[extreme])extreme=i;
+        if(sign<0&&residuals[i]<residuals[extreme])extreme=i;
+      }
+      if(extreme>=edge&&extreme<=residuals.length-1-edge)runs.push({start,end,sign,extreme});
+      start=null;sign=0;
+    };
+    for(let i=1;i<residuals.length-1;i++){
+      const r=residuals[i],s=r>0?1:r<0?-1:0;
+      if(Math.abs(r)<band){close(i-1);continue;}
+      if(start==null){start=i;sign=s;continue;}
+      if(s!==sign){close(i-1);start=i;sign=s;}
+    }
+    close(residuals.length-2);
+    return runs;
+  }
+
+  function evaluateExcursion(values,a,b,run,ctx,depth){
+    const len=b-a,residuals=lineResiduals(values,a,b),local=run.extreme;
+    const magnitude=Math.abs(residuals[local]);
+    const unit=Math.max(ctx.deviationUnit*(1+depth*.08),Math.abs(values[b]-values[a])*.028,1e-12);
+    const peak=magnitude/unit;
+    const duration=(run.end-run.start+1)/len;
+    const returnBand=unit*.20;
+    let returnIndex=null;
+    for(let k=local+1;k<residuals.length;k++){
+      if(Math.abs(residuals[k])<=returnBand){returnIndex=k;break;}
+    }
+    const recovery=((returnIndex==null?len:returnIndex)-local)/len;
+    const unrecovered=returnIndex==null;
+    const persistence=clamp(duration*.45+recovery*.55,0,1);
+
+    const baseError=lineError(values,a,b);
+    const split=a+local;
+    const splitError=lineError(values,a,b,split);
+    const improvement=baseError>1e-12?clamp((baseError-splitError)/baseError,0,1):0;
+
+    const significance=Math.sqrt(Math.max(peak,0))*Math.sqrt(Math.max(persistence,0))*Math.sqrt(Math.max(improvement,0));
+    return {sampleIndex:split,type:residuals[local]>0?'high':'low',peak,duration,recovery,unrecovered,persistence,improvement,significance};
   }
 
   function strongestDeviation(rows,sampled,values,leftOriginal,rightOriginal,depth,ctx){
     const a=sampleIndexForOriginal(sampled,leftOriginal),b=sampleIndexForOriginal(sampled,rightOriginal),len=b-a;
-    const minLen=Math.max(10,Math.round(ctx.count*.025),Math.round(ctx.radius*1.1));
+    const minLen=Math.max(10,Math.round(ctx.count*.024),Math.round(ctx.radius*1.05));
     if(len<minLen*2)return null;
 
-    const residuals=[];
-    for(let o=0;o<=len;o++){
-      const expected=values[a]+(values[b]-values[a])*(o/len);
-      residuals.push(values[a+o]-expected);
-    }
-
-    const depthPenalty=1+depth*.10;
-    const unit=Math.max(ctx.deviationUnit*depthPenalty,Math.abs(values[b]-values[a])*.03,1e-12);
-    const excursionBand=unit*.30;
-    const returnBand=unit*.20;
-    const edge=Math.max(3,Math.round(len*.06));
-    const baseError=lineError(values,a,b);
-    if(baseError<=1e-12)return null;
-
-    // One excursion = one continuous departure on one side of the current trend line.
-    const excursions=[];
-    let runStart=null,runSign=0;
-    const closeRun=runEnd=>{
-      if(runStart==null||runEnd<runStart)return;
-      let extreme=runStart;
-      for(let local=runStart+1;local<=runEnd;local++){
-        if(runSign>0&&residuals[local]>residuals[extreme])extreme=local;
-        if(runSign<0&&residuals[local]<residuals[extreme])extreme=local;
-      }
-      if(extreme>=edge&&extreme<=len-edge)excursions.push({start:runStart,end:runEnd,sign:runSign,extreme});
-      runStart=null;runSign=0;
-    };
-
-    for(let local=1;local<len;local++){
-      const r=residuals[local];
-      const sign=r>0?1:r<0?-1:0;
-      if(Math.abs(r)<excursionBand){closeRun(local-1);continue;}
-      if(runStart==null){runStart=local;runSign=sign;continue;}
-      if(sign!==runSign){closeRun(local-1);runStart=local;runSign=sign;}
-    }
-    closeRun(len-1);
-
+    const residuals=lineResiduals(values,a,b);
+    const unit=Math.max(ctx.deviationUnit*(1+depth*.08),Math.abs(values[b]-values[a])*.028,1e-12);
+    const band=unit*.28;
+    const edge=Math.max(3,Math.round(len*.055));
+    const runs=excursionRuns(residuals,band,edge);
     let best=null;
-    for(const ex of excursions){
-      const local=ex.extreme;
-      const magnitude=Math.abs(residuals[local]);
-      const peak=magnitude/unit;
-      if(peak<.72)continue;
-
-      // Time spent materially away from the line, relative to current segment length.
-      const duration=(ex.end-ex.start+1)/len;
-
-      // Time from the extreme point until the series returns near the current trend line.
-      // If it never returns, the remaining segment length is treated as unresolved persistence.
-      let returnIndex=null;
-      for(let k=local+1;k<=len;k++){
-        if(Math.abs(residuals[k])<=returnBand){returnIndex=k;break;}
-      }
-      const recovery=((returnIndex==null?len:returnIndex)-local)/len;
-      const unrecovered=returnIndex==null;
-      const exposure=Math.max(duration,recovery);
-
-      // A flash spike that immediately returns is not structural, regardless of height.
-      if(exposure<.035)continue;
-
-      const split=a+local;
-      const splitError=lineError(values,a,b,split);
-      const improvement=clamp((baseError-splitError)/baseError,0,1);
-      if(improvement<.14)continue;
-
-      // Continuous structural significance. No large/medium/small buckets.
-      // Distance matters only together with time away from the line and actual explanatory gain.
-      const persistenceFactor=Math.sqrt(exposure);
-      const improvementFactor=Math.sqrt(improvement);
-      const significance=peak*persistenceFactor*improvementFactor;
-      const minimumSignificance=.24*(1+depth*.08);
-      if(significance<minimumSignificance)continue;
-
-      const type=residuals[local]>0?'high':'low';
-      if(!best||significance>best.significance){
-        best={sampleIndex:split,type,peak,duration,recovery,unrecovered,improvement,significance};
-      }
+    for(const run of runs){
+      const e=evaluateExcursion(values,a,b,run,ctx,depth);
+      if(e.peak<.62||e.improvement<.11||e.persistence<.025)continue;
+      const threshold=.30*(1+depth*.06);
+      if(e.significance<threshold)continue;
+      if(!best||e.significance>best.significance)best=e;
     }
-
     if(!best)return null;
+
     const pivot=makePivot(rows,sampled,best.sampleIndex,best.type,'deviation',best.significance,'structural-deviation',ctx,{
-      deviationPeak:best.peak,
-      deviationDuration:best.duration,
-      deviationRecovery:best.recovery,
-      unrecovered:best.unrecovered,
-      improvement:best.improvement,
-      priority:best.significance,
-      depth,
+      deviationPeak:best.peak,deviationDuration:best.duration,deviationRecovery:best.recovery,
+      unrecovered:best.unrecovered,persistence:best.persistence,improvement:best.improvement,
+      priority:best.significance,depth,
     });
     if(pivot.index<=leftOriginal||pivot.index>=rightOriginal)return null;
     return pivot;
   }
 
-  function recursiveDeviation(rows,sampled,values,leftOriginal,rightOriginal,depth,ctx,out){
+  function buildDeviationTree(rows,sampled,values,left,right,depth,ctx,out){
     if(depth>ctx.maxDeviationDepth)return;
-    const candidate=strongestDeviation(rows,sampled,values,leftOriginal,rightOriginal,depth,ctx);
-    if(!candidate)return;
+    const pivot=strongestDeviation(rows,sampled,values,left,right,depth,ctx);
+    if(!pivot)return;
+    const gap=Math.max(2,Math.round(rows.length*.0025));
+    if(pivot.index-left<gap||right-pivot.index<gap)return;
 
-    const minRawGap=Math.max(2,Math.round(rows.length*.0025));
-    if(candidate.index-leftOriginal<minRawGap||rightOriginal-candidate.index<minRawGap)return;
-
-    // Exactly one extreme point is accepted for this segment before the line is rebuilt.
-    out.push(candidate);
-    recursiveDeviation(rows,sampled,values,leftOriginal,candidate.index,depth+1,ctx,out);
-    recursiveDeviation(rows,sampled,values,candidate.index,rightOriginal,depth+1,ctx,out);
+    out.push(pivot);
+    buildDeviationTree(rows,sampled,values,left,pivot.index,depth+1,ctx,out);
+    buildDeviationTree(rows,sampled,values,pivot.index,right,depth+1,ctx,out);
   }
 
-  function dedupeStructural(majors,sideways,ctx){
-    const all=[...majors,...sideways].sort((a,b)=>a.index-b.index);
-    const out=[];
-    const near=Math.max(2,ctx.rawSnapRadius);
-    for(const p of all){
-      const last=out.at(-1);
-      if(!last||Math.abs(last.index-p.index)>near){out.push(p);continue;}
-      if(last.source==='major')continue;
-      if(p.source==='major'){out[out.length-1]=p;continue;}
-      out[out.length-1]=p;
+  function revalidateDeviation(rows,sampled,values,majors,deviations,ctx){
+    let kept=[...majors,...deviations].sort((a,b)=>a.index-b.index);
+    let changed=true,guard=0;
+    while(changed&&guard++<30){
+      changed=false;
+      for(let i=1;i<kept.length-1;i++){
+        const p=kept[i];if(p.source!=='deviation')continue;
+        const left=kept[i-1],right=kept[i+1];
+        const a=sampleIndexForOriginal(sampled,left.index),b=sampleIndexForOriginal(sampled,right.index),s=sampleIndexForOriginal(sampled,p.index);
+        if(!(a<s&&s<b)){kept.splice(i,1);changed=true;break;}
+        const residuals=lineResiduals(values,a,b),local=s-a,sign=residuals[local]>0?1:-1;
+        const unit=Math.max(ctx.deviationUnit*(1+(p.depth||0)*.08),Math.abs(values[b]-values[a])*.028,1e-12);
+        const band=unit*.28;
+        let runStart=local,runEnd=local;
+        while(runStart>1&&sign*residuals[runStart-1]>=band)runStart--;
+        while(runEnd<residuals.length-2&&sign*residuals[runEnd+1]>=band)runEnd++;
+        const e=evaluateExcursion(values,a,b,{start:runStart,end:runEnd,sign,extreme:local},ctx,p.depth||0);
+        const threshold=.30*(1+(p.depth||0)*.06);
+        if(e.peak<.62||e.improvement<.11||e.persistence<.025||e.significance<threshold){kept.splice(i,1);changed=true;break;}
+      }
     }
-    return out;
+    return kept.filter(p=>p.source==='deviation');
+  }
+
+  function mergeSideways(majors,deviations,sideways,ctx){
+    const base=[...majors,...deviations].sort((a,b)=>a.index-b.index);
+    const near=Math.max(2,ctx.rawSnapRadius);
+    for(const s of sideways){
+      if(base.some(p=>Math.abs(p.index-s.index)<=near))continue;
+      base.push(s);
+    }
+    return base.sort((a,b)=>a.index-b.index);
+  }
+
+  function finalDeviationRevalidation(rows,sampled,values,pivots,ctx){
+    let kept=[...pivots].sort((a,b)=>a.index-b.index),changed=true,guard=0;
+    while(changed&&guard++<30){
+      changed=false;
+      for(let i=1;i<kept.length-1;i++){
+        const p=kept[i];if(p.source!=='deviation')continue;
+        const left=kept[i-1],right=kept[i+1];
+        const a=sampleIndexForOriginal(sampled,left.index),b=sampleIndexForOriginal(sampled,right.index),s=sampleIndexForOriginal(sampled,p.index);
+        if(!(a<s&&s<b)){kept.splice(i,1);changed=true;break;}
+        const residuals=lineResiduals(values,a,b),local=s-a,sign=residuals[local]>0?1:-1;
+        const unit=Math.max(ctx.deviationUnit*(1+(p.depth||0)*.08),Math.abs(values[b]-values[a])*.028,1e-12),band=unit*.28;
+        let start=local,end=local;
+        while(start>1&&sign*residuals[start-1]>=band)start--;
+        while(end<residuals.length-2&&sign*residuals[end+1]>=band)end++;
+        const e=evaluateExcursion(values,a,b,{start,end,sign,extreme:local},ctx,p.depth||0);
+        const threshold=.30*(1+(p.depth||0)*.06);
+        if(e.peak<.62||e.improvement<.11||e.persistence<.025||e.significance<threshold){kept.splice(i,1);changed=true;break;}
+      }
+    }
+    return kept;
   }
 
   function detect(rows){
-    if(!Array.isArray(rows)||rows.length<5)return {pivots:[],path:rows||[],diagnostics:{engineVersion:'frontend-structure-v3',major:0,sidewaysZones:0,deviation:0}};
+    if(!Array.isArray(rows)||rows.length<5)return {pivots:[],path:rows||[],diagnostics:{engineVersion:'frontend-structure-v4',major:0,sidewaysZones:0,deviation:0}};
 
-    const sampled=minMaxSample(rows,1200);
-    const count=sampled.length;
+    const sampled=minMaxSample(rows,1200),count=sampled.length;
     const smoothingWidth=odd(clamp(Math.round(count*.012),1,21));
     const values=smooth(sampled.map(r=>r.value),smoothingWidth);
-    const robustRange=Math.max(quantile(values,.95)-quantile(values,.05),1e-12);
-    const diffs=[];
+    const robustRange=Math.max(quantile(values,.95)-quantile(values,.05),1e-12),diffs=[];
     for(let i=1;i<count;i++)diffs.push(Math.abs(values[i]-values[i-1]));
     const noise=Math.max(median(diffs),1e-12);
     const radius=clamp(Math.round(count*.03),2,Math.max(2,Math.round(count*.10)));
-    const majorRadius=clamp(Math.round(count*.105),4,Math.max(4,Math.round(count*.19)));
     const ctx={
-      count,
-      robustRange,
-      noise,
-      radius,
-      majorRadius,
-      majorFloor:Math.max(robustRange*.082,noise*4.3),
-      deviationUnit:Math.max(robustRange*.035,noise*3.0,1e-12),
+      count,robustRange,noise,radius,
+      majorRadius:clamp(Math.round(count*.105),4,Math.max(4,Math.round(count*.19))),
+      majorFloor:Math.max(robustRange*.085,noise*4.5),
+      deviationUnit:Math.max(robustRange*.040,noise*3.2,1e-12),
       rawSnapRadius:Math.max(1,Math.round(rows.length*.005)),
-      maxDeviationDepth:6,
+      maxDeviationDepth:5,
     };
 
     const majors=majorSkeleton(rows,sampled,values,ctx);
+    const anchors=[{index:0,source:'virtual'},...majors,{index:rows.length-1,source:'virtual'}].sort((a,b)=>a.index-b.index);
+    const deviationRaw=[];
+    for(let i=0;i<anchors.length-1;i++)buildDeviationTree(rows,sampled,values,anchors[i].index,anchors[i+1].index,0,ctx,deviationRaw);
+    const deviations=revalidateDeviation(rows,sampled,values,majors,deviationRaw,ctx);
+
     const zones=detectSidewaysZones(values,ctx);
-    const sideways=sidewaysCandidates(rows,sampled,values,zones,ctx);
-    const structural=dedupeStructural(majors,sideways,ctx);
+    const sideways=sidewaysBoundaries(rows,sampled,values,zones,ctx);
+    let pivots=mergeSideways(majors,deviations,sideways,ctx);
+    pivots=finalDeviationRevalidation(rows,sampled,values,pivots,ctx);
 
-    const anchors=[0,...structural.map(p=>p.index),rows.length-1].sort((a,b)=>a-b);
-    const deviations=[];
-    for(let i=0;i<anchors.length-1;i++){
-      if(anchors[i+1]-anchors[i]<3)continue;
-      recursiveDeviation(rows,sampled,values,anchors[i],anchors[i+1],0,ctx,deviations);
-    }
-
-    const pivots=[...structural,...deviations].sort((a,b)=>a.index-b.index);
     const path=[{date:rows[0].time,value:rows[0].value,virtual:true},...pivots.map(p=>({date:p.date,value:p.value,virtual:false})),{date:rows.at(-1).time,value:rows.at(-1).value,virtual:true}];
-
     return {
-      pivots,
-      path,
-      diagnostics:{
-        engineVersion:'frontend-structure-v3',
-        major:majors.length,
-        sidewaysZones:zones.length,
-        flatSidewaysZones:zones.filter(z=>z.type==='flat').length,
-        oscillatingSidewaysZones:zones.filter(z=>z.type==='oscillating').length,
-        sidewaysBoundaries:sideways.length,
-        deviation:deviations.length,
-        sampled:count,
-        raw:rows.length,
-      },
+      pivots,path,
+      diagnostics:{engineVersion:'frontend-structure-v4',major:majors.length,deviation:pivots.filter(p=>p.source==='deviation').length,sidewaysZones:zones.length,sidewaysBoundaries:pivots.filter(p=>p.source==='sideways-boundary').length,sampled:count,raw:rows.length}
     };
   }
 
