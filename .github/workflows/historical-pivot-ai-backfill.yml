@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun after PIVOT_ANALYSIS_PROMPT update
+# rerun all eligible GFC/SP500 indicators after PIVOT_ANALYSIS_PROMPT update
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ on:
       series_code:
         description: "Indicator series code or all"
         required: true
-        default: "US2Y"
+        default: "all"
         type: string
       limit:
         description: "When series_code=all, optional max indicator count (0 = all)"
@@ -66,7 +66,7 @@ jobs:
           if [[ "$EVENT_NAME" == "push" ]]; then
             CASE_CODE="global_financial_crisis"
             INDEX_CODE="SP500"
-            SERIES_CODE="US2Y"
+            SERIES_CODE="all"
             LIMIT="0"
           else
             CASE_CODE="$INPUT_CASE"
