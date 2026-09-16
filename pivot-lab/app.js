@@ -25,15 +25,35 @@
     return rows.map(row=>({time:String(row.observation_date).slice(0,10),value:Number(row.value)})).filter(row=>Number.isFinite(row.value));
   }
 
+  function monthlyExtremes(points){
+    const months=[];let bucket=null;
+    for(const point of points){
+      const month=point.time.slice(0,7);
+      if(!bucket||bucket.month!==month){
+        if(bucket)months.push(bucket);
+        bucket={month,high:point,low:point};
+        continue;
+      }
+      if(point.value>bucket.high.value)bucket.high=point;
+      if(point.value<bucket.low.value)bucket.low=point;
+    }
+    if(bucket)months.push(bucket);
+    return {
+      highs:months.map(m=>({x:m.high.time,y:m.high.value})),
+      lows:months.map(m=>({x:m.low.time,y:m.low.value})),
+      count:months.length,
+    };
+  }
+
   function applyPivots(result,meta,instance=chart){
     if(!instance)return;
     const pivots=Array.isArray(result?.pivots)?result.pivots:[];
     const path=Array.isArray(result?.path)&&result.path.length?result.path:pivots;
     const highs=pivots.filter(item=>item.type==='high');
     const lows=pivots.filter(item=>item.type==='low');
-    instance.data.datasets[1].data=path.map(item=>({x:item.date,y:item.value}));
-    instance.data.datasets[2].data=highs.map(item=>({x:item.date,y:item.value}));
-    instance.data.datasets[3].data=lows.map(item=>({x:item.date,y:item.value}));
+    instance.data.datasets[3].data=path.map(item=>({x:item.date,y:item.value}));
+    instance.data.datasets[4].data=highs.map(item=>({x:item.date,y:item.value}));
+    instance.data.datasets[5].data=lows.map(item=>({x:item.date,y:item.value}));
     instance.update('none');
     elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
     const d=result?.diagnostics||{};
@@ -48,10 +68,13 @@
 
   function draw(meta,points,result){
     if(chart)chart.destroy();
+    const monthly=monthlyExtremes(points);
     chart=new Chart(elements.canvas.getContext('2d'),{
       type:'line',
       data:{labels:points.map(row=>row.time),datasets:[
-        {label:meta.title,data:points.map(row=>row.value),borderWidth:1.5,pointRadius:0,tension:0,borderColor:'#38a9f4'},
+        {label:meta.title,data:points.map(row=>row.value),borderWidth:1,pointRadius:0,tension:0,borderColor:'rgba(56,169,244,.22)'},
+        {label:'월중 최저',data:monthly.lows,borderWidth:2.4,pointRadius:1.6,pointHoverRadius:5,tension:0,borderColor:'rgba(59,130,246,.95)',backgroundColor:'rgba(59,130,246,.10)',spanGaps:true},
+        {label:'월중 최고',data:monthly.highs,borderWidth:2.4,pointRadius:1.6,pointHoverRadius:5,tension:0,borderColor:'rgba(239,68,68,.95)',backgroundColor:'rgba(148,163,184,.12)',fill:{target:1},spanGaps:true},
         {label:'Pivot path',data:[],borderWidth:3,pointRadius:0,tension:0,spanGaps:true,borderColor:'rgba(245,158,11,.68)'},
         {type:'scatter',label:'HIGH',data:[],pointRadius:6,pointHoverRadius:8,backgroundColor:'#f59e0b',borderColor:'#f59e0b'},
         {type:'scatter',label:'LOW',data:[],pointRadius:6,pointHoverRadius:8,backgroundColor:'#22c55e',borderColor:'#22c55e'}
@@ -67,6 +90,7 @@
       }
     });
     applyPivots(result,meta,chart);
+    setStatus(`${elements.status.textContent} · 월 밴드 ${monthly.count}개월`);
     elements.canvas.ondblclick=()=>chart?.resetZoom();
   }
 
