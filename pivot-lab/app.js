@@ -1,35 +1,28 @@
 (() => {
   'use strict';
 
-  const FUNCTION_NAME='pivot-lab-engine';
-  const DEBOUNCE_MS=280;
   const config=window.MACROWATCH_CONFIG;
   const registry=window.MacroWatchEconomicSeriesRegistry;
-  if(!config?.supabaseUrl||!config?.supabasePublishableKey||!registry?.allSeries)throw new Error('Pivot Lab 초기화에 필요한 설정을 불러오지 못했습니다.');
+  const engine=window.PivotLabEngine;
+  if(!config?.supabaseUrl||!config?.supabasePublishableKey||!registry?.allSeries||!engine?.detect)throw new Error('Pivot Lab 초기화에 필요한 설정을 불러오지 못했습니다.');
 
   const client=window.supabase.createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const elements={list:document.getElementById('series-list'),search:document.getElementById('search'),count:document.getElementById('series-count'),title:document.getElementById('series-title'),meta:document.getElementById('series-meta'),status:document.getElementById('status'),pointCount:document.getElementById('point-count'),pivotCount:document.getElementById('pivot-count'),canvas:document.getElementById('chart')};
   const catalog=[...registry.allSeries];
-  const cache=new Map();
-  let activeCode=null,chart=null,loadToken=0,recalcToken=0,recalcTimer=null;
+  let activeCode=null,chart=null,loadToken=0;
 
   const setStatus=(text,error=false)=>{elements.status.textContent=text;elements.status.classList.toggle('error',error);};
   const formatValue=(value,decimals=2)=>Number(value).toLocaleString('ko-KR',{maximumFractionDigits:decimals,minimumFractionDigits:0});
-  const cacheKey=(code,startDate,endDate)=>`${code}|${startDate||''}|${endDate||''}`;
 
-  async function invokeAnalyzer({seriesCode,startDate=null,endDate=null,includePoints=false}){
-    const {data,error}=await client.functions.invoke(FUNCTION_NAME,{body:{series_code:seriesCode,start_date:startDate,end_date:endDate,include_points:includePoints}});
-    if(error)throw error;
-    if(data?.error)throw new Error(data.error);
-    return {...(data||{}),startDate:data?.start_date||startDate||data?.points?.[0]?.time||null,endDate:data?.end_date||endDate||data?.points?.at?.(-1)?.time||null};
-  }
-
-  function visibleDates(instance,points){
-    const x=instance?.scales?.x;
-    if(!x||!points.length)return {startDate:points[0]?.time||null,endDate:points.at(-1)?.time||null};
-    const start=Math.max(0,Math.floor(Number.isFinite(x.min)?x.min:0));
-    const end=Math.min(points.length-1,Math.ceil(Number.isFinite(x.max)?x.max:points.length-1));
-    return {startDate:points[start]?.time||points[0]?.time||null,endDate:points[end]?.time||points.at(-1)?.time||null};
+  async function fetchSeries(code){
+    const rows=[];const pageSize=1000;
+    for(let from=0;;from+=pageSize){
+      const {data,error}=await client.from('economic_chart_series_points').select('observation_date,value').eq('series_code',code).order('observation_date',{ascending:true}).range(from,from+pageSize-1);
+      if(error)throw error;
+      rows.push(...(data||[]));
+      if(!data||data.length<pageSize)break;
+    }
+    return rows.map(row=>({time:String(row.observation_date).slice(0,10),value:Number(row.value)})).filter(row=>Number.isFinite(row.value));
   }
 
   function applyPivots(result,meta,instance=chart){
@@ -44,40 +37,16 @@
     instance.update('none');
     elements.pivotCount.textContent=`피봇 ${pivots.length.toLocaleString('ko-KR')}개`;
     const d=result?.diagnostics||{};
-    const parts=[`현재 화면 ${result?.startDate||'-'} ~ ${result?.endDate||'-'}`,`피봇 ${pivots.length}개`];
+    const parts=[`고정 스케일 1회 계산`,`피봇 ${pivots.length}개`];
     if(Number.isFinite(d.major))parts.push(`주요 ${d.major}`);
-    if(Number.isFinite(d.deviation))parts.push(`분할 ${d.deviation}`);
+    if(Number.isFinite(d.deviation))parts.push(`이격 ${d.deviation}`);
     if(Number.isFinite(d.sidewaysZones))parts.push(`횡보 ${d.sidewaysZones}`);
+    if(Number.isFinite(d.sampled)&&Number.isFinite(d.raw))parts.push(`계산 ${d.sampled}/${d.raw}`);
     if(d.engineVersion)parts.push(d.engineVersion);
-    setStatus(`백엔드 계산 · ${parts.join(' · ')}`);
+    setStatus(parts.join(' · '));
   }
 
-  async function recalc(meta,points,instance=chart){
-    if(!instance||!points.length||!activeCode)return;
-    const {startDate,endDate}=visibleDates(instance,points);
-    const key=cacheKey(activeCode,startDate,endDate);
-    const cached=cache.get(key);
-    if(cached){applyPivots(cached,meta,instance);return;}
-
-    const token=++recalcToken;
-    setStatus(`현재 화면 ${startDate||'-'} ~ ${endDate||'-'} · 백엔드에서 피봇 계산 중…`);
-    try{
-      const result=await invokeAnalyzer({seriesCode:activeCode,startDate,endDate,includePoints:false});
-      if(token!==recalcToken||activeCode!==meta.code)return;
-      cache.set(key,result);
-      applyPivots(result,meta,instance);
-    }catch(error){
-      if(token!==recalcToken)return;
-      setStatus(error?.message||String(error),true);
-    }
-  }
-
-  function scheduleRecalc(meta,points,instance=chart){
-    clearTimeout(recalcTimer);
-    recalcTimer=setTimeout(()=>recalc(meta,points,instance),DEBOUNCE_MS);
-  }
-
-  function draw(meta,points,initialResult){
+  function draw(meta,points,result){
     if(chart)chart.destroy();
     chart=new Chart(elements.canvas.getContext('2d'),{
       type:'line',
@@ -92,35 +61,32 @@
         plugins:{
           legend:{display:false},
           tooltip:{callbacks:{label(ctx){return `${ctx.dataset.label}: ${formatValue(ctx.parsed.y,meta.decimals)}`;}}},
-          zoom:{
-            limits:{x:{min:'original',max:'original'}},
-            pan:{enabled:true,mode:'x',onPanComplete:({chart:instance})=>scheduleRecalc(meta,points,instance)},
-            zoom:{wheel:{enabled:true,speed:.08},pinch:{enabled:true},mode:'x',onZoomComplete:({chart:instance})=>scheduleRecalc(meta,points,instance)}
-          }
+          zoom:{limits:{x:{min:'original',max:'original'}},pan:{enabled:true,mode:'x'},zoom:{wheel:{enabled:true,speed:.08},pinch:{enabled:true},mode:'x'}}
         },
         scales:{x:{type:'category',grid:{display:false},ticks:{maxTicksLimit:12}},y:{grid:{color:'rgba(148,163,184,.12)'},ticks:{callback:value=>formatValue(value,meta.decimals)}}}
       }
     });
-    applyPivots(initialResult,meta,chart);
-    elements.canvas.ondblclick=()=>{chart?.resetZoom();scheduleRecalc(meta,points,chart);};
+    applyPivots(result,meta,chart);
+    elements.canvas.ondblclick=()=>chart?.resetZoom();
   }
 
   async function selectSeries(code){
     const meta=catalog.find(item=>item.code===code);if(!meta)return;
-    const token=++loadToken;
-    activeCode=code;recalcToken++;clearTimeout(recalcTimer);cache.clear();renderList(elements.search.value);
+    const token=++loadToken;activeCode=code;renderList(elements.search.value);
     elements.title.textContent=meta.title;elements.meta.textContent=`${meta.code} · ${meta.frequencyLabel} · ${meta.category} · ${meta.unit}`;
-    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('백엔드에서 시계열과 피봇을 계산 중입니다.');
+    elements.pointCount.textContent='데이터 불러오는 중';elements.pivotCount.textContent='피봇 계산 중';setStatus('전체 기간 데이터를 불러온 뒤 브라우저에서 한 번만 계산합니다.');
     try{
       const {data:{session}}=await client.auth.getSession();
       if(!session)throw new Error('로그인이 필요합니다. MacroWatch에 로그인한 뒤 이 페이지를 다시 열어 주세요.');
-      const result=await invokeAnalyzer({seriesCode:code,includePoints:true});
+      const points=await fetchSeries(code);
       if(token!==loadToken||activeCode!==code)return;
-      const points=Array.isArray(result?.points)?result.points.map(row=>({time:String(row.time),value:Number(row.value)})).filter(row=>Number.isFinite(row.value)):[];
       elements.pointCount.textContent=`데이터 ${points.length.toLocaleString('ko-KR')}개`;
       if(!points.length){setStatus('이 지표의 저장된 시계열이 없습니다.',true);elements.pivotCount.textContent='피봇 -';if(chart){chart.destroy();chart=null;}return;}
-      cache.set(cacheKey(code,result.startDate,result.endDate),result);
+      const started=performance.now();
+      const result=engine.detect(points);
+      const elapsed=Math.round(performance.now()-started);
       draw(meta,points,result);
+      setStatus(`${elements.status.textContent} · ${elapsed.toLocaleString('ko-KR')}ms`);
     }catch(error){
       if(token!==loadToken)return;
       setStatus(error?.message||String(error),true);elements.pointCount.textContent='데이터 -';elements.pivotCount.textContent='피봇 -';
