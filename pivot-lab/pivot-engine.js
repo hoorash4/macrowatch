@@ -49,72 +49,146 @@
     return out;
   }
 
-  function dir(a,b){return b>a?1:b<a?-1:0;}
+  function direction(a,b){return b>a?1:b<a?-1:0;}
 
-  // A directional trend is not created by one move. It needs two highs and two lows.
-  // Higher high + higher low => up. Lower high + lower low => down.
-  function buildEvidence(swings){
+  // Every swing can update the two most recent highs/lows. A directional observation
+  // exists only when BOTH high direction and low direction agree.
+  function structuralObservations(swings){
     const highs=[],lows=[],out=[];
-    for(const e of swings){
-      if(e.type==='high'){highs.push(e);if(highs.length>2)highs.shift();}
-      else{lows.push(e);if(lows.length>2)lows.shift();}
+    for(const event of swings){
+      if(event.type==='high'){
+        highs.push(event);
+        if(highs.length>2)highs.shift();
+      }else{
+        lows.push(event);
+        if(lows.length>2)lows.shift();
+      }
       if(highs.length<2||lows.length<2)continue;
 
       const [h1,h2]=highs,[l1,l2]=lows;
-      const hd=dir(h1.value,h2.value),ld=dir(l1.value,l2.value);
+      const hd=direction(h1.value,h2.value),ld=direction(l1.value,l2.value);
       let state=null;
       if(hd===1&&ld===1)state='up';
       else if(hd===-1&&ld===-1)state='down';
-      if(!state)continue; // mixed high/low directions stay unresolved/sideways
 
-      const start=state==='up'?l1:h1;
-      const terminal=state==='up'?h2:l2;
-      if(start.point.index>=terminal.point.index)continue;
-
-      const last=out.at(-1);
-      if(last&&last.state===state&&last.start.point.index===start.point.index&&last.terminal.point.index===terminal.point.index)continue;
-      out.push({state,start,terminal,confirmedAt:e.point.index});
+      out.push({
+        state,
+        at:event.point.index,
+        highPair:[h1,h2],
+        lowPair:[l1,l2],
+        start:state==='up'?l1:state==='down'?h1:null,
+        terminal:state==='up'?h2:state==='down'?l2:null,
+      });
     }
     return out;
   }
 
-  function mergeSameDirection(evidence){
-    const out=[];
-    for(const e of evidence){
-      const last=out.at(-1);
-      if(!last||last.state!==e.state){out.push({...e});continue;}
+  function extendTerminal(trend,observation){
+    if(!observation||observation.state!==trend.state)return;
+    if(trend.state==='up'){
+      if(observation.terminal.value>=trend.terminal.value)trend.terminal=observation.terminal;
+    }else if(observation.terminal.value<=trend.terminal.value){
+      trend.terminal=observation.terminal;
+    }
+    trend.confirmations++;
+    trend.confirmedAt=observation.at;
+  }
 
-      // Same directional evidence belongs to one trend. Keep the earliest structural start
-      // and extend only to a more extreme terminal.
-      if(e.state==='up'){
-        if(e.terminal.value>=last.terminal.value)last.terminal=e.terminal;
-      }else if(e.terminal.value<=last.terminal.value){
-        last.terminal=e.terminal;
+  // Moderate hierarchy:
+  // 1 directional observation = provisional only.
+  // 2 same-direction observations = confirmed trend.
+  // A confirmed trend is not reversed by one opposite observation; the opposite side
+  // must also confirm twice. Mixed high/low direction remains unresolved and creates no pivot.
+  function confirmTrends(observations){
+    const trends=[];
+    let active=null;
+    let candidate=null;
+
+    for(const o of observations){
+      if(!o.state)continue;
+
+      if(!active){
+        if(!candidate||candidate.state!==o.state){
+          candidate={state:o.state,count:1,start:o.start,terminal:o.terminal,firstAt:o.at,lastAt:o.at};
+          continue;
+        }
+        candidate.count++;
+        candidate.lastAt=o.at;
+        if(candidate.state==='up'){
+          if(o.terminal.value>=candidate.terminal.value)candidate.terminal=o.terminal;
+        }else if(o.terminal.value<=candidate.terminal.value){
+          candidate.terminal=o.terminal;
+        }
+        if(candidate.count>=2){
+          active={
+            state:candidate.state,
+            start:candidate.start,
+            terminal:candidate.terminal,
+            confirmations:candidate.count,
+            confirmedAt:candidate.lastAt,
+          };
+          candidate=null;
+        }
+        continue;
       }
-      last.confirmedAt=Math.max(last.confirmedAt,e.confirmedAt);
+
+      if(o.state===active.state){
+        candidate=null;
+        extendTerminal(active,o);
+        continue;
+      }
+
+      // Opposite direction: keep it provisional until it confirms twice.
+      if(!candidate||candidate.state!==o.state){
+        candidate={state:o.state,count:1,start:o.start,terminal:o.terminal,firstAt:o.at,lastAt:o.at};
+        continue;
+      }
+
+      candidate.count++;
+      candidate.lastAt=o.at;
+      if(candidate.state==='up'){
+        if(o.terminal.value>=candidate.terminal.value)candidate.terminal=o.terminal;
+      }else if(o.terminal.value<=candidate.terminal.value){
+        candidate.terminal=o.terminal;
+      }
+
+      if(candidate.count>=2){
+        trends.push(active);
+        active={
+          state:candidate.state,
+          start:candidate.start,
+          terminal:candidate.terminal,
+          confirmations:candidate.count,
+          confirmedAt:candidate.lastAt,
+        };
+        candidate=null;
+      }
     }
-    return out;
+
+    if(active)trends.push(active);
+    return trends;
   }
 
-  function dominatesLaterSameDirection(a,c){
-    if(a.state!==c.state)return false;
-    if(a.state==='down')return c.terminal.value<a.terminal.value;
-    return c.terminal.value>a.terminal.value;
+  function resumedBeyond(parent,later){
+    if(parent.state!==later.state)return false;
+    return parent.state==='down'
+      ? later.terminal.value<parent.terminal.value
+      : later.terminal.value>parent.terminal.value;
   }
 
-  // Retrospective hierarchy:
-  // down -> short up -> down that makes a NEW lower low is still one larger downtrend.
-  // up -> short down -> up that makes a NEW higher high is still one larger uptrend.
-  // The middle countertrend is cancelled, not turned into pivots.
-  function absorbCountertrends(segments){
-    let out=segments.map(s=>({...s}));
+  // A minimal two-confirmation countertrend can still turn out to be an internal wave.
+  // If the original larger direction resumes and exceeds its old terminal, erase ONLY that
+  // minimum-strength middle trend. Stronger/longer countertrends survive as real regimes.
+  function absorbWeakCountertrends(trends){
+    let out=trends.map(t=>({...t}));
     let changed=true,guard=0;
-    while(changed&&guard++<200){
+    while(changed&&guard++<100){
       changed=false;
       for(let i=0;i<out.length-2;i++){
         const a=out[i],b=out[i+1],c=out[i+2];
         if(a.state!==c.state||b.state===a.state)continue;
-        if(!dominatesLaterSameDirection(a,c))continue;
+        if(b.confirmations!==2)continue;
+        if(!resumedBeyond(a,c))continue;
 
         const merged={
           state:a.state,
@@ -122,6 +196,7 @@
           terminal:a.state==='down'
             ? (c.terminal.value<a.terminal.value?c.terminal:a.terminal)
             : (c.terminal.value>a.terminal.value?c.terminal:a.terminal),
+          confirmations:a.confirmations+c.confirmations,
           confirmedAt:Math.max(a.confirmedAt,c.confirmedAt),
         };
         out.splice(i,3,merged);
@@ -132,38 +207,9 @@
     return out;
   }
 
-  function coalesceOverlaps(segments){
-    const out=[];
-    for(const s of segments){
-      const last=out.at(-1);
-      if(!last){out.push({...s});continue;}
-
-      if(last.state===s.state){
-        if(s.state==='up'&&s.terminal.value>=last.terminal.value)last.terminal=s.terminal;
-        if(s.state==='down'&&s.terminal.value<=last.terminal.value)last.terminal=s.terminal;
-        last.confirmedAt=Math.max(last.confirmedAt,s.confirmedAt);
-        continue;
-      }
-
-      // Opposite trend can start only from its own structural start. If that start lies
-      // inside the previous trend, keep it provisional until hierarchy absorption decides.
-      out.push({...s});
-    }
-    return out;
-  }
-
-  function buildHierarchicalTrends(swings){
-    const evidence=buildEvidence(swings);
-    let trends=mergeSameDirection(evidence);
-    trends=absorbCountertrends(trends);
-    trends=coalesceOverlaps(trends);
-    trends=absorbCountertrends(trends);
-    return {evidence,trends};
-  }
-
   function pivotFrom(event,type,reason){
     const p=event.point;
-    return {type,index:p.index,date:p.time,value:p.value,source:'monthly-hierarchical-trend',reason};
+    return {type,index:p.index,date:p.time,value:p.value,source:'monthly-balanced-trend',reason};
   }
 
   function buildPivots(trends){
@@ -195,16 +241,18 @@
 
   function detect(rows){
     if(!Array.isArray(rows)||rows.length<8){
-      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-hierarchy-v4',major:0,sidewaysZones:0,deviation:0}};
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-balanced-v5',major:0,sidewaysZones:0,deviation:0}};
     }
 
     const months=buildMonthlyExtremes(rows);
     if(months.length<4){
-      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-hierarchy-v4',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
+      return {pivots:[],path:[],diagnostics:{engineVersion:'monthly-balanced-v5',major:0,sidewaysZones:0,deviation:0,monthly:months.length,raw:rows.length}};
     }
 
     const swings=alternatingSwings(months);
-    const {evidence,trends}=buildHierarchicalTrends(swings);
+    const observations=structuralObservations(swings);
+    let trends=confirmTrends(observations);
+    trends=absorbWeakCountertrends(trends);
     const pivots=buildPivots(trends);
 
     let sidewaysZones=0;
@@ -216,14 +264,14 @@
       pivots,
       path:pivots.map(p=>({date:p.date,value:p.value,virtual:false})),
       diagnostics:{
-        engineVersion:'monthly-hierarchy-v4',
+        engineVersion:'monthly-balanced-v5',
         major:pivots.length,
         sidewaysZones,
         deviation:0,
         monthly:months.length,
         raw:rows.length,
         swings:swings.length,
-        confirmations:evidence.length,
+        observations:observations.length,
         trends:trends.length,
       }
     };
