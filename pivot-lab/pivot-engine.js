@@ -37,16 +37,6 @@
     return travel?Math.abs(values.at(-1)-values[0])/travel:0;
   }
 
-  function localExtremeIndex(values,center,radius,type){
-    const from=Math.max(0,center-radius),to=Math.min(values.length-1,center+radius);
-    let pick=from;
-    for(let i=from+1;i<=to;i++){
-      if(type==='high'&&values[i]>values[pick])pick=i;
-      if(type==='low'&&values[i]<values[pick])pick=i;
-    }
-    return pick;
-  }
-
   function snapToRaw(rows,sampled,sampleIndex,type,rawRadius){
     const center=sampled[sampleIndex].originalIndex;
     const from=Math.max(0,center-rawRadius),to=Math.min(rows.length-1,center+rawRadius);
@@ -98,12 +88,15 @@
     const q10=quantile(w,.10),q90=quantile(w,.90),range=Math.max(q90-q10,1e-12);
     const net=Math.abs(w.at(-1)-w[0]);
     const eff=efficiency(w);
-    const flatRange=Math.max(ctx.robustRange*.018,ctx.noise*3.2);
-    const flatDrift=Math.max(ctx.robustRange*.008,ctx.noise*2.2);
+
+    // Flat sideways: near-zero amplitude and near-zero drift. Ratio tests are intentionally skipped.
+    const flatRange=Math.max(ctx.robustRange*.020,ctx.noise*3.4);
+    const flatDrift=Math.max(ctx.robustRange*.009,ctx.noise*2.4);
     if(range<=flatRange&&net<=flatDrift)return 'flat';
 
-    const oscillatingRange=Math.max(ctx.robustRange*.28,ctx.noise*10);
-    if(range<=oscillatingRange&&eff<=.42&&net/range<=.58)return 'oscillating';
+    // Oscillating sideways: wider box is allowed, but directional efficiency and net drift must stay low.
+    const oscillatingRange=Math.max(ctx.robustRange*.30,ctx.noise*11);
+    if(range<=oscillatingRange&&eff<=.44&&net/range<=.62)return 'oscillating';
     return null;
   }
 
@@ -188,17 +181,18 @@
       residuals.push(values[a+o]-expected);
     }
 
-    const depthPenalty=1+depth*.12;
-    const unit=Math.max(ctx.deviationUnit*depthPenalty,Math.abs(values[b]-values[a])*.035);
-    const activation=unit*.34;
-    const returnBand=unit*.24;
-    const edge=Math.max(3,Math.round(len*.065));
+    const depthPenalty=1+depth*.10;
+    const unit=Math.max(ctx.deviationUnit*depthPenalty,Math.abs(values[b]-values[a])*.03,1e-12);
+    const excursionBand=unit*.30;
+    const returnBand=unit*.20;
+    const edge=Math.max(3,Math.round(len*.06));
     const baseError=lineError(values,a,b);
     if(baseError<=1e-12)return null;
 
+    // One excursion = one continuous departure on one side of the current trend line.
     const excursions=[];
     let runStart=null,runSign=0;
-    const closeRun=(runEnd)=>{
+    const closeRun=runEnd=>{
       if(runStart==null||runEnd<runStart)return;
       let extreme=runStart;
       for(let local=runStart+1;local<=runEnd;local++){
@@ -210,9 +204,9 @@
     };
 
     for(let local=1;local<len;local++){
-      const r=residuals[local],sign=r>0?1:r<0?-1:0;
-      const active=Math.abs(r)>=activation;
-      if(!active){closeRun(local-1);continue;}
+      const r=residuals[local];
+      const sign=r>0?1:r<0?-1:0;
+      if(Math.abs(r)<excursionBand){closeRun(local-1);continue;}
       if(runStart==null){runStart=local;runSign=sign;continue;}
       if(sign!==runSign){closeRun(local-1);runStart=local;runSign=sign;}
     }
@@ -220,33 +214,54 @@
 
     let best=null;
     for(const ex of excursions){
-      const local=ex.extreme,mag=Math.abs(residuals[local]),peak=mag/unit;
+      const local=ex.extreme;
+      const magnitude=Math.abs(residuals[local]);
+      const peak=magnitude/unit;
+      if(peak<.72)continue;
+
+      // Time spent materially away from the line, relative to current segment length.
       const duration=(ex.end-ex.start+1)/len;
-      let recovery=0;
+
+      // Time from the extreme point until the series returns near the current trend line.
+      // If it never returns, the remaining segment length is treated as unresolved persistence.
+      let returnIndex=null;
       for(let k=local+1;k<=len;k++){
-        if(Math.abs(residuals[k])<=returnBand){recovery=(k-local)/len;break;}
+        if(Math.abs(residuals[k])<=returnBand){returnIndex=k;break;}
       }
-      if(recovery===0)recovery=(len-local)/len;
+      const recovery=((returnIndex==null?len:returnIndex)-local)/len;
+      const unrecovered=returnIndex==null;
+      const exposure=Math.max(duration,recovery);
+
+      // A flash spike that immediately returns is not structural, regardless of height.
+      if(exposure<.035)continue;
 
       const split=a+local;
-      const improvedError=lineError(values,a,b,split);
-      const improvement=clamp((baseError-improvedError)/baseError,0,1);
+      const splitError=lineError(values,a,b,split);
+      const improvement=clamp((baseError-splitError)/baseError,0,1);
+      if(improvement<.14)continue;
 
-      const huge=peak>=1.65&&improvement>=.16;
-      const normal=peak>=1.0&&improvement>=.26&&(duration>=.055||recovery>=.05);
-      if(!huge&&!normal)continue;
+      // Continuous structural significance. No large/medium/small buckets.
+      // Distance matters only together with time away from the line and actual explanatory gain.
+      const persistenceFactor=Math.sqrt(exposure);
+      const improvementFactor=Math.sqrt(improvement);
+      const significance=peak*persistenceFactor*improvementFactor;
+      const minimumSignificance=.24*(1+depth*.08);
+      if(significance<minimumSignificance)continue;
 
       const type=residuals[local]>0?'high':'low';
-      const score=peak+improvement*.45+Math.max(duration,recovery)*.35;
-      if(!best||score>best.score)best={sampleIndex:split,type,peak,duration,recovery,improvement,score,huge};
+      if(!best||significance>best.significance){
+        best={sampleIndex:split,type,peak,duration,recovery,unrecovered,improvement,significance};
+      }
     }
 
     if(!best)return null;
-    const pivot=makePivot(rows,sampled,best.sampleIndex,best.type,'deviation',best.peak,best.huge?'extreme-deviation':'persistent-deviation',ctx,{
+    const pivot=makePivot(rows,sampled,best.sampleIndex,best.type,'deviation',best.significance,'structural-deviation',ctx,{
+      deviationPeak:best.peak,
       deviationDuration:best.duration,
       deviationRecovery:best.recovery,
+      unrecovered:best.unrecovered,
       improvement:best.improvement,
-      priority:best.score,
+      priority:best.significance,
       depth,
     });
     if(pivot.index<=leftOriginal||pivot.index>=rightOriginal)return null;
@@ -257,9 +272,11 @@
     if(depth>ctx.maxDeviationDepth)return;
     const candidate=strongestDeviation(rows,sampled,values,leftOriginal,rightOriginal,depth,ctx);
     if(!candidate)return;
+
     const minRawGap=Math.max(2,Math.round(rows.length*.0025));
     if(candidate.index-leftOriginal<minRawGap||rightOriginal-candidate.index<minRawGap)return;
 
+    // Exactly one extreme point is accepted for this segment before the line is rebuilt.
     out.push(candidate);
     recursiveDeviation(rows,sampled,values,leftOriginal,candidate.index,depth+1,ctx,out);
     recursiveDeviation(rows,sampled,values,candidate.index,rightOriginal,depth+1,ctx,out);
@@ -280,7 +297,7 @@
   }
 
   function detect(rows){
-    if(!Array.isArray(rows)||rows.length<5)return {pivots:[],path:rows||[],diagnostics:{engineVersion:'frontend-structure-v2',major:0,sidewaysZones:0,deviation:0}};
+    if(!Array.isArray(rows)||rows.length<5)return {pivots:[],path:rows||[],diagnostics:{engineVersion:'frontend-structure-v3',major:0,sidewaysZones:0,deviation:0}};
 
     const sampled=minMaxSample(rows,1200);
     const count=sampled.length;
@@ -299,7 +316,7 @@
       radius,
       majorRadius,
       majorFloor:Math.max(robustRange*.082,noise*4.3),
-      deviationUnit:Math.max(robustRange*.04,noise*3.2,1e-12),
+      deviationUnit:Math.max(robustRange*.035,noise*3.0,1e-12),
       rawSnapRadius:Math.max(1,Math.round(rows.length*.005)),
       maxDeviationDepth:6,
     };
@@ -318,18 +335,16 @@
 
     const pivots=[...structural,...deviations].sort((a,b)=>a.index-b.index);
     const path=[{date:rows[0].time,value:rows[0].value,virtual:true},...pivots.map(p=>({date:p.date,value:p.value,virtual:false})),{date:rows.at(-1).time,value:rows.at(-1).value,virtual:true}];
-    const flatZones=zones.filter(z=>z.type==='flat').length;
-    const oscillatingZones=zones.filter(z=>z.type==='oscillating').length;
 
     return {
       pivots,
       path,
       diagnostics:{
-        engineVersion:'frontend-structure-v2',
+        engineVersion:'frontend-structure-v3',
         major:majors.length,
         sidewaysZones:zones.length,
-        flatSidewaysZones:flatZones,
-        oscillatingSidewaysZones:oscillatingZones,
+        flatSidewaysZones:zones.filter(z=>z.type==='flat').length,
+        oscillatingSidewaysZones:zones.filter(z=>z.type==='oscillating').length,
         sidewaysBoundaries:sideways.length,
         deviation:deviations.length,
         sampled:count,
