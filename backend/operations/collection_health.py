@@ -59,6 +59,8 @@ WEEK_END_LABELED_SERIES = frozenset({
 
 MANUAL_SUCCESS_ONLY_RECOVERY = frozenset({
     "central-bank-policy.yml",
+    "korea-stress.yml",
+    "market-context.yml",
 })
 
 WORKFLOW_DATABASE_SERIES = {
