@@ -10,15 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  dispatch-repairs:
+  dispatch-health:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Dispatch current market context collector
+      - name: Dispatch existing collection health check
         run: |
           set -euo pipefail
-          gh workflow run market-context.yml -f mode=automatic
-          echo "Dispatched current market-context workflow for final KRX/FRED recovery; no schedule added."
+          gh workflow run collection-health.yml
+          echo "Dispatched existing collection-health workflow only; no schedule added."
