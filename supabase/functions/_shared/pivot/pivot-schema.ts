@@ -1,5 +1,5 @@
-// Pivot schema v3: rerun marker for directional pivot-date prompt validation.
-export const PIVOT_SCHEMA_VERSION = "pivot-schema-v3";
+// Pivot schema v4: optional A/B post-trend parent structure for relationship scoring.
+export const PIVOT_SCHEMA_VERSION = "pivot-schema-v4";
 
 export const PIVOT_ANALYSIS_SCHEMA = {
   type: "object",
@@ -46,6 +46,15 @@ export const PIVOT_ANALYSIS_SCHEMA = {
           direction: { type: "string", enum: ["high", "low", "neutral"] },
           reason: { type: "string", minLength: 1, maxLength: 400 },
           confidence: { type: "number", minimum: 0, maximum: 1 },
+          post_trend: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              direction: { type: "string", enum: ["up", "down", "sideways"] },
+              end_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+            },
+            required: ["direction", "end_date"],
+          },
         },
         required: ["date", "value", "type", "grade", "direction", "reason", "confidence"],
       },
@@ -101,6 +110,11 @@ export type PivotRegime = {
   confidence: number;
 };
 
+export type PivotPostTrend = {
+  direction: "up" | "down" | "sideways";
+  end_date: string;
+};
+
 export type PivotPoint = {
   date: string;
   value: number;
@@ -109,6 +123,7 @@ export type PivotPoint = {
   direction: "high" | "low" | "neutral";
   reason: string;
   confidence: number;
+  post_trend?: PivotPostTrend;
 };
 
 export type PivotAnomaly = {

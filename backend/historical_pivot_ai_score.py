@@ -14,7 +14,7 @@ from typing import Any
 
 from common import SupabaseRest
 
-SCORING_VERSION = "pivot-ai-score-v4"
+SCORING_VERSION = "pivot-ai-score-v5"
 REFERENCE_ORDER = ("START", "PEAK", "TROUGH")
 REFERENCE_WEIGHTS = {"structural": 0.45, "timing": 0.35, "duration": 0.20}
 OVERALL_WEIGHTS = {"best": 0.70, "mean": 0.30}
@@ -71,11 +71,8 @@ def timing_score(offset_days: int, before: int, after: int) -> float:
 
 def duration_score(indicator_days: int, market_days: int | None) -> float:
     if not market_days or market_days <= 0:
-        return 100.0
-    score = min(indicator_days / market_days, 1.0) * 100.0
-    if market_days < 365 and indicator_days > market_days * 2:
-        score *= max(0.7, market_days * 2 / indicator_days)
-    return min(100.0, score)
+        return 0.0
+    return min(max(indicator_days, 0) / market_days, 1.0) * 100.0
 
 
 def structural_score(pivot: dict[str, Any]) -> float:
@@ -166,9 +163,51 @@ def market_duration(reference_type: str, cycle: dict[str, Any]) -> int | None:
     start, peak, trough = cycle.get("start_date"), cycle.get("peak_date"), cycle.get("trough_date")
     if reference_type == "START" and start and peak:
         return max(1, days_between(str(start), str(peak)))
-    if reference_type in {"PEAK", "TROUGH"} and peak and trough:
+    if reference_type == "PEAK" and peak and trough:
         return max(1, days_between(str(peak), str(trough)))
+    if reference_type == "TROUGH" and trough:
+        return max(1, days_between(str(trough), shift_months(str(trough), 24)))
     return None
+
+
+def post_trend_values(pivot: dict[str, Any]) -> tuple[str | None, str | None]:
+    value = pivot.get("post_trend")
+    if not isinstance(value, dict):
+        return None, None
+    direction = str(value.get("direction") or "")
+    end_date = str(value.get("end_date") or "")[:10]
+    if direction not in {"up", "down", "sideways"} or not end_date:
+        return None, None
+    try:
+        if date.fromisoformat(end_date) < date.fromisoformat(str(pivot.get("date") or "")[:10]):
+            return None, None
+    except ValueError:
+        return None, None
+    return direction, end_date
+
+
+def market_direction_for_reference(reference_type: str, cycle: dict[str, Any]) -> str | None:
+    if reference_type == "START":
+        return "up"
+    if reference_type == "PEAK":
+        return "down"
+    if reference_type == "TROUGH":
+        value = str(cycle.get("_post_trough_direction") or "")
+        return value if value in {"up", "sideways"} else None
+    return None
+
+
+def relationship_from_post_trend(reference_type: str, post_direction: str, cycle: dict[str, Any]) -> str:
+    market_direction = market_direction_for_reference(reference_type, cycle)
+    if not market_direction:
+        return "unclear"
+    if post_direction == market_direction:
+        return "positive"
+    if post_direction == "down" and market_direction in {"up", "sideways"}:
+        return "inverse"
+    if market_direction == "down" and post_direction == "up":
+        return "inverse"
+    return "unclear"
 
 
 def result_from_pivot(
@@ -186,10 +225,18 @@ def result_from_pivot(
     after = max(1, days_between(reference_date, window_to))
     structural = structural_score(pivot)
     timing = timing_score(offset, before, after)
-    persistence = persistence_days(str(pivot["date"]), next_regime, regimes, analysis_end)
+    post_direction, post_end_date = post_trend_values(pivot)
+    if post_direction and post_end_date:
+        persistence = max(0, days_between(str(pivot["date"]), post_end_date))
+        relationship = relationship_from_post_trend(reference_type, post_direction, cycle)
+        relationship_source = "post_trend"
+    else:
+        # Legacy analyses remain scoreable until the updated prompt has been rerun.
+        persistence = persistence_days(str(pivot["date"]), next_regime, regimes, analysis_end)
+        relationship = structural_relationship(reference_type, previous, next_regime)
+        relationship_source = "legacy_regime"
     duration = duration_score(persistence, market_duration(reference_type, cycle))
     base_score = min(100.0, structural * REFERENCE_WEIGHTS["structural"] + timing * REFERENCE_WEIGHTS["timing"] + duration * REFERENCE_WEIGHTS["duration"])
-    relationship = structural_relationship(reference_type, previous, next_regime)
     return {
         "referenceType": reference_type,
         "referenceDate": reference_date,
@@ -210,8 +257,13 @@ def result_from_pivot(
         "baseScore": base_score,
         "relationship": relationship,
         "nativeRelationship": relationship,
+        "relationshipSource": relationship_source,
+        "marketDirection": market_direction_for_reference(reference_type, cycle),
+        "postTrendDirection": post_direction,
+        "postTrendEndDate": post_end_date,
+        "relationshipScore": duration,
         "relationshipBonus": 0.0,
-        "relationshipConfidence": 0.0,
+        "relationshipConfidence": duration / 100.0,
         "pivotSelectionScore": structural,
         "pivotRole": "anomaly" if str(pivot.get("type")) == "anomaly" else "market-relevant",
         "markerStatus": "confirmed",
@@ -279,7 +331,7 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
         updated = dict(result)
         updated.update({
             "nativeRelationship": native,
-            "relationship": "unclear" if cycle_relationship == "unresolved" else cycle_relationship,
+            "relationship": native,
             "cycleRelationship": cycle_relationship,
             "relationshipStatus": status,
             "score": float(result["baseScore"]),
@@ -342,6 +394,32 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def post_trough_market_direction(db: SupabaseRest, index_code: str, trough_date: str | None) -> str | None:
+    if not trough_date:
+        return None
+    end_date = shift_months(str(trough_date), 24)
+    rows = fetch_all(db, "market_index_prices", {
+        "select": "market_date,close",
+        "index_code": f"eq.{index_code}",
+        "market_date": f"gte.{trough_date}",
+        "order": "market_date.asc",
+    })
+    usable = []
+    for row in rows:
+        market_date = str(row.get("market_date") or "")[:10]
+        if not market_date or market_date > end_date:
+            break
+        try:
+            close = float(row.get("close"))
+        except (TypeError, ValueError):
+            continue
+        usable.append((market_date, close))
+    if len(usable) < 2:
+        return None
+    # Product rule: after TROUGH, classify the market only as up or sideways.
+    return "up" if usable[-1][1] > usable[0][1] else "sideways"
+
+
 def score_rows(db: SupabaseRest, case_code: str | None = None, index_code: str | None = None, series_code: str | None = None) -> int:
     params = {"select": "case_code,index_code,series_code,display_end,regimes,pivots,anomalies,analyzed_at", "order": "case_code.asc,index_code.asc,series_code.asc"}
     if case_code:
@@ -366,7 +444,9 @@ def score_rows(db: SupabaseRest, case_code: str | None = None, index_code: str |
             })
             if not cycles:
                 raise RuntimeError(f"Missing historical cycle: {key[0]}/{key[1]}")
-            cycle_cache[key] = cycles[0]
+            cycle = dict(cycles[0])
+            cycle["_post_trough_direction"] = post_trough_market_direction(db, key[1], cycle.get("trough_date"))
+            cycle_cache[key] = cycle
         scored.append(score_analysis(row, cycle_cache[key]))
 
     db.upsert("historical_indicator_ai_scores", scored, conflict="case_code,index_code,series_code")
