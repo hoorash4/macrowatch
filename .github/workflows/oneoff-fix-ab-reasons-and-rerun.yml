@@ -1,5 +1,5 @@
-name: One-off fix A/B reason UI and rerun
-# retry after helper relaxation
+name: One-off fix A/B reason UI
+# frontend-only retry
 on:
   push:
     branches: [main]
@@ -23,6 +23,6 @@ jobs:
           git config user.name "hoorash4"
           git config user.email "hoorash4@gmail.com"
           rm .github/workflows/oneoff-fix-ab-reasons-and-rerun.yml tools/patch_history_ab_ui.py
-          git add assets/js/historical-insight/historical-insight.js assets/css/historical-insight.css historical-insight.html .github/workflows/historical-pivot-ai-backfill.yml .github/workflows/oneoff-fix-ab-reasons-and-rerun.yml tools/patch_history_ab_ui.py
-          git commit -m "Show remaining A/B reasons and rerun US10Y2Y"
+          git add assets/js/historical-insight/historical-insight.js assets/css/historical-insight.css historical-insight.html .github/workflows/oneoff-fix-ab-reasons-and-rerun.yml tools/patch_history_ab_ui.py
+          git commit -m "Show remaining A/B reasons"
           git push
