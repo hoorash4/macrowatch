@@ -1,9 +1,9 @@
 """Score stored Pivot AI structures for Historical Insight.
 
-AI finds and grades structural pivot candidates. Python uses only A/B pivots for
-market START / PEAK / TROUGH matching. C/D pivots remain stored in the analysis
-row for audit/display purposes and are never promoted into scoring candidates.
-Anomalies remain independently preserved as exceptional candidates.
+Only A/B pivots are eligible for normal market matching. C/D pivots remain stored
+for audit only. Direct-window matches receive normal scores, expanded-window
+near-misses receive half-weight scores, and A/B pivots outside the expanded
+window remain display-only with no score. Anomalies remain separately preserved.
 """
 from __future__ import annotations
 
@@ -14,12 +14,13 @@ from typing import Any
 
 from common import SupabaseRest
 
-SCORING_VERSION = "pivot-ai-score-v3"
+SCORING_VERSION = "pivot-ai-score-v4"
 REFERENCE_ORDER = ("START", "PEAK", "TROUGH")
 REFERENCE_WEIGHTS = {"structural": 0.45, "timing": 0.35, "duration": 0.20}
 OVERALL_WEIGHTS = {"best": 0.70, "mean": 0.30}
 COVERAGE_BONUS = {1: 0, 2: 12, 3: 25}
 GRADE_STRUCTURAL = {"A": 100.0, "B": 88.0, "C": 72.0, "D": 58.0}
+NEAR_MISS_SCORE_FACTOR = 0.50
 MARKET_REFERENCE_ROLE = {"START": "up_start", "PEAK": "down_start", "TROUGH": "down_end"}
 OPPOSITE_ROLE = {"up_start": "down_start", "down_start": "up_start", "down_end": "up_end", "up_end": "down_end"}
 TRANSITION_ROLES = {
@@ -139,33 +140,16 @@ def filter_pivots_for_scoring(
     regimes: list[dict[str, Any]],
     analysis_end: str,
 ) -> list[dict[str, Any]]:
-    """Return only A/B pivots plus separately preserved anomaly candidates.
-
-    C/D pivots stay in historical_indicator_ai_analysis.pivots for audit/display,
-    but they are never eligible for START/PEAK/TROUGH matching or near-miss scoring.
-    """
-    del regimes, analysis_end  # kept in signature for call-site compatibility
-
-    accepted = [
-        dict(item)
-        for item in pivots
-        if str(item.get("grade") or "D").upper() in {"A", "B"}
-    ]
-
-    # Preserve exceptional shocks as independent candidates. They remain separate
-    # from the normal A/B pivot grading model even though they can still be matched.
+    """Return A/B pivots plus separately preserved anomaly candidates."""
+    del regimes, analysis_end
+    accepted = [dict(item) for item in pivots if str(item.get("grade") or "D").upper() in {"A", "B"}]
     existing_dates = {str(item.get("date"))[:10] for item in accepted}
     for anomaly in anomalies or []:
         anomaly_date = str(anomaly.get("date") or "")[:10]
         if not anomaly_date or anomaly_date in existing_dates:
             continue
         anomaly_type = str(anomaly.get("type") or "")
-        if "down" in anomaly_type:
-            direction = "low"
-        elif "up" in anomaly_type:
-            direction = "high"
-        else:
-            direction = "neutral"
+        direction = "low" if "down" in anomaly_type else "high" if "up" in anomaly_type else "neutral"
         accepted.append({
             "date": anomaly_date,
             "value": float(anomaly.get("value") or 0.0),
@@ -175,14 +159,11 @@ def filter_pivots_for_scoring(
             "confidence": float(anomaly.get("confidence") or 0.0),
             "anomaly_type": anomaly_type,
         })
-
     return sorted(accepted, key=lambda item: str(item.get("date") or ""))
 
 
 def market_duration(reference_type: str, cycle: dict[str, Any]) -> int | None:
-    start = cycle.get("start_date")
-    peak = cycle.get("peak_date")
-    trough = cycle.get("trough_date")
+    start, peak, trough = cycle.get("start_date"), cycle.get("peak_date"), cycle.get("trough_date")
     if reference_type == "START" and start and peak:
         return max(1, days_between(str(start), str(peak)))
     if reference_type in {"PEAK", "TROUGH"} and peak and trough:
@@ -190,11 +171,17 @@ def market_duration(reference_type: str, cycle: dict[str, Any]) -> int | None:
     return None
 
 
-def result_from_pivot(pivot: dict[str, Any], reference_type: str, reference_date: str, cycle: dict[str, Any], regimes: list[dict[str, Any]], analysis_end: str) -> dict[str, Any]:
+def result_from_pivot(
+    pivot: dict[str, Any],
+    reference_type: str,
+    reference_date: str,
+    cycle: dict[str, Any],
+    regimes: list[dict[str, Any]],
+    analysis_end: str,
+) -> dict[str, Any]:
     previous, next_regime = transition_for(pivot, regimes)
     offset = days_between(reference_date, str(pivot["date"]))
-    window_from = shift_months(reference_date, -3)
-    window_to = shift_months(reference_date, 1)
+    window_from, window_to = shift_months(reference_date, -3), shift_months(reference_date, 1)
     before = max(1, days_between(window_from, reference_date))
     after = max(1, days_between(reference_date, window_to))
     structural = structural_score(pivot)
@@ -242,20 +229,23 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
     regimes = normalized_regimes(list(row.get("regimes") or []))
     analysis_end = str(row.get("display_end") or cycle.get("trough_date") or cycle.get("peak_date") or cycle.get("start_date"))
     pivots = filter_pivots_for_scoring(ai_pivots, ai_anomalies, regimes, analysis_end)
+
     candidates: dict[str, list[dict[str, Any]]] = {}
     near_miss_candidates: dict[str, list[dict[str, Any]]] = {}
     for reference_type in REFERENCE_ORDER:
         reference_date = cycle.get(f"{reference_type.lower()}_date")
         if not reference_date:
-            candidates[reference_type] = []
-            near_miss_candidates[reference_type] = []
+            candidates[reference_type], near_miss_candidates[reference_type] = [], []
             continue
         reference_date = str(reference_date)
         direct_from, direct_to = shift_months(reference_date, -3), shift_months(reference_date, 1)
         near_from, near_to = shift_months(reference_date, -6), shift_months(reference_date, 2)
         all_results = [result_from_pivot(pivot, reference_type, reference_date, cycle, regimes, analysis_end) for pivot in pivots]
         candidates[reference_type] = [item for item in all_results if direct_from <= item["pivotDate"] <= direct_to]
-        near_miss_candidates[reference_type] = [item for item in all_results if near_from <= item["pivotDate"] <= near_to and not (direct_from <= item["pivotDate"] <= direct_to)]
+        near_miss_candidates[reference_type] = [
+            item for item in all_results
+            if near_from <= item["pivotDate"] <= near_to and not (direct_from <= item["pivotDate"] <= direct_to)
+        ]
 
     assigned: dict[str, dict[str, Any] | None] = {}
     used: list[dict[str, Any]] = []
@@ -293,6 +283,7 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
             "cycleRelationship": cycle_relationship,
             "relationshipStatus": status,
             "score": float(result["baseScore"]),
+            "markerStatus": "confirmed",
         })
         normalized[reference_type] = updated
         results.append(updated)
@@ -303,19 +294,26 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
             continue
         available = [item for item in near_miss_candidates[reference_type] if not any(same_pivot(item, previous) for previous in used)]
         available.sort(key=lambda item: (abs(item["offsetDays"]), -item["structuralScore"], item["pivotDate"]))
-        if available:
-            candidate = dict(available[0])
-            candidate.update({"score": 0.0, "markerStatus": "near_miss", "pivotRole": "near-miss"})
-            near_miss.append(candidate)
-            used.append(candidate)
+        if not available:
+            continue
+        candidate = dict(available[0])
+        candidate.update({
+            "score": float(candidate["baseScore"]) * NEAR_MISS_SCORE_FACTOR,
+            "markerStatus": "near_miss",
+            "pivotRole": "near-miss",
+            "scoreFactor": NEAR_MISS_SCORE_FACTOR,
+        })
+        near_miss.append(candidate)
+        used.append(candidate)
 
     coverage_items = [item for item in results if item.get("relationshipStatus") == "aligned" and item.get("cycleRelationship") in {"positive", "inverse"}]
     coverage_count = len(coverage_items)
     coverage_bonus = float(COVERAGE_BONUS.get(coverage_count, 0))
-    scores = [float(item["score"]) for item in results]
+
+    score_items = results + near_miss
+    scores = [float(item["score"]) for item in score_items if item.get("score") is not None]
     if scores:
-        best = max(scores)
-        mean = sum(scores) / len(scores)
+        best, mean = max(scores), sum(scores) / len(scores)
         overall = min(100.0, best * OVERALL_WEIGHTS["best"] + mean * OVERALL_WEIGHTS["mean"] + coverage_bonus)
         max_reference = best
     else:
@@ -327,7 +325,7 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
         "index_code": row["index_code"],
         "series_code": row["series_code"],
         "overall_score": round(overall, 6),
-        "meaningful_reference_count": len(results),
+        "meaningful_reference_count": len(score_items),
         "max_reference_score": round(max_reference, 6),
         "reference_coverage_count": coverage_count,
         "coverage_bonus": coverage_bonus,
@@ -355,6 +353,7 @@ def score_rows(db: SupabaseRest, case_code: str | None = None, index_code: str |
     analyses = fetch_all(db, "historical_indicator_ai_analysis", params)
     if not analyses:
         raise RuntimeError("No Pivot AI analyses found for scoring.")
+
     cycle_cache: dict[tuple[str, str], dict[str, Any]] = {}
     scored = []
     for row in analyses:
@@ -369,6 +368,7 @@ def score_rows(db: SupabaseRest, case_code: str | None = None, index_code: str |
                 raise RuntimeError(f"Missing historical cycle: {key[0]}/{key[1]}")
             cycle_cache[key] = cycles[0]
         scored.append(score_analysis(row, cycle_cache[key]))
+
     db.upsert("historical_indicator_ai_scores", scored, conflict="case_code,index_code,series_code")
     for row in scored:
         print(f"SCORED {row['case_code']}/{row['index_code']}/{row['series_code']}: {row['overall_score']:.1f} refs={row['meaningful_reference_count']} filtered={len(row['filtered_pivots'])}/{len(row['ai_pivots'])}")
