@@ -25,7 +25,6 @@
     paneViews(){return [this.view];}
     timeAxisPaneViews(){return [this.timeAxisPaneView];}
   }
-  // 공통 frontend-core가 테마/등록/해제를, 차트 라이브러리가 크기 관찰을 담당합니다.
   function create(host) {
     let chart = null;
     let series = null;
@@ -35,7 +34,9 @@
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
-    const nearMissStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim(),textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()});
+    const referenceOnlyStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
+    const nearMissStyle=()=>({color:document.documentElement.dataset.theme==='dark'?'#475569':'#64748b',textColor:'#fff'});
+    const pivotStyle=(result,color)=>result.markerStatus==='near_miss'?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
     function ensure() {
       if (chart) return;
       if (!window.LightweightCharts) throw new Error('차트 라이브러리를 불러오지 못했습니다.');
@@ -75,15 +76,13 @@
       },
       setIndicators(items) {
         if(!chart&&items.length)ensure();
-        // 지표마다 다른 관측일이 시간축에 추가되므로 논리 인덱스가 달라질 수 있습니다.
-        // 사용자가 보고 있던 실제 날짜 범위를 보존해 지표 선택 시 축이 압축되거나 밀리지 않게 합니다.
         const visibleRange=chart?.timeScale().getVisibleRange();
         for(const entry of indicatorSeries.values()){for(const primitive of entry.primitives)entry.series.detachPrimitive(primitive);chart?.removeSeries(entry.series);}
         indicatorSeries.clear();
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const primitives=(item.displayPivots||item.results).map(result=>{const style=result.markerStatus==='near_miss'?nearMissStyle():{color,textColor:'#fff'};return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor);});
+          const primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives});
         });
