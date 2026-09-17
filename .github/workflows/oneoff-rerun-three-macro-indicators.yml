@@ -1,0 +1,52 @@
+name: One-off rerun three macro indicators
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-rerun-three-macro-indicators.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  rerun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib==3.10.6
+      - name: Analyze and score US10Y2Y
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python -m historical_pivot_ai_backfill --case global_financial_crisis --index SP500 --series US10Y2Y --limit 0
+          PYTHONPATH=backend python -m historical_pivot_ai_score --case global_financial_crisis --index SP500 --series US10Y2Y
+      - name: Analyze and score US2Y
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python -m historical_pivot_ai_backfill --case global_financial_crisis --index SP500 --series US2Y --limit 0
+          PYTHONPATH=backend python -m historical_pivot_ai_score --case global_financial_crisis --index SP500 --series US2Y
+      - name: Analyze and score US_POLICY_RATE_MID
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python -m historical_pivot_ai_backfill --case global_financial_crisis --index SP500 --series US_POLICY_RATE_MID --limit 0
+          PYTHONPATH=backend python -m historical_pivot_ai_score --case global_financial_crisis --index SP500 --series US_POLICY_RATE_MID
+      - name: Remove one-off workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/oneoff-rerun-three-macro-indicators.yml
+          git commit -m 'Remove one-off three-indicator rerun workflow'
+          git push
