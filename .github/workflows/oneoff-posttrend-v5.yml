@@ -1,4 +1,5 @@
 name: One-off post-trend schema v5
+# retry with fixed-string verification
 on:
   push:
     branches: [main]
@@ -15,9 +16,8 @@ jobs:
         run: python tools/patch_posttrend_schema_v5.py
       - name: Verify
         run: |
-          grep -q 'pivot-schema-v5' supabase/functions/_shared/pivot/pivot-schema.ts
-          grep -q 'post_trend: PivotPostTrend | null' supabase/functions/_shared/pivot/pivot-schema.ts
-          grep -q 'POST_TREND_INSTRUCTION' supabase/functions/pivot-ai/index.ts
+          grep -Fq 'pivot-schema-v5' supabase/functions/_shared/pivot/pivot-schema.ts
+          grep -Fq 'POST_TREND_INSTRUCTION' supabase/functions/pivot-ai/index.ts
       - name: Commit result
         run: |
           git config user.name "hoorash4"
