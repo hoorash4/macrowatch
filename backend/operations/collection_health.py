@@ -57,6 +57,10 @@ WEEK_END_LABELED_SERIES = frozenset({
     "em_market_stress_weekly",
 })
 
+MANUAL_SUCCESS_ONLY_RECOVERY = frozenset({
+    "central-bank-policy.yml",
+})
+
 WORKFLOW_DATABASE_SERIES = {
     "small-business-risk.yml": "us_small_business_risk_monthly",
     "korea-small-business-risk.yml": "kr_small_business_risk_monthly",
@@ -175,11 +179,16 @@ def _series_is_fresh(db: SupabaseRest, series_name: str, today: date) -> bool:
 
 
 def _scheduled_failure_recovered(workflow: str, run: dict, token: str, today: date, db: SupabaseRest | None) -> tuple[bool, SupabaseRest | None]:
-    series_name = WORKFLOW_DATABASE_SERIES.get(workflow)
-    if not series_name:
-        return False, db
     repair = github_manual_success_after(workflow, token, run)
     if repair is None:
+        return False, db
+    if workflow in MANUAL_SUCCESS_ONLY_RECOVERY:
+        # FOMC polling is idempotent and legitimately has no new DB row on
+        # non-meeting days. A later successful run of the same collector is
+        # therefore sufficient recovery evidence.
+        return True, db
+    series_name = WORKFLOW_DATABASE_SERIES.get(workflow)
+    if not series_name:
         return False, db
     if db is None:
         db = SupabaseRest()
