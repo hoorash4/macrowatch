@@ -1,4 +1,4 @@
-export const PIVOT_SCHEMA_VERSION = "pivot-schema-v2";
+export const PIVOT_SCHEMA_VERSION = "pivot-schema-v3";
 
 export const PIVOT_ANALYSIS_SCHEMA = {
   type: "object",
@@ -43,9 +43,10 @@ export const PIVOT_ANALYSIS_SCHEMA = {
           },
           grade: { type: "string", enum: ["A", "B", "C", "D"] },
           direction: { type: "string", enum: ["high", "low", "neutral"] },
+          reason: { type: "string", minLength: 1, maxLength: 400 },
           confidence: { type: "number", minimum: 0, maximum: 1 },
         },
-        required: ["date", "value", "type", "grade", "direction", "confidence"],
+        required: ["date", "value", "type", "grade", "direction", "reason", "confidence"],
       },
     },
     anomalies: {
@@ -105,6 +106,7 @@ export type PivotPoint = {
   type: "major_reversal" | "sideways_entry" | "sideways_exit" | "local_reversal" | "slope_change";
   grade: "A" | "B" | "C" | "D";
   direction: "high" | "low" | "neutral";
+  reason: string;
   confidence: number;
 };
 
