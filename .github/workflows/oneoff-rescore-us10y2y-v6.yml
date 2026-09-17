@@ -1,0 +1,38 @@
+name: One-off rescore US10Y2Y v6
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-rescore-us10y2y-v6.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Rescore stored US10Y2Y analysis only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python -m historical_pivot_ai_score --case global_financial_crisis --index SP500 --series US10Y2Y
+      - name: Dispatch Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages-deploy.yml --ref main
+      - name: Remove one-off workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/oneoff-rescore-us10y2y-v6.yml
+          git commit -m 'Remove one-off US10Y2Y v6 rescore'
+          git push origin HEAD:main
