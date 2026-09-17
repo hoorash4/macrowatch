@@ -61,6 +61,7 @@ MANUAL_SUCCESS_ONLY_RECOVERY = frozenset({
     "central-bank-policy.yml",
     "korea-stress.yml",
     "market-context.yml",
+    "earnings-v2-korea-automatic.yml",
 })
 
 WORKFLOW_DATABASE_SERIES = {
