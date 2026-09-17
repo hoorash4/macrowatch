@@ -1,0 +1,26 @@
+name: One-off rerun US10Y2Y reasons
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-rerun-us10y2y-reasons.yml"
+permissions:
+  contents: write
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Dispatch US10Y2Y backfill
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run historical-pivot-ai-backfill.yml -f case_code=global_financial_crisis -f index_code=SP500 -f series_code=US10Y2Y -f limit=0
+      - name: Remove one-off workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/oneoff-rerun-us10y2y-reasons.yml
+          git commit -m "Remove one-off US10Y2Y reason rerun"
+          git push
