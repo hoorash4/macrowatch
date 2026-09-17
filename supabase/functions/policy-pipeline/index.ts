@@ -31,6 +31,7 @@ type EventRow = {
 
 const FED_BASE = "https://www.federalreserve.gov";
 const NYFED_BASE = "https://www.newyorkfed.org";
+const LIQUIDITY_CONTEXT_VERSION = "nyfed-v2";
 const NYFED_LIQUIDITY_SOURCES = [
   {
     key: "treasury_operations",
@@ -47,8 +48,8 @@ const NYFED_LIQUIDITY_SOURCES = [
   {
     key: "agency_mbs_operations",
     label: "New York Fed Agency Mortgage-Backed Securities",
-    url: `${NYFED_BASE}/markets/domestic-market-operations/monetary-policy-implementation/agency-mortgage-backed-securities`,
-    anchor: "Agency Mortgage-Backed Securities",
+    url: `${NYFED_BASE}/markets/ambs/ambs_schedule`,
+    anchor: "Agency MBS Historical Operational Results and Planned Operation Amounts",
   },
 ] as const;
 const POLICY_PROMPT_VERSION = "v2.0";
@@ -171,7 +172,7 @@ function boundedOfficialExcerpt(text: string, anchor: string, maxChars = 5_000) 
   const normalized = normalizeText(text);
   const at = normalized.toLowerCase().indexOf(anchor.toLowerCase());
   if (at < 0) return normalized.slice(0, maxChars);
-  const start = Math.max(0, at - 700);
+  const start = Math.max(0, at - 180);
   return normalized.slice(start, start + maxChars);
 }
 
@@ -197,6 +198,7 @@ async function newYorkFedLiquidityContext(meetingDate: string) {
     return null;
   }
   return {
+    version: LIQUIDITY_CONTEXT_VERSION,
     meeting_date: meetingDate,
     captured_at: new Date().toISOString(),
     source: "Federal Reserve Bank of New York official market operations",
@@ -337,8 +339,10 @@ Deno.serve(async (request) => {
       const candidateTranscriptUrl = transcriptUrl(source.meetingDate);
       const pressConferenceUrl = await officialPdfAvailable(candidateTranscriptUrl) ? candidateTranscriptUrl : null;
       const priorSourceState = saved?.briefing_source_state || {};
-      const liquidityContext = priorSourceState.liquidity_context
-        ?? (meetingUsesModernBriefingSources(source.meetingDate, source.isEmergency)
+      const priorLiquidityContext = priorSourceState.liquidity_context as Record<string, unknown> | null | undefined;
+      const liquidityContext = priorLiquidityContext?.version === LIQUIDITY_CONTEXT_VERSION
+        ? priorLiquidityContext
+        : (meetingUsesModernBriefingSources(source.meetingDate, source.isEmergency)
           ? await newYorkFedLiquidityContext(source.meetingDate)
           : null);
       const sourceStateBase: Record<string, unknown> = {
