@@ -152,6 +152,12 @@ class OpenDartClient:
         binary: bool = False,
         retry_total: int | None = None,
     ) -> Any:
+        # Daily disclosure discovery is a read-only request and occasionally
+        # sees short OpenDART connection stalls from hosted runners. Give only
+        # list.json two additional bounded retries; heavier financial payloads
+        # keep the shared default so the workflow budget stays predictable.
+        if retry_total is None and endpoint == "list.json":
+            retry_total = 4
         self._wait()
         self.request_count += 1
         try:
