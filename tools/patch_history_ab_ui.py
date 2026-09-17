@@ -33,11 +33,3 @@ html = html_path.read_text()
 html = re.sub(r'assets/css/historical-insight\.css\?v=\d+', 'assets/css/historical-insight.css?v=25', html)
 html = re.sub(r'assets/js/historical-insight/historical-insight\.js\?v=\d+', 'assets/js/historical-insight/historical-insight.js?v=33', html)
 html_path.write_text(html)
-
-wf_path = Path('.github/workflows/historical-pivot-ai-backfill.yml')
-wf = wf_path.read_text().splitlines()
-if len(wf) > 1 and wf[1].startswith('# rerun'):
-    wf[1] = '# rerun US10Y2Y after pivot-schema-v4 deployment'
-else:
-    wf.insert(1, '# rerun US10Y2Y after pivot-schema-v4 deployment')
-wf_path.write_text('\n'.join(wf) + '\n')
