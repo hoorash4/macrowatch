@@ -30,6 +30,27 @@ type EventRow = {
 };
 
 const FED_BASE = "https://www.federalreserve.gov";
+const NYFED_BASE = "https://www.newyorkfed.org";
+const NYFED_LIQUIDITY_SOURCES = [
+  {
+    key: "treasury_operations",
+    label: "New York Fed Treasury Securities Operational Details",
+    url: `${NYFED_BASE}/markets/domestic-market-operations/monetary-policy-implementation/treasury-securities/treasury-securities-operational-details`,
+    anchor: "At the most recent FOMC meeting",
+  },
+  {
+    key: "repo_operations",
+    label: "New York Fed Repo and Reverse Repo Agreements",
+    url: `${NYFED_BASE}/markets/domestic-market-operations/monetary-policy-implementation/repo-reverse-repo-agreements`,
+    anchor: "Standing repo operations",
+  },
+  {
+    key: "agency_mbs_operations",
+    label: "New York Fed Agency Mortgage-Backed Securities",
+    url: `${NYFED_BASE}/markets/domestic-market-operations/monetary-policy-implementation/agency-mortgage-backed-securities`,
+    anchor: "Agency Mortgage-Backed Securities",
+  },
+] as const;
 const POLICY_PROMPT_VERSION = "v2.0";
 const REASON_CONFIDENCE_THRESHOLD = 0.55;
 const UNCERTAIN_CONFIDENCE_MAX = 0.549;
@@ -139,6 +160,61 @@ async function officialPdfAvailable(url: string) {
     const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
     return response.ok && (response.headers.get("content-type") || "").toLowerCase().includes("pdf");
   } catch { return false; }
+}
+
+
+function meetingUsesModernBriefingSources(meetingDate: string, isEmergency: boolean) {
+  return !isEmergency && meetingDate >= "2019-01-01";
+}
+
+function boundedOfficialExcerpt(text: string, anchor: string, maxChars = 5_000) {
+  const normalized = normalizeText(text);
+  const at = normalized.toLowerCase().indexOf(anchor.toLowerCase());
+  if (at < 0) return normalized.slice(0, maxChars);
+  const start = Math.max(0, at - 700);
+  return normalized.slice(start, start + maxChars);
+}
+
+async function newYorkFedLiquidityContext(meetingDate: string) {
+  const snapshots: Record<string, unknown> = {};
+  for (const source of NYFED_LIQUIDITY_SOURCES) {
+    try {
+      const response = await fetch(source.url, { signal: AbortSignal.timeout(30_000) });
+      if (!response.ok) continue;
+      const html = await response.text();
+      const excerpt = boundedOfficialExcerpt(html, source.anchor);
+      if (excerpt.length < 120) continue;
+      snapshots[source.key] = {
+        label: source.label,
+        url: source.url,
+        excerpt,
+      };
+    } catch {
+      // Optional official sources are retried on the next normal collector run.
+    }
+  }
+  if (!snapshots.treasury_operations || !snapshots.repo_operations || !snapshots.agency_mbs_operations) {
+    return null;
+  }
+  return {
+    meeting_date: meetingDate,
+    captured_at: new Date().toISOString(),
+    source: "Federal Reserve Bank of New York official market operations",
+    snapshots,
+  };
+}
+
+function briefingSourceProgress(source: Source, sourceState: Record<string, unknown>) {
+  const modern = meetingUsesModernBriefingSources(source.meetingDate, source.isEmergency);
+  const missing: string[] = [];
+  if (!sourceState.statement_hash) missing.push("statement");
+  if (modern && !sourceState.implementation_note_url) missing.push("implementation_note");
+  if (modern && !sourceState.press_conference_url) missing.push("press_conference");
+  if (modern && !sourceState.liquidity_context) missing.push("liquidity_context");
+  return {
+    source_complete: missing.length === 0,
+    missing_sources: missing,
+  };
 }
 
 function systemPrompt() {
@@ -261,13 +337,19 @@ Deno.serve(async (request) => {
       const candidateTranscriptUrl = transcriptUrl(source.meetingDate);
       const pressConferenceUrl = await officialPdfAvailable(candidateTranscriptUrl) ? candidateTranscriptUrl : null;
       const priorSourceState = saved?.briefing_source_state || {};
-      const sourceState = {
+      const liquidityContext = priorSourceState.liquidity_context
+        ?? (meetingUsesModernBriefingSources(source.meetingDate, source.isEmergency)
+          ? await newYorkFedLiquidityContext(source.meetingDate)
+          : null);
+      const sourceStateBase: Record<string, unknown> = {
         statement_hash: statementHash,
         implementation_note_url: implementationNote ? noteUrl : null,
         press_conference_url: pressConferenceUrl,
-        // Meeting-time liquidity data is immutable once supplied by the collector.
-        liquidity_context: priorSourceState.liquidity_context ?? null,
+        // Meeting-time New York Fed snapshots become immutable once captured.
+        liquidity_context: liquidityContext,
       };
+      const sourceProgress = briefingSourceProgress(source, sourceStateBase);
+      const sourceState = { ...sourceStateBase, ...sourceProgress };
       const sourceStateHash = await sha256(JSON.stringify(sourceState));
       const priorSourceStateHash = typeof priorSourceState.source_state_hash === "string" ? priorSourceState.source_state_hash : null;
       const briefingNeedsRefresh = !saved?.briefing || saved.analysis_prompt_version !== POLICY_PROMPT_VERSION || sourceStateHash !== priorSourceStateHash;
