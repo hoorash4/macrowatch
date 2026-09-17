@@ -1006,4 +1006,7 @@ test('FOMC 브리핑은 실제 자료 완성 상태로 Updating과 Updated를 �
   assert.match(pipeline, /repo_operations/);
   assert.match(pipeline, /agency_mbs_operations/);
   assert.match(pipeline, /missing_sources/);
+  assert.match(pipeline, /implementation_note_hash/);
+  assert.match(pipeline, /press_conference_state/);
+  assert.match(pipeline, /withinSourceRefreshWindow/);
 });
