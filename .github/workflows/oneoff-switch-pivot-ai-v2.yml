@@ -1,0 +1,42 @@
+name: One-off switch Historical Pivot AI to v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-switch-pivot-ai-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Switch backfill caller to visual-first v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/historical_pivot_ai_backfill.py')
+          s = p.read_text()
+          old = '/functions/v1/pivot-ai'
+          new = '/functions/v1/pivot-ai-v2'
+          if old not in s:
+              raise SystemExit('pivot-ai endpoint marker not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('pivot-ai {response.status_code}', 'pivot-ai-v2 {response.status_code}', 1)
+          p.write_text(s)
+          PY
+      - name: Commit change and remove one-off workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/oneoff-switch-pivot-ai-v2.yml
+          git add backend/historical_pivot_ai_backfill.py
+          git commit -m "Use visual-first Pivot AI v2 for historical backfill"
+          git push
