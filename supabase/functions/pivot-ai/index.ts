@@ -6,6 +6,15 @@ const PROMPT_VERSION = Deno.env.get("PIVOT_ANALYSIS_PROMPT_VERSION") || "pivot-v
 const MODEL = Deno.env.get("PIVOT_AI_MODEL") || Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna";
 const MAX_SERIES_POINTS = 1200;
 const ANOMALY_VALIDATION_VERSION = "web-search-v1";
+const PIVOT_REASON_INSTRUCTION = `
+피봇 판단 근거 기록 규칙은 반드시 지켜라.
+- 모든 pivot에 reason을 반드시 기록한다. reason은 사후 검증용이며 1~2문장으로 간단명료하게 쓴다.
+- A의 reason에는 부모 추세가 무엇이었는지, 어떤 상위 구조가 깨졌는지, 어떤 후속 구조가 새로운 추세의 지속성을 확인했는지를 명시한다.
+- B의 reason에는 횡보 전후의 부모 추세 방향이 실제로 어떻게 달라졌는지를 명시한다.
+- C/D도 짧게 판단 근거를 남기되, 특히 A/B가 아닌 이유가 드러나게 쓴다.
+- 단순히 '상승 후 하락', '저점 후 상승', '큰 폭으로 움직임'처럼 결과나 진폭만 반복하지 마라.
+- 부모 추세의 흐름을 바꾸지 못한 반대 방향 움직임은 자식 추세일 뿐이며 A의 근거가 될 수 없다.
+`;
 const ANOMALY_WEB_INSTRUCTION = `
 특이점(anomaly) 규칙은 다음을 반드시 지켜라.
 - 차트에서 급격하거나 이례적으로 보이는 움직임은 anomaly의 후보일 뿐이며, 차트 모양만으로 anomaly를 확정해서는 안 된다.
@@ -122,7 +131,7 @@ function normalizeAnalysis(raw: PivotAnalysisOutput, points: Point[], from: stri
   const inRange = (date: string) => date >= from && date <= to;
   const pivots = (raw.pivots || []).filter(item => validDate(item.date) && inRange(item.date)).map(item => {
     const point = nearestPoint(points, item.date);
-    return { ...item, date: point.date, value: point.value, confidence: Math.max(0, Math.min(1, Number(item.confidence))) };
+    return { ...item, reason: String(item.reason || "").trim().slice(0, 400), date: point.date, value: point.value, confidence: Math.max(0, Math.min(1, Number(item.confidence))) };
   });
   const anomalies = (raw.anomalies || []).filter(item => {
     if (!validDate(item.movement_start_date) || !validDate(item.date) || !validDate(item.event_date)) return false;
@@ -175,6 +184,7 @@ Deno.serve(async (req) => {
       series_code: input.series_code, series_name: input.series_name || null,
       cycle: input.cycle, display_window: input.display_window,
       instruction: "상단 시장지수와 하단 지표는 동일한 X축이다. 하단 지표만 피봇/횡보/특이점 분석 대상으로 삼고, 시장 START/PEAK/TROUGH는 시간축 문맥으로만 사용하며 그 위치에 피봇을 강제로 만들지 마라.",
+      pivot_reason_instruction: PIVOT_REASON_INSTRUCTION,
       anomaly_instruction: ANOMALY_WEB_INSTRUCTION,
       indicator_points: compact,
     };
@@ -185,12 +195,12 @@ Deno.serve(async (req) => {
         model: MODEL,
         reasoning: { effort: "medium" },
         max_output_tokens: 5_000,
-        prompt_cache_key: "macrowatch-pivot-analysis-v2",
+        prompt_cache_key: "macrowatch-pivot-analysis-v3",
         tools: [{ type: "web_search_preview", search_context_size: "medium" }],
         tool_choice: "required",
         include: ["web_search_call.action.sources"],
         input: [
-          { role: "system", content: [{ type: "input_text", text: prompt + "\n\n" + ANOMALY_WEB_INSTRUCTION }] },
+          { role: "system", content: [{ type: "input_text", text: prompt + "\n\n" + PIVOT_REASON_INSTRUCTION + "\n\n" + ANOMALY_WEB_INSTRUCTION }] },
           { role: "user", content: [
             { type: "input_text", text: JSON.stringify(metadata) },
             { type: "input_image", image_url: input.chart_image_data_url, detail: "high" },
