@@ -156,16 +156,30 @@ async function optionalOfficialText(url: string) {
   } catch { return null; }
 }
 
-async function officialPdfAvailable(url: string) {
+async function officialPdfState(url: string) {
   try {
     const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
-    return response.ok && (response.headers.get("content-type") || "").toLowerCase().includes("pdf");
-  } catch { return false; }
+    if (!response.ok || !(response.headers.get("content-type") || "").toLowerCase().includes("pdf")) return null;
+    return {
+      url,
+      etag: response.headers.get("etag"),
+      last_modified: response.headers.get("last-modified"),
+      content_length: response.headers.get("content-length"),
+    };
+  } catch { return null; }
 }
 
 
 function meetingUsesModernBriefingSources(meetingDate: string, isEmergency: boolean) {
   return !isEmergency && meetingDate >= "2019-01-01";
+}
+
+
+function withinSourceRefreshWindow(meetingDate: string, days = 7) {
+  const meeting = Date.parse(`${meetingDate}T00:00:00Z`);
+  if (!Number.isFinite(meeting)) return false;
+  const elapsed = Date.now() - meeting;
+  return elapsed >= 0 && elapsed <= days * 24 * 60 * 60 * 1000;
 }
 
 function boundedOfficialExcerpt(text: string, anchor: string, maxChars = 5_000) {
@@ -336,20 +350,29 @@ Deno.serve(async (request) => {
       const statementHash = await sha256(statement);
       const noteUrl = implementationNoteUrl(source.sourceUrl);
       const implementationNote = noteUrl ? await optionalOfficialText(noteUrl) : null;
+      const implementationNoteHash = implementationNote ? await sha256(implementationNote) : null;
       const candidateTranscriptUrl = transcriptUrl(source.meetingDate);
-      const pressConferenceUrl = await officialPdfAvailable(candidateTranscriptUrl) ? candidateTranscriptUrl : null;
+      const pressConferenceState = await officialPdfState(candidateTranscriptUrl);
+      const pressConferenceUrl = pressConferenceState?.url || null;
       const priorSourceState = saved?.briefing_source_state || {};
       const priorLiquidityContext = priorSourceState.liquidity_context as Record<string, unknown> | null | undefined;
-      const liquidityContext = priorLiquidityContext?.version === LIQUIDITY_CONTEXT_VERSION
-        ? priorLiquidityContext
-        : (meetingUsesModernBriefingSources(source.meetingDate, source.isEmergency)
-          ? await newYorkFedLiquidityContext(source.meetingDate)
-          : null);
+      const modernSources = meetingUsesModernBriefingSources(source.meetingDate, source.isEmergency);
+      const shouldRefreshLiquidity = modernSources && (
+        priorLiquidityContext?.version !== LIQUIDITY_CONTEXT_VERSION
+        || withinSourceRefreshWindow(source.meetingDate)
+      );
+      const refreshedLiquidityContext = shouldRefreshLiquidity
+        ? await newYorkFedLiquidityContext(source.meetingDate)
+        : null;
+      const liquidityContext = refreshedLiquidityContext ?? priorLiquidityContext ?? null;
       const sourceStateBase: Record<string, unknown> = {
         statement_hash: statementHash,
         implementation_note_url: implementationNote ? noteUrl : null,
+        implementation_note_hash: implementationNoteHash,
         press_conference_url: pressConferenceUrl,
-        // Meeting-time New York Fed snapshots become immutable once captured.
+        press_conference_state: pressConferenceState,
+        // Recheck the newest meeting during the short publication window, then
+        // preserve the captured meeting-time New York Fed context.
         liquidity_context: liquidityContext,
       };
       const sourceProgress = briefingSourceProgress(source, sourceStateBase);
