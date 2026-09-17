@@ -118,12 +118,15 @@ def _fetch_yahoo_candles(index_code: str, start: date, end: date) -> list[dict[s
 
 def _fetch_fred_close(index_code: str, start: date, end: date) -> dict[date, float]:
     series_id = FRED_SERIES[index_code]
-    response = request_with_retry(lambda: requests.get(
-        "https://fred.stlouisfed.org/graph/fredgraph.csv",
-        params={"id": series_id, "cosd": start.isoformat(), "coed": end.isoformat()},
-        headers={"User-Agent": HTTP_HEADERS["User-Agent"]},
-        timeout=60,
-    ))
+    response = request_with_retry(
+        lambda: requests.get(
+            "https://fred.stlouisfed.org/graph/fredgraph.csv",
+            params={"id": series_id, "cosd": start.isoformat(), "coed": end.isoformat()},
+            headers={"User-Agent": HTTP_HEADERS["User-Agent"]},
+            timeout=20,
+        ),
+        retry_count=1,
+    )
     response.raise_for_status()
     values: dict[date, float] = {}
     for item in csv.DictReader(StringIO(response.text)):
