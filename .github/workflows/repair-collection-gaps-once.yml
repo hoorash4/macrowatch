@@ -21,4 +21,4 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run market-context.yml -f mode=automatic
-          echo "Dispatched existing market-context workflow only; no schedule added."
+          echo "Dispatched current market-context workflow for final KRX/FRED recovery; no schedule added."
