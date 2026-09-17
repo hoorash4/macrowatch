@@ -1,0 +1,47 @@
+name: One-off fix historical label z-order
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-fix-historical-label-zorder.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Keep one label lane and use draw order as z-order
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('assets/js/historical-insight/historical-index-chart.js')
+          s = p.read_text(encoding='utf-8')
+          old = "timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 68 }"
+          new = "timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 46 }"
+          if old not in s:
+              raise SystemExit('minimumHeight pattern not found')
+          s = s.replace(old, new, 1)
+          old = "const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color),lane=pivotPriority(result);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,lane);});"
+          new = "const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});"
+          if old not in s:
+              raise SystemExit('pivot priority pattern not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit patch and remove one-off workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/historical-insight/historical-index-chart.js
+          git commit -m "Fix historical pivot label z-order"
+          git rm .github/workflows/oneoff-fix-historical-label-zorder.yml
+          git commit -m "Remove one-off label z-order workflow"
+          git push origin HEAD:main
