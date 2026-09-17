@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun US10Y2Y after B grading prompt update
+# rerun US10Y2Y after immutable-regime prompt update
 
 on:
   workflow_dispatch:
