@@ -1,0 +1,31 @@
+name: One-off deploy Pivot AI v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-deploy-pivot-v2.yml"
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Dispatch Pivot AI v2 deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deploy-supabase.yml -f operation=function -f target=pivot-ai-v2
+      - name: Remove one-off workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/oneoff-deploy-pivot-v2.yml
+          git commit -m "Remove one-off Pivot AI v2 deployer"
+          git push
