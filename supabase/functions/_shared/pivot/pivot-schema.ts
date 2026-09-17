@@ -1,3 +1,4 @@
+// Pivot schema v3: rerun marker for directional pivot-date prompt validation.
 export const PIVOT_SCHEMA_VERSION = "pivot-schema-v3";
 
 export const PIVOT_ANALYSIS_SCHEMA = {
