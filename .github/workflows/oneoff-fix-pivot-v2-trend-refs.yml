@@ -1,0 +1,44 @@
+name: One-off fix Pivot AI v2 trend refs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-fix-pivot-v2-trend-refs.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Patch visual trend reference fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('supabase/functions/pivot-ai-v2/index.ts')
+          s=p.read_text()
+          old='''stage_instruction:"1차 시각 분석 단계다. 원시 수치는 제공되지 않는다. 차트 이미지만 보고 골격추세와 서브추세를 확정하라. visual_date는 X축 위치를 YYYY-MM-DD로 대략 표시하되 구조 판단은 숫자가 아니라 그림으로만 한다. 이후 단계에서 구조/개수/방향/등급은 변경할 수 없다."'''
+          new='''stage_instruction:"1차 시각 분석 단계다. 원시 수치는 제공되지 않는다. 차트 이미지만 보고 골격추세와 서브추세를 확정하라. visual_date는 X축 위치를 YYYY-MM-DD로 대략 표시하되 구조 판단은 숫자가 아니라 그림으로만 한다. 이후 단계에서 구조/개수/방향/등급은 변경할 수 없다. turning_points의 previous_trend_id와 next_trend_id에는 반드시 skeleton_trends 또는 sub_trends에 실제 존재하는 trend id만 넣어라. TP id를 넣지 마라."'''
+          if old not in s: raise SystemExit('stage instruction marker missing')
+          s=s.replace(old,new,1)
+          old2='''const tps=visual.turning_points.map((tp:any)=>{const a:any=tm.get(tp.previous_trend_id),b:any=tm.get(tp.next_trend_id);if(!a||!b)throw new Error(`bad trend ref ${tp.id}`);const p=ext(ps,tp.visual_date,kind(a.type,b.type,tp.type) as any,rad);return {...tp,date:p.date,value:p.value}});'''
+          new2='''const tps=visual.turning_points.map((tp:any)=>{let a:any=tm.get(tp.previous_trend_id),b:any=tm.get(tp.next_trend_id);if(!a||!b){const pool:any[]=tp.level==="skeleton"?rs:rsub;const before=[...pool].filter((x:any)=>x.visual_start_date<=tp.visual_date).sort((x:any,y:any)=>x.visual_start_date.localeCompare(y.visual_start_date));const after=[...pool].filter((x:any)=>x.visual_end_date>=tp.visual_date).sort((x:any,y:any)=>x.visual_start_date.localeCompare(y.visual_start_date));a=a||before.at(-1)||null;b=b||after.find((x:any)=>!a||x.id!==a.id)||null;if(!a||!b)throw new Error(`bad trend ref ${tp.id}`);tp={...tp,previous_trend_id:a.id,next_trend_id:b.id}}const p=ext(ps,tp.visual_date,kind(a.type,b.type,tp.type) as any,rad);return {...tp,date:p.date,value:p.value}});'''
+          if old2 not in s: raise SystemExit('turning point marker missing')
+          s=s.replace(old2,new2,1)
+          p.write_text(s)
+          PY
+      - name: Commit and remove one-off workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/oneoff-fix-pivot-v2-trend-refs.yml
+          git add supabase/functions/pivot-ai-v2/index.ts
+          git commit -m "Harden visual trend references in Pivot AI v2"
+          git push
