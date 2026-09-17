@@ -178,6 +178,18 @@ class CollectionHealthTests(unittest.TestCase):
         self.assertIn("DB 최신값 날짜 이상: future, latest=2026-09-12", failures)
         self.assertFalse(any("healthy" in item for item in failures))
 
+    def test_week_end_labeled_series_may_point_to_this_friday(self):
+        series = {
+            "us_market_tension_weekly": ("weekly_table", "week", 21),
+        }
+        db = FakeDb({"weekly_table": [{"week": "2026-09-18"}]})
+        with (
+            patch.object(health, "DATABASE_SERIES", series),
+            patch.object(health, "WEEK_END_LABELED_SERIES", frozenset({"us_market_tension_weekly"})),
+            patch.object(health, "SupabaseRest", return_value=db),
+        ):
+            self.assertEqual([], health.check_database(date(2026, 9, 16)))
+
     def test_sector_flow_database_health_uses_only_durable_close_stage(self):
         series = {
             "sector_flow_rankings": (
