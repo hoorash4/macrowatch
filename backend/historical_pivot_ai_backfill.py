@@ -139,11 +139,11 @@ def render_chart(index_rows: list[dict[str, Any]], indicator_rows: list[dict[str
 
 
 def invoke_pivot_ai(payload: dict[str, Any]) -> dict[str, Any]:
-    url = require_env("SUPABASE_URL").rstrip("/") + "/functions/v1/pivot-ai"
+    url = require_env("SUPABASE_URL").rstrip("/") + "/functions/v1/pivot-ai-v2"
     key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     response = requests.post(url, headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json=payload, timeout=180)
     if not response.ok:
-        raise RuntimeError(f"pivot-ai {response.status_code}: {response.text[:1200]}")
+        raise RuntimeError(f"pivot-ai-v2 {response.status_code}: {response.text[:1200]}")
     return response.json()
 
 
