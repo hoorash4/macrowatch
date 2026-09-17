@@ -246,7 +246,14 @@ def _promote_fred_after_one_session(index_code: str, rows: list[dict[str, Any]],
         return rows
     trading_dates = [date.fromisoformat(str(row["market_date"])) for row in rows]
     eligible = set(trading_dates[:-1])
-    fred = _fetch_fred_close(index_code, start, end)
+    try:
+        fred = _fetch_fred_close(index_code, start, end)
+    except requests.RequestException as error:
+        # FRED verification is an upgrade of already collected Yahoo OHLC, not a
+        # prerequisite for storing the market close.  Keep provisional rows and
+        # retry promotion on the next normal run instead of failing the collector.
+        print(f"fred_promotion_deferred index={index_code} reason={type(error).__name__}")
+        return rows
     series_id = FRED_SERIES[index_code]
     symbol = YAHOO_SYMBOLS[index_code]
     promoted: list[dict[str, Any]] = []
