@@ -1,8 +1,9 @@
 """Score stored Pivot AI structures for Historical Insight.
 
-AI finds and grades structural pivot candidates. Python keeps A/B pivots, preserves
-anomalies, and filters C pivots so local waves do not overwhelm the higher-level
-trend used to match market START / PEAK / TROUGH.
+AI finds and grades structural pivot candidates. Python uses only A/B pivots for
+market START / PEAK / TROUGH matching. C/D pivots remain stored in the analysis
+row for audit/display purposes and are never promoted into scoring candidates.
+Anomalies remain independently preserved as exceptional candidates.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from typing import Any
 
 from common import SupabaseRest
 
-SCORING_VERSION = "pivot-ai-score-v2"
+SCORING_VERSION = "pivot-ai-score-v3"
 REFERENCE_ORDER = ("START", "PEAK", "TROUGH")
 REFERENCE_WEIGHTS = {"structural": 0.45, "timing": 0.35, "duration": 0.20}
 OVERALL_WEIGHTS = {"best": 0.70, "mean": 0.30}
@@ -30,7 +31,6 @@ TRANSITION_ROLES = {
     ("falling", "sideways"): ("down_end",),
 }
 REGIME_MAP = {"uptrend": "rising", "downtrend": "falling", "sideways": "sideways"}
-MIN_C_FOLLOW_THROUGH_DAYS = 90
 
 
 def fetch_all(db: SupabaseRest, table: str, params: dict[str, str], page_size: int = 1000) -> list[dict[str, Any]]:
@@ -111,18 +111,6 @@ def transition_for(pivot: dict[str, Any], regimes: list[dict[str, Any]]) -> tupl
     return "sideways", "sideways"
 
 
-def pivot_new_direction(pivot: dict[str, Any], regimes: list[dict[str, Any]]) -> str | None:
-    _, next_regime = transition_for(pivot, regimes)
-    if next_regime in {"rising", "falling"}:
-        return next_regime
-    direction = str(pivot.get("direction") or "")
-    if direction == "high":
-        return "falling"
-    if direction == "low":
-        return "rising"
-    return None
-
-
 def structural_relationship(reference_type: str, previous: str, next_regime: str) -> str:
     reference_role = MARKET_REFERENCE_ROLE[reference_type]
     roles = TRANSITION_ROLES.get((previous, next_regime), ())
@@ -145,80 +133,27 @@ def persistence_days(pivot_date: str, next_regime: str, regimes: list[dict[str, 
     return max(0, days_between(pivot_date, end))
 
 
-def nearest_extreme(pivots: list[dict[str, Any]], index: int, direction: str, step: int) -> dict[str, Any] | None:
-    cursor = index + step
-    while 0 <= cursor < len(pivots):
-        item = pivots[cursor]
-        if str(item.get("direction") or "") == direction:
-            return item
-        cursor += step
-    return None
+def filter_pivots_for_scoring(
+    pivots: list[dict[str, Any]],
+    anomalies: list[dict[str, Any]],
+    regimes: list[dict[str, Any]],
+    analysis_end: str,
+) -> list[dict[str, Any]]:
+    """Return only A/B pivots plus separately preserved anomaly candidates.
 
-
-def c_has_follow_through(pivots: list[dict[str, Any]], index: int, new_direction: str, regimes: list[dict[str, Any]], analysis_end: str) -> bool:
-    """Confirm that a C pivot starts a real higher-level reversal, not a short wiggle."""
-    pivot = pivots[index]
-    pivot_date = str(pivot.get("date"))[:10]
-    persistence = persistence_days(pivot_date, new_direction, regimes, analysis_end)
-    if persistence < MIN_C_FOLLOW_THROUGH_DAYS:
-        return False
-
-    if new_direction == "falling":
-        previous_low = nearest_extreme(pivots, index, "low", -1)
-        later_low = nearest_extreme(pivots, index, "low", 1)
-        if previous_low and later_low:
-            return float(later_low["value"]) < float(previous_low["value"])
-    elif new_direction == "rising":
-        previous_high = nearest_extreme(pivots, index, "high", -1)
-        later_high = nearest_extreme(pivots, index, "high", 1)
-        if previous_high and later_high:
-            return float(later_high["value"]) > float(previous_high["value"])
-
-    # If there is not yet a comparable opposite extreme, keep only a sustained
-    # reversal. This also handles right-edge cases with limited future data.
-    return persistence >= MIN_C_FOLLOW_THROUGH_DAYS * 2
-
-
-def filter_pivots_for_scoring(pivots: list[dict[str, Any]], anomalies: list[dict[str, Any]], regimes: list[dict[str, Any]], analysis_end: str) -> list[dict[str, Any]]:
-    """Return the higher-level pivots that are eligible for market matching.
-
-    A/B are trusted AI structural points. D/angle-only points are stored but not
-    used. C points must oppose the current accepted higher-level direction and
-    demonstrate follow-through. Anomalies are independently preserved.
+    C/D pivots stay in historical_indicator_ai_analysis.pivots for audit/display,
+    but they are never eligible for START/PEAK/TROUGH matching or near-miss scoring.
     """
-    ordered = sorted((dict(item) for item in pivots), key=lambda item: str(item.get("date") or ""))
-    accepted: list[dict[str, Any]] = []
-    dominant_direction: str | None = None
+    del regimes, analysis_end  # kept in signature for call-site compatibility
 
-    for index, pivot in enumerate(ordered):
-        grade = str(pivot.get("grade") or "D").upper()
-        if grade in {"A", "B"}:
-            accepted.append(pivot)
-            next_direction = pivot_new_direction(pivot, regimes)
-            if next_direction:
-                dominant_direction = next_direction
-            continue
-        if grade != "C":
-            continue
+    accepted = [
+        dict(item)
+        for item in pivots
+        if str(item.get("grade") or "D").upper() in {"A", "B"}
+    ]
 
-        new_direction = pivot_new_direction(pivot, regimes)
-        if not new_direction:
-            continue
-
-        # A C point that merely resumes the already-established higher-level
-        # direction is exactly the local zig-zag we want to suppress.
-        if dominant_direction and new_direction == dominant_direction:
-            continue
-
-        if not c_has_follow_through(ordered, index, new_direction, regimes, analysis_end):
-            continue
-
-        accepted.append(pivot)
-        dominant_direction = new_direction
-
-    # Preserve short but exceptional shocks (e.g. a COVID-like crash) as
-    # independent candidates. They do not redefine the dominant trend by
-    # themselves, but they remain eligible for START/PEAK/TROUGH matching.
+    # Preserve exceptional shocks as independent candidates. They remain separate
+    # from the normal A/B pivot grading model even though they can still be matched.
     existing_dates = {str(item.get("date"))[:10] for item in accepted}
     for anomaly in anomalies or []:
         anomaly_date = str(anomaly.get("date") or "")[:10]
