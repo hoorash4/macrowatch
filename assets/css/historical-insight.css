@@ -166,3 +166,13 @@ html[data-theme="dark"] .historical-cycle-signal strong { color: #4ade80; }
 .historical-pivot-reason p { margin:0; color:var(--theme-text-primary); font-size:12px; line-height:1.6; }
 html[data-theme="dark"] .historical-pivot-reason { border-color:rgba(216,180,254,.2); background:rgba(192,38,211,.09); }
 html[data-theme="dark"] .historical-pivot-reason b { color:#e879f9; }
+
+
+/* Remaining A/B audit reasons under matched pivot details. */
+.historical-ab-reason-section { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--theme-border); }
+.historical-ab-reason-title { display:block; margin-bottom:8px; color:var(--theme-text-secondary); font-size:11px; font-weight:850; letter-spacing:.02em; }
+.historical-ab-reason-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.historical-ab-reason-grid article { padding:10px 12px; border:1px solid var(--theme-border); border-radius:8px; background:var(--theme-surface); }
+.historical-ab-reason-grid article > strong { display:block; color:var(--theme-text-primary); font-size:11px; line-height:1.45; }
+.historical-ab-reason-grid article > p { margin:5px 0 0; color:var(--theme-text-secondary); font-size:11px; line-height:1.6; }
+@media(max-width:850px){.historical-ab-reason-grid{grid-template-columns:1fr}}
