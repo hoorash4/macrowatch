@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun US10Y2Y after latest PIVOT_ANALYSIS_PROMPT anomaly-rule update
+# rerun US10Y2Y and diagnose anomaly rationale
 
 on:
   workflow_dispatch:
@@ -30,6 +30,7 @@ on:
       - ".github/workflows/historical-pivot-ai-backfill.yml"
       - "backend/historical_pivot_ai_backfill.py"
       - "backend/historical_pivot_ai_score.py"
+      - "backend/historical_pivot_ai_diagnose.py"
 
 permissions:
   contents: read
@@ -51,7 +52,7 @@ jobs:
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
           pip install --disable-pip-version-check matplotlib==3.10.6
-      - name: Analyze, score and persist historical pivots
+      - name: Analyze, score and diagnose historical pivots
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -82,3 +83,6 @@ jobs:
           fi
           PYTHONPATH=backend python -m historical_pivot_ai_backfill "${args[@]}"
           PYTHONPATH=backend python -m historical_pivot_ai_score "${score_args[@]}"
+          if [[ "$SERIES_CODE" == "US10Y2Y" && -n "$INDEX_CODE" ]]; then
+            PYTHONPATH=backend python -m historical_pivot_ai_diagnose --case "$CASE_CODE" --index "$INDEX_CODE" --series "$SERIES_CODE"
+          fi
