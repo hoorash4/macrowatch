@@ -1,0 +1,32 @@
+name: Repair collection gaps once
+
+on:
+  push:
+    paths:
+      - ".github/workflows/repair-collection-gaps-once.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-repairs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Dispatch existing collectors on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run market-context.yml -f mode=automatic
+          gh workflow run korea-small-business-risk.yml
+          gh workflow run korea-stress.yml
+          gh workflow run liquidity.yml
+          gh workflow run equity-bond-attractiveness.yml -f initialize_sources=false
+          gh workflow run earnings-v2-korea-automatic.yml -f phase=dart -f write=true
+          gh workflow run economic-chart-data.yml
+          gh workflow run central-bank-policy.yml -f mode=latest
+          echo "Dispatched existing workflows only; no schedules were added."
