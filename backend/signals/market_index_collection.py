@@ -278,7 +278,23 @@ def automatic(db: SupabaseRest | None = None, *, today: date | None = None) -> d
     start = today - timedelta(days=AUTOMATIC_LOOKBACK_DAYS)
     stored: dict[str, int] = {}
     for code in INDEX_CODES:
-        rows = fetch_index_candles(code, start, today, mode="automatic")
+        try:
+            rows = fetch_index_candles(code, start, today, mode="automatic")
+        except (requests.RequestException, RuntimeError) as error:
+            if code != "KOSPI":
+                raise
+            existing = load_close(database, "KOSPI", start, today)
+            # KOSPI is also written by the primary Korean market/KIS path.
+            # A transient KRX web endpoint failure must not invalidate U.S.
+            # index collection when a recent canonical KOSPI close already exists.
+            if not existing or max(existing) < today - timedelta(days=7):
+                raise
+            print(
+                f"kospi_refresh_deferred reason={type(error).__name__} "
+                f"latest={max(existing).isoformat()}"
+            )
+            stored[code] = 0
+            continue
         if code in FRED_SERIES:
             rows = _promote_fred_after_one_session(code, rows, start, today)
         # Recent window is deliberately upserted every run so provisional rows can later be
