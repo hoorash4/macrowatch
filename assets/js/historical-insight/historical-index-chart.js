@@ -46,7 +46,7 @@
         localization: { locale: 'ko-KR', dateFormat: 'yyyy. MM. dd.' },
         rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
         leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false, minimumWidth: 34 },
-        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 68 },
+        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 46 },
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
         handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -82,7 +82,7 @@
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color),lane=pivotPriority(result);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,lane);});
+          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives});
         });
