@@ -988,3 +988,22 @@ test('개인설정 모달은 고정 헤더와 스크롤 본문에서 항상 닫�
   assert.match(modalData, /event\.key === 'Escape'[\s\S]*?close\(\)/);
 });
 
+
+
+test('FOMC 브리핑은 실제 자료 완성 상태로 Updating과 Updated를 표시한다', () => {
+  const briefing = fs.readFileSync(path.join(__dirname, '..', 'assets/js/policy/policy-briefing.js'), 'utf8');
+  const pipeline = fs.readFileSync(path.join(__dirname, '..', 'supabase/functions/policy-pipeline/index.ts'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  assert.match(briefing, /briefingUpdateState/);
+  assert.match(briefing, /source_complete/);
+  assert.match(briefing, /briefing_source_state,briefing_updated_at/);
+  assert.match(briefing, /Updating/);
+  assert.match(briefing, /Updated/);
+  assert.match(styles, /\.fomc-briefing-status\.is-updating/);
+  assert.match(styles, /\.fomc-briefing-status\.is-updated/);
+  assert.match(pipeline, /newYorkFedLiquidityContext/);
+  assert.match(pipeline, /treasury_operations/);
+  assert.match(pipeline, /repo_operations/);
+  assert.match(pipeline, /agency_mbs_operations/);
+  assert.match(pipeline, /missing_sources/);
+});
