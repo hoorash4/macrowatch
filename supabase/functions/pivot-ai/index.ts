@@ -5,6 +5,20 @@ import { PIVOT_ANALYSIS_SCHEMA, PIVOT_SCHEMA_VERSION, type PivotAnalysisOutput }
 const PROMPT_VERSION = Deno.env.get("PIVOT_ANALYSIS_PROMPT_VERSION") || "pivot-v1";
 const MODEL = Deno.env.get("PIVOT_AI_MODEL") || Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna";
 const MAX_SERIES_POINTS = 1200;
+const ANOMALY_VALIDATION_VERSION = "web-search-v1";
+const ANOMALY_WEB_INSTRUCTION = `
+특이점(anomaly) 규칙은 다음을 반드시 지켜라.
+- 차트에서 급격하거나 이례적으로 보이는 움직임은 anomaly의 후보일 뿐이며, 차트 모양만으로 anomaly를 확정해서는 안 된다.
+- anomaly 후보를 발견하면 그 움직임의 실제 시작점(movement_start_date)을 먼저 정한다.
+- 반드시 웹 검색을 사용하여 movement_start_date 이전 3개월 이내의 주요 뉴스와 사건을 조사한다.
+- 그 기간 안에 당시 시장 참여자가 절대 예상할 수 없었던 돌발 외생 사건이 실제로 확인되고, 그 사건이 해당 움직임을 설명할 합리적 연결고리가 있을 때만 anomalies 배열에 포함한다.
+- 이미 알려져 있던 위험, 누적된 불균형, 진행 중이던 위기의 연장, 예정된 정책/일정, 이미 인식되던 취약성의 현실화는 anomaly 근거가 될 수 없다.
+- 조건을 만족하는 사건을 확인하지 못하면 후보가 아무리 급격해 보여도 anomaly로 출력하지 말고 버린다.
+- anomaly의 date는 움직임 시작일이 아니라 그 충격 파동이 만든 실제 극값 날짜다. 급등은 최고점, 급락은 최저점이다.
+- event_name, event_date, reason, source_urls에는 실제 웹 검색으로 확인한 근거만 기록한다. 사건명이나 출처를 추측하거나 만들어내지 마라.
+- search_window_start는 movement_start_date의 3개월 전, search_window_end는 movement_start_date로 기록한다.
+- anomalies 배열에 들어가는 모든 항목은 unexpected_event=true여야 한다. 이 조건을 확신할 수 없으면 anomalies에 넣지 마라.
+`;
 
 type Point = { date: string; value: number };
 type Payload = {
@@ -40,6 +54,17 @@ function outputText(payload: Record<string, unknown>) {
 
 function validDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
+}
+
+function minusThreeMonths(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const source = new Date(Date.UTC(year, month - 1, day));
+  const targetMonth = source.getUTCMonth() - 3;
+  const targetYear = source.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  const target = new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay)));
+  return target.toISOString().slice(0, 10);
 }
 
 function validateInput(body: unknown): Payload {
@@ -99,9 +124,28 @@ function normalizeAnalysis(raw: PivotAnalysisOutput, points: Point[], from: stri
     const point = nearestPoint(points, item.date);
     return { ...item, date: point.date, value: point.value, confidence: Math.max(0, Math.min(1, Number(item.confidence))) };
   });
-  const anomalies = (raw.anomalies || []).filter(item => validDate(item.date) && inRange(item.date)).map(item => {
+  const anomalies = (raw.anomalies || []).filter(item => {
+    if (!validDate(item.movement_start_date) || !validDate(item.date) || !validDate(item.event_date)) return false;
+    if (!inRange(item.movement_start_date) || !inRange(item.date)) return false;
+    if (item.unexpected_event !== true) return false;
+    const expectedStart = minusThreeMonths(item.movement_start_date);
+    if (item.event_date < expectedStart || item.event_date > item.movement_start_date) return false;
+    if (!Array.isArray(item.source_urls) || item.source_urls.length < 1) return false;
+    if (!String(item.event_name || "").trim() || !String(item.reason || "").trim()) return false;
+    return true;
+  }).map(item => {
     const point = nearestPoint(points, item.date);
-    return { ...item, date: point.date, value: point.value, confidence: Math.max(0, Math.min(1, Number(item.confidence))) };
+    const movementStart = nearestPoint(points, item.movement_start_date).date;
+    return {
+      ...item,
+      movement_start_date: movementStart,
+      date: point.date,
+      value: point.value,
+      search_window_start: minusThreeMonths(movementStart),
+      search_window_end: movementStart,
+      source_urls: item.source_urls.slice(0, 5),
+      confidence: Math.max(0, Math.min(1, Number(item.confidence))),
+    };
   });
   const regimes = (raw.regimes || []).filter(item => validDate(item.start_date) && inRange(item.start_date)).map(item => ({
     ...item,
@@ -131,6 +175,7 @@ Deno.serve(async (req) => {
       series_code: input.series_code, series_name: input.series_name || null,
       cycle: input.cycle, display_window: input.display_window,
       instruction: "상단 시장지수와 하단 지표는 동일한 X축이다. 하단 지표만 피봇/횡보/특이점 분석 대상으로 삼고, 시장 START/PEAK/TROUGH는 시간축 문맥으로만 사용하며 그 위치에 피봇을 강제로 만들지 마라.",
+      anomaly_instruction: ANOMALY_WEB_INSTRUCTION,
       indicator_points: compact,
     };
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -139,10 +184,13 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: MODEL,
         reasoning: { effort: "medium" },
-        max_output_tokens: 4_000,
-        prompt_cache_key: "macrowatch-pivot-analysis-v1",
+        max_output_tokens: 5_000,
+        prompt_cache_key: "macrowatch-pivot-analysis-v2",
+        tools: [{ type: "web_search_preview", search_context_size: "medium" }],
+        tool_choice: "required",
+        include: ["web_search_call.action.sources"],
         input: [
-          { role: "system", content: [{ type: "input_text", text: prompt }] },
+          { role: "system", content: [{ type: "input_text", text: prompt + "\n\n" + ANOMALY_WEB_INSTRUCTION }] },
           { role: "user", content: [
             { type: "input_text", text: JSON.stringify(metadata) },
             { type: "input_image", image_url: input.chart_image_data_url, detail: "high" },
@@ -164,13 +212,14 @@ Deno.serve(async (req) => {
       cycle_start: input.cycle.start_date, cycle_peak: input.cycle.peak_date, cycle_trough: input.cycle.trough_date,
       model: MODEL, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION,
       regimes: analysis.regimes, pivots: analysis.pivots, anomalies: analysis.anomalies,
+      anomaly_validation_version: ANOMALY_VALIDATION_VERSION,
       source_point_count: input.indicator_points.length, chart_sha256: input.chart_sha256 || null,
       analyzed_at: now, updated_at: now,
     };
     const supabase = supabaseClient();
     const { error } = await supabase.from("historical_indicator_ai_analysis").upsert(row, { onConflict: "case_code,index_code,series_code" });
     if (error) throw error;
-    return json({ ok: true, model: MODEL, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION, analysis });
+    return json({ ok: true, model: MODEL, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION, anomaly_validation_version: ANOMALY_VALIDATION_VERSION, analysis });
   } catch (error) {
     console.error(error);
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
