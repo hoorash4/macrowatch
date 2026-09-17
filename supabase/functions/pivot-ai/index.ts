@@ -15,6 +15,15 @@ const PIVOT_REASON_INSTRUCTION = `
 - 단순히 '상승 후 하락', '저점 후 상승', '큰 폭으로 움직임'처럼 결과나 진폭만 반복하지 마라.
 - 부모 추세의 흐름을 바꾸지 못한 반대 방향 움직임은 자식 추세일 뿐이며 A의 근거가 될 수 없다.
 `;
+const POST_TREND_INSTRUCTION = `
+A/B 피봇의 post_trend 출력 규칙은 반드시 지켜라.
+- A 또는 B에는 post_trend를 반드시 객체로 출력한다.
+- post_trend.direction은 up/down/sideways 중 하나다.
+- post_trend.end_date는 해당 피봇을 시작점으로 한 가장 상위의 단일 부모 추세가 구조적으로 끝난 날짜다.
+- 작은 조정, 반등, 짧은 횡보나 국소 파동으로 부모 추세를 끊지 마라.
+- C 또는 D에는 post_trend를 분석하지 말고 반드시 null을 출력한다.
+- post_trend 결과를 이용해 이미 결정한 A/B/C/D 등급이나 기존 regime을 다시 바꾸지 마라.
+`;
 const ANOMALY_WEB_INSTRUCTION = `
 특이점(anomaly) 규칙은 다음을 반드시 지켜라.
 - 차트에서 급격하거나 이례적으로 보이는 움직임은 anomaly의 후보일 뿐이며, 차트 모양만으로 anomaly를 확정해서는 안 된다.
@@ -131,7 +140,20 @@ function normalizeAnalysis(raw: PivotAnalysisOutput, points: Point[], from: stri
   const inRange = (date: string) => date >= from && date <= to;
   const pivots = (raw.pivots || []).filter(item => validDate(item.date) && inRange(item.date)).map(item => {
     const point = nearestPoint(points, item.date);
-    return { ...item, reason: String(item.reason || "").trim().slice(0, 400), date: point.date, value: point.value, confidence: Math.max(0, Math.min(1, Number(item.confidence))) };
+    const grade = String(item.grade || "").toUpperCase();
+    let postTrend = item.post_trend ?? null;
+    if (grade === "A" || grade === "B") {
+      if (!postTrend || typeof postTrend !== "object") throw new Error(`A/B post_trend가 없습니다: ${point.date}`);
+      const direction = String(postTrend.direction || "");
+      const endDate = String(postTrend.end_date || "");
+      if (!["up", "down", "sideways"].includes(direction) || !validDate(endDate) || endDate < point.date || endDate > to) {
+        throw new Error(`A/B post_trend가 올바르지 않습니다: ${point.date}`);
+      }
+      postTrend = { direction: direction as "up" | "down" | "sideways", end_date: endDate };
+    } else {
+      postTrend = null;
+    }
+    return { ...item, post_trend: postTrend, reason: String(item.reason || "").trim().slice(0, 400), date: point.date, value: point.value, confidence: Math.max(0, Math.min(1, Number(item.confidence))) };
   });
   const anomalies = (raw.anomalies || []).filter(item => {
     if (!validDate(item.movement_start_date) || !validDate(item.date) || !validDate(item.event_date)) return false;
@@ -185,6 +207,7 @@ Deno.serve(async (req) => {
       cycle: input.cycle, display_window: input.display_window,
       instruction: "상단 시장지수와 하단 지표는 동일한 X축이다. 하단 지표만 피봇/횡보/특이점 분석 대상으로 삼고, 시장 START/PEAK/TROUGH는 시간축 문맥으로만 사용하며 그 위치에 피봇을 강제로 만들지 마라.",
       pivot_reason_instruction: PIVOT_REASON_INSTRUCTION,
+      post_trend_instruction: POST_TREND_INSTRUCTION,
       anomaly_instruction: ANOMALY_WEB_INSTRUCTION,
       indicator_points: compact,
     };
@@ -195,7 +218,7 @@ Deno.serve(async (req) => {
         model: MODEL,
         reasoning: { effort: "medium" },
         max_output_tokens: 5_000,
-        prompt_cache_key: "macrowatch-pivot-analysis-v3",
+        prompt_cache_key: "macrowatch-pivot-analysis-v5",
         tools: [{ type: "web_search_preview", search_context_size: "medium" }],
         tool_choice: "required",
         include: ["web_search_call.action.sources"],

@@ -47,16 +47,21 @@ export const PIVOT_ANALYSIS_SCHEMA = {
           reason: { type: "string", minLength: 1, maxLength: 400 },
           confidence: { type: "number", minimum: 0, maximum: 1 },
           post_trend: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              direction: { type: "string", enum: ["up", "down", "sideways"] },
-              end_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
-            },
-            required: ["direction", "end_date"],
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  direction: { type: "string", enum: ["up", "down", "sideways"] },
+                  end_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+                },
+                required: ["direction", "end_date"],
+              },
+              { type: "null" },
+            ],
           },
         },
-        required: ["date", "value", "type", "grade", "direction", "reason", "confidence"],
+        required: ["date", "value", "type", "grade", "direction", "reason", "confidence", "post_trend"],
       },
     },
     anomalies: {
@@ -123,7 +128,7 @@ export type PivotPoint = {
   direction: "high" | "low" | "neutral";
   reason: string;
   confidence: number;
-  post_trend?: PivotPostTrend;
+  post_trend: PivotPostTrend | null;
 };
 
 export type PivotAnomaly = {
