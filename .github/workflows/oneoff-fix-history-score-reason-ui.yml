@@ -1,0 +1,60 @@
+name: One-off fix historical score and reason UI
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-fix-history-score-reason-ui.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Patch historical indicator list and pivot reason detail
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          js_path = Path('assets/js/historical-insight/historical-insight.js')
+          js = js_path.read_text()
+
+          old = "name.textContent=item.meta.title;label.append(input,name);if(activeMode==='current'){const score=document.createElement('em');score.className='historical-indicator-score';score.textContent=signalState==='market_relevant_confirmed'?`시장 관련 ${Math.round(item.evidence.score)}점`:signalState==='structural_only'?`구조 유지 ${Math.round(item.evidence.score)}점`:signalState==='candidate'?`후보 ${Math.round(item.evidence.score)}점`:signalState==='watch'?`감시 ${Math.round(item.evidence.score)}점`:'신호 없음';label.append(score);}"
+          new = "name.textContent=item.meta.title;label.append(input,name);if(activeMode==='history'){const value=Number(item.overallScore);if(Number.isFinite(value)&&value>0){const score=document.createElement('em');score.className='historical-indicator-score';score.textContent=`${Math.round(value)}점`;label.append(score);}}else{const score=document.createElement('em');score.className='historical-indicator-score';score.textContent=signalState==='market_relevant_confirmed'?`시장 관련 ${Math.round(item.evidence.score)}점`:signalState==='structural_only'?`구조 유지 ${Math.round(item.evidence.score)}점`:signalState==='candidate'?`후보 ${Math.round(item.evidence.score)}점`:signalState==='watch'?`감시 ${Math.round(item.evidence.score)}점`:'신호 없음';label.append(score);}"
+          if old not in js:
+              raise SystemExit('indicator score block not found')
+          js = js.replace(old, new, 1)
+
+          old_reason = "if(result){const reason=pivotReasonFor(item,result);if(reason){const reasonBox=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');reasonBox.className='historical-pivot-reason';reasonLabel.textContent='판정 근거';reasonText.textContent=reason;reasonBox.append(reasonLabel,reasonText);card.append(reasonBox);}}"
+          new_reason = "if(result){const reason=pivotReasonFor(item,result),reasonBox=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');reasonBox.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=reason||'근거 미저장 · 재분석 필요';reasonBox.append(reasonLabel,reasonText);card.append(reasonBox);}"
+          if old_reason not in js:
+              raise SystemExit('pivot reason block not found')
+          js = js.replace(old_reason, new_reason, 1)
+
+          if '0점 · 범위 근접' in js or '범위 근접' in js:
+              raise SystemExit('stale near-range text still present')
+          js_path.write_text(js)
+
+          html_path = Path('historical-insight.html')
+          html = html_path.read_text()
+          html = html.replace('assets/js/historical-insight/historical-insight.js?v=30', 'assets/js/historical-insight/historical-insight.js?v=31')
+          html_path.write_text(html)
+          PY
+      - name: Verify
+        shell: bash
+        run: |
+          node --check assets/js/historical-insight/historical-insight.js
+          grep -q "피봇 판정 근거" assets/js/historical-insight/historical-insight.js
+          grep -q 'value>0' assets/js/historical-insight/historical-insight.js
+          ! grep -R "0점 · 범위 근접\|범위 근접" -n assets/js/historical-insight/historical-insight.js
+          grep -q 'historical-insight.js?v=31' historical-insight.html
+      - name: Commit result
+        shell: bash
+        run: |
+          git config user.name "hoorash4"
+          git config user.email "hoorash4@gmail.com"
+          rm .github/workflows/oneoff-fix-history-score-reason-ui.yml
+          git add assets/js/historical-insight/historical-insight.js historical-insight.html .github/workflows/oneoff-fix-history-score-reason-ui.yml
+          git commit -m "Restore historical scores and pivot reason cards"
+          git push
