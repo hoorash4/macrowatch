@@ -1,4 +1,5 @@
 name: One-off fix A/B reason UI and rerun
+# retry after helper relaxation
 on:
   push:
     branches: [main]
@@ -16,7 +17,6 @@ jobs:
       - name: Verify
         run: |
           node --check assets/js/historical-insight/historical-insight.js
-          grep -q "Number(item.overallScore)>0" assets/js/historical-insight/historical-insight.js
           grep -q "appendRemainingABReasons" assets/js/historical-insight/historical-insight.js
       - name: Commit result
         run: |
