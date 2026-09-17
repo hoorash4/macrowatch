@@ -52,6 +52,11 @@ SECTOR_FLOW_JOBS = {
 # A successful manual run resolves a failed scheduled run only when there is
 # independent data evidence that the collector recovered. Workflows without a
 # suitable freshness series stay failed rather than trusting a green manual run.
+WEEK_END_LABELED_SERIES = frozenset({
+    "us_market_tension_weekly",
+    "em_market_stress_weekly",
+})
+
 WORKFLOW_DATABASE_SERIES = {
     "small-business-risk.yml": "us_small_business_risk_monthly",
     "korea-small-business-risk.yml": "kr_small_business_risk_monthly",
@@ -163,7 +168,10 @@ def _series_latest_date(db: SupabaseRest, series_name: str) -> date:
 def _series_is_fresh(db: SupabaseRest, series_name: str, today: date) -> bool:
     _table, _column, max_age, _filters = _series_spec(series_name)
     observed = _series_latest_date(db, series_name)
-    return observed <= today and (today - observed).days <= max_age
+    future_days = (observed - today).days
+    if future_days > (6 if series_name in WEEK_END_LABELED_SERIES else 0):
+        return False
+    return (today - min(observed, today)).days <= max_age
 
 
 def _scheduled_failure_recovered(workflow: str, run: dict, token: str, today: date, db: SupabaseRest | None) -> tuple[bool, SupabaseRest | None]:
@@ -286,9 +294,10 @@ def check_database(today: date) -> list[str]:
         try:
             _table, _column, max_age, _filters = _series_spec(label)
             observed = _series_latest_date(db, label)
-            if observed > today:
+            allowed_future_days = 6 if label in WEEK_END_LABELED_SERIES else 0
+            if (observed - today).days > allowed_future_days:
                 failures.append(f"DB 최신값 날짜 이상: {label}, latest={observed.isoformat()}")
-            elif (today - observed).days > max_age:
+            elif (today - min(observed, today)).days > max_age:
                 failures.append(f"DB 최신값 지연: {label}, latest={observed.isoformat()}")
         except Exception as error:
             # A schema/API/value problem in one series is itself a health
