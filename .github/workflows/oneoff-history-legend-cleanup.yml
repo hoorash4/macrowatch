@@ -1,0 +1,38 @@
+name: One-off historical range-near legend cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-history-legend-cleanup.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Remove historical range-near legend text
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('assets/js/historical-insight/historical-insight.js')
+          text = path.read_text()
+          old = "label.textContent=`${selected[0].meta.title}${anchors.length?` · ${anchors.join('/')}`:nearMisses.length?` · 범위 근접`:''}`;"
+          new = "label.textContent=`${selected[0].meta.title}${anchors.length?` · ${anchors.join('/')}`:''}`;"
+          if old not in text:
+              raise SystemExit('legend range-near text not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit patch and remove one-off workflow
+        run: |
+          rm .github/workflows/oneoff-history-legend-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/historical-insight/historical-insight.js .github/workflows/oneoff-history-legend-cleanup.yml
+          git commit -m "Remove historical range-near legend text"
+          git push
