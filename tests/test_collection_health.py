@@ -137,6 +137,19 @@ class CollectionHealthTests(unittest.TestCase):
         ):
             self.assertEqual([], health.check_workflows(date(2026, 9, 11)))
 
+    def test_central_bank_manual_success_can_recover_without_new_event_row(self):
+        failed = {"updated_at": "2026-09-17T20:41:00Z", "status": "completed", "conclusion": "failure"}
+        repair = {"updated_at": "2026-09-17T23:30:00Z", "status": "completed", "conclusion": "success"}
+        with (
+            patch.object(health, "WORKFLOWS", {"central-bank-policy.yml": 3}),
+            patch.object(health, "MANUAL_SUCCESS_ONLY_RECOVERY", frozenset({"central-bank-policy.yml"})),
+            patch.object(health, "require_env", return_value="token"),
+            patch.object(health, "github_workflow_info", return_value={"state": "active", "created_at": "2026-01-01T00:00:00Z"}),
+            patch.object(health, "github_latest_run", return_value=failed),
+            patch.object(health, "github_manual_success_after", return_value=repair),
+        ):
+            self.assertEqual([], health.check_workflows(date(2026, 9, 18)))
+
     def test_manual_success_does_not_hide_failed_schedule_when_data_is_stale(self):
         failed = {"updated_at": "2026-09-10T00:00:00Z", "status": "completed", "conclusion": "failure"}
         repair = {"updated_at": "2026-09-11T00:00:00Z", "status": "completed", "conclusion": "success"}
