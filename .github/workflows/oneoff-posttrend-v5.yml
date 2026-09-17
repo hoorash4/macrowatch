@@ -1,0 +1,28 @@
+name: One-off post-trend schema v5
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-posttrend-v5.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply patch
+        run: python tools/patch_posttrend_schema_v5.py
+      - name: Verify
+        run: |
+          grep -q 'pivot-schema-v5' supabase/functions/_shared/pivot/pivot-schema.ts
+          grep -q 'post_trend: PivotPostTrend | null' supabase/functions/_shared/pivot/pivot-schema.ts
+          grep -q 'POST_TREND_INSTRUCTION' supabase/functions/pivot-ai/index.ts
+      - name: Commit result
+        run: |
+          git config user.name "hoorash4"
+          git config user.email "hoorash4@gmail.com"
+          rm .github/workflows/oneoff-posttrend-v5.yml tools/patch_posttrend_schema_v5.py
+          git add supabase/functions/_shared/pivot/pivot-schema.ts supabase/functions/pivot-ai/index.ts .github/workflows/oneoff-posttrend-v5.yml tools/patch_posttrend_schema_v5.py
+          git commit -m "Require A/B post-trend output"
+          git push
