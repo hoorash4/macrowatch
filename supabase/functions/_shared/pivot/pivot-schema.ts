@@ -1,5 +1,5 @@
-// Pivot schema v4: A/B post-trend structure is optional during prompt rollout and used when present.
-export const PIVOT_SCHEMA_VERSION = "pivot-schema-v4";
+// Pivot schema v5: required nullable post-trend field; A/B must carry parent post-trend.
+export const PIVOT_SCHEMA_VERSION = "pivot-schema-v5";
 
 export const PIVOT_ANALYSIS_SCHEMA = {
   type: "object",
