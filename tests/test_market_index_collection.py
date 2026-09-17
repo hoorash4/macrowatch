@@ -129,6 +129,32 @@ class MarketIndexCollectionTests(unittest.TestCase):
             self.assertEqual("TEST", rows[0]["source"])
             self.assertEqual(100.0, rows[0]["close"])
 
+    def test_automatic_keeps_existing_kospi_when_krx_refresh_fails(self):
+        import requests
+
+        today = date(2026, 9, 17)
+        db = FakeDatabase()
+
+        def sample(code, _start, _end, **kwargs):
+            if code == "KOSPI":
+                raise requests.HTTPError("KRX 400")
+            return [row(code, "2026-09-16"), row(code, "2026-09-17")]
+
+        with (
+            patch("signals.market_index_collection.fetch_index_candles", side_effect=sample),
+            patch("signals.market_index_collection._fetch_fred_close", return_value={}),
+            patch(
+                "signals.market_index_collection.load_close",
+                return_value={date(2026, 9, 17): 6715.41},
+            ),
+        ):
+            stored = automatic(db, today=today)
+
+        self.assertEqual(2, stored["SP500"])
+        self.assertEqual(2, stored["NASDAQ_COMPOSITE"])
+        self.assertEqual(0, stored["KOSPI"])
+        self.assertEqual(2, len(db.upserts))
+
     def test_load_close_reads_market_index_prices(self):
         db = FakeDatabase(pages=[[{"market_date": "2026-09-11", "close": "123.45"}]])
         values = load_close(db, "SP500", date(2026, 9, 1), date(2026, 9, 14))
