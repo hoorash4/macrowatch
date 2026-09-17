@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun US10Y2Y after pivot-schema-v4 deployment
+# rerun US10Y2Y after deployed pivot-schema-v5
 
 on:
   workflow_dispatch:
