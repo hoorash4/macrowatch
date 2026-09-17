@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun US10Y2Y after immutable-regime prompt update
+# rerun US10Y2Y after pivot-schema-v4 deployment
 
 on:
   workflow_dispatch:
