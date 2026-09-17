@@ -12,15 +12,15 @@
   }
   class PivotTimeAxisRenderer {
     constructor(view){this.view=view;}
-    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelTop=scope.bitmapSize.height-labelHeight-3*v,padX=5*h;ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle=this.view.textColor;ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();});}
+    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelGap=2*v,labelTop=scope.bitmapSize.height-(this.view.lane+1)*labelHeight-this.view.lane*labelGap-3*v,padX=5*h;ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle=this.view.textColor;ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();});}
   }
   class PivotTimeAxisPaneView {
-    constructor(paneView,date,color,textColor){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.rendererInstance=new PivotTimeAxisRenderer(this);}
+    constructor(paneView,date,color,textColor,lane=0){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.lane=lane;this.rendererInstance=new PivotTimeAxisRenderer(this);}
     renderer(){return this.rendererInstance;}
     zOrder(){return 'top';}
   }
   class PivotLinePrimitive {
-    constructor(chart,time,color,textColor='#fff'){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor);}
+    constructor(chart,time,color,textColor='#fff',lane=0){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor,lane);}
     updateAllViews(){this.view.update();}
     paneViews(){return [this.view];}
     timeAxisPaneViews(){return [this.timeAxisPaneView];}
@@ -80,9 +80,9 @@
         for(const entry of indicatorSeries.values()){for(const primitive of entry.primitives)entry.series.detachPrimitive(primitive);chart?.removeSeries(entry.series);}
         indicatorSeries.clear();
         items.forEach(item=>{
-          const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
+          const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor);});
+          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color),lane=pivotPriority(result);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,lane);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives});
         });
