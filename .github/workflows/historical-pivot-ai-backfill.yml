@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun US10Y2Y after pivot date vs regime boundary prompt update
+# rerun US10Y2Y after B grading prompt update
 
 on:
   workflow_dispatch:
