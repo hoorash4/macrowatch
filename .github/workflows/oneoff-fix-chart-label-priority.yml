@@ -1,0 +1,51 @@
+name: One-off fix chart label priority
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-fix-chart-label-priority.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Patch chart labels
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path('assets/js/historical-insight/historical-index-chart.js')
+          s=p.read_text()
+          s=s.replace("constructor(view){this.view=view;}\n    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelTop=scope.bitmapSize.height-labelHeight-3*v,padX=5*h;", "constructor(view){this.view=view;}\n    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const ctx=scope.context,h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h),labelHeight=18*v,labelGap=2*v,labelTop=scope.bitmapSize.height-(this.view.lane+1)*labelHeight-this.view.lane*labelGap-3*v,padX=5*h;")
+          s=s.replace("constructor(paneView,date,color,textColor){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.rendererInstance=new PivotTimeAxisRenderer(this);}", "constructor(paneView,date,color,textColor,lane=0){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.lane=lane;this.rendererInstance=new PivotTimeAxisRenderer(this);}")
+          s=s.replace("constructor(chart,time,color,textColor='#fff'){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor);}", "constructor(chart,time,color,textColor='#fff',lane=0){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor,lane);}")
+          s=s.replace("priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:item.meta.title,priceFormat", "priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat")
+          old="const primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor);});"
+          new="const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, primitives=(item.displayPivots||item.results).map(result=>{const style=pivotStyle(result,color),lane=pivotPriority(result);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,lane);});"
+          if old not in s: raise SystemExit('primitive anchor not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+
+          h=Path('historical-insight.html')
+          t=h.read_text()
+          t=re.sub(r'assets/js/historical-insight/historical-index-chart\.js\?v=\d+', 'assets/js/historical-insight/historical-index-chart.js?v=16', t)
+          h.write_text(t)
+          PY
+      - name: Verify
+        run: |
+          node --check assets/js/historical-insight/historical-index-chart.js
+          grep -Fq "title:''" assets/js/historical-insight/historical-index-chart.js
+          grep -Fq "pivotPriority" assets/js/historical-insight/historical-index-chart.js
+          grep -Fq "historical-index-chart.js?v=16" historical-insight.html
+      - name: Commit result
+        run: |
+          git config user.name "hoorash4"
+          git config user.email "hoorash4@gmail.com"
+          rm .github/workflows/oneoff-fix-chart-label-priority.yml
+          git add assets/js/historical-insight/historical-index-chart.js historical-insight.html .github/workflows/oneoff-fix-chart-label-priority.yml
+          git commit -m "Clean chart label and prioritize pivot dates"
+          git push
