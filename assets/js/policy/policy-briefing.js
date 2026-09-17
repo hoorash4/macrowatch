@@ -17,6 +17,27 @@
     };
   }
 
+  function briefingUpdateState(row) {
+    const sourceState = row.briefing_source_state || {};
+    if (typeof sourceState.source_complete === 'boolean') {
+      return sourceState.source_complete ? 'Updated' : 'Updating';
+    }
+    const modern = !row.is_emergency && String(row.meeting_date) >= '2019-01-01';
+    const complete = Boolean(
+      sourceState.statement_hash
+      && (!modern || sourceState.implementation_note_url)
+      && (!modern || sourceState.press_conference_url)
+      && (!modern || sourceState.liquidity_context)
+    );
+    return complete ? 'Updated' : 'Updating';
+  }
+
+  function briefingStatusMarkup(row) {
+    const status = briefingUpdateState(row);
+    const updating = status === 'Updating';
+    return `<span class="fomc-briefing-status ${updating ? 'is-updating' : 'is-updated'}" aria-label="FOMC briefing ${status}"><span class="fomc-briefing-status-dot" aria-hidden="true"></span>${status}</span>`;
+  }
+
   function rateDecision(row) {
     const lower = Number(row.target_range_lower);
     const upper = Number(row.target_range_upper);
@@ -84,7 +105,7 @@
       const title = meetingTitleParts(row);
       return `<article class="fomc-briefing-item${isOpen ? ' is-open' : ''}">
         <button type="button" class="fomc-briefing-toggle" data-fomc-meeting-date="${escapeHtml(row.meeting_date)}" aria-expanded="${isOpen}" aria-controls="${panelId}">
-          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong><span class="fomc-briefing-title-date">${escapeHtml(title.date)}</span><span class="fomc-briefing-title-label">${escapeHtml(title.label)}</span></strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
+          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong><span class="fomc-briefing-title-date">${escapeHtml(title.date)}</span><span class="fomc-briefing-title-label">${escapeHtml(title.label)}</span>${briefingStatusMarkup(row)}</strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
           <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
         </button>
         <div id="${panelId}" class="fomc-briefing-detail"${isOpen ? '' : ' hidden'}>${isOpen ? detailContent(row) : ''}</div>
@@ -131,7 +152,7 @@
     if (!container || !supabaseClient) return;
     bindInteractions();
     const { data, error } = await supabaseClient.from('central_bank_policy_events')
-      .select('meeting_date,is_emergency,action,target_range_lower,target_range_upper,change_bps,briefing,briefing_revision')
+      .select('meeting_date,is_emergency,action,target_range_lower,target_range_upper,change_bps,briefing,briefing_revision,briefing_source_state,briefing_updated_at')
       .eq('central_bank', 'fed').eq('analysis_status', 'completed').not('briefing', 'is', null)
       .order('meeting_date', { ascending: false });
     if (error) {
