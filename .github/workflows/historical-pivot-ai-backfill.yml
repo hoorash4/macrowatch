@@ -1,5 +1,5 @@
 name: Historical Pivot AI backfill
-# rerun US10Y2Y after pivot/anomaly logic updates
+# rerun US10Y2Y after latest parent-trend prompt update
 
 on:
   workflow_dispatch:
