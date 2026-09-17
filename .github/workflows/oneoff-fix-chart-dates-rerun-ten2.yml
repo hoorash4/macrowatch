@@ -1,0 +1,72 @@
+name: One-off fix chart dates and rerun US10Y2Y
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oneoff-fix-chart-dates-rerun-ten2.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch-and-rerun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Fix stacked date labels and cache version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('assets/js/historical-insight/historical-index-chart.js')
+          s = p.read_text()
+          old = "timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 46 }"
+          new = "timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 68 }"
+          if old not in s:
+              raise SystemExit('expected timeScale minimumHeight pattern not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('historical-insight.html')
+          s = p.read_text()
+          old = 'assets/js/historical-insight/historical-index-chart.js?v=16'
+          new = 'assets/js/historical-insight/historical-index-chart.js?v=17'
+          if old not in s:
+              raise SystemExit('expected historical-index-chart cache version not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          grep -F "minimumHeight: 68" assets/js/historical-insight/historical-index-chart.js
+          grep -F "historical-index-chart.js?v=17" historical-insight.html
+      - name: Commit frontend fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/historical-insight/historical-index-chart.js historical-insight.html
+          git commit -m "Restore stacked pivot date labels"
+          git push origin HEAD:main
+      - name: Dispatch Pages and US10Y2Y backfill
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run pages-deploy.yml --ref main
+          gh workflow run historical-pivot-ai-backfill.yml --ref main \
+            -f case_code=global_financial_crisis \
+            -f index_code=SP500 \
+            -f series_code=US10Y2Y \
+            -f limit=0
+      - name: Remove one-off workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --rebase origin main
+          git rm .github/workflows/oneoff-fix-chart-dates-rerun-ten2.yml
+          git commit -m "Remove one-off chart date rerun workflow"
+          git push origin HEAD:main
