@@ -63,9 +63,9 @@
     return Object.freeze({
       meta,rows,regimes,pivots:Object.freeze(aiPivots),technicalPivots:Object.freeze(aiPivots),marketRelevantPivots:results,nearMissPivots,
       cycleRelationship:row.cycle_relationship||'unresolved',byReference,results,diagnostics:Object.freeze([]),
-      overallScore:Number(row.overall_score||0),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),
+      overallScore:row.overall_score==null?null:Number(row.overall_score),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),
       meaningfulReferenceCount:Number(row.meaningful_reference_count||results.length),maxReferenceScore:Number(row.max_reference_score||0),
-      visible:results.length>0||scoredNearMisses.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,
+      visible:results.length>0||scoredNearMisses.length>0||referenceOnly.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,
       anomalies:Object.freeze([...(row.ai_anomalies||[])])
     });
   }

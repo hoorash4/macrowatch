@@ -14,7 +14,7 @@ from typing import Any
 
 from common import SupabaseRest
 
-SCORING_VERSION = "pivot-ai-score-v5"
+SCORING_VERSION = "pivot-ai-score-v6"
 REFERENCE_ORDER = ("START", "PEAK", "TROUGH")
 REFERENCE_WEIGHTS = {"structural": 0.45, "timing": 0.35, "duration": 0.20}
 OVERALL_WEIGHTS = {"best": 0.70, "mean": 0.30}
@@ -281,6 +281,7 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
     regimes = normalized_regimes(list(row.get("regimes") or []))
     analysis_end = str(row.get("display_end") or cycle.get("trough_date") or cycle.get("peak_date") or cycle.get("start_date"))
     pivots = filter_pivots_for_scoring(ai_pivots, ai_anomalies, regimes, analysis_end)
+    has_ab_pivots = any(str(item.get("grade") or "").upper() in {"A", "B"} for item in ai_pivots)
 
     candidates: dict[str, list[dict[str, Any]]] = {}
     near_miss_candidates: dict[str, list[dict[str, Any]]] = {}
@@ -369,16 +370,16 @@ def score_analysis(row: dict[str, Any], cycle: dict[str, Any]) -> dict[str, Any]
         overall = min(100.0, best * OVERALL_WEIGHTS["best"] + mean * OVERALL_WEIGHTS["mean"] + coverage_bonus)
         max_reference = best
     else:
-        overall = 0.0
-        max_reference = 0.0
+        overall = 0.0 if has_ab_pivots else None
+        max_reference = 0.0 if has_ab_pivots else None
 
     return {
         "case_code": row["case_code"],
         "index_code": row["index_code"],
         "series_code": row["series_code"],
-        "overall_score": round(overall, 6),
+        "overall_score": None if overall is None else round(overall, 6),
         "meaningful_reference_count": len(score_items),
-        "max_reference_score": round(max_reference, 6),
+        "max_reference_score": None if max_reference is None else round(max_reference, 6),
         "reference_coverage_count": coverage_count,
         "coverage_bonus": coverage_bonus,
         "cycle_relationship": cycle_relationship,
