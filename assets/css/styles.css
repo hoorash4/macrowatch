@@ -729,6 +729,12 @@ body:has(#app-shell:not(.hidden)) {
 .fomc-briefing-toggle strong { font-size:.95rem; font-weight:700; letter-spacing:-.018em; }
 .fomc-briefing-title-date { color:#efc7d1; }
 .fomc-briefing-title-label { margin-left:.45rem; color:#f1e8eb; }
+.fomc-briefing-status { display:inline-flex; align-items:center; gap:.34rem; margin-left:.55rem; padding:.15rem .45rem; border-radius:999px; font-size:.66rem; font-weight:750; letter-spacing:.02em; vertical-align:middle; }
+.fomc-briefing-status-dot { width:.42rem; height:.42rem; flex:none; border-radius:999px; }
+.fomc-briefing-status.is-updating { border:1px solid rgba(251,191,36,.4); background:rgba(251,191,36,.12); color:#fde68a; }
+.fomc-briefing-status.is-updating .fomc-briefing-status-dot { background:#fbbf24; box-shadow:0 0 0 3px rgba(251,191,36,.12); }
+.fomc-briefing-status.is-updated { border:1px solid rgba(52,211,153,.38); background:rgba(16,185,129,.12); color:#a7f3d0; }
+.fomc-briefing-status.is-updated .fomc-briefing-status-dot { background:#34d399; }
 .fomc-briefing-toggle small { color:#ddcbd1; font-size:.79rem; font-weight:500; }
 .fomc-briefing-toggle > i { color:#cbb2ba; font-size:.72rem; transition:transform .2s ease; }
 .fomc-briefing-item.is-open .fomc-briefing-toggle { border-left-color:#e1b4bf; background:#50313b; }
