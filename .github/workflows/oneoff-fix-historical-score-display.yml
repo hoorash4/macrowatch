@@ -1,0 +1,83 @@
+name: One-off fix Historical Insight score/display semantics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-fix-historical-score-display.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Patch scorer and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          score = Path('backend/historical_pivot_ai_score.py')
+          text = score.read_text()
+          text = text.replace('SCORING_VERSION = "pivot-ai-score-v5"', 'SCORING_VERSION = "pivot-ai-score-v6"')
+          text = text.replace(
+              '    pivots = filter_pivots_for_scoring(ai_pivots, ai_anomalies, regimes, analysis_end)\n',
+              '    pivots = filter_pivots_for_scoring(ai_pivots, ai_anomalies, regimes, analysis_end)\n    has_ab_pivots = any(str(item.get("grade") or "").upper() in {"A", "B"} for item in ai_pivots)\n'
+          )
+          text = text.replace(
+              '    else:\n        overall = 0.0\n        max_reference = 0.0\n',
+              '    else:\n        overall = 0.0 if has_ab_pivots else None\n        max_reference = 0.0 if has_ab_pivots else None\n'
+          )
+          text = text.replace(
+              '        "overall_score": round(overall, 6),\n',
+              '        "overall_score": None if overall is None else round(overall, 6),\n'
+          )
+          text = text.replace(
+              '        "max_reference_score": round(max_reference, 6),\n',
+              '        "max_reference_score": None if max_reference is None else round(max_reference, 6),\n'
+          )
+          score.write_text(text)
+
+          data = Path('assets/js/historical-insight/historical-indicator-data.js')
+          text = data.read_text()
+          text = text.replace(
+              "      overallScore:Number(row.overall_score||0),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),",
+              "      overallScore:row.overall_score==null?null:Number(row.overall_score),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),"
+          )
+          text = text.replace(
+              "      visible:results.length>0||scoredNearMisses.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,",
+              "      visible:results.length>0||scoredNearMisses.length>0||referenceOnly.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,"
+          )
+          data.write_text(text)
+
+          page = Path('assets/js/historical-insight/historical-insight.js')
+          text = page.read_text()
+          text = text.replace(
+              "  function candidatesFor(context){if(context.mode==='history')return{items:context.analyses.filter(item=>item.visible).sort(indicatorAnalysis.compareAnalyses),signal:null};",
+              "  function candidatesFor(context){if(context.mode==='history')return{items:context.analyses.filter(item=>item.visible&&Number.isFinite(item.overallScore)&&item.overallScore>0).sort(indicatorAnalysis.compareAnalyses),signal:null};"
+          )
+          page.write_text(text)
+
+          html = Path('historical-insight.html')
+          text = html.read_text()
+          text = text.replace('historical-indicator-data.js?v=5', 'historical-indicator-data.js?v=6')
+          text = text.replace('historical-insight.js?v=35', 'historical-insight.js?v=36')
+          html.write_text(text)
+          PY
+      - name: Commit patch and remove one-off workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm .github/workflows/oneoff-fix-historical-score-display.yml
+          git add backend/historical_pivot_ai_score.py assets/js/historical-insight/historical-indicator-data.js assets/js/historical-insight/historical-insight.js historical-insight.html .github/workflows/oneoff-fix-historical-score-display.yml
+          git commit -m 'Fix Historical Insight score and pivot display semantics'
+          git push origin HEAD:main
