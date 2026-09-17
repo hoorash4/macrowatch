@@ -1,0 +1,24 @@
+name: One-off deploy zero-score indicator list fix
+on:
+  push:
+    paths:
+      - '.github/workflows/oneoff-dispatch-pages-zero-score.yml'
+permissions:
+  contents: write
+  actions: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Dispatch Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages-deploy.yml
+      - name: Remove one-off workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/oneoff-dispatch-pages-zero-score.yml
+          git commit -m 'Remove one-off zero-score deploy workflow'
+          git push
