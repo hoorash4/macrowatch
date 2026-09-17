@@ -95,11 +95,15 @@ def main() -> None:
     # 최초 표시월에도 발표가 느린 가동률·연체율의 직전 관측치가 필요하다.
     collection_start = month_start_months_ago(start, AUTOMATIC_MONTHLY_CONTEXT_PERIODS)
     if args.stage in ("sources", "all"):
+        source_payload = []
         try:
             raw = fetch_all(collection_start, end, include_historical=False)
         except requests.RequestException as error:
-            raise RuntimeError(f"Korea small-business source unavailable: {type(error).__name__}") from error
-        source_payload = []
+            # KOSIS/ECOS occasionally refuse or time out from GitHub-hosted runners.
+            # Keep the last canonical observations usable; the next normal run
+            # requests the same recent months and fills the missed publication.
+            print(f"korea_sme_refresh_deferred={type(error).__name__}")
+            raw = {}
         for name, code, source in (
             ("funding_outlook", "KR_SME_FUNDING_OUTLOOK", "KOSIS:DT_D10116"),
             ("utilization_sa", "KR_SME_UTILIZATION_SA", "KOSIS:DT_D10125"),
@@ -110,7 +114,8 @@ def main() -> None:
                 code, {date.fromisoformat(day): value for day, value in raw.get(name, {}).items()},
                 frequency="M", source=source,
             ))
-        store_canonical(database, source_payload, owner="korea_small_business_risk")
+        if source_payload:
+            store_canonical(database, source_payload, owner="korea_small_business_risk")
         print(f"stage=sources stored={len(source_payload)}")
         if args.stage == "sources":
             return
