@@ -311,11 +311,20 @@ def main() -> None:
     }
     if args.stage in ("sources", "all"):
         key = require_env("ECOS_API_KEY")
-        daily_sources = {name: parsed_daily(daily_source_rows(key, SERIES[name][0], SERIES[name][1],
-                                                               min(monthly_start, weekly_start), today))
-                         for name in owned}
-        source_payload = [row for name, (code, source) in owned.items()
-                          for row in canonical_rows(code, daily_sources[name], frequency="D", source=source)]
+        source_payload = []
+        try:
+            daily_sources = {name: parsed_daily(daily_source_rows(
+                key, SERIES[name][0], SERIES[name][1], min(monthly_start, weekly_start), today,
+            )) for name in owned}
+            source_payload.extend(
+                row for name, (code, source) in owned.items()
+                for row in canonical_rows(code, daily_sources[name], frequency="D", source=source)
+            )
+        except (requests.ConnectionError, requests.Timeout, RuntimeError) as error:
+            # A temporary ECOS outage must not invalidate already stored canonical
+            # observations.  Derived calculation proceeds from the DB and the next
+            # normal run retries the same recent source window, filling any gap.
+            print(f"ecos_refresh_deferred={type(error).__name__}: {error}")
         existing_fsi = load_canonical(database, "BOK_FSI", start=monthly_start)
         try:
             fsi_source = {date.fromisoformat(day): value for day, value in fetch_bok_fsi(monthly_start).items()}
@@ -323,7 +332,8 @@ def main() -> None:
             print(f"fsi_unavailable={error}")
             fsi_source = existing_fsi
         source_payload.extend(canonical_rows("BOK_FSI", fsi_source, frequency="M", source="BOK_SNAPSHOT:1583"))
-        store_canonical(database, source_payload, owner="korea_stress")
+        if source_payload:
+            store_canonical(database, source_payload, owner="korea_stress")
         print(f"stage=sources stored={len(source_payload)}")
         if args.stage == "sources":
             return
