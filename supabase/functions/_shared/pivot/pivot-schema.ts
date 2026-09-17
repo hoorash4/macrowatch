@@ -1,4 +1,4 @@
-// Pivot schema v4: optional A/B post-trend parent structure for relationship scoring.
+// Pivot schema v4: A/B post-trend structure is optional during prompt rollout and used when present.
 export const PIVOT_SCHEMA_VERSION = "pivot-schema-v4";
 
 export const PIVOT_ANALYSIS_SCHEMA = {
