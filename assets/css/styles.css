@@ -1044,7 +1044,7 @@ body:has(#app-shell:not(.hidden)) {
 .policy-chart-y-label { fill:#64748b; font-size:9px; font-weight:650; }
 .policy-chart-year-guide { stroke:#e2e8f0; stroke-width:1; }
 .policy-chart-line { fill:none; stroke:var(--color-chart-blue); stroke-width:var(--chart-line-primary-width); stroke-linecap:round; stroke-linejoin:round; }
-.policy-chart-point { fill:#1e40af; stroke:#fff; stroke-width:1.5; }
+.policy-chart-point { fill:#1e40af; stroke:#fff; stroke-width:1.5; cursor:default; pointer-events:all; }
 .policy-chart-year { fill:#64748b; font-size:12px; font-weight:650; }
 .policy-chart-cursor { opacity:0; stroke:#64748b; stroke-width:1; stroke-dasharray:4 4; pointer-events:none; }
 .policy-chart-cursor.is-visible { opacity:.75; }
