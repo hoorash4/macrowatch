@@ -42,7 +42,8 @@ PLATEAU_NET_DRIFT_Y = 0.11
 PLATEAU_HALF_DRIFT_Y = 0.11
 PLATEAU_DIRECTIONAL_EFFICIENCY = 0.42
 SPIKE_MIN_Y = 0.13
-SPIKE_MAX_X = 0.12
+SPIKE_SIDE_X = 0.12
+SPIKE_MAX_X = 0.24
 EDGE_ZONE_X = 0.04
 MAX_D_PIVOTS = 5
 
@@ -359,7 +360,6 @@ def detect_plateaus(points: list[Point], extremes: list[Extreme]) -> list[Platea
                 same_progression
                 or broad_legs >= 2
                 or (abs(net) >= PLATEAU_NET_DRIFT_Y and efficiency >= PLATEAU_DIRECTIONAL_EFFICIENCY)
-                or half_drift >= PLATEAU_HALF_DRIFT_Y
             )
             if directional:
                 continue
@@ -398,8 +398,8 @@ def detect_spikes(points: list[Point], extremes: list[Extreme]) -> dict[int, dic
         p = points[idx]
         if not (0.02 <= p.x <= 0.98):
             continue
-        pre = [q.smooth for q in points if 0.015 <= p.x - q.x <= SPIKE_MAX_X]
-        post = [q.smooth for q in points if 0.015 <= q.x - p.x <= SPIKE_MAX_X]
+        pre = [q.smooth for q in points if 0.015 <= p.x - q.x <= SPIKE_SIDE_X]
+        post = [q.smooth for q in points if 0.015 <= q.x - p.x <= SPIKE_SIDE_X]
         if len(pre) < 1 or len(post) < 1:
             continue
         pre_base, post_base = median(pre), median(post)
@@ -412,11 +412,11 @@ def detect_spikes(points: list[Point], extremes: list[Extreme]) -> dict[int, dic
         sign = 1 if p.smooth >= baseline else -1
         left_candidates = [
             q for q in points[:idx]
-            if p.x - q.x <= SPIKE_MAX_X and sign * (q.smooth - baseline) <= deviation * 0.45
+            if p.x - q.x <= SPIKE_SIDE_X and sign * (q.smooth - baseline) <= deviation * 0.45
         ]
         right_candidates = [
             q for q in points[idx + 1:]
-            if q.x - p.x <= SPIKE_MAX_X and sign * (q.smooth - baseline) <= deviation * 0.45
+            if q.x - p.x <= SPIKE_SIDE_X and sign * (q.smooth - baseline) <= deviation * 0.45
         ]
         if not left_candidates or not right_candidates:
             continue
