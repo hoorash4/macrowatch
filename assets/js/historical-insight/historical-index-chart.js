@@ -40,7 +40,7 @@
   }
 
   function create(marketHost, indicatorHost) {
-    let marketChart=null,marketSeries=null,indicatorChart=null,indicatorLine=null,marketData=[],indicatorData=[];
+    let marketChart=null,marketSeries=null,indicatorChart=null,indicatorLine=null,marketData=[],indicatorData=[],activeIndicatorCode=null;
     let syncLock=false;
     const indicatorColor='#c026d3';
     const lineColor=()=>getComputedStyle(marketHost).getPropertyValue('--historical-chart-line').trim();
@@ -76,7 +76,7 @@
         indicatorChart.removeSeries(indicatorLine.series);
         indicatorLine=null;
       }
-      indicatorData=item?.displayRows||[];
+      activeIndicatorCode=item?.meta?.code||null;indicatorData=item?.displayRows||[];
       if(!item||!indicatorData.length)return;
       const series=indicatorChart.addLineSeries({priceScaleId:'left',color:indicatorColor,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>window.MacroWatchFrontend.formatDisplayNumber(value)}});
       series.setData(indicatorData);
@@ -102,7 +102,7 @@
         const item=items?.[0]||null;setIndicatorItem(item);
         if(marketChart){const range=marketChart.timeScale().getVisibleRange();if(range)sync(range.from,range.to);}
       },
-      indicatorColors(){return new Map(indicatorLine?[['active',indicatorColor]]:[]);},
+      indicatorColors(){return new Map(indicatorLine&&activeIndicatorCode?[[activeIndicatorCode,indicatorColor]]:[]);},
       focus(from,to,markerInset=.12){
         if(!marketChart||!from||!to||!marketData.length)return;
         const startIndex=marketData.findIndex(row=>row.time>=from),endIndex=marketData.findLastIndex(row=>row.time<=to);
@@ -115,7 +115,7 @@
         const range=marketChart?.timeScale().getVisibleRange();if(range)sync(range.from,range.to);
       },
       destroy(){
-        marketChart?.remove();indicatorChart?.remove();marketChart=null;marketSeries=null;indicatorChart=null;indicatorLine=null;marketData=[];indicatorData=[];
+        marketChart?.remove();indicatorChart?.remove();marketChart=null;marketSeries=null;indicatorChart=null;indicatorLine=null;marketData=[];indicatorData=[];activeIndicatorCode=null;
       },
     });
   }
