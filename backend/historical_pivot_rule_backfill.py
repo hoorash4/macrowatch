@@ -127,7 +127,7 @@ def quantile(values: list[float], q: float) -> float:
     return items[lo] * (hi - pos) + items[hi] * (pos - lo)
 
 
-def load_case(db: SupabaseRest, case_code: str, index_code: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
+def load_case(db: SupabaseRest, case_code: str) -> dict[str, Any]:
     cases = fetch_all(db, "historical_cases", {
         "select": "case_code,case_name,primary_index_code,search_start,search_end",
         "case_code": f"eq.{case_code}",
@@ -137,16 +137,18 @@ def load_case(db: SupabaseRest, case_code: str, index_code: str | None) -> tuple
     case = cases[0]
     if not case.get("search_end"):
         raise RuntimeError("Rule backfill currently requires a completed Historical Case search_end.")
-    selected_index = index_code or str(case["primary_index_code"])
+    return case
+
+
+def load_cycle(db: SupabaseRest, case_code: str, index_code: str) -> dict[str, Any]:
     cycles = fetch_all(db, "historical_case_market_cycles", {
         "select": "case_code,index_code,start_date,peak_date,trough_date,cycle_status",
         "case_code": f"eq.{case_code}",
-        "index_code": f"eq.{selected_index}",
+        "index_code": f"eq.{index_code}",
     })
     if not cycles:
-        raise RuntimeError(f"Historical market cycle not found: {case_code}/{selected_index}")
-    return case, cycles[0]
-
+        raise RuntimeError(f"Historical market cycle not found: {case_code}/{index_code}")
+    return cycles[0]
 
 def load_indicator_rows(db: SupabaseRest, series_code: str, start: str, end: str) -> list[dict[str, Any]]:
     raw = fetch_all(db, "economic_chart_series_points", {
@@ -667,8 +669,15 @@ def structure(points: list[Point]) -> dict[str, Any]:
     }
 
 
-def analyze_one(db: SupabaseRest, case_code: str, index_code: str | None, series_code: str) -> dict[str, Any]:
-    case, cycle = load_case(db, case_code, index_code)
+def analyze_indicator_only(db: SupabaseRest, case_code: str, series_code: str) -> tuple[dict[str, Any], dict[str, Any], list[Point], float, float]:
+    """Detect structure from one indicator only.
+
+    No market-index values, market START/PEAK/TROUGH dates, or market-series
+    points are accepted by this function.  The Historical Case contributes only
+    the fixed X-axis bounds.  +/-24 months are indicator-only context for edge
+    validation and never alter the fixed axes.
+    """
+    case = load_case(db, case_code)
     fixed_start = str(case["search_start"])
     fixed_end = str(case["search_end"])
     buffer_start = shift_months(fixed_start, -BUFFER_MONTHS)
@@ -676,10 +685,27 @@ def analyze_one(db: SupabaseRest, case_code: str, index_code: str | None, series
     raw_rows = load_indicator_rows(db, series_code, buffer_start, buffer_end)
     points, y_min, y_max = normalize_points(raw_rows, fixed_start, fixed_end)
     result = structure(points)
+    return case, result, points, y_min, y_max
+
+
+def persist_indicator_structure(
+    db: SupabaseRest,
+    case: dict[str, Any],
+    index_code: str,
+    series_code: str,
+    result: dict[str, Any],
+    points: list[Point],
+    y_min: float,
+    y_max: float,
+) -> dict[str, Any]:
+    """Attach market metadata only after indicator structure is finalized."""
+    cycle = load_cycle(db, str(case["case_code"]), index_code)
+    fixed_start = str(case["search_start"])
+    fixed_end = str(case["search_end"])
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     row = {
-        "case_code": case_code,
-        "index_code": str(cycle["index_code"]),
+        "case_code": str(case["case_code"]),
+        "index_code": index_code,
         "series_code": series_code,
         "display_start": fixed_start,
         "display_end": fixed_end,
@@ -704,13 +730,18 @@ def analyze_one(db: SupabaseRest, case_code: str, index_code: str | None, series
     }
     db.upsert("historical_indicator_ai_analysis", [row], conflict="case_code,index_code,series_code")
     print(
-        f"{case_code}/{cycle['index_code']}/{series_code}: "
+        f"{case['case_code']}/{index_code}/{series_code}: "
         f"A={sum(p['grade']=='A' for p in result['pivots'])} "
         f"B={sum(p['grade']=='B' for p in result['pivots'])} "
         f"D={sum(p['grade']=='D' for p in result['pivots'])} "
         f"boxes={len(result['sideways_boundaries'])} y=[{y_min:g},{y_max:g}]"
     )
     return row
+
+
+def analyze_one(db: SupabaseRest, case_code: str, index_code: str, series_code: str) -> dict[str, Any]:
+    case, result, points, y_min, y_max = analyze_indicator_only(db, case_code, series_code)
+    return persist_indicator_structure(db, case, index_code, series_code, result, points, y_min, y_max)
 
 
 def main() -> None:
@@ -722,7 +753,10 @@ def main() -> None:
     args = parser.parse_args()
 
     db = SupabaseRest()
-    case, _ = load_case(db, args.case, args.index)
+    case = load_case(db, args.case)
+    index_code = args.index or str(case["primary_index_code"])
+    # Cycle existence is checked for persistence only, never for structure detection.
+    load_cycle(db, args.case, index_code)
     fixed_start, fixed_end = str(case["search_start"]), str(case["search_end"])
     series_codes = [args.series] if args.series != "all" else eligible_series(db, fixed_start, fixed_end)
     if args.limit > 0:
@@ -733,7 +767,7 @@ def main() -> None:
     failures: list[tuple[str, str]] = []
     for series_code in series_codes:
         try:
-            analyze_one(db, args.case, args.index, series_code)
+            analyze_one(db, args.case, index_code, series_code)
         except Exception as exc:
             failures.append((series_code, str(exc)))
             print(f"ERROR {series_code}: {exc}")
