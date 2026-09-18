@@ -63,7 +63,7 @@
       x: point.x,
       y: scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top),
     })));
-    const circlesFor = ({ yMin, yMax }) => points.map((point) => `<circle cx="${point.x}" cy="${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top)}" r="3" class="policy-chart-point"/>`).join('');
+    const circlesFor = ({ yMin, yMax }) => points.map((point) => `<circle cx="${point.x}" cy="${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top)}" r="4" class="policy-chart-point" data-policy-meeting-date="${point.meetingDate}"/>`).join('');
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
     const yearTicks = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
@@ -155,14 +155,17 @@
       cursorPeriod.setAttribute('visibility', 'hidden');
       cursorAction.setAttribute('visibility', 'hidden');
     });
-    svg.addEventListener('click', () => {
-      if (!selectedPoint || !adminLink || adminLink.hidden) return;
+    svg.addEventListener('click', (event) => {
+      const pointNode = event.target.closest?.('[data-policy-meeting-date]');
+      if (!pointNode || !adminLink || adminLink.hidden) return;
+      const meetingDate = pointNode.dataset.policyMeetingDate;
+      if (!meetingDate) return;
       const storageKey = 'macrowatch_policy_review_dates';
       let dates = [];
       try { dates = JSON.parse(window.localStorage.getItem(storageKey) || '[]'); } catch (_) { dates = []; }
-      dates = [...new Set([...(Array.isArray(dates) ? dates : []), selectedPoint.meetingDate])];
+      dates = [...new Set([...(Array.isArray(dates) ? dates : []), meetingDate])];
       window.localStorage.setItem(storageKey, JSON.stringify(dates));
-      window.MacroWatchDashboard?.showNotice('FOMC 수정 목록 등록', `${selectedPoint.meetingDate} 회의를 관리자 수정 목록에 추가했습니다.`);
+      window.MacroWatchDashboard?.showNotice('FOMC 수정 목록 등록', `${meetingDate} 회의를 관리자 수정 목록에 추가했습니다.`);
     });
   }
 
