@@ -131,9 +131,9 @@
         ${textSection('고용', briefing.employment, 'fa-user-group')}
         ${textSection('기타', briefing.other, 'fa-ellipsis')}
       </div>
+      ${changesSection(briefing.changes_from_previous)}
       ${textSection('금리 결정의 핵심 이유', briefing.key_rate_reason, 'fa-bullseye', 'fomc-briefing-section--reason')}
       ${liquidityOperationsSection(row, briefing)}
-      ${changesSection(briefing.changes_from_previous)}
       ${textSection('AI 종합 분석', briefing.ai_overall_analysis, 'fa-brain', 'fomc-briefing-section--analysis')}
       <div class="fomc-briefing-close-row"><button type="button" data-fomc-close="${escapeHtml(row.meeting_date)}"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i> 브리핑 닫기</button></div>
     </div>`;
