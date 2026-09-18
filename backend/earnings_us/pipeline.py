@@ -113,8 +113,15 @@ class USEarningsAutomaticPipeline:
             return None
         if filings is None:
             target_end = period_end(year, quarter)
+            target_start = date(year, (quarter - 1) * 3 + 1, 1)
             filings = self.sec.financial_filings(
-                cik, filed_from=target_end - timedelta(days=10), filed_to=target_end + timedelta(days=180),
+                cik,
+                # Off-calendar fiscal quarters can end well before the calendar
+                # quarter end and file before target_end - 10 days. Search the
+                # whole market quarter; report_date filtering below still
+                # restricts the candidate to the requested market quarter.
+                filed_from=target_start,
+                filed_to=target_end + timedelta(days=180),
             )
         candidates: list[USFinancialFact] = []
         for filing in filings:
