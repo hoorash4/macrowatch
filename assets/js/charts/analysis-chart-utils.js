@@ -114,6 +114,51 @@
     }, { passive: true });
   }
 
+  function bindDragScroll(frame) {
+    const drag = { active: false, moved: false, pointerId: null, startX: 0, startScrollLeft: 0 };
+
+    frame.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || event.pointerType === 'touch') return;
+      drag.active = true;
+      drag.moved = false;
+      drag.pointerId = event.pointerId;
+      drag.startX = event.clientX;
+      drag.startScrollLeft = frame.scrollLeft;
+      frame.setPointerCapture?.(event.pointerId);
+    });
+
+    frame.addEventListener('pointermove', (event) => {
+      if (!drag.active || event.pointerId !== drag.pointerId) return;
+      const delta = event.clientX - drag.startX;
+      if (!drag.moved && Math.abs(delta) < 3) return;
+      drag.moved = true;
+      frame.classList.add('is-dragging');
+      frame.scrollLeft = drag.startScrollLeft - delta;
+      event.preventDefault();
+    });
+
+    const finish = (event) => {
+      if (!drag.active || (event?.pointerId != null && event.pointerId !== drag.pointerId)) return;
+      drag.active = false;
+      frame.classList.remove('is-dragging');
+      if (drag.pointerId != null && frame.hasPointerCapture?.(drag.pointerId)) {
+        frame.releasePointerCapture(drag.pointerId);
+      }
+      drag.pointerId = null;
+      if (drag.moved) {
+        window.setTimeout(() => { drag.moved = false; }, 0);
+      }
+    };
+    frame.addEventListener('pointerup', finish);
+    frame.addEventListener('pointercancel', finish);
+    frame.addEventListener('lostpointercapture', finish);
+    frame.addEventListener('click', (event) => {
+      if (!drag.moved) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+  }
+
   function createChartShell(profile = chartProfiles.main, ariaLabel = '시계열 그래프', showScrollbar = true) {
     const shell = document.createElement('div');
     shell.className = `analysis-chart-shell analysis-chart-shell--${profile.axisMode}`;
@@ -124,6 +169,7 @@
     frame.tabIndex = 0;
     frame.setAttribute('aria-label', `${ariaLabel} 전체 이력 가로 스크롤`);
     bindPanelScroll(frame);
+    bindDragScroll(frame);
     return { shell, frame };
   }
 
