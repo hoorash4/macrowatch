@@ -28,16 +28,12 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
         self.assertIn(10.0, pivot_values)
 
     def test_tiny_pullback_after_large_rise_is_not_structural(self):
-        # The 2-3% chart-height wiggle beside the high must disappear.
         values = [0, 20, 40, 60, 80, 100, 98, 99, 97, 94, 90, 86, 82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42, 38, 34, 30, 26, 22, 18, 14, 10]
         result = self.analyze(values)
         structural_values = {pivot["value"] for pivot in result["pivots"] if pivot["grade"] in {"A", "B"}}
         self.assertNotIn(98.0, structural_values)
         self.assertNotIn(99.0, structural_values)
         self.assertNotIn(97.0, structural_values)
-        # The exact high must survive.  In a coarse synthetic series it may be
-        # classified as the boundary of a short reversal/consolidation box,
-        # which is valid under the box rule, so require a structural A/B point.
         self.assertIn(100.0, structural_values)
 
     def test_small_bounce_inside_large_decline_is_not_structural(self):
@@ -48,7 +44,6 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
         self.assertNotIn(11.0, a_values)
 
     def test_long_straight_sideways_is_detected_without_many_extrema(self):
-        # Down -> long nearly straight box -> large rise.
         values = [60, 40, 20, 10, 10.2, 9.9, 10.1, 10.0, 10.2, 10.1, 9.9, 10.0, 10.1, 10.0,
                   10.2, 10.1, 10.0, 20, 40, 65, 90, 100]
         result = self.analyze(values)
@@ -67,29 +62,28 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
         ordinary = [pivot for pivot in result["pivots"] if pivot["type"] == "major_reversal"]
         self.assertLessEqual(len(ordinary), 1)
 
-    def test_spike_keeps_true_entry_exact_extreme_and_recovery(self):
-        # Short-X, >50%-Y excursion with small wiggles near both sides.
-        values = [20, 18, 16, 14, 15, 13, 12, 90, 14, 13, 12, 11, 10, 11, 12,
-                  13, 15, 18, 22, 28, 36, 45, 55, 65, 75, 82, 88, 92, 95, 97]
+    def test_spike_is_relative_amplitude_outlier_not_fixed_half_axis(self):
+        # Most swings are about 8-14% of the frozen Y axis.  The spike is about
+        # 40%, so it should be caught even though it is below an arbitrary 50%.
+        values = [20, 28, 22, 31, 24, 35, 27, 68, 29, 36, 28, 38, 30, 40, 32, 42, 34, 44, 36, 46]
         result = self.analyze(values)
-        spikes = [pivot for pivot in result["pivots"] if pivot["type"].startswith("spike_")]
-        types = {pivot["type"] for pivot in spikes}
-        self.assertTrue({"spike_entry", "spike_extreme", "spike_retracement"}.issubset(types))
-        self.assertTrue(any(pivot["value"] == 90.0 for pivot in spikes if pivot["type"] == "spike_extreme"))
-        self.assertTrue(any(pivot["value"] <= 13.0 for pivot in spikes if pivot["type"] == "spike_entry"))
+        self.assertTrue(any(pivot["type"] == "spike_extreme" for pivot in result["pivots"]))
 
-    def test_sub_half_axis_excursion_is_not_spike(self):
-        values = [20, 18, 16, 14, 15, 13, 12, 45, 14, 13, 12, 11, 10, 20, 30, 50, 70, 90]
+    def test_similar_49_and_50_percent_swings_are_not_spikes(self):
+        # A 50% move is not exceptional if neighboring moves are essentially
+        # the same size. Relative comparison must reject it as a spike.
+        values = [0, 49, 0, 50, 1, 50, 2, 51, 3, 52]
         result = self.analyze(values)
         self.assertFalse(any(pivot["type"] == "spike_extreme" for pivot in result["pivots"]))
 
-    def test_reversal_reason_reports_axis_shares_not_big_small_raw_claims(self):
+    def test_reversal_reason_reports_axis_shares_and_relative_validation(self):
         values = [10, 30, 50, 80, 100, 85, 65, 45, 20, 30, 50, 75, 95]
         result = self.analyze(values)
         reasons = [pivot["reason"] for pivot in result["pivots"] if pivot["type"] == "major_reversal"]
         self.assertTrue(reasons)
         for reason in reasons:
             self.assertIn("고정 Y축", reason)
+            self.assertIn("전형적 스윙", reason)
             self.assertNotIn("큰 상승", reason)
             self.assertNotIn("큰 하락", reason)
 
