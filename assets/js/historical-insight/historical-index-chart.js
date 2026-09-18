@@ -49,7 +49,7 @@
         timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 46 },
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-        handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+        handleScale: { axisPressedMouseMove: { time: true, price: false }, mouseWheel: true, pinch: true },
       });
       series = chart.addLineSeries({ color: lineColor(), lineWidth: 2, priceLineVisible: false,
         lastValueVisible: true, priceFormat: { type: 'custom', minMove: .01,
