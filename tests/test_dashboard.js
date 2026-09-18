@@ -1000,6 +1000,11 @@ test('FOMC 브리핑은 실제 자료 완성 상태로 Updating과 Updated를 �
   assert.match(briefing, /Updating/);
   assert.match(briefing, /Updated/);
   assert.match(briefing, /유동성·자산운용/);
+  assert.match(briefing, /liquidityOperationsSection/);
+  assert.match(briefing, /월간 규모/);
+  assert.match(briefing, /금리 결정의 핵심 이유[\s\S]*liquidityOperationsSection/);
+  assert.match(pipeline, /liquidityOperationSummary/);
+  assert.match(pipeline, /monthly_amount_usd_billion/);
   assert.match(pipeline, /liquidity_operations/);
   assert.match(styles, /\.fomc-briefing-status\.is-updating/);
   assert.match(styles, /\.fomc-briefing-status\.is-updated/);
