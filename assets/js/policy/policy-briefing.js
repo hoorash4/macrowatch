@@ -27,7 +27,8 @@
     return row.briefing ? 'Updated' : 'Updating';
   }
 
-  function briefingStatusMarkup(row) {
+  function briefingStatusMarkup(row, newestMeetingDate) {
+    if (String(row.meeting_date) !== String(newestMeetingDate || '')) return '';
     const status = briefingUpdateState(row);
     const updating = status === 'Updating';
     return `<span class="fomc-briefing-status ${updating ? 'is-updating' : 'is-updated'}" aria-label="FOMC briefing ${status}"><span class="fomc-briefing-status-dot" aria-hidden="true"></span>${status}</span>`;
@@ -147,13 +148,14 @@
     const pageCount = Math.ceil(state.rows.length / PAGE_SIZE);
     state.page = Math.min(state.page, pageCount - 1);
     const pageRows = state.rows.slice(state.page * PAGE_SIZE, (state.page + 1) * PAGE_SIZE);
+    const newestMeetingDate = state.rows[0]?.meeting_date || null;
     container.innerHTML = `<div class="fomc-briefing-items">${pageRows.map((row) => {
       const isOpen = state.openMeetingDate === row.meeting_date;
       const panelId = `fomc-briefing-${row.meeting_date}`;
       const title = meetingTitleParts(row);
       return `<article class="fomc-briefing-item${isOpen ? ' is-open' : ''}">
         <button type="button" class="fomc-briefing-toggle" data-fomc-meeting-date="${escapeHtml(row.meeting_date)}" aria-expanded="${isOpen}" aria-controls="${panelId}">
-          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong><span class="fomc-briefing-title-date">${escapeHtml(title.date)}</span><span class="fomc-briefing-title-label">${escapeHtml(title.label)}</span>${briefingStatusMarkup(row)}</strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
+          <span class="fomc-briefing-title-wrap"><span class="fomc-briefing-title-mark"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span><span class="fomc-briefing-title-text"><strong><span class="fomc-briefing-title-date">${escapeHtml(title.date)}</span><span class="fomc-briefing-title-label">${escapeHtml(title.label)}</span>${briefingStatusMarkup(row, newestMeetingDate)}</strong><small>${escapeHtml(rateDecision(row))}</small></span></span>
           <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
         </button>
         <div id="${panelId}" class="fomc-briefing-detail"${isOpen ? '' : ' hidden'}>${isOpen ? detailContent(row) : ''}</div>
