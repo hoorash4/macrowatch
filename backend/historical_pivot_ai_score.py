@@ -454,7 +454,8 @@ def score_rows(db: SupabaseRest, case_code: str | None = None, index_code: str |
 
     db.upsert("historical_indicator_ai_scores", scored, conflict="case_code,index_code,series_code")
     for row in scored:
-        print(f"SCORED {row['case_code']}/{row['index_code']}/{row['series_code']}: {row['overall_score']:.1f} refs={row['meaningful_reference_count']} filtered={len(row['filtered_pivots'])}/{len(row['ai_pivots'])}")
+        score_text = "null" if row["overall_score"] is None else f"{row['overall_score']:.1f}"
+        print(f"SCORED {row['case_code']}/{row['index_code']}/{row['series_code']}: {score_text} refs={row['meaningful_reference_count']} filtered={len(row['filtered_pivots'])}/{len(row['ai_pivots'])}")
     return len(scored)
 
 
