@@ -42,7 +42,7 @@ PLATEAU_NET_DRIFT_Y = 0.11
 PLATEAU_HALF_DRIFT_Y = 0.11
 PLATEAU_DIRECTIONAL_EFFICIENCY = 0.42
 SPIKE_MIN_Y = 0.13
-SPIKE_MAX_X = 0.09
+SPIKE_MAX_X = 0.12
 EDGE_ZONE_X = 0.04
 MAX_D_PIVOTS = 5
 
@@ -342,8 +342,22 @@ def detect_plateaus(points: list[Point], extremes: list[Extreme]) -> list[Platea
                 and abs(high_drift) >= PLATEAU_NET_DRIFT_Y * 0.75
                 and abs(low_drift) >= PLATEAU_NET_DRIFT_Y * 0.75
             )
+            # A visually flat *envelope* is not enough.  If the candidate
+            # contains broad diagonal legs that themselves occupy meaningful X
+            # and Y shares, it is a sequence of trends (e.g. down -> up ->
+            # down), not a box.  Large-amplitude boxes are still allowed when
+            # their vertical swings are relatively quick rather than broad
+            # directional runs.
+            internal = strongish[i:j + 1]
+            broad_legs = 0
+            for left_extreme, right_extreme in zip(internal, internal[1:]):
+                dx = points[right_extreme.index].x - points[left_extreme.index].x
+                dy = abs(points[right_extreme.index].smooth - points[left_extreme.index].smooth)
+                if dx >= 0.14 and dy >= 0.16:
+                    broad_legs += 1
             directional = (
                 same_progression
+                or broad_legs >= 2
                 or (abs(net) >= PLATEAU_NET_DRIFT_Y and efficiency >= PLATEAU_DIRECTIONAL_EFFICIENCY)
                 or half_drift >= PLATEAU_HALF_DRIFT_Y
             )
@@ -384,8 +398,8 @@ def detect_spikes(points: list[Point], extremes: list[Extreme]) -> dict[int, dic
         p = points[idx]
         if not (0.02 <= p.x <= 0.98):
             continue
-        pre = [q.smooth for q in points if 0.015 <= p.x - q.x <= 0.075]
-        post = [q.smooth for q in points if 0.015 <= q.x - p.x <= 0.075]
+        pre = [q.smooth for q in points if 0.015 <= p.x - q.x <= SPIKE_MAX_X]
+        post = [q.smooth for q in points if 0.015 <= q.x - p.x <= SPIKE_MAX_X]
         if len(pre) < 1 or len(post) < 1:
             continue
         pre_base, post_base = median(pre), median(post)
