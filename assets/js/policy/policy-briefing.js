@@ -75,6 +75,7 @@
         ${textSection('경기', briefing.economy, 'fa-chart-line')}
         ${textSection('물가', briefing.inflation, 'fa-gauge-high')}
         ${textSection('고용', briefing.employment, 'fa-user-group')}
+        ${textSection('유동성·자산운용', briefing.liquidity_operations, 'fa-coins')}
         ${textSection('기타', briefing.other, 'fa-ellipsis')}
       </div>
       ${textSection('금리 결정의 핵심 이유', briefing.key_rate_reason, 'fa-bullseye', 'fomc-briefing-section--reason')}
