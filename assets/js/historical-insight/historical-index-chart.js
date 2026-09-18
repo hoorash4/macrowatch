@@ -25,99 +25,92 @@
     paneViews(){return [this.view];}
     timeAxisPaneViews(){return [this.timeAxisPaneView];}
   }
-
-  function baseOptions(host){
-    return {
-      autoSize:true,
-      layout:{fontFamily:'Pretendard, system-ui, sans-serif',fontSize:11,attributionLogo:false},
-      localization:{locale:'ko-KR',dateFormat:'yyyy. MM. dd.'},
-      rightPriceScale:{scaleMargins:{top:.08,bottom:.08}},
-      timeScale:{timeVisible:false,secondsVisible:false,rightOffset:8,minBarSpacing:.01,minimumHeight:38},
-      crosshair:{mode:window.LightweightCharts.CrosshairMode.Normal},
-      handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
-      handleScale:{axisPressedMouseMove:{time:true,price:false},mouseWheel:true,pinch:true},
-    };
-  }
-
-  function create(marketHost, indicatorHost) {
-    let marketChart=null,marketSeries=null,indicatorChart=null,indicatorLine=null,marketData=[],indicatorData=[],activeIndicatorCode=null;
-    let syncLock=false;
+  function create(host) {
+    let chart = null;
+    let series = null;
+    let data = [];
+    const indicatorSeries = new Map();
     const indicatorColor='#c026d3';
-    const lineColor=()=>getComputedStyle(marketHost).getPropertyValue('--historical-chart-line').trim();
-    const referenceColor=type=>getComputedStyle(marketHost).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
-    const referenceOnlyStyle=()=>({color:getComputedStyle(marketHost).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(marketHost).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
+    const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
+    const updateLine = () => series?.applyOptions({ color: lineColor() });
+    const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
+    const referenceOnlyStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
     const nearMissStyle=()=>({color:document.documentElement.dataset.theme==='dark'?'#475569':'#64748b',textColor:'#fff'});
     const pivotStyle=(result,color)=>result.markerStatus==='near_miss'?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
-
-    function sync(from,to){
-      if(syncLock||!from||!to)return;
-      syncLock=true;
-      try{marketChart?.timeScale().setVisibleRange({from,to});indicatorChart?.timeScale().setVisibleRange({from,to});}catch{}
-      syncLock=false;
+    function ensure() {
+      if (chart) return;
+      if (!window.LightweightCharts) throw new Error('차트 라이브러리를 불러오지 못했습니다.');
+      chart = window.LightweightCharts.createChart(host, {
+        autoSize: true,
+        layout: { fontFamily: 'Pretendard, system-ui, sans-serif', fontSize: 11, attributionLogo: false },
+        localization: { locale: 'ko-KR', dateFormat: 'yyyy. MM. dd.' },
+        rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
+        leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false, minimumWidth: 34 },
+        timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 46 },
+        crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+        handleScale: { axisPressedMouseMove: { time: true, price: false }, mouseWheel: true, pinch: true },
+      });
+      series = chart.addLineSeries({ color: lineColor(), lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: true, priceFormat: { type: 'custom', minMove: .01,
+          formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value) } });
+      window.addEventListener('macrowatch:themechange', updateLine);
     }
-    function attachSync(chart,other){
-      chart.timeScale().subscribeVisibleTimeRangeChange(range=>{if(!range||syncLock)return;sync(range.from,range.to);});
-    }
-    function ensureMarket(){
-      if(marketChart)return;
-      marketChart=window.LightweightCharts.createChart(marketHost,{...baseOptions(marketHost),leftPriceScale:{visible:false}});
-      marketSeries=marketChart.addLineSeries({color:lineColor(),lineWidth:2,priceLineVisible:false,lastValueVisible:true,priceFormat:{type:'custom',minMove:.01,formatter:value=>window.MacroWatchFrontend.formatDisplayNumber(value)}});
-      attachSync(marketChart,indicatorChart);
-    }
-    function ensureIndicator(){
-      if(indicatorChart)return;
-      indicatorChart=window.LightweightCharts.createChart(indicatorHost,{...baseOptions(indicatorHost),leftPriceScale:{visible:true,scaleMargins:{top:.08,bottom:.08},borderVisible:false,minimumWidth:34}});
-      attachSync(indicatorChart,marketChart);
-    }
-    function setIndicatorItem(item){
-      ensureIndicator();
-      if(indicatorLine){
-        for(const primitive of indicatorLine.primitives)indicatorLine.series.detachPrimitive(primitive);
-        indicatorChart.removeSeries(indicatorLine.series);
-        indicatorLine=null;
-      }
-      activeIndicatorCode=item?.meta?.code||null;indicatorData=item?.displayRows||[];
-      if(!item||!indicatorData.length)return;
-      const series=indicatorChart.addLineSeries({priceScaleId:'left',color:indicatorColor,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>window.MacroWatchFrontend.formatDisplayNumber(value)}});
-      series.setData(indicatorData);
-      const ordered=[...(item.displayPivots||item.results||[])].sort((a,b)=>(a.markerStatus==='reference_only'?0:a.markerStatus==='near_miss'?1:2)-(b.markerStatus==='reference_only'?0:b.markerStatus==='near_miss'?1:2));
-      const primitives=ordered.map(result=>{const style=pivotStyle(result,indicatorColor);return new PivotLinePrimitive(indicatorChart,result.pivotDate,style.color,style.textColor,0);});
-      for(const primitive of primitives)series.attachPrimitive(primitive);
-      indicatorLine={series,primitives};
-    }
-
-    window.addEventListener('macrowatch:themechange',()=>marketSeries?.applyOptions({color:lineColor()}));
     return Object.freeze({
-      setData(rows){
-        marketData=rows;
-        if(!rows.length){marketSeries?.setData([]);return;}
-        ensureMarket();marketSeries.setData(rows);marketChart.timeScale().fitContent();
+      setData(rows) {
+        data = rows;
+        if (!rows.length) { series?.setData([]); series?.setMarkers([]); return; }
+        ensure();
+        series.setData(rows);
+        chart.timeScale().fitContent();
       },
-      setCycle(points){
-        if(!marketSeries)return;
-        const style={START:{position:'belowBar',shape:'arrowUp',color:referenceColor('START')},PEAK:{position:'aboveBar',shape:'arrowDown',color:referenceColor('PEAK')},TROUGH:{position:'belowBar',shape:'arrowUp',color:referenceColor('TROUGH')}};
-        marketSeries.setMarkers(points.map(point=>({time:point.row.time,...style[point.type],text:`${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}`})));
+      setCycle(points) {
+        if (!series) return;
+        const style = {
+          START: { position: 'belowBar', shape: 'arrowUp', color: referenceColor('START') },
+          PEAK: { position: 'aboveBar', shape: 'arrowDown', color: referenceColor('PEAK') },
+          TROUGH: { position: 'belowBar', shape: 'arrowUp', color: referenceColor('TROUGH') },
+        };
+        series.setMarkers(points.map(point => ({ time: point.row.time, ...style[point.type],
+          text: `${point.type} · ${point.date} · ${window.MacroWatchFrontend.formatDisplayNumber(point.row.value)}` })));
       },
-      setIndicators(items){
-        const item=items?.[0]||null;setIndicatorItem(item);
-        if(marketChart){const range=marketChart.timeScale().getVisibleRange();if(range)sync(range.from,range.to);}
+      setIndicators(items) {
+        if(!chart&&items.length)ensure();
+        const visibleRange=chart?.timeScale().getVisibleRange();
+        for(const entry of indicatorSeries.values()){for(const primitive of entry.primitives)entry.series.detachPrimitive(primitive);chart?.removeSeries(entry.series);}
+        indicatorSeries.clear();
+        items.forEach(item=>{
+          const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
+          line.setData(item.displayRows);
+          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});
+          for(const primitive of primitives)line.attachPrimitive(primitive);
+          indicatorSeries.set(item.meta.code,{series:line,color,primitives});
+        });
+        if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
       },
-      indicatorColors(){return new Map(indicatorLine&&activeIndicatorCode?[[activeIndicatorCode,indicatorColor]]:[]);},
-      focus(from,to,markerInset=.12){
-        if(!marketChart||!from||!to||!marketData.length)return;
-        const startIndex=marketData.findIndex(row=>row.time>=from),endIndex=marketData.findLastIndex(row=>row.time<=to);
-        if(startIndex<0||endIndex<startIndex)return;
-        const span=Math.max(1,endIndex-startIndex),context=Math.max(1,span*markerInset/(1-markerInset*2));
-        sync(marketData[Math.floor(Math.max(0,startIndex-context))].time,marketData[Math.ceil(Math.min(marketData.length-1,endIndex+context))].time);
+      indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
+      focus(from, to, markerInset = .12) {
+        if (!chart || !from || !to || !data.length) return;
+        const startIndex = data.findIndex(row => row.time >= from);
+        let endIndex = data.findLastIndex(row => row.time <= to);
+        if (startIndex < 0 || endIndex < startIndex) return;
+        const span = Math.max(1, endIndex - startIndex);
+        const context = Math.max(1, span * markerInset / (1 - markerInset * 2));
+        chart.timeScale().setVisibleRange({
+          from: data[Math.floor(Math.max(0, startIndex - context))].time,
+          to: data[Math.ceil(Math.min(data.length - 1, endIndex + context))].time,
+        });
       },
-      fit(){
-        marketChart?.timeScale().fitContent();
-        const range=marketChart?.timeScale().getVisibleRange();if(range)sync(range.from,range.to);
-      },
-      destroy(){
-        marketChart?.remove();indicatorChart?.remove();marketChart=null;marketSeries=null;indicatorChart=null;indicatorLine=null;marketData=[];indicatorData=[];activeIndicatorCode=null;
+      fit() { chart?.timeScale().fitContent(); },
+      destroy() {
+        window.removeEventListener('macrowatch:themechange', updateLine);
+        chart?.remove();
+        chart = null;
+        series = null;
+        indicatorSeries.clear();
+        data = [];
       },
     });
   }
-  window.MacroWatchHistoricalChart=Object.freeze({create});
+  window.MacroWatchHistoricalChart = Object.freeze({ create });
 })();
