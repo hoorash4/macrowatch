@@ -330,48 +330,61 @@ def prune_visual_micro_turns(
     turns: list[Turn],
     protected: set[int] | None = None,
 ) -> tuple[list[Turn], list[tuple[Turn, float, float]]]:
-    """Validate candidate turns on the frozen Y axis before keeping them.
+    """Collapse visually tiny zigzags in frozen-Y coordinates.
 
-    A turn with a visually tiny adjacent leg cannot create a structural
-    reversal.  The weakest such turn is removed first, then geometry is
-    recomputed.  This is precisely where Y-axis share is allowed and required.
+    For an alternating triple high-low-high or low-high-low, a tiny adjacent
+    leg means the middle opposite turn is only a micro-wave.  The correct
+    structural action is NOT to delete whichever pivot happens to own the
+    small leg.  Instead, collapse the whole three-turn zigzag and keep the more
+    extreme of the two same-kind outer turns.  This preserves the true high or
+    low and removes its tiny neighboring wiggle.
     """
     protected = protected or set()
     out = list(turns)
     reviews: list[tuple[Turn, float, float]] = []
 
     while len(out) >= 3:
-        failures: list[tuple[float, int, float, float]] = []
-        reviews_now: list[tuple[int, float, float]] = []
-
-        for i in range(1, len(out) - 1):
-            current = out[i]
-            if current.index in protected:
+        changed = False
+        for i in range(len(out) - 2):
+            left, middle, right = out[i:i + 3]
+            if left.kind != right.kind or middle.kind == left.kind:
                 continue
-            incoming = y_share(points, out[i - 1].index, current.index)
-            outgoing = y_share(points, current.index, out[i + 1].index)
-            weakest = min(incoming, outgoing)
-            if weakest < REVIEW_Y_SHARE:
-                failures.append((weakest, i, incoming, outgoing))
-            elif weakest < MIN_STRUCTURAL_Y_SHARE:
-                reviews_now.append((i, incoming, outgoing))
+            if middle.index in protected:
+                continue
 
-        if failures:
-            _, i, _, _ = min(failures, key=lambda item: item[0])
-            del out[i]
+            left_leg = y_share(points, left.index, middle.index)
+            right_leg = y_share(points, middle.index, right.index)
+            weakest = min(left_leg, right_leg)
+            if weakest >= MIN_STRUCTURAL_Y_SHARE:
+                continue
+
+            if REVIEW_Y_SHARE <= weakest < MIN_STRUCTURAL_Y_SHARE:
+                reviews.append((middle, left_leg, right_leg))
+
+            if left.kind == "high":
+                survivor = left if points[left.index].y >= points[right.index].y else right
+            else:
+                survivor = left if points[left.index].y <= points[right.index].y else right
+
+            # If one outer anchor is protected, it wins.  Two protected outer
+            # anchors mean this zigzag belongs to another explicit rule and is
+            # left untouched.
+            left_protected = left.index in protected
+            right_protected = right.index in protected
+            if left_protected and right_protected:
+                continue
+            if left_protected:
+                survivor = left
+            elif right_protected:
+                survivor = right
+
+            out[i:i + 3] = [survivor]
             out = collapse_same_kind_axis(points, out)
-            continue
+            changed = True
+            break
 
-        if reviews_now:
-            # Borderline candidates are not chart pivots.  Record them as D and
-            # remove them from the structural skeleton before the next pass.
-            i, incoming, outgoing = min(reviews_now, key=lambda item: min(item[1], item[2]))
-            reviews.append((out[i], incoming, outgoing))
-            del out[i]
-            out = collapse_same_kind_axis(points, out)
-            continue
-
-        break
+        if not changed:
+            break
 
     return out, reviews
 
@@ -489,17 +502,43 @@ def keep_maximal_noncontained(points: list[Point], boxes: list[Box]) -> list[Box
 def merge_overlapping_boxes(points: list[Point], boxes: list[Box]) -> list[Box]:
     if not boxes:
         return []
-    boxes = sorted(boxes, key=lambda item: item.start_index)
+
+    # A directly observed flat interval is the stronger description when an
+    # oscillatory candidate sits entirely inside it.  Do not let incidental
+    # tiny wiggles relabel an obvious straight sideways stretch.
+    flat_boxes = [box for box in boxes if box.mode == "flat"]
+    filtered: list[Box] = []
+    for box in boxes:
+        if box.mode == "oscillatory" and any(
+            flat.start_index <= box.start_index and box.end_index <= flat.end_index
+            for flat in flat_boxes
+        ):
+            continue
+        filtered.append(box)
+
+    boxes = sorted(filtered, key=lambda item: item.start_index)
     merged: list[Box] = []
     for box in boxes:
         if not merged or box.start_index > merged[-1].end_index:
             merged.append(box)
             continue
+
         prior = merged[-1]
-        start = min(prior.start_index, box.start_index)
-        end = max(prior.end_index, box.end_index)
-        mode = "flat" if prior.mode == box.mode == "flat" else "oscillatory"
-        merged[-1] = Box(start, end, mode)
+        if prior.mode == box.mode == "flat":
+            merged[-1] = Box(
+                min(prior.start_index, box.start_index),
+                max(prior.end_index, box.end_index),
+                "flat",
+            )
+            continue
+
+        # For mixed-mode overlaps, keep the interval that occupies more of the
+        # fixed X axis rather than fabricating a new boundary.
+        prior_width = x_share(points, prior.start_index, prior.end_index)
+        box_width = x_share(points, box.start_index, box.end_index)
+        if box_width > prior_width:
+            merged[-1] = box
+
     return merged
 
 
