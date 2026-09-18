@@ -1715,3 +1715,9 @@ class USEarningsTransformTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+def test_inline_xbrl_lookup_covers_off_calendar_filing_window():
+    source = open("backend/earnings_us/pipeline.py", encoding="utf-8").read()
+    assert "target_start = date(year, (quarter - 1) * 3 + 1, 1)" in source
+    assert "filed_from=target_start" in source
