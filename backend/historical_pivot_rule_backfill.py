@@ -422,23 +422,53 @@ def prune_relative_micro_waves(
 # ---------------------------------------------------------------------------
 
 def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]:
+    """Find long visually flat runs from normalized local slopes.
+
+    A straight sideways stretch does not need local extrema.  Its defining
+    feature is that normalized Y changes per normalized X are persistently in
+    the low-slope tail of THIS chart, while the segment occupies a relatively
+    long X share and makes little net directional progress.
+    """
+    step_slopes: list[float] = []
+    for i in range(v0 + 1, v1 + 1):
+        dx = x_share(points, i - 1, i)
+        if dx <= 0:
+            continue
+        step_slopes.append(y_share(points, i - 1, i) / dx)
+    if not step_slopes:
+        return []
+
+    low_slope = quantile(step_slopes, 0.25)
     candidates: list[Box] = []
 
-    # Straight/near-straight sideways can have almost no extrema, so scan the
-    # actual normalized path. "Flat" means its full Y range is no larger than
-    # the same-chart typical swing, and its X duration is at least typical.
     for start in range(v0, v1):
-        min_y = max_y = points[start].y
-        best_end: int | None = None
-        for end in range(start + 1, v1 + 1):
-            min_y = min(min_y, points[end].y)
-            max_y = max(max_y, points[end].y)
-            if max_y - min_y > scale.typical_y:
+        for end in range(v1, start, -1):
+            width = x_share(points, start, end)
+            if width < scale.long_x:
                 break
-            if x_share(points, start, end) >= scale.typical_x:
-                best_end = end
-        if best_end is not None:
-            candidates.append(Box(start, best_end, "flat"))
+
+            local_slopes: list[float] = []
+            for i in range(start + 1, end + 1):
+                dx = x_share(points, i - 1, i)
+                if dx > 0:
+                    local_slopes.append(y_share(points, i - 1, i) / dx)
+            if not local_slopes or median(local_slopes) > low_slope:
+                continue
+
+            ys = [points[i].y for i in range(start, end + 1)]
+            y_range = max(ys) - min(ys)
+            if y_range > scale.typical_y:
+                continue
+
+            net = y_share(points, start, end)
+            # A monotonic low-slope trend is still a trend.  A flat box spends
+            # its Y range oscillating/stalling rather than progressing from one
+            # edge of that range to the other.
+            if y_range > 0 and net > y_range * 0.5:
+                continue
+
+            candidates.append(Box(start, end, "flat"))
+            break
 
     return maximal_boxes(points, candidates)
 
