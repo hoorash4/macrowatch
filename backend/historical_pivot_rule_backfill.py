@@ -464,13 +464,22 @@ def mixed_progression(values: list[float]) -> bool:
     return directions == {1, -1} or len(directions) == 0
 
 
-def oscillatory_sideways_candidates(points: list[Point], turns: list[Turn]) -> list[Sideways]:
-    """Detect large-amplitude boxes by absence of sustained extrema progress."""
+def oscillatory_sideways_candidates(
+    points: list[Point],
+    turns: list[Turn],
+    structural_turns: list[Turn],
+) -> list[Sideways]:
+    """Detect repeated large-amplitude boxes without swallowing broad trends.
+
+    Large amplitude is allowed.  The disqualifier is sustained directional
+    progress that occupies a substantial share of the candidate X interval.
+    """
     found: list[Sideways] = []
     for i in range(len(turns)):
         for j in range(len(turns) - 1, i + OSCILLATORY_SIDEWAYS_MIN_TURNS - 2, -1):
             window = turns[i:j + 1]
-            x_share = points[window[-1].index].x - points[window[0].index].x
+            start_idx, end_idx = window[0].index, window[-1].index
+            x_share = points[end_idx].x - points[start_idx].x
             if x_share < SIDEWAYS_MIN_X_SHARE:
                 continue
 
@@ -478,19 +487,30 @@ def oscillatory_sideways_candidates(points: list[Point], turns: list[Turn]) -> l
             lows = [points[item.index].y for item in window if item.kind == "low"]
             if len(highs) < 2 or len(lows) < 2:
                 continue
-
-            # A box may have huge amplitude.  What matters is that highs/lows
-            # do not sustain one-direction progress at the structural scale.
             if not mixed_progression(highs) or not mixed_progression(lows):
                 continue
 
-            # Local directional sub-runs are allowed inside a broad box.
-            # What matters is that highs/lows do not sustain one direction
-            # across the whole structural interval.
+            # Look at already axis-validated structural turns inside the same
+            # interval.  Two broad directional legs (or one leg taking most of
+            # the interval) mean this is a trend sequence, not a box.
+            structural_inside = [
+                turn for turn in structural_turns
+                if start_idx <= turn.index <= end_idx
+            ]
+            broad_leg_ratios: list[float] = []
+            for left, right in zip(structural_inside, structural_inside[1:]):
+                dx = leg_x(points, left, right)
+                if x_share > 0:
+                    broad_leg_ratios.append(dx / x_share)
+
+            if any(ratio >= 0.50 for ratio in broad_leg_ratios):
+                continue
+            if sum(ratio >= 0.18 for ratio in broad_leg_ratios) >= 2:
+                continue
 
             found.append(Sideways(
-                start_index=window[0].index,
-                end_index=window[-1].index,
+                start_index=start_idx,
+                end_index=end_idx,
                 mode="oscillatory",
                 long=x_share >= LONG_SIDEWAYS_X_SHARE,
             ))
@@ -539,7 +559,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
 
     # Sideways is a regime hypothesis, not a by-product of local-turn count.
     flat_boxes = flat_sideways_candidates(points, v0, v1)
-    oscillatory_boxes = oscillatory_sideways_candidates(points, raw)
+    oscillatory_boxes = oscillatory_sideways_candidates(points, raw, validated)
     boxes = merge_sideways(points, [*flat_boxes, *oscillatory_boxes])
 
     # Spike is an explicit exceptional-shape rule and therefore uses X/Y shares.
