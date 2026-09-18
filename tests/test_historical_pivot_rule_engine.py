@@ -52,7 +52,7 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
         self.assertTrue({"spike_entry","spike_extreme","spike_retracement"}.issubset(types))
 
     def test_sub_half_axis_excursion_is_not_spike(self):
-        values=[20,18,15,10,45,12,14,13,12,11,10,9,8,7,6]
+        values=[20,18,15,10,45,12,14,13,12,11,10,9,8,7,6,20,40,60,80,100]
         result=self.analyze(values)
         self.assertFalse(any(p["type"]=="spike_extreme" for p in result["pivots"]))
 
