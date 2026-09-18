@@ -1,4 +1,4 @@
-name: Historical Pivot AI backfill
+name: Historical Pivot AI candidate backfill
 # rerun US10Y2Y after deployed pivot-schema-v5
 
 on:
@@ -24,15 +24,6 @@ on:
         required: true
         default: "0"
         type: string
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/historical-pivot-ai-backfill.yml"
-      - "backend/historical_pivot_ai_backfill.py"
-      - "backend/historical_pivot_ai_score.py"
-      - "supabase/functions/pivot-ai/**"
-      - "supabase/functions/_shared/pivot/**"
-
 permissions:
   contents: read
 
@@ -65,17 +56,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "push" ]]; then
-            CASE_CODE="global_financial_crisis"
-            INDEX_CODE="SP500"
-            SERIES_CODE="US10Y2Y"
-            LIMIT="0"
-          else
-            CASE_CODE="$INPUT_CASE"
-            INDEX_CODE="$INPUT_INDEX"
-            SERIES_CODE="$INPUT_SERIES"
-            LIMIT="$INPUT_LIMIT"
-          fi
+          CASE_CODE="$INPUT_CASE"
+          INDEX_CODE="$INPUT_INDEX"
+          SERIES_CODE="$INPUT_SERIES"
+          LIMIT="$INPUT_LIMIT"
           args=(--case "$CASE_CODE" --series "$SERIES_CODE" --limit "$LIMIT")
           score_args=(--case "$CASE_CODE" --series "$SERIES_CODE")
           if [[ -n "$INDEX_CODE" ]]; then
