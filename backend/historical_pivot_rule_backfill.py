@@ -1,25 +1,21 @@
-"""Historical Insight deterministic indicator-structure detector — v5 clean rebuild.
+"""Historical Insight deterministic indicator structure detector — clean v7 rebuild.
 
-Contract:
-- Raw indicator values are used only to locate the exact extrema and to persist
-  the displayed value.
-- Historical Case start/end freeze the X axis.
-- Visible indicator min/max freeze the Y axis.
-- After extrema discovery, every comparison of size/height/duration/long/short
-  is made only with fixed-axis shares (normalized X/Y).
-- +/-24 months of the SAME indicator are context for validating visible-edge
-  extrema only. They never rescale X/Y.
-- Market-index prices never enter structure detection.
+User contract enforced by code:
+- raw values are used only to find the exact raw extrema and to persist display values;
+- after raw extrema discovery, every comparison is performed on the frozen chart
+  coordinates x/y, where the Historical Case fixes X and the visible indicator
+  min/max fix Y;
+- "large/small/long/short" is never inferred from raw units or raw percent change;
+- market-index prices never enter indicator structure detection;
+- +/-24 months of the same indicator are edge context only and never rescale axes.
 
-Pipeline:
-1. discover exact extrema from raw values;
-2. map them to the frozen chart axes;
-3. discover trend candidates with HH/HL and LH/LL structure;
-4. validate every candidate against relative X/Y geometry before accepting it;
-5. detect sideways as lack of directional progress, including straight flats;
-6. detect spikes only as RELATIVE amplitude/duration anomalies versus the other
-   swings on the same frozen chart;
-7. persist only validated structural boundaries.
+Order:
+1) exact raw extrema
+2) frozen-axis coordinates
+3) structural-flow discovery (HH/HL, LH/LL)
+4) axis-share validation / pruning
+5) sideways and spike exceptions
+6) persist exact raw dates/values
 """
 from __future__ import annotations
 
@@ -32,9 +28,19 @@ from typing import Any
 from common import SupabaseRest
 
 INDEX_CODES = {"SP500", "NASDAQ_COMPOSITE", "KOSPI"}
-SCHEMA_VERSION = "rule-structure-v6"
-ENGINE_VERSION = "historical-rules-20260918-v6"
+SCHEMA_VERSION = "rule-structure-v7"
+ENGINE_VERSION = "historical-rules-20260918-v7"
 BUFFER_MONTHS = 24
+
+# These constants are used only where the rule itself is about chart geometry.
+# They are shares of the already-frozen chart axes, never raw indicator units.
+SPIKE_MIN_Y_SHARE = 0.50
+SPIKE_MAX_X_SHARE = 0.16
+FLAT_MAX_Y_TO_X = 0.35
+FLAT_MIN_X_SHARE = 0.10
+LONG_BOX_X_SHARE = 0.20
+MICRO_MAX_Y_SHARE = 0.06
+DOMINATED_LEG_RATIO = 0.34
 
 
 @dataclass(frozen=True)
@@ -49,16 +55,6 @@ class Point:
 class Turn:
     index: int
     kind: str  # high | low
-
-
-@dataclass(frozen=True)
-class Scale:
-    typical_y: float
-    material_y: float
-    typical_x: float
-    long_x: float
-    spike_y_outlier: float
-    short_roundtrip_x: float
 
 
 @dataclass(frozen=True)
@@ -150,13 +146,11 @@ def normalize_points(rows: list[dict[str, Any]], visible_start: str, visible_end
     visible = [row for row in rows if visible_start <= row["date"] <= visible_end]
     if len(visible) < 3:
         raise RuntimeError("Not enough indicator points inside the fixed case window.")
-
     y_min = min(float(row["value"]) for row in visible)
     y_max = max(float(row["value"]) for row in visible)
     y_span = max(y_max - y_min, 1e-12)
     x_days = max(1, days_between(visible_start, visible_end))
-
-    points = [
+    return [
         Point(
             date=str(row["date"]),
             value=float(row["value"]),
@@ -164,181 +158,87 @@ def normalize_points(rows: list[dict[str, Any]], visible_start: str, visible_end
             y=(float(row["value"]) - y_min) / y_span,
         )
         for row in rows
-    ]
-    return points, y_min, y_max
+    ], y_min, y_max
 
 
 def visible_indices(points: list[Point]) -> list[int]:
-    return [i for i, point in enumerate(points) if 0.0 <= point.x <= 1.0]
+    return [i for i, p in enumerate(points) if 0.0 <= p.x <= 1.0]
 
 
-def quantile(values: list[float], q: float) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    if len(ordered) == 1:
-        return ordered[0]
-    pos = (len(ordered) - 1) * q
-    lo = int(pos)
-    hi = min(lo + 1, len(ordered) - 1)
-    frac = pos - lo
-    return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
+def dx(points: list[Point], a: int, b: int) -> float:
+    return abs(points[b].x - points[a].x)
 
 
-def median(values: list[float]) -> float:
-    return quantile(values, 0.5)
-
-
-def y_share(points: list[Point], left: int, right: int) -> float:
-    return abs(points[right].y - points[left].y)
-
-
-def x_share(points: list[Point], left: int, right: int) -> float:
-    return abs(points[right].x - points[left].x)
+def dy(points: list[Point], a: int, b: int) -> float:
+    return abs(points[b].y - points[a].y)
 
 
 # ---------------------------------------------------------------------------
-# 1) Exact extrema discovery. Raw values are allowed only in this section.
+# RAW SECTION. Raw values are allowed only to locate exact extrema.
 # ---------------------------------------------------------------------------
 
 def exact_raw_turns(points: list[Point]) -> list[Turn]:
     if len(points) < 3:
         return []
-
-    turns: list[Turn] = []
+    out: list[Turn] = []
     last_nonflat = 0
     previous_direction = 0
 
-    i = 1
-    while i < len(points):
+    for i in range(1, len(points)):
         if points[i].value == points[last_nonflat].value:
-            i += 1
             continue
-
         direction = 1 if points[i].value > points[last_nonflat].value else -1
         if previous_direction and direction != previous_direction:
-            turns.append(Turn(last_nonflat, "high" if previous_direction > 0 else "low"))
+            out.append(Turn(last_nonflat, "high" if previous_direction > 0 else "low"))
         previous_direction = direction
         last_nonflat = i
-        i += 1
-
-    return collapse_same_kind_raw(points, turns)
+    return collapse_same_kind(points, out)
 
 
-def collapse_same_kind_raw(points: list[Point], turns: list[Turn]) -> list[Turn]:
+def collapse_same_kind(points: list[Point], turns: list[Turn]) -> list[Turn]:
     out: list[Turn] = []
     for turn in sorted(turns, key=lambda t: t.index):
         if out and out[-1].kind == turn.kind:
             prior = out[-1]
             if turn.kind == "high":
-                if points[turn.index].value > points[prior.index].value:
+                if points[turn.index].y > points[prior.index].y:
                     out[-1] = turn
             else:
-                if points[turn.index].value < points[prior.index].value:
+                if points[turn.index].y < points[prior.index].y:
                     out[-1] = turn
         else:
             out.append(turn)
     return out
 
 
-def exact_visible_candidates(points: list[Point], v0: int, v1: int) -> list[Turn]:
+def exact_visible_extrema(points: list[Point], v0: int, v1: int) -> list[Turn]:
     turns = [t for t in exact_raw_turns(points) if v0 <= t.index <= v1]
 
-    # Exact visible global high/low are never allowed to disappear before
-    # validation. This fixes the prior failure to even candidate obvious extrema.
-    max_idx = max(range(v0, v1 + 1), key=lambda i: points[i].value)
-    min_idx = min(range(v0, v1 + 1), key=lambda i: points[i].value)
-    for turn in (Turn(max_idx, "high"), Turn(min_idx, "low")):
-        if all(existing.index != turn.index for existing in turns):
-            turns.append(turn)
-
-    return collapse_same_kind_raw(points, turns)
+    # Global visible high/low must always be present as candidates.
+    hi = max(range(v0, v1 + 1), key=lambda i: points[i].value)
+    lo = min(range(v0, v1 + 1), key=lambda i: points[i].value)
+    for t in (Turn(hi, "high"), Turn(lo, "low")):
+        if all(existing.index != t.index for existing in turns):
+            turns.append(t)
+    return collapse_same_kind(points, turns)
 
 
 # ---------------------------------------------------------------------------
-# 2) Frozen-axis scale. All structural comparisons below use only x/y shares.
+# From here on: normalized fixed-axis geometry only.
 # ---------------------------------------------------------------------------
 
-def build_scale(points: list[Point], turns: list[Turn]) -> Scale:
-    swing_y = [
-        y_share(points, a.index, b.index)
-        for a, b in zip(turns, turns[1:])
-        if a.index != b.index
-    ]
-    swing_x = [
-        x_share(points, a.index, b.index)
-        for a, b in zip(turns, turns[1:])
-        if a.index != b.index
-    ]
-
-    typical_y = median(swing_y) if swing_y else 1.0
-    # With only a few structural legs there is no statistical basis for
-    # declaring one of them "micro" merely because it is below the median.
-    # In richer/noisier charts, use the lower quartile as the minimum material
-    # same-chart Y share; pruning still uses the median typical swing.
-    material_y = (
-        min(swing_y) if 0 < len(swing_y) <= 4
-        else quantile(swing_y, 0.25) if swing_y
-        else 1.0
-    )
-    typical_x = median(swing_x) if swing_x else 1.0
-    long_x = quantile(swing_x, 0.75) if swing_x else typical_x
-
-    # Spike amplitude is RELATIVE to the other swing amplitudes.
-    # Tukey's upper fence is used only as a same-chart outlier detector.
-    if len(swing_y) >= 4:
-        q1 = quantile(swing_y, 0.25)
-        q3 = quantile(swing_y, 0.75)
-        spike_y_outlier = q3 + 1.5 * (q3 - q1)
-    else:
-        spike_y_outlier = max(swing_y) if swing_y else 1.0
-
-    roundtrip_x = [
-        x_share(points, turns[i - 1].index, turns[i + 1].index)
-        for i in range(1, len(turns) - 1)
-    ]
-    short_roundtrip_x = median(roundtrip_x) if roundtrip_x else typical_x * 2.0
-
-    return Scale(
-        typical_y=max(typical_y, 1e-12),
-        material_y=max(material_y, 1e-12),
-        typical_x=max(typical_x, 1e-12),
-        long_x=max(long_x, 1e-12),
-        spike_y_outlier=max(spike_y_outlier, 1e-12),
-        short_roundtrip_x=max(short_roundtrip_x, 1e-12),
-    )
+def visible_sequence(points: list[Point], extrema: list[Turn], v0: int, v1: int) -> list[Turn]:
+    seq = list(extrema)
+    if not seq or seq[0].index != v0:
+        first_kind = "low" if (seq and seq[0].kind == "high") else "high"
+        seq.insert(0, Turn(v0, first_kind))
+    if not seq or seq[-1].index != v1:
+        last_kind = "low" if (seq and seq[-1].kind == "high") else "high"
+        seq.append(Turn(v1, last_kind))
+    return collapse_same_kind(points, seq)
 
 
-def collapse_same_kind_axis(points: list[Point], turns: list[Turn]) -> list[Turn]:
-    out: list[Turn] = []
-    for turn in sorted(turns, key=lambda t: t.index):
-        if out and out[-1].kind == turn.kind:
-            prior = out[-1]
-            if turn.kind == "high":
-                if points[turn.index].y >= points[prior.index].y:
-                    out[-1] = turn
-            else:
-                if points[turn.index].y <= points[prior.index].y:
-                    out[-1] = turn
-        else:
-            out.append(turn)
-    return out
-
-
-def add_visible_anchors(points: list[Point], turns: list[Turn], v0: int, v1: int) -> list[Turn]:
-    sequence = list(turns)
-    if not sequence or sequence[0].index != v0:
-        kind = "low" if (not sequence or sequence[0].kind == "high") else "high"
-        sequence.append(Turn(v0, kind))
-    sequence = collapse_same_kind_axis(points, sequence)
-
-    if not sequence or sequence[-1].index != v1:
-        kind = "low" if (not sequence or sequence[-1].kind == "high") else "high"
-        sequence.append(Turn(v1, kind))
-    return collapse_same_kind_axis(points, sequence)
-
-
-def continuation_kind(points: list[Point], four: list[Turn]) -> str | None:
+def continuation(points: list[Point], four: list[Turn]) -> str | None:
     if len(four) != 4:
         return None
     a, b, c, d = four
@@ -352,197 +252,156 @@ def continuation_kind(points: list[Point], four: list[Turn]) -> str | None:
     return None
 
 
-def merge_hh_hl_lh_ll(points: list[Point], turns: list[Turn], protected: set[int]) -> list[Turn]:
+def merge_directional_continuations(points: list[Point], turns: list[Turn], protected: set[int]) -> list[Turn]:
+    """Discover HH/HL and LH/LL, then validate the internal correction on Y-axis share."""
     out = list(turns)
     changed = True
     while changed and len(out) >= 4:
         changed = False
         for i in range(len(out) - 3):
             four = out[i:i + 4]
-            if not continuation_kind(points, four):
+            if not continuation(points, four):
                 continue
-            if four[1].index in protected or four[2].index in protected:
+            b, c = four[1], four[2]
+            if b.index in protected or c.index in protected:
                 continue
-
-            # The flow pattern discovers a possible merge; frozen-Y shares
-            # validate that the counter-wave is not larger than the impulses
-            # around it. No raw value or absolute indicator unit is used.
-            correction = y_share(points, four[1].index, four[2].index)
-            impulse_left = y_share(points, four[0].index, four[1].index)
-            impulse_right = y_share(points, four[2].index, four[3].index)
-            if correction <= max(impulse_left, impulse_right):
+            correction = dy(points, b.index, c.index)
+            left_impulse = dy(points, four[0].index, b.index)
+            right_impulse = dy(points, c.index, four[3].index)
+            # Only discard when the counter-wave is chart-small compared with
+            # the directional impulses around it.
+            if correction <= min(left_impulse, right_impulse):
                 del out[i + 1:i + 3]
-                out = collapse_same_kind_axis(points, out)
+                out = collapse_same_kind(points, out)
                 changed = True
                 break
     return out
 
 
-def prune_relative_micro_waves(
-    points: list[Point],
-    turns: list[Turn],
-    scale: Scale,
-    protected: set[int],
-) -> list[Turn]:
-    """Remove zigzags whose chart-height is below the same-chart typical swing.
-
-    The threshold is not an absolute number. It is the median Y-axis share of
-    all discovered swings on this indicator chart.
-    """
+def prune_dominated_zigzags(points: list[Point], turns: list[Turn], protected: set[int]) -> list[Turn]:
+    """Remove tiny chart-height reversals, not raw-unit reversals."""
     out = list(turns)
-    while len(out) >= 3:
+    changed = True
+    while changed and len(out) >= 3:
         changed = False
-        for i in range(len(out) - 2):
-            left, middle, right = out[i:i + 3]
-            if left.kind != right.kind or middle.kind == left.kind:
+        for i in range(1, len(out) - 1):
+            left, mid, right = out[i - 1:i + 2]
+            if mid.index in protected:
                 continue
-            if middle.index in protected:
-                continue
-
-            left_dy = y_share(points, left.index, middle.index)
-            right_dy = y_share(points, middle.index, right.index)
-            # A zigzag is micro only when BOTH of its legs are below the
-            # same-chart typical swing.  One smaller leg beside a substantial
-            # opposite leg is not enough to erase a real reversal.
-            if max(left_dy, right_dy) >= scale.typical_y:
+            left_leg = dy(points, left.index, mid.index)
+            right_leg = dy(points, mid.index, right.index)
+            small = min(left_leg, right_leg)
+            large = max(left_leg, right_leg)
+            # A turn is disposable only when the smaller side is both visually
+            # tiny on the fixed Y axis and clearly dominated by the other side.
+            if small > MICRO_MAX_Y_SHARE or small > large * DOMINATED_LEG_RATIO:
                 continue
 
-            left_protected = left.index in protected
-            right_protected = right.index in protected
-            if left_protected and right_protected:
-                continue
-
-            if left_protected:
-                survivor = left
-            elif right_protected:
-                survivor = right
-            elif left.kind == "high":
-                survivor = left if points[left.index].y >= points[right.index].y else right
-            else:
-                survivor = left if points[left.index].y <= points[right.index].y else right
-
-            out[i:i + 3] = [survivor]
-            out = collapse_same_kind_axis(points, out)
-            changed = True
-            break
-
-        if not changed:
-            break
+            # Remove the tiny excursion as a pair with the adjacent same-kind
+            # anchor, keeping the more extreme anchor in frozen-Y coordinates.
+            if left.kind == right.kind:
+                if left.index in protected and right.index in protected:
+                    continue
+                if left.index in protected:
+                    survivor = left
+                elif right.index in protected:
+                    survivor = right
+                elif left.kind == "high":
+                    survivor = left if points[left.index].y >= points[right.index].y else right
+                else:
+                    survivor = left if points[left.index].y <= points[right.index].y else right
+                out[i - 1:i + 2] = [survivor]
+                out = collapse_same_kind(points, out)
+                changed = True
+                break
     return out
 
 
-# ---------------------------------------------------------------------------
-# 3) Sideways detection from axis geometry.
-# ---------------------------------------------------------------------------
+def find_spikes(points: list[Point], extrema: list[Turn]) -> list[tuple[Turn, Turn, Turn]]:
+    """Find structural entry -> exact spike extreme -> structural retracement.
 
-def two_cluster_low_slope_cut(values: list[float]) -> float | None:
-    """Split normalized local slopes into low/high groups without a fixed cut."""
-    if not values:
-        return None
-    low = min(values)
-    high = max(values)
-    if abs(high - low) <= 1e-12:
-        return None
-
-    for _ in range(20):
-        low_group = [v for v in values if abs(v - low) <= abs(v - high)]
-        high_group = [v for v in values if abs(v - low) > abs(v - high)]
-        if not low_group or not high_group:
-            return None
-        new_low = sum(low_group) / len(low_group)
-        new_high = sum(high_group) / len(high_group)
-        if abs(new_low - low) + abs(new_high - high) <= 1e-12:
-            low, high = new_low, new_high
-            break
-        low, high = new_low, new_high
-
-    if low > high:
-        low, high = high, low
-    return (low + high) / 2.0
-
-
-def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]:
-    """Find long straight/near-straight sideways runs from normalized slopes.
-
-    The low-slope class is learned from this chart itself.  No fixed raw-value
-    threshold is used.  Long/short comes from normalized X share.
+    Spike classification is the one place where large-Y + short-X is explicit.
+    The entry/retracement anchors need not be immediately adjacent raw extrema.
     """
-    steps: list[tuple[int, float]] = []
-    slopes: list[float] = []
-    for i in range(v0 + 1, v1 + 1):
-        dx = x_share(points, i - 1, i)
-        if dx <= 0:
+    spikes: list[tuple[Turn, Turn, Turn]] = []
+    for k, extreme in enumerate(extrema):
+        # Search several extrema outward so a tiny wiggle cannot hide the real
+        # structural spike entry/retracement anchor.
+        lefts = extrema[max(0, k - 6):k]
+        rights = extrema[k + 1:k + 7]
+        best: tuple[float, Turn, Turn] | None = None
+        for left in lefts:
+            if left.kind == extreme.kind:
+                continue
+            for right in rights:
+                if right.kind != left.kind:
+                    continue
+                width = dx(points, left.index, right.index)
+                if width <= 0 or width > SPIKE_MAX_X_SHARE:
+                    continue
+                left_move = dy(points, left.index, extreme.index)
+                right_move = dy(points, extreme.index, right.index)
+                excursion = min(left_move, right_move)
+                if excursion < SPIKE_MIN_Y_SHARE:
+                    continue
+                score = excursion - width
+                if best is None or score > best[0]:
+                    best = (score, left, right)
+        if best is not None:
+            _, left, right = best
+            spikes.append((left, extreme, right))
+
+    # keep non-overlapping strongest structures
+    unique: list[tuple[Turn, Turn, Turn]] = []
+    used: set[int] = set()
+    for triple in sorted(
+        spikes,
+        key=lambda t: min(dy(points, t[0].index, t[1].index), dy(points, t[1].index, t[2].index)),
+        reverse=True,
+    ):
+        if any(t.index in used for t in triple):
             continue
-        slope = y_share(points, i - 1, i) / dx
-        steps.append((i, slope))
-        slopes.append(slope)
-    if not steps:
-        return []
-
-    cut = two_cluster_low_slope_cut(slopes)
-    if cut is None:
-        return []
-
-    candidates: list[Box] = []
-    run_start: int | None = None
-    previous_i: int | None = None
-
-    def consider(start_point: int, end_point: int) -> None:
-        if end_point <= start_point:
-            return
-        # A visible-edge monotonic leg is not called a flat box merely because
-        # its local slope belongs to the lower cluster. Edge structure is
-        # validated separately with indicator buffer context.
-        if start_point == v0 or end_point == v1:
-            return
-
-        width = x_share(points, start_point, end_point)
-        if width < scale.long_x:
-            return
-
-        travel = sum(
-            y_share(points, i - 1, i)
-            for i in range(start_point + 1, end_point + 1)
-        )
-        if travel <= 1e-12:
-            candidates.append(Box(start_point, end_point, "flat"))
-            return
-
-        net = y_share(points, start_point, end_point)
-        # Directional efficiency is used ONLY here because sideways is
-        # specifically a question of progress versus back-and-forth/stalling.
-        if net / travel > 0.5:
-            return
-
-        candidates.append(Box(start_point, end_point, "flat"))
-
-    for i, slope in steps:
-        if slope <= cut:
-            if run_start is None:
-                run_start = i - 1
-            previous_i = i
-        else:
-            if run_start is not None and previous_i is not None:
-                consider(run_start, previous_i)
-            run_start = None
-            previous_i = None
-
-    if run_start is not None and previous_i is not None:
-        consider(run_start, previous_i)
-
-    return maximal_boxes(points, candidates)
+        unique.append(triple)
+        used.update(t.index for t in triple)
+    return sorted(unique, key=lambda t: t[1].index)
 
 
-def oscillatory_boxes(points: list[Point], turns: list[Turn], scale: Scale) -> list[Box]:
-    candidates: list[Box] = []
-    for i in range(len(turns)):
-        for j in range(len(turns) - 1, i + 3, -1):
-            window = turns[i:j + 1]
+def flat_boxes(points: list[Point], v0: int, v1: int) -> list[Box]:
+    """Detect obvious long flat/stalled regimes directly from frozen X/Y geometry."""
+    boxes: list[Box] = []
+    # Consider every sufficiently separated pair. Keep windows whose total
+    # vertical envelope is small relative to their horizontal chart width.
+    for start in range(v0, v1):
+        best_end: int | None = None
+        ymin = ymax = points[start].y
+        for end in range(start + 1, v1 + 1):
+            ymin = min(ymin, points[end].y)
+            ymax = max(ymax, points[end].y)
+            width = dx(points, start, end)
+            if width < FLAT_MIN_X_SHARE:
+                continue
+            yspan = ymax - ymin
+            if yspan <= width * FLAT_MAX_Y_TO_X:
+                best_end = end
+            elif best_end is not None:
+                break
+        if best_end is not None:
+            boxes.append(Box(start, best_end, "flat"))
+
+    return maximal_boxes(boxes)
+
+
+def oscillatory_boxes(points: list[Point], extrema: list[Turn]) -> list[Box]:
+    """Large-amplitude boxes are allowed if highs/lows fail to progress directionally."""
+    boxes: list[Box] = []
+    for i in range(len(extrema)):
+        for j in range(len(extrema) - 1, i + 3, -1):
+            window = extrema[i:j + 1]
             if len(window) < 5:
                 continue
-
             start, end = window[0].index, window[-1].index
-            if x_share(points, start, end) < scale.typical_x:
+            width = dx(points, start, end)
+            if width < FLAT_MIN_X_SHARE:
                 continue
 
             highs = [points[t.index].y for t in window if t.kind == "high"]
@@ -550,198 +409,93 @@ def oscillatory_boxes(points: list[Point], turns: list[Turn], scale: Scale) -> l
             if len(highs) < 2 or len(lows) < 2:
                 continue
 
-            high_progress = all(b >= a for a, b in zip(highs, highs[1:])) or all(b <= a for a, b in zip(highs, highs[1:]))
-            low_progress = all(b >= a for a, b in zip(lows, lows[1:])) or all(b <= a for a, b in zip(lows, lows[1:]))
-            same_up = all(b >= a for a, b in zip(highs, highs[1:])) and all(b >= a for a, b in zip(lows, lows[1:]))
-            same_down = all(b <= a for a, b in zip(highs, highs[1:])) and all(b <= a for a, b in zip(lows, lows[1:]))
-            if high_progress and low_progress and (same_up or same_down):
+            highs_up = all(b >= a for a, b in zip(highs, highs[1:]))
+            lows_up = all(b >= a for a, b in zip(lows, lows[1:]))
+            highs_down = all(b <= a for a, b in zip(highs, highs[1:]))
+            lows_down = all(b <= a for a, b in zip(lows, lows[1:]))
+            if (highs_up and lows_up) or (highs_down and lows_down):
                 continue
 
-            # Directionless if the net displacement is small relative to the
-            # typical same-chart swing, regardless of the box's internal range.
-            net = y_share(points, start, end)
-            if net > scale.typical_y:
+            # No sustained directional progression. Net displacement must be
+            # smaller than the internal vertical envelope; amplitude itself can
+            # be large and therefore does not disqualify a box.
+            ys = [points[t.index].y for t in window]
+            envelope = max(ys) - min(ys)
+            net = dy(points, start, end)
+            if envelope <= 1e-12 or net > envelope * 0.45:
                 continue
-
-            candidates.append(Box(start, end, "oscillatory"))
+            boxes.append(Box(start, end, "oscillatory"))
             break
+    return maximal_boxes(boxes)
 
-    return maximal_boxes(points, candidates)
 
-
-def maximal_boxes(points: list[Point], boxes: list[Box]) -> list[Box]:
+def maximal_boxes(boxes: list[Box]) -> list[Box]:
     selected: list[Box] = []
-    for box in sorted(boxes, key=lambda b: x_share(points, b.start_index, b.end_index), reverse=True):
-        if any(box.start_index >= kept.start_index and box.end_index <= kept.end_index for kept in selected):
+    for box in sorted(boxes, key=lambda b: (b.end_index - b.start_index), reverse=True):
+        if any(not (box.end_index < other.start_index or box.start_index > other.end_index) for other in selected):
             continue
         selected.append(box)
     return sorted(selected, key=lambda b: b.start_index)
 
 
-def merge_boxes(points: list[Point], boxes: list[Box]) -> list[Box]:
-    if not boxes:
-        return []
-    ordered = sorted(boxes, key=lambda b: b.start_index)
-    out: list[Box] = []
-    for box in ordered:
-        if not out or box.start_index > out[-1].end_index:
-            out.append(box)
-            continue
-        prior = out[-1]
-        if box.mode == prior.mode == "flat":
-            out[-1] = Box(min(prior.start_index, box.start_index), max(prior.end_index, box.end_index), "flat")
-        elif prior.mode == "flat" and box.mode == "oscillatory":
-            # A directly observed flat interval is stronger evidence than a
-            # broad oscillatory interpretation that merely overlaps it.
-            continue
-        elif prior.mode == "oscillatory" and box.mode == "flat":
-            out[-1] = box
-        else:
-            prior_x = x_share(points, prior.start_index, prior.end_index)
-            box_x = x_share(points, box.start_index, box.end_index)
-            if box_x > prior_x:
-                out[-1] = box
-    return out
+def nearest_turn_before(turns: list[Turn], index: int) -> Turn | None:
+    return next((t for t in reversed(turns) if t.index < index), None)
 
 
-def path_direction_changes(points: list[Point], start: int, end: int) -> int:
-    previous = 0
-    changes = 0
-    for i in range(start + 1, end + 1):
-        delta = points[i].y - points[i - 1].y
-        direction = 1 if delta > 0 else -1 if delta < 0 else 0
-        if direction == 0:
-            continue
-        if previous and direction != previous:
-            changes += 1
-        previous = direction
-    return changes
+def nearest_turn_after(turns: list[Turn], index: int) -> Turn | None:
+    return next((t for t in turns if t.index > index), None)
 
 
-def box_context(points: list[Point], box: Box, skeleton: list[Turn]) -> dict[str, Any] | None:
-    before = next((t for t in reversed(skeleton) if t.index < box.start_index), None)
-    after = next((t for t in skeleton if t.index > box.end_index), None)
+def box_survives(points: list[Point], box: Box, skeleton: list[Turn]) -> tuple[bool, dict[str, Any]]:
+    before = nearest_turn_before(skeleton, box.start_index)
+    after = nearest_turn_after(skeleton, box.end_index)
     if not before or not after:
-        return None
+        return False, {}
 
-    width = x_share(points, box.start_index, box.end_index)
-    left_x = x_share(points, before.index, box.start_index)
-    right_x = x_share(points, box.end_index, after.index)
+    width = dx(points, box.start_index, box.end_index)
+    left_x = dx(points, before.index, box.start_index)
+    right_x = dx(points, box.end_index, after.index)
+    entry_delta = points[box.start_index].y - points[before.index].y
+    exit_delta = points[after.index].y - points[box.end_index].y
+    reversal = entry_delta != 0 and exit_delta != 0 and (entry_delta > 0) != (exit_delta > 0)
+    long_box = width >= LONG_BOX_X_SHARE or width >= max(left_x, right_x)
 
-    entry = points[box.start_index].y - points[before.index].y
-    exit_ = points[after.index].y - points[box.end_index].y
-
-    # "Long" is relative to the neighboring directional legs on the same
-    # frozen X axis. No fixed percentage of calendar time is injected.
-    long_box = width >= left_x and width >= right_x
-    reversal_box = entry != 0 and exit_ != 0 and (entry > 0) != (exit_ > 0)
-
-    return {
-        "before": before,
-        "after": after,
+    # short continuation pause disappears; long box or reversal box survives
+    keep = long_box or reversal
+    return keep, {
         "width": width,
         "left_x": left_x,
         "right_x": right_x,
-        "entry_direction": 1 if entry > 0 else -1 if entry < 0 else 0,
-        "exit_direction": 1 if exit_ > 0 else -1 if exit_ < 0 else 0,
         "long": long_box,
-        "reversal": reversal_box,
+        "reversal": reversal,
     }
 
 
-def box_survives(points: list[Point], box: Box, skeleton: list[Turn]) -> bool:
-    context = box_context(points, box, skeleton)
-    if context is None:
-        return False
-
-    if context["long"]:
-        return True
-
-    # A short box survives only when it is a real reversal/consolidation:
-    # opposite broad entry/exit directions, not a continuation pause.
-    if not context["reversal"]:
-        return False
-
-    # A short "box" still needs repeated sideways behavior; a single tiny
-    # kink at a top/bottom is not a regime.
-    return path_direction_changes(points, box.start_index, box.end_index) >= 3
-
-
 def boundary_kind(points: list[Point], index: int, side: str) -> str:
-    if side == "entry":
-        prior = max(0, index - 1)
-        return "low" if points[index].y < points[prior].y else "high"
-    after = min(len(points) - 1, index + 1)
-    return "low" if points[after].y > points[index].y else "high"
+    if side == "entry" and index > 0:
+        return "high" if points[index].y >= points[index - 1].y else "low"
+    if side == "exit" and index + 1 < len(points):
+        return "low" if points[index + 1].y >= points[index].y else "high"
+    return "low"
 
 
-# ---------------------------------------------------------------------------
-# 4) Spike = RELATIVE amplitude outlier + RELATIVELY short X duration.
-# ---------------------------------------------------------------------------
+def edge_reversal(points: list[Point], turn: Turn, v0: int, v1: int) -> bool:
+    """Only genuine edge turns use the +/-24m same-indicator buffer."""
+    if turn.index not in {v0, v1}:
+        return True
+    value = points[turn.index].y
+    if turn.index == v0:
+        before = [p.y for p in points[:v0]]
+        after = [p.y for p in points[v0 + 1:v1 + 1]]
+    else:
+        before = [p.y for p in points[v0: v1]]
+        after = [p.y for p in points[v1 + 1:]]
+    if not before or not after:
+        return False
+    if turn.kind == "high":
+        return max(before) < value and max(after) < value
+    return min(before) > value and min(after) > value
 
-def find_spikes(points: list[Point], extrema: list[Turn], scale: Scale, v0: int, v1: int) -> list[tuple[Turn, Turn, Turn]]:
-    if len(extrema) < 3:
-        return []
-
-    candidates: list[tuple[float, float, float, Turn, Turn, Turn]] = []
-
-    for center_pos, extreme in enumerate(extrema):
-        center = extreme.index
-        if not (v0 < center < v1):
-            continue
-
-        # Search structural entry/recovery anchors among opposite extrema within
-        # a relative X neighborhood derived from this chart's swing durations.
-        left_pool = [
-            t for t in extrema[:center_pos]
-            if t.kind != extreme.kind and points[center].x - points[t.index].x <= scale.long_x
-        ]
-        right_pool = [
-            t for t in extrema[center_pos + 1:]
-            if t.kind != extreme.kind and points[t.index].x - points[center].x <= scale.long_x
-        ]
-        if not left_pool or not right_pool:
-            continue
-
-        best: tuple[float, float, float, Turn, Turn] | None = None
-        for left in left_pool:
-            for right in right_pool:
-                left_dy = y_share(points, left.index, center)
-                right_dy = y_share(points, center, right.index)
-                excursion = min(left_dy, right_dy)
-                width = x_share(points, left.index, right.index)
-                base_gap = y_share(points, left.index, right.index)
-
-                # No absolute 50% rule. The excursion must be an amplitude
-                # outlier versus the other same-chart swings, and its duration
-                # must be short relative to the same chart's round trips.
-                if excursion <= scale.spike_y_outlier:
-                    continue
-                if width > scale.short_roundtrip_x:
-                    continue
-
-                score = excursion / max(width, 1e-12)
-                item = (score, excursion, -base_gap, left, right)
-                if best is None or item[:3] > best[:3]:
-                    best = item
-
-        if best:
-            _, excursion, neg_base_gap, left, right = best
-            candidates.append((excursion, -neg_base_gap, x_share(points, left.index, right.index), left, extreme, right))
-
-    selected: list[tuple[Turn, Turn, Turn]] = []
-    occupied: list[tuple[int, int]] = []
-    for _, _, _, left, extreme, right in sorted(candidates, key=lambda item: (-item[0], item[2])):
-        if any(not (right.index < a or left.index > b) for a, b in occupied):
-            continue
-        selected.append((left, extreme, right))
-        occupied.append((left.index, right.index))
-    return sorted(selected, key=lambda item: item[1].index)
-
-
-# ---------------------------------------------------------------------------
-# 5) Structure assembly.
-# ---------------------------------------------------------------------------
 
 def structure(points: list[Point]) -> dict[str, Any]:
     visible = visible_indices(points)
@@ -749,44 +503,47 @@ def structure(points: list[Point]) -> dict[str, Any]:
         return {"regimes": [], "pivots": [], "sideways_boundaries": [], "turning_points": []}
 
     v0, v1 = visible[0], visible[-1]
-    extrema = exact_visible_candidates(points, v0, v1)
-    if not extrema:
-        return {"regimes": [], "pivots": [], "sideways_boundaries": [], "turning_points": []}
+    extrema = exact_visible_extrema(points, v0, v1)
+    sequence = visible_sequence(points, extrema, v0, v1)
 
-    scale_sequence = add_visible_anchors(points, extrema, v0, v1)
-    scale = build_scale(points, scale_sequence)
-
-    boxes = merge_boxes(points, [
-        *flat_boxes(points, v0, v1, scale),
-        *oscillatory_boxes(points, extrema, scale),
-    ])
-    spikes = find_spikes(points, extrema, scale, v0, v1)
-
+    spikes = find_spikes(points, extrema)
     spike_indices = {t.index for triple in spikes for t in triple}
-    global_high_index = max(range(v0, v1 + 1), key=lambda idx: points[idx].y)
-    global_low_index = min(range(v0, v1 + 1), key=lambda idx: points[idx].y)
-    # Candidate boxes are NOT protected here. Otherwise speculative sideways
-    # boundaries prevent trend compression and create a feedback loop that
-    # manufactures dozens of false boxes.
-    protected = spike_indices | {global_high_index, global_low_index}
+    global_high = max(range(v0, v1 + 1), key=lambda i: points[i].y)
+    global_low = min(range(v0, v1 + 1), key=lambda i: points[i].y)
 
-    skeleton = list(scale_sequence)
-    skeleton = merge_hh_hl_lh_ll(points, skeleton, protected)
-    skeleton = prune_relative_micro_waves(points, skeleton, scale, protected)
-    skeleton = merge_hh_hl_lh_ll(points, skeleton, protected)
-    skeleton = prune_relative_micro_waves(points, skeleton, scale, protected)
+    # Global exact extrema stay candidates; they still need axis-share validation
+    # before being persisted as ordinary reversals.
+    protected = spike_indices | {global_high, global_low}
+
+    skeleton = merge_directional_continuations(points, sequence, protected)
+    skeleton = prune_dominated_zigzags(points, skeleton, protected)
+    skeleton = merge_directional_continuations(points, skeleton, protected)
+    skeleton = prune_dominated_zigzags(points, skeleton, protected)
+
+    boxes = maximal_boxes([
+        *flat_boxes(points, v0, v1),
+        *oscillatory_boxes(points, extrema),
+    ])
 
     accepted: dict[int, dict[str, Any]] = {}
-    extrema_map = {t.index: t for t in extrema}
+    extrema_indices = {t.index for t in extrema}
 
-    # Ordinary reversals must survive structure discovery AND same-chart Y-share
-    # validation on both sides. No raw unit and no fixed absolute Y threshold.
-    for i, turn in enumerate(skeleton):
-        if turn.index not in extrema_map or i == 0 or i == len(skeleton) - 1:
+    # Ordinary reversals: candidate first, then validate incoming/outgoing chart
+    # shares. Never call a leg "large" here; report its actual fixed-Y share.
+    for i in range(1, len(skeleton) - 1):
+        turn = skeleton[i]
+        if turn.index not in extrema_indices:
             continue
-        incoming = y_share(points, skeleton[i - 1].index, turn.index)
-        outgoing = y_share(points, turn.index, skeleton[i + 1].index)
-        if incoming < scale.material_y or outgoing < scale.material_y:
+        incoming = dy(points, skeleton[i - 1].index, turn.index)
+        outgoing = dy(points, turn.index, skeleton[i + 1].index)
+
+        # Reject an isolated tiny opposite leg. This is precisely an axis-share
+        # validation, not a raw-number or raw-percent check.
+        small = min(incoming, outgoing)
+        large = max(incoming, outgoing)
+        if small <= MICRO_MAX_Y_SHARE and small <= large * DOMINATED_LEG_RATIO:
+            continue
+        if not edge_reversal(points, turn, v0, v1):
             continue
 
         accepted[turn.index] = {
@@ -794,75 +551,42 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "type": "major_reversal",
             "grade": "A",
             "reason": (
-                f"A: {'상승→하락' if turn.kind == 'high' else '하락→상승'} 구조적 반전. "
-                f"반전 전·후 이동은 고정 Y축의 {incoming*100:.1f}%와 {outgoing*100:.1f}%이고, "
-                f"이 지표의 동일 차트 기준 구조 검증 하한은 {scale.material_y*100:.1f}%이고 전형적 스윙은 {scale.typical_y*100:.1f}%라 구조점으로 유지."
+                f"A: {'상승→하락' if turn.kind == 'high' else '하락→상승'} 구조적 반전 후보를 "
+                f"고정축으로 검증했다. 전·후 이동은 각각 Y축의 {incoming*100:.1f}%/{outgoing*100:.1f}%다. "
+                "원시 수치가 아니라 이 축 비중 검증을 통과해 유지."
             ),
         }
 
-    # Visible global high/low are exact-extrema candidates by construction.
-    # If both sides occupy at least the same-chart typical Y swing, they are
-    # structural even when continuation compression would otherwise hide them.
-    global_high = max(range(v0, v1 + 1), key=lambda idx: points[idx].y)
-    global_low = min(range(v0, v1 + 1), key=lambda idx: points[idx].y)
-    skeleton_indices = [turn.index for turn in skeleton]
-    for idx, kind in ((global_high, "high"), (global_low, "low")):
-        if idx in accepted:
-            continue
-        left = next((turn for turn in reversed(skeleton) if turn.index < idx), None)
-        right = next((turn for turn in skeleton if turn.index > idx), None)
-        if not left or not right:
-            continue
-        incoming = y_share(points, left.index, idx)
-        outgoing = y_share(points, idx, right.index)
-        if incoming < scale.material_y or outgoing < scale.material_y:
-            continue
-        accepted[idx] = {
-            "turn": Turn(idx, kind),
-            "type": "major_reversal",
-            "grade": "A",
-            "reason": (
-                f"A: {'상승→하락' if kind == 'high' else '하락→상승'} 구조적 반전. "
-                f"정확한 가시구간 {'최고점' if kind == 'high' else '최저점'}이며, "
-                f"반전 전·후 이동은 고정 Y축의 {incoming*100:.1f}%와 {outgoing*100:.1f}%로 "
-                f"같은 차트의 구조 검증 하한 {scale.material_y*100:.1f}%를 모두 넘어 유지."
-            ),
-        }
-
-    # Sideways boundaries.
     kept_boxes: list[Box] = []
     sideways_boundaries: list[dict[str, Any]] = []
     for n, box in enumerate(boxes, 1):
-        context = box_context(points, box, skeleton)
-        if context is None or not box_survives(points, box, skeleton):
+        keep, context = box_survives(points, box, skeleton)
+        if not keep:
             continue
         kept_boxes.append(box)
-
-        width = context["width"]
         ys = [points[i].y for i in range(box.start_index, box.end_index + 1)]
-        y_span = max(ys) - min(ys)
+        yspan = max(ys) - min(ys)
+        width = context["width"]
 
         entry = Turn(box.start_index, boundary_kind(points, box.start_index, "entry"))
         exit_ = Turn(box.end_index, boundary_kind(points, box.end_index, "exit"))
-
         sideways_boundaries.append({
             "id": f"box-{n}",
             "start_date": points[box.start_index].date,
             "end_date": points[box.end_index].date,
             "mode": box.mode,
             "x_share": round(width, 6),
-            "y_span": round(y_span, 6),
+            "y_span": round(yspan, 6),
             "long": bool(context["long"]),
         })
-
         accepted[entry.index] = {
             "turn": entry,
             "type": "sideways_entry",
             "grade": "B",
             "reason": (
-                f"B: 횡보 진입점. 횡보 구간은 고정 X축의 {width*100:.1f}%를 차지하고, "
-                f"앞·뒤 방향 구간은 각각 {context['left_x']*100:.1f}%/{context['right_x']*100:.1f}%다. "
-                f"{'양쪽 방향 구간보다 길어 장기 횡보로 유지.' if context['long'] else '짧지만 진입·이탈의 큰 방향이 반대라 반전형 횡보로 유지.'}"
+                f"B: 횡보 진입. 구간은 고정 X축의 {width*100:.1f}%를 차지하고 "
+                f"전체 Y폭은 고정 Y축의 {yspan*100:.1f}%다. "
+                f"{'장기 횡보' if context['long'] else '반전형 단기 횡보'}로 검증되어 경계를 유지."
             ),
         }
         accepted[exit_.index] = {
@@ -870,51 +594,43 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "type": "sideways_exit",
             "grade": "B",
             "reason": (
-                f"B: 횡보 이탈점. 구간 전체 Y폭은 고정 Y축의 {y_span*100:.1f}%이고, "
-                "이 지점 이후 다시 방향 진행이 시작되어 경계점으로 유지."
+                f"B: 횡보 이탈. 같은 횡보가 X축 {width*100:.1f}%, Y축 {yspan*100:.1f}%를 차지하며 "
+                "이 지점 이후 방향 진행이 재개되어 경계를 유지."
             ),
         }
 
-    # Spike triplets override ordinary labels.
-    for left, extreme, right in spikes:
-        left_dy = y_share(points, left.index, extreme.index)
-        right_dy = y_share(points, extreme.index, right.index)
-        width = x_share(points, left.index, right.index)
-        excursion = min(left_dy, right_dy)
-
-        accepted[left.index] = {
-            "turn": left,
-            "type": "spike_entry",
-            "grade": "A",
-            "reason": (
-                f"A: 스파이크 진입점. 극점 왕복 진폭 {excursion*100:.1f}%는 같은 차트 다른 스윙들의 "
-                f"상대적 이상치 기준 {scale.spike_y_outlier*100:.1f}%를 넘고, 왕복 X폭 {width*100:.1f}%는 상대적으로 짧아 시작점으로 유지."
-            ),
-        }
-        accepted[extreme.index] = {
-            "turn": extreme,
-            "type": "spike_extreme",
-            "grade": "A",
-            "reason": (
-                f"A: 스파이크 극점. 양쪽 Y이동은 {left_dy*100:.1f}%/{right_dy*100:.1f}%이며 "
-                f"다른 스윙 대비 상대적 진폭 이상치이고, X폭은 {width*100:.1f}%로 짧아 일반 파동과 분리."
-            ),
-        }
-        accepted[right.index] = {
-            "turn": right,
-            "type": "spike_retracement",
-            "grade": "A",
-            "reason": (
-                f"A: 스파이크 복귀점. 극점에서 이 점까지 고정 Y축의 {right_dy*100:.1f}%를 되돌려 "
-                "상대적 이상치 왕복 구조의 반대편 앵커로 유지."
-            ),
-        }
-
-    # Accepted sideways suppresses internal ordinary points, but not spikes.
+    # Accepted box suppresses internal ordinary reversals.
     for box in kept_boxes:
         for idx in list(accepted):
             if box.start_index < idx < box.end_index and idx not in spike_indices:
                 del accepted[idx]
+
+    # Spikes override ordinary/box labels and preserve all three anchors.
+    for left, extreme, right in spikes:
+        left_y = dy(points, left.index, extreme.index)
+        right_y = dy(points, extreme.index, right.index)
+        width = dx(points, left.index, right.index)
+        accepted[left.index] = {
+            "turn": left, "type": "spike_entry", "grade": "A",
+            "reason": (
+                f"A: 스파이크 시작점. 극점까지 Y축 {left_y*100:.1f}% 이동하고 "
+                f"전체 왕복은 X축 {width*100:.1f}% 안에서 일어나 스파이크 구조의 시작 앵커로 유지."
+            ),
+        }
+        accepted[extreme.index] = {
+            "turn": extreme, "type": "spike_extreme", "grade": "A",
+            "reason": (
+                f"A: 정확한 스파이크 극점. 양쪽 이동은 Y축 {left_y*100:.1f}%/{right_y*100:.1f}%, "
+                f"왕복 X폭은 {width*100:.1f}%로 검증."
+            ),
+        }
+        accepted[right.index] = {
+            "turn": right, "type": "spike_retracement", "grade": "A",
+            "reason": (
+                f"A: 스파이크 복귀점. 극점에서 Y축 {right_y*100:.1f}% 되돌린 뒤 "
+                "스파이크 왕복 구조가 끝나는 반대편 앵커라 유지."
+            ),
+        }
 
     pivots: list[dict[str, Any]] = []
     for idx in sorted(accepted):
@@ -953,20 +669,14 @@ def structure(points: list[Point]) -> dict[str, Any]:
     for left, right in zip(boundaries, boundaries[1:]):
         if left == right:
             continue
-        in_box = any(box.start_index <= left and right <= box.end_index for box in kept_boxes)
-        if in_box:
+        if any(box.start_index <= left and right <= box.end_index for box in kept_boxes):
             kind = "sideways"
         else:
             kind = "uptrend" if points[right].y > points[left].y else "downtrend" if points[right].y < points[left].y else "sideways"
         if regimes and regimes[-1]["type"] == kind:
             regimes[-1]["end_date"] = points[right].date
         else:
-            regimes.append({
-                "type": kind,
-                "start_date": points[left].date,
-                "end_date": points[right].date,
-                "confidence": 1.0,
-            })
+            regimes.append({"type": kind, "start_date": points[left].date, "end_date": points[right].date, "confidence": 1.0})
 
     turning_points = [
         {
@@ -980,7 +690,6 @@ def structure(points: list[Point]) -> dict[str, Any]:
         }
         for i, p in enumerate(pivots)
     ]
-
     return {
         "regimes": regimes,
         "pivots": pivots,
@@ -992,12 +701,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
 def analyze_indicator_only(db: SupabaseRest, case_code: str, series_code: str) -> tuple[dict[str, Any], dict[str, Any], list[Point], float, float]:
     case = load_case(db, case_code)
     start, end = str(case["search_start"]), str(case["search_end"])
-    rows = load_indicator_rows(
-        db,
-        series_code,
-        shift_months(start, -BUFFER_MONTHS),
-        shift_months(end, BUFFER_MONTHS),
-    )
+    rows = load_indicator_rows(db, series_code, shift_months(start, -BUFFER_MONTHS), shift_months(end, BUFFER_MONTHS))
     points, y_min, y_max = normalize_points(rows, start, end)
     return case, structure(points), points, y_min, y_max
 
@@ -1012,7 +716,6 @@ def persist_indicator_structure(
     y_min: float,
     y_max: float,
 ) -> dict[str, Any]:
-    # Market metadata is attached only after indicator-only structure is final.
     cycle = load_cycle(db, str(case["case_code"]), index_code)
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     row = {
@@ -1032,7 +735,7 @@ def persist_indicator_structure(
         "anomalies": [],
         "source_point_count": len([p for p in points if 0 <= p.x <= 1]),
         "chart_sha256": None,
-        "anomaly_validation_version": "rule-spike-relative-v6",
+        "anomaly_validation_version": "rule-spike-axis-v7",
         "skeleton_trends": [],
         "sub_trends": [],
         "turning_points": result["turning_points"],
@@ -1083,12 +786,8 @@ def main() -> None:
         except Exception as exc:
             failures.append((series_code, str(exc)))
             print(f"ERROR {series_code}: {exc}")
-
     if failures:
-        raise RuntimeError(
-            "Rule pivot failures: "
-            + "; ".join(f"{code}={message}" for code, message in failures[:10])
-        )
+        raise RuntimeError("Rule pivot failures: " + "; ".join(f"{code}={message}" for code, message in failures[:10]))
 
 
 if __name__ == "__main__":
