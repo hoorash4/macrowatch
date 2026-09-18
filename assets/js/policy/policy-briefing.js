@@ -22,14 +22,9 @@
     if (typeof sourceState.source_complete === 'boolean') {
       return sourceState.source_complete ? 'Updated' : 'Updating';
     }
-    const modern = !row.is_emergency && String(row.meeting_date) >= '2019-01-01';
-    const complete = Boolean(
-      sourceState.statement_hash
-      && (!modern || sourceState.implementation_note_url)
-      && (!modern || sourceState.press_conference_url)
-      && (!modern || sourceState.liquidity_context)
-    );
-    return complete ? 'Updated' : 'Updating';
+    // Older stored briefings predate explicit source-completion tracking.
+    // They are completed legacy snapshots, not active refreshes.
+    return row.briefing ? 'Updated' : 'Updating';
   }
 
   function briefingStatusMarkup(row) {
