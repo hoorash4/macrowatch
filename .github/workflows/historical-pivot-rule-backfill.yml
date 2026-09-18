@@ -1,4 +1,5 @@
 name: Historical Pivot Rule backfill
+# rerun-after-hard-separation
 
 on:
   workflow_dispatch:
