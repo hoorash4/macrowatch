@@ -1,0 +1,20 @@
+name: Refresh FOMC liquidity once
+
+on:
+  push:
+    paths:
+      - ".github/workflows/refresh-fomc-liquidity-once.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - run: gh workflow run central-bank-policy.yml -f mode=latest
