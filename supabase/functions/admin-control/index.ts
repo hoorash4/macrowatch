@@ -14,6 +14,170 @@ const BACKUP_WORKFLOW = "backup-database.yml";
 const NEWS_WORKFLOW = "news-pipeline.yml";
 const EARNINGS_V2_WORKFLOW = "earnings-v2-korea.yml";
 
+
+const HISTORICAL_INDEX_CODES = ["SP500", "NASDAQ_COMPOSITE", "KOSPI"] as const;
+type HistoricalIndexCode = typeof HISTORICAL_INDEX_CODES[number];
+type HistoricalPoint = { market_date: string; close: number };
+
+function historicalDate(value: unknown, required = true) {
+  const text = String(value ?? "").trim();
+  if (!text && !required) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || !Number.isFinite(Date.parse(text + "T00:00:00Z"))) {
+    throw new Error("관찰기간 날짜를 확인해 주세요.");
+  }
+  return text;
+}
+
+function historicalIndex(value: unknown): HistoricalIndexCode {
+  const code = String(value || "") as HistoricalIndexCode;
+  if (!HISTORICAL_INDEX_CODES.includes(code)) throw new Error("대표 시장지수를 확인해 주세요.");
+  return code;
+}
+
+function historicalCaseName(value: unknown) {
+  const name = String(value || "").replace(/\s+/g, " ").trim();
+  if (!name || name.length > 60) throw new Error("국면명은 1~60자로 입력해 주세요.");
+  return name;
+}
+
+function historicalSummary(value: unknown) {
+  const summary = String(value || "").replace(/\s+/g, " ").trim();
+  if (!summary || summary.length > 220) throw new Error("국면 요약은 1~220자로 입력해 주세요.");
+  return summary;
+}
+
+function historicalCycleCandidate(points: HistoricalPoint[]) {
+  const rows = points
+    .map((row) => ({ date: String(row.market_date), value: Number(row.close) }))
+    .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.date) && Number.isFinite(row.value) && row.value > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (rows.length < 20) throw new Error("자동 피봇을 계산하기에 지수 데이터가 부족합니다.");
+
+  const prefixMin: typeof rows = [];
+  let low = rows[0];
+  for (const row of rows) {
+    if (row.value < low.value) low = row;
+    prefixMin.push(low);
+  }
+  const suffixMin: typeof rows = new Array(rows.length);
+  low = rows.at(-1)!;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].value <= low.value) low = rows[i];
+    suffixMin[i] = low;
+  }
+
+  let best: { start: typeof rows[number]; peak: typeof rows[number]; trough: typeof rows[number]; score: number } | null = null;
+  for (let i = 5; i < rows.length - 5; i++) {
+    const start = prefixMin[i - 1], peak = rows[i], trough = suffixMin[i + 1];
+    const riseDays = (Date.parse(peak.date) - Date.parse(start.date)) / 86400000;
+    const fallDays = (Date.parse(trough.date) - Date.parse(peak.date)) / 86400000;
+    if (riseDays < 30 || fallDays < 20 || peak.value <= start.value || trough.value >= peak.value) continue;
+    const rise = peak.value / start.value - 1;
+    const drawdown = 1 - trough.value / peak.value;
+    const score = Math.log1p(Math.max(0, rise)) + Math.log1p(Math.max(0, drawdown) * 1.35);
+    if (!best || score > best.score) best = { start, peak, trough, score };
+  }
+  if (!best) throw new Error("START → PEAK → TROUGH 자동 후보를 찾지 못했습니다.");
+  return {
+    start_date: best.start.date,
+    peak_date: best.peak.date,
+    trough_date: best.trough.date,
+    start_value: best.start.value,
+    peak_value: best.peak.value,
+    trough_value: best.trough.value,
+    rise_pct: (best.peak.value / best.start.value - 1) * 100,
+    fall_pct: (best.trough.value / best.peak.value - 1) * 100,
+  };
+}
+
+function historicalOutputText(payload: Record<string, unknown>) {
+  if (typeof payload.output_text === "string") return payload.output_text;
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const content = Array.isArray((item as { content?: unknown[] }).content) ? (item as { content: unknown[] }).content : [];
+    for (const part of content) {
+      if (part && typeof part === "object" && (part as { type?: unknown }).type === "output_text"
+        && typeof (part as { text?: unknown }).text === "string") return (part as { text: string }).text;
+    }
+  }
+  return null;
+}
+
+async function generateHistoricalSummary(input: {
+  name: string; primaryIndex: HistoricalIndexCode; searchStart: string; searchEnd: string;
+  cycle: ReturnType<typeof historicalCycleCandidate>;
+}) {
+  const key = Deno.env.get("OPENAI_API_KEY");
+  if (!key) return input.name + " 전후 시장 상승과 급락, 이후 조정이 이어진 주요 시장 사이클";
+  const model = Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna";
+  const schema = {
+    type: "object", additionalProperties: false,
+    properties: { summary: { type: "string", minLength: 20, maxLength: 140 } },
+    required: ["summary"],
+  };
+  const prompt = [
+    "MacroWatch의 과거 시장국면 한줄 요약을 한국어로 작성한다.",
+    "한 문장, 약 45~100자. [주요 배경] → [시장 전달경로] → [결과] 구조를 선호한다.",
+    "국면명으로 널리 확립된 역사적 배경만 사용할 수 있다. 구체 사실이 불확실하면 가격 사이클 중심으로 보수적으로 쓴다.",
+    "수치, 투자판단, 과장 표현은 넣지 않는다.",
+  ].join("\n");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model, reasoning: { effort: "low" }, max_output_tokens: 300,
+      prompt_cache_key: "macrowatch-historical-case-summary-v1",
+      input: [
+        { role: "system", content: [{ type: "input_text", text: prompt }] },
+        { role: "user", content: [{ type: "input_text", text: JSON.stringify({
+          case_name: input.name, primary_index: input.primaryIndex,
+          observation_window: { start: input.searchStart, end: input.searchEnd },
+          detected_cycle: input.cycle,
+        }) }] },
+      ],
+      text: { format: { type: "json_schema", name: "historical_case_summary", strict: true, schema } },
+    }),
+  });
+  if (!response.ok) throw new Error("국면 요약 생성에 실패했습니다. (" + response.status + ")");
+  const text = historicalOutputText(await response.json() as Record<string, unknown>);
+  if (!text) throw new Error("국면 요약 응답이 비어 있습니다.");
+  const parsed = JSON.parse(text) as { summary?: unknown };
+  return historicalSummary(parsed.summary);
+}
+
+async function historicalCyclesForWindow(admin: any, searchStart: string, searchEnd: string) {
+  const cycles: Record<string, ReturnType<typeof historicalCycleCandidate>> = {};
+  for (const code of HISTORICAL_INDEX_CODES) {
+    const { data, error } = await admin.from("market_index_prices")
+      .select("market_date,close")
+      .eq("index_code", code)
+      .gte("market_date", searchStart)
+      .lte("market_date", searchEnd)
+      .order("market_date", { ascending: true });
+    if (error) throw error;
+    try { cycles[code] = historicalCycleCandidate((data || []) as HistoricalPoint[]); } catch {}
+  }
+  return cycles;
+}
+
+async function reorderHistoricalCases(admin: any) {
+  const { data, error } = await admin.from("historical_cases")
+    .select("case_code,search_start").order("search_start", { ascending: true });
+  if (error) throw error;
+  const rows = data || [];
+  for (let i = 0; i < rows.length; i++) {
+    const { error: tempError } = await admin.from("historical_cases")
+      .update({ display_order: 1000 + i }).eq("case_code", rows[i].case_code);
+    if (tempError) throw tempError;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const { error: finalError } = await admin.from("historical_cases")
+      .update({ display_order: i + 1 }).eq("case_code", rows[i].case_code);
+    if (finalError) throw finalError;
+  }
+}
+
 function corsHeaders(origin: string | null) {
   return {
     "Access-Control-Allow-Origin": origin === ALLOWED_ORIGIN ? origin : ALLOWED_ORIGIN,
@@ -328,6 +492,108 @@ export default {
           recalculationError = error instanceof Error ? error.message : "분기 재계산 시작 요청에 실패했습니다.";
         }
         return json({ item: data, recalculation_dispatched: recalculationDispatched, recalculation_error: recalculationError || null }, 200, origin);
+      }
+
+
+      if (action === "preview_historical_case") {
+        const name = historicalCaseName(body?.case_name);
+        const primaryIndex = historicalIndex(body?.primary_index_code);
+        const searchStart = historicalDate(body?.search_start)!;
+        const searchEnd = historicalDate(body?.search_end)!;
+        if (searchStart >= searchEnd) return json({ error: "관찰 종료일은 시작일보다 뒤여야 합니다." }, 400, origin);
+        const cycles = await historicalCyclesForWindow(admin, searchStart, searchEnd);
+        const primaryCycle = cycles[primaryIndex];
+        if (!primaryCycle) return json({ error: "대표지수의 자동 피봇을 계산할 수 없습니다." }, 422, origin);
+        const summary = await generateHistoricalSummary({ name, primaryIndex, searchStart, searchEnd, cycle: primaryCycle });
+        return json({
+          summary,
+          cycles: HISTORICAL_INDEX_CODES.flatMap((indexCode) => cycles[indexCode] ? [{
+            index_code: indexCode, ...cycles[indexCode],
+          }] : []),
+        }, 200, origin);
+      }
+
+      if (action === "save_historical_case") {
+        const code = String(body?.case_code || "").trim();
+        const name = historicalCaseName(body?.case_name);
+        const primaryIndex = historicalIndex(body?.primary_index_code);
+        const searchStart = historicalDate(body?.search_start)!;
+        const searchEnd = historicalDate(body?.search_end, false);
+        if (searchEnd && searchStart >= searchEnd) return json({ error: "관찰 종료일은 시작일보다 뒤여야 합니다." }, 400, origin);
+        const summary = historicalSummary(body?.cycle_summary);
+        const rawCycles = Array.isArray(body?.cycles) ? body.cycles : [];
+        const cycles = rawCycles.map((item: any) => ({
+          index_code: historicalIndex(item?.index_code),
+          start_date: historicalDate(item?.start_date, false),
+          peak_date: historicalDate(item?.peak_date, false),
+          trough_date: historicalDate(item?.trough_date, false),
+        }));
+        const byIndex = new Map(cycles.map((item: any) => [item.index_code, item]));
+        if (!byIndex.get(primaryIndex)?.start_date) return json({ error: "대표지수 START가 필요합니다." }, 400, origin);
+        for (const item of cycles) {
+          const ordered = [item.start_date, item.peak_date, item.trough_date].filter(Boolean);
+          if (ordered.some((value, index) => index && value < ordered[index - 1])) {
+            return json({ error: item.index_code + " 기준점은 START → PEAK → TROUGH 순서여야 합니다." }, 400, origin);
+          }
+          if (item.start_date && item.start_date < searchStart) return json({ error: "기준점이 관찰 시작일보다 빠릅니다." }, 400, origin);
+          const lastPoint = item.trough_date || item.peak_date || item.start_date;
+          if (searchEnd && lastPoint && lastPoint > searchEnd) return json({ error: "기준점이 관찰 종료일보다 늦습니다." }, 400, origin);
+        }
+
+        let caseCode = code;
+        const now = new Date().toISOString();
+        if (caseCode) {
+          const { data: existing, error: existingError } = await admin.from("historical_cases")
+            .select("case_code").eq("case_code", caseCode).maybeSingle();
+          if (existingError) throw existingError;
+          if (!existing) return json({ error: "수정할 과거 국면을 찾을 수 없습니다." }, 404, origin);
+          const { error } = await admin.from("historical_cases").update({
+            case_name: name, primary_index_code: primaryIndex,
+            comparison_index_codes: HISTORICAL_INDEX_CODES.filter((item) => item !== primaryIndex),
+            search_start: searchStart, search_end: searchEnd, cycle_summary: summary,
+            updated_at: now, updated_by: user.id,
+          }).eq("case_code", caseCode);
+          if (error) throw error;
+        } else {
+          caseCode = "case_" + crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+          const { data: orderRows, error: orderError } = await admin.from("historical_cases")
+            .select("display_order").order("display_order", { ascending: false }).limit(1);
+          if (orderError) throw orderError;
+          const displayOrder = Number(orderRows?.[0]?.display_order || 0) + 1;
+          const { error } = await admin.from("historical_cases").insert({
+            case_code: caseCode, display_order: displayOrder, case_name: name,
+            primary_index_code: primaryIndex,
+            comparison_index_codes: HISTORICAL_INDEX_CODES.filter((item) => item !== primaryIndex),
+            search_start: searchStart, search_end: searchEnd, cycle_summary: summary,
+            updated_at: now, updated_by: user.id,
+          });
+          if (error) throw error;
+        }
+
+        const { error: deleteCyclesError } = await admin.from("historical_case_market_cycles")
+          .delete().eq("case_code", caseCode);
+        if (deleteCyclesError) throw deleteCyclesError;
+        if (cycles.length) {
+          const { error: cycleError } = await admin.from("historical_case_market_cycles").insert(cycles.map((item: any) => ({
+            case_code: caseCode, index_code: item.index_code,
+            start_date: item.start_date, peak_date: item.peak_date, trough_date: item.trough_date,
+            updated_at: now, updated_by: user.id,
+          })));
+          if (cycleError) throw cycleError;
+        }
+        await reorderHistoricalCases(admin);
+        return json({ saved: true, case_code: caseCode }, code ? 200 : 201, origin);
+      }
+
+      if (action === "delete_historical_case") {
+        const code = String(body?.case_code || "").trim();
+        if (!code) return json({ error: "삭제할 국면 식별자가 필요합니다." }, 400, origin);
+        const { data, error } = await admin.from("historical_cases").delete()
+          .eq("case_code", code).select("case_code").maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "삭제할 과거 국면을 찾을 수 없습니다." }, 404, origin);
+        await reorderHistoricalCases(admin);
+        return json({ deleted: true }, 200, origin);
       }
 
       if (action === "list_policy_reviews") {
