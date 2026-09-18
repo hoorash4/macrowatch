@@ -124,13 +124,13 @@
       drag.pointerId = event.pointerId;
       drag.startX = event.clientX;
       drag.startScrollLeft = frame.scrollLeft;
-      frame.setPointerCapture?.(event.pointerId);
     });
 
     frame.addEventListener('pointermove', (event) => {
       if (!drag.active || event.pointerId !== drag.pointerId) return;
       const delta = event.clientX - drag.startX;
       if (!drag.moved && Math.abs(delta) < 3) return;
+      if (!drag.moved) frame.setPointerCapture?.(event.pointerId);
       drag.moved = true;
       frame.classList.add('is-dragging');
       frame.scrollLeft = drag.startScrollLeft - delta;
