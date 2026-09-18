@@ -435,47 +435,89 @@ def prune_relative_micro_waves(
 # 3) Sideways detection from axis geometry.
 # ---------------------------------------------------------------------------
 
-def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]:
-    """Find long straight/near-straight sideways runs in O(n).
+def two_cluster_low_slope_cut(values: list[float]) -> float | None:
+    """Split normalized local slopes into low/high groups without a fixed cut."""
+    if not values:
+        return None
+    low = min(values)
+    high = max(values)
+    if abs(high - low) <= 1e-12:
+        return None
 
-    Local slope is computed only from normalized X/Y.  A candidate must stay in
-    the low-slope half of this chart for a long X share, have a Y range below
-    the same-chart material swing scale, and make little net progress across
-    that range.  This catches obvious long flats without mistaking a broad V
-    for sideways.
+    for _ in range(20):
+        low_group = [v for v in values if abs(v - low) <= abs(v - high)]
+        high_group = [v for v in values if abs(v - low) > abs(v - high)]
+        if not low_group or not high_group:
+            return None
+        new_low = sum(low_group) / len(low_group)
+        new_high = sum(high_group) / len(high_group)
+        if abs(new_low - low) + abs(new_high - high) <= 1e-12:
+            low, high = new_low, new_high
+            break
+        low, high = new_low, new_high
+
+    if low > high:
+        low, high = high, low
+    return (low + high) / 2.0
+
+
+def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]:
+    """Find long straight/near-straight sideways runs from normalized slopes.
+
+    The low-slope class is learned from this chart itself.  No fixed raw-value
+    threshold is used.  Long/short comes from normalized X share.
     """
     steps: list[tuple[int, float]] = []
+    slopes: list[float] = []
     for i in range(v0 + 1, v1 + 1):
         dx = x_share(points, i - 1, i)
         if dx <= 0:
             continue
-        steps.append((i, y_share(points, i - 1, i) / dx))
+        slope = y_share(points, i - 1, i) / dx
+        steps.append((i, slope))
+        slopes.append(slope)
     if not steps:
         return []
 
-    low_slope = median([slope for _, slope in steps])
-    candidates: list[Box] = []
+    cut = two_cluster_low_slope_cut(slopes)
+    if cut is None:
+        return []
 
+    candidates: list[Box] = []
     run_start: int | None = None
     previous_i: int | None = None
 
     def consider(start_point: int, end_point: int) -> None:
         if end_point <= start_point:
             return
+        # A visible-edge monotonic leg is not called a flat box merely because
+        # its local slope belongs to the lower cluster. Edge structure is
+        # validated separately with indicator buffer context.
+        if start_point == v0 or end_point == v1:
+            return
+
         width = x_share(points, start_point, end_point)
         if width < scale.long_x:
             return
-        ys = [points[i].y for i in range(start_point, end_point + 1)]
-        y_range = max(ys) - min(ys)
-        if y_range >= scale.material_y:
+
+        travel = sum(
+            y_share(points, i - 1, i)
+            for i in range(start_point + 1, end_point + 1)
+        )
+        if travel <= 1e-12:
+            candidates.append(Box(start_point, end_point, "flat"))
             return
+
         net = y_share(points, start_point, end_point)
-        if y_range > 0 and net > y_range * 0.5:
+        # Directional efficiency is used ONLY here because sideways is
+        # specifically a question of progress versus back-and-forth/stalling.
+        if net / travel > 0.5:
             return
+
         candidates.append(Box(start_point, end_point, "flat"))
 
     for i, slope in steps:
-        if slope <= low_slope:
+        if slope <= cut:
             if run_start is None:
                 run_start = i - 1
             previous_i = i
