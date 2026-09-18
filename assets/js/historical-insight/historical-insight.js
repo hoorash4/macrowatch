@@ -4,7 +4,7 @@
   const status=$('historical-chart-status'),meta=$('historical-chart-meta'),message=$('historical-chart-message'),retry=$('historical-chart-retry'),fullRange=$('historical-chart-full-range'),caseRange=$('historical-chart-case-range');
   const marketButtons=[...document.querySelectorAll('[data-historical-index]')],modeButtons=[...document.querySelectorAll('[data-historical-mode]')];
   const indexData=window.MacroWatchHistoricalData,cycleData=window.MacroWatchHistoricalCycles,indicatorData=window.MacroWatchHistoricalIndicators,indicatorAnalysis=window.MacroWatchHistoricalIndicatorAnalysis,selectionApi=window.MacroWatchHistoricalIndicatorSelection;
-  let activeCode='NASDAQ_COMPOSITE',activeCase=null,activeMode='history',activeHistoricalCode=null,cases=[],currentSettings={currentName:'현재 국면 관찰 중'},currentSource=null,currentModel=null,requestToken=0,indexRepository,caseRepository,indicatorRepository,chart,activeRows=[],currentUser=null,isAdmin=false;
+  let activeCode='NASDAQ_COMPOSITE',activeCase=null,activeMode='history',activeHistoricalCode=null,cases=[],currentSettings={currentName:'현재 국면 관찰 중'},currentSource=null,currentModel=null,requestToken=0,indexRepository,caseRepository,indicatorRepository,chart,activeRows=[],currentUser=null,isAdmin=false,functionClient=null,deleteCaseCode=null;
   let analysisCache=new Map(),visibleIndicators=[],selection=selectionApi?.create(),activeIndicatorContext=null;
 
   function state(kind,text){host.dataset.state=kind;host.setAttribute('aria-busy',String(kind==='loading'));status.textContent=text;message.textContent=kind==='ready'?'':text;message.hidden=kind==='ready';retry.hidden=kind!=='error';fullRange.disabled=caseRange.disabled=kind!=='ready';}
@@ -15,7 +15,86 @@
   function showCycle(item,cycle,metrics){const panel=$('historical-cycle-panel');panel.hidden=activeMode==='current';$('historical-cycle-state').textContent=cycle.status==='confirmed'?'CONFIRMED CYCLE':cycle.status==='in_progress'?'IN PROGRESS':'DRAFT';$('historical-cycle-name').textContent=item.name;$('historical-cycle-market').textContent=indexData.indices[cycle.indexCode]||cycle.indexCode;$('historical-search-range').textContent=`관찰 범위 ${item.searchStart} ~ ${item.searchEnd||'현재'}`;$('historical-cycle-description').textContent=item.summary;formatPoint('start',metrics.start);formatPoint('peak',metrics.peak);formatPoint('trough',metrics.trough);$('historical-rise').textContent=percentage(metrics.rise);$('historical-fall').textContent=percentage(metrics.fall);$('historical-rise-days').textContent=duration(metrics.riseDays);$('historical-fall-days').textContent=duration(metrics.fallDays);showCurrentAnchors(cycle);if(isAdmin){$('historical-cycle-editor').hidden=activeMode==='current';$('historical-start-date').value=cycle.startDate||'';$('historical-peak-date').value=cycle.peakDate||'';$('historical-trough-date').value=cycle.troughDate||'';$('historical-cycle-save-status').textContent='';}}
   const isCurrentCase=item=>Object.values(item.markets).some(cycle=>cycle.status!=='confirmed'),isHistoricalCase=item=>Object.values(item.markets).length>0&&Object.values(item.markets).every(cycle=>cycle.status==='confirmed');
   function rebuildCurrentModel(){currentSource=cases.filter(isCurrentCase).sort((a,b)=>b.order-a.order)[0]||null;if(currentSource){currentModel=currentSource;return currentModel;}const troughs=cases.filter(isHistoricalCase).flatMap(item=>Object.values(item.markets).map(cycle=>cycle.troughDate).filter(Boolean)),searchStart=troughs.sort().at(-1)||'1990-01-01',markets=Object.freeze(Object.fromEntries(Object.keys(indexData.indices).map(indexCode=>[indexCode,Object.freeze({caseCode:'__current_monitoring__',indexCode,startDate:null,peakDate:null,troughDate:null,status:'draft'})])));currentModel=Object.freeze({code:'__current_monitoring__',order:Number.MAX_SAFE_INTEGER,name:currentSettings.currentName,primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart,searchEnd:null,summary:'과거 선행 지표의 최신 피봇을 상시 관찰합니다.',markets});return currentModel;}
-  function renderCaseList(){const root=$('historical-case-list');root.replaceChildren();for(const item of cases.filter(isHistoricalCase)){const button=document.createElement('button');button.type='button';button.className='historical-case';button.dataset.historicalCase=item.code;const label=document.createElement('span'),badge=document.createElement('small');label.textContent=item.name;badge.textContent='확정';button.append(label,badge);button.addEventListener('click',()=>selectCase(item.code));root.append(button);}}
+
+  const caseIndexCodes=()=>Object.keys(indexData.indices);
+  function renderCaseCycleRows(cycles={}){
+    const root=$('historical-case-cycle-grid');if(!root)return;root.replaceChildren();
+    for(const code of caseIndexCodes()){
+      const cycle=cycles[code]||{},row=document.createElement('div');row.className='historical-case-cycle-row';row.dataset.caseCycleIndex=code;
+      const title=document.createElement('strong');title.textContent=indexData.indices[code]||code;row.append(title);
+      for(const [key,label] of [['startDate','START'],['peakDate','PEAK'],['troughDate','TROUGH']]){
+        const field=document.createElement('label'),input=document.createElement('input');field.textContent=label;input.type='date';input.dataset.caseCycleField=key;input.value=cycle[key]||'';field.append(input);row.append(field);
+      }
+      root.append(row);
+    }
+  }
+  function closeCaseModal(){$('historical-case-modal').hidden=true;$('historical-case-save-status').textContent='';$('historical-case-auto-status').textContent='';}
+  function openCaseModal(item=null){
+    if(!isAdmin)return;
+    $('historical-case-modal-title').textContent=item?'과거 국면 수정':'과거 국면 추가';
+    $('historical-case-code').value=item?.code||'';
+    $('historical-case-name').value=item?.name||'';
+    $('historical-case-primary-index').value=item?.primaryIndex||'NASDAQ_COMPOSITE';
+    $('historical-case-search-start').value=item?.searchStart||'';
+    $('historical-case-search-end').value=item?.searchEnd||'';
+    $('historical-case-summary').value=item?.summary||'';
+    renderCaseCycleRows(item?.markets||{});
+    $('historical-case-save-status').textContent='';
+    $('historical-case-auto-status').textContent='';
+    $('historical-case-modal').hidden=false;
+    $('historical-case-name').focus();
+  }
+  function caseCyclesFromForm(){
+    return [...document.querySelectorAll('[data-case-cycle-index]')].map(row=>({
+      index_code:row.dataset.caseCycleIndex,
+      start_date:row.querySelector('[data-case-cycle-field="startDate"]')?.value||null,
+      peak_date:row.querySelector('[data-case-cycle-field="peakDate"]')?.value||null,
+      trough_date:row.querySelector('[data-case-cycle-field="troughDate"]')?.value||null,
+    }));
+  }
+  function applyPreviewCycles(items){
+    const byCode=new Map((items||[]).map(item=>[item.index_code,item]));
+    for(const row of document.querySelectorAll('[data-case-cycle-index]')){
+      const item=byCode.get(row.dataset.caseCycleIndex);if(!item)continue;
+      row.querySelector('[data-case-cycle-field="startDate"]').value=item.start_date||'';
+      row.querySelector('[data-case-cycle-field="peakDate"]').value=item.peak_date||'';
+      row.querySelector('[data-case-cycle-field="troughDate"]').value=item.trough_date||'';
+    }
+  }
+  async function previewHistoricalCase(){
+    if(!isAdmin||!functionClient)return;
+    const button=$('historical-case-auto-analyze'),output=$('historical-case-auto-status');
+    const payload={action:'preview_historical_case',case_name:$('historical-case-name').value,primary_index_code:$('historical-case-primary-index').value,search_start:$('historical-case-search-start').value,search_end:$('historical-case-search-end').value};
+    button.disabled=true;output.textContent='피봇 계산·요약 생성 중';
+    try{const result=await functionClient.invoke('admin-control',payload);applyPreviewCycles(result.cycles);$('historical-case-summary').value=result.summary||'';output.textContent='자동 후보 생성 완료 · 확인 후 저장';}
+    catch(error){output.textContent='자동 분석 오류: '+(error?.message||'알 수 없는 오류');}
+    finally{button.disabled=false;}
+  }
+  async function reloadHistoricalCases(preferredCode=null){
+    caseRepository=cycleData.createRepository(window.macroWatchSupabase);cases=await caseRepository.load();analysisCache.clear();rebuildCurrentModel();renderCaseList();updateModeAvailability();
+    const historical=cases.filter(isHistoricalCase),target=historical.find(item=>item.code===preferredCode)||historical.find(item=>item.code===activeHistoricalCode)||historical[0];
+    if(target){activeHistoricalCode=target.code;activeMode='history';await selectCase(target.code);}
+  }
+  async function saveHistoricalCase(event){
+    event.preventDefault();if(!isAdmin||!functionClient)return;
+    const button=$('historical-case-save'),output=$('historical-case-save-status');button.disabled=true;output.textContent='저장 중';
+    try{
+      const result=await functionClient.invoke('admin-control',{action:'save_historical_case',case_code:$('historical-case-code').value,case_name:$('historical-case-name').value,primary_index_code:$('historical-case-primary-index').value,search_start:$('historical-case-search-start').value,search_end:$('historical-case-search-end').value||null,cycle_summary:$('historical-case-summary').value,cycles:caseCyclesFromForm()});
+      closeCaseModal();await reloadHistoricalCases(result.case_code);
+    }catch(error){output.textContent='저장 오류: '+(error?.message||'알 수 없는 오류');}
+    finally{button.disabled=false;}
+  }
+  function openDeleteCase(item){
+    if(!isAdmin)return;deleteCaseCode=item.code;$('historical-case-delete-message').textContent='"'+item.name+'" 국면과 연결된 피봇·AI 분석 결과를 함께 삭제합니다.';$('historical-case-delete-status').textContent='';$('historical-case-delete-modal').hidden=false;
+  }
+  async function confirmDeleteCase(){
+    if(!deleteCaseCode||!functionClient)return;const button=$('historical-case-delete-confirm'),output=$('historical-case-delete-status');button.disabled=true;output.textContent='삭제 중';
+    try{await functionClient.invoke('admin-control',{action:'delete_historical_case',case_code:deleteCaseCode});const removed=deleteCaseCode;deleteCaseCode=null;$('historical-case-delete-modal').hidden=true;if(activeHistoricalCode===removed)activeHistoricalCode=null;await reloadHistoricalCases();}
+    catch(error){output.textContent='삭제 오류: '+(error?.message||'알 수 없는 오류');}
+    finally{button.disabled=false;}
+  }
+  function renderCaseList(){const root=$('historical-case-list');root.replaceChildren();for(const item of cases.filter(isHistoricalCase)){const row=document.createElement('div');row.className='historical-case-row';const button=document.createElement('button');button.type='button';button.className='historical-case';button.dataset.historicalCase=item.code;const label=document.createElement('span'),badge=document.createElement('small');label.textContent=item.name;badge.textContent='확정';button.append(label,badge);button.addEventListener('click',()=>selectCase(item.code));row.append(button);if(isAdmin){const actions=document.createElement('span');actions.className='historical-case-actions';const edit=document.createElement('button'),del=document.createElement('button');edit.type=del.type='button';edit.innerHTML='<i class="fa-solid fa-pen"></i>';del.innerHTML='<i class="fa-solid fa-trash"></i>';edit.title='수정';del.title='삭제';del.className='is-delete';edit.addEventListener('click',()=>openCaseModal(item));del.addEventListener('click',()=>openDeleteCase(item));actions.append(edit,del);row.append(actions);}root.append(row);}}
+
   function activeCaseButton(){document.querySelectorAll('[data-historical-case]').forEach(button=>button.classList.toggle('is-active',button.dataset.historicalCase===activeCase?.code));}
   function focusCase(){if(!chart||!activeRows.length||!activeCase)return;const cycle=cycleData.marketCycle(activeCase,activeCode);const from=cycle.startDate||activeCase.searchStart;const to=cycle.troughDate || cycle.peakDate || activeRows.at(-1).time;chart.focus(from,to,.12);}
   function indicatorLoading(text='비교 지표 분석 중'){const root=$('historical-indicator-list');if(root){root.replaceChildren();const p=document.createElement('p');p.className='historical-indicator-empty';p.textContent=text;root.append(p);}}
@@ -44,8 +123,15 @@
   function closeCurrentNameEditor(){const form=$('historical-current-name-form');form.hidden=true;$('historical-current-name-status').textContent='';}
   async function saveAnchors(values,output){if(!isAdmin||!activeCase)return;const savedCode=activeCase.code;output.textContent='저장 중';try{const rows=await indexRepository.load(activeCode);cycleData.calculate(activeCase,{...cycleData.marketCycle(activeCase,activeCode),...values},rows);await caseRepository.save(savedCode,activeCode,values,currentUser.id);cases=await caseRepository.load();const updated=cases.find(item=>item.code===savedCode);analysisCache.clear();rebuildCurrentModel();renderCaseList();updateModeAvailability();if(isHistoricalCase(updated))activeHistoricalCode=updated.code;await setMode(isCurrentCase(updated)?activeMode:'history');output.textContent='저장 완료';}catch(error){output.textContent=`저장 오류: ${error?.message||'알 수 없는 오류'}`;}}
   function setMode(mode){const available=cases.filter(isHistoricalCase);if(mode==='history'&&!available.length)return;activeMode=mode;for(const button of modeButtons){const selected=button.dataset.historicalMode===mode;button.classList.toggle('is-active',selected);button.setAttribute('aria-selected',String(selected));}const currentMode=mode==='current';$('historical-stage').classList.toggle('is-current-mode',currentMode);$('historical-past-sidebar').hidden=currentMode;$('historical-current-sidebar').hidden=!currentMode;$('historical-toolbar-title').textContent=currentMode?'현재 국면 차트':'과거 국면 차트';closeCurrentNameEditor();const desired=currentMode?rebuildCurrentModel():available.find(item=>item.code===activeHistoricalCode)||available[0];if(currentMode){$('historical-current-case-name').textContent=desired.name;$('historical-current-case-state').textContent=currentSource?'진행 중':'상시 관찰';$('historical-current-name-edit').hidden=!isAdmin;}return selectCase(desired.code);}
-  async function initialize(){try{if(!indexData||!cycleData||!window.MacroWatchFrontend)throw new Error('화면 모듈을 불러오지 못했습니다.');const client=window.macroWatchSupabase||window.MacroWatchFrontend.createSupabaseClient();if(!client)throw new Error('데이터 연결을 확인해 주세요.');window.macroWatchSupabase=client;indexRepository=indexData.createRepository(client);caseRepository=cycleData.createRepository(client);if(indicatorData)indicatorRepository=indicatorData.createRepository(client);const {data:authData,error:authError}=await client.auth.getSession();if(authError)throw authError;currentUser=authData.session?.user||null;if(!currentUser)throw new Error('로그인이 필요합니다.');const [{data:account,error:accountError},loadedCases,loadedSettings]=await Promise.all([client.from('user_accounts').select('is_admin').eq('user_id',currentUser.id).maybeSingle(),caseRepository.load(),caseRepository.loadCurrentSettings()]);isAdmin=!accountError&&account?.is_admin===true;cases=loadedCases;currentSettings=loadedSettings;rebuildCurrentModel();renderCaseList();const historicalCases=cases.filter(isHistoricalCase);updateModeAvailability();setMode(historicalCases.length?'history':'current');}catch(error){state('error','Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');console.error('[Historical Insight]',error);}}
+  async function initialize(){try{if(!indexData||!cycleData||!window.MacroWatchFrontend)throw new Error('화면 모듈을 불러오지 못했습니다.');const client=window.macroWatchSupabase||window.MacroWatchFrontend.createSupabaseClient();if(!client)throw new Error('데이터 연결을 확인해 주세요.');window.macroWatchSupabase=client;indexRepository=indexData.createRepository(client);caseRepository=cycleData.createRepository(client);if(indicatorData)indicatorRepository=indicatorData.createRepository(client);const {data:authData,error:authError}=await client.auth.getSession();if(authError)throw authError;currentUser=authData.session?.user||null;if(!currentUser)throw new Error('로그인이 필요합니다.');const [{data:account,error:accountError},loadedCases,loadedSettings]=await Promise.all([client.from('user_accounts').select('is_admin').eq('user_id',currentUser.id).maybeSingle(),caseRepository.load(),caseRepository.loadCurrentSettings()]);isAdmin=!accountError&&account?.is_admin===true;functionClient=window.MacroWatchFrontend.createFunctionClient(client);$('historical-case-add').hidden=!isAdmin;cases=loadedCases;currentSettings=loadedSettings;rebuildCurrentModel();renderCaseList();const historicalCases=cases.filter(isHistoricalCase);updateModeAvailability();setMode(historicalCases.length?'history':'current');}catch(error){state('error','Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');console.error('[Historical Insight]',error);}}
   modeButtons.forEach(button=>button.addEventListener('click',()=>setMode(button.dataset.historicalMode)));marketButtons.forEach(button=>button.addEventListener('click',()=>activeCase&&render(button.dataset.historicalIndex)));
+  $('historical-case-add').addEventListener('click',()=>openCaseModal());
+  $('historical-case-modal-close').addEventListener('click',closeCaseModal);
+  $('historical-case-cancel').addEventListener('click',closeCaseModal);
+  $('historical-case-auto-analyze').addEventListener('click',previewHistoricalCase);
+  $('historical-case-form').addEventListener('submit',saveHistoricalCase);
+  $('historical-case-delete-cancel').addEventListener('click',()=>{deleteCaseCode=null;$('historical-case-delete-modal').hidden=true;});
+  $('historical-case-delete-confirm').addEventListener('click',confirmDeleteCase);
   $('historical-indicator-clear').addEventListener('click',clearIndicatorSelection);
   $('historical-cycle-form').addEventListener('submit',event=>{event.preventDefault();saveAnchors({startDate:$('historical-start-date').value,peakDate:$('historical-peak-date').value,troughDate:$('historical-trough-date').value},$('historical-cycle-save-status'));});
   $('historical-current-anchor-form').addEventListener('submit',event=>{event.preventDefault();saveAnchors({startDate:$('historical-current-start-date').value,peakDate:$('historical-current-peak-date').value,troughDate:$('historical-current-trough-date').value},$('historical-current-anchor-save-status'));});
