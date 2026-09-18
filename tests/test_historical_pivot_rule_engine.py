@@ -29,7 +29,7 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
 
     def test_tiny_pullback_after_large_rise_is_not_structural(self):
         # The 2-3% chart-height wiggle beside the high must disappear.
-        values = [0, 20, 40, 60, 80, 100, 98, 99, 97, 80, 60, 40, 20]
+        values = [0, 20, 40, 60, 80, 100, 98, 99, 97, 94, 90, 86, 82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42, 38, 34, 30, 26, 22, 18, 14, 10]
         result = self.analyze(values)
         structural_values = {pivot["value"] for pivot in result["pivots"] if pivot["grade"] in {"A", "B"}}
         self.assertNotIn(98.0, structural_values)
