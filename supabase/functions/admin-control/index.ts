@@ -530,6 +530,14 @@ export default {
         }));
         const byIndex = new Map(cycles.map((item: any) => [item.index_code, item]));
         if (!byIndex.get(primaryIndex)?.start_date) return json({ error: "대표지수 START가 필요합니다." }, 400, origin);
+        if (searchEnd) {
+          for (const indexCode of HISTORICAL_INDEX_CODES) {
+            const item = byIndex.get(indexCode);
+            if (!item?.start_date || !item?.peak_date || !item?.trough_date) {
+              return json({ error: indexCode + "의 START / PEAK / TROUGH를 모두 확인해 주세요." }, 400, origin);
+            }
+          }
+        }
         for (const item of cycles) {
           const ordered = [item.start_date, item.peak_date, item.trough_date].filter(Boolean);
           if (ordered.some((value, index) => index && value < ordered[index - 1])) {
@@ -570,15 +578,12 @@ export default {
           if (error) throw error;
         }
 
-        const { error: deleteCyclesError } = await admin.from("historical_case_market_cycles")
-          .delete().eq("case_code", caseCode);
-        if (deleteCyclesError) throw deleteCyclesError;
         if (cycles.length) {
-          const { error: cycleError } = await admin.from("historical_case_market_cycles").insert(cycles.map((item: any) => ({
+          const { error: cycleError } = await admin.from("historical_case_market_cycles").upsert(cycles.map((item: any) => ({
             case_code: caseCode, index_code: item.index_code,
             start_date: item.start_date, peak_date: item.peak_date, trough_date: item.trough_date,
             updated_at: now, updated_by: user.id,
-          })));
+          })), { onConflict: "case_code,index_code" });
           if (cycleError) throw cycleError;
         }
         await reorderHistoricalCases(admin);
