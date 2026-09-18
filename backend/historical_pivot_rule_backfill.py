@@ -262,6 +262,33 @@ def ordered_turns(points: list[Point], visible_start: int, visible_end: int) -> 
     return sorted(raw, key=lambda item: item.index)
 
 
+def context_turns(points: list[Point], raw: list[Turn], visible_start: int, visible_end: int) -> list[Turn]:
+    """Add visible endpoints as context anchors only; they are never emitted as pivots."""
+    if raw:
+        start_kind = "low" if raw[0].kind == "high" else "high"
+        end_kind = "low" if raw[-1].kind == "high" else "high"
+    else:
+        rising = points[visible_end].y >= points[visible_start].y
+        start_kind = "low" if rising else "high"
+        end_kind = "high" if rising else "low"
+    sequence = [Turn(visible_start, start_kind), *raw, Turn(visible_end, end_kind)]
+
+    collapsed: list[Turn] = []
+    for turn in sequence:
+        if collapsed and collapsed[-1].index == turn.index:
+            collapsed[-1] = turn
+            continue
+        if collapsed and collapsed[-1].kind == turn.kind:
+            prior = collapsed[-1]
+            if (turn.kind == "high" and points[turn.index].y >= points[prior.index].y) or (
+                turn.kind == "low" and points[turn.index].y <= points[prior.index].y
+            ):
+                collapsed[-1] = turn
+        else:
+            collapsed.append(turn)
+    return collapsed
+
+
 def leg_y(points: list[Point], left: Turn, right: Turn) -> float:
     return abs(points[right.index].y - points[left.index].y)
 
@@ -288,25 +315,39 @@ def continuation_direction(points: list[Point], four: list[Turn]) -> str | None:
 def compress_continuations(points: list[Point], turns: list[Turn]) -> list[Turn]:
     """Merge HH/HL and LH/LL internal waves before reversal validation."""
     out = list(turns)
+
+    def collapse_same_kind(items: list[Turn]) -> list[Turn]:
+        collapsed: list[Turn] = []
+        for turn in items:
+            if collapsed and collapsed[-1].kind == turn.kind:
+                prior = collapsed[-1]
+                if (turn.kind == "high" and points[turn.index].y >= points[prior.index].y) or (
+                    turn.kind == "low" and points[turn.index].y <= points[prior.index].y
+                ):
+                    collapsed[-1] = turn
+            else:
+                collapsed.append(turn)
+        return collapsed
+
     changed = True
     while changed and len(out) >= 4:
         changed = False
         for i in range(len(out) - 3):
             if continuation_direction(points, out[i:i + 4]):
                 del out[i + 1:i + 3]
+                out = collapse_same_kind(out)
                 changed = True
                 break
     return out
 
 
-def validate_reversals(points: list[Point], turns: list[Turn]) -> tuple[list[Turn], list[Turn]]:
+def validate_reversals(points: list[Point], turns: list[Turn]) -> tuple[list[Turn], list[tuple[Turn, float, float]]]:
     """Validate every candidate reversal on the frozen Y axis.
 
-    This is where 'large/small enough to matter' is decided.  Candidate finding
-    itself does not use the threshold.
+    Candidate discovery and importance validation are deliberately separate.
     """
     accepted = list(turns)
-    review: list[Turn] = []
+    review: list[tuple[Turn, float, float]] = []
 
     changed = True
     while changed and len(accepted) >= 3:
@@ -318,12 +359,11 @@ def validate_reversals(points: list[Point], turns: list[Turn]) -> tuple[list[Tur
             visual_reversal = min(incoming, outgoing)
 
             if visual_reversal < REVERSAL_REVIEW_Y_SHARE:
-                # Visually tiny on the frozen Y axis: merge it away.
                 del accepted[i]
                 changed = True
                 break
             if visual_reversal < REVERSAL_MIN_Y_SHARE:
-                review.append(current)
+                review.append((current, incoming, outgoing))
                 del accepted[i]
                 changed = True
                 break
@@ -483,11 +523,13 @@ def structure(points: list[Point]) -> dict[str, Any]:
 
     v0, v1 = visible[0], visible[-1]
     raw = ordered_turns(points, v0, v1)
+    directional_candidates = context_turns(points, raw, v0, v1)
 
     # 1) Exact extrema first.
-    # 2) Discover big directional flow via HH/HL and LH/LL.
-    # 3) Validate reversal magnitude on fixed Y axis.
-    compressed = compress_continuations(points, raw)
+    # 2) Add endpoints only as context anchors.
+    # 3) Discover big directional flow via HH/HL and LH/LL.
+    # 4) Validate reversal magnitude on the frozen Y axis.
+    compressed = compress_continuations(points, directional_candidates)
     validated, review_turns = validate_reversals(points, compressed)
 
     # Sideways is a regime hypothesis, not a by-product of local-turn count.
@@ -496,7 +538,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
     boxes = merge_sideways(points, [*flat_boxes, *oscillatory_boxes])
 
     # Spike is an explicit exceptional-shape rule and therefore uses X/Y shares.
-    spikes = find_spikes(points, raw)
+    spikes = find_spikes(points, directional_candidates)
     spike_indices = {turn.index for triple in spikes for turn in triple}
 
     accepted: dict[int, dict[str, Any]] = {}
@@ -521,7 +563,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
         }
 
     # D only for genuine reversal candidates that narrowly fail the Y-axis check.
-    for turn in review_turns:
+    for turn, incoming, outgoing in review_turns:
         if turn.index in accepted:
             continue
         accepted[turn.index] = {
@@ -529,9 +571,9 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "type": "review_required",
             "grade": "D",
             "reason": (
-                f"D: 방향 반전 후보는 맞지만 인접 움직임 중 작은 쪽이 고정 Y축의 "
-                f"{min(REVERSAL_MIN_Y_SHARE, max(REVERSAL_REVIEW_Y_SHARE, 0))*100:.0f}% 전후 구간이라 "
-                "구조적 반전으로 자동 확정하지 않고 보류."
+                f"D: 방향 반전 후보는 맞지만 반전 전·후 움직임이 고정 Y축의 "
+                f"{incoming*100:.1f}%와 {outgoing*100:.1f}%라 구조적 반전으로 자동 확정하기엔 "
+                "시각적 비중이 경계구간에 있어 보류."
             ),
         }
 
