@@ -463,7 +463,7 @@ def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]
                 dx = x_share(points, i - 1, i)
                 if dx > 0:
                     local_slopes.append(y_share(points, i - 1, i) / dx)
-            if not local_slopes or median(local_slopes) > low_slope:
+            if not local_slopes or quantile(local_slopes, 0.75) > low_slope:
                 continue
 
             ys = [points[i].y for i in range(start, end + 1)]
