@@ -34,6 +34,13 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
         result=self.analyze(values)
         self.assertTrue(result["sideways_boundaries"])
 
+
+    def test_repeated_large_oscillations_are_box_not_spikes(self):
+        values=[10,90,12,88,11,92,14,86,13,89,12,91,15,85]
+        result=self.analyze(values)
+        self.assertTrue(result["sideways_boundaries"])
+        self.assertFalse(any(p["type"]=="spike_extreme" for p in result["pivots"]))
+
     def test_straight_flat_long_box_is_sideways(self):
         values=[50,30,15,10,10.2,9.9,10.1,10,10.2,9.8,10,10.1,10,20,40,70,95]
         result=self.analyze(values)
