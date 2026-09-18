@@ -41,6 +41,7 @@ SPIKE_MAX_X_SHARE = 0.15
 # A sideways interval must have enough alternating turns to establish that it
 # is a regime rather than one ordinary correction.
 SIDEWAYS_MIN_EXTREMA = 6
+LONG_SIDEWAYS_MIN_X_SHARE = 0.20
 
 
 @dataclass(frozen=True)
@@ -317,8 +318,11 @@ def detect_sideways(points: list[Point], raw: list[Turn], compressed: list[Turn]
         left_x = points[start_turn.index].x - points[previous.index].x if previous else None
         right_x = points[following.index].x - points[end_turn.index].x if following else None
         long_box = bool(
-            left_x is not None and right_x is not None
-            and box_x >= left_x and box_x >= right_x
+            box_x >= LONG_SIDEWAYS_MIN_X_SHARE
+            or (
+                left_x is not None and right_x is not None
+                and box_x >= left_x and box_x >= right_x
+            )
         )
         reversal_box = bool(
             entry_direction in {"up", "down"} and exit_direction in {"up", "down"}
