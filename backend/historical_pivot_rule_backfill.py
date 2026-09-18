@@ -500,12 +500,32 @@ def merge_boxes(points: list[Point], boxes: list[Box]) -> list[Box]:
         prior = out[-1]
         if box.mode == prior.mode == "flat":
             out[-1] = Box(min(prior.start_index, box.start_index), max(prior.end_index, box.end_index), "flat")
+        elif prior.mode == "flat" and box.mode == "oscillatory":
+            # A directly observed flat interval is stronger evidence than a
+            # broad oscillatory interpretation that merely overlaps it.
+            continue
+        elif prior.mode == "oscillatory" and box.mode == "flat":
+            out[-1] = box
         else:
             prior_x = x_share(points, prior.start_index, prior.end_index)
             box_x = x_share(points, box.start_index, box.end_index)
             if box_x > prior_x:
                 out[-1] = box
     return out
+
+
+def path_direction_changes(points: list[Point], start: int, end: int) -> int:
+    previous = 0
+    changes = 0
+    for i in range(start + 1, end + 1):
+        delta = points[i].y - points[i - 1].y
+        direction = 1 if delta > 0 else -1 if delta < 0 else 0
+        if direction == 0:
+            continue
+        if previous and direction != previous:
+            changes += 1
+        previous = direction
+    return changes
 
 
 def box_survives(points: list[Point], box: Box, skeleton: list[Turn], scale: Scale) -> bool:
@@ -515,6 +535,12 @@ def box_survives(points: list[Point], box: Box, skeleton: list[Turn], scale: Sca
     # durations on this same chart.
     if width >= scale.long_x:
         return True
+
+    # A short interval is not a "box" merely because a tiny top/bottom wiggle
+    # happens to fit inside a narrow Y range. It needs repeated sideways
+    # behavior before the short-box reversal rule is even considered.
+    if path_direction_changes(points, box.start_index, box.end_index) < 3:
+        return False
 
     before = next((t for t in reversed(skeleton) if t.index < box.start_index), None)
     after = next((t for t in skeleton if t.index > box.end_index), None)
@@ -651,6 +677,35 @@ def structure(points: list[Point]) -> dict[str, Any]:
                 f"A: {'상승→하락' if turn.kind == 'high' else '하락→상승'} 구조적 반전. "
                 f"반전 전·후 이동은 고정 Y축의 {incoming*100:.1f}%와 {outgoing*100:.1f}%이고, "
                 f"이 지표의 동일 차트 기준 전형적 스윙은 {scale.typical_y*100:.1f}%라 둘 다 이를 넘어 구조점으로 유지."
+            ),
+        }
+
+    # Visible global high/low are exact-extrema candidates by construction.
+    # If both sides occupy at least the same-chart typical Y swing, they are
+    # structural even when continuation compression would otherwise hide them.
+    global_high = max(range(v0, v1 + 1), key=lambda idx: points[idx].y)
+    global_low = min(range(v0, v1 + 1), key=lambda idx: points[idx].y)
+    skeleton_indices = [turn.index for turn in skeleton]
+    for idx, kind in ((global_high, "high"), (global_low, "low")):
+        if idx in accepted:
+            continue
+        left = next((turn for turn in reversed(skeleton) if turn.index < idx), None)
+        right = next((turn for turn in skeleton if turn.index > idx), None)
+        if not left or not right:
+            continue
+        incoming = y_share(points, left.index, idx)
+        outgoing = y_share(points, idx, right.index)
+        if incoming < scale.typical_y or outgoing < scale.typical_y:
+            continue
+        accepted[idx] = {
+            "turn": Turn(idx, kind),
+            "type": "major_reversal",
+            "grade": "A",
+            "reason": (
+                f"A: {'상승→하락' if kind == 'high' else '하락→상승'} 구조적 반전. "
+                f"정확한 가시구간 {'최고점' if kind == 'high' else '최저점'}이며, "
+                f"반전 전·후 이동은 고정 Y축의 {incoming*100:.1f}%와 {outgoing*100:.1f}%로 "
+                f"같은 차트의 전형적 스윙 {scale.typical_y*100:.1f}%를 모두 넘어 유지."
             ),
         }
 
