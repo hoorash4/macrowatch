@@ -37,7 +37,7 @@ permissions:
 
 concurrency:
   group: historical-pivot-rule-backfill
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   backfill:
