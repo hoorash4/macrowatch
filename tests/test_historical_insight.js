@@ -285,12 +285,12 @@ test('current screening bounds retrospective validation and ignores zero-score n
 });
 
 
-test('comparison indicators live in a dedicated right rail beside the Historical chart', () => {
+test('comparison indicators are narrow and limited to the Historical chart row', () => {
   const html=read('historical-insight.html');
   const css=read('assets/css/historical-insight.css');
-  assert.match(html,/class="historical-workspace"[\s\S]*class="historical-indicator-rail"/);
-  assert.match(html,/historical-indicator-rail[\s\S]*id="historical-indicator-section"/);
-  assert.doesNotMatch(html,/historical-case-panel[\s\S]*id="historical-indicator-section"[\s\S]*<\/aside>\s*<div class="historical-workspace"/);
-  assert.match(css,/grid-template-columns:220px minmax\(0,1fr\) 270px/);
-  assert.match(css,/\.historical-indicator-rail\s*\{/);
+  assert.match(html,/class="historical-workspace"[\s\S]*class="historical-chart-with-indicators"[\s\S]*class="historical-indicator-rail"/);
+  assert.match(html,/historical-chart-with-indicators[\s\S]*historical-indicator-rail[\s\S]*id="historical-indicator-section"[\s\S]*<\/div>\s*<section id="historical-cycle-panel"/);
+  assert.match(css,/grid-template-columns:220px minmax\(0,1fr\)/);
+  assert.match(css,/\.historical-chart-with-indicators \{[^}]*grid-template-columns:minmax\(0,1fr\) 220px/);
+  assert.match(css,/\.historical-indicator-list \{[^}]*max-height:510px/);
 });
