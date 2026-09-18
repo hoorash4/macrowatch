@@ -618,28 +618,53 @@ def path_direction_changes(points: list[Point], start: int, end: int) -> int:
     return changes
 
 
-def box_survives(points: list[Point], box: Box, skeleton: list[Turn], scale: Scale) -> bool:
-    width = x_share(points, box.start_index, box.end_index)
-
-    # Long/short is judged only by X-axis shares relative to the other swing
-    # durations on this same chart.
-    if width >= scale.long_x:
-        return True
-
-    # A short interval is not a "box" merely because a tiny top/bottom wiggle
-    # happens to fit inside a narrow Y range. It needs repeated sideways
-    # behavior before the short-box reversal rule is even considered.
-    if path_direction_changes(points, box.start_index, box.end_index) < 3:
-        return False
-
+def box_context(points: list[Point], box: Box, skeleton: list[Turn]) -> dict[str, Any] | None:
     before = next((t for t in reversed(skeleton) if t.index < box.start_index), None)
     after = next((t for t in skeleton if t.index > box.end_index), None)
     if not before or not after:
-        return False
+        return None
+
+    width = x_share(points, box.start_index, box.end_index)
+    left_x = x_share(points, before.index, box.start_index)
+    right_x = x_share(points, box.end_index, after.index)
 
     entry = points[box.start_index].y - points[before.index].y
     exit_ = points[after.index].y - points[box.end_index].y
-    return entry != 0 and exit_ != 0 and (entry > 0) != (exit_ > 0)
+
+    # "Long" is relative to the neighboring directional legs on the same
+    # frozen X axis. No fixed percentage of calendar time is injected.
+    long_box = width >= left_x and width >= right_x
+    reversal_box = entry != 0 and exit_ != 0 and (entry > 0) != (exit_ > 0)
+
+    return {
+        "before": before,
+        "after": after,
+        "width": width,
+        "left_x": left_x,
+        "right_x": right_x,
+        "entry_direction": 1 if entry > 0 else -1 if entry < 0 else 0,
+        "exit_direction": 1 if exit_ > 0 else -1 if exit_ < 0 else 0,
+        "long": long_box,
+        "reversal": reversal_box,
+    }
+
+
+def box_survives(points: list[Point], box: Box, skeleton: list[Turn]) -> bool:
+    context = box_context(points, box, skeleton)
+    if context is None:
+        return False
+
+    if context["long"]:
+        return True
+
+    # A short box survives only when it is a real reversal/consolidation:
+    # opposite broad entry/exit directions, not a continuation pause.
+    if not context["reversal"]:
+        return False
+
+    # A short "box" still needs repeated sideways behavior; a single tiny
+    # kink at a top/bottom is not a regime.
+    return path_direction_changes(points, box.start_index, box.end_index) >= 3
 
 
 def boundary_kind(points: list[Point], index: int, side: str) -> str:
@@ -738,10 +763,12 @@ def structure(points: list[Point]) -> dict[str, Any]:
     spikes = find_spikes(points, extrema, scale, v0, v1)
 
     spike_indices = {t.index for triple in spikes for t in triple}
-    box_indices = {idx for box in boxes for idx in (box.start_index, box.end_index)}
     global_high_index = max(range(v0, v1 + 1), key=lambda idx: points[idx].y)
     global_low_index = min(range(v0, v1 + 1), key=lambda idx: points[idx].y)
-    protected = spike_indices | box_indices | {global_high_index, global_low_index}
+    # Candidate boxes are NOT protected here. Otherwise speculative sideways
+    # boundaries prevent trend compression and create a feedback loop that
+    # manufactures dozens of false boxes.
+    protected = spike_indices | {global_high_index, global_low_index}
 
     skeleton = list(scale_sequence)
     skeleton = merge_hh_hl_lh_ll(points, skeleton, protected)
@@ -824,7 +851,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "mode": box.mode,
             "x_share": round(width, 6),
             "y_span": round(y_span, 6),
-            "long": width >= scale.long_x,
+            "long": bool(context["long"]),
         })
 
         accepted[entry.index] = {
@@ -832,8 +859,9 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "type": "sideways_entry",
             "grade": "B",
             "reason": (
-                f"B: 횡보 진입점. 횡보 구간은 고정 X축의 {width*100:.1f}%를 차지하며, "
-                f"같은 차트의 전형적 스윙 기간 {scale.typical_x*100:.1f}%보다 {'길다' if width >= scale.typical_x else '짧다'}."
+                f"B: 횡보 진입점. 횡보 구간은 고정 X축의 {width*100:.1f}%를 차지하고, "
+                f"앞·뒤 방향 구간은 각각 {context['left_x']*100:.1f}%/{context['right_x']*100:.1f}%다. "
+                f"{'양쪽 방향 구간보다 길어 장기 횡보로 유지.' if context['long'] else '짧지만 진입·이탈의 큰 방향이 반대라 반전형 횡보로 유지.'}"
             ),
         }
         accepted[exit_.index] = {
