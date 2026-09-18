@@ -6,26 +6,15 @@ on:
       - ".github/workflows/repair-us-earnings-once.yml"
 
 permissions:
+  actions: write
   contents: read
 
 jobs:
-  repair:
+  dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 5
     env:
-      EARNINGS_WRITE_MODE: automatic
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Repair incomplete U.S. earnings
-        env:
-          PYTHONUNBUFFERED: "1"
-          PYTHONPATH: backend
-          SEC_USER_AGENT: "MacroWatch/1.0 (contact: hoorash44@gmail.com)"
-          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -m earnings_us.repair_cli --write
+      - run: gh workflow run earnings-us-repair.yml -f write=true
