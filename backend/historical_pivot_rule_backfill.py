@@ -54,6 +54,7 @@ class Turn:
 @dataclass(frozen=True)
 class Scale:
     typical_y: float
+    material_y: float
     typical_x: float
     long_x: float
     spike_y_outlier: float
@@ -271,6 +272,15 @@ def build_scale(points: list[Point], turns: list[Turn]) -> Scale:
     ]
 
     typical_y = median(swing_y) if swing_y else 1.0
+    # With only a few structural legs there is no statistical basis for
+    # declaring one of them "micro" merely because it is below the median.
+    # In richer/noisier charts, use the lower quartile as the minimum material
+    # same-chart Y share; pruning still uses the median typical swing.
+    material_y = (
+        min(swing_y) if 0 < len(swing_y) <= 4
+        else quantile(swing_y, 0.25) if swing_y
+        else 1.0
+    )
     typical_x = median(swing_x) if swing_x else 1.0
     long_x = quantile(swing_x, 0.75) if swing_x else typical_x
 
@@ -291,6 +301,7 @@ def build_scale(points: list[Point], turns: list[Turn]) -> Scale:
 
     return Scale(
         typical_y=max(typical_y, 1e-12),
+        material_y=max(material_y, 1e-12),
         typical_x=max(typical_x, 1e-12),
         long_x=max(long_x, 1e-12),
         spike_y_outlier=max(spike_y_outlier, 1e-12),
@@ -668,7 +679,8 @@ def structure(points: list[Point]) -> dict[str, Any]:
     if not extrema:
         return {"regimes": [], "pivots": [], "sideways_boundaries": [], "turning_points": []}
 
-    scale = build_scale(points, extrema)
+    scale_sequence = add_visible_anchors(points, extrema, v0, v1)
+    scale = build_scale(points, scale_sequence)
 
     boxes = merge_boxes(points, [
         *flat_boxes(points, v0, v1, scale),
@@ -680,7 +692,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
     box_indices = {idx for box in boxes for idx in (box.start_index, box.end_index)}
     protected = spike_indices | box_indices
 
-    skeleton = add_visible_anchors(points, extrema, v0, v1)
+    skeleton = list(scale_sequence)
     skeleton = merge_hh_hl_lh_ll(points, skeleton, protected)
     skeleton = prune_relative_micro_waves(points, skeleton, scale, protected)
     skeleton = merge_hh_hl_lh_ll(points, skeleton, protected)
@@ -696,7 +708,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
             continue
         incoming = y_share(points, skeleton[i - 1].index, turn.index)
         outgoing = y_share(points, turn.index, skeleton[i + 1].index)
-        if incoming < scale.typical_y or outgoing < scale.typical_y:
+        if incoming < scale.material_y or outgoing < scale.material_y:
             continue
 
         accepted[turn.index] = {
@@ -706,7 +718,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "reason": (
                 f"A: {'상승→하락' if turn.kind == 'high' else '하락→상승'} 구조적 반전. "
                 f"반전 전·후 이동은 고정 Y축의 {incoming*100:.1f}%와 {outgoing*100:.1f}%이고, "
-                f"이 지표의 동일 차트 기준 전형적 스윙은 {scale.typical_y*100:.1f}%라 둘 다 이를 넘어 구조점으로 유지."
+                f"이 지표의 동일 차트 기준 구조 검증 하한은 {scale.material_y*100:.1f}%이고 전형적 스윙은 {scale.typical_y*100:.1f}%라 구조점으로 유지."
             ),
         }
 
@@ -725,7 +737,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
             continue
         incoming = y_share(points, left.index, idx)
         outgoing = y_share(points, idx, right.index)
-        if incoming < scale.typical_y or outgoing < scale.typical_y:
+        if incoming < scale.material_y or outgoing < scale.material_y:
             continue
         accepted[idx] = {
             "turn": Turn(idx, kind),
@@ -735,7 +747,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
                 f"A: {'상승→하락' if kind == 'high' else '하락→상승'} 구조적 반전. "
                 f"정확한 가시구간 {'최고점' if kind == 'high' else '최저점'}이며, "
                 f"반전 전·후 이동은 고정 Y축의 {incoming*100:.1f}%와 {outgoing*100:.1f}%로 "
-                f"같은 차트의 전형적 스윙 {scale.typical_y*100:.1f}%를 모두 넘어 유지."
+                f"같은 차트의 구조 검증 하한 {scale.material_y*100:.1f}%를 모두 넘어 유지."
             ),
         }
 
