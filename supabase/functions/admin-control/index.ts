@@ -495,6 +495,66 @@ export default {
       }
 
 
+      if (action === "resolve_historical_pivot_review") {
+        const caseCode = String(body?.case_code || "").trim();
+        const indexCode = String(body?.index_code || "").trim();
+        const seriesCode = String(body?.series_code || "").trim();
+        const pivotDate = String(body?.pivot_date || "").slice(0, 10);
+        const resolution = String(body?.resolution || "").toUpperCase();
+        if (!caseCode || !indexCode || !seriesCode || !/^\d{4}-\d{2}-\d{2}$/.test(pivotDate) || !["A","B","C","DELETE"].includes(resolution)) {
+          return json({ error: "D 피봇 판정 요청이 올바르지 않습니다." }, 400, origin);
+        }
+        const { data: analysis, error: analysisError } = await admin.from("historical_indicator_ai_analysis")
+          .select("pivots,turning_points").eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode).maybeSingle();
+        if (analysisError) throw analysisError;
+        if (!analysis) return json({ error: "분석 원본을 찾을 수 없습니다." }, 404, origin);
+        const pivots = Array.isArray(analysis.pivots) ? [...analysis.pivots] : [];
+        const targetIndex = pivots.findIndex((item: any) => String(item?.date || "").slice(0,10) === pivotDate);
+        if (targetIndex < 0 || String(pivots[targetIndex]?.grade || "").toUpperCase() !== "D") {
+          return json({ error: "검토 대기(D) 피봇을 찾을 수 없습니다." }, 409, origin);
+        }
+        const now = new Date().toISOString();
+        let resolvedPivot: any = null;
+        if (resolution === "DELETE") {
+          pivots.splice(targetIndex, 1);
+        } else {
+          resolvedPivot = {
+            ...pivots[targetIndex],
+            grade: resolution,
+            manual_resolution: true,
+            manual_reviewed_at: now,
+            manual_reviewed_by: user.id,
+          };
+          pivots[targetIndex] = resolvedPivot;
+        }
+        const turningPoints = (Array.isArray(analysis.turning_points) ? analysis.turning_points : [])
+          .filter((item: any) => resolution !== "DELETE" || String(item?.date || "").slice(0,10) !== pivotDate)
+          .map((item: any) => String(item?.date || "").slice(0,10) === pivotDate && resolution !== "DELETE"
+            ? { ...item, grade: resolution, manual_resolution: true, manual_reviewed_at: now }
+            : item);
+        const { error: updateError } = await admin.from("historical_indicator_ai_analysis").update({
+          pivots, turning_points: turningPoints, updated_at: now,
+        }).eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode);
+        if (updateError) throw updateError;
+
+        const { data: scoreRow, error: scoreError } = await admin.from("historical_indicator_ai_scores")
+          .select("ai_pivots").eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode).maybeSingle();
+        if (scoreError) throw scoreError;
+        if (scoreRow) {
+          const scorePivots = Array.isArray(scoreRow.ai_pivots) ? [...scoreRow.ai_pivots] : [];
+          const scoreIndex = scorePivots.findIndex((item: any) => String(item?.date || "").slice(0,10) === pivotDate);
+          if (scoreIndex >= 0) {
+            if (resolution === "DELETE") scorePivots.splice(scoreIndex, 1);
+            else scorePivots[scoreIndex] = { ...scorePivots[scoreIndex], grade: resolution, manual_resolution: true, manual_reviewed_at: now };
+            const { error: scoreUpdateError } = await admin.from("historical_indicator_ai_scores").update({
+              ai_pivots: scorePivots, updated_at: now,
+            }).eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode);
+            if (scoreUpdateError) throw scoreUpdateError;
+          }
+        }
+        return json({ resolved: true, resolution, pivot: resolvedPivot }, 200, origin);
+      }
+
       if (action === "preview_historical_case") {
         const name = historicalCaseName(body?.case_name);
         const primaryIndex = historicalIndex(body?.primary_index_code);
