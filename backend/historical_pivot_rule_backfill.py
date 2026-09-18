@@ -264,21 +264,27 @@ def local_extrema(points: list[Point]) -> list[Extreme]:
             collapsed.append((idx, kind))
 
     extremes: list[Extreme] = []
-    for pos, (idx, kind) in enumerate(collapsed):
-        opposite_left = [
-            points[j].smooth for j, k in collapsed[:pos]
-            if k != kind and points[idx].x - points[j].x <= 0.22
+    for idx, kind in collapsed:
+        center = points[idx]
+        # Prominence must not depend on already-detected opposite extrema.  A
+        # clean V or a one-off spike can have only one interior local extreme,
+        # while the meaningful shoulders are monotonic paths rather than local
+        # extrema themselves.  Measure the candidate against the actual fixed-
+        # axis path on each side.
+        left_values = [
+            p.smooth for p in points[:idx]
+            if 0 < center.x - p.x <= 0.22
         ]
-        opposite_right = [
-            points[j].smooth for j, k in collapsed[pos + 1:]
-            if k != kind and points[j].x - points[idx].x <= 0.22
+        right_values = [
+            p.smooth for p in points[idx + 1:]
+            if 0 < p.x - center.x <= 0.22
         ]
         if kind == "high":
-            left_prom = points[idx].smooth - max(opposite_left[-3:] or [points[idx].smooth])
-            right_prom = points[idx].smooth - max(opposite_right[:3] or [points[idx].smooth])
+            left_prom = center.smooth - min(left_values) if left_values else 0.0
+            right_prom = center.smooth - min(right_values) if right_values else 0.0
         else:
-            left_prom = min(opposite_left[-3:] or [points[idx].smooth]) - points[idx].smooth
-            right_prom = min(opposite_right[:3] or [points[idx].smooth]) - points[idx].smooth
+            left_prom = max(left_values) - center.smooth if left_values else 0.0
+            right_prom = max(right_values) - center.smooth if right_values else 0.0
         available = [v for v in (left_prom, right_prom) if v > 0]
         prominence = min(available) if len(available) == 2 else (available[0] if available else 0.0)
         extremes.append(Extreme(idx, kind, prominence))
