@@ -49,7 +49,7 @@ const NYFED_LIQUIDITY_SOURCES = [
     key: "agency_mbs_operations",
     label: "New York Fed Agency Mortgage-Backed Securities",
     url: `${NYFED_BASE}/markets/ambs/ambs_schedule`,
-    anchor: "Agency MBS Historical Operational Results and Planned Operation Amounts",
+    anchor: "Monthly Operation Amounts and Results",
   },
 ] as const;
 const POLICY_PROMPT_VERSION = "v2.0";
@@ -241,7 +241,7 @@ type LiquidityOperationItem = {
   operation: string;
   monthly_amount_usd_billion: number | null;
   direction: "expand" | "maintain" | "contract" | "neutral";
-  nature: "policy_purchase" | "reserve_management" | "reinvestment" | "operational_readiness" | "facility";
+  nature: "policy_purchase" | "reserve_management" | "reinvestment" | "balance_sheet_runoff" | "operational_readiness" | "facility";
   note: string | null;
 };
 
@@ -315,6 +315,32 @@ function liquidityOperationSummary(liquidityContext: unknown, implementationNote
       nature: "policy_purchase",
       note: "FOMC 지침에 명시된 정기적 순매입(QE 성격)",
     });
+  }
+
+  const treasuryRunoff = note.match(/Treasury securities[^.]{0,260}?(?:cap|limit)[^$]{0,80}?\$([0-9.]+)\s*billion per (?:calendar )?month/i)
+    || note.match(/\$([0-9.]+)\s*billion per (?:calendar )?month[^.]{0,220}?Treasury securities/i);
+  if (treasuryRunoff) {
+    items.push({
+      asset: "미 재무부 증권",
+      operation: "월간 런오프 한도",
+      monthly_amount_usd_billion: Number(treasuryRunoff[1]),
+      direction: "contract",
+      nature: "balance_sheet_runoff",
+      note: "만기상환분을 재투자하지 않아 SOMA 보유액을 줄이는 QT 성격의 월간 상한",
+    } as LiquidityOperationItem);
+  }
+
+  const agencyRunoff = note.match(/agency (?:debt and agency mortgage-backed securities|securities)[^.]{0,300}?(?:cap|limit)[^$]{0,80}?\$([0-9.]+)\s*billion per (?:calendar )?month/i)
+    || note.match(/\$([0-9.]+)\s*billion per (?:calendar )?month[^.]{0,220}?agency (?:debt|mortgage-backed|securities)/i);
+  if (agencyRunoff) {
+    items.push({
+      asset: "Agency MBS·기관채",
+      operation: "월간 런오프 한도",
+      monthly_amount_usd_billion: Number(agencyRunoff[1]),
+      direction: "contract",
+      nature: "balance_sheet_runoff",
+      note: "기관증권 원금상환분의 미재투자를 통한 QT 성격의 월간 상한",
+    } as LiquidityOperationItem);
   }
 
   if (!items.length) return null;
