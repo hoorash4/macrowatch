@@ -401,7 +401,10 @@ def prune_relative_micro_waves(
 
             left_dy = y_share(points, left.index, middle.index)
             right_dy = y_share(points, middle.index, right.index)
-            if min(left_dy, right_dy) >= scale.typical_y:
+            # A zigzag is micro only when BOTH of its legs are below the
+            # same-chart typical swing.  One smaller leg beside a substantial
+            # opposite leg is not enough to erase a real reversal.
+            if max(left_dy, right_dy) >= scale.typical_y:
                 continue
 
             left_protected = left.index in protected
@@ -690,7 +693,9 @@ def structure(points: list[Point]) -> dict[str, Any]:
 
     spike_indices = {t.index for triple in spikes for t in triple}
     box_indices = {idx for box in boxes for idx in (box.start_index, box.end_index)}
-    protected = spike_indices | box_indices
+    global_high_index = max(range(v0, v1 + 1), key=lambda idx: points[idx].y)
+    global_low_index = min(range(v0, v1 + 1), key=lambda idx: points[idx].y)
+    protected = spike_indices | box_indices | {global_high_index, global_low_index}
 
     skeleton = list(scale_sequence)
     skeleton = merge_hh_hl_lh_ll(points, skeleton, protected)
@@ -835,21 +840,6 @@ def structure(points: list[Point]) -> dict[str, Any]:
         for idx in list(accepted):
             if box.start_index < idx < box.end_index and idx not in spike_indices:
                 del accepted[idx]
-
-    if len(visible) <= 50:
-        print("DEBUG_STRUCTURE", {
-            "values": [round(points[i].y, 4) for i in visible],
-            "extrema": [(t.index, t.kind, round(points[t.index].y, 4)) for t in extrema],
-            "scale": {
-                "typical_y": round(scale.typical_y, 4),
-                "material_y": round(scale.material_y, 4),
-                "typical_x": round(scale.typical_x, 4),
-                "long_x": round(scale.long_x, 4),
-            },
-            "boxes": [(b.start_index, b.end_index, b.mode) for b in kept_boxes],
-            "skeleton": [(t.index, t.kind, round(points[t.index].y, 4)) for t in skeleton],
-            "accepted": [(idx, accepted[idx]["type"], round(points[idx].y, 4)) for idx in sorted(accepted)],
-        })
 
     pivots: list[dict[str, Any]] = []
     for idx in sorted(accepted):
