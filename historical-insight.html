@@ -80,24 +80,34 @@
           </div>
         </aside>
         <div class="historical-workspace">
-          <header class="historical-toolbar">
-            <div>
-              <strong id="historical-toolbar-title">과거 국면 차트</strong>
-              <div id="historical-chart-meta" class="economic-chart-meta">사례와 지수 데이터 불러오는 중</div>
+          <div class="historical-chart-with-indicators">
+            <div class="historical-chart-main">
+              <header class="historical-toolbar">
+                <div>
+                  <strong id="historical-toolbar-title">과거 국면 차트</strong>
+                  <div id="historical-chart-meta" class="economic-chart-meta">사례와 지수 데이터 불러오는 중</div>
+                </div>
+                <div class="historical-toolbar-right">
+                  <span id="historical-chart-status" role="status" aria-live="polite" class="historical-chart-status">지수 데이터 불러오는 중</span>
+                  <div class="historical-range-tools"><button type="button" id="historical-chart-case-range" disabled>사례 범위</button><button type="button" id="historical-chart-full-range" disabled>전체 이력</button><button type="button" id="historical-chart-retry" hidden>다시 시도</button></div>
+                  <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택">
+                    <button type="button" role="tab" aria-selected="false" data-historical-index="SP500">S&amp;P500</button>
+                    <button type="button" role="tab" aria-selected="true" class="is-active" data-historical-index="NASDAQ_COMPOSITE">NASDAQ Composite</button>
+                    <button type="button" role="tab" aria-selected="false" data-historical-index="KOSPI">KOSPI</button>
+                  </div>
+                </div>
+              </header>
+              <div id="historical-cycle-signal" class="historical-cycle-signal" hidden><strong id="historical-cycle-signal-title">주가 피봇 가능성</strong><span id="historical-cycle-signal-text"></span></div>
+              <div id="historical-indicator-legend" class="historical-indicator-legend" aria-label="선택 지표 범례" hidden></div>
+              <div class="historical-chart-region"><div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div><p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p></div>
             </div>
-            <div class="historical-toolbar-right">
-              <span id="historical-chart-status" role="status" aria-live="polite" class="historical-chart-status">지수 데이터 불러오는 중</span>
-              <div class="historical-range-tools"><button type="button" id="historical-chart-case-range" disabled>사례 범위</button><button type="button" id="historical-chart-full-range" disabled>전체 이력</button><button type="button" id="historical-chart-retry" hidden>다시 시도</button></div>
-              <div class="historical-market-tabs" role="tablist" aria-label="시장 지수 선택">
-                <button type="button" role="tab" aria-selected="false" data-historical-index="SP500">S&amp;P500</button>
-                <button type="button" role="tab" aria-selected="true" class="is-active" data-historical-index="NASDAQ_COMPOSITE">NASDAQ Composite</button>
-                <button type="button" role="tab" aria-selected="false" data-historical-index="KOSPI">KOSPI</button>
-              </div>
-            </div>
-          </header>
-          <div id="historical-cycle-signal" class="historical-cycle-signal" hidden><strong id="historical-cycle-signal-title">주가 피봇 가능성</strong><span id="historical-cycle-signal-text"></span></div>
-          <div id="historical-indicator-legend" class="historical-indicator-legend" aria-label="선택 지표 범례" hidden></div>
-          <div class="historical-chart-region"><div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div><p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p></div>
+            <aside class="historical-indicator-rail" aria-label="비교 지표 패널">
+              <section id="historical-indicator-section" class="historical-indicator-section">
+                <div class="historical-indicator-heading"><strong>비교 지표</strong><button type="button" id="historical-indicator-clear" disabled>지표 클리어</button></div>
+                <div id="historical-indicator-list" class="historical-indicator-list" aria-label="비교 지표 선택"><p class="historical-indicator-empty">지표 분석 중</p></div>
+              </section>
+            </aside>
+          </div>
           <section id="historical-cycle-panel" class="historical-cycle-panel" aria-label="선택 사례 사이클 요약" hidden>
             <div class="historical-cycle-heading"><div><small id="historical-cycle-state">CYCLE</small><strong id="historical-cycle-name">—</strong><span id="historical-cycle-market" class="historical-cycle-market">—</span></div><span id="historical-search-range">—</span></div>
             <p id="historical-cycle-description" class="historical-cycle-description"></p>
@@ -128,12 +138,6 @@
             <article><small>CURRENT COMPARISON</small><strong>현재 유사도</strong><p>확정된 과거 국면과 현재를 비교하는 최종 확장 영역입니다.</p></article>
           </div>
         </div>
-        <aside class="historical-indicator-rail" aria-label="비교 지표 패널">
-          <section id="historical-indicator-section" class="historical-indicator-section">
-            <div class="historical-indicator-heading"><strong>비교 지표</strong><button type="button" id="historical-indicator-clear" disabled>지표 클리어</button></div>
-            <div id="historical-indicator-list" class="historical-indicator-list" aria-label="비교 지표 선택"><p class="historical-indicator-empty">지표 분석 중</p></div>
-          </section>
-        </aside>
       </section>
     </main>
   </div>
