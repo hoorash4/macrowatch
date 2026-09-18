@@ -53,6 +53,58 @@
     return `<section class="fomc-briefing-section ${className}"><h4><span><i class="fa-solid ${icon}" aria-hidden="true"></i></span>${escapeHtml(title)}</h4><div class="fomc-briefing-copy">${escapeHtml(text)}</div></section>`;
   }
 
+  function formatLiquidityAmount(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '금액 미확인';
+    if (amount === 0) return '$0';
+    if (amount >= 1) return `약 ${formatDisplayNumber(amount)}B / 월`;
+    return `약 ${formatDisplayNumber(amount * 1000)}M / 월`;
+  }
+
+  function liquidityDirectionLabel(direction) {
+    return ({
+      expand: '대차대조표 확대',
+      maintain: '보유규모 유지',
+      contract: '대차대조표 축소',
+      neutral: '변동 없음',
+      mixed: '혼합',
+    })[direction] || '영향 미확인';
+  }
+
+  function liquidityNatureLabel(nature) {
+    return ({
+      policy_purchase: '정책적 순매입',
+      reserve_management: '준비금관리',
+      reinvestment: '재투자',
+      operational_readiness: '운영준비',
+      facility: '유동성 수단',
+    })[nature] || nature || '기타';
+  }
+
+  function liquidityOperationsSection(row, briefing) {
+    const summary = row.briefing_source_state?.liquidity_summary;
+    const items = Array.isArray(summary?.items) ? summary.items : [];
+    if (!items.length && !briefing.liquidity_operations) return '';
+    const period = summary?.period ? `<p class="fomc-liquidity-period">적용 기간 · ${escapeHtml(summary.period)}</p>` : '';
+    const rows = items.length ? `<div class="fomc-liquidity-table">
+      <div class="fomc-liquidity-row is-header"><span>자산</span><span>운용</span><span>월간 규모</span><span>대차대조표</span></div>
+      ${items.map((item) => `<div class="fomc-liquidity-row">
+        <span><strong>${escapeHtml(item.asset)}</strong><small>${escapeHtml(liquidityNatureLabel(item.nature))}</small></span>
+        <span>${escapeHtml(item.operation)}</span>
+        <span class="fomc-liquidity-amount">${escapeHtml(formatLiquidityAmount(item.monthly_amount_usd_billion))}</span>
+        <span>${escapeHtml(liquidityDirectionLabel(item.direction))}</span>
+        ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ''}
+      </div>`).join('')}
+    </div>` : '';
+    const narrative = briefing.liquidity_operations
+      ? `<div class="fomc-briefing-copy fomc-liquidity-copy">${escapeHtml(briefing.liquidity_operations)}</div>`
+      : '';
+    return `<section class="fomc-briefing-section fomc-briefing-section--reason fomc-briefing-section--liquidity">
+      <h4><span><i class="fa-solid fa-coins" aria-hidden="true"></i></span>유동성·자산운용</h4>
+      ${period}${rows}${narrative}
+    </section>`;
+  }
+
   function changesSection(changes) {
     if (!Array.isArray(changes) || !changes.length) return '';
     return `<section class="fomc-briefing-section"><h4><span><i class="fa-solid fa-code-compare" aria-hidden="true"></i></span>이전 성명서와 달라진 점</h4><div class="fomc-briefing-changes">${changes.map((change) => `
@@ -75,10 +127,10 @@
         ${textSection('경기', briefing.economy, 'fa-chart-line')}
         ${textSection('물가', briefing.inflation, 'fa-gauge-high')}
         ${textSection('고용', briefing.employment, 'fa-user-group')}
-        ${textSection('유동성·자산운용', briefing.liquidity_operations, 'fa-coins')}
         ${textSection('기타', briefing.other, 'fa-ellipsis')}
       </div>
       ${textSection('금리 결정의 핵심 이유', briefing.key_rate_reason, 'fa-bullseye', 'fomc-briefing-section--reason')}
+      ${liquidityOperationsSection(row, briefing)}
       ${changesSection(briefing.changes_from_previous)}
       ${textSection('AI 종합 분석', briefing.ai_overall_analysis, 'fa-brain', 'fomc-briefing-section--analysis')}
       <div class="fomc-briefing-close-row"><button type="button" data-fomc-close="${escapeHtml(row.meeting_date)}"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i> 브리핑 닫기</button></div>
