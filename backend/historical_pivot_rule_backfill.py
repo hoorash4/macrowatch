@@ -32,8 +32,8 @@ from typing import Any
 from common import SupabaseRest
 
 INDEX_CODES = {"SP500", "NASDAQ_COMPOSITE", "KOSPI"}
-SCHEMA_VERSION = "rule-structure-v5"
-ENGINE_VERSION = "historical-rules-20260918-v5"
+SCHEMA_VERSION = "rule-structure-v6"
+ENGINE_VERSION = "historical-rules-20260918-v6"
 BUFFER_MONTHS = 24
 
 
@@ -436,53 +436,57 @@ def prune_relative_micro_waves(
 # ---------------------------------------------------------------------------
 
 def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]:
-    """Find long visually flat runs from normalized local slopes.
+    """Find long straight/near-straight sideways runs in O(n).
 
-    A straight sideways stretch does not need local extrema.  Its defining
-    feature is that normalized Y changes per normalized X are persistently in
-    the low-slope tail of THIS chart, while the segment occupies a relatively
-    long X share and makes little net directional progress.
+    Local slope is computed only from normalized X/Y.  A candidate must stay in
+    the low-slope half of this chart for a long X share, have a Y range below
+    the same-chart material swing scale, and make little net progress across
+    that range.  This catches obvious long flats without mistaking a broad V
+    for sideways.
     """
-    step_slopes: list[float] = []
+    steps: list[tuple[int, float]] = []
     for i in range(v0 + 1, v1 + 1):
         dx = x_share(points, i - 1, i)
         if dx <= 0:
             continue
-        step_slopes.append(y_share(points, i - 1, i) / dx)
-    if not step_slopes:
+        steps.append((i, y_share(points, i - 1, i) / dx))
+    if not steps:
         return []
 
-    low_slope = quantile(step_slopes, 0.25)
+    low_slope = median([slope for _, slope in steps])
     candidates: list[Box] = []
 
-    for start in range(v0, v1):
-        for end in range(v1, start, -1):
-            width = x_share(points, start, end)
-            if width < scale.long_x:
-                break
+    run_start: int | None = None
+    previous_i: int | None = None
 
-            local_slopes: list[float] = []
-            for i in range(start + 1, end + 1):
-                dx = x_share(points, i - 1, i)
-                if dx > 0:
-                    local_slopes.append(y_share(points, i - 1, i) / dx)
-            if not local_slopes or quantile(local_slopes, 0.75) > low_slope:
-                continue
+    def consider(start_point: int, end_point: int) -> None:
+        if end_point <= start_point:
+            return
+        width = x_share(points, start_point, end_point)
+        if width < scale.long_x:
+            return
+        ys = [points[i].y for i in range(start_point, end_point + 1)]
+        y_range = max(ys) - min(ys)
+        if y_range >= scale.material_y:
+            return
+        net = y_share(points, start_point, end_point)
+        if y_range > 0 and net > y_range * 0.5:
+            return
+        candidates.append(Box(start_point, end_point, "flat"))
 
-            ys = [points[i].y for i in range(start, end + 1)]
-            y_range = max(ys) - min(ys)
-            if y_range >= scale.material_y:
-                continue
+    for i, slope in steps:
+        if slope <= low_slope:
+            if run_start is None:
+                run_start = i - 1
+            previous_i = i
+        else:
+            if run_start is not None and previous_i is not None:
+                consider(run_start, previous_i)
+            run_start = None
+            previous_i = None
 
-            net = y_share(points, start, end)
-            # A monotonic low-slope trend is still a trend.  A flat box spends
-            # its Y range oscillating/stalling rather than progressing from one
-            # edge of that range to the other.
-            if y_range > 0 and net > y_range * 0.5:
-                continue
-
-            candidates.append(Box(start, end, "flat"))
-            break
+    if run_start is not None and previous_i is not None:
+        consider(run_start, previous_i)
 
     return maximal_boxes(points, candidates)
 
@@ -957,7 +961,7 @@ def persist_indicator_structure(
         "anomalies": [],
         "source_point_count": len([p for p in points if 0 <= p.x <= 1]),
         "chart_sha256": None,
-        "anomaly_validation_version": "rule-spike-relative-v5",
+        "anomaly_validation_version": "rule-spike-relative-v6",
         "skeleton_trends": [],
         "sub_trends": [],
         "turning_points": result["turning_points"],
