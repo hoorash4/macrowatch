@@ -752,6 +752,22 @@ body:has(#app-shell:not(.hidden)) {
 .fomc-briefing-context-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 1.25rem; }
 .fomc-briefing-section--reason { padding:1rem 1.1rem; border-left:3px solid #0e7490; background:linear-gradient(90deg,rgba(236,254,255,.62),rgba(248,250,252,.38)); }
 .fomc-briefing-section--reason h4 { border:0; padding:0; }
+.fomc-briefing-section--liquidity { margin-top:.85rem; }
+.fomc-liquidity-period { margin:.65rem 0 0; color:#64748b; font-size:.75rem; font-weight:650; }
+.fomc-liquidity-table { display:grid; gap:.45rem; margin-top:.75rem; }
+.fomc-liquidity-row { display:grid; grid-template-columns:minmax(8.5rem,1.25fr) minmax(7rem,1fr) minmax(7rem,.85fr) minmax(8rem,1fr); gap:.65rem; align-items:center; padding:.7rem .75rem; border:1px solid rgba(14,116,144,.16); border-radius:.6rem; background:rgba(255,255,255,.55); color:#334155; font-size:.78rem; }
+.fomc-liquidity-row.is-header { padding:.35rem .75rem; border:0; background:transparent; color:#64748b; font-size:.68rem; font-weight:750; }
+.fomc-liquidity-row > span { min-width:0; }
+.fomc-liquidity-row strong { display:block; color:#172033; font-size:.8rem; }
+.fomc-liquidity-row small { display:block; margin-top:.12rem; color:#0e7490; font-size:.68rem; font-weight:700; }
+.fomc-liquidity-row p { grid-column:1 / -1; margin:.05rem 0 0; color:#64748b; font-size:.72rem; line-height:1.5; }
+.fomc-liquidity-amount { color:#0f766e; font-weight:800; white-space:nowrap; }
+.fomc-liquidity-copy { margin-top:.8rem; padding-top:.7rem; border-top:1px solid rgba(14,116,144,.14); }
+@media (max-width:760px) {
+  .fomc-liquidity-row { grid-template-columns:1fr 1fr; }
+  .fomc-liquidity-row.is-header { display:none; }
+  .fomc-liquidity-row p { grid-column:1 / -1; }
+}
 .fomc-briefing-changes { display:grid; gap:.65rem; margin-top:.75rem; }
 .fomc-briefing-changes article { padding:.85rem .95rem; border:1px solid rgba(71,85,105,.2); border-radius:.65rem; background:rgba(255,255,255,.62); }
 .fomc-briefing-changes strong { color:#1e293b; font-size:.85rem; }
