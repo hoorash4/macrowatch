@@ -17,4 +17,4 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - run: gh workflow run central-bank-policy.yml -f mode=latest # structured liquidity refresh
+      - run: gh workflow run central-bank-policy.yml -f mode=latest # structured liquidity refresh final
