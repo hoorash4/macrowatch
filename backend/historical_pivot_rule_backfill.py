@@ -448,17 +448,9 @@ def structure(points: list[Point]) -> dict[str, Any]:
             "reason": "A: 스파이크 이후 급격한 복귀가 끝난 첫 구조적 반대 극점이라 스파이크 극점과 짝으로 유지.",
         }
 
-    # If a visible edge itself looked structural but +/-24m context cannot verify
-    # it, keep it off-chart as D rather than inventing a direction.
-    for edge_index in (v0, v1):
-        turn = next((item for item in raw if item.index == edge_index), None)
-        if turn and edge_index not in accepted and edge_index in {item.index for item in compressed} and not edge_verified(points, turn, v0, v1):
-            accepted[edge_index] = {
-                "turn": turn,
-                "type": "review_required",
-                "grade": "D",
-                "reason": "D: 사례 경계의 구조 후보지만 같은 지표의 ±24개월 문맥으로도 진입·이탈 방향을 확정하지 못해 자동 판정을 보류.",
-            }
+    # Visible endpoints are context anchors, not automatic pivots.  The +/-24m
+    # buffer is consulted only when a genuine structural turn lands on the
+    # boundary; synthetic first/last points are never emitted as D by default.
 
     pivots: list[dict[str, Any]] = []
     for idx in sorted(accepted):
