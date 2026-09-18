@@ -613,6 +613,9 @@ test('FOMC 정책 그래프는 네 자리 연도와 커서 월 표시를 제공�
   assert.match(chart, /POLICY_CHART_MODE === 'legacy'/);
   assert.match(chart, /yMin: domain\.min, yMax: domain\.max/);
   assert.match(chart, /adminLink\.hidden/);
+  assert.match(chart, /data-policy-meeting-date/);
+  assert.match(chart, /event\.target\.closest\?\.\('\[data-policy-meeting-date\]'\)/);
+  assert.doesNotMatch(chart, /if \(!selectedPoint \|\| !adminLink/);
   assert.match(chart, /macrowatch_policy_review_dates/);
   assert.doesNotMatch(chart, /slice\(-20\)/);
   assert.match(chart, /showNotice\('FOMC 수정 목록 등록'/);
@@ -1018,4 +1021,17 @@ test('FOMC 브리핑은 실제 자료 완성 상태로 Updating과 Updated를 �
   assert.match(pipeline, /implementation_note_hash/);
   assert.match(pipeline, /press_conference_state/);
   assert.match(pipeline, /withinSourceRefreshWindow/);
+});
+
+
+test('공통 인덱스 차트는 마우스 드래그로 가로 스크롤하고 드래그 직후 클릭을 억제한다', () => {
+  const utils = fs.readFileSync(path.join(__dirname, '..', 'assets/js/charts/analysis-chart-utils.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'assets/css/styles.css'), 'utf8');
+  assert.match(utils, /function bindDragScroll\(frame\)/);
+  assert.match(utils, /frame\.scrollLeft = drag\.startScrollLeft - delta/);
+  assert.match(utils, /setPointerCapture/);
+  assert.match(utils, /stopImmediatePropagation/);
+  assert.match(utils, /bindDragScroll\(frame\)/);
+  assert.match(styles, /\.analysis-chart-frame\.is-dragging/);
+  assert.match(styles, /cursor:grabbing/);
 });
