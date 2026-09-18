@@ -452,7 +452,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
     # it, keep it off-chart as D rather than inventing a direction.
     for edge_index in (v0, v1):
         turn = next((item for item in raw if item.index == edge_index), None)
-        if turn and edge_index in {item.index for item in compressed} and not edge_verified(points, turn, v0, v1):
+        if turn and edge_index not in accepted and edge_index in {item.index for item in compressed} and not edge_verified(points, turn, v0, v1):
             accepted[edge_index] = {
                 "turn": turn,
                 "type": "review_required",
