@@ -49,8 +49,8 @@
   const pivotDate=value=>String(value||'').slice(0,10);
   function displayOnlyPivot(pivot){
     return Object.freeze({
-      pivotDate:pivotDate(pivot.date),pivotValue:Number(pivot.value),pivotType:String(pivot.type||''),pivotGrade:String(pivot.grade||''),
-      pivotConfidence:Number(pivot.confidence||0),regimeBoundaryDate:pivotDate(pivot.date),confirmationDate:pivotDate(pivot.date),
+      pivotDate:pivotDate(pivot.date),pivotValue:Number(pivot.value),pivotType:String(pivot.type||''),pivotGrade:'C',sourcePivotGrade:String(pivot.grade||''),
+      pivotReason:String(pivot.reason||''),pivotConfidence:Number(pivot.confidence||0),regimeBoundaryDate:pivotDate(pivot.date),confirmationDate:pivotDate(pivot.date),
       referenceType:null,referenceDate:null,offsetDays:null,markerStatus:'reference_only',pivotRole:'reference-only',score:null,baseScore:null
     });
   }
@@ -58,6 +58,7 @@
     const results=Object.freeze([...(row.results||[])]),scoredNearMisses=[...(row.near_miss_pivots||[])],byReference=Object.freeze(row.by_reference||{}),aiPivots=[...(row.ai_pivots||[])];
     const occupied=new Set([...results,...scoredNearMisses].map(item=>pivotDate(item.pivotDate)));
     const referenceOnly=aiPivots.filter(item=>['A','B'].includes(String(item?.grade||'').toUpperCase())&&!occupied.has(pivotDate(item.date))).map(displayOnlyPivot);
+    const reviewPivots=Object.freeze(aiPivots.filter(item=>String(item?.grade||'').toUpperCase()==='D').map(item=>Object.freeze({...item,reason:String(item?.reason||'')})));
     const nearMissPivots=Object.freeze([...scoredNearMisses,...referenceOnly]);
     const regimes=Object.freeze((row.ai_regimes||[]).map(item=>Object.freeze({type:regimeType(item.type),startDate:item.start_date,endDate:item.end_date,confidence:item.confidence})));
     return Object.freeze({
@@ -65,8 +66,8 @@
       cycleRelationship:row.cycle_relationship||'unresolved',byReference,results,diagnostics:Object.freeze([]),
       overallScore:row.overall_score==null?null:Number(row.overall_score),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),
       meaningfulReferenceCount:Number(row.meaningful_reference_count||results.length),maxReferenceScore:Number(row.max_reference_score||0),
-      visible:results.length>0||scoredNearMisses.length>0||referenceOnly.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,
-      anomalies:Object.freeze([...(row.ai_anomalies||[])])
+      visible:results.length>0||scoredNearMisses.length>0||referenceOnly.length>0||reviewPivots.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,
+      reviewPivots,anomalies:Object.freeze([...(row.ai_anomalies||[])])
     });
   }
   let analysisApi=null;
