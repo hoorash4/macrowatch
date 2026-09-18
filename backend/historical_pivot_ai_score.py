@@ -244,6 +244,8 @@ def result_from_pivot(
         "pivotValue": float(pivot["value"]),
         "pivotType": str(pivot.get("type") or ""),
         "pivotGrade": str(pivot.get("grade") or "D"),
+        "sourcePivotGrade": str(pivot.get("grade") or "D"),
+        "pivotReason": str(pivot.get("reason") or "").strip(),
         "pivotConfidence": float(pivot.get("confidence") or 0.0),
         "previousRegime": previous,
         "nextRegime": next_regime,
