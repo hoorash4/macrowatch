@@ -836,6 +836,21 @@ def structure(points: list[Point]) -> dict[str, Any]:
             if box.start_index < idx < box.end_index and idx not in spike_indices:
                 del accepted[idx]
 
+    if len(visible) <= 50:
+        print("DEBUG_STRUCTURE", {
+            "values": [round(points[i].y, 4) for i in visible],
+            "extrema": [(t.index, t.kind, round(points[t.index].y, 4)) for t in extrema],
+            "scale": {
+                "typical_y": round(scale.typical_y, 4),
+                "material_y": round(scale.material_y, 4),
+                "typical_x": round(scale.typical_x, 4),
+                "long_x": round(scale.long_x, 4),
+            },
+            "boxes": [(b.start_index, b.end_index, b.mode) for b in kept_boxes],
+            "skeleton": [(t.index, t.kind, round(points[t.index].y, 4)) for t in skeleton],
+            "accepted": [(idx, accepted[idx]["type"], round(points[idx].y, 4)) for idx in sorted(accepted)],
+        })
+
     pivots: list[dict[str, Any]] = []
     for idx in sorted(accepted):
         item = accepted[idx]
