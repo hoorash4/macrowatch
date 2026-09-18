@@ -48,6 +48,7 @@ SPIKE_BASE_MAX_Y_GAP = 0.20
 SIDEWAYS_MIN_X_SHARE = 0.10
 LONG_SIDEWAYS_X_SHARE = 0.20
 FLAT_SIDEWAYS_MAX_Y_SHARE = 0.06
+SIDEWAYS_MAX_CENTER_DRIFT_Y_SHARE = 0.15
 
 # Minimum extrema count for an oscillatory (potentially large-amplitude) box.
 OSCILLATORY_SIDEWAYS_MIN_TURNS = 5
@@ -454,6 +455,41 @@ def flat_sideways_candidates(points: list[Point], visible_start: int, visible_en
     return sorted(maximal, key=lambda box: box.start_index)
 
 
+def median_value(values: list[float]) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("median requires values")
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def center_path_drift(points: list[Point], start_idx: int, end_idx: int, bins: int = 3) -> float | None:
+    """Return central-path vertical spread in frozen-Y coordinates.
+
+    This is used only to validate the defining sideways question: does the
+    overall center of the interval make meaningful directional progress?
+    """
+    start_x, end_x = points[start_idx].x, points[end_idx].x
+    width = end_x - start_x
+    if width <= 0:
+        return None
+
+    centers: list[float] = []
+    for bin_index in range(bins):
+        left = start_x + width * bin_index / bins
+        right = start_x + width * (bin_index + 1) / bins
+        ys = [
+            point.y for point in points[start_idx:end_idx + 1]
+            if (left <= point.x < right) or (bin_index == bins - 1 and left <= point.x <= right)
+        ]
+        if not ys:
+            return None
+        centers.append(median_value(ys))
+    return max(centers) - min(centers)
+
+
 def mixed_progression(values: list[float]) -> bool:
     directions = set()
     for left, right in zip(values, values[1:]):
@@ -488,6 +524,13 @@ def oscillatory_sideways_candidates(
             if len(highs) < 2 or len(lows) < 2:
                 continue
             if not mixed_progression(highs) or not mixed_progression(lows):
+                continue
+
+            # A large-amplitude box may swing vertically, but its overall
+            # central path must remain broadly non-directional.  Validate that
+            # statement against the frozen Y axis, not raw values.
+            center_drift = center_path_drift(points, start_idx, end_idx)
+            if center_drift is None or center_drift > SIDEWAYS_MAX_CENTER_DRIFT_Y_SHARE:
                 continue
 
             # Look at already axis-validated structural turns inside the same
