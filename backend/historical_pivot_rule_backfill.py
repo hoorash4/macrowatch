@@ -833,7 +833,7 @@ def structure(points: list[Point]) -> dict[str, Any]:
     kept_boxes: list[Box] = []
     sideways_boundaries: list[dict[str, Any]] = []
     for n, box in enumerate(boxes, 1):
-        if not box_survives(points, box, skeleton, scale):
+        if not box_survives(points, box, skeleton):
             continue
         kept_boxes.append(box)
 
