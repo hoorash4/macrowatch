@@ -23,9 +23,10 @@
     }
     return Object.freeze({catalog,loadCoverage,load,clearAnalysisData(){coverageCache=null;seriesCache.clear();}});
   }
-  window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize});
+  window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize,clearAiScores});
 
   const aiScoreCache=new Map();
+  function clearAiScores(){aiScoreCache.clear();}
   function loadAiScores(caseCode,indexCode){
     const key=`${caseCode}:${indexCode}`;
     if(aiScoreCache.has(key))return aiScoreCache.get(key);
@@ -54,10 +55,21 @@
       referenceType:null,referenceDate:null,offsetDays:null,markerStatus:'reference_only',pivotRole:'reference-only',score:null,baseScore:null
     });
   }
-  function aiAnalysis(row,meta,rows){
+  const shiftMonths=(value,amount)=>{const [year,month,day]=String(value).slice(0,10).split('-').map(Number),target=new Date(Date.UTC(year,month-1+amount,1)),last=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();target.setUTCDate(Math.min(day,last));return target.toISOString().slice(0,10);};
+  function manualDisplayPivot(pivot,cycle){
+    const date=pivotDate(pivot.date),grade=String(pivot.grade||'').toUpperCase(),base={pivotDate:date,pivotValue:Number(pivot.value),pivotType:String(pivot.type||''),pivotGrade:grade,sourcePivotGrade:grade,pivotReason:String(pivot.reason||''),pivotConfidence:Number(pivot.confidence||0),regimeBoundaryDate:date,confirmationDate:date,score:null,baseScore:null,manualResolution:true};
+    if(grade==='C')return Object.freeze({...base,referenceType:null,referenceDate:null,offsetDays:null,markerStatus:'reference_only',pivotRole:'reference-only'});
+    const refs=[['START',cycle?.startDate],['PEAK',cycle?.peakDate],['TROUGH',cycle?.troughDate]].filter(([,d])=>d);
+    for(const [type,ref] of refs){if(date>=shiftMonths(ref,-3)&&date<=shiftMonths(ref,1))return Object.freeze({...base,referenceType:type,referenceDate:ref,offsetDays:Math.round((Date.parse(date)-Date.parse(ref))/86400000),markerStatus:'confirmed',pivotRole:'manual-confirmed'});}
+    for(const [type,ref] of refs){if(date>=shiftMonths(ref,-6)&&date<=shiftMonths(ref,2))return Object.freeze({...base,referenceType:type,referenceDate:ref,offsetDays:Math.round((Date.parse(date)-Date.parse(ref))/86400000),markerStatus:'near_miss',pivotRole:'manual-near-miss'});}
+    return Object.freeze({...base,pivotGrade:'C',referenceType:null,referenceDate:null,offsetDays:null,markerStatus:'reference_only',pivotRole:'reference-only'});
+  }
+  function aiAnalysis(row,meta,rows,cycle){
     const results=Object.freeze([...(row.results||[])]),scoredNearMisses=[...(row.near_miss_pivots||[])],byReference=Object.freeze(row.by_reference||{}),aiPivots=[...(row.ai_pivots||[])];
     const occupied=new Set([...results,...scoredNearMisses].map(item=>pivotDate(item.pivotDate)));
-    const referenceOnly=aiPivots.filter(item=>['A','B'].includes(String(item?.grade||'').toUpperCase())&&!occupied.has(pivotDate(item.date))).map(displayOnlyPivot);
+    const manualDisplayPivots=Object.freeze(aiPivots.filter(item=>item?.manual_resolution&&['A','B','C'].includes(String(item?.grade||'').toUpperCase())&&!occupied.has(pivotDate(item.date))).map(item=>manualDisplayPivot(item,cycle)));
+    const manualDates=new Set(manualDisplayPivots.map(item=>pivotDate(item.pivotDate)));
+    const referenceOnly=aiPivots.filter(item=>['A','B'].includes(String(item?.grade||'').toUpperCase())&&!occupied.has(pivotDate(item.date))&&!manualDates.has(pivotDate(item.date))).map(displayOnlyPivot);
     const reviewPivots=Object.freeze(aiPivots.filter(item=>String(item?.grade||'').toUpperCase()==='D').map(item=>Object.freeze({...item,reason:String(item?.reason||'')})));
     const nearMissPivots=Object.freeze([...scoredNearMisses,...referenceOnly]);
     const regimes=Object.freeze((row.ai_regimes||[]).map(item=>Object.freeze({type:regimeType(item.type),startDate:item.start_date,endDate:item.end_date,confidence:item.confidence})));
@@ -67,7 +79,7 @@
       overallScore:row.overall_score==null?null:Number(row.overall_score),referenceCoverageCount:Number(row.reference_coverage_count||0),coverageBonus:Number(row.coverage_bonus||0),
       meaningfulReferenceCount:Number(row.meaningful_reference_count||results.length),maxReferenceScore:Number(row.max_reference_score||0),
       visible:results.length>0||scoredNearMisses.length>0||referenceOnly.length>0||reviewPivots.length>0,aiSourced:true,scoringVersion:row.scoring_version||null,
-      reviewPivots,anomalies:Object.freeze([...(row.ai_anomalies||[])])
+      reviewPivots,manualDisplayPivots,anomalies:Object.freeze([...(row.ai_anomalies||[])])
     });
   }
   let analysisApi=null;
@@ -77,7 +89,7 @@
       const legacyAnalyze=value.analyzeHistorical;
       const wrapped=function(meta,rows,item,cycle,marketRows=[]){
         const caseCode=item?.code||cycle?.caseCode,indexCode=cycle?.indexCode;
-        if(caseCode&&indexCode){const score=loadAiScores(caseCode,indexCode).get(meta.code);if(score)return aiAnalysis(score,meta,rows);}
+        if(caseCode&&indexCode){const score=loadAiScores(caseCode,indexCode).get(meta.code);if(score)return aiAnalysis(score,meta,rows,cycle);}
         return legacyAnalyze(meta,rows,item,cycle,marketRows);
       };
       analysisApi=Object.freeze({...value,analyzeHistorical:wrapped});
