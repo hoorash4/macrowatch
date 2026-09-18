@@ -475,10 +475,20 @@ class USEarningsAutomaticPipeline:
                 candidate = refreshed.get(current.key)
                 updated = current
                 if candidate is not None:
+                    filled_from_candidate = any(
+                        getattr(current, field) is None and getattr(candidate, field) is not None
+                        for field in ("top_line", "operating_income", "net_income")
+                    )
                     updated = current.with_changes(
                         top_line=_first_non_null(current.top_line, candidate.top_line),
                         operating_income=_first_non_null(current.operating_income, candidate.operating_income),
                         net_income=_first_non_null(current.net_income, candidate.net_income),
+                        source_filing_id=(
+                            candidate.source_filing_id if filled_from_candidate else current.source_filing_id
+                        ),
+                        filing_date=(
+                            candidate.filing_date if filled_from_candidate else current.filing_date
+                        ),
                     )
                 still_pending = not updated.fully_complete
                 delisting_cutoff = current.period_end + timedelta(days=120)
