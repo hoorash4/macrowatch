@@ -468,7 +468,7 @@ def flat_boxes(points: list[Point], v0: int, v1: int, scale: Scale) -> list[Box]
 
             ys = [points[i].y for i in range(start, end + 1)]
             y_range = max(ys) - min(ys)
-            if y_range > scale.typical_y:
+            if y_range >= scale.material_y:
                 continue
 
             net = y_share(points, start, end)
