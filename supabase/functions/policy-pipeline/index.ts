@@ -235,6 +235,99 @@ function briefingSourceProgress(source: Source, sourceState: Record<string, unkn
 }
 
 
+
+type LiquidityOperationItem = {
+  asset: string;
+  operation: string;
+  monthly_amount_usd_billion: number | null;
+  direction: "expand" | "maintain" | "contract" | "neutral";
+  nature: "policy_purchase" | "reserve_management" | "reinvestment" | "operational_readiness" | "facility";
+  note: string | null;
+};
+
+function liquidityOperationSummary(liquidityContext: unknown, implementationNote: string | null) {
+  if (!liquidityContext || typeof liquidityContext !== "object") return null;
+  const snapshots = (liquidityContext as { snapshots?: Record<string, { excerpt?: string }> }).snapshots || {};
+  const treasury = String(snapshots.treasury_operations?.excerpt || "");
+  const mbs = String(snapshots.agency_mbs_operations?.excerpt || "");
+  const items: LiquidityOperationItem[] = [];
+  let period: string | null = null;
+
+  const treasuryPeriod = treasury.match(/(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})[\s\S]{0,500}?approximately\s+\$([0-9.]+)\s+billion\s+in\s+reinvestment\s+purchases(?:\s+and\s+(no|an additional approximately\s+\$([0-9.]+)\s+billion\s+in)\s+reserve\s+management\s+purchases)?/i);
+  if (treasuryPeriod) {
+    period = treasuryPeriod[1].replace(/\s+/g, " ");
+    items.push({
+      asset: "미 재무부 증권",
+      operation: "재투자 매입",
+      monthly_amount_usd_billion: Number(treasuryPeriod[2]),
+      direction: "maintain",
+      nature: "reinvestment",
+      note: "만기·원금상환분 재투자. 순자산 확대가 아니라 SOMA 보유규모 유지·구성 조정 성격",
+    });
+    const rmpAmount = /\bno\b/i.test(treasuryPeriod[3] || "") ? 0 : Number(treasuryPeriod[4] || 0);
+    items.push({
+      asset: "미 재무부 증권",
+      operation: "준비금관리 매입",
+      monthly_amount_usd_billion: Number.isFinite(rmpAmount) ? rmpAmount : null,
+      direction: rmpAmount > 0 ? "expand" : "neutral",
+      nature: "reserve_management",
+      note: rmpAmount > 0
+        ? "충분한 준비금 유지를 위한 순매입. 대차대조표 확대 요인"
+        : "현재 월간 운용기간에는 별도 준비금관리 매입 없음",
+    });
+  }
+
+  const mbsPeriod = mbs.match(/([A-Z][a-z]+ \d{1,2}, \d{4}\s*[–-]\s*[A-Z][a-z]+ \d{1,2}, \d{4})[\s\S]{0,450}?approximately\s+\$([0-9.]+)\s+(million|billion)\s+in\s+small value\s+(purchase|sale)\s+operations/i);
+  if (mbsPeriod) {
+    const amount = Number(mbsPeriod[2]) * (mbsPeriod[3].toLowerCase() === "million" ? 0.001 : 1);
+    items.push({
+      asset: "Agency MBS",
+      operation: mbsPeriod[4].toLowerCase() === "purchase" ? "소액 매입" : "소액 매도",
+      monthly_amount_usd_billion: amount,
+      direction: mbsPeriod[4].toLowerCase() === "purchase" ? "expand" : "contract",
+      nature: "operational_readiness",
+      note: "정책적 QE가 아니라 운영준비(small value) 목적",
+    });
+  } else if (/does not have any agency MBS outright operations scheduled/i.test(mbs)) {
+    items.push({
+      asset: "Agency MBS",
+      operation: "정기 outright 운용 없음",
+      monthly_amount_usd_billion: 0,
+      direction: "neutral",
+      nature: "operational_readiness",
+      note: "해당 월간 기간에 예정된 outright 매입·매도 없음",
+    });
+  }
+
+  const note = String(implementationNote || "");
+  const policyPatterns = [
+    { asset: "미 재무부 증권", regex: /increase (?:the )?(?:System Open Market Account|SOMA)?\s*holdings of Treasury securities by at least \$?([0-9.]+)\s*billion per month/i },
+    { asset: "Agency MBS", regex: /increase (?:the )?(?:System Open Market Account|SOMA)?\s*holdings of agency mortgage-backed securities by at least \$?([0-9.]+)\s*billion per month/i },
+  ];
+  for (const pattern of policyPatterns) {
+    const match = note.match(pattern.regex);
+    if (!match) continue;
+    items.unshift({
+      asset: pattern.asset,
+      operation: "정책적 순매입",
+      monthly_amount_usd_billion: Number(match[1]),
+      direction: "expand",
+      nature: "policy_purchase",
+      note: "FOMC 지침에 명시된 정기적 순매입(QE 성격)",
+    });
+  }
+
+  if (!items.length) return null;
+  return {
+    period,
+    items,
+    balance_sheet_direction: items.some((item) => item.nature === "policy_purchase" && item.direction === "expand")
+      || items.some((item) => item.nature === "reserve_management" && item.direction === "expand")
+      ? "expand"
+      : items.some((item) => item.direction === "contract") ? "mixed" : "maintain",
+  };
+}
+
 function liquidityOperationsFallback(liquidityContext: unknown) {
   if (!liquidityContext || typeof liquidityContext !== "object") return null;
   const snapshots = (liquidityContext as { snapshots?: Record<string, { excerpt?: string }> }).snapshots || {};
@@ -392,6 +485,7 @@ Deno.serve(async (request) => {
         ? await newYorkFedLiquidityContext(source.meetingDate)
         : null;
       const liquidityContext = refreshedLiquidityContext ?? priorLiquidityContext ?? null;
+      const liquiditySummary = liquidityOperationSummary(liquidityContext, implementationNote);
       const sourceStateBase: Record<string, unknown> = {
         statement_hash: statementHash,
         implementation_note_url: implementationNote ? noteUrl : null,
@@ -401,6 +495,7 @@ Deno.serve(async (request) => {
         // Recheck the newest meeting during the short publication window, then
         // preserve the captured meeting-time New York Fed context.
         liquidity_context: liquidityContext,
+        liquidity_summary: liquiditySummary,
       };
       const sourceProgress = briefingSourceProgress(source, sourceStateBase);
       const sourceState = { ...sourceStateBase, ...sourceProgress };
