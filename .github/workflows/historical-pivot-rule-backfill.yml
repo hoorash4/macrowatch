@@ -27,6 +27,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/historical-pivot-rule-backfill.yml"
+      - "backend/historical_pivot_rule_backfill.py"
+      - "tests/test_historical_pivot_rule_engine.py"
 
 permissions:
   contents: read
