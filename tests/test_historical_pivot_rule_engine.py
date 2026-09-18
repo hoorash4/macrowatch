@@ -46,6 +46,15 @@ class HistoricalPivotRuleEngineTests(unittest.TestCase):
         result=self.analyze(values)
         self.assertTrue(any(b["mode"]=="flat" for b in result["sideways_boundaries"]))
 
+
+    def test_broad_down_up_down_sequence_is_not_one_box(self):
+        values=[90,82,74,66,58,52,48,50,47,45,48,54,60,68,76,82,78,72,66,60,54,48]
+        result=self.analyze(values)
+        self.assertFalse(any(
+            b["start_date"]==rows(values)[0]["date"] and b["end_date"]==rows(values)[-1]["date"]
+            for b in result["sideways_boundaries"]
+        ))
+
     def test_hh_hl_continuation_is_merged(self):
         values=[10,30,20,45,32,60,48,75,65,90]
         result=self.analyze(values)
