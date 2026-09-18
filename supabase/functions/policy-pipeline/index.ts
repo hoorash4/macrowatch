@@ -14,7 +14,7 @@ type Analysis = {
   analysis: { primary_reason: Reason; reason_confidence: number; transition_assessment: Transition; financial_stress_mentioned: boolean; growth_downside_mentioned: boolean; inflation_pressure_mentioned: boolean; summary: string };
   briefing: {
     statement_briefing: string; economy: string | null; inflation: string | null;
-    employment: string | null; other: string | null; key_rate_reason: string;
+    employment: string | null; liquidity_operations: string | null; other: string | null; key_rate_reason: string;
     changes_from_previous: Array<{ title: string; change_type: "added" | "removed" | "strengthened" | "softened" | "reframed" | "maintained"; significance: "high" | "medium" | "low"; previous_expression: string | null; current_expression: string | null; explanation: string }>;
     ai_overall_analysis: string;
   };
@@ -79,6 +79,7 @@ const RESPONSE_SCHEMA = {
       economy: { anyOf: [{ type: "string" }, { type: "null" }] },
       inflation: { anyOf: [{ type: "string" }, { type: "null" }] },
       employment: { anyOf: [{ type: "string" }, { type: "null" }] },
+      liquidity_operations: { anyOf: [{ type: "string" }, { type: "null" }] },
       other: { anyOf: [{ type: "string" }, { type: "null" }] },
       key_rate_reason: { type: "string" },
       changes_from_previous: { type: "array", maxItems: 6, items: { type: "object", additionalProperties: false, properties: {
@@ -87,7 +88,7 @@ const RESPONSE_SCHEMA = {
         previous_expression: { anyOf: [{ type: "string" }, { type: "null" }] }, current_expression: { anyOf: [{ type: "string" }, { type: "null" }] }, explanation: { type: "string" },
       }, required: ["title", "change_type", "significance", "previous_expression", "current_expression", "explanation"] } },
       ai_overall_analysis: { type: "string" },
-    }, required: ["statement_briefing", "economy", "inflation", "employment", "other", "key_rate_reason", "changes_from_previous", "ai_overall_analysis"] },
+    }, required: ["statement_briefing", "economy", "inflation", "employment", "liquidity_operations", "other", "key_rate_reason", "changes_from_previous", "ai_overall_analysis"] },
   }, required: ["decision", "analysis", "briefing"],
 };
 
@@ -231,6 +232,32 @@ function briefingSourceProgress(source: Source, sourceState: Record<string, unkn
     source_complete: missing.length === 0,
     missing_sources: missing,
   };
+}
+
+
+function liquidityOperationsFallback(liquidityContext: unknown) {
+  if (!liquidityContext || typeof liquidityContext !== "object") return null;
+  const snapshots = (liquidityContext as { snapshots?: Record<string, { excerpt?: string }> }).snapshots || {};
+  const treasury = String(snapshots.treasury_operations?.excerpt || "");
+  const repo = String(snapshots.repo_operations?.excerpt || "");
+  const mbs = String(snapshots.agency_mbs_operations?.excerpt || "");
+  const parts: string[] = [];
+  const periodMatch = treasury.match(/(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})[\s\S]{0,450}?approximately\s+\$([0-9.]+)\s+billion\s+in\s+reinvestment\s+purchases(?:\s+and\s+(no|an additional approximately\s+\$[0-9.]+\s+billion\s+in)\s+reserve\s+management\s+purchases)?/i);
+  if (periodMatch) {
+    const reserveText = /\bno\b/i.test(periodMatch[3] || "")
+      ? "별도의 준비금관리 매입은 계획되지 않았습니다."
+      : (periodMatch[3] ? periodMatch[3].replace(/an additional approximately/i, "추가 약") + " 준비금관리 매입이 계획돼 있습니다." : "");
+    parts.push(periodMatch[1] + " 기간 재투자 매입은 약 " + periodMatch[2] + "0억 달러 규모로 계획돼 있습니다. " + reserveText);
+  } else if (treasury) {
+    parts.push("뉴욕연은의 재무부증권 운용계획과 준비금관리 매입 지침이 확인됐습니다.");
+  }
+  if (repo) {
+    parts.push("뉴욕연은은 상설 레포와 역레포 운영을 통해 단기자금시장 금리의 상·하단을 보조하고 시장기능을 지원하고 있습니다.");
+  }
+  if (mbs) {
+    parts.push("Agency MBS 운용계획과 운영결과도 함께 확인해 자산 재투자·매입 맥락에 반영했습니다.");
+  }
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 function systemPrompt() {
@@ -392,6 +419,8 @@ Deno.serve(async (request) => {
         const previous = previousRows?.[0] as EventRow || null;
         const previousStatement = previousRows?.[0]?.source_url ? await getStatement(previousRows[0].source_url) : null;
         const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous, previousStatement, implementationNote, pressConferenceUrl, sourceState.liquidity_context), previous);
+        const liquidityFallback = liquidityOperationsFallback(sourceState.liquidity_context);
+        if (liquidityFallback && !analysis.briefing.liquidity_operations?.trim()) analysis.briefing.liquidity_operations = liquidityFallback;
         const now = new Date().toISOString();
         const isNewBriefing = !saved?.briefing;
         const briefingRevision = isNewBriefing ? 0 : Number(saved?.briefing_revision || 0) + 1;
