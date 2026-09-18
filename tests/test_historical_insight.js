@@ -294,3 +294,27 @@ test('comparison indicators are narrow and limited to the Historical chart row',
   assert.match(css,/\.historical-chart-with-indicators \{[^}]*grid-template-columns:minmax\(0,1fr\) 220px/);
   assert.match(css,/\.historical-indicator-list \{[^}]*max-height:510px/);
 });
+
+
+test('admins can add edit delete Historical cases in-page with automatic pivot and summary preview', () => {
+  const html=read('historical-insight.html');
+  const controller=read('assets/js/historical-insight/historical-insight.js');
+  const css=read('assets/css/historical-insight.css');
+  const adminControl=read('supabase/functions/admin-control/index.ts');
+  assert.match(html,/id="historical-case-add"/);
+  assert.match(html,/id="historical-case-modal"/);
+  assert.match(html,/id="historical-case-auto-analyze"/);
+  assert.match(html,/id="historical-case-delete-modal"/);
+  assert.match(controller,/preview_historical_case/);
+  assert.match(controller,/save_historical_case/);
+  assert.match(controller,/delete_historical_case/);
+  assert.match(controller,/historical-case-actions/);
+  assert.match(css,/\.historical-case-modal\{/);
+  assert.match(adminControl,/function historicalCycleCandidate/);
+  assert.match(adminControl,/generateHistoricalSummary/);
+  assert.match(adminControl,/action === "preview_historical_case"/);
+  assert.match(adminControl,/action === "save_historical_case"/);
+  assert.match(adminControl,/action === "delete_historical_case"/);
+  assert.match(adminControl,/\.upsert\(cycles\.map/);
+  assert.doesNotMatch(adminControl,/deleteCyclesError/);
+});
