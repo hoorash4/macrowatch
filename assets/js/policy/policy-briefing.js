@@ -77,6 +77,7 @@
       policy_purchase: '정책적 순매입',
       reserve_management: '준비금관리',
       reinvestment: '재투자',
+      balance_sheet_runoff: 'QT·런오프',
       operational_readiness: '운영준비',
       facility: '유동성 수단',
     })[nature] || nature || '기타';
