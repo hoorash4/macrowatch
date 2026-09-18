@@ -833,11 +833,12 @@ def structure(points: list[Point]) -> dict[str, Any]:
     kept_boxes: list[Box] = []
     sideways_boundaries: list[dict[str, Any]] = []
     for n, box in enumerate(boxes, 1):
-        if not box_survives(points, box, skeleton):
+        context = box_context(points, box, skeleton)
+        if context is None or not box_survives(points, box, skeleton):
             continue
         kept_boxes.append(box)
 
-        width = x_share(points, box.start_index, box.end_index)
+        width = context["width"]
         ys = [points[i].y for i in range(box.start_index, box.end_index + 1)]
         y_span = max(ys) - min(ys)
 
