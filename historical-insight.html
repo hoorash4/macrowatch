@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=28">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=29">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -99,7 +99,18 @@
               </header>
               <div id="historical-cycle-signal" class="historical-cycle-signal" hidden><strong id="historical-cycle-signal-title">주가 피봇 가능성</strong><span id="historical-cycle-signal-text"></span></div>
               <div id="historical-indicator-legend" class="historical-indicator-legend" aria-label="선택 지표 범례" hidden></div>
-              <div class="historical-chart-region"><div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div><p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p></div>
+              <div class="historical-chart-region">
+                <div class="historical-market-chart-panel">
+                  <div class="historical-chart-panel-label">MARKET INDEX · X축 기준</div>
+                  <div id="historical-chart-host" class="historical-chart-host" aria-label="과거 시장 지수 차트"></div>
+                  <p id="historical-chart-message" class="historical-chart-message">지수 데이터 불러오는 중</p>
+                </div>
+                <div class="historical-indicator-chart-panel">
+                  <div class="historical-chart-panel-label">INDICATOR · 구조 분석 대상</div>
+                  <div id="historical-indicator-chart-host" class="historical-indicator-chart-host" aria-label="비교 지표 구조 분석 차트"></div>
+                  <p id="historical-indicator-chart-empty" class="historical-indicator-chart-empty">오른쪽에서 지표를 선택하면 동일한 X축에 별도 지표 차트가 표시됩니다.</p>
+                </div>
+              </div>
             </div>
             <aside class="historical-indicator-rail" aria-label="비교 지표 패널">
               <section id="historical-indicator-section" class="historical-indicator-section">
@@ -189,8 +200,8 @@
   <script src="assets/js/historical-insight/historical-indicator-data.js?v=7"></script>
   <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=35"></script>
   <script src="assets/js/historical-insight/historical-indicator-selection.js?v=4"></script>
-  <script src="assets/js/historical-insight/historical-index-chart.js?v=18"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=40"></script>
+  <script src="assets/js/historical-insight/historical-index-chart.js?v=19"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=41"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>
