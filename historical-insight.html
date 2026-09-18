@@ -47,7 +47,7 @@
       <section id="historical-stage" class="historical-stage" aria-label="히스토리컬 인사이트 작업영역">
         <aside id="historical-case-panel" class="historical-case-panel">
           <div id="historical-past-sidebar">
-            <p class="historical-panel-label">HISTORICAL CASES</p>
+            <div class="historical-case-list-heading"><p class="historical-panel-label">HISTORICAL CASES</p><button type="button" id="historical-case-add" aria-label="과거 국면 추가" title="과거 국면 추가" hidden>+</button></div>
             <div id="historical-case-list" class="historical-case-list" aria-label="Historical Case 목록"><span class="historical-case-loading">사례 불러오는 중</span></div>
           </div>
           <div id="historical-current-sidebar" hidden>
@@ -140,6 +140,47 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="historical-case-modal" class="historical-case-modal" hidden>
+    <div class="historical-case-modal-card" role="dialog" aria-modal="true" aria-labelledby="historical-case-modal-title">
+      <div class="historical-case-modal-head">
+        <div><small>HISTORICAL CASE</small><strong id="historical-case-modal-title">과거 국면 추가</strong></div>
+        <button type="button" id="historical-case-modal-close" aria-label="닫기">×</button>
+      </div>
+      <form id="historical-case-form">
+        <input id="historical-case-code" type="hidden">
+        <div class="historical-case-form-grid">
+          <label class="is-wide">국면명<input id="historical-case-name" type="text" maxlength="60" required></label>
+          <label>대표지수<select id="historical-case-primary-index"><option value="NASDAQ_COMPOSITE">NASDAQ Composite</option><option value="SP500">S&amp;P 500</option><option value="KOSPI">KOSPI</option></select></label>
+          <label>관찰 시작<input id="historical-case-search-start" type="date" required></label>
+          <label>관찰 종료<input id="historical-case-search-end" type="date"></label>
+        </div>
+        <div class="historical-case-auto-row">
+          <button type="button" id="historical-case-auto-analyze">자동 피봇·요약 생성</button>
+          <span id="historical-case-auto-status" role="status" aria-live="polite"></span>
+        </div>
+        <section class="historical-case-cycle-editor">
+          <div class="historical-case-cycle-head"><strong>시장별 기준점</strong><span>자동 후보를 확인하고 필요하면 직접 수정</span></div>
+          <div id="historical-case-cycle-grid"></div>
+        </section>
+        <label class="historical-case-summary-field">한줄 요약<textarea id="historical-case-summary" rows="3" maxlength="220" required></textarea></label>
+        <div class="historical-case-form-actions">
+          <button type="button" id="historical-case-cancel">취소</button>
+          <button type="submit" id="historical-case-save">저장</button>
+        </div>
+        <span id="historical-case-save-status" role="status" aria-live="polite"></span>
+      </form>
+    </div>
+  </div>
+
+  <div id="historical-case-delete-modal" class="historical-case-modal" hidden>
+    <div class="historical-case-delete-card" role="dialog" aria-modal="true" aria-labelledby="historical-case-delete-title">
+      <strong id="historical-case-delete-title">과거 국면을 삭제할까?</strong>
+      <p id="historical-case-delete-message"></p>
+      <div><button type="button" id="historical-case-delete-cancel">취소</button><button type="button" id="historical-case-delete-confirm">삭제</button></div>
+      <span id="historical-case-delete-status" role="status" aria-live="polite"></span>
+    </div>
   </div>
 
   <script src="assets/js/charts/economic-series-catalog.js?v=2"></script>
