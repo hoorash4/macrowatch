@@ -1,0 +1,81 @@
+name: Historical Pivot Rule backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_code:
+        description: "Historical case code"
+        required: true
+        default: "tightening_2022"
+        type: string
+      index_code:
+        description: "Market index code (blank = case primary index)"
+        required: false
+        default: "NASDAQ_COMPOSITE"
+        type: string
+      series_code:
+        description: "Indicator series code or all"
+        required: true
+        default: "all"
+        type: string
+      limit:
+        description: "When series_code=all, optional max indicator count (0 = all)"
+        required: true
+        default: "0"
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/historical-pivot-rule-backfill.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-pivot-rule-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Test rule engine
+        run: PYTHONPATH=backend python -m unittest discover -s tests -p "test_historical_pivot_rule_engine.py"
+      - name: Analyze and score historical pivots
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CASE: ${{ inputs.case_code }}
+          INPUT_INDEX: ${{ inputs.index_code }}
+          INPUT_SERIES: ${{ inputs.series_code }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            CASE_CODE="tightening_2022"
+            INDEX_CODE="NASDAQ_COMPOSITE"
+            SERIES_CODE="all"
+            LIMIT="0"
+          else
+            CASE_CODE="$INPUT_CASE"
+            INDEX_CODE="$INPUT_INDEX"
+            SERIES_CODE="$INPUT_SERIES"
+            LIMIT="$INPUT_LIMIT"
+          fi
+          args=(--case "$CASE_CODE" --series "$SERIES_CODE" --limit "$LIMIT")
+          score_args=(--case "$CASE_CODE" --series "$SERIES_CODE")
+          if [[ -n "$INDEX_CODE" ]]; then
+            args+=(--index "$INDEX_CODE")
+            score_args+=(--index "$INDEX_CODE")
+          fi
+          PYTHONPATH=backend python -m historical_pivot_rule_backfill "${args[@]}"
+          PYTHONPATH=backend python -m historical_pivot_ai_score "${score_args[@]}"
