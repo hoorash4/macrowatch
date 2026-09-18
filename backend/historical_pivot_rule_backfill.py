@@ -41,6 +41,7 @@ REVERSAL_REVIEW_Y_SHARE = 0.04
 # a large ordinary wave.
 SPIKE_MIN_Y_SHARE = 0.50
 SPIKE_MAX_TOTAL_X_SHARE = 0.18
+SPIKE_BASE_MAX_Y_GAP = 0.20
 
 # Sideways: X is used only to decide whether the regime lasts long enough to
 # matter; Y is used only for the special "nearly straight flat" case.
@@ -372,17 +373,13 @@ def validate_reversals(points: list[Point], turns: list[Turn]) -> tuple[list[Tur
 
 
 def find_spikes(points: list[Point], turns: list[Turn]) -> list[tuple[Turn, Turn, Turn]]:
-    """Find exceptional spike triplets using only fixed-axis shares."""
-    found: list[tuple[Turn, Turn, Turn]] = []
+    """Find isolated exceptional spike triplets in fixed-axis coordinates.
 
-    for center_pos in range(len(turns)):
-        extreme = turns[center_pos]
+    Repeated large oscillations are not spikes; they are handled as sideways/waves.
+    """
+    candidates: list[tuple[float, float, Turn, Turn, Turn]] = []
 
-        best: tuple[Turn, Turn, Turn] | None = None
-        best_span = None
-
-        # Search outward rather than requiring immediate adjacent extrema so
-        # small wiggles cannot hide the true structural entry/retracement point.
+    for center_pos, extreme in enumerate(turns):
         for left_pos in range(center_pos - 1, -1, -1):
             left = turns[left_pos]
             if left.kind == extreme.kind:
@@ -401,14 +398,26 @@ def find_spikes(points: list[Point], turns: list[Turn]) -> list[tuple[Turn, Turn
                 if left_y < SPIKE_MIN_Y_SHARE or right_y < SPIKE_MIN_Y_SHARE:
                     continue
 
-                if best is None or total_x < best_span:
-                    best = (left, extreme, right)
-                    best_span = total_x
+                # A spike leaves and returns toward roughly the same structural
+                # level.  Compare bases on the frozen Y axis, never raw values.
+                base_gap = abs(points[left.index].y - points[right.index].y)
+                if base_gap > SPIKE_BASE_MAX_Y_GAP:
+                    continue
 
-        if best and all(best[1].index != item[1].index for item in found):
-            found.append(best)
+                strength = min(left_y, right_y)
+                candidates.append((strength, total_x, left, extreme, right))
 
-    return found
+    # One exceptional excursion should not explode into dozens of overlapping
+    # triples.  Keep the strongest non-overlapping structural spike.
+    selected: list[tuple[Turn, Turn, Turn]] = []
+    occupied: list[tuple[int, int]] = []
+    for _, _, left, extreme, right in sorted(candidates, key=lambda item: (-item[0], item[1])):
+        if any(not (right.index < start or left.index > end) for start, end in occupied):
+            continue
+        selected.append((left, extreme, right))
+        occupied.append((left.index, right.index))
+
+    return sorted(selected, key=lambda triple: triple[1].index)
 
 
 def flat_sideways_candidates(points: list[Point], visible_start: int, visible_end: int) -> list[Sideways]:
@@ -475,13 +484,9 @@ def oscillatory_sideways_candidates(points: list[Point], turns: list[Turn]) -> l
             if not mixed_progression(highs) or not mixed_progression(lows):
                 continue
 
-            # Do not call it sideways if the whole window is clean HH/HL or LH/LL.
-            has_clean_direction = any(
-                continuation_direction(points, window[k:k + 4])
-                for k in range(max(0, len(window) - 3))
-            )
-            if has_clean_direction:
-                continue
+            # Local directional sub-runs are allowed inside a broad box.
+            # What matters is that highs/lows do not sustain one direction
+            # across the whole structural interval.
 
             found.append(Sideways(
                 start_index=window[0].index,
@@ -539,6 +544,15 @@ def structure(points: list[Point]) -> dict[str, Any]:
 
     # Spike is an explicit exceptional-shape rule and therefore uses X/Y shares.
     spikes = find_spikes(points, directional_candidates)
+    # Repeated large oscillations inside an accepted oscillatory box are waves,
+    # not one-off spikes.
+    spikes = [
+        triple for triple in spikes
+        if not any(
+            box.mode == "oscillatory" and box.start_index <= triple[1].index <= box.end_index
+            for box in boxes
+        )
+    ]
     spike_indices = {turn.index for triple in spikes for turn in triple}
 
     accepted: dict[int, dict[str, Any]] = {}
