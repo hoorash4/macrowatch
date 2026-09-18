@@ -999,6 +999,8 @@ test('FOMC 브리핑은 실제 자료 완성 상태로 Updating과 Updated를 �
   assert.match(briefing, /briefing_source_state,briefing_updated_at/);
   assert.match(briefing, /Updating/);
   assert.match(briefing, /Updated/);
+  assert.match(briefing, /유동성·자산운용/);
+  assert.match(pipeline, /liquidity_operations/);
   assert.match(styles, /\.fomc-briefing-status\.is-updating/);
   assert.match(styles, /\.fomc-briefing-status\.is-updated/);
   assert.match(pipeline, /newYorkFedLiquidityContext/);
