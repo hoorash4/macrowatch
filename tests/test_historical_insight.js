@@ -318,3 +318,13 @@ test('admins can add edit delete Historical cases in-page with automatic pivot a
   assert.match(adminControl,/\.upsert\(cycles\.map/);
   assert.doesNotMatch(adminControl,/deleteCyclesError/);
 });
+
+
+test('Historical case edit and delete controls float over the unchanged list item on hover', () => {
+  const css=read('assets/css/historical-insight.css');
+  assert.match(css,/\.historical-case-row\{position:relative;display:block/);
+  assert.match(css,/\.historical-case-row>\.historical-case\{width:100%\}/);
+  assert.match(css,/\.historical-case-actions\{position:absolute;[^}]*right:7px;[^}]*top:50%/);
+  assert.match(css,/visibility:hidden/);
+  assert.match(css,/\.historical-case-row:hover \.historical-case-actions/);
+});
