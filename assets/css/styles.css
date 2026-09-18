@@ -1061,7 +1061,8 @@ body:has(#app-shell:not(.hidden)) {
 .analysis-chart-range-controls button:hover,.analysis-chart-range-controls button:focus-visible { border-color:#8293a8; color:#334155; }
 .analysis-chart-range-controls button.is-active { border-color:#475569; background:#475569; color:#f8fafc; }
 .analysis-chart-shell { position:relative; display:flex; width:100%; min-width:0; align-items:stretch; overflow:hidden; background:var(--analysis-chart-plot-background); }
-.analysis-chart-frame { position:relative; min-width:0; flex:1 1 auto; overflow-x:auto; overflow-y:hidden; background:var(--analysis-chart-plot-background); }
+.analysis-chart-frame { position:relative; min-width:0; flex:1 1 auto; overflow-x:auto; overflow-y:hidden; background:var(--analysis-chart-plot-background); cursor:grab; }
+.analysis-chart-frame.is-dragging { cursor:grabbing; user-select:none; }
 .analysis-chart-frame.analysis-chart-frame--scrollbar-hidden { scrollbar-width:none; }
 .analysis-chart-frame.analysis-chart-frame--scrollbar-hidden::-webkit-scrollbar { display:none; height:0; }
 .analysis-chart-fixed-axis { z-index:2; width:52px; flex:0 0 52px; align-self:stretch; background:var(--analysis-chart-plot-background); pointer-events:none; }
