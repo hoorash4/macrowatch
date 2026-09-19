@@ -25,6 +25,7 @@ from common import SupabaseRest
 
 BUFFER_MONTHS = 24
 SPIKE_ANGLE_THRESHOLD_DEG = 40.0
+SIDEWAYS_ANGLE_THRESHOLD_DEG = 10.0
 
 
 @dataclass(frozen=True)
@@ -101,12 +102,20 @@ class ChartGeometry:
 
 
 @dataclass(frozen=True)
+class SpikePeak:
+    point: PivotPoint
+    direction: str  # up | down
+    angle_deg: float
+
+
+@dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
     """Base RDP pivots plus additive spike-entry markers only."""
 
     base: BasePivotResult
     added_high_pivots: tuple[PivotPoint, ...]
     added_low_pivots: tuple[PivotPoint, ...]
+    spike_peaks: tuple[SpikePeak, ...] = ()
 
     @property
     def high_pivots(self) -> tuple[PivotPoint, ...]:
@@ -128,6 +137,30 @@ class SpikeAugmentedPivotResult:
             (*self.high_pivots, *self.low_pivots),
             key=lambda item: (item.day, item.pivot_type),
         ))
+
+
+@dataclass(frozen=True)
+class SidewaysSegment:
+    """Confirmed sideways interval defined only by its approved reference line."""
+
+    start: PivotPoint
+    end: PivotPoint
+    prior_trend: str  # up | down
+    reference_side: str  # high | low
+    angle_deg: float
+    spike_peaks: tuple[SpikePeak, ...] = ()
+
+    @property
+    def pivot_points(self) -> tuple[PivotPoint, ...]:
+        """Sideways boundaries plus any spike peaks inside; no spike entry/exit markers."""
+        unique = {
+            (self.start.day, self.start.value, self.start.pivot_type): self.start,
+            (self.end.day, self.end.value, self.end.pivot_type): self.end,
+        }
+        for spike in self.spike_peaks:
+            point = spike.point
+            unique[(point.day, point.value, point.pivot_type)] = point
+        return tuple(sorted(unique.values(), key=lambda item: (item.day, item.pivot_type)))
 
 
 def shift_months(value: date, months: int) -> date:
@@ -294,6 +327,76 @@ def _screen_xy(point: PivotPoint, geometry: ChartGeometry) -> tuple[float, float
     return x, y
 
 
+
+
+def screen_segment_angle_degrees(
+    start: PivotPoint,
+    end: PivotPoint,
+    geometry: ChartGeometry,
+) -> float:
+    """Signed screen angle from the x-axis; positive means rising on the chart."""
+    sx, sy = _screen_xy(start, geometry)
+    ex, ey = _screen_xy(end, geometry)
+    dx = ex - sx
+    if dx <= 0:
+        raise ValueError("sideways reference line must move forward in time")
+    # Screen y grows downward, so invert dy for mathematical/chart direction.
+    dy = sy - ey
+    return math.degrees(math.atan2(dy, dx))
+
+
+def classify_sideways_reference_line(
+    start: PivotPoint,
+    end: PivotPoint,
+    prior_trend: str,
+    geometry: ChartGeometry,
+    *,
+    spike_peaks: Sequence[SpikePeak] = (),
+    angle_threshold_deg: float = SIDEWAYS_ANGLE_THRESHOLD_DEG,
+) -> SidewaysSegment | None:
+    """Apply only the approved sideways rule to an already chosen reference line.
+
+    After a downtrend, the reference line must connect lows.
+    After an uptrend, the reference line must connect highs.
+    If the absolute screen angle is <= 10 degrees (configurable only by explicit caller
+    choice), the entire start-to-end interval is sideways. The opposing line is not part
+    of this decision. Spike peaks inside remain pivots, but their entry/exit markers are
+    not part of the sideways segment's pivot set.
+
+    This function deliberately does not invent how the prior trend or the candidate
+    start/end pair is selected; those are separate decisions.
+    """
+    if prior_trend not in {"up", "down"}:
+        raise ValueError("prior_trend must be up or down")
+    if angle_threshold_deg < 0 or angle_threshold_deg >= 90:
+        raise ValueError("angle_threshold_deg must be in [0, 90)")
+    expected_side = "low" if prior_trend == "down" else "high"
+    if start.pivot_type != expected_side or end.pivot_type != expected_side:
+        raise ValueError(
+            f"{prior_trend} prior trend requires a {expected_side}-to-{expected_side} reference line"
+        )
+    angle = screen_segment_angle_degrees(start, end, geometry)
+    if abs(angle) > angle_threshold_deg:
+        return None
+    internal_spikes = tuple(
+        sorted(
+            (
+                spike for spike in spike_peaks
+                if start.day <= spike.point.day <= end.day
+            ),
+            key=lambda spike: spike.point.day,
+        )
+    )
+    return SidewaysSegment(
+        start=start,
+        end=end,
+        prior_trend=prior_trend,
+        reference_side=expected_side,
+        angle_deg=angle,
+        spike_peaks=internal_spikes,
+    )
+
+
 def screen_angle_degrees(
     left: PivotPoint,
     pivot: PivotPoint,
@@ -356,6 +459,7 @@ def augment_spike_entry_points(
     low_candidates = tuple(sorted(base.low_candidates, key=lambda item: item.day))
     added_high: dict[tuple[date, float], PivotPoint] = {}
     added_low: dict[tuple[date, float], PivotPoint] = {}
+    spike_peaks: dict[tuple[date, float, str], SpikePeak] = {}
 
     for index in range(1, len(high_rdp) - 1):
         left, pivot, right = high_rdp[index - 1], high_rdp[index], high_rdp[index + 1]
@@ -369,6 +473,10 @@ def augment_spike_entry_points(
             continue
         if _first_pivot_after(low_rdp, right.day) is None:
             continue
+        spike_peaks[(pivot.day, pivot.value, "up")] = SpikePeak(
+            point=pivot, direction="up",
+            angle_deg=screen_angle_degrees(left, pivot, right, geometry),
+        )
         entry_candidates = [
             item for item in low_candidates
             if left.day < item.day < pivot.day
@@ -390,6 +498,10 @@ def augment_spike_entry_points(
             continue
         if _first_pivot_after(high_rdp, right.day) is None:
             continue
+        spike_peaks[(pivot.day, pivot.value, "down")] = SpikePeak(
+            point=pivot, direction="down",
+            angle_deg=screen_angle_degrees(left, pivot, right, geometry),
+        )
         entry_candidates = [
             item for item in high_candidates
             if left.day < item.day < pivot.day
@@ -403,6 +515,7 @@ def augment_spike_entry_points(
         base=base,
         added_high_pivots=tuple(sorted(added_high.values(), key=lambda item: item.day)),
         added_low_pivots=tuple(sorted(added_low.values(), key=lambda item: item.day)),
+        spike_peaks=tuple(sorted(spike_peaks.values(), key=lambda item: item.point.day)),
     )
 
 
