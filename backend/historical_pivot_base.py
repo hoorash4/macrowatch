@@ -711,7 +711,8 @@ def augment_spike_entry_points(
       - lower-RDP pivots may exist from A through C, but none may sit above
         max(A, C); such a lower pivot means the lower boundary followed the peak upward
       - D, the first lower-RDP pivot after C, exists
-      - add the lowest lower-plateau candidate strictly between A and P
+      - reuse the lowest existing lower-RDP point strictly between A and P when present;
+        otherwise add the lowest lower-plateau candidate there
 
     Downward spike is the exact high/low mirror.
     D is already a base RDP pivot, so it is used as the spike exit and is not added again.
@@ -752,14 +753,22 @@ def augment_spike_entry_points(
             point=pivot, direction="up",
             angle_deg=screen_angle_degrees(left, pivot, right, geometry),
         )
-        entry_candidates = [
-            item for item in low_candidates
+        existing_entries = [
+            item for item in low_rdp
             if left.day < item.day < pivot.day
         ]
-        if not entry_candidates:
-            continue
-        entry = min(entry_candidates, key=lambda item: item.value)
-        added_low[(entry.day, entry.value)] = entry
+        if existing_entries:
+            # Reuse the existing lower-RDP entry point when one already exists.
+            entry = min(existing_entries, key=lambda item: item.value)
+        else:
+            entry_candidates = [
+                item for item in low_candidates
+                if left.day < item.day < pivot.day
+            ]
+            if not entry_candidates:
+                continue
+            entry = min(entry_candidates, key=lambda item: item.value)
+            added_low[(entry.day, entry.value)] = entry
         spike_resets[(entry.day, entry.value, pivot.day, pivot.value, "up")] = SpikeReset(
             entry=entry,
             peak=pivot,
@@ -789,14 +798,22 @@ def augment_spike_entry_points(
             point=pivot, direction="down",
             angle_deg=screen_angle_degrees(left, pivot, right, geometry),
         )
-        entry_candidates = [
-            item for item in high_candidates
+        existing_entries = [
+            item for item in high_rdp
             if left.day < item.day < pivot.day
         ]
-        if not entry_candidates:
-            continue
-        entry = max(entry_candidates, key=lambda item: item.value)
-        added_high[(entry.day, entry.value)] = entry
+        if existing_entries:
+            # Reuse the existing upper-RDP entry point when one already exists.
+            entry = max(existing_entries, key=lambda item: item.value)
+        else:
+            entry_candidates = [
+                item for item in high_candidates
+                if left.day < item.day < pivot.day
+            ]
+            if not entry_candidates:
+                continue
+            entry = max(entry_candidates, key=lambda item: item.value)
+            added_high[(entry.day, entry.value)] = entry
         spike_resets[(entry.day, entry.value, pivot.day, pivot.value, "down")] = SpikeReset(
             entry=entry,
             peak=pivot,
