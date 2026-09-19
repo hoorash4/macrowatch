@@ -214,77 +214,135 @@ def _inside_any_sideways(
     return any(_is_inside_sideways(point, segment) for segment in sideways_segments)
 
 
-def _compress_trend_window(
+def _build_trend_window(
     points: Sequence[PivotPoint],
-) -> tuple[PivotPoint, ...]:
-    """Compress one chronological trend window using the approved trend state rules.
+) -> tuple[tuple[TrendConnection, ...], set[tuple[date, float, str]]]:
+    """Build one trend window exactly from the approved HH/LL connection rules.
 
-    A low starts/continues an upward leg. While that upward leg is active, all
-    intermediate highs and lows are skipped and only the highest high reached before
-    a true lower-low reversal is retained. A high is the exact mirror for a downward
-    leg: only the lowest low before a true higher-high reversal is retained.
+    If the window starts at a low, the first line is low -> high. While the uptrend
+    continues, every later higher high is connected high -> high; the previous high
+    marker becomes redundant, but its line stays. The first high that fails to make a
+    higher high confirms that the preceding high was the reversal point, so the state
+    flips to falling and continues high -> low, then low -> lower-low.
 
-    This deliberately uses no new angle, distance, percentage, or smoothing threshold.
+    A window starting at a high is the exact mirror. No angle/distance/percentage
+    threshold is introduced here.
     """
     ordered = tuple(sorted(points, key=lambda point: (point.day, point.pivot_type)))
-    if len(ordered) <= 2:
-        return ordered
+    if len(ordered) < 2:
+        return (), set()
 
-    result: list[PivotPoint] = [ordered[0]]
-    leg_start = ordered[0]
-    direction = "up" if leg_start.pivot_type == "low" else "down"
-    best: PivotPoint | None = None
+    highs = tuple(point for point in ordered if point.pivot_type == "high")
+    lows = tuple(point for point in ordered if point.pivot_type == "low")
+    end_point = ordered[-1]
+    connections: list[TrendConnection] = []
+    hidden_markers: set[tuple[date, float, str]] = set()
 
-    def append_unique(point: PivotPoint) -> None:
-        if not result or _pivot_identity(result[-1]) != _pivot_identity(point):
-            result.append(point)
+    def add_connection(left: PivotPoint, right: PivotPoint) -> None:
+        if left.day >= right.day:
+            return
+        pair = (_pivot_identity(left), _pivot_identity(right))
+        if not any(
+            (_pivot_identity(item.start), _pivot_identity(item.end)) == pair
+            for item in connections
+        ):
+            connections.append(TrendConnection(left, right, "trend"))
 
-    for point in ordered[1:]:
+    anchor = ordered[0]
+    direction = "up" if anchor.pivot_type == "low" else "down"
+
+    while anchor.day < end_point.day:
         if direction == "up":
-            if point.pivot_type == "high":
-                if best is None or point.value > best.value:
-                    best = point
+            candidates = [point for point in highs if point.day > anchor.day]
+            if not candidates:
+                if anchor.day < end_point.day:
+                    add_connection(anchor, end_point)
+                break
+
+            current = candidates[0]
+            add_connection(anchor, current)
+            reversed_direction = False
+
+            for next_high in candidates[1:]:
+                if next_high.value > current.value:
+                    add_connection(current, next_high)
+                    hidden_markers.add(_pivot_identity(current))
+                    current = next_high
+                    continue
+
+                # HH failed: current is the confirmed reversal/high boundary.
+                anchor = current
+                direction = "down"
+                reversed_direction = True
+                break
+
+            if reversed_direction:
                 continue
 
-            # A low below the low that started the upward leg is the reversal.
-            if point.value < leg_start.value:
-                if best is not None:
-                    append_unique(best)
-                    leg_start = best
-                    direction = "down"
-                    best = point
-                else:
-                    # No high was formed; move the provisional low anchor lower.
-                    result[-1] = point
-                    leg_start = point
+            # No HH failure before the protected/window end.
+            if current.day < end_point.day:
+                add_connection(current, end_point)
+            break
+
+        candidates = [point for point in lows if point.day > anchor.day]
+        if not candidates:
+            if anchor.day < end_point.day:
+                add_connection(anchor, end_point)
+            break
+
+        current = candidates[0]
+        add_connection(anchor, current)
+        reversed_direction = False
+
+        for next_low in candidates[1:]:
+            if next_low.value < current.value:
+                add_connection(current, next_low)
+                hidden_markers.add(_pivot_identity(current))
+                current = next_low
                 continue
 
-        else:  # direction == "down"
-            if point.pivot_type == "low":
-                if best is None or point.value < best.value:
-                    best = point
-                continue
+            # LL failed: current is the confirmed reversal/low boundary.
+            anchor = current
+            direction = "up"
+            reversed_direction = True
+            break
 
-            # A high above the high that started the downward leg is the reversal.
-            if point.value > leg_start.value:
-                if best is not None:
-                    append_unique(best)
-                    leg_start = best
-                    direction = "up"
-                    best = point
-                else:
-                    # No low was formed; move the provisional high anchor higher.
-                    result[-1] = point
-                    leg_start = point
-                continue
+        if reversed_direction:
+            continue
 
-    if best is not None:
-        append_unique(best)
+        if current.day < end_point.day:
+            add_connection(current, end_point)
+        break
 
-    # The window endpoint is a boundary anchor (protected point or chart edge) and must
-    # remain available to the next window. Final chart-edge anchors are trimmed later.
-    append_unique(ordered[-1])
-    return tuple(result)
+    connections.sort(key=lambda item: (item.start.day, item.end.day))
+    return tuple(connections), hidden_markers
+
+
+def _connection_kind(
+    left: PivotPoint,
+    right: PivotPoint,
+    *,
+    sideways_segments: Sequence[SidewaysSegment],
+    spike_resets: Sequence[SpikeReset],
+) -> str:
+    left_key = _pivot_identity(left)
+    right_key = _pivot_identity(right)
+
+    for reset in spike_resets:
+        if (
+            left_key == _pivot_identity(reset.entry)
+            and right_key == _pivot_identity(reset.peak)
+        ):
+            return "spike"
+
+    for segment in sideways_segments:
+        if (
+            segment.start.day <= left.day <= segment.end.day
+            and segment.start.day <= right.day <= segment.end.day
+        ):
+            return "sideways"
+
+    return "trend"
 
 
 def compress_same_direction_pivots(
@@ -292,11 +350,11 @@ def compress_same_direction_pivots(
     *,
     protected_points: Sequence[PivotPoint] = (),
 ) -> tuple[PivotPoint, ...]:
-    """Build the connected trend path and skip every unused intermediate RDP point.
+    """Compatibility helper: return all points used by the approved trend lines.
 
-    Protected points split the path into independent windows. This is how sideways
-    boundaries and spike reset points survive even when a same-direction trend would
-    otherwise compress across them.
+    The final workflow now separates line geometry from visible pivot markers. This
+    helper therefore returns the unique line endpoints, including intermediate HH/LL
+    points whose marker may later be hidden.
     """
     ordered = tuple(sorted(points, key=lambda point: (point.day, point.pivot_type)))
     if len(ordered) <= 2:
@@ -312,14 +370,15 @@ def compress_same_direction_pivots(
     split_indices.append(len(ordered) - 1)
     split_indices = sorted(set(split_indices))
 
-    compressed: list[PivotPoint] = []
+    used: dict[tuple[date, float, str], PivotPoint] = {}
     for left_index, right_index in zip(split_indices, split_indices[1:]):
-        window = ordered[left_index:right_index + 1]
-        for point in _compress_trend_window(window):
-            if not compressed or _pivot_identity(compressed[-1]) != _pivot_identity(point):
-                compressed.append(point)
+        connections, _ = _build_trend_window(ordered[left_index:right_index + 1])
+        for connection in connections:
+            used[_pivot_identity(connection.start)] = connection.start
+            used[_pivot_identity(connection.end)] = connection.end
 
-    return tuple(compressed)
+    return tuple(sorted(used.values(), key=lambda point: (point.day, point.pivot_type)))
+
 
 def finalize_connected_pivots(
     candidate_path: Sequence[PivotPoint],
@@ -328,16 +387,18 @@ def finalize_connected_pivots(
     sideways_segments: Sequence[SidewaysSegment] = (),
     remove_chart_boundary_points: bool = True,
 ) -> FinalPivotResult:
-    """Apply the approved final-pivot rules without changing the base RDP extraction.
+    """Build final trend lines first, then hide only redundant pivot markers.
 
-    The caller supplies the chronological candidate connection path. This function:
-      1. protects sideways start/end points and keeps only spike peaks inside sideways;
-      2. compresses same-direction HH/LL intermediate pivots;
-      3. outside sideways, forces an added spike-entry point to connect to its peak,
-         then resumes from that peak;
-      4. removes the first and last chart/path points from the final pivot list.
-
-    No new angle, distance, smoothing, or threshold rule is introduced here.
+    Approved rules:
+      - uptrend starts low -> high, then continues high -> higher-high;
+      - downtrend starts high -> low, then continues low -> lower-low;
+      - when the next same-side point fails HH/LL, the current extreme is preserved as
+        the reversal point and the next line changes side;
+      - sideways boundaries are protected and split the state machine;
+      - an outside-sideways spike entry -> peak is a protected forced connection;
+      - a spike inside sideways contributes only its peak;
+      - intermediate HH/LL markers are hidden, but every line segment remains;
+      - only the first and last markers of the full final connected path are hidden.
     """
     ordered = tuple(sorted(candidate_path, key=lambda point: (point.day, point.pivot_type)))
     if not ordered:
@@ -354,8 +415,6 @@ def finalize_connected_pivots(
             continue
         retained.append(point)
 
-    # Outside sideways, an added spike entry is a hard reset trigger. Nothing between
-    # entry and peak belongs to the ordinary trend path: entry connects directly to peak.
     outside_resets = tuple(
         reset for reset in spike_result.spike_resets
         if not _inside_any_sideways(reset.peak, sideways_segments)
@@ -381,44 +440,73 @@ def finalize_connected_pivots(
     for reset in outside_resets:
         protected_points.extend((reset.entry, reset.peak))
 
-    retained = list(compress_same_direction_pivots(
-        retained,
-        protected_points=protected_points,
-    ))
+    protected_keys = {_pivot_identity(point) for point in protected_points}
+    split_indices = [0]
+    split_indices.extend(
+        index
+        for index, point in enumerate(retained[1:-1], start=1)
+        if _pivot_identity(point) in protected_keys
+    )
+    split_indices.append(len(retained) - 1)
+    split_indices = sorted(set(split_indices))
 
-    retained_keys = {_pivot_identity(point) for point in retained}
-    connections: list[TrendConnection] = []
-    reset_pairs = {
-        (_pivot_identity(reset.entry), _pivot_identity(reset.peak))
-        for reset in spike_result.spike_resets
-        if not _inside_any_sideways(reset.peak, sideways_segments)
-    }
-    sideways_pairs = {
-        (_pivot_identity(segment.start), _pivot_identity(segment.end))
-        for segment in sideways_segments
-    }
-    for left, right in zip(retained, retained[1:]):
-        pair = (_pivot_identity(left), _pivot_identity(right))
-        if pair in reset_pairs:
-            kind = "spike"
-        elif pair in sideways_pairs:
-            kind = "sideways"
-        else:
-            kind = "trend"
-        connections.append(TrendConnection(left, right, kind))
+    raw_connections: list[TrendConnection] = []
+    hidden_markers: set[tuple[date, float, str]] = set()
+    for left_index, right_index in zip(split_indices, split_indices[1:]):
+        window = retained[left_index:right_index + 1]
+        window_connections, window_hidden = _build_trend_window(window)
+        raw_connections.extend(window_connections)
+        hidden_markers.update(window_hidden)
 
-    if remove_chart_boundary_points and retained:
-        # The first and last points of the FINAL connected path are chart-boundary
-        # anchors only. Hide only those endpoint MARKERS. Keep the connections
-        # themselves so the full final path remains drawn from edge to edge.
-        first_key = _pivot_identity(retained[0])
-        last_key = _pivot_identity(retained[-1])
-        retained = [
-            point for point in retained
-            if _pivot_identity(point) not in {first_key, last_key}
-        ]
+    # Forced spike reset connection must exist even if ordinary trend construction
+    # would have chosen another segment around it.
+    connection_map: dict[
+        tuple[tuple[date, float, str], tuple[date, float, str]],
+        TrendConnection,
+    ] = {}
+    for connection in raw_connections:
+        key = (_pivot_identity(connection.start), _pivot_identity(connection.end))
+        connection_map[key] = connection
+    for reset in outside_resets:
+        key = (_pivot_identity(reset.entry), _pivot_identity(reset.peak))
+        connection_map[key] = TrendConnection(reset.entry, reset.peak, "spike")
 
-    return FinalPivotResult(tuple(retained), tuple(connections))
+    connections = [
+        TrendConnection(
+            connection.start,
+            connection.end,
+            _connection_kind(
+                connection.start,
+                connection.end,
+                sideways_segments=sideways_segments,
+                spike_resets=outside_resets,
+            ),
+        )
+        for connection in connection_map.values()
+    ]
+    connections.sort(key=lambda item: (item.start.day, item.end.day))
+
+    used_points: dict[tuple[date, float, str], PivotPoint] = {}
+    for connection in connections:
+        used_points[_pivot_identity(connection.start)] = connection.start
+        used_points[_pivot_identity(connection.end)] = connection.end
+
+    visible_keys = set(used_points) - hidden_markers
+    visible_keys.update(protected_keys)
+
+    if remove_chart_boundary_points and connections:
+        first_connection = min(connections, key=lambda item: item.start.day)
+        last_connection = max(connections, key=lambda item: item.end.day)
+        visible_keys.discard(_pivot_identity(first_connection.start))
+        visible_keys.discard(_pivot_identity(last_connection.end))
+
+    pivots = tuple(
+        sorted(
+            (point for key, point in used_points.items() if key in visible_keys),
+            key=lambda point: (point.day, point.pivot_type),
+        )
+    )
+    return FinalPivotResult(pivots, tuple(connections))
 
 
 def shift_months(value: date, months: int) -> date:
