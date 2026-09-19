@@ -541,17 +541,17 @@ def simplify_pivot_lines(
     augmented: SpikeAugmentedPivotResult,
     geometry: ChartGeometry,
 ) -> SimplifiedLineResult:
-    """Simplify the line path after removing the unused side of confirmed sideways.
+    """Simplify the line path in chronological order.
 
     Rules:
       - uptrend starts low -> high, then continues high -> high
-      - downtrend starts high -> low, then continues low -> low
-      - sideways keeps the same side as the prior trend:
-        uptrend => high -> high, downtrend => low -> low
-      - when one sideways side is selected, the overlapping opposite-side sideways
-        pair is removed first, so those unused pivots cannot be used by later lines
-      - a spike interrupts the current line at its entry, draws entry -> peak,
-        then restarts from the peak
+      - when the next high is lower, the PREVIOUS high owns the down reversal
+      - that previous high connects to the first later low that is NOT itself
+        a low-side up->down reversal point
+      - downtrend is the exact mirror
+      - sideways keeps the same side as the prior trend
+      - overlapping opposite-side sideways pivots are removed before later links
+      - spike entry interrupts the current line, entry -> peak is drawn, then restart
     """
     original_highs = tuple(sorted(augmented.high_pivots, key=lambda item: item.day))
     original_lows = tuple(sorted(augmented.low_pivots, key=lambda item: item.day))
@@ -562,6 +562,9 @@ def simplify_pivot_lines(
         (item for item in augmented.spike_peaks if item.entry is not None),
         key=lambda item: item.entry.day,
     ))
+
+    def point_key(point: PivotPoint) -> tuple[date, float, str]:
+        return point.day, point.value, point.pivot_type
 
     def sideways_pairs(
         points: Sequence[PivotPoint],
@@ -578,11 +581,7 @@ def simplify_pivot_lines(
 
     high_sideways = sideways_pairs(original_highs, "up")
     low_sideways = sideways_pairs(original_lows, "down")
-
     removed_keys: set[tuple[date, float, str]] = set()
-
-    def point_key(point: PivotPoint) -> tuple[date, float, str]:
-        return point.day, point.value, point.pivot_type
 
     def overlaps(left: SidewaysSegment, right: SidewaysSegment) -> bool:
         return left.start.day <= right.end.day and right.start.day <= left.end.day
@@ -625,37 +624,47 @@ def simplify_pivot_lines(
     def next_after(points: Sequence[PivotPoint], after: date) -> PivotPoint | None:
         return next((item for item in points if item.day > after), None)
 
-    def turns_into_same_direction(
+    def previous_before(points: Sequence[PivotPoint], before: date) -> PivotPoint | None:
+        previous = [item for item in points if item.day < before]
+        return previous[-1] if previous else None
+
+    def is_same_direction_turn(
         candidate: PivotPoint,
         points: Sequence[PivotPoint],
-        direction_to_check: str,
+        wanted_direction: str,
     ) -> bool:
-        """Return whether candidate itself is a same-side reversal into the given direction."""
+        """Candidate is the actual same-side turning vertex into wanted_direction."""
         ordered = [item for item in points if item.day <= candidate.day]
         if len(ordered) < 3 or ordered[-1] != candidate:
             return False
-        before_previous, previous, current = ordered[-3], ordered[-2], ordered[-1]
-        previous_delta = previous.value - before_previous.value
-        current_delta = current.value - previous.value
-        if previous_delta == 0 or current_delta == 0:
+        left, pivot, right = ordered[-3], ordered[-2], ordered[-1]
+
+        # The TURN lives at the middle point. We are testing whether candidate
+        # is that turning point, so candidate needs a point AFTER it.
+        after = next_after(points, candidate.day)
+        before = previous_before(points, candidate.day)
+        if before is None or after is None:
             return False
-        previous_direction = "up" if previous_delta > 0 else "down"
-        current_direction = "up" if current_delta > 0 else "down"
-        return (
-            previous_direction != current_direction
-            and current_direction == direction_to_check
-        )
+
+        if candidate.pivot_type == "low":
+            if wanted_direction == "down":
+                return before.value < candidate.value and after.value < candidate.value
+            return before.value > candidate.value and after.value > candidate.value
+
+        if wanted_direction == "down":
+            return before.value < candidate.value and after.value < candidate.value
+        return before.value > candidate.value and after.value > candidate.value
 
     def next_valid_opposite(
         points: Sequence[PivotPoint],
         after: date,
-        direction_to_check: str,
+        wanted_direction: str,
     ) -> PivotPoint | None:
         candidate = next_after(points, after)
-        while candidate is not None and turns_into_same_direction(
+        while candidate is not None and is_same_direction_turn(
             candidate,
             points,
-            direction_to_check,
+            wanted_direction,
         ):
             candidate = next_after(points, candidate.day)
         return candidate
@@ -677,123 +686,119 @@ def simplify_pivot_lines(
     refresh_points()
     first_high = highs[0]
     first_low = lows[0]
+
     if first_low.day < first_high.day:
         direction = "up"
         anchor = first_low
-        target = next_after(highs, anchor.day)
+        current_same_side = next_after(highs, anchor.day)
     else:
         direction = "down"
         anchor = first_high
-        target = next_after(lows, anchor.day)
+        current_same_side = next_after(lows, anchor.day)
 
-    if target is None:
+    if current_same_side is None:
         return SimplifiedLineResult(markers=(), segments=(), sideways_segments=())
 
-    while target is not None:
-        spike = next_spike_before(anchor.day, target.day)
-        if spike is not None and spike.entry is not None:
-            add_segment(anchor, spike.entry, "trend")
-            add_segment(spike.entry, spike.point, "spike")
-            consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
-            anchor = spike.point
-            direction = "down" if spike.point.pivot_type == "high" else "up"
-            refresh_points()
-            target = (
-                next_after(lows, anchor.day)
-                if direction == "down"
-                else next_after(highs, anchor.day)
-            )
-            continue
+    # Initial cross-side leg.
+    add_segment(anchor, current_same_side, "trend")
+    anchor = current_same_side
+
+    while True:
+        refresh_points()
 
         if direction == "up":
-            if anchor.pivot_type == "low":
-                add_segment(anchor, target, "trend")
-                anchor = target
-                target = next_after(highs, anchor.day)
-                continue
-
-            sideways = classify_sideways_reference_line(anchor, target, "up", geometry)
-            if sideways is not None:
-                remove_opposite_sideways(sideways)
-                refresh_points()
-                add_segment(anchor, target, "sideways")
-                sideways_segments.append(sideways)
-                anchor = target
-                target = next_after(highs, anchor.day)
-                continue
-
-            if target.value > anchor.value:
-                add_segment(anchor, target, "trend")
-                anchor = target
-                target = next_after(highs, anchor.day)
-                continue
-
-            reversal_low = next_valid_opposite(lows, anchor.day, "down")
-            if reversal_low is None:
+            next_high = next_after(highs, anchor.day)
+            if next_high is None:
                 break
-            spike = next_spike_before(anchor.day, reversal_low.day)
+
+            spike = next_spike_before(anchor.day, next_high.day)
             if spike is not None and spike.entry is not None:
                 add_segment(anchor, spike.entry, "trend")
                 add_segment(spike.entry, spike.point, "spike")
                 consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
                 anchor = spike.point
                 direction = "down" if spike.point.pivot_type == "high" else "up"
-                refresh_points()
-                target = (
-                    next_after(lows, anchor.day)
-                    if direction == "down"
-                    else next_after(highs, anchor.day)
-                )
                 continue
-            add_segment(anchor, reversal_low, "trend")
-            anchor = reversal_low
+
+            sideways = classify_sideways_reference_line(anchor, next_high, "up", geometry)
+            if sideways is not None:
+                remove_opposite_sideways(sideways)
+                refresh_points()
+                add_segment(anchor, next_high, "sideways")
+                sideways_segments.append(sideways)
+                anchor = next_high
+                continue
+
+            if next_high.value > anchor.value:
+                add_segment(anchor, next_high, "trend")
+                anchor = next_high
+                continue
+
+            # next_high is lower: anchor is the actual high-side reversal owner.
+            reversal_owner = anchor
+            low_candidate = next_valid_opposite(lows, reversal_owner.day, "down")
+            if low_candidate is None:
+                break
+
+            spike = next_spike_before(reversal_owner.day, low_candidate.day)
+            if spike is not None and spike.entry is not None:
+                add_segment(reversal_owner, spike.entry, "trend")
+                add_segment(spike.entry, spike.point, "spike")
+                consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
+                anchor = spike.point
+                direction = "down" if spike.point.pivot_type == "high" else "up"
+                continue
+
+            add_segment(reversal_owner, low_candidate, "trend")
+            anchor = low_candidate
             direction = "down"
-            target = next_after(lows, anchor.day)
             continue
 
-        if anchor.pivot_type == "high":
-            add_segment(anchor, target, "trend")
-            anchor = target
-            target = next_after(lows, anchor.day)
-            continue
-
-        sideways = classify_sideways_reference_line(anchor, target, "down", geometry)
-        if sideways is not None:
-            remove_opposite_sideways(sideways)
-            refresh_points()
-            add_segment(anchor, target, "sideways")
-            sideways_segments.append(sideways)
-            anchor = target
-            target = next_after(lows, anchor.day)
-            continue
-
-        if target.value < anchor.value:
-            add_segment(anchor, target, "trend")
-            anchor = target
-            target = next_after(lows, anchor.day)
-            continue
-
-        reversal_high = next_valid_opposite(highs, anchor.day, "up")
-        if reversal_high is None:
+        next_low = next_after(lows, anchor.day)
+        if next_low is None:
             break
-        spike = next_spike_before(anchor.day, reversal_high.day)
+
+        spike = next_spike_before(anchor.day, next_low.day)
         if spike is not None and spike.entry is not None:
             add_segment(anchor, spike.entry, "trend")
             add_segment(spike.entry, spike.point, "spike")
             consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
             anchor = spike.point
             direction = "down" if spike.point.pivot_type == "high" else "up"
-            refresh_points()
-            target = (
-                next_after(lows, anchor.day)
-                if direction == "down"
-                else next_after(highs, anchor.day)
-            )
             continue
-        add_segment(anchor, reversal_high, "trend")
-        anchor = reversal_high
+
+        sideways = classify_sideways_reference_line(anchor, next_low, "down", geometry)
+        if sideways is not None:
+            remove_opposite_sideways(sideways)
+            refresh_points()
+            add_segment(anchor, next_low, "sideways")
+            sideways_segments.append(sideways)
+            anchor = next_low
+            continue
+
+        if next_low.value < anchor.value:
+            add_segment(anchor, next_low, "trend")
+            anchor = next_low
+            continue
+
+        # next_low is higher: anchor is the actual low-side reversal owner.
+        reversal_owner = anchor
+        high_candidate = next_valid_opposite(highs, reversal_owner.day, "up")
+        if high_candidate is None:
+            break
+
+        spike = next_spike_before(reversal_owner.day, high_candidate.day)
+        if spike is not None and spike.entry is not None:
+            add_segment(reversal_owner, spike.entry, "trend")
+            add_segment(spike.entry, spike.point, "spike")
+            consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
+            anchor = spike.point
+            direction = "down" if spike.point.pivot_type == "high" else "up"
+            continue
+
+        add_segment(reversal_owner, high_candidate, "trend")
+        anchor = high_candidate
         direction = "up"
-        target = next_after(highs, anchor.day)
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_segments.sort(key=lambda item: (item.start.day, item.end.day))
