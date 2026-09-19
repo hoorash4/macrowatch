@@ -214,47 +214,112 @@ def _inside_any_sideways(
     return any(_is_inside_sideways(point, segment) for segment in sideways_segments)
 
 
+def _compress_trend_window(
+    points: Sequence[PivotPoint],
+) -> tuple[PivotPoint, ...]:
+    """Compress one chronological trend window using the approved trend state rules.
+
+    A low starts/continues an upward leg. While that upward leg is active, all
+    intermediate highs and lows are skipped and only the highest high reached before
+    a true lower-low reversal is retained. A high is the exact mirror for a downward
+    leg: only the lowest low before a true higher-high reversal is retained.
+
+    This deliberately uses no new angle, distance, percentage, or smoothing threshold.
+    """
+    ordered = tuple(sorted(points, key=lambda point: (point.day, point.pivot_type)))
+    if len(ordered) <= 2:
+        return ordered
+
+    result: list[PivotPoint] = [ordered[0]]
+    leg_start = ordered[0]
+    direction = "up" if leg_start.pivot_type == "low" else "down"
+    best: PivotPoint | None = None
+
+    def append_unique(point: PivotPoint) -> None:
+        if not result or _pivot_identity(result[-1]) != _pivot_identity(point):
+            result.append(point)
+
+    for point in ordered[1:]:
+        if direction == "up":
+            if point.pivot_type == "high":
+                if best is None or point.value > best.value:
+                    best = point
+                continue
+
+            # A low below the low that started the upward leg is the reversal.
+            if point.value < leg_start.value:
+                if best is not None:
+                    append_unique(best)
+                    leg_start = best
+                    direction = "down"
+                    best = point
+                else:
+                    # No high was formed; move the provisional low anchor lower.
+                    result[-1] = point
+                    leg_start = point
+                continue
+
+        else:  # direction == "down"
+            if point.pivot_type == "low":
+                if best is None or point.value < best.value:
+                    best = point
+                continue
+
+            # A high above the high that started the downward leg is the reversal.
+            if point.value > leg_start.value:
+                if best is not None:
+                    append_unique(best)
+                    leg_start = best
+                    direction = "up"
+                    best = point
+                else:
+                    # No low was formed; move the provisional high anchor higher.
+                    result[-1] = point
+                    leg_start = point
+                continue
+
+    if best is not None:
+        append_unique(best)
+
+    # The window endpoint is a boundary anchor (protected point or chart edge) and must
+    # remain available to the next window. Final chart-edge anchors are trimmed later.
+    append_unique(ordered[-1])
+    return tuple(result)
+
+
 def compress_same_direction_pivots(
     points: Sequence[PivotPoint],
     *,
     protected_points: Sequence[PivotPoint] = (),
 ) -> tuple[PivotPoint, ...]:
-    """Remove same-side intermediate HH/LL pivots while keeping protected boundaries.
+    """Build the connected trend path and skip every unused intermediate RDP point.
 
-    This implements only the approved continuation rule on an already ordered connected
-    path:
-      - rising continuation uses high -> high and removes intermediate highs while a
-        later high is higher;
-      - falling continuation uses low -> low and removes intermediate lows while a later
-        low is lower;
-      - low -> high and high -> low reversal/start connections are preserved;
-      - protected points (for example sideways boundaries) are never removed.
+    Protected points split the path into independent windows. This is how sideways
+    boundaries and spike reset points survive even when a same-direction trend would
+    otherwise compress across them.
     """
-    ordered = list(points)
-    protected = {_pivot_identity(point) for point in protected_points}
-    changed = True
-    while changed:
-        changed = False
-        for index in range(1, len(ordered) - 1):
-            left, middle, right = ordered[index - 1:index + 2]
-            if _pivot_identity(middle) in protected:
-                continue
-            if (
-                left.pivot_type == middle.pivot_type == right.pivot_type == "high"
-                and left.value < middle.value < right.value
-            ):
-                del ordered[index]
-                changed = True
-                break
-            if (
-                left.pivot_type == middle.pivot_type == right.pivot_type == "low"
-                and left.value > middle.value > right.value
-            ):
-                del ordered[index]
-                changed = True
-                break
-    return tuple(ordered)
+    ordered = tuple(sorted(points, key=lambda point: (point.day, point.pivot_type)))
+    if len(ordered) <= 2:
+        return ordered
 
+    protected = {_pivot_identity(point) for point in protected_points}
+    split_indices = [0]
+    split_indices.extend(
+        index
+        for index, point in enumerate(ordered[1:-1], start=1)
+        if _pivot_identity(point) in protected
+    )
+    split_indices.append(len(ordered) - 1)
+    split_indices = sorted(set(split_indices))
+
+    compressed: list[PivotPoint] = []
+    for left_index, right_index in zip(split_indices, split_indices[1:]):
+        window = ordered[left_index:right_index + 1]
+        for point in _compress_trend_window(window):
+            if not compressed or _pivot_identity(compressed[-1]) != _pivot_identity(point):
+                compressed.append(point)
+
+    return tuple(compressed)
 
 def finalize_connected_pivots(
     candidate_path: Sequence[PivotPoint],
@@ -289,11 +354,33 @@ def finalize_connected_pivots(
             continue
         retained.append(point)
 
+    # Outside sideways, an added spike entry is a hard reset trigger. Nothing between
+    # entry and peak belongs to the ordinary trend path: entry connects directly to peak.
+    outside_resets = tuple(
+        reset for reset in spike_result.spike_resets
+        if not _inside_any_sideways(reset.peak, sideways_segments)
+    )
+    for reset in outside_resets:
+        retained = [
+            point for point in retained
+            if not (reset.entry.day < point.day < reset.peak.day)
+        ]
+        existing = {_pivot_identity(point) for point in retained}
+        if _pivot_identity(reset.entry) not in existing:
+            retained.append(reset.entry)
+        if _pivot_identity(reset.peak) not in existing:
+            retained.append(reset.peak)
+
+    retained.sort(key=lambda point: (point.day, point.pivot_type))
+
     protected_points = [
         point
         for segment in sideways_segments
         for point in segment.pivot_points
     ]
+    for reset in outside_resets:
+        protected_points.extend((reset.entry, reset.peak))
+
     retained = list(compress_same_direction_pivots(
         retained,
         protected_points=protected_points,
@@ -301,36 +388,6 @@ def finalize_connected_pivots(
 
     retained_keys = {_pivot_identity(point) for point in retained}
     connections: list[TrendConnection] = []
-
-    for left, right in zip(retained, retained[1:]):
-        connection_type = "trend"
-        for segment in sideways_segments:
-            if (
-                _pivot_identity(left) == _pivot_identity(segment.start)
-                and _pivot_identity(right) == _pivot_identity(segment.end)
-            ):
-                connection_type = "sideways"
-                break
-        connections.append(TrendConnection(left, right, connection_type))
-
-    # Outside sideways, an approved spike entry is a reset trigger:
-    # entry -> peak is forced, and all subsequent trend logic resumes from the peak.
-    for reset in spike_result.spike_resets:
-        if _inside_any_sideways(reset.peak, sideways_segments):
-            continue
-        entry_key = _pivot_identity(reset.entry)
-        peak_key = _pivot_identity(reset.peak)
-        if entry_key not in retained_keys:
-            retained.append(reset.entry)
-            retained_keys.add(entry_key)
-        if peak_key not in retained_keys:
-            retained.append(reset.peak)
-            retained_keys.add(peak_key)
-
-    retained.sort(key=lambda point: (point.day, point.pivot_type))
-
-    # Rebuild connections after spike-reset points were inserted.
-    connections = []
     reset_pairs = {
         (_pivot_identity(reset.entry), _pivot_identity(reset.peak))
         for reset in spike_result.spike_resets
