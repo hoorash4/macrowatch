@@ -16,6 +16,8 @@ from historical_pivot_base import (  # noqa: E402
     PivotPoint,
     PivotPolicy,
     SeriesPoint,
+    SidewaysSegment,
+    SpikeAugmentedPivotResult,
     SpikePeak,
     SpikeReset,
     buffer_bounds,
