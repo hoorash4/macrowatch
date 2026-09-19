@@ -16,6 +16,7 @@ from historical_pivot_base import (  # noqa: E402
     PivotPoint,
     PivotPolicy,
     SeriesPoint,
+    SidewaysSegment,
     SpikePeak,
     buffer_bounds,
     build_envelope,
@@ -25,7 +26,9 @@ from historical_pivot_base import (  # noqa: E402
     frontend_payload,
     plateau_extrema,
     augment_spike_entry_points,
+    classify_sideways_reference_line,
     screen_angle_degrees,
+    screen_segment_angle_degrees,
 )
 
 
@@ -383,6 +386,36 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             geometry,
         )
         self.assertLess(angle, 40.0)
+
+
+    def test_uptrend_sideways_uses_high_reference_line_at_six_degrees(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        end = PivotPoint(d + timedelta(days=60), 5.5, "high")
+        segment = classify_sideways_reference_line(start, end, "up", geometry)
+        self.assertIsNotNone(segment)
+        self.assertEqual("high", segment.reference_side)
+        self.assertLessEqual(abs(segment.angle_deg), 6.0)
+
+    def test_downtrend_sideways_uses_low_reference_line_at_six_degrees(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 2.0, "low")
+        end = PivotPoint(d + timedelta(days=60), 2.5, "low")
+        segment = classify_sideways_reference_line(start, end, "down", geometry)
+        self.assertIsNotNone(segment)
+        self.assertEqual("low", segment.reference_side)
+        self.assertLessEqual(abs(segment.angle_deg), 6.0)
+
+    def test_sideways_rejects_reference_line_over_six_degrees(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        end = PivotPoint(d + timedelta(days=30), 8.0, "high")
+        self.assertIsNone(
+            classify_sideways_reference_line(start, end, "up", geometry)
+        )
 
 
 if __name__ == "__main__":
