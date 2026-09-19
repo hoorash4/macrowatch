@@ -589,19 +589,31 @@ def prune_same_trend_extremes(
     angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
     protected_markers: Sequence[PivotPoint] = (),
 ) -> SimplifiedLineResult:
-    """Additional post-processing only; the existing simplification runs first.
+    """Delete only interior pivots of a confirmed same-trend extreme run.
 
-    Starting from a low, compare only successively higher highs from that same low.
-    A lower high is ignored for the angle test. When a later high exceeds the current
-    high, compare the two rays from the starting low. If their interior angle is
-    <= threshold, the later high remains in the same up-wave candidate set and becomes
-    the new extreme. If the angle is > threshold, the current extreme closes the wave.
+    This is an additive post-pass. It never rebuilds the existing trend state.
 
-    Down-waves are the exact mirror using successively lower lows from the starting high.
+    A candidate run starts only from an already-existing cross-side trend segment:
+      - low -> high starts an up-run from that low
+      - high -> low starts a down-run from that high
 
-    Once an extreme is fixed, every ordinary high/low strictly between the wave origin
-    and that extreme is removed and replaced by one direct trend segment. Protected
-    marker-only spikes remain as standalone markers and are never connected.
+    Up-run:
+      - inspect later highs only
+      - the first high establishes the first extreme
+      - lower/equal highs are ignored
+      - only a NEW higher high creates an angle comparison at the fixed low anchor
+      - <= 10 degrees: same trend, update the extreme and continue
+      - > 10 degrees: stop before that new high
+
+    Down-run is the exact mirror.
+
+    At least two successive extreme updates (therefore at least one angle comparison)
+    are required before anything is deleted. A sideways or spike segment is a hard
+    trend boundary: angle scanning stops there and never crosses it.
+
+    When a run is confirmed, only ordinary pivots strictly between its fixed anchor
+    and confirmed extreme are removed. The anchor, extreme, all spike peaks, and all
+    sideways structure remain untouched.
     """
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
@@ -610,84 +622,124 @@ def prune_same_trend_extremes(
         return point.day, point.value, point.pivot_type
 
     protected_keys = {key(item) for item in protected_markers}
-    connected: dict[tuple[date, float, str], PivotPoint] = {}
+
+    # Existing segment endpoints are the only points this post-pass may inspect.
+    point_map: dict[tuple[date, float, str], PivotPoint] = {}
     for segment in result.segments:
-        connected[key(segment.start)] = segment.start
-        connected[key(segment.end)] = segment.end
+        point_map[key(segment.start)] = segment.start
+        point_map[key(segment.end)] = segment.end
+    for marker in protected_markers:
+        point_map[key(marker)] = marker
 
     points = tuple(sorted(
-        (item for item in connected.values() if key(item) not in protected_keys),
+        point_map.values(),
         key=lambda item: (item.day, item.pivot_type),
     ))
-    if len(points) < 2:
-        return result
-
     highs = tuple(item for item in points if item.pivot_type == "high")
     lows = tuple(item for item in points if item.pivot_type == "low")
 
-    def after(seq: Sequence[PivotPoint], day: date) -> list[PivotPoint]:
-        return [item for item in seq if item.day > day]
+    # Sideways and spike are hard boundaries. The previous directional trend ends
+    # at the start of either segment; the post-pass may not look past that day.
+    hard_boundaries = tuple(sorted(
+        segment.start.day
+        for segment in result.segments
+        if segment.kind in {"sideways", "spike"}
+    ))
 
-    waves: list[tuple[PivotPoint, PivotPoint]] = []
-    anchor = points[0]
-    direction = "up" if anchor.pivot_type == "low" else "down"
+    def first_boundary_after(day: date) -> date | None:
+        return next((item for item in hard_boundaries if item > day), None)
 
-    while True:
-        if direction == "up":
-            candidates = after(highs, anchor.day)
-            if not candidates:
-                break
-            extreme = candidates[0]
-            for candidate in candidates[1:]:
-                if candidate.value <= extreme.value:
-                    continue
-                angle = screen_origin_angle_degrees(
-                    anchor, extreme, candidate, geometry,
-                )
-                if angle > angle_threshold_deg:
-                    break
-                extreme = candidate
-            waves.append((anchor, extreme))
-            anchor = extreme
-            direction = "down"
+    # Start only from transition anchors that the existing simplifier already made.
+    # We do not invent a new anchor or reinterpret the pre-existing trend path.
+    run_starts: list[tuple[PivotPoint, str]] = []
+    for segment in result.segments:
+        if segment.kind != "trend":
+            continue
+        if segment.start.pivot_type == "low" and segment.end.pivot_type == "high":
+            run_starts.append((segment.start, "up"))
+        elif segment.start.pivot_type == "high" and segment.end.pivot_type == "low":
+            run_starts.append((segment.start, "down"))
+
+    replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
+
+    def covered(day: date) -> bool:
+        return any(start.day < day < end.day for start, end in replacement_intervals)
+
+    for anchor, direction in sorted(run_starts, key=lambda item: item[0].day):
+        if key(anchor) in protected_keys or covered(anchor.day):
             continue
 
-        candidates = after(lows, anchor.day)
+        boundary = first_boundary_after(anchor.day)
+        same_side = highs if direction == "up" else lows
+        candidates = [
+            item for item in same_side
+            if item.day > anchor.day
+            and (boundary is None or item.day <= boundary)
+            and key(item) not in protected_keys
+        ]
         if not candidates:
-            break
+            continue
+
         extreme = candidates[0]
+        comparison_count = 0
+
         for candidate in candidates[1:]:
-            if candidate.value >= extreme.value:
+            improves = (
+                candidate.value > extreme.value
+                if direction == "up"
+                else candidate.value < extreme.value
+            )
+            if not improves:
                 continue
+
             angle = screen_origin_angle_degrees(
-                anchor, extreme, candidate, geometry,
+                anchor,
+                extreme,
+                candidate,
+                geometry,
             )
             if angle > angle_threshold_deg:
                 break
+
             extreme = candidate
-        waves.append((anchor, extreme))
-        anchor = extreme
-        direction = "up"
+            comparison_count += 1
 
-    if not waves:
-        return result
-
-    removed_keys: set[tuple[date, float, str]] = set()
-    replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
-    for start, end in waves:
-        if start.day >= end.day:
+        # One first extreme plus at least one later extreme update is required.
+        if comparison_count == 0:
             continue
+        if anchor.day >= extreme.day:
+            continue
+
+        # Never collapse across a hard boundary.
+        if boundary is not None and extreme.day > boundary:
+            continue
+
+        # Do not cross any protected spike peak.
+        if any(anchor.day < marker.day < extreme.day for marker in protected_markers):
+            continue
+
         interior = [
             item for item in points
-            if start.day < item.day < end.day
+            if anchor.day < item.day < extreme.day
+            and key(item) not in protected_keys
         ]
         if not interior:
             continue
-        removed_keys.update(key(item) for item in interior)
-        replacement_intervals.append((start, end))
+
+        replacement_intervals.append((anchor, extreme))
 
     if not replacement_intervals:
         return result
+
+    # Keep intervals non-overlapping and chronological. An interval created from an
+    # earlier confirmed trend owns its interior; later anchors inside it are ignored.
+    replacement_intervals.sort(key=lambda item: (item[0].day, item[1].day))
+    non_overlapping: list[tuple[PivotPoint, PivotPoint]] = []
+    for start, end in replacement_intervals:
+        if non_overlapping and start.day < non_overlapping[-1][1].day:
+            continue
+        non_overlapping.append((start, end))
+    replacement_intervals = non_overlapping
 
     def segment_inside_replacement(segment: SimplifiedLineSegment) -> bool:
         return any(
@@ -696,6 +748,7 @@ def prune_same_trend_extremes(
             for start, end in replacement_intervals
         )
 
+    # Existing behavior outside confirmed intervals is preserved exactly.
     kept_segments = [
         segment for segment in result.segments
         if not segment_inside_replacement(segment)
@@ -719,14 +772,7 @@ def prune_same_trend_extremes(
             key=lambda item: (item.day, item.pivot_type),
         )),
         segments=tuple(kept_segments),
-        sideways_segments=tuple(
-            segment for segment in result.sideways_segments
-            if not any(
-                start.day <= segment.start.day
-                and segment.end.day <= end.day
-                for start, end in replacement_intervals
-            )
-        ),
+        sideways_segments=result.sideways_segments,
     )
 
 
@@ -1047,7 +1093,7 @@ def simplify_pivot_lines(
     return prune_same_trend_extremes(
         simplified,
         geometry,
-        protected_markers=tuple(spike.point for spike in marker_only_spikes),
+        protected_markers=tuple(spike.point for spike in augmented.spike_peaks),
     )
 
 def _single_row(
