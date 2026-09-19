@@ -11,7 +11,10 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from historical_pivot_base import (  # noqa: E402
     PIVOT_POLICIES,
+    BasePivotResult,
+    ChartGeometry,
     PivotPoint,
+    PivotPolicy,
     SeriesPoint,
     buffer_bounds,
     build_envelope,
@@ -20,6 +23,8 @@ from historical_pivot_base import (  # noqa: E402
     fixed_count_rdp,
     frontend_payload,
     plateau_extrema,
+    augment_spike_entry_points,
+    screen_angle_degrees,
 )
 
 
@@ -160,6 +165,113 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         point_query = db.requests[1][2]
         self.assertEqual("gte.2018-03-23", point_query["observation_date"])
         self.assertIn("observation_date.lte.2024-12-28", point_query["and"])
+
+
+    def test_spike_augmentation_preserves_base_rdp_and_adds_upward_entry_only(self):
+        d = date(2020, 1, 1)
+        high_rdp = (
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 5.0, "high"),
+            PivotPoint(d + timedelta(days=40), 6.0, "high"),
+        )
+        low_rdp = (
+            PivotPoint(d - timedelta(days=10), 0.0, "low"),
+            PivotPoint(d + timedelta(days=30), 1.0, "low"),
+            PivotPoint(d + timedelta(days=50), 0.5, "low"),
+        )
+        low_candidates = (
+            PivotPoint(d + timedelta(days=3), 2.0, "low"),
+            PivotPoint(d + timedelta(days=6), 1.0, "low"),
+            PivotPoint(d + timedelta(days=8), 1.5, "low"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14),
+            high_candidates=high_rdp,
+            low_candidates=low_candidates,
+            high_pivots=high_rdp,
+            low_pivots=low_rdp,
+        )
+        geometry = ChartGeometry(
+            display_start=d,
+            display_end=d + timedelta(days=100),
+            y_min=0.0,
+            y_max=10.0,
+            width=100.0,
+            height=100.0,
+        )
+        result = augment_spike_entry_points(base, geometry)
+        self.assertEqual(high_rdp, result.base.high_pivots)
+        self.assertEqual(low_rdp, result.base.low_pivots)
+        self.assertEqual((PivotPoint(d + timedelta(days=6), 1.0, "low"),), result.added_low_pivots)
+        self.assertEqual((), result.added_high_pivots)
+        self.assertTrue(all(item in result.low_pivots for item in low_rdp))
+
+    def test_spike_augmentation_skips_when_opposite_rdp_already_exists_between_a_and_c(self):
+        d = date(2020, 1, 1)
+        high_rdp = (
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 5.0, "high"),
+        )
+        low_rdp = (
+            PivotPoint(d + timedelta(days=5), 1.0, "low"),
+            PivotPoint(d + timedelta(days=30), 0.0, "low"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14),
+            high_candidates=high_rdp,
+            low_candidates=(PivotPoint(d + timedelta(days=6), 0.5, "low"),),
+            high_pivots=high_rdp,
+            low_pivots=low_rdp,
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        result = augment_spike_entry_points(base, geometry)
+        self.assertEqual((), result.added_low_pivots)
+
+    def test_spike_augmentation_mirrors_for_downward_spike(self):
+        d = date(2020, 1, 1)
+        low_rdp = (
+            PivotPoint(d, 5.0, "low"),
+            PivotPoint(d + timedelta(days=10), 0.0, "low"),
+            PivotPoint(d + timedelta(days=20), 5.0, "low"),
+            PivotPoint(d + timedelta(days=40), 4.0, "low"),
+        )
+        high_rdp = (
+            PivotPoint(d - timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=30), 9.0, "high"),
+            PivotPoint(d + timedelta(days=50), 9.5, "high"),
+        )
+        high_candidates = (
+            PivotPoint(d + timedelta(days=3), 7.0, "high"),
+            PivotPoint(d + timedelta(days=6), 9.0, "high"),
+            PivotPoint(d + timedelta(days=8), 8.0, "high"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14),
+            high_candidates=high_candidates,
+            low_candidates=low_rdp,
+            high_pivots=high_rdp,
+            low_pivots=low_rdp,
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        result = augment_spike_entry_points(base, geometry)
+        self.assertEqual((PivotPoint(d + timedelta(days=6), 9.0, "high"),), result.added_high_pivots)
+        self.assertEqual((), result.added_low_pivots)
+
+    def test_screen_angle_uses_chart_geometry(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        angle = screen_angle_degrees(
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 5.0, "high"),
+            geometry,
+        )
+        self.assertLess(angle, 40.0)
 
 
 if __name__ == "__main__":
