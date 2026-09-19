@@ -368,38 +368,58 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertGreater(rising, 0)
         self.assertLess(falling, 0)
 
-    def test_same_direction_hh_ll_compression_keeps_only_run_extreme(self):
+    def test_mixed_path_compression_skips_intermediate_points_until_hh_or_ll_extreme(self):
         d = date(2020, 1, 1)
-        rising_highs = (
-            PivotPoint(d, 1.0, "high"),
-            PivotPoint(d + timedelta(days=10), 2.0, "high"),
-            PivotPoint(d + timedelta(days=20), 3.0, "high"),
-            PivotPoint(d + timedelta(days=30), 4.0, "high"),
-        )
-        self.assertEqual(
-            (rising_highs[0], rising_highs[-1]),
-            compress_same_direction_pivots(rising_highs),
-        )
-
-        falling_lows = (
-            PivotPoint(d, 4.0, "low"),
-            PivotPoint(d + timedelta(days=10), 3.0, "low"),
+        rising = (
+            PivotPoint(d, 0.0, "low"),
+            PivotPoint(d + timedelta(days=5), 2.0, "high"),
+            PivotPoint(d + timedelta(days=10), 1.0, "low"),
+            PivotPoint(d + timedelta(days=15), 3.0, "high"),
             PivotPoint(d + timedelta(days=20), 2.0, "low"),
-            PivotPoint(d + timedelta(days=30), 1.0, "low"),
+            PivotPoint(d + timedelta(days=25), 4.0, "high"),
         )
         self.assertEqual(
-            (falling_lows[0], falling_lows[-1]),
-            compress_same_direction_pivots(falling_lows),
+            (rising[0], rising[-1]),
+            compress_same_direction_pivots(rising),
         )
 
-    def test_sideways_boundaries_survive_same_direction_compression(self):
-        d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 1.0, "high")
-        p2 = PivotPoint(d + timedelta(days=10), 2.0, "high")
-        p3 = PivotPoint(d + timedelta(days=20), 3.0, "high")
+        falling = (
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=5), 3.0, "low"),
+            PivotPoint(d + timedelta(days=10), 4.0, "high"),
+            PivotPoint(d + timedelta(days=15), 2.0, "low"),
+            PivotPoint(d + timedelta(days=20), 3.0, "high"),
+            PivotPoint(d + timedelta(days=25), 1.0, "low"),
+        )
         self.assertEqual(
-            (p1, p2, p3),
-            compress_same_direction_pivots((p1, p2, p3), protected_points=(p2,)),
+            (falling[0], falling[-1]),
+            compress_same_direction_pivots(falling),
+        )
+
+    def test_downtrend_skips_intermediate_high_when_a_later_low_is_lower(self):
+        d = date(2020, 1, 1)
+        high = PivotPoint(d, -0.11, "high")
+        first_low = PivotPoint(d + timedelta(days=10), -0.345, "low")
+        intermediate_high = PivotPoint(d + timedelta(days=20), -0.185, "high")
+        lower_low = PivotPoint(d + timedelta(days=30), -0.422, "low")
+        self.assertEqual(
+            (high, lower_low),
+            compress_same_direction_pivots(
+                (high, first_low, intermediate_high, lower_low)
+            ),
+        )
+
+    def test_sideways_boundary_splits_the_state_machine_and_survives(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 0.0, "low")
+        protected_high = PivotPoint(d + timedelta(days=10), 2.0, "high")
+        later_high = PivotPoint(d + timedelta(days=20), 3.0, "high")
+        self.assertEqual(
+            (low, protected_high, later_high),
+            compress_same_direction_pivots(
+                (low, protected_high, later_high),
+                protected_points=(protected_high,),
+            ),
         )
 
     def test_finalization_keeps_only_peak_for_spike_inside_sideways(self):
@@ -486,7 +506,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         points = (
             PivotPoint(d, 0.0, "low"),
             PivotPoint(d + timedelta(days=10), 2.0, "high"),
-            PivotPoint(d + timedelta(days=20), 1.0, "low"),
+            PivotPoint(d + timedelta(days=20), -1.0, "low"),
             PivotPoint(d + timedelta(days=30), 3.0, "high"),
         )
         base = BasePivotResult(
