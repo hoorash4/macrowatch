@@ -31,10 +31,11 @@ SPIKE_ANGLE_THRESHOLD_DEG = 40.0
 class PivotPolicy:
     envelope_points: int
     rdp_points: int
+    envelope_calendar_radius_days: int | None = None
 
 
 PIVOT_POLICIES = {
-    "D": PivotPolicy(envelope_points=35, rdp_points=14),
+    "D": PivotPolicy(envelope_points=35, rdp_points=14, envelope_calendar_radius_days=17),
     "W": PivotPolicy(envelope_points=5, rdp_points=14),
     "M": PivotPolicy(envelope_points=3, rdp_points=10),
 }
@@ -168,8 +169,20 @@ def build_envelope(points: Sequence[SeriesPoint], frequency: str) -> tuple[Envel
     policy = PIVOT_POLICIES.get(frequency)
     if policy is None:
         raise ValueError(f"unsupported pivot frequency: {frequency}")
-    radius = policy.envelope_points // 2
     result: list[EnvelopePoint] = []
+
+    if policy.envelope_calendar_radius_days is not None:
+        radius_days = policy.envelope_calendar_radius_days
+        for point in points:
+            window = [
+                item for item in points
+                if abs((item.day - point.day).days) <= radius_days
+            ]
+            values = [item.value for item in window]
+            result.append(EnvelopePoint(point.day, point.value, max(values), min(values)))
+        return tuple(result)
+
+    radius = policy.envelope_points // 2
     for index, point in enumerate(points):
         window = points[max(0, index - radius):min(len(points), index + radius + 1)]
         values = [item.value for item in window]
