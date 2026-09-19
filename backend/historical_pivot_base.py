@@ -217,24 +217,25 @@ def _inside_any_sideways(
 def _build_trend_window(
     points: Sequence[PivotPoint],
 ) -> tuple[tuple[TrendConnection, ...], set[tuple[date, float, str]]]:
-    """Build one trend window exactly from the approved HH/LL connection rules.
+    """Build one trend window with one failed HH/LL attempt deferred.
 
-    If the window starts at a low, the first line is low -> high. While the uptrend
-    continues, every later higher high is connected high -> high; the previous high
-    marker becomes redundant, but its line stays. The first high that fails to make a
-    higher high confirms that the preceding high was the reversal point, so the state
-    flips to falling and continues high -> low, then low -> lower-low.
+    Uptrend:
+      - start low -> first high;
+      - higher highs continue high -> high;
+      - one lower/equal high does NOT end the uptrend;
+      - if a later high breaks the confirmed high, the deferred failure is discarded;
+      - otherwise a lower low formed after the failed-high sequence confirms reversal,
+        and the path switches high -> low, then low -> lower-low.
 
-    A window starting at a high is the exact mirror. No angle/distance/percentage
-    threshold is introduced here.
+    Downtrend is the exact mirror.
+
+    Sideways/spike boundaries are handled outside this function by splitting windows,
+    so this function introduces no additional angle, distance, percentage, or tolerance.
     """
     ordered = tuple(sorted(points, key=lambda point: (point.day, point.pivot_type)))
     if len(ordered) < 2:
         return (), set()
 
-    highs = tuple(point for point in ordered if point.pivot_type == "high")
-    lows = tuple(point for point in ordered if point.pivot_type == "low")
-    end_point = ordered[-1]
     connections: list[TrendConnection] = []
     hidden_markers: set[tuple[date, float, str]] = set()
 
@@ -250,69 +251,114 @@ def _build_trend_window(
 
     anchor = ordered[0]
     direction = "up" if anchor.pivot_type == "low" else "down"
+    confirmed = anchor
+    first_leg_done = False
 
-    while anchor.day < end_point.day:
+    # Deferred reversal evidence. These are ignored completely if the original trend
+    # resumes by breaking the confirmed same-side extreme.
+    failed_same_side = False
+    opposite_candidates: list[PivotPoint] = []
+
+    for point in ordered[1:]:
         if direction == "up":
-            candidates = [point for point in highs if point.day > anchor.day]
-            if not candidates:
-                if anchor.day < end_point.day:
-                    add_connection(anchor, end_point)
-                break
-
-            current = candidates[0]
-            add_connection(anchor, current)
-            reversed_direction = False
-
-            for next_high in candidates[1:]:
-                if next_high.value > current.value:
-                    add_connection(current, next_high)
-                    hidden_markers.add(_pivot_identity(current))
-                    current = next_high
+            if point.pivot_type == "high":
+                if not first_leg_done:
+                    add_connection(anchor, point)
+                    confirmed = point
+                    first_leg_done = True
+                    failed_same_side = False
+                    opposite_candidates = []
                     continue
 
-                # HH failed: current is the confirmed reversal/high boundary.
-                anchor = current
+                if point.value > confirmed.value:
+                    add_connection(confirmed, point)
+                    hidden_markers.add(_pivot_identity(confirmed))
+                    confirmed = point
+                    failed_same_side = False
+                    opposite_candidates = []
+                    continue
+
+                # One failed HH is only deferred. Keep waiting for either
+                # a later HH breakout or lower-low confirmation.
+                failed_same_side = True
+                continue
+
+            # Low while uptrend is active.
+            if not failed_same_side:
+                continue
+
+            opposite_candidates.append(point)
+            if len(opposite_candidates) < 2:
+                continue
+
+            previous_low = opposite_candidates[-2]
+            current_low = opposite_candidates[-1]
+            if current_low.value < previous_low.value:
+                # Reversal confirmed at the last confirmed high.
+                add_connection(confirmed, previous_low)
+                add_connection(previous_low, current_low)
+                hidden_markers.add(_pivot_identity(previous_low))
+                anchor = current_low
+                confirmed = current_low
                 direction = "down"
-                reversed_direction = True
-                break
-
-            if reversed_direction:
-                continue
-
-            # No HH failure before the protected/window end.
-            if current.day < end_point.day:
-                add_connection(current, end_point)
-            break
-
-        candidates = [point for point in lows if point.day > anchor.day]
-        if not candidates:
-            if anchor.day < end_point.day:
-                add_connection(anchor, end_point)
-            break
-
-        current = candidates[0]
-        add_connection(anchor, current)
-        reversed_direction = False
-
-        for next_low in candidates[1:]:
-            if next_low.value < current.value:
-                add_connection(current, next_low)
-                hidden_markers.add(_pivot_identity(current))
-                current = next_low
-                continue
-
-            # LL failed: current is the confirmed reversal/low boundary.
-            anchor = current
-            direction = "up"
-            reversed_direction = True
-            break
-
-        if reversed_direction:
+                first_leg_done = True
+                failed_same_side = False
+                opposite_candidates = []
             continue
 
-        if current.day < end_point.day:
-            add_connection(current, end_point)
-        break
+        # direction == "down"
+        if point.pivot_type == "low":
+            if not first_leg_done:
+                add_connection(anchor, point)
+                confirmed = point
+                first_leg_done = True
+                failed_same_side = False
+                opposite_candidates = []
+                continue
+
+            if point.value < confirmed.value:
+                add_connection(confirmed, point)
+                hidden_markers.add(_pivot_identity(confirmed))
+                confirmed = point
+                failed_same_side = False
+                opposite_candidates = []
+                continue
+
+            # One failed LL is deferred.
+            failed_same_side = True
+            continue
+
+        # High while downtrend is active.
+        if not failed_same_side:
+            continue
+
+        opposite_candidates.append(point)
+        if len(opposite_candidates) < 2:
+            continue
+
+        previous_high = opposite_candidates[-2]
+        current_high = opposite_candidates[-1]
+        if current_high.value > previous_high.value:
+            # Reversal confirmed at the last confirmed low.
+            add_connection(confirmed, previous_high)
+            add_connection(previous_high, current_high)
+            hidden_markers.add(_pivot_identity(previous_high))
+            anchor = current_high
+            confirmed = current_high
+            direction = "up"
+            first_leg_done = True
+            failed_same_side = False
+            opposite_candidates = []
+        continue
+
+    # Keep the protected/window endpoint connected when no ordinary segment reached it.
+    end_point = ordered[-1]
+    if connections:
+        latest_end = max((item.end for item in connections), key=lambda point: point.day)
+        if latest_end.day < end_point.day:
+            add_connection(latest_end, end_point)
+    else:
+        add_connection(ordered[0], end_point)
 
     connections.sort(key=lambda item: (item.start.day, item.end.day))
     return tuple(connections), hidden_markers
