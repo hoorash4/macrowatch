@@ -29,6 +29,7 @@ from historical_pivot_base import (  # noqa: E402
     classify_sideways_reference_line,
     screen_angle_degrees,
     screen_segment_angle_degrees,
+    simplify_pivot_lines,
 )
 
 
@@ -426,6 +427,76 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         segment = classify_sideways_reference_line(start, end, "up", geometry)
         self.assertIsNotNone(segment)
         self.assertEqual((start, end), segment.pivot_points)
+
+
+    def test_line_simplification_keeps_all_markers_and_merges_by_trend_side(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 5.0, "high"),
+            PivotPoint(d + timedelta(days=30), 7.0, "high"),
+            PivotPoint(d + timedelta(days=50), 6.0, "high"),
+        )
+        lows = (
+            PivotPoint(d, 1.0, "low"),
+            PivotPoint(d + timedelta(days=20), 2.0, "low"),
+            PivotPoint(d + timedelta(days=40), 1.0, "low"),
+            PivotPoint(d + timedelta(days=60), 0.0, "low"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
+        augmented = SpikeAugmentedPivotResult(base, (), ())
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        result = simplify_pivot_lines(augmented, geometry)
+
+        self.assertEqual(augmented.display_markers, result.markers)
+        pairs = [(item.start, item.end) for item in result.segments]
+        self.assertIn((lows[0], highs[0]), pairs)
+        self.assertIn((highs[0], highs[1]), pairs)
+        self.assertIn((highs[1], lows[2]), pairs)
+        self.assertIn((lows[2], lows[3]), pairs)
+
+    def test_spike_stops_at_entry_hits_peak_and_restarts(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 5.0, "high"),
+            PivotPoint(d + timedelta(days=20), 10.0, "high"),
+            PivotPoint(d + timedelta(days=40), 6.0, "high"),
+        )
+        entry = PivotPoint(d + timedelta(days=15), 2.0, "low")
+        lows = (
+            PivotPoint(d, 1.0, "low"),
+            entry,
+            PivotPoint(d + timedelta(days=30), 3.0, "low"),
+            PivotPoint(d + timedelta(days=50), 2.0, "low"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
+        augmented = SpikeAugmentedPivotResult(
+            base,
+            (),
+            (),
+            (SpikePeak(highs[1], "up", 20.0, entry),),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        result = simplify_pivot_lines(augmented, geometry)
+        pairs = [(item.start, item.end, item.kind) for item in result.segments]
+
+        self.assertIn((highs[0], entry, "trend"), pairs)
+        self.assertIn((entry, highs[1], "spike"), pairs)
+        self.assertIn((highs[1], lows[2], "trend"), pairs)
+        self.assertEqual(augmented.display_markers, result.markers)
 
 
 if __name__ == "__main__":
