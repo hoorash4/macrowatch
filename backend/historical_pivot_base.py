@@ -26,6 +26,7 @@ from common import SupabaseRest
 BUFFER_MONTHS = 24
 SPIKE_ANGLE_THRESHOLD_DEG = 40.0
 SIDEWAYS_ANGLE_THRESHOLD_DEG = 6.0
+SAME_TREND_ANGLE_THRESHOLD_DEG = 10.0
 
 
 @dataclass(frozen=True)
@@ -561,6 +562,174 @@ def augment_spike_entry_points(
 
 
 
+def screen_origin_angle_degrees(
+    origin: PivotPoint,
+    left: PivotPoint,
+    right: PivotPoint,
+    geometry: ChartGeometry,
+) -> float:
+    """Angle at origin between two candidate extremes in screen coordinates."""
+    ox, oy = _screen_xy(origin, geometry)
+    lx, ly = _screen_xy(left, geometry)
+    rx, ry = _screen_xy(right, geometry)
+    v1 = (lx - ox, ly - oy)
+    v2 = (rx - ox, ry - oy)
+    norm1 = math.hypot(*v1)
+    norm2 = math.hypot(*v2)
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    cosine = (v1[0] * v2[0] + v1[1] * v2[1]) / (norm1 * norm2)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def prune_same_trend_extremes(
+    result: SimplifiedLineResult,
+    geometry: ChartGeometry,
+    *,
+    angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
+    protected_markers: Sequence[PivotPoint] = (),
+) -> SimplifiedLineResult:
+    """Additional post-processing only; the existing simplification runs first.
+
+    Starting from a low, compare only successively higher highs from that same low.
+    A lower high is ignored for the angle test. When a later high exceeds the current
+    high, compare the two rays from the starting low. If their interior angle is
+    <= threshold, the later high remains in the same up-wave candidate set and becomes
+    the new extreme. If the angle is > threshold, the current extreme closes the wave.
+
+    Down-waves are the exact mirror using successively lower lows from the starting high.
+
+    Once an extreme is fixed, every ordinary high/low strictly between the wave origin
+    and that extreme is removed and replaced by one direct trend segment. Protected
+    marker-only spikes remain as standalone markers and are never connected.
+    """
+    if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
+        raise ValueError("angle_threshold_deg must be between 0 and 180")
+
+    def key(point: PivotPoint) -> tuple[date, float, str]:
+        return point.day, point.value, point.pivot_type
+
+    protected_keys = {key(item) for item in protected_markers}
+    connected: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in result.segments:
+        connected[key(segment.start)] = segment.start
+        connected[key(segment.end)] = segment.end
+
+    points = tuple(sorted(
+        (item for item in connected.values() if key(item) not in protected_keys),
+        key=lambda item: (item.day, item.pivot_type),
+    ))
+    if len(points) < 2:
+        return result
+
+    highs = tuple(item for item in points if item.pivot_type == "high")
+    lows = tuple(item for item in points if item.pivot_type == "low")
+
+    def after(seq: Sequence[PivotPoint], day: date) -> list[PivotPoint]:
+        return [item for item in seq if item.day > day]
+
+    waves: list[tuple[PivotPoint, PivotPoint]] = []
+    anchor = points[0]
+    direction = "up" if anchor.pivot_type == "low" else "down"
+
+    while True:
+        if direction == "up":
+            candidates = after(highs, anchor.day)
+            if not candidates:
+                break
+            extreme = candidates[0]
+            for candidate in candidates[1:]:
+                if candidate.value <= extreme.value:
+                    continue
+                angle = screen_origin_angle_degrees(
+                    anchor, extreme, candidate, geometry,
+                )
+                if angle > angle_threshold_deg:
+                    break
+                extreme = candidate
+            waves.append((anchor, extreme))
+            anchor = extreme
+            direction = "down"
+            continue
+
+        candidates = after(lows, anchor.day)
+        if not candidates:
+            break
+        extreme = candidates[0]
+        for candidate in candidates[1:]:
+            if candidate.value >= extreme.value:
+                continue
+            angle = screen_origin_angle_degrees(
+                anchor, extreme, candidate, geometry,
+            )
+            if angle > angle_threshold_deg:
+                break
+            extreme = candidate
+        waves.append((anchor, extreme))
+        anchor = extreme
+        direction = "up"
+
+    if not waves:
+        return result
+
+    removed_keys: set[tuple[date, float, str]] = set()
+    replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
+    for start, end in waves:
+        if start.day >= end.day:
+            continue
+        interior = [
+            item for item in points
+            if start.day < item.day < end.day
+        ]
+        if not interior:
+            continue
+        removed_keys.update(key(item) for item in interior)
+        replacement_intervals.append((start, end))
+
+    if not replacement_intervals:
+        return result
+
+    def segment_inside_replacement(segment: SimplifiedLineSegment) -> bool:
+        return any(
+            start.day <= segment.start.day
+            and segment.end.day <= end.day
+            for start, end in replacement_intervals
+        )
+
+    kept_segments = [
+        segment for segment in result.segments
+        if not segment_inside_replacement(segment)
+    ]
+    for start, end in replacement_intervals:
+        kept_segments.append(
+            SimplifiedLineSegment(start=start, end=end, kind="trend")
+        )
+    kept_segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
+
+    marker_map: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in kept_segments:
+        marker_map[key(segment.start)] = segment.start
+        marker_map[key(segment.end)] = segment.end
+    for marker in protected_markers:
+        marker_map[key(marker)] = marker
+
+    return SimplifiedLineResult(
+        markers=tuple(sorted(
+            marker_map.values(),
+            key=lambda item: (item.day, item.pivot_type),
+        )),
+        segments=tuple(kept_segments),
+        sideways_segments=tuple(
+            segment for segment in result.sideways_segments
+            if not any(
+                start.day <= segment.start.day
+                and segment.end.day <= end.day
+                for start, end in replacement_intervals
+            )
+        ),
+    )
+
+
 def simplify_pivot_lines(
     augmented: SpikeAugmentedPivotResult,
     geometry: ChartGeometry,
@@ -867,13 +1036,18 @@ def simplify_pivot_lines(
     for spike in marker_only_spikes:
         used_markers[point_key(spike.point)] = spike.point
 
-    return SimplifiedLineResult(
+    simplified = SimplifiedLineResult(
         markers=tuple(sorted(
             used_markers.values(),
             key=lambda item: (item.day, item.pivot_type),
         )),
         segments=tuple(segments),
         sideways_segments=tuple(sideways_segments),
+    )
+    return prune_same_trend_extremes(
+        simplified,
+        geometry,
+        protected_markers=tuple(spike.point for spike in marker_only_spikes),
     )
 
 def _single_row(
