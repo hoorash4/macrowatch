@@ -351,22 +351,13 @@ def finalize_connected_pivots(
         connections.append(TrendConnection(left, right, kind))
 
     if remove_chart_boundary_points and retained:
-        # Fixed-count RDP forces both ends of each separate high/low candidate line.
-        # Those artificial chart-edge anchors are calculation aids only, so remove
-        # the first and last retained point of EACH side, not merely the globally
-        # earliest/latest chronological point.
-        boundary_keys: set[tuple[date, float, str]] = set()
-        for pivot_type in ("high", "low"):
-            side_points = [
-                point for point in retained
-                if point.pivot_type == pivot_type
-            ]
-            if side_points:
-                boundary_keys.add(_pivot_identity(side_points[0]))
-                boundary_keys.add(_pivot_identity(side_points[-1]))
+        # The first and last points of the FINAL connected path are chart-boundary
+        # anchors only. Remove only those two final-path endpoints.
+        first_key = _pivot_identity(retained[0])
+        last_key = _pivot_identity(retained[-1])
         retained = [
             point for point in retained
-            if _pivot_identity(point) not in boundary_keys
+            if _pivot_identity(point) not in {first_key, last_key}
         ]
         retained_keys = {_pivot_identity(point) for point in retained}
         connections = [
