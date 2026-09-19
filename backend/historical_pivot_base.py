@@ -708,7 +708,8 @@ def augment_spike_entry_points(
     Upward spike:
       - consecutive upper-RDP A-P-C with P above A/C
       - P is inside the visible case range and its downward-facing angle is < threshold
-      - no lower-RDP pivot exists from A through C
+      - lower-RDP pivots may exist from A through C, but none may sit above
+        max(A, C); such a lower pivot means the lower boundary followed the peak upward
       - D, the first lower-RDP pivot after C, exists
       - add the lowest lower-plateau candidate strictly between A and P
 
@@ -735,7 +736,15 @@ def augment_spike_entry_points(
             continue
         if screen_angle_degrees(left, pivot, right, geometry) >= angle_threshold_deg:
             continue
-        if _has_pivot_between(low_rdp, left.day, right.day):
+        # Opposite-side pivots may exist inside A-P-C. Reject the spike only
+        # when at least one lower pivot has followed the peak upward far enough to sit
+        # above the higher of the two adjacent highs. That means the whole channel,
+        # not just the peak, moved upward.
+        opposite_inside = [
+            item for item in low_rdp
+            if left.day <= item.day <= right.day
+        ]
+        if any(item.value > max(left.value, right.value) for item in opposite_inside):
             continue
         if _first_pivot_after(low_rdp, right.day) is None:
             continue
@@ -765,7 +774,14 @@ def augment_spike_entry_points(
             continue
         if screen_angle_degrees(left, pivot, right, geometry) >= angle_threshold_deg:
             continue
-        if _has_pivot_between(high_rdp, left.day, right.day):
+        # Mirror rule for a downward spike: opposite-side highs may exist,
+        # but if any of them falls below the lower of the two adjacent lows, the whole
+        # channel has followed the peak downward and this is not treated as a spike.
+        opposite_inside = [
+            item for item in high_rdp
+            if left.day <= item.day <= right.day
+        ]
+        if any(item.value < min(left.value, right.value) for item in opposite_inside):
             continue
         if _first_pivot_after(high_rdp, right.day) is None:
             continue
