@@ -418,5 +418,15 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
 
 
+    def test_confirmed_sideways_protects_both_boundary_pivots(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        end = PivotPoint(d + timedelta(days=60), 5.5, "high")
+        segment = classify_sideways_reference_line(start, end, "up", geometry)
+        self.assertIsNotNone(segment)
+        self.assertEqual((start, end), segment.pivot_points)
+
+
 if __name__ == "__main__":
     unittest.main()
