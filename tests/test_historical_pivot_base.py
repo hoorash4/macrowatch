@@ -17,6 +17,7 @@ from historical_pivot_base import (  # noqa: E402
     PivotPolicy,
     SeriesPoint,
     SpikePeak,
+    SpikeReset,
     buffer_bounds,
     build_envelope,
     calculate_base_pivots,
@@ -26,6 +27,8 @@ from historical_pivot_base import (  # noqa: E402
     plateau_extrema,
     augment_spike_entry_points,
     classify_sideways_reference_line,
+    compress_same_direction_pivots,
+    finalize_connected_pivots,
     screen_angle_degrees,
     screen_segment_angle_degrees,
 )
@@ -362,6 +365,142 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         self.assertGreater(rising, 0)
         self.assertLess(falling, 0)
+
+    def test_same_direction_hh_ll_compression_keeps_only_run_extreme(self):
+        d = date(2020, 1, 1)
+        rising_highs = (
+            PivotPoint(d, 1.0, "high"),
+            PivotPoint(d + timedelta(days=10), 2.0, "high"),
+            PivotPoint(d + timedelta(days=20), 3.0, "high"),
+            PivotPoint(d + timedelta(days=30), 4.0, "high"),
+        )
+        self.assertEqual(
+            (rising_highs[0], rising_highs[-1]),
+            compress_same_direction_pivots(rising_highs),
+        )
+
+        falling_lows = (
+            PivotPoint(d, 4.0, "low"),
+            PivotPoint(d + timedelta(days=10), 3.0, "low"),
+            PivotPoint(d + timedelta(days=20), 2.0, "low"),
+            PivotPoint(d + timedelta(days=30), 1.0, "low"),
+        )
+        self.assertEqual(
+            (falling_lows[0], falling_lows[-1]),
+            compress_same_direction_pivots(falling_lows),
+        )
+
+    def test_sideways_boundaries_survive_same_direction_compression(self):
+        d = date(2020, 1, 1)
+        p1 = PivotPoint(d, 1.0, "high")
+        p2 = PivotPoint(d + timedelta(days=10), 2.0, "high")
+        p3 = PivotPoint(d + timedelta(days=20), 3.0, "high")
+        self.assertEqual(
+            (p1, p2, p3),
+            compress_same_direction_pivots((p1, p2, p3), protected_points=(p2,)),
+        )
+
+    def test_finalization_keeps_only_peak_for_spike_inside_sideways(self):
+        d = date(2020, 1, 1)
+        side_start = PivotPoint(d + timedelta(days=10), 2.0, "high")
+        spike_peak_point = PivotPoint(d + timedelta(days=20), 5.0, "high")
+        side_end = PivotPoint(d + timedelta(days=30), 2.1, "high")
+        spike_entry = PivotPoint(d + timedelta(days=15), 1.0, "low")
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=(side_start, spike_peak_point, side_end),
+            low_candidates=(spike_entry,),
+            high_pivots=(side_start, spike_peak_point, side_end),
+            low_pivots=(spike_entry,),
+        )
+        spike = SpikePeak(spike_peak_point, "up", 20.0)
+        augmented = SpikeAugmentedPivotResult(
+            base=base,
+            added_high_pivots=(),
+            added_low_pivots=(spike_entry,),
+            spike_peaks=(spike,),
+            spike_resets=(SpikeReset(spike_entry, spike_peak_point, "up"),),
+        )
+        sideways = SidewaysSegment(
+            start=side_start,
+            end=side_end,
+            prior_trend="up",
+            reference_side="high",
+            angle_deg=1.0,
+            spike_peaks=(spike,),
+        )
+        result = finalize_connected_pivots(
+            (side_start, spike_entry, spike_peak_point, side_end),
+            augmented,
+            sideways_segments=(sideways,),
+            remove_chart_boundary_points=False,
+        )
+        self.assertEqual(
+            (side_start, spike_peak_point, side_end),
+            result.pivots,
+        )
+        self.assertFalse(any(c.connection_type == "spike" for c in result.connections))
+
+    def test_finalization_forces_non_sideways_spike_entry_to_peak_and_resumes(self):
+        d = date(2020, 1, 1)
+        high0 = PivotPoint(d, 4.0, "high")
+        entry = PivotPoint(d + timedelta(days=10), 1.0, "low")
+        peak = PivotPoint(d + timedelta(days=12), 6.0, "high")
+        low_after = PivotPoint(d + timedelta(days=30), 0.0, "low")
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=(high0, peak),
+            low_candidates=(entry, low_after),
+            high_pivots=(high0, peak),
+            low_pivots=(low_after,),
+        )
+        augmented = SpikeAugmentedPivotResult(
+            base=base,
+            added_high_pivots=(),
+            added_low_pivots=(entry,),
+            spike_peaks=(SpikePeak(peak, "up", 20.0),),
+            spike_resets=(SpikeReset(entry, peak, "up"),),
+        )
+        result = finalize_connected_pivots(
+            (high0, entry, peak, low_after),
+            augmented,
+            remove_chart_boundary_points=False,
+        )
+        self.assertIn(entry, result.pivots)
+        self.assertIn(peak, result.pivots)
+        self.assertIn(
+            (entry, peak, "spike"),
+            tuple((c.start, c.end, c.connection_type) for c in result.connections),
+        )
+        self.assertIn(
+            (peak, low_after, "trend"),
+            tuple((c.start, c.end, c.connection_type) for c in result.connections),
+        )
+
+    def test_finalization_removes_first_and_last_chart_points(self):
+        d = date(2020, 1, 1)
+        points = (
+            PivotPoint(d, 0.0, "low"),
+            PivotPoint(d + timedelta(days=10), 2.0, "high"),
+            PivotPoint(d + timedelta(days=20), 1.0, "low"),
+            PivotPoint(d + timedelta(days=30), 3.0, "high"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=(),
+            low_candidates=(),
+            high_pivots=(),
+            low_pivots=(),
+        )
+        augmented = SpikeAugmentedPivotResult(base, (), ())
+        result = finalize_connected_pivots(points, augmented)
+        self.assertEqual((points[1], points[2]), result.pivots)
+        self.assertEqual(1, len(result.connections))
+        self.assertEqual(points[1], result.connections[0].start)
+        self.assertEqual(points[2], result.connections[0].end)
 
 
 if __name__ == "__main__":
