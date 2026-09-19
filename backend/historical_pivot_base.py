@@ -25,6 +25,7 @@ from common import SupabaseRest
 
 BUFFER_MONTHS = 24
 SPIKE_ANGLE_THRESHOLD_DEG = 40.0
+SIDEWAYS_ANGLE_THRESHOLD_DEG = 6.0
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,15 @@ class ChartGeometry:
 class SpikePeak:
     point: PivotPoint
     direction: str  # up | down
+    angle_deg: float
+
+
+@dataclass(frozen=True)
+class SidewaysSegment:
+    start: PivotPoint
+    end: PivotPoint
+    prior_trend: str  # up | down
+    reference_side: str  # high | low
     angle_deg: float
 
 
@@ -321,6 +331,54 @@ def screen_angle_degrees(
     cosine = (v1[0] * v2[0] + v1[1] * v2[1]) / (norm1 * norm2)
     return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
 
+
+
+def screen_segment_angle_degrees(
+    start: PivotPoint,
+    end: PivotPoint,
+    geometry: ChartGeometry,
+) -> float:
+    """Signed chart angle from the x-axis; positive means rising."""
+    sx, sy = _screen_xy(start, geometry)
+    ex, ey = _screen_xy(end, geometry)
+    dx = ex - sx
+    if dx <= 0:
+        raise ValueError("sideways reference line must move forward in time")
+    dy = sy - ey
+    return math.degrees(math.atan2(dy, dx))
+
+
+def classify_sideways_reference_line(
+    start: PivotPoint,
+    end: PivotPoint,
+    prior_trend: str,
+    geometry: ChartGeometry,
+    *,
+    angle_threshold_deg: float = SIDEWAYS_ANGLE_THRESHOLD_DEG,
+) -> SidewaysSegment | None:
+    """Classify an already-selected reference line as sideways.
+
+    After an uptrend, the reference line is high -> high.
+    After a downtrend, the reference line is low -> low.
+    Absolute chart angle <= 6 degrees is sideways.
+    """
+    if prior_trend not in {"up", "down"}:
+        raise ValueError("prior_trend must be up or down")
+    expected_side = "high" if prior_trend == "up" else "low"
+    if start.pivot_type != expected_side or end.pivot_type != expected_side:
+        raise ValueError(
+            f"{prior_trend} prior trend requires a {expected_side}-to-{expected_side} reference line"
+        )
+    angle = screen_segment_angle_degrees(start, end, geometry)
+    if abs(angle) > angle_threshold_deg:
+        return None
+    return SidewaysSegment(
+        start=start,
+        end=end,
+        prior_trend=prior_trend,
+        reference_side=expected_side,
+        angle_deg=angle,
+    )
 
 def _has_pivot_between(
     pivots: Sequence[PivotPoint],
