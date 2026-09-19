@@ -485,6 +485,48 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             for segment in result.segments
         ))
 
+    def test_reversal_owner_skips_matching_opposite_turn_and_connects_next_candidate(self):
+        d = date(2020, 1, 1)
+        lows = (
+            PivotPoint(d + timedelta(days=0), 3.0, "low"),
+            PivotPoint(d + timedelta(days=15), 8.0, "low"),
+            PivotPoint(d + timedelta(days=25), 12.0, "low"),  # duplicate down-turn owner
+            PivotPoint(d + timedelta(days=35), 10.0, "low"),
+            PivotPoint(d + timedelta(days=45), 16.0, "low"),
+        )
+        highs = (
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 15.0, "high"),
+            PivotPoint(d + timedelta(days=30), 12.0, "high"),  # duplicate up-turn owner
+            PivotPoint(d + timedelta(days=40), 18.0, "high"),
+        )
+        augmented = type("Augmented", (), {
+            "high_pivots": highs,
+            "low_pivots": lows,
+            "spike_peaks": (),
+        })()
+        geometry = ChartGeometry(
+            d,
+            d + timedelta(days=50),
+            0.0,
+            20.0,
+            100.0,
+            100.0,
+        )
+
+        result = simplify_pivot_lines(augmented, geometry)
+
+        expected = {
+            (lows[0], highs[0]),
+            (highs[0], highs[1]),
+            (highs[1], lows[3]),
+            (lows[3], highs[3]),
+        }
+        actual = {(segment.start, segment.end) for segment in result.segments}
+        self.assertTrue(expected.issubset(actual))
+        self.assertNotIn(lows[2], result.markers)
+        self.assertNotIn(highs[2], result.markers)
+
     def test_downtrend_sideways_removes_overlapping_high_pair_before_connections(self):
         d = date(2020, 1, 1)
         low_start = PivotPoint(d + timedelta(days=10), 1.0, "low")
