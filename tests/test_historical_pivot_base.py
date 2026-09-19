@@ -429,6 +429,49 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertEqual((start, end), segment.pivot_points)
 
 
+    def test_downtrend_sideways_removes_overlapping_high_pair_before_connections(self):
+        d = date(2020, 1, 1)
+        low_start = PivotPoint(d + timedelta(days=10), 1.0, "low")
+        low_end = PivotPoint(d + timedelta(days=70), 0.95, "low")
+        high_left = PivotPoint(d + timedelta(days=20), 2.0, "high")
+        high_right = PivotPoint(d + timedelta(days=60), 1.98, "high")
+        next_high = PivotPoint(d + timedelta(days=90), 2.5, "high")
+
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=(high_left, high_right, next_high),
+            low_candidates=(low_start, low_end),
+            high_pivots=(high_left, high_right, next_high),
+            low_pivots=(low_start, low_end),
+        )
+        augmented = type("Augmented", (), {
+            "high_pivots": base.high_pivots,
+            "low_pivots": base.low_pivots,
+            "spike_peaks": (),
+        })()
+        geometry = ChartGeometry(
+            d,
+            d + timedelta(days=120),
+            0.0,
+            3.0,
+            120.0,
+            100.0,
+        )
+
+        result = simplify_pivot_lines(augmented, geometry)
+
+        self.assertNotIn(high_left, result.markers)
+        self.assertNotIn(high_right, result.markers)
+        self.assertIn(low_start, result.markers)
+        self.assertIn(low_end, result.markers)
+        self.assertFalse(any(
+            segment.start in {high_left, high_right}
+            or segment.end in {high_left, high_right}
+            for segment in result.segments
+        ))
+
+
     def test_line_simplification_keeps_all_markers_and_merges_by_trend_side(self):
         d = date(2020, 1, 1)
         highs = (
