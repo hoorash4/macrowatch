@@ -109,6 +109,15 @@ class SpikePeak:
 
 
 @dataclass(frozen=True)
+class SpikeReset:
+    """Approved non-sideways spike connection: added entry point -> spike peak."""
+
+    entry: PivotPoint
+    peak: PivotPoint
+    direction: str  # up | down
+
+
+@dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
     """Base RDP pivots plus additive spike-entry markers only."""
 
@@ -116,6 +125,7 @@ class SpikeAugmentedPivotResult:
     added_high_pivots: tuple[PivotPoint, ...]
     added_low_pivots: tuple[PivotPoint, ...]
     spike_peaks: tuple[SpikePeak, ...] = ()
+    spike_resets: tuple[SpikeReset, ...] = ()
 
     @property
     def high_pivots(self) -> tuple[PivotPoint, ...]:
@@ -161,6 +171,202 @@ class SidewaysSegment:
             point = spike.point
             unique[(point.day, point.value, point.pivot_type)] = point
         return tuple(sorted(unique.values(), key=lambda item: (item.day, item.pivot_type)))
+
+
+@dataclass(frozen=True)
+class TrendConnection:
+    """One final visible connection between retained pivots."""
+
+    start: PivotPoint
+    end: PivotPoint
+    connection_type: str  # trend | sideways | spike
+
+
+@dataclass(frozen=True)
+class FinalPivotResult:
+    """Final post-processed pivots after trend compression and approved protections."""
+
+    pivots: tuple[PivotPoint, ...]
+    connections: tuple[TrendConnection, ...]
+
+
+def _pivot_identity(point: PivotPoint) -> tuple[date, float, str]:
+    return point.day, point.value, point.pivot_type
+
+
+def _is_inside_sideways(point: PivotPoint, segment: SidewaysSegment) -> bool:
+    return segment.start.day <= point.day <= segment.end.day
+
+
+def _sideways_point_keys(
+    sideways_segments: Sequence[SidewaysSegment],
+) -> set[tuple[date, float, str]]:
+    keys: set[tuple[date, float, str]] = set()
+    for segment in sideways_segments:
+        keys.update(_pivot_identity(point) for point in segment.pivot_points)
+    return keys
+
+
+def _inside_any_sideways(
+    point: PivotPoint,
+    sideways_segments: Sequence[SidewaysSegment],
+) -> bool:
+    return any(_is_inside_sideways(point, segment) for segment in sideways_segments)
+
+
+def compress_same_direction_pivots(
+    points: Sequence[PivotPoint],
+    *,
+    protected_points: Sequence[PivotPoint] = (),
+) -> tuple[PivotPoint, ...]:
+    """Remove same-side intermediate HH/LL pivots while keeping protected boundaries.
+
+    This implements only the approved continuation rule on an already ordered connected
+    path:
+      - rising continuation uses high -> high and removes intermediate highs while a
+        later high is higher;
+      - falling continuation uses low -> low and removes intermediate lows while a later
+        low is lower;
+      - low -> high and high -> low reversal/start connections are preserved;
+      - protected points (for example sideways boundaries) are never removed.
+    """
+    ordered = list(points)
+    protected = {_pivot_identity(point) for point in protected_points}
+    changed = True
+    while changed:
+        changed = False
+        for index in range(1, len(ordered) - 1):
+            left, middle, right = ordered[index - 1:index + 2]
+            if _pivot_identity(middle) in protected:
+                continue
+            if (
+                left.pivot_type == middle.pivot_type == right.pivot_type == "high"
+                and left.value < middle.value < right.value
+            ):
+                del ordered[index]
+                changed = True
+                break
+            if (
+                left.pivot_type == middle.pivot_type == right.pivot_type == "low"
+                and left.value > middle.value > right.value
+            ):
+                del ordered[index]
+                changed = True
+                break
+    return tuple(ordered)
+
+
+def finalize_connected_pivots(
+    candidate_path: Sequence[PivotPoint],
+    spike_result: SpikeAugmentedPivotResult,
+    *,
+    sideways_segments: Sequence[SidewaysSegment] = (),
+    remove_chart_boundary_points: bool = True,
+) -> FinalPivotResult:
+    """Apply the approved final-pivot rules without changing the base RDP extraction.
+
+    The caller supplies the chronological candidate connection path. This function:
+      1. protects sideways start/end points and keeps only spike peaks inside sideways;
+      2. compresses same-direction HH/LL intermediate pivots;
+      3. outside sideways, forces an added spike-entry point to connect to its peak,
+         then resumes from that peak;
+      4. removes the first and last chart/path points from the final pivot list.
+
+    No new angle, distance, smoothing, or threshold rule is introduced here.
+    """
+    ordered = tuple(sorted(candidate_path, key=lambda point: (point.day, point.pivot_type)))
+    if not ordered:
+        return FinalPivotResult((), ())
+
+    sideways_keys = _sideways_point_keys(sideways_segments)
+    retained: list[PivotPoint] = []
+    for point in ordered:
+        containing = [
+            segment for segment in sideways_segments
+            if _is_inside_sideways(point, segment)
+        ]
+        if containing and _pivot_identity(point) not in sideways_keys:
+            continue
+        retained.append(point)
+
+    protected_points = [
+        point
+        for segment in sideways_segments
+        for point in segment.pivot_points
+    ]
+    retained = list(compress_same_direction_pivots(
+        retained,
+        protected_points=protected_points,
+    ))
+
+    retained_keys = {_pivot_identity(point) for point in retained}
+    connections: list[TrendConnection] = []
+
+    for left, right in zip(retained, retained[1:]):
+        connection_type = "trend"
+        for segment in sideways_segments:
+            if (
+                _pivot_identity(left) == _pivot_identity(segment.start)
+                and _pivot_identity(right) == _pivot_identity(segment.end)
+            ):
+                connection_type = "sideways"
+                break
+        connections.append(TrendConnection(left, right, connection_type))
+
+    # Outside sideways, an approved spike entry is a reset trigger:
+    # entry -> peak is forced, and all subsequent trend logic resumes from the peak.
+    for reset in spike_result.spike_resets:
+        if _inside_any_sideways(reset.peak, sideways_segments):
+            continue
+        entry_key = _pivot_identity(reset.entry)
+        peak_key = _pivot_identity(reset.peak)
+        if entry_key not in retained_keys:
+            retained.append(reset.entry)
+            retained_keys.add(entry_key)
+        if peak_key not in retained_keys:
+            retained.append(reset.peak)
+            retained_keys.add(peak_key)
+
+    retained.sort(key=lambda point: (point.day, point.pivot_type))
+
+    # Rebuild connections after spike-reset points were inserted.
+    connections = []
+    reset_pairs = {
+        (_pivot_identity(reset.entry), _pivot_identity(reset.peak))
+        for reset in spike_result.spike_resets
+        if not _inside_any_sideways(reset.peak, sideways_segments)
+    }
+    sideways_pairs = {
+        (_pivot_identity(segment.start), _pivot_identity(segment.end))
+        for segment in sideways_segments
+    }
+    for left, right in zip(retained, retained[1:]):
+        pair = (_pivot_identity(left), _pivot_identity(right))
+        if pair in reset_pairs:
+            kind = "spike"
+        elif pair in sideways_pairs:
+            kind = "sideways"
+        else:
+            kind = "trend"
+        connections.append(TrendConnection(left, right, kind))
+
+    if remove_chart_boundary_points and retained:
+        first_key = _pivot_identity(retained[0])
+        last_key = _pivot_identity(retained[-1])
+        retained = [
+            point for point in retained
+            if _pivot_identity(point) not in {first_key, last_key}
+        ]
+        retained_keys = {_pivot_identity(point) for point in retained}
+        connections = [
+            connection for connection in connections
+            if (
+                _pivot_identity(connection.start) in retained_keys
+                and _pivot_identity(connection.end) in retained_keys
+            )
+        ]
+
+    return FinalPivotResult(tuple(retained), tuple(connections))
 
 
 def shift_months(value: date, months: int) -> date:
@@ -460,6 +666,7 @@ def augment_spike_entry_points(
     added_high: dict[tuple[date, float], PivotPoint] = {}
     added_low: dict[tuple[date, float], PivotPoint] = {}
     spike_peaks: dict[tuple[date, float, str], SpikePeak] = {}
+    spike_resets: dict[tuple[date, float, date, float, str], SpikeReset] = {}
 
     for index in range(1, len(high_rdp) - 1):
         left, pivot, right = high_rdp[index - 1], high_rdp[index], high_rdp[index + 1]
@@ -485,6 +692,11 @@ def augment_spike_entry_points(
             continue
         entry = min(entry_candidates, key=lambda item: item.value)
         added_low[(entry.day, entry.value)] = entry
+        spike_resets[(entry.day, entry.value, pivot.day, pivot.value, "up")] = SpikeReset(
+            entry=entry,
+            peak=pivot,
+            direction="up",
+        )
 
     for index in range(1, len(low_rdp) - 1):
         left, pivot, right = low_rdp[index - 1], low_rdp[index], low_rdp[index + 1]
@@ -510,12 +722,18 @@ def augment_spike_entry_points(
             continue
         entry = max(entry_candidates, key=lambda item: item.value)
         added_high[(entry.day, entry.value)] = entry
+        spike_resets[(entry.day, entry.value, pivot.day, pivot.value, "down")] = SpikeReset(
+            entry=entry,
+            peak=pivot,
+            direction="down",
+        )
 
     return SpikeAugmentedPivotResult(
         base=base,
         added_high_pivots=tuple(sorted(added_high.values(), key=lambda item: item.day)),
         added_low_pivots=tuple(sorted(added_low.values(), key=lambda item: item.day)),
         spike_peaks=tuple(sorted(spike_peaks.values(), key=lambda item: item.point.day)),
+        spike_resets=tuple(sorted(spike_resets.values(), key=lambda item: item.peak.day)),
     )
 
 
