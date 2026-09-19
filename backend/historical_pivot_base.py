@@ -107,6 +107,7 @@ class SpikePeak:
     direction: str  # up | down
     angle_deg: float
     entry: PivotPoint | None = None
+    marker_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -446,6 +447,23 @@ def augment_spike_entry_points(
     added_low: dict[tuple[date, float], PivotPoint] = {}
     spike_peaks: dict[tuple[date, float, str], SpikePeak] = {}
 
+    def opposite_sideways_contains_spike(
+        pivot: PivotPoint,
+        direction: str,
+    ) -> bool:
+        opposite = low_rdp if direction == "up" else high_rdp
+        prior_trend = "down" if direction == "up" else "up"
+        for start, end in zip(opposite, opposite[1:]):
+            sideways = classify_sideways_reference_line(
+                start,
+                end,
+                prior_trend,
+                geometry,
+            )
+            if sideways is not None and start.day < pivot.day < end.day:
+                return True
+        return False
+
     for index in range(1, len(high_rdp) - 1):
         left, pivot, right = high_rdp[index - 1], high_rdp[index], high_rdp[index + 1]
         if not (geometry.display_start <= pivot.day <= geometry.display_end):
@@ -468,6 +486,7 @@ def augment_spike_entry_points(
             item for item in low_rdp
             if left.day < item.day < pivot.day
         ]
+        marker_only = opposite_sideways_contains_spike(pivot, "up")
         if existing_entries:
             entry = min(existing_entries, key=lambda item: item.value)
         else:
@@ -478,13 +497,15 @@ def augment_spike_entry_points(
             if not entry_candidates:
                 continue
             entry = min(entry_candidates, key=lambda item: item.value)
-            added_low[(entry.day, entry.value)] = entry
+            if not marker_only:
+                added_low[(entry.day, entry.value)] = entry
 
         spike_peaks[(pivot.day, pivot.value, "up")] = SpikePeak(
             point=pivot,
             direction="up",
             angle_deg=angle,
             entry=entry,
+            marker_only=marker_only,
         )
 
     for index in range(1, len(low_rdp) - 1):
@@ -509,6 +530,7 @@ def augment_spike_entry_points(
             item for item in high_rdp
             if left.day < item.day < pivot.day
         ]
+        marker_only = opposite_sideways_contains_spike(pivot, "down")
         if existing_entries:
             entry = max(existing_entries, key=lambda item: item.value)
         else:
@@ -519,13 +541,15 @@ def augment_spike_entry_points(
             if not entry_candidates:
                 continue
             entry = max(entry_candidates, key=lambda item: item.value)
-            added_high[(entry.day, entry.value)] = entry
+            if not marker_only:
+                added_high[(entry.day, entry.value)] = entry
 
         spike_peaks[(pivot.day, pivot.value, "down")] = SpikePeak(
             point=pivot,
             direction="down",
             angle_deg=angle,
             entry=entry,
+            marker_only=marker_only,
         )
 
     return SpikeAugmentedPivotResult(
@@ -558,8 +582,27 @@ def simplify_pivot_lines(
     if not original_highs or not original_lows:
         return SimplifiedLineResult(markers=(), segments=(), sideways_segments=())
 
+    marker_only_spikes = tuple(
+        item for item in augmented.spike_peaks if item.marker_only
+    )
+    marker_only_keys = {
+        (item.point.day, item.point.value, item.point.pivot_type)
+        for item in marker_only_spikes
+    }
+    line_highs = tuple(
+        item for item in original_highs
+        if (item.day, item.value, item.pivot_type) not in marker_only_keys
+    )
+    line_lows = tuple(
+        item for item in original_lows
+        if (item.day, item.value, item.pivot_type) not in marker_only_keys
+    )
+
     spikes = tuple(sorted(
-        (item for item in augmented.spike_peaks if item.entry is not None),
+        (
+            item for item in augmented.spike_peaks
+            if not item.marker_only and item.entry is not None
+        ),
         key=lambda item: item.entry.day,
     ))
 
@@ -579,8 +622,8 @@ def simplify_pivot_lines(
                 found.append(segment)
         return tuple(found)
 
-    high_sideways = sideways_pairs(original_highs, "up")
-    low_sideways = sideways_pairs(original_lows, "down")
+    high_sideways = sideways_pairs(line_highs, "up")
+    low_sideways = sideways_pairs(line_lows, "down")
     removed_keys: set[tuple[date, float, str]] = set()
 
     def overlaps(left: SidewaysSegment, right: SidewaysSegment) -> bool:
@@ -601,8 +644,8 @@ def simplify_pivot_lines(
 
     def refresh_points() -> None:
         nonlocal highs, lows
-        highs = [item for item in original_highs if point_key(item) not in removed_keys]
-        lows = [item for item in original_lows if point_key(item) not in removed_keys]
+        highs = [item for item in line_highs if point_key(item) not in removed_keys]
+        lows = [item for item in line_lows if point_key(item) not in removed_keys]
 
     def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
         if start.day >= end.day:
@@ -821,6 +864,8 @@ def simplify_pivot_lines(
     for segment in segments:
         used_markers[point_key(segment.start)] = segment.start
         used_markers[point_key(segment.end)] = segment.end
+    for spike in marker_only_spikes:
+        used_markers[point_key(spike.point)] = spike.point
 
     return SimplifiedLineResult(
         markers=tuple(sorted(
