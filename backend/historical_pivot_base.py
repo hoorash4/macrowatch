@@ -562,71 +562,6 @@ def simplify_pivot_lines(
         (item for item in augmented.spike_peaks if item.entry is not None),
         key=lambda item: item.entry.day,
     ))
-    spike_keys = {
-        (point.day, point.value, point.pivot_type)
-        for spike in spikes
-        for point in (spike.entry, spike.point)
-        if point is not None
-    }
-
-    def point_key(point: PivotPoint) -> tuple[date, float, str]:
-        return point.day, point.value, point.pivot_type
-
-    # Each side can discover the same reversal at a different time.
-    # Once one side owns a reversal, the later opposite-side pivot that flips
-    # into that SAME direction is redundant and is removed before any lines
-    # or sideways segments are built.
-    redundant_reversal_keys: set[tuple[date, float, str]] = set()
-    side_direction: dict[str, str | None] = {"high": None, "low": None}
-    current_direction: str | None = None
-    reversal_owner: str | None = None
-
-    events: list[tuple[date, str, PivotPoint, str, bool]] = []
-    for side, points in (("high", original_highs), ("low", original_lows)):
-        previous_direction: str | None = None
-        for previous, current in zip(points, points[1:]):
-            if current.value == previous.value:
-                continue
-            direction = "up" if current.value > previous.value else "down"
-            changed = previous_direction is not None and direction != previous_direction
-            events.append((current.day, side, current, direction, changed))
-            previous_direction = direction
-
-    events.sort(key=lambda item: (item[0], item[1]))
-
-    for _, side, point, direction, changed in events:
-        if side_direction[side] is None:
-            side_direction[side] = direction
-            if current_direction is None:
-                current_direction = direction
-            continue
-
-        side_direction[side] = direction
-        if not changed:
-            continue
-
-        opposite_side = "low" if side == "high" else "high"
-
-        if current_direction is None or direction != current_direction:
-            current_direction = direction
-            reversal_owner = side
-            continue
-
-        if reversal_owner == opposite_side and point_key(point) not in spike_keys:
-            redundant_reversal_keys.add(point_key(point))
-            # The opposite side has now caught up with the already-confirmed reversal.
-            # Consume this one duplicate confirmation only; after that both sides are
-            # aligned and the next side-direction change can own a new reversal.
-            reversal_owner = None
-
-    filtered_highs = tuple(
-        item for item in original_highs
-        if point_key(item) not in redundant_reversal_keys
-    )
-    filtered_lows = tuple(
-        item for item in original_lows
-        if point_key(item) not in redundant_reversal_keys
-    )
 
     def sideways_pairs(
         points: Sequence[PivotPoint],
@@ -641,10 +576,13 @@ def simplify_pivot_lines(
                 found.append(segment)
         return tuple(found)
 
-    high_sideways = sideways_pairs(filtered_highs, "up")
-    low_sideways = sideways_pairs(filtered_lows, "down")
+    high_sideways = sideways_pairs(original_highs, "up")
+    low_sideways = sideways_pairs(original_lows, "down")
 
-    removed_keys: set[tuple[date, float, str]] = set(redundant_reversal_keys)
+    removed_keys: set[tuple[date, float, str]] = set()
+
+    def point_key(point: PivotPoint) -> tuple[date, float, str]:
+        return point.day, point.value, point.pivot_type
 
     def overlaps(left: SidewaysSegment, right: SidewaysSegment) -> bool:
         return left.start.day <= right.end.day and right.start.day <= left.end.day
@@ -664,8 +602,8 @@ def simplify_pivot_lines(
 
     def refresh_points() -> None:
         nonlocal highs, lows
-        highs = [item for item in filtered_highs if point_key(item) not in removed_keys]
-        lows = [item for item in filtered_lows if point_key(item) not in removed_keys]
+        highs = [item for item in original_highs if point_key(item) not in removed_keys]
+        lows = [item for item in original_lows if point_key(item) not in removed_keys]
 
     def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
         if start.day >= end.day:
