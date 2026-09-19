@@ -1,0 +1,345 @@
+"""Base Historical Insight pivot extraction.
+
+This module is intentionally limited to the approved base pipeline:
+raw economic-chart points -> centered envelope -> plateau extrema -> fixed-count RDP.
+
+It is read-only with respect to source data. The frontend must continue to draw the
+original economic series from its canonical source; this module only produces marker
+coordinates that may later be overlaid on that original chart.
+"""
+from __future__ import annotations
+
+import argparse
+import calendar
+import json
+import math
+from dataclasses import dataclass
+from datetime import date
+from typing import Any, Iterable, Sequence
+
+from common import SupabaseRest
+
+
+BUFFER_MONTHS = 24
+
+
+@dataclass(frozen=True)
+class PivotPolicy:
+    envelope_points: int
+    rdp_points: int
+
+
+PIVOT_POLICIES = {
+    "D": PivotPolicy(envelope_points=35, rdp_points=14),
+    "W": PivotPolicy(envelope_points=5, rdp_points=14),
+    "M": PivotPolicy(envelope_points=3, rdp_points=10),
+}
+
+
+@dataclass(frozen=True)
+class SeriesPoint:
+    day: date
+    value: float
+
+
+@dataclass(frozen=True)
+class EnvelopePoint:
+    day: date
+    value: float
+    upper: float
+    lower: float
+
+
+@dataclass(frozen=True)
+class PivotPoint:
+    day: date
+    value: float
+    pivot_type: str
+
+
+@dataclass(frozen=True)
+class BasePivotResult:
+    frequency: str
+    policy: PivotPolicy
+    high_candidates: tuple[PivotPoint, ...]
+    low_candidates: tuple[PivotPoint, ...]
+    high_pivots: tuple[PivotPoint, ...]
+    low_pivots: tuple[PivotPoint, ...]
+
+    @property
+    def display_markers(self) -> tuple[PivotPoint, ...]:
+        """Return only marker coordinates for overlay on the untouched raw chart."""
+        return tuple(sorted(
+            (*self.high_pivots, *self.low_pivots),
+            key=lambda item: (item.day, item.pivot_type),
+        ))
+
+
+def shift_months(value: date, months: int) -> date:
+    """Shift a date by whole calendar months, clamping the day to the target month."""
+    month_index = value.year * 12 + value.month - 1 + months
+    year, month_zero = divmod(month_index, 12)
+    month = month_zero + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def buffer_bounds(cycle_start: date, cycle_trough: date) -> tuple[date, date]:
+    if cycle_trough < cycle_start:
+        raise ValueError("cycle_trough must not precede cycle_start")
+    return shift_months(cycle_start, -BUFFER_MONTHS), shift_months(cycle_trough, BUFFER_MONTHS)
+
+
+def normalize_rows(rows: Iterable[dict[str, Any]]) -> tuple[SeriesPoint, ...]:
+    points: list[SeriesPoint] = []
+    for row in rows:
+        raw_day = str(row.get("observation_date") or "")[:10]
+        try:
+            observed = date.fromisoformat(raw_day)
+            value = float(row["value"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("economic-chart row has an invalid date or value") from exc
+        if not math.isfinite(value):
+            raise ValueError("economic-chart row has a non-finite value")
+        points.append(SeriesPoint(observed, value))
+    points.sort(key=lambda item: item.day)
+    if any(left.day >= right.day for left, right in zip(points, points[1:])):
+        raise ValueError("economic-chart rows must have unique dates")
+    if not points:
+        raise ValueError("economic-chart series is empty")
+    return tuple(points)
+
+
+def build_envelope(points: Sequence[SeriesPoint], frequency: str) -> tuple[EnvelopePoint, ...]:
+    policy = PIVOT_POLICIES.get(frequency)
+    if policy is None:
+        raise ValueError(f"unsupported pivot frequency: {frequency}")
+    radius = policy.envelope_points // 2
+    result: list[EnvelopePoint] = []
+    for index, point in enumerate(points):
+        window = points[max(0, index - radius):min(len(points), index + radius + 1)]
+        values = [item.value for item in window]
+        result.append(EnvelopePoint(point.day, point.value, max(values), min(values)))
+    return tuple(result)
+
+
+def plateau_extrema(
+    envelope: Sequence[EnvelopePoint],
+    pivot_type: str,
+) -> tuple[PivotPoint, ...]:
+    if pivot_type not in {"high", "low"}:
+        raise ValueError("pivot_type must be high or low")
+    attribute = "upper" if pivot_type == "high" else "lower"
+    candidates: list[PivotPoint] = []
+    run_start = 0
+    while run_start < len(envelope):
+        level = getattr(envelope[run_start], attribute)
+        run_end = run_start + 1
+        while run_end < len(envelope) and getattr(envelope[run_end], attribute) == level:
+            run_end += 1
+        run = envelope[run_start:run_end]
+        if len(run) >= 2:
+            chosen = (
+                max(run, key=lambda item: item.value)
+                if pivot_type == "high"
+                else min(run, key=lambda item: item.value)
+            )
+            candidates.append(PivotPoint(chosen.day, chosen.value, pivot_type))
+        run_start = run_end
+    unique = {(item.day, item.value): item for item in candidates}
+    return tuple(sorted(unique.values(), key=lambda item: item.day))
+
+
+def _perpendicular_distance(
+    point: PivotPoint,
+    left: PivotPoint,
+    right: PivotPoint,
+    origin: date,
+) -> float:
+    px = float((point.day - origin).days)
+    py = point.value
+    x1 = float((left.day - origin).days)
+    y1 = left.value
+    x2 = float((right.day - origin).days)
+    y2 = right.value
+    denominator = math.hypot(y2 - y1, x2 - x1)
+    if denominator == 0:
+        return math.hypot(px - x1, py - y1)
+    return abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1) / denominator
+
+
+def fixed_count_rdp(
+    points: Sequence[PivotPoint],
+    target_count: int,
+) -> tuple[PivotPoint, ...]:
+    """Greedy fixed-count RDP-style simplification used in the approved experiments."""
+    if target_count < 2:
+        raise ValueError("target_count must be at least 2")
+    ordered = tuple(sorted(points, key=lambda item: item.day))
+    if len(ordered) <= target_count:
+        return ordered
+    origin = ordered[0].day
+    selected = {0, len(ordered) - 1}
+    while len(selected) < target_count:
+        best_index: int | None = None
+        best_distance = -1.0
+        indices = sorted(selected)
+        for left_index, right_index in zip(indices, indices[1:]):
+            for index in range(left_index + 1, right_index):
+                distance = _perpendicular_distance(
+                    ordered[index], ordered[left_index], ordered[right_index], origin,
+                )
+                if distance > best_distance:
+                    best_index = index
+                    best_distance = distance
+        if best_index is None:
+            break
+        selected.add(best_index)
+    return tuple(ordered[index] for index in sorted(selected))
+
+
+def calculate_base_pivots(
+    rows: Iterable[dict[str, Any]],
+    frequency: str,
+) -> BasePivotResult:
+    points = normalize_rows(rows)
+    policy = PIVOT_POLICIES.get(frequency)
+    if policy is None:
+        raise ValueError(f"unsupported pivot frequency: {frequency}")
+    envelope = build_envelope(points, frequency)
+    high_candidates = plateau_extrema(envelope, "high")
+    low_candidates = plateau_extrema(envelope, "low")
+    return BasePivotResult(
+        frequency=frequency,
+        policy=policy,
+        high_candidates=high_candidates,
+        low_candidates=low_candidates,
+        high_pivots=fixed_count_rdp(high_candidates, policy.rdp_points),
+        low_pivots=fixed_count_rdp(low_candidates, policy.rdp_points),
+    )
+
+
+def _single_row(
+    db: SupabaseRest,
+    table: str,
+    params: dict[str, str],
+) -> dict[str, Any]:
+    rows = db.request("GET", table, params=params) or []
+    if len(rows) != 1:
+        raise RuntimeError(f"expected exactly one {table} row, got {len(rows)}")
+    return rows[0]
+
+
+def load_case_series(
+    db: SupabaseRest,
+    *,
+    case_code: str,
+    index_code: str,
+    series_code: str,
+) -> tuple[tuple[dict[str, Any], ...], str, date, date]:
+    cycle = _single_row(db, "historical_case_market_cycles", {
+        "select": "start_date,trough_date",
+        "case_code": f"eq.{case_code}",
+        "index_code": f"eq.{index_code}",
+        "limit": "2",
+    })
+    if not cycle.get("start_date") or not cycle.get("trough_date"):
+        raise RuntimeError("Historical cycle requires both START and TROUGH")
+    cycle_start = date.fromisoformat(str(cycle["start_date"])[:10])
+    cycle_trough = date.fromisoformat(str(cycle["trough_date"])[:10])
+    buffer_start, buffer_end = buffer_bounds(cycle_start, cycle_trough)
+
+    rows = db.request("GET", "economic_chart_points", params={
+        "select": "observation_date,value,frequency",
+        "series_code": f"eq.{series_code}",
+        "observation_date": f"gte.{buffer_start.isoformat()}",
+        "and": f"(observation_date.lte.{buffer_end.isoformat()})",
+        "order": "observation_date.asc",
+        "limit": "10000",
+    }) or []
+    if not rows:
+        raise RuntimeError(f"No economic-chart rows for {series_code} in buffer range")
+    frequencies = {str(row.get("frequency") or "") for row in rows}
+    if len(frequencies) != 1:
+        raise RuntimeError(
+            f"{series_code} has inconsistent frequencies in buffer range: {sorted(frequencies)}"
+        )
+    frequency = next(iter(frequencies))
+    if frequency not in PIVOT_POLICIES:
+        raise RuntimeError(
+            f"{series_code} frequency {frequency} is not part of this base pipeline"
+        )
+    return tuple(rows), frequency, buffer_start, buffer_end
+
+
+def calculate_case_series(
+    db: SupabaseRest,
+    *,
+    case_code: str,
+    index_code: str,
+    series_code: str,
+) -> tuple[BasePivotResult, date, date]:
+    rows, frequency, buffer_start, buffer_end = load_case_series(
+        db,
+        case_code=case_code,
+        index_code=index_code,
+        series_code=series_code,
+    )
+    return calculate_base_pivots(rows, frequency), buffer_start, buffer_end
+
+
+def frontend_payload(
+    result: BasePivotResult,
+    *,
+    case_code: str,
+    index_code: str,
+    series_code: str,
+    buffer_start: date,
+    buffer_end: date,
+) -> dict[str, Any]:
+    """Serialize marker-only output; raw chart points remain owned by the frontend data path."""
+    return {
+        "case_code": case_code,
+        "index_code": index_code,
+        "series_code": series_code,
+        "frequency": result.frequency,
+        "buffer_start": buffer_start.isoformat(),
+        "buffer_end": buffer_end.isoformat(),
+        "markers": [
+            {
+                "pivot_date": marker.day.isoformat(),
+                "pivot_value": marker.value,
+                "pivot_type": marker.pivot_type,
+            }
+            for marker in result.display_markers
+        ],
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Calculate base Historical Insight pivot markers without changing source rows."
+    )
+    parser.add_argument("--case-code", required=True)
+    parser.add_argument("--index-code", required=True)
+    parser.add_argument("--series-code", required=True)
+    args = parser.parse_args()
+
+    result, buffer_start, buffer_end = calculate_case_series(
+        SupabaseRest(),
+        case_code=args.case_code,
+        index_code=args.index_code,
+        series_code=args.series_code,
+    )
+    print(json.dumps(frontend_payload(
+        result,
+        case_code=args.case_code,
+        index_code=args.index_code,
+        series_code=args.series_code,
+        buffer_start=buffer_start,
+        buffer_end=buffer_end,
+    ), ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
