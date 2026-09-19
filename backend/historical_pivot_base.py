@@ -541,34 +541,77 @@ def simplify_pivot_lines(
     augmented: SpikeAugmentedPivotResult,
     geometry: ChartGeometry,
 ) -> SimplifiedLineResult:
-    """Simplify only the line path; never remove or hide pivot markers.
+    """Simplify the line path after removing the unused side of confirmed sideways.
 
     Rules:
       - uptrend starts low -> high, then continues high -> high
       - downtrend starts high -> low, then continues low -> low
       - sideways keeps the same side as the prior trend:
         uptrend => high -> high, downtrend => low -> low
+      - when one sideways side is selected, the overlapping opposite-side sideways
+        pair is removed first, so those unused pivots cannot be used by later lines
       - a spike interrupts the current line at its entry, draws entry -> peak,
         then restarts from the peak
     """
-    highs = tuple(sorted(augmented.high_pivots, key=lambda item: item.day))
-    lows = tuple(sorted(augmented.low_pivots, key=lambda item: item.day))
-    markers = augmented.display_markers
-    if not highs or not lows:
-        return SimplifiedLineResult(markers=markers, segments=(), sideways_segments=())
+    original_highs = tuple(sorted(augmented.high_pivots, key=lambda item: item.day))
+    original_lows = tuple(sorted(augmented.low_pivots, key=lambda item: item.day))
+    if not original_highs or not original_lows:
+        return SimplifiedLineResult(markers=(), segments=(), sideways_segments=())
 
     spikes = tuple(sorted(
         (item for item in augmented.spike_peaks if item.entry is not None),
         key=lambda item: item.entry.day,
     ))
+
+    def sideways_pairs(
+        points: Sequence[PivotPoint],
+        prior_trend: str,
+    ) -> tuple[SidewaysSegment, ...]:
+        found: list[SidewaysSegment] = []
+        for left, right in zip(points, points[1:]):
+            segment = classify_sideways_reference_line(
+                left, right, prior_trend, geometry,
+            )
+            if segment is not None:
+                found.append(segment)
+        return tuple(found)
+
+    high_sideways = sideways_pairs(original_highs, "up")
+    low_sideways = sideways_pairs(original_lows, "down")
+
+    removed_keys: set[tuple[date, float, str]] = set()
+
+    def point_key(point: PivotPoint) -> tuple[date, float, str]:
+        return point.day, point.value, point.pivot_type
+
+    def overlaps(left: SidewaysSegment, right: SidewaysSegment) -> bool:
+        return left.start.day <= right.end.day and right.start.day <= left.end.day
+
+    def remove_opposite_sideways(selected: SidewaysSegment) -> None:
+        opposite = high_sideways if selected.reference_side == "low" else low_sideways
+        for other in opposite:
+            if overlaps(selected, other):
+                removed_keys.add(point_key(other.start))
+                removed_keys.add(point_key(other.end))
+
+    highs = list(original_highs)
+    lows = list(original_lows)
     consumed_spikes: set[tuple[date, float, str]] = set()
     segments: list[SimplifiedLineSegment] = []
     sideways_segments: list[SidewaysSegment] = []
 
+    def refresh_points() -> None:
+        nonlocal highs, lows
+        highs = [item for item in original_highs if point_key(item) not in removed_keys]
+        lows = [item for item in original_lows if point_key(item) not in removed_keys]
+
     def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
         if start.day >= end.day:
             return
-        key = (start.day, start.value, start.pivot_type, end.day, end.value, end.pivot_type, kind)
+        key = (
+            start.day, start.value, start.pivot_type,
+            end.day, end.value, end.pivot_type, kind,
+        )
         if any(
             (
                 item.start.day, item.start.value, item.start.pivot_type,
@@ -591,9 +634,12 @@ def simplify_pivot_lines(
                 continue
             if before is not None and spike.entry.day > before:
                 continue
+            if point_key(spike.entry) in removed_keys or point_key(spike.point) in removed_keys:
+                continue
             return spike
         return None
 
+    refresh_points()
     first_high = highs[0]
     first_low = lows[0]
     if first_low.day < first_high.day:
@@ -606,7 +652,7 @@ def simplify_pivot_lines(
         target = next_after(lows, anchor.day)
 
     if target is None:
-        return SimplifiedLineResult(markers=markers, segments=(), sideways_segments=())
+        return SimplifiedLineResult(markers=(), segments=(), sideways_segments=())
 
     while target is not None:
         spike = next_spike_before(anchor.day, target.day)
@@ -616,6 +662,7 @@ def simplify_pivot_lines(
             consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
             anchor = spike.point
             direction = "down" if spike.point.pivot_type == "high" else "up"
+            refresh_points()
             target = (
                 next_after(lows, anchor.day)
                 if direction == "down"
@@ -630,10 +677,10 @@ def simplify_pivot_lines(
                 target = next_after(highs, anchor.day)
                 continue
 
-            sideways = classify_sideways_reference_line(
-                anchor, target, "up", geometry,
-            )
+            sideways = classify_sideways_reference_line(anchor, target, "up", geometry)
             if sideways is not None:
+                remove_opposite_sideways(sideways)
+                refresh_points()
                 add_segment(anchor, target, "sideways")
                 sideways_segments.append(sideways)
                 anchor = target
@@ -656,6 +703,7 @@ def simplify_pivot_lines(
                 consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
                 anchor = spike.point
                 direction = "down" if spike.point.pivot_type == "high" else "up"
+                refresh_points()
                 target = (
                     next_after(lows, anchor.day)
                     if direction == "down"
@@ -674,10 +722,10 @@ def simplify_pivot_lines(
             target = next_after(lows, anchor.day)
             continue
 
-        sideways = classify_sideways_reference_line(
-            anchor, target, "down", geometry,
-        )
+        sideways = classify_sideways_reference_line(anchor, target, "down", geometry)
         if sideways is not None:
+            remove_opposite_sideways(sideways)
+            refresh_points()
             add_segment(anchor, target, "sideways")
             sideways_segments.append(sideways)
             anchor = target
@@ -700,6 +748,7 @@ def simplify_pivot_lines(
             consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
             anchor = spike.point
             direction = "down" if spike.point.pivot_type == "high" else "up"
+            refresh_points()
             target = (
                 next_after(lows, anchor.day)
                 if direction == "down"
@@ -714,13 +763,10 @@ def simplify_pivot_lines(
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_segments.sort(key=lambda item: (item.start.day, item.end.day))
 
-    # Final markers are not independently deleted. They are simply the endpoints
-    # of the simplified lines that survived. If a redundant line disappears,
-    # points used only by that line disappear from the final marker overlay too.
     used_markers: dict[tuple[date, float, str], PivotPoint] = {}
     for segment in segments:
-        used_markers[(segment.start.day, segment.start.value, segment.start.pivot_type)] = segment.start
-        used_markers[(segment.end.day, segment.end.value, segment.end.pivot_type)] = segment.end
+        used_markers[point_key(segment.start)] = segment.start
+        used_markers[point_key(segment.end)] = segment.end
 
     return SimplifiedLineResult(
         markers=tuple(sorted(
