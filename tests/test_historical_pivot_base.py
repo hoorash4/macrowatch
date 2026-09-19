@@ -602,6 +602,50 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIn((highs[1], lows[2]), pairs)
         self.assertIn((lows[2], lows[3]), pairs)
 
+    def test_spike_inside_opposite_sideways_is_marker_only(self):
+        d = date(2020, 1, 1)
+        high_rdp = (
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 6.0, "high"),
+        )
+        low_rdp = (
+            PivotPoint(d + timedelta(days=5), 1.0, "low"),
+            PivotPoint(d + timedelta(days=15), 1.05, "low"),
+            PivotPoint(d + timedelta(days=30), 1.2, "low"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=high_rdp,
+            low_candidates=low_rdp,
+            high_pivots=high_rdp,
+            low_pivots=low_rdp,
+        )
+        geometry = ChartGeometry(
+            d,
+            d + timedelta(days=100),
+            0.0,
+            10.0,
+            100.0,
+            100.0,
+        )
+
+        augmented = augment_spike_entry_points(base, geometry)
+
+        self.assertEqual(1, len(augmented.spike_peaks))
+        spike = augmented.spike_peaks[0]
+        self.assertTrue(spike.marker_only)
+        self.assertEqual(high_rdp[1], spike.point)
+        self.assertEqual((), augmented.added_low_pivots)
+
+        simplified = simplify_pivot_lines(augmented, geometry)
+        self.assertIn(spike.point, simplified.markers)
+        self.assertFalse(any(
+            segment.start == spike.point or segment.end == spike.point
+            for segment in simplified.segments
+        ))
+
     def test_spike_stops_at_entry_hits_peak_and_restarts(self):
         d = date(2020, 1, 1)
         highs = (
