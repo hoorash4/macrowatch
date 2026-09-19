@@ -711,6 +711,13 @@ def simplify_pivot_lines(
             if next_high is None:
                 break
 
+            # A spike/restart can leave the current anchor on the opposite side.
+            # Complete only that first cross-side leg, then resume high -> high.
+            if anchor.pivot_type == "low":
+                add_segment(anchor, next_high, "trend")
+                anchor = next_high
+                continue
+
             spike = next_spike_before(anchor.day, next_high.day)
             if spike is not None and spike.entry is not None:
                 add_segment(anchor, spike.entry, "trend")
@@ -757,6 +764,13 @@ def simplify_pivot_lines(
         next_low = next_after(lows, anchor.day)
         if next_low is None:
             break
+
+        # A spike/restart can leave the current anchor on the opposite side.
+        # Complete only that first cross-side leg, then resume low -> low.
+        if anchor.pivot_type == "high":
+            add_segment(anchor, next_low, "trend")
+            anchor = next_low
+            continue
 
         spike = next_spike_before(anchor.day, next_low.day)
         if spike is not None and spike.entry is not None:
