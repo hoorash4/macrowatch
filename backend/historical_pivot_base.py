@@ -614,6 +614,10 @@ def simplify_pivot_lines(
 
         if reversal_owner == opposite_side and point_key(point) not in spike_keys:
             redundant_reversal_keys.add(point_key(point))
+            # The opposite side has now caught up with the already-confirmed reversal.
+            # Consume this one duplicate confirmation only; after that both sides are
+            # aligned and the next side-direction change can own a new reversal.
+            reversal_owner = None
 
     filtered_highs = tuple(
         item for item in original_highs
