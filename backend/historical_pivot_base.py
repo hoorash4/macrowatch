@@ -25,7 +25,7 @@ from common import SupabaseRest
 
 BUFFER_MONTHS = 24
 SPIKE_ANGLE_THRESHOLD_DEG = 40.0
-SIDEWAYS_ANGLE_THRESHOLD_DEG = 10.0
+SIDEWAYS_ANGLE_THRESHOLD_DEG = 6.0
 
 
 @dataclass(frozen=True)
@@ -623,7 +623,7 @@ def classify_sideways_reference_line(
 
     After a downtrend, the reference line must connect lows.
     After an uptrend, the reference line must connect highs.
-    If the absolute screen angle is <= 10 degrees (configurable only by explicit caller
+    If the absolute screen angle is <= 6 degrees (configurable only by explicit caller
     choice), the entire start-to-end interval is sideways. The opposing line is not part
     of this decision. Spike peaks inside remain pivots, but their entry/exit markers are
     not part of the sideways segment's pivot set.
