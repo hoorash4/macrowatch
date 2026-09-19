@@ -713,8 +713,20 @@ def simplify_pivot_lines(
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_segments.sort(key=lambda item: (item.start.day, item.end.day))
+
+    # Final markers are not independently deleted. They are simply the endpoints
+    # of the simplified lines that survived. If a redundant line disappears,
+    # points used only by that line disappear from the final marker overlay too.
+    used_markers: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in segments:
+        used_markers[(segment.start.day, segment.start.value, segment.start.pivot_type)] = segment.start
+        used_markers[(segment.end.day, segment.end.value, segment.end.pivot_type)] = segment.end
+
     return SimplifiedLineResult(
-        markers=markers,
+        markers=tuple(sorted(
+            used_markers.values(),
+            key=lambda item: (item.day, item.pivot_type),
+        )),
         segments=tuple(segments),
         sideways_segments=tuple(sideways_segments),
     )
