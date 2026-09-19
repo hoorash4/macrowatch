@@ -445,6 +445,53 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             compress_same_direction_pivots(falling),
         )
 
+    def test_one_failed_hh_is_deferred_and_later_breakout_resumes_uptrend(self):
+        d = date(2020, 1, 1)
+        points = (
+            PivotPoint(d, 0.0, "low"),
+            PivotPoint(d + timedelta(days=10), 5.0, "high"),
+            PivotPoint(d + timedelta(days=20), 2.0, "low"),
+            PivotPoint(d + timedelta(days=30), 4.0, "high"),  # one failed HH
+            PivotPoint(d + timedelta(days=40), 3.0, "low"),
+            PivotPoint(d + timedelta(days=50), 6.0, "high"),  # breakout resumes uptrend
+        )
+        result = compress_same_direction_pivots(points)
+        self.assertIn(points[0], result)
+        self.assertIn(points[1], result)
+        self.assertIn(points[-1], result)
+        self.assertNotIn(points[3], result)
+
+    def test_failed_hh_plus_lower_low_confirms_downtrend(self):
+        d = date(2020, 1, 1)
+        points = (
+            PivotPoint(d, 0.0, "low"),
+            PivotPoint(d + timedelta(days=10), 5.0, "high"),
+            PivotPoint(d + timedelta(days=20), 3.0, "low"),
+            PivotPoint(d + timedelta(days=30), 4.0, "high"),  # failed HH
+            PivotPoint(d + timedelta(days=40), 2.5, "low"),
+            PivotPoint(d + timedelta(days=50), 4.0, "high"),
+            PivotPoint(d + timedelta(days=60), 1.5, "low"),  # lower low confirms downtrend
+        )
+        result = compress_same_direction_pivots(points)
+        self.assertIn(points[1], result)
+        self.assertIn(points[-1], result)
+
+    def test_one_failed_ll_is_deferred_and_later_breakdown_resumes_downtrend(self):
+        d = date(2020, 1, 1)
+        points = (
+            PivotPoint(d, 6.0, "high"),
+            PivotPoint(d + timedelta(days=10), 2.0, "low"),
+            PivotPoint(d + timedelta(days=20), 5.0, "high"),
+            PivotPoint(d + timedelta(days=30), 3.0, "low"),  # one failed LL
+            PivotPoint(d + timedelta(days=40), 4.0, "high"),
+            PivotPoint(d + timedelta(days=50), 1.0, "low"),  # breakdown resumes downtrend
+        )
+        result = compress_same_direction_pivots(points)
+        self.assertIn(points[0], result)
+        self.assertIn(points[1], result)
+        self.assertIn(points[-1], result)
+        self.assertNotIn(points[3], result)
+
     def test_downtrend_skips_intermediate_high_when_a_later_low_is_lower(self):
         d = date(2020, 1, 1)
         high = PivotPoint(d, -0.11, "high")
