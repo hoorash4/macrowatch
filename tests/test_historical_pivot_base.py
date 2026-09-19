@@ -52,8 +52,12 @@ class FakeDatabase:
 class HistoricalPivotBaseTests(unittest.TestCase):
     def test_approved_frequency_policy_is_fixed(self):
         self.assertEqual(
-            (35, 14),
-            (PIVOT_POLICIES["D"].envelope_points, PIVOT_POLICIES["D"].rdp_points),
+            (35, 14, 17),
+            (
+                PIVOT_POLICIES["D"].envelope_points,
+                PIVOT_POLICIES["D"].rdp_points,
+                PIVOT_POLICIES["D"].envelope_calendar_radius_days,
+            ),
         )
         self.assertEqual(
             (5, 14),
@@ -71,15 +75,17 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             buffer_bounds(date(2020, 3, 23), date(2022, 12, 28)),
         )
 
-    def test_daily_envelope_uses_35_points_centered(self):
+    def test_daily_envelope_uses_centered_35_calendar_day_window(self):
         start = date(2020, 1, 1)
         points = tuple(
-            SeriesPoint(start + timedelta(days=index), float(index))
-            for index in range(40)
+            SeriesPoint(start + timedelta(days=index * 2), float(index))
+            for index in range(30)
         )
         envelope = build_envelope(points, "D")
-        self.assertEqual(35.0, envelope[18].upper)
-        self.assertEqual(1.0, envelope[18].lower)
+        # At Jan 21 (index 10), +/-17 calendar days includes Jan 5..Feb 7,
+        # i.e. indices 2 through 18 in this every-other-day sample.
+        self.assertEqual(18.0, envelope[10].upper)
+        self.assertEqual(2.0, envelope[10].lower)
 
     def test_plateau_extrema_returns_actual_raw_point(self):
         points = (
