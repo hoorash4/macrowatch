@@ -30,6 +30,7 @@ from historical_pivot_base import (  # noqa: E402
     screen_angle_degrees,
     screen_segment_angle_degrees,
     simplify_pivot_lines,
+    prune_same_trend_extremes,
 )
 
 
@@ -645,6 +646,49 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             segment.start == spike.point or segment.end == spike.point
             for segment in simplified.segments
         ))
+
+    def test_post_pass_keeps_existing_result_then_prunes_only_same_trend_interior_points(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 0.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
+        inside_low = PivotPoint(d + timedelta(days=15), 4.0, "low")
+        high2 = PivotPoint(d + timedelta(days=20), 20.0, "high")
+        lower_high = PivotPoint(d + timedelta(days=30), 15.0, "high")
+        far_higher_high = PivotPoint(d + timedelta(days=40), 21.0, "high")
+        later_low = PivotPoint(d + timedelta(days=50), 3.0, "low")
+
+        existing = SimplifiedLineResult(
+            markers=(low, high1, inside_low, high2, lower_high, far_higher_high, later_low),
+            segments=(
+                SimplifiedLineSegment(low, high1, "trend"),
+                SimplifiedLineSegment(high1, inside_low, "trend"),
+                SimplifiedLineSegment(inside_low, high2, "trend"),
+                SimplifiedLineSegment(high2, lower_high, "trend"),
+                SimplifiedLineSegment(lower_high, far_higher_high, "trend"),
+                SimplifiedLineSegment(far_higher_high, later_low, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(
+            d,
+            d + timedelta(days=100),
+            0.0,
+            100.0,
+            100.0,
+            100.0,
+        )
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        self.assertIn(low, result.markers)
+        self.assertIn(high2, result.markers)
+        self.assertNotIn(high1, result.markers)
+        self.assertNotIn(inside_low, result.markers)
+        self.assertIn(far_higher_high, result.markers)
+        self.assertIn(
+            SimplifiedLineSegment(low, high2, "trend"),
+            result.segments,
+        )
 
     def test_spike_stops_at_entry_hits_peak_and_restarts(self):
         d = date(2020, 1, 1)
