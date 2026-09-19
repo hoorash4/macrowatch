@@ -589,7 +589,7 @@ def simplify_pivot_lines(
                 continue
             if spike.entry.day <= after:
                 continue
-            if before is not None and spike.entry.day >= before:
+            if before is not None and spike.entry.day > before:
                 continue
             return spike
         return None
