@@ -116,6 +116,11 @@ class SidewaysSegment:
     reference_side: str  # high | low
     angle_deg: float
 
+    @property
+    def pivot_points(self) -> tuple[PivotPoint, PivotPoint]:
+        """A confirmed sideways segment always protects both boundary pivots."""
+        return self.start, self.end
+
 
 @dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
