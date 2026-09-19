@@ -625,6 +625,41 @@ def simplify_pivot_lines(
     def next_after(points: Sequence[PivotPoint], after: date) -> PivotPoint | None:
         return next((item for item in points if item.day > after), None)
 
+    def turns_into_same_direction(
+        candidate: PivotPoint,
+        points: Sequence[PivotPoint],
+        direction_to_check: str,
+    ) -> bool:
+        """Return whether candidate itself is a same-side reversal into the given direction."""
+        ordered = [item for item in points if item.day <= candidate.day]
+        if len(ordered) < 3 or ordered[-1] != candidate:
+            return False
+        before_previous, previous, current = ordered[-3], ordered[-2], ordered[-1]
+        previous_delta = previous.value - before_previous.value
+        current_delta = current.value - previous.value
+        if previous_delta == 0 or current_delta == 0:
+            return False
+        previous_direction = "up" if previous_delta > 0 else "down"
+        current_direction = "up" if current_delta > 0 else "down"
+        return (
+            previous_direction != current_direction
+            and current_direction == direction_to_check
+        )
+
+    def next_valid_opposite(
+        points: Sequence[PivotPoint],
+        after: date,
+        direction_to_check: str,
+    ) -> PivotPoint | None:
+        candidate = next_after(points, after)
+        while candidate is not None and turns_into_same_direction(
+            candidate,
+            points,
+            direction_to_check,
+        ):
+            candidate = next_after(points, candidate.day)
+        return candidate
+
     def next_spike_before(after: date, before: date | None) -> SpikePeak | None:
         for spike in spikes:
             key = (spike.point.day, spike.point.value, spike.direction)
@@ -693,7 +728,7 @@ def simplify_pivot_lines(
                 target = next_after(highs, anchor.day)
                 continue
 
-            reversal_low = next_after(lows, anchor.day)
+            reversal_low = next_valid_opposite(lows, anchor.day, "down")
             if reversal_low is None:
                 break
             spike = next_spike_before(anchor.day, reversal_low.day)
@@ -738,7 +773,7 @@ def simplify_pivot_lines(
             target = next_after(lows, anchor.day)
             continue
 
-        reversal_high = next_after(highs, anchor.day)
+        reversal_high = next_valid_opposite(highs, anchor.day, "up")
         if reversal_high is None:
             break
         spike = next_spike_before(anchor.day, reversal_high.day)
