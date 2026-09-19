@@ -1,7 +1,10 @@
 """Base Historical Insight pivot extraction.
 
-This module is intentionally limited to the approved base pipeline:
+The approved base pipeline is:
 raw economic-chart points -> centered envelope -> plateau extrema -> fixed-count RDP.
+
+Optional spike entry-point augmentation is a separate post-processing step. It never
+replaces or removes the base RDP pivots.
 
 It is read-only with respect to source data. The frontend must continue to draw the
 original economic series from its canonical source; this module only produces marker
@@ -21,6 +24,7 @@ from common import SupabaseRest
 
 
 BUFFER_MONTHS = 24
+SPIKE_ANGLE_THRESHOLD_DEG = 40.0
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,56 @@ class BasePivotResult:
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
         """Return only marker coordinates for overlay on the untouched raw chart."""
+        return tuple(sorted(
+            (*self.high_pivots, *self.low_pivots),
+            key=lambda item: (item.day, item.pivot_type),
+        ))
+
+
+@dataclass(frozen=True)
+class ChartGeometry:
+    """Visible chart coordinate system used to measure the angle seen on screen."""
+
+    display_start: date
+    display_end: date
+    y_min: float
+    y_max: float
+    width: float
+    height: float
+
+    def __post_init__(self) -> None:
+        if self.display_end <= self.display_start:
+            raise ValueError("display_end must be after display_start")
+        if self.y_max <= self.y_min:
+            raise ValueError("y_max must be greater than y_min")
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("chart width and height must be positive")
+
+
+@dataclass(frozen=True)
+class SpikeAugmentedPivotResult:
+    """Base RDP pivots plus additive spike-entry markers only."""
+
+    base: BasePivotResult
+    added_high_pivots: tuple[PivotPoint, ...]
+    added_low_pivots: tuple[PivotPoint, ...]
+
+    @property
+    def high_pivots(self) -> tuple[PivotPoint, ...]:
+        return tuple(sorted(
+            (*self.base.high_pivots, *self.added_high_pivots),
+            key=lambda item: item.day,
+        ))
+
+    @property
+    def low_pivots(self) -> tuple[PivotPoint, ...]:
+        return tuple(sorted(
+            (*self.base.low_pivots, *self.added_low_pivots),
+            key=lambda item: item.day,
+        ))
+
+    @property
+    def display_markers(self) -> tuple[PivotPoint, ...]:
         return tuple(sorted(
             (*self.high_pivots, *self.low_pivots),
             key=lambda item: (item.day, item.pivot_type),
@@ -216,6 +270,126 @@ def calculate_base_pivots(
         low_candidates=low_candidates,
         high_pivots=fixed_count_rdp(high_candidates, policy.rdp_points),
         low_pivots=fixed_count_rdp(low_candidates, policy.rdp_points),
+    )
+
+
+
+def _screen_xy(point: PivotPoint, geometry: ChartGeometry) -> tuple[float, float]:
+    x_span = (geometry.display_end - geometry.display_start).days
+    x = (point.day - geometry.display_start).days / x_span * geometry.width
+    y = (geometry.y_max - point.value) / (geometry.y_max - geometry.y_min) * geometry.height
+    return x, y
+
+
+def screen_angle_degrees(
+    left: PivotPoint,
+    pivot: PivotPoint,
+    right: PivotPoint,
+    geometry: ChartGeometry,
+) -> float:
+    """Measure the pivot's interior angle in the chart's visible coordinate system."""
+    ax, ay = _screen_xy(left, geometry)
+    bx, by = _screen_xy(pivot, geometry)
+    cx, cy = _screen_xy(right, geometry)
+    v1 = (ax - bx, ay - by)
+    v2 = (cx - bx, cy - by)
+    norm1 = math.hypot(*v1)
+    norm2 = math.hypot(*v2)
+    if norm1 == 0 or norm2 == 0:
+        raise ValueError("angle points must have distinct screen coordinates")
+    cosine = (v1[0] * v2[0] + v1[1] * v2[1]) / (norm1 * norm2)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+
+
+def _has_pivot_between(
+    pivots: Sequence[PivotPoint],
+    start: date,
+    end: date,
+) -> bool:
+    return any(start <= item.day <= end for item in pivots)
+
+
+def _first_pivot_after(
+    pivots: Sequence[PivotPoint],
+    after: date,
+) -> PivotPoint | None:
+    return next((item for item in sorted(pivots, key=lambda point: point.day) if item.day > after), None)
+
+
+def augment_spike_entry_points(
+    base: BasePivotResult,
+    geometry: ChartGeometry,
+    *,
+    angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
+) -> SpikeAugmentedPivotResult:
+    """Add only missing spike entry points while preserving every base RDP pivot.
+
+    Upward spike:
+      - consecutive upper-RDP A-P-C with P above A/C
+      - P is inside the visible case range and its downward-facing angle is < threshold
+      - no lower-RDP pivot exists from A through C
+      - D, the first lower-RDP pivot after C, exists
+      - add the lowest lower-plateau candidate strictly between A and P
+
+    Downward spike is the exact high/low mirror.
+    D is already a base RDP pivot, so it is used as the spike exit and is not added again.
+    """
+    if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
+        raise ValueError("angle_threshold_deg must be between 0 and 180")
+
+    high_rdp = tuple(sorted(base.high_pivots, key=lambda item: item.day))
+    low_rdp = tuple(sorted(base.low_pivots, key=lambda item: item.day))
+    high_candidates = tuple(sorted(base.high_candidates, key=lambda item: item.day))
+    low_candidates = tuple(sorted(base.low_candidates, key=lambda item: item.day))
+    added_high: dict[tuple[date, float], PivotPoint] = {}
+    added_low: dict[tuple[date, float], PivotPoint] = {}
+
+    for index in range(1, len(high_rdp) - 1):
+        left, pivot, right = high_rdp[index - 1], high_rdp[index], high_rdp[index + 1]
+        if not (geometry.display_start <= pivot.day <= geometry.display_end):
+            continue
+        if not (pivot.value > left.value and pivot.value > right.value):
+            continue
+        if screen_angle_degrees(left, pivot, right, geometry) >= angle_threshold_deg:
+            continue
+        if _has_pivot_between(low_rdp, left.day, right.day):
+            continue
+        if _first_pivot_after(low_rdp, right.day) is None:
+            continue
+        entry_candidates = [
+            item for item in low_candidates
+            if left.day < item.day < pivot.day
+        ]
+        if not entry_candidates:
+            continue
+        entry = min(entry_candidates, key=lambda item: item.value)
+        added_low[(entry.day, entry.value)] = entry
+
+    for index in range(1, len(low_rdp) - 1):
+        left, pivot, right = low_rdp[index - 1], low_rdp[index], low_rdp[index + 1]
+        if not (geometry.display_start <= pivot.day <= geometry.display_end):
+            continue
+        if not (pivot.value < left.value and pivot.value < right.value):
+            continue
+        if screen_angle_degrees(left, pivot, right, geometry) >= angle_threshold_deg:
+            continue
+        if _has_pivot_between(high_rdp, left.day, right.day):
+            continue
+        if _first_pivot_after(high_rdp, right.day) is None:
+            continue
+        entry_candidates = [
+            item for item in high_candidates
+            if left.day < item.day < pivot.day
+        ]
+        if not entry_candidates:
+            continue
+        entry = max(entry_candidates, key=lambda item: item.value)
+        added_high[(entry.day, entry.value)] = entry
+
+    return SpikeAugmentedPivotResult(
+        base=base,
+        added_high_pivots=tuple(sorted(added_high.values(), key=lambda item: item.day)),
+        added_low_pivots=tuple(sorted(added_low.values(), key=lambda item: item.day)),
     )
 
 
