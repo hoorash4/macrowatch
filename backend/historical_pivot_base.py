@@ -106,6 +106,7 @@ class SpikePeak:
     point: PivotPoint
     direction: str  # up | down
     angle_deg: float
+    entry: PivotPoint | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,20 @@ class SidewaysSegment:
     def pivot_points(self) -> tuple[PivotPoint, PivotPoint]:
         """A confirmed sideways segment always protects both boundary pivots."""
         return self.start, self.end
+
+
+@dataclass(frozen=True)
+class SimplifiedLineSegment:
+    start: PivotPoint
+    end: PivotPoint
+    kind: str  # trend | sideways | spike
+
+
+@dataclass(frozen=True)
+class SimplifiedLineResult:
+    markers: tuple[PivotPoint, ...]
+    segments: tuple[SimplifiedLineSegment, ...]
+    sideways_segments: tuple[SidewaysSegment, ...]
 
 
 @dataclass(frozen=True)
@@ -469,6 +484,7 @@ def augment_spike_entry_points(
             point=pivot,
             direction="up",
             angle_deg=angle,
+            entry=entry,
         )
 
     for index in range(1, len(low_rdp) - 1):
@@ -509,6 +525,7 @@ def augment_spike_entry_points(
             point=pivot,
             direction="down",
             angle_deg=angle,
+            entry=entry,
         )
 
     return SpikeAugmentedPivotResult(
@@ -518,6 +535,189 @@ def augment_spike_entry_points(
         spike_peaks=tuple(sorted(spike_peaks.values(), key=lambda item: item.point.day)),
     )
 
+
+
+def simplify_pivot_lines(
+    augmented: SpikeAugmentedPivotResult,
+    geometry: ChartGeometry,
+) -> SimplifiedLineResult:
+    """Simplify only the line path; never remove or hide pivot markers.
+
+    Rules:
+      - uptrend starts low -> high, then continues high -> high
+      - downtrend starts high -> low, then continues low -> low
+      - sideways keeps the same side as the prior trend:
+        uptrend => high -> high, downtrend => low -> low
+      - a spike interrupts the current line at its entry, draws entry -> peak,
+        then restarts from the peak
+    """
+    highs = tuple(sorted(augmented.high_pivots, key=lambda item: item.day))
+    lows = tuple(sorted(augmented.low_pivots, key=lambda item: item.day))
+    markers = augmented.display_markers
+    if not highs or not lows:
+        return SimplifiedLineResult(markers=markers, segments=(), sideways_segments=())
+
+    spikes = tuple(sorted(
+        (item for item in augmented.spike_peaks if item.entry is not None),
+        key=lambda item: item.entry.day,
+    ))
+    consumed_spikes: set[tuple[date, float, str]] = set()
+    segments: list[SimplifiedLineSegment] = []
+    sideways_segments: list[SidewaysSegment] = []
+
+    def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
+        if start.day >= end.day:
+            return
+        key = (start.day, start.value, start.pivot_type, end.day, end.value, end.pivot_type, kind)
+        if any(
+            (
+                item.start.day, item.start.value, item.start.pivot_type,
+                item.end.day, item.end.value, item.end.pivot_type, item.kind,
+            ) == key
+            for item in segments
+        ):
+            return
+        segments.append(SimplifiedLineSegment(start=start, end=end, kind=kind))
+
+    def next_after(points: Sequence[PivotPoint], after: date) -> PivotPoint | None:
+        return next((item for item in points if item.day > after), None)
+
+    def next_spike_before(after: date, before: date | None) -> SpikePeak | None:
+        for spike in spikes:
+            key = (spike.point.day, spike.point.value, spike.direction)
+            if key in consumed_spikes or spike.entry is None:
+                continue
+            if spike.entry.day <= after:
+                continue
+            if before is not None and spike.entry.day >= before:
+                continue
+            return spike
+        return None
+
+    first_high = highs[0]
+    first_low = lows[0]
+    if first_low.day < first_high.day:
+        direction = "up"
+        anchor = first_low
+        target = next_after(highs, anchor.day)
+    else:
+        direction = "down"
+        anchor = first_high
+        target = next_after(lows, anchor.day)
+
+    if target is None:
+        return SimplifiedLineResult(markers=markers, segments=(), sideways_segments=())
+
+    while target is not None:
+        spike = next_spike_before(anchor.day, target.day)
+        if spike is not None and spike.entry is not None:
+            add_segment(anchor, spike.entry, "trend")
+            add_segment(spike.entry, spike.point, "spike")
+            consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
+            anchor = spike.point
+            direction = "down" if spike.point.pivot_type == "high" else "up"
+            target = (
+                next_after(lows, anchor.day)
+                if direction == "down"
+                else next_after(highs, anchor.day)
+            )
+            continue
+
+        if direction == "up":
+            if anchor.pivot_type == "low":
+                add_segment(anchor, target, "trend")
+                anchor = target
+                target = next_after(highs, anchor.day)
+                continue
+
+            sideways = classify_sideways_reference_line(
+                anchor, target, "up", geometry,
+            )
+            if sideways is not None:
+                add_segment(anchor, target, "sideways")
+                sideways_segments.append(sideways)
+                anchor = target
+                target = next_after(highs, anchor.day)
+                continue
+
+            if target.value > anchor.value:
+                add_segment(anchor, target, "trend")
+                anchor = target
+                target = next_after(highs, anchor.day)
+                continue
+
+            reversal_low = next_after(lows, anchor.day)
+            if reversal_low is None:
+                break
+            spike = next_spike_before(anchor.day, reversal_low.day)
+            if spike is not None and spike.entry is not None:
+                add_segment(anchor, spike.entry, "trend")
+                add_segment(spike.entry, spike.point, "spike")
+                consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
+                anchor = spike.point
+                direction = "down" if spike.point.pivot_type == "high" else "up"
+                target = (
+                    next_after(lows, anchor.day)
+                    if direction == "down"
+                    else next_after(highs, anchor.day)
+                )
+                continue
+            add_segment(anchor, reversal_low, "trend")
+            anchor = reversal_low
+            direction = "down"
+            target = next_after(lows, anchor.day)
+            continue
+
+        if anchor.pivot_type == "high":
+            add_segment(anchor, target, "trend")
+            anchor = target
+            target = next_after(lows, anchor.day)
+            continue
+
+        sideways = classify_sideways_reference_line(
+            anchor, target, "down", geometry,
+        )
+        if sideways is not None:
+            add_segment(anchor, target, "sideways")
+            sideways_segments.append(sideways)
+            anchor = target
+            target = next_after(lows, anchor.day)
+            continue
+
+        if target.value < anchor.value:
+            add_segment(anchor, target, "trend")
+            anchor = target
+            target = next_after(lows, anchor.day)
+            continue
+
+        reversal_high = next_after(highs, anchor.day)
+        if reversal_high is None:
+            break
+        spike = next_spike_before(anchor.day, reversal_high.day)
+        if spike is not None and spike.entry is not None:
+            add_segment(anchor, spike.entry, "trend")
+            add_segment(spike.entry, spike.point, "spike")
+            consumed_spikes.add((spike.point.day, spike.point.value, spike.direction))
+            anchor = spike.point
+            direction = "down" if spike.point.pivot_type == "high" else "up"
+            target = (
+                next_after(lows, anchor.day)
+                if direction == "down"
+                else next_after(highs, anchor.day)
+            )
+            continue
+        add_segment(anchor, reversal_high, "trend")
+        anchor = reversal_high
+        direction = "up"
+        target = next_after(highs, anchor.day)
+
+    segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
+    sideways_segments.sort(key=lambda item: (item.start.day, item.end.day))
+    return SimplifiedLineResult(
+        markers=markers,
+        segments=tuple(segments),
+        sideways_segments=tuple(sideways_segments),
+    )
 
 def _single_row(
     db: SupabaseRest,
