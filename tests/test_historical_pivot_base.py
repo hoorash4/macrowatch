@@ -569,9 +569,9 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         augmented = SpikeAugmentedPivotResult(base, (), ())
         result = finalize_connected_pivots(points, augmented)
         self.assertEqual((points[1], points[2]), result.pivots)
-        self.assertEqual(1, len(result.connections))
-        self.assertEqual(points[1], result.connections[0].start)
-        self.assertEqual(points[2], result.connections[0].end)
+        self.assertEqual(3, len(result.connections))
+        self.assertEqual(points[0], result.connections[0].start)
+        self.assertEqual(points[-1], result.connections[-1].end)
 
 
 if __name__ == "__main__":
