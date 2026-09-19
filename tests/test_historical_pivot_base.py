@@ -16,6 +16,7 @@ from historical_pivot_base import (  # noqa: E402
     PivotPoint,
     PivotPolicy,
     SeriesPoint,
+    SpikePeak,
     buffer_bounds,
     build_envelope,
     calculate_base_pivots,
@@ -24,7 +25,9 @@ from historical_pivot_base import (  # noqa: E402
     frontend_payload,
     plateau_extrema,
     augment_spike_entry_points,
+    classify_sideways_reference_line,
     screen_angle_degrees,
+    screen_segment_angle_degrees,
 )
 
 
@@ -278,6 +281,87 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             geometry,
         )
         self.assertLess(angle, 40.0)
+
+
+    def test_spike_peak_is_recorded_separately_from_added_entry(self):
+        d = date(2020, 1, 1)
+        high_rdp = (
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 5.0, "high"),
+            PivotPoint(d + timedelta(days=40), 6.0, "high"),
+        )
+        low_rdp = (
+            PivotPoint(d - timedelta(days=10), 0.0, "low"),
+            PivotPoint(d + timedelta(days=30), 1.0, "low"),
+        )
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=high_rdp,
+            low_candidates=(PivotPoint(d + timedelta(days=6), 1.0, "low"),),
+            high_pivots=high_rdp,
+            low_pivots=low_rdp,
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        result = augment_spike_entry_points(base, geometry)
+        self.assertEqual(1, len(result.spike_peaks))
+        self.assertEqual(high_rdp[1], result.spike_peaks[0].point)
+        self.assertEqual("up", result.spike_peaks[0].direction)
+
+    def test_downtrend_sideways_uses_low_reference_line_and_ten_degree_limit(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 2.0, "low")
+        end = PivotPoint(d + timedelta(days=60), 2.5, "low")
+        segment = classify_sideways_reference_line(start, end, "down", geometry)
+        self.assertIsNotNone(segment)
+        self.assertEqual("low", segment.reference_side)
+        self.assertLessEqual(abs(segment.angle_deg), 10.0)
+
+    def test_uptrend_sideways_uses_high_reference_line_and_rejects_steep_line(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        end = PivotPoint(d + timedelta(days=30), 8.0, "high")
+        self.assertIsNone(classify_sideways_reference_line(start, end, "up", geometry))
+
+    def test_sideways_interval_keeps_only_boundaries_and_internal_spike_peaks(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        start = PivotPoint(d + timedelta(days=10), 2.0, "low")
+        end = PivotPoint(d + timedelta(days=60), 2.2, "low")
+        spike_point = PivotPoint(d + timedelta(days=35), 9.0, "high")
+        outside_spike = PivotPoint(d + timedelta(days=80), 9.0, "high")
+        segment = classify_sideways_reference_line(
+            start,
+            end,
+            "down",
+            geometry,
+            spike_peaks=(
+                SpikePeak(spike_point, "up", 20.0),
+                SpikePeak(outside_spike, "up", 20.0),
+            ),
+        )
+        self.assertIsNotNone(segment)
+        self.assertEqual((spike_point,), tuple(item.point for item in segment.spike_peaks))
+        self.assertEqual((start, spike_point, end), segment.pivot_points)
+
+    def test_sideways_angle_is_signed_against_x_axis(self):
+        d = date(2020, 1, 1)
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        rising = screen_segment_angle_degrees(
+            PivotPoint(d + timedelta(days=10), 2.0, "low"),
+            PivotPoint(d + timedelta(days=60), 2.5, "low"),
+            geometry,
+        )
+        falling = screen_segment_angle_degrees(
+            PivotPoint(d + timedelta(days=10), 2.5, "low"),
+            PivotPoint(d + timedelta(days=60), 2.0, "low"),
+            geometry,
+        )
+        self.assertGreater(rising, 0)
+        self.assertLess(falling, 0)
 
 
 if __name__ == "__main__":
