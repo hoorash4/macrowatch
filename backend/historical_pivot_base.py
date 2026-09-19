@@ -409,20 +409,13 @@ def finalize_connected_pivots(
 
     if remove_chart_boundary_points and retained:
         # The first and last points of the FINAL connected path are chart-boundary
-        # anchors only. Remove only those two final-path endpoints.
+        # anchors only. Hide only those endpoint MARKERS. Keep the connections
+        # themselves so the full final path remains drawn from edge to edge.
         first_key = _pivot_identity(retained[0])
         last_key = _pivot_identity(retained[-1])
         retained = [
             point for point in retained
             if _pivot_identity(point) not in {first_key, last_key}
-        ]
-        retained_keys = {_pivot_identity(point) for point in retained}
-        connections = [
-            connection for connection in connections
-            if (
-                _pivot_identity(connection.start) in retained_keys
-                and _pivot_identity(connection.end) in retained_keys
-            )
         ]
 
     return FinalPivotResult(tuple(retained), tuple(connections))
