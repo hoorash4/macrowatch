@@ -1,0 +1,27 @@
+name: Temporary verify Stage4 10 degree
+on:
+  push:
+    paths:
+      - "backend/historical_pivot_stage4.py"
+      - "backend/historical_pivot_stage3.py"
+      - "tools/tmp_verify_stage4_10deg.py"
+      - ".github/workflows/tmp-verify-stage4-10deg.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pytest matplotlib
+      - run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_stage_boundaries.py
+      - name: Four live series
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_verify_stage4_10deg.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage4-10deg-four
+          path: tmp_stage4_fix_four/*.png
