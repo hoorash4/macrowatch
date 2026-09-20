@@ -55,6 +55,11 @@ def run(code,rows,freq,start,end):
         print("NFCI_SIDEWAYS",[(str(x.start.day),x.start.value,str(x.end.day),x.end.value,x.reference_side) for x in s3.sideways_segments if x.end.day.year>=2022])
         print("NFCI_S4",[(str(p.day),p.value,p.pivot_type) for p in s4.markers if p.day.year>=2022])
         print("NFCI_S5",[(str(p.day),p.value,p.pivot_type) for p in s5.markers if p.day.year>=2022])
+        from historical_pivot_stage4 import _process_window
+        sm=list(s3.markers)
+        for i in range(max(0,len(sm)-8),len(sm)-2):
+            intervals=_process_window(sm[i:],g,10.0)
+            print("NFCI_SUFFIX",i,str(sm[i].day),[(str(a.day),str(b.day)) for a,b in intervals])
         final={key(p) for p in s5.markers}
         assert (date(2018,3,30),-0.497,"high") in final
         assert (date(2024,8,2),-0.359,"high") not in final
