@@ -703,24 +703,48 @@ def prune_same_trend_extremes(
         if not candidates:
             continue
 
-        # Build only strict record extremes. Lower highs / higher lows do not
-        # participate in the angle check.
-        records: list[PivotPoint] = [candidates[0]]
+        # Connection candidates and angle ordinals are intentionally separate.
+        #
+        # A lower high during an up-run (or a higher low during a down-run) is
+        # NOT a new connection extreme, but it still consumes an angle ordinal.
+        # Therefore the first visible angle is ignored regardless of size, while
+        # the second and later visible angles are subject to the 10-degree rule.
+        #
+        # Example (up-run): H1 -> lower H2 -> higher H3
+        #   - H2 is skipped as a connection extreme
+        #   - angle H1-anchor-H2 is still angle #1 and is ignored
+        #   - angle H1-anchor-H3 is angle #2 and must pass the threshold
+        #
+        # Existing simplify_pivot_lines() already handles provisional 100%+
+        # retracement/reversal structure by following the later same-side extreme;
+        # do not duplicate that state machine here.
+        extreme = candidates[0]
+        angle_ordinal = 0
         for candidate in candidates[1:]:
+            angle_ordinal += 1
+            angle = screen_origin_angle_degrees(
+                anchor,
+                extreme,
+                candidate,
+                geometry,
+            )
+
+            # Angle #1 never stops the run. Angle #2 onward does.
+            if angle_ordinal >= 2 and angle > angle_threshold_deg:
+                break
+
             improves = (
-                candidate.value > records[-1].value
+                candidate.value > extreme.value
                 if direction == "up"
-                else candidate.value < records[-1].value
+                else candidate.value < extreme.value
             )
             if improves:
-                records.append(candidate)
+                extreme = candidate
 
-        # One record extreme alone changes nothing. With exactly two record
-        # extremes, simplify directly to the second extreme without using angle.
-        # From three record extremes onward, the FIRST available interior angle
-        # is informational only: accept the third extreme even if it exceeds the
-        # threshold. The 10-degree stop rule starts with the SECOND interior angle.
-        if len(records) == 1:
+        # No later same-side candidate improved on the first extreme, so there is
+        # nothing to collapse to. Two-candidate runs collapse directly when the
+        # second candidate improved; their only angle is angle #1 and is ignored.
+        if extreme == candidates[0]:
             continue
 
         sideways_keys = {
@@ -730,28 +754,11 @@ def prune_same_trend_extremes(
         }
         structure_protected_keys = protected_keys | sideways_keys
 
-        if len(records) == 2:
-            extreme = records[1]
-            # The second extreme survives as the direct endpoint, so it may be a
-            # protected structure boundary. What must not disappear is the first
-            # record extreme: if that point is protected, do not collapse across it.
-            if key(records[0]) in structure_protected_keys:
-                continue
-        else:
-            # H1/L1 is the first post-transition extreme; H2/L2 is the first
-            # update. H3/L3 creates the first interior angle, which never stops
-            # the simplification. Threshold enforcement begins at H4/L4.
-            extreme = records[2]
-            for candidate in records[3:]:
-                angle = screen_origin_angle_degrees(
-                    anchor,
-                    extreme,
-                    candidate,
-                    geometry,
-                )
-                if angle > angle_threshold_deg:
-                    break
-                extreme = candidate
+        # The first connection extreme disappears when we collapse to the final
+        # extreme. Preserve it when it is a protected spike/sideways boundary.
+        # The final extreme itself may be protected because it remains the endpoint.
+        if key(candidates[0]) in structure_protected_keys:
+            continue
 
         if anchor.day >= extreme.day:
             continue
