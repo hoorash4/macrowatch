@@ -1,0 +1,28 @@
+name: Temporary verify staged pivot refactor
+on:
+  push:
+    paths:
+      - "backend/historical_pivot_*.py"
+      - "tests/test_historical_pivot_*.py"
+      - "tools/tmp_verify_staged_refactor.py"
+      - ".github/workflows/tmp-verify-staged-refactor.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pytest matplotlib
+      - name: Unit and boundary tests
+        run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_base.py tests/test_historical_pivot_stage_boundaries.py
+      - name: Verify staged pipeline and render four charts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_verify_staged_refactor.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staged-four-charts
+          path: tmp_staged_four/*.png
