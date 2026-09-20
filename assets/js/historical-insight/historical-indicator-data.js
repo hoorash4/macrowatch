@@ -32,7 +32,12 @@
           selectionReasonCodes:Object.freeze([...(row.selection_reason_codes||[])]),selectionReason:String(row.selection_reason||''),selectionMeta:Object.freeze(row.selection_meta||{}),
           frequency:String(row.frequency||''),bufferStart:String(row.buffer_start||'').slice(0,10),bufferEnd:String(row.buffer_end||'').slice(0,10),
           sourcePointCount:Number(row.source_point_count||0),inputSha256:String(row.input_sha256||''),algorithmVersion:String(row.algorithm_version||'')
-        }))));
+        })).filter(row=>{
+          if(!row.bufferStart||!row.bufferEnd||!row.pivotDate)return true;
+          const visibleStart=shiftMonths(row.bufferStart,1);
+          const visibleEnd=shiftMonths(row.bufferEnd,-1);
+          return row.pivotDate>visibleStart&&row.pivotDate<visibleEnd;
+        })));
       pivotCache.set(key,promise);promise.catch(()=>pivotCache.delete(key));return promise;
     }
     return Object.freeze({catalog,loadCoverage,load,loadStoredPivots,clearAnalysisData(){coverageCache=null;seriesCache.clear();pivotCache.clear();}});
