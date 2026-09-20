@@ -36,7 +36,7 @@ def _stage_markers(stage: Any) -> tuple[PivotPoint, ...]:
     return tuple((*highs, *lows))
 
 
-def _reason_text(
+def _technical_reason_text(
     point: PivotPoint,
     *,
     base_rdp: bool,
@@ -75,6 +75,223 @@ def _reason_text(
         return "최종 선 구조에 연결되지 않는 독립 보호 마커로 유지되었습니다."
     return "기존 Stage 결과에서 최종 선 구조의 꼭짓점으로 남아 Stage 5까지 유지되었습니다."
 
+
+def _previous_same_side(
+    ordered: Sequence[PivotPoint],
+    index: int,
+) -> PivotPoint | None:
+    point = ordered[index]
+    for candidate in reversed(ordered[:index]):
+        if candidate.pivot_type == point.pivot_type:
+            return candidate
+    return None
+
+
+def _next_same_side(
+    ordered: Sequence[PivotPoint],
+    index: int,
+) -> PivotPoint | None:
+    point = ordered[index]
+    for candidate in ordered[index + 1:]:
+        if candidate.pivot_type == point.pivot_type:
+            return candidate
+    return None
+
+
+def _direction(left: PivotPoint | None, right: PivotPoint | None) -> int:
+    if left is None or right is None:
+        return 0
+    if right.value > left.value:
+        return 1
+    if right.value < left.value:
+        return -1
+    return 0
+
+
+def _format_value(value: float) -> str:
+    text = f"{float(value):.6f}".rstrip("0").rstrip(".")
+    return text if text != "-0" else "0"
+
+
+def _interpretive_reason(
+    ordered: Sequence[PivotPoint],
+    index: int,
+    *,
+    spike: dict[str, Any] | None,
+    sideways_boundaries: Sequence[dict[str, Any]],
+    standalone: bool,
+) -> tuple[str, str]:
+    """Describe only the already-selected final structure in plain language.
+
+    This function never changes pivot selection. It interprets final Stage-5
+    vertices and existing protection metadata using value/direction relations
+    that are already present in the stored result.
+    """
+    point = ordered[index]
+    previous = ordered[index - 1] if index > 0 else None
+    following = ordered[index + 1] if index + 1 < len(ordered) else None
+    previous_same = _previous_same_side(ordered, index)
+    next_same = _next_same_side(ordered, index)
+    incoming = _direction(previous, point)
+    outgoing = _direction(point, following)
+    value = _format_value(point.value)
+
+    if spike and spike.get("marker_only"):
+        return (
+            "isolated_spike",
+            f"{value}까지 짧고 급격한 변동이 나타났지만 주 추세선과는 분리된 특이 피봇으로 남았습니다.",
+        )
+
+    if spike and spike.get("role") == "peak":
+        direction = str(spike.get("direction") or "")
+        word = "상방" if direction == "up" else "하방" if direction == "down" else ""
+        return (
+            "protected_spike_peak",
+            f"{word}으로 급격한 움직임이 집중되며 주변 흐름과 뚜렷이 구별되는 변곡점이 형성됐습니다.",
+        )
+
+    if sideways_boundaries:
+        boundaries = {str(item.get("boundary") or "") for item in sideways_boundaries}
+        prior_trends = {str(item.get("prior_trend") or "") for item in sideways_boundaries}
+        if "start" in boundaries and "end" not in boundaries:
+            prior = "상승" if "up" in prior_trends else "하락" if "down" in prior_trends else "기존"
+            return (
+                "sideways_entry",
+                f"{prior} 흐름의 극값 갱신이 둔화되고 기준선이 평탄해지면서 횡보 구간으로 진입한 지점입니다.",
+            )
+        if "end" in boundaries and "start" not in boundaries:
+            if following is not None:
+                next_word = "상승" if outgoing > 0 else "하락" if outgoing < 0 else "새로운"
+                return (
+                    "sideways_exit",
+                    f"횡보 구간이 끝난 뒤 {next_word} 방향의 움직임이 다시 시작되는 경계점입니다.",
+                )
+            return (
+                "sideways_boundary_end",
+                "방향성이 약했던 횡보 구간의 마지막 경계점으로 남았습니다.",
+            )
+        return (
+            "sideways_boundary",
+            "비슷한 수준의 극값이 반복되며 방향성이 약해진 횡보 구조의 핵심 경계점입니다.",
+        )
+
+    if standalone:
+        return (
+            "standalone_protected_pivot",
+            "주 추세선과 직접 연결되지는 않지만 구조적으로 독립적인 변동점으로 보호되어 남았습니다.",
+        )
+
+    if previous is None and following is not None:
+        word = "상승" if outgoing > 0 else "하락" if outgoing < 0 else "다음"
+        return (
+            "structure_start",
+            f"최종 피봇 구조가 시작되는 기준점으로, 이후 {word} 흐름의 출발점이 됐습니다.",
+        )
+
+    if following is None:
+        if previous_same is not None:
+            if point.pivot_type == "low" and point.value < previous_same.value:
+                return (
+                    "final_lower_low",
+                    f"직전 주요 저점 {_format_value(previous_same.value)}보다 더 낮은 {value}의 저점을 만들며 하락 흐름의 최종 극값을 형성했습니다.",
+                )
+            if point.pivot_type == "low" and point.value > previous_same.value:
+                return (
+                    "final_higher_low",
+                    f"직전 주요 저점 {_format_value(previous_same.value)}보다 높은 {value}에서 저점이 형성돼 하락 압력이 약해진 상태로 끝났습니다.",
+                )
+            if point.pivot_type == "high" and point.value > previous_same.value:
+                return (
+                    "final_higher_high",
+                    f"직전 주요 고점 {_format_value(previous_same.value)}을 넘어 {value}의 새 고점을 만들며 상승 흐름의 최종 극값을 형성했습니다.",
+                )
+            if point.pivot_type == "high" and point.value < previous_same.value:
+                return (
+                    "final_lower_high",
+                    f"직전 주요 고점 {_format_value(previous_same.value)}을 넘지 못하고 {value}에서 고점이 형성돼 상승 탄력이 약해진 상태로 끝났습니다.",
+                )
+        word = "고점" if point.pivot_type == "high" else "저점"
+        return (
+            "final_extreme",
+            f"이 구간에서 마지막으로 확인된 주요 {word}으로 최종 피봇 구조의 끝점입니다.",
+        )
+
+    if incoming and outgoing and incoming != outgoing:
+        if point.pivot_type == "high":
+            if previous_same is not None and point.value > previous_same.value:
+                if next_same is not None and next_same.value < point.value:
+                    return (
+                        "uptrend_peak_reversal",
+                        f"직전 주요 고점 {_format_value(previous_same.value)}을 넘어 {value}까지 상승한 뒤 방향이 꺾여 하락으로 전환된 변곡점입니다.",
+                    )
+                return (
+                    "higher_high_turn",
+                    f"직전 주요 고점을 넘어 {value}의 새 고점을 만든 뒤 상승 흐름이 멈추고 방향이 전환된 지점입니다.",
+                )
+            if previous is not None and following is not None and following.pivot_type == "low":
+                prior_low = previous if previous.pivot_type == "low" else None
+                if prior_low is not None and following.value < prior_low.value:
+                    return (
+                        "failed_rebound_in_downtrend",
+                        f"하락 중 {value}까지 반등했지만 이후 저점이 다시 더 낮아져 기존 하락 구조가 유지된 반등 변곡점입니다.",
+                    )
+            return (
+                "local_high_turn",
+                f"{value}에서 반등이 멈추고 이후 하락 방향으로 전환된 주요 고점입니다.",
+            )
+
+        if point.pivot_type == "low":
+            if previous_same is not None and point.value < previous_same.value:
+                if next_same is not None and next_same.value > point.value:
+                    return (
+                        "downtrend_low_reversal",
+                        f"직전 주요 저점 {_format_value(previous_same.value)}을 밑돌아 {value}까지 하락한 뒤 방향이 꺾여 상승으로 전환된 변곡점입니다.",
+                    )
+                return (
+                    "lower_low_turn",
+                    f"직전 주요 저점보다 낮은 {value}의 새 저점을 만든 뒤 하락 흐름이 멈추고 방향이 전환된 지점입니다.",
+                )
+            if previous is not None and following is not None and following.pivot_type == "high":
+                prior_high = previous if previous.pivot_type == "high" else None
+                if prior_high is not None and following.value > prior_high.value:
+                    return (
+                        "failed_pullback_in_uptrend",
+                        f"상승 중 {value}까지 조정받았지만 이후 고점이 다시 더 높아져 기존 상승 구조가 유지된 조정 변곡점입니다.",
+                    )
+            return (
+                "local_low_turn",
+                f"{value}에서 하락이 멈추고 이후 상승 방향으로 전환된 주요 저점입니다.",
+            )
+
+    if point.pivot_type == "high" and previous_same is not None:
+        if point.value > previous_same.value:
+            return (
+                "higher_high_continuation",
+                f"직전 주요 고점 {_format_value(previous_same.value)}을 넘어 {value}의 새 고점을 만들며 상승 구조가 이어졌습니다.",
+            )
+        if point.value < previous_same.value:
+            return (
+                "lower_high_weakness",
+                f"반등이 {value}에서 멈추며 직전 주요 고점을 회복하지 못해 상승 탄력이 약해진 구조입니다.",
+            )
+
+    if point.pivot_type == "low" and previous_same is not None:
+        if point.value < previous_same.value:
+            return (
+                "lower_low_continuation",
+                f"직전 주요 저점 {_format_value(previous_same.value)}을 밑돌아 {value}의 새 저점을 만들며 하락 구조가 이어졌습니다.",
+            )
+        if point.value > previous_same.value:
+            return (
+                "higher_low_weakening_downtrend",
+                f"저점이 직전 주요 저점보다 높은 {value}에서 형성돼 하락 압력이 약해진 구조입니다.",
+            )
+
+    word = "고점" if point.pivot_type == "high" else "저점"
+    return (
+        "final_structure_pivot",
+        f"주변의 작은 변동을 제거한 뒤에도 최종 구조에 남은 주요 {word}입니다.",
+    )
 
 def build_storage_rows(
     *,
@@ -175,17 +392,13 @@ def build_storage_rows(
             "next_pivot_order": next_order,
             "segment_to_next": segment_kind,
             "selection_reason_codes": reason_codes,
-            "selection_reason": _reason_text(
-                point,
-                base_rdp=base_rdp,
-                spike_peak=bool(spike and spike.get("role") == "peak"),
-                spike_entry=bool(spike and spike.get("role") == "entry"),
-                marker_only=bool(spike and spike.get("marker_only")),
+            "selection_reason": _interpretive_reason(
+                ordered,
+                pivot_order,
+                spike=spike,
                 sideways_boundaries=sideways,
-                stage3_vertex=point_key in stage3_keys,
-                stage4_survivor=point_key in stage4_keys,
                 standalone=standalone,
-            ),
+            )[1],
             "selection_meta": {
                 "stage_membership": {
                     "stage1": point_key in stage1_keys,
@@ -197,6 +410,24 @@ def build_storage_rows(
                 "base_rdp": base_rdp,
                 "spike": spike,
                 "sideways_boundaries": sideways,
+                "reason_type": _interpretive_reason(
+                    ordered,
+                    pivot_order,
+                    spike=spike,
+                    sideways_boundaries=sideways,
+                    standalone=standalone,
+                )[0],
+                "technical_reason": _technical_reason_text(
+                    point,
+                    base_rdp=base_rdp,
+                    spike_peak=bool(spike and spike.get("role") == "peak"),
+                    spike_entry=bool(spike and spike.get("role") == "entry"),
+                    marker_only=bool(spike and spike.get("marker_only")),
+                    sideways_boundaries=sideways,
+                    stage3_vertex=point_key in stage3_keys,
+                    stage4_survivor=point_key in stage4_keys,
+                    standalone=standalone,
+                ),
                 "final_role": {
                     "standalone": standalone,
                     "next_pivot_order": next_order,
