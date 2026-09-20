@@ -145,3 +145,5 @@ if "2000-10-23" in by_date:
 print("S2 FIRST")
 for p in s2.display_markers[:8]:
     print(p.day,p.value,p.pivot_type)
+
+# rerun after Stage3 first-anchor fix
