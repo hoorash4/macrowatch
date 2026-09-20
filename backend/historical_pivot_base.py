@@ -27,6 +27,28 @@ BUFFER_MONTHS = 24
 SPIKE_ANGLE_THRESHOLD_DEG = 40.0
 SIDEWAYS_ANGLE_THRESHOLD_DEG = 6.0
 SAME_TREND_ANGLE_THRESHOLD_DEG = 10.0
+DEFAULT_TREND_MERGE_METHOD = "structural"  # Roll back with "angle"; "none" skips the post-pass.
+
+
+@dataclass(frozen=True)
+class StructuralMergePolicy:
+    """Dimensionless experimental defaults, not fitted probabilities."""
+
+    maximum_retracement: float = 0.5
+    maximum_recovery_share: float = 0.5
+    maximum_recovery_to_advance: float = 1.0
+    minimum_follow_through: float = 0.1
+
+    def __post_init__(self) -> None:
+        values = (self.maximum_retracement, self.maximum_recovery_share,
+                  self.maximum_recovery_to_advance, self.minimum_follow_through)
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            raise ValueError("structural merge limits must be finite and positive")
+        if self.maximum_retracement >= 1 or self.maximum_recovery_share >= 1:
+            raise ValueError("retracement and recovery share must be below one")
+
+
+STRUCTURAL_MERGE_POLICY = StructuralMergePolicy()
 
 
 @dataclass(frozen=True)
@@ -137,6 +159,7 @@ class SimplifiedLineResult:
     markers: tuple[PivotPoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
     sideways_segments: tuple[SidewaysSegment, ...]
+    merge_diagnostics: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -786,11 +809,160 @@ def prune_same_trend_extremes(
     )
 
 
+def _structural_merge_evidence(
+    points: Sequence[PivotPoint], policy: StructuralMergePolicy,
+) -> dict[str, Any]:
+    """Evaluate an existing connected polyline; dates are observed endpoints.
+
+    Recovery time is conservatively the first surviving endpoint at/above the
+    previous record, not an invented raw-series crossing date. Every excursion
+    is evaluated against the advance BEFORE it, so a distant future extreme
+    cannot dilute an earlier deep reversal.
+    """
+    anchor, end = points[0], points[-1]
+    sign = 1 if anchor.pivot_type == "low" else -1
+    values = [sign * (point.value - anchor.value) for point in points]
+    evidence: dict[str, Any] = {
+        "start": anchor.day.isoformat(), "end": end.day.isoformat(),
+        "accepted": False, "reason": "not_a_new_extreme", "excursions": [],
+    }
+    expected_end = "high" if sign == 1 else "low"
+    if end.pivot_type != expected_end or values[-1] <= 0:
+        return evidence
+    if any(value <= 0 for value in values[1:]):
+        evidence["reason"] = "origin_broken"
+        return evidence
+    if values[-1] <= max(values[1:-1], default=0):
+        return evidence
+    peak = 1
+    index = 2
+    total_days = (end.day - anchor.day).days
+    while index < len(points):
+        if values[index] >= values[peak]:
+            peak = index
+            index += 1
+            continue
+        recovery = index
+        while recovery < len(points) and values[recovery] < values[peak]:
+            recovery += 1
+        if recovery == len(points):
+            evidence["reason"] = "unrecovered"
+            return evidence
+        advance = values[peak]
+        advance_days = (points[peak].day - anchor.day).days
+        recovery_days = (points[recovery].day - points[peak].day).days
+        metrics = {
+            "peak": points[peak].day.isoformat(),
+            "recovered_by": points[recovery].day.isoformat(),
+            "retracement": (advance - min(values[index:recovery])) / advance,
+            "recovery_share": recovery_days / total_days,
+            "recovery_to_advance": recovery_days / advance_days,
+            "follow_through": (values[-1] - advance) / advance,
+        }
+        evidence["excursions"].append(metrics)
+        limits = (
+            (metrics["retracement"] > policy.maximum_retracement, "deep_reversal"),
+            (metrics["recovery_share"] > policy.maximum_recovery_share, "long_recovery"),
+            (metrics["recovery_to_advance"] > policy.maximum_recovery_to_advance, "long_recovery"),
+            (metrics["follow_through"] < policy.minimum_follow_through, "weak_follow_through"),
+        )
+        for failed, reason in limits:
+            if failed:
+                evidence["reason"] = reason
+                return evidence
+        peak = recovery
+        index = recovery + 1
+    evidence.update(accepted=True, reason="recovered_correction" if evidence["excursions"] else "directional_continuation")
+    return evidence
+
+
+def prune_structural_trends(
+    result: SimplifiedLineResult,
+    *,
+    policy: StructuralMergePolicy = STRUCTURAL_MERGE_POLICY,
+) -> SimplifiedLineResult:
+    """Retrospective upper-level path, independent of chart geometry.
+
+    Sideways/spike labels are not automatic barriers: a complete internal
+    segment may be absorbed only after passing the same recovery checks.
+    Disconnected/branching segments are never joined. Base pivots remain intact.
+    """
+    segments = sorted(result.segments, key=lambda segment: (segment.start.day, segment.end.day))
+    if any(segment.end.day <= segment.start.day for segment in segments):
+        raise ValueError("trend segments must move forward in time")
+    all_points = (*result.markers, *(point for segment in segments for point in (segment.start, segment.end)))
+    if any(not math.isfinite(point.value) for point in all_points):
+        raise ValueError("trend markers must be finite")
+    kept: list[SimplifiedLineSegment] = []
+    removed_intervals: list[tuple[date, date]] = []
+    diagnostics: list[dict[str, Any]] = []
+    cursor = 0
+    while cursor < len(segments):
+        first = segments[cursor]
+        points = [first.start, first.end]
+        best = cursor
+        best_evidence = None
+        for index in range(cursor + 1, len(segments)):
+            segment = segments[index]
+            if segment.start != points[-1] or segment.end.day <= segment.start.day:
+                break
+            # Fail closed on overlapping branches rather than deleting their vertices.
+            if index + 1 < len(segments) and segments[index + 1].start.day < segment.end.day:
+                break
+            points.append(segment.end)
+            # Include marker-only spikes too; they cannot disappear unexamined.
+            interior = set(points) | {
+                marker for marker in result.markers
+                if first.start.day < marker.day < segment.end.day
+            }
+            evidence_points = sorted(interior, key=lambda point: (point.day, point.pivot_type))
+            if len({point.day for point in evidence_points}) != len(evidence_points):
+                break
+            evidence = _structural_merge_evidence(evidence_points, policy)
+            diagnostics.append(evidence)
+            if evidence["accepted"]:
+                best, best_evidence = index, evidence
+            elif evidence["reason"] in {"origin_broken", "deep_reversal"}:
+                break
+        if best > cursor:
+            end = segments[best].end
+            kept.append(SimplifiedLineSegment(first.start, end, "trend"))
+            removed_intervals.append((first.start.day, end.day))
+            best_evidence["selected"] = True
+        else:
+            kept.append(first)
+        cursor = best + 1
+
+    # Only accepted interiors disappear from the upper-level display markers.
+    marker_map = {
+        (point.day, point.value, point.pivot_type): point
+        for segment in kept for point in (segment.start, segment.end)
+    }
+    for marker in result.markers:
+        if not any(start < marker.day < end for start, end in removed_intervals):
+            marker_map[(marker.day, marker.value, marker.pivot_type)] = marker
+    sideways = tuple(
+        item for item in result.sideways_segments
+        if not any(start <= item.start.day and item.end.day <= end for start, end in removed_intervals)
+    )
+    return SimplifiedLineResult(
+        markers=tuple(sorted(marker_map.values(), key=lambda point: (point.day, point.pivot_type))),
+        segments=tuple(kept), sideways_segments=sideways,
+        merge_diagnostics=tuple(diagnostics),
+    )
+
+
 def simplify_pivot_lines(
     augmented: SpikeAugmentedPivotResult,
     geometry: ChartGeometry,
+    *,
+    merge_method: str | None = None,
+    merge_policy: StructuralMergePolicy = STRUCTURAL_MERGE_POLICY,
 ) -> SimplifiedLineResult:
     """Simplify the line path in chronological order.
+
+    Then apply the selected post-pass: structural (default), legacy angle,
+    or none. Only the structural post-pass is independent of chart geometry.
 
     Rules:
       - uptrend starts low -> high, then continues high -> high
@@ -802,6 +974,9 @@ def simplify_pivot_lines(
       - overlapping opposite-side sideways pivots are removed before later links
       - spike entry interrupts the current line, entry -> peak is drawn, then restart
     """
+    merge_method = DEFAULT_TREND_MERGE_METHOD if merge_method is None else merge_method
+    if merge_method not in {"structural", "angle", "none"}:
+        raise ValueError("merge_method must be structural, angle, or none")
     original_highs = tuple(sorted(augmented.high_pivots, key=lambda item: item.day))
     original_lows = tuple(sorted(augmented.low_pivots, key=lambda item: item.day))
     if not original_highs or not original_lows:
@@ -1100,6 +1275,10 @@ def simplify_pivot_lines(
         segments=tuple(segments),
         sideways_segments=tuple(sideways_segments),
     )
+    if merge_method == "none":
+        return simplified
+    if merge_method == "structural":
+        return prune_structural_trends(simplified, policy=merge_policy)
     return prune_same_trend_extremes(
         simplified,
         geometry,
