@@ -84,6 +84,136 @@ def simplify_pivot_lines(
     low_sideways = sideways_pairs(line_lows, "down")
     removed_keys: set[tuple[date, float, str]] = set()
 
+    # Normal-wave merge happens BEFORE any cross-side connection is created.
+    # When the upper and lower RDP lines move in the same direction over the
+    # same time region, they describe one wave, not two turns to be connected.
+    #
+    # Up wave   : keep the wave's first LOW and last HIGH.
+    # Down wave : keep the wave's first HIGH and last LOW.
+    #
+    # Every ordinary point that merely follows inside that same wave is removed
+    # before the single-line builder sees it. Protected spike/sideways points
+    # block this collapse.
+    protected_wave_keys = {
+        point_key(point)
+        for sideways in (*augmented.high_sideways_segments, *augmented.low_sideways_segments)
+        for point in sideways.pivot_points
+    }
+    for spike in augmented.spike_peaks:
+        protected_wave_keys.add(point_key(spike.point))
+        if spike.entry is not None:
+            protected_wave_keys.add(point_key(spike.entry))
+
+    def leg_direction(left: PivotPoint, right: PivotPoint) -> int:
+        if right.value > left.value:
+            return 1
+        if right.value < left.value:
+            return -1
+        return 0
+
+    high_legs = [
+        (index, left, right, leg_direction(left, right))
+        for index, (left, right) in enumerate(zip(line_highs, line_highs[1:]))
+        if leg_direction(left, right) != 0
+    ]
+    low_legs = [
+        (index, left, right, leg_direction(left, right))
+        for index, (left, right) in enumerate(zip(line_lows, line_lows[1:]))
+        if leg_direction(left, right) != 0
+    ]
+
+    # Each node is a same-direction overlapping high/low leg pair.
+    wave_nodes: list[tuple[int, int, int]] = []
+    for high_index, high_left, high_right, high_dir in high_legs:
+        for low_index, low_left, low_right, low_dir in low_legs:
+            if high_dir != low_dir:
+                continue
+            overlap_start = max(high_left.day, low_left.day)
+            overlap_end = min(high_right.day, low_right.day)
+            if overlap_start <= overlap_end:
+                wave_nodes.append((high_index, low_index, high_dir))
+
+    # Merge adjacent/overlapping nodes of the same direction into one normal wave.
+    # This lets an ongoing wave update only its terminal extreme instead of
+    # connecting every following point.
+    unvisited = set(range(len(wave_nodes)))
+    components: list[list[tuple[int, int, int]]] = []
+    while unvisited:
+        seed_index = unvisited.pop()
+        component_indexes = {seed_index}
+        changed = True
+        while changed:
+            changed = False
+            for candidate_index in list(unvisited):
+                hi, li, direction = wave_nodes[candidate_index]
+                if any(
+                    direction == other_direction
+                    and (
+                        abs(hi - other_hi) <= 1
+                        and abs(li - other_li) <= 1
+                    )
+                    for other_hi, other_li, other_direction in (
+                        wave_nodes[item] for item in component_indexes
+                    )
+                ):
+                    unvisited.remove(candidate_index)
+                    component_indexes.add(candidate_index)
+                    changed = True
+        components.append([wave_nodes[item] for item in component_indexes])
+
+    normal_wave_removed: set[tuple[date, float, str]] = set()
+    normal_wave_kept: set[tuple[date, float, str]] = set()
+
+    for component in components:
+        direction = component[0][2]
+        high_indexes = sorted({item[0] for item in component})
+        low_indexes = sorted({item[1] for item in component})
+
+        high_points = {
+            point_key(point): point
+            for index in high_indexes
+            for point in (line_highs[index], line_highs[index + 1])
+        }
+        low_points = {
+            point_key(point): point
+            for index in low_indexes
+            for point in (line_lows[index], line_lows[index + 1])
+        }
+
+        if direction > 0:
+            start = min(low_points.values(), key=lambda item: item.day)
+            end = max(high_points.values(), key=lambda item: item.day)
+        else:
+            start = min(high_points.values(), key=lambda item: item.day)
+            end = max(low_points.values(), key=lambda item: item.day)
+
+        if start.day >= end.day:
+            continue
+
+        keep_keys = {point_key(start), point_key(end)}
+        component_keys = set(high_points) | set(low_points)
+        delete_keys = component_keys - keep_keys
+
+        # A protected point is never silently swallowed inside a normal wave.
+        if delete_keys & protected_wave_keys:
+            continue
+
+        normal_wave_kept.update(keep_keys)
+        normal_wave_removed.update(delete_keys)
+
+    # Keep wins when adjacent waves share a true turning endpoint.
+    normal_wave_removed.difference_update(normal_wave_kept)
+
+    if normal_wave_removed:
+        line_highs = tuple(
+            item for item in line_highs
+            if point_key(item) not in normal_wave_removed
+        )
+        line_lows = tuple(
+            item for item in line_lows
+            if point_key(item) not in normal_wave_removed
+        )
+
     def overlaps(left: SidewaysSegment, right: SidewaysSegment) -> bool:
         return left.start.day <= right.end.day and right.start.day <= left.end.day
 
@@ -334,8 +464,7 @@ def simplify_pivot_lines(
         sideways_segments=tuple(sideways_segments),
     )
 
-    # Hard stage boundary: stage 2 may only delete from the sealed stage-1 set.
-    # There is no legal path for a candidate/debug/deleted point to re-enter here.
+    # Hard Stage 3 boundary: this stage may only delete from Stage 2's sealed set.
     stage1_keys = {
         (item.day, item.value, item.pivot_type)
         for item in augmented.display_markers
@@ -345,7 +474,7 @@ def simplify_pivot_lines(
         for item in simplified.markers
     }
     if not stage2_keys.issubset(stage1_keys):
-        raise RuntimeError("line simplification resurrected a non-final stage-1 point")
+        raise RuntimeError("stage3 merge created a point absent from stage2")
 
     return simplified
 
