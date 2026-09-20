@@ -235,9 +235,11 @@ def prune_same_trend_extremes(
         )
         next_unresolved = next(
             (
-                day
-                for day in sorted(unresolved_days)
-                if day > anchor.day
+                check.point.day
+                for check in checks
+                if check.status == "unresolved"
+                and check.direction != direction
+                and check.point.day > anchor.day
             ),
             None,
         )
