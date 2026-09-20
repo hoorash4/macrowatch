@@ -670,6 +670,64 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             result.segments,
         )
 
+    def test_post_pass_two_extremes_keeps_first_when_first_is_sideways_boundary(self):
+        d = date(2020, 1, 1)
+        high = PivotPoint(d, 10.0, "high")
+        low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
+        low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        sideways = SidewaysSegment(
+            start=low1,
+            end=low2,
+            prior_trend="down",
+            reference_side="low",
+            angle_deg=1.0,
+        )
+        existing = SimplifiedLineResult(
+            markers=(high, low1, low2),
+            segments=(
+                SimplifiedLineSegment(high, low1, "trend"),
+                SimplifiedLineSegment(low1, low2, "sideways"),
+            ),
+            sideways_segments=(sideways,),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        self.assertEqual(existing, result)
+
+    def test_post_pass_two_extremes_may_end_on_second_sideways_boundary(self):
+        d = date(2020, 1, 1)
+        high = PivotPoint(d, 10.0, "high")
+        low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
+        low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        sideways_start = PivotPoint(d + timedelta(days=15), 3.5, "low")
+        sideways = SidewaysSegment(
+            start=sideways_start,
+            end=low2,
+            prior_trend="down",
+            reference_side="low",
+            angle_deg=1.0,
+        )
+        existing = SimplifiedLineResult(
+            markers=(high, low1, sideways_start, low2),
+            segments=(
+                SimplifiedLineSegment(high, low1, "trend"),
+                SimplifiedLineSegment(low1, sideways_start, "trend"),
+                SimplifiedLineSegment(sideways_start, low2, "sideways"),
+            ),
+            sideways_segments=(sideways,),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        # The second record extreme is the surviving endpoint. It being protected
+        # does not by itself block the direct high -> low2 simplification.
+        self.assertIn(high, result.markers)
+        self.assertIn(low2, result.markers)
+        self.assertNotIn(low1, result.markers)
+
     def test_post_pass_first_angle_never_stops_even_when_over_threshold(self):
         d = date(2020, 1, 1)
         low = PivotPoint(d, 0.0, "low")
