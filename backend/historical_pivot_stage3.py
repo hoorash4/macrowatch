@@ -471,8 +471,18 @@ def simplify_pivot_lines(
             add_segment(left, right, "trend")
 
     cursor_day: date | None = None
-    forced_anchor: PivotPoint | None = None
-    forced_direction: int | None = None
+
+    # The very first Stage-2 point is the Stage-3 starting anchor.  It may not be
+    # discarded merely because the first later consensus run points the other way.
+    # High starts a falling wave; low starts a rising wave.
+    forced_anchor: PivotPoint | None = points[0] if points else None
+    forced_direction: int | None = (
+        -1
+        if forced_anchor is not None and forced_anchor.pivot_type == "high"
+        else 1
+        if forced_anchor is not None
+        else None
+    )
 
     for protected in hard:
         window = [
