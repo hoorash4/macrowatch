@@ -373,30 +373,6 @@ def _merge_window(
     if not waves:
         return [forced_anchor] if forced_anchor is not None else []
 
-    # The chart can end while the newest opposite wave is still unfinished.
-    # Keep that current final wave instead of dropping the last real endpoint.
-    last = waves[-1]
-    if last.direction > 0:
-        trailing = [
-            point
-            for point in ordered
-            if point.day > last.end.day and point.pivot_type == "low"
-        ]
-        if trailing:
-            final_low = min(trailing, key=lambda item: (item.value, item.day))
-            if final_low.day > last.end.day:
-                waves.append(_Wave(-1, last.end, final_low))
-    else:
-        trailing = [
-            point
-            for point in ordered
-            if point.day > last.end.day and point.pivot_type == "high"
-        ]
-        if trailing:
-            final_high = max(trailing, key=lambda item: (item.value, item.day))
-            if final_high.day > last.end.day:
-                waves.append(_Wave(1, last.end, final_high))
-
     vertices = [waves[0].start]
     for wave in waves:
         if vertices[-1] != wave.start:
