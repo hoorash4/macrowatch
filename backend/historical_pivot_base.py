@@ -715,40 +715,64 @@ def prune_same_trend_extremes(
             if improves:
                 records.append(candidate)
 
-        # The first extreme is only the initial post-transition point.
-        # Update #1 creates H2/L2; update #2 creates H3/L3. Only then is there
-        # a user-approved comparison angle: H2-anchor-H3 (or L2-anchor-L3).
-        if len(records) < 3:
+        # One record extreme alone changes nothing. With exactly two record
+        # extremes, simplify directly to the second extreme without using angle.
+        # From three record extremes onward, the FIRST available interior angle
+        # is informational only: accept the third extreme even if it exceeds the
+        # threshold. The 10-degree stop rule starts with the SECOND interior angle.
+        if len(records) == 1:
             continue
 
-        extreme = records[1]
-        for candidate in records[2:]:
-            angle = screen_origin_angle_degrees(
-                anchor,
-                extreme,
-                candidate,
-                geometry,
-            )
-            if angle > angle_threshold_deg:
-                break
-            extreme = candidate
+        sideways_keys = {
+            key(point)
+            for sideways in result.sideways_segments
+            for point in sideways.pivot_points
+        }
+        structure_protected_keys = protected_keys | sideways_keys
+
+        if len(records) == 2:
+            extreme = records[1]
+            # If the second extreme is itself a protected structure boundary,
+            # keep the existing structure unchanged.
+            if key(extreme) in structure_protected_keys:
+                continue
+        else:
+            # H1/L1 is the first post-transition extreme; H2/L2 is the first
+            # update. H3/L3 creates the first interior angle, which never stops
+            # the simplification. Threshold enforcement begins at H4/L4.
+            extreme = records[2]
+            for candidate in records[3:]:
+                angle = screen_origin_angle_degrees(
+                    anchor,
+                    extreme,
+                    candidate,
+                    geometry,
+                )
+                if angle > angle_threshold_deg:
+                    break
+                extreme = candidate
 
         if anchor.day >= extreme.day:
             continue
         if boundary is not None and extreme.day > boundary:
             continue
 
-        # Spike peaks are always preserved and also block collapsing across them.
+        # Spike peaks and both sideways boundary pivots are always preserved.
+        # A collapse may not cross any of those protected structure points.
+        protected_structure_points = [
+            item for item in points
+            if key(item) in structure_protected_keys
+        ]
         if any(
             anchor.day < marker.day < extreme.day
-            for marker in protected_markers
+            for marker in protected_structure_points
         ):
             continue
 
         interior_points = [
             item for item in points
             if anchor.day < item.day < extreme.day
-            and key(item) not in protected_keys
+            and key(item) not in structure_protected_keys
         ]
         if not interior_points:
             continue
