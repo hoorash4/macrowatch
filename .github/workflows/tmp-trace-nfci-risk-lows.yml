@@ -1,0 +1,84 @@
+name: Trace NFCI_RISK low sequence temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-trace-nfci-risk-lows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Trace NFCI_RISK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series, ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
+          from historical_pivot_stage2 import finalize_sideways_protection
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          from historical_pivot_stage5 import prune_unconfirmed_retracements
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="NFCI_RISK")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals); pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+
+          base=calculate_base_pivots(rows,freq)
+          s1=augment_spike_entry_points(base,g)
+          s2=finalize_sideways_protection(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=prune_same_trend_extremes(s3,g)
+          s5=prune_unconfirmed_retracements(s4)
+
+          def show(name, pts):
+              print(name, [(p.day.isoformat(), round(p.value,6), p.pivot_type) for p in pts if p.day.year>=2022])
+
+          show("BASE_LOW_CANDIDATES", base.low_candidates)
+          show("BASE_LOW_RDP", base.low_pivots)
+          show("STAGE1_ALL", s1.display_markers)
+          show("STAGE2_ALL", s2.display_markers)
+          show("STAGE3_ALL", s3.markers)
+          show("STAGE4_ALL", s4.markers)
+          show("STAGE5_ALL", s5.markers)
+
+          print("STAGE2_SIDEWAYS",[
+            (x.start.day.isoformat(),round(x.start.value,6),x.start.pivot_type,
+             x.end.day.isoformat(),round(x.end.value,6),x.end.pivot_type,
+             x.prior_trend,x.reference_side,round(x.angle_deg,4))
+            for x in (*s2.high_sideways_segments,*s2.low_sideways_segments)
+            if x.end.day.year>=2022
+          ])
+          print("STAGE3_SEGMENTS",[
+            (seg.kind,seg.start.day.isoformat(),round(seg.start.value,6),seg.start.pivot_type,
+             seg.end.day.isoformat(),round(seg.end.value,6),seg.end.pivot_type)
+            for seg in s3.segments if seg.end.day.year>=2022
+          ])
+          print("STAGE4_SEGMENTS",[
+            (seg.kind,seg.start.day.isoformat(),round(seg.start.value,6),seg.start.pivot_type,
+             seg.end.day.isoformat(),round(seg.end.value,6),seg.end.pivot_type)
+            for seg in s4.segments if seg.end.day.year>=2022
+          ])
+          print("STAGE5_SEGMENTS",[
+            (seg.kind,seg.start.day.isoformat(),round(seg.start.value,6),seg.start.pivot_type,
+             seg.end.day.isoformat(),round(seg.end.value,6),seg.end.pivot_type)
+            for seg in s5.segments if seg.end.day.year>=2022
+          ])
+          PY
