@@ -1,26 +1,27 @@
-"""Stage 4: 10-degree simplification over Stage 3's single line.
+"""Stage 4: confirmed-run 10-degree simplification.
 
-This file intentionally contains one Stage-4 algorithm only.
+Stage 4 receives only Stage 3's single merged line.
 
-Input:
-- Stage 3 surviving line vertices / segments
-- protected sideways / spike structure already present in Stage 3
+One algorithm:
+1. Track the current trend and a provisional opposite reversal.
+2. A provisional reversal is cancelled if the old trend makes a new extreme.
+3. A reversal is confirmed only after:
+   - opposite extreme,
+   - retracement that does not break the turn,
+   - another extreme in the new direction.
+4. The confirmed turn becomes the next run anchor.
+5. Within every active/confirmed run, same-direction record extremes are simplified:
+   - first angle is always ignored,
+   - second and later angles collapse only while <= 10 degrees,
+   - > 10 degrees starts a new same-direction angle run at the previous extreme.
 
-Rule:
-- work continuously from the current confirmed anchor even before the next
-  reversal is fully confirmed
-- keep tracking the current run's same-direction record extreme
-- a provisional opposite turn is cancelled if the old trend makes a new extreme
-- when a reversal is fully confirmed, that turn becomes the new anchor
-- from each anchor, the first angle is ignored
-- from the second angle onward, <= 10 degrees may collapse through to the newer
-  same-direction extreme; > 10 degrees stops before that extreme
-- deletion only: Stage 4 can never create a point absent from Stage 3
+Stage 4 is deletion-only and never reads Stage 2/1/raw candidates.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from typing import Sequence
 
 from historical_pivot_shared import (
     ChartGeometry,
@@ -37,13 +38,227 @@ def _key(point: PivotPoint) -> tuple[date, float, str]:
 
 
 @dataclass
-class _Run:
-    anchor: PivotPoint
-    direction: str  # up | down
-    first_extreme: PivotPoint | None = None
-    current_extreme: PivotPoint | None = None
-    angle_ordinal: int = 0
-    collapse_end: PivotPoint | None = None
+class _Pending:
+    direction: str
+    turn: PivotPoint
+    first_extreme: PivotPoint
+    current_extreme: PivotPoint
+    retrace_seen: bool = False
+
+
+@dataclass(frozen=True)
+class _Anchor:
+    point: PivotPoint
+    direction: str
+
+
+def _direction_from(points: Sequence[PivotPoint]) -> str | None:
+    if len(points) < 2:
+        return None
+    first = points[0]
+    for item in points[1:]:
+        if item.value > first.value:
+            return "up"
+        if item.value < first.value:
+            return "down"
+    return None
+
+
+def _confirmed_anchors(points: Sequence[PivotPoint]) -> list[_Anchor]:
+    """Find run anchors while continuously tracking provisional reversals."""
+    ordered = list(points)
+    direction = _direction_from(ordered)
+    if not ordered or direction is None:
+        return []
+
+    anchors: list[_Anchor] = [_Anchor(ordered[0], direction)]
+    active_extreme: PivotPoint | None = None
+    pending: _Pending | None = None
+
+    def improves_active(item: PivotPoint) -> bool:
+        if active_extreme is None:
+            return True
+        return (
+            item.value > active_extreme.value
+            if direction == "up"
+            else item.value < active_extreme.value
+        )
+
+    for item in ordered[1:]:
+        wanted_type = "high" if direction == "up" else "low"
+
+        if pending is None:
+            if item.pivot_type == wanted_type:
+                if improves_active(item):
+                    active_extreme = item
+                continue
+
+            if active_extreme is None:
+                continue
+
+            pending = _Pending(
+                direction="down" if direction == "up" else "up",
+                turn=active_extreme,
+                first_extreme=item,
+                current_extreme=item,
+            )
+            continue
+
+        # Old trend resumes: provisional reversal is cancelled.
+        if direction == "up":
+            if (
+                item.pivot_type == "high"
+                and item.value > pending.turn.value
+            ):
+                active_extreme = item
+                pending = None
+                continue
+
+            if pending.direction == "down":
+                if item.pivot_type == "high":
+                    if item.value < pending.turn.value:
+                        pending.retrace_seen = True
+                    continue
+
+                # low in provisional down-run
+                if item.value < pending.current_extreme.value:
+                    if pending.retrace_seen:
+                        anchors.append(_Anchor(pending.turn, "down"))
+                        direction = "down"
+                        active_extreme = item
+                        pending = None
+                    else:
+                        pending.current_extreme = item
+                continue
+
+        else:
+            if (
+                item.pivot_type == "low"
+                and item.value < pending.turn.value
+            ):
+                active_extreme = item
+                pending = None
+                continue
+
+            if pending.direction == "up":
+                if item.pivot_type == "low":
+                    if item.value > pending.turn.value:
+                        pending.retrace_seen = True
+                    continue
+
+                # high in provisional up-run
+                if item.value > pending.current_extreme.value:
+                    if pending.retrace_seen:
+                        anchors.append(_Anchor(pending.turn, "up"))
+                        direction = "up"
+                        active_extreme = item
+                        pending = None
+                    else:
+                        pending.current_extreme = item
+                continue
+
+    # Deduplicate in chronological order; later confirmation for the same point wins.
+    by_key = {
+        _key(anchor.point): anchor
+        for anchor in anchors
+    }
+    return sorted(
+        by_key.values(),
+        key=lambda anchor: anchor.point.day,
+    )
+
+
+def _angle_replacements(
+    points: Sequence[PivotPoint],
+    anchors: Sequence[_Anchor],
+    geometry: ChartGeometry,
+    angle_threshold_deg: float,
+    protected_keys: set[tuple[date, float, str]],
+) -> list[tuple[PivotPoint, PivotPoint]]:
+    """Compute only the direct replacement intervals for confirmed/active runs."""
+    replacements: list[tuple[PivotPoint, PivotPoint]] = []
+
+    for index, anchor_info in enumerate(anchors):
+        anchor = anchor_info.point
+        direction = anchor_info.direction
+        next_anchor_day = (
+            anchors[index + 1].point.day
+            if index + 1 < len(anchors)
+            else None
+        )
+
+        wanted_type = "high" if direction == "up" else "low"
+        candidates = [
+            point
+            for point in points
+            if point.day > anchor.day
+            and point.pivot_type == wanted_type
+            and (next_anchor_day is None or point.day <= next_anchor_day)
+        ]
+        if len(candidates) < 2:
+            continue
+
+        run_anchor = anchor
+        extreme = candidates[0]
+        angle_ordinal = 0
+        collapse_end: PivotPoint | None = None
+
+        for candidate in candidates[1:]:
+            improves = (
+                candidate.value > extreme.value
+                if direction == "up"
+                else candidate.value < extreme.value
+            )
+            if not improves:
+                continue
+
+            angle_ordinal += 1
+            angle = screen_origin_angle_degrees(
+                run_anchor,
+                extreme,
+                candidate,
+                geometry,
+            )
+
+            if angle_ordinal == 1 or angle <= angle_threshold_deg:
+                extreme = candidate
+                collapse_end = candidate
+                continue
+
+            # >= second angle and >10°: preserve the previous extreme and begin
+            # a new same-direction angle run there.
+            if collapse_end is not None:
+                interior = [
+                    point
+                    for point in points
+                    if run_anchor.day < point.day < collapse_end.day
+                ]
+                if (
+                    interior
+                    and not any(_key(point) in protected_keys for point in interior)
+                    and _key(extreme) not in protected_keys
+                ):
+                    replacements.append((run_anchor, collapse_end))
+
+            run_anchor = extreme
+            extreme = candidate
+            angle_ordinal = 0
+            collapse_end = None
+
+        if collapse_end is not None:
+            interior = [
+                point
+                for point in points
+                if run_anchor.day < point.day < collapse_end.day
+            ]
+            if (
+                interior
+                and not any(_key(point) in protected_keys for point in interior)
+                and _key(candidates[0]) not in protected_keys
+            ):
+                replacements.append((run_anchor, collapse_end))
+
+    return replacements
 
 
 def prune_same_trend_extremes(
@@ -52,7 +267,6 @@ def prune_same_trend_extremes(
     *,
     angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
 ) -> SimplifiedLineResult:
-    """Apply the approved 10-degree rule to Stage 3's single line."""
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
@@ -60,11 +274,11 @@ def prune_same_trend_extremes(
         result.markers,
         key=lambda item: (item.day, item.pivot_type),
     ))
-    if len(points) < 2:
+    if len(points) < 3:
         return result
 
     point_map = {_key(point): point for point in points}
-    segment_endpoint_keys = {
+    endpoint_keys = {
         _key(point)
         for segment in result.segments
         for point in (segment.start, segment.end)
@@ -72,247 +286,83 @@ def prune_same_trend_extremes(
     standalone_keys = {
         _key(point)
         for point in result.markers
-        if _key(point) not in segment_endpoint_keys
+        if _key(point) not in endpoint_keys
     }
-
     sideways_keys = {
         _key(point)
         for sideways in result.sideways_segments
         for point in sideways.pivot_points
     }
-    spike_segment_keys = {
+    spike_keys = {
         _key(point)
         for segment in result.segments
         if segment.kind == "spike"
         for point in (segment.start, segment.end)
     }
-    protected_keys = standalone_keys | sideways_keys | spike_segment_keys
+    protected_keys = standalone_keys | sideways_keys | spike_keys
 
-    # Hard structure boundaries split Stage 4 processing.  Sideways END belongs
-    # to the just-finished run; a spike starts a hard interruption at its entry.
-    hard_boundary_days = set()
-    for segment in result.segments:
-        if segment.kind == "sideways":
-            hard_boundary_days.add(segment.end.day)
-        elif segment.kind == "spike":
-            hard_boundary_days.add(segment.start.day)
+    # Split at protected structure boundaries. No 10-degree collapse may cross them.
+    split_days = sorted({
+        segment.end.day if segment.kind == "sideways" else segment.start.day
+        for segment in result.segments
+        if segment.kind in {"sideways", "spike"}
+    })
 
-    def initial_direction(start_index: int) -> str | None:
-        first = points[start_index]
-        for item in points[start_index + 1:]:
-            if item.day in hard_boundary_days and item.day != first.day:
-                break
-            if item.value > first.value:
-                return "up"
-            if item.value < first.value:
-                return "down"
-        return None
+    windows: list[list[PivotPoint]] = []
+    start_index = 0
+    for split_day in split_days:
+        window = [
+            point
+            for point in points[start_index:]
+            if point.day <= split_day
+        ]
+        if window:
+            windows.append(window)
+            last = window[-1]
+            start_index = points.index(last)
+    tail = list(points[start_index:])
+    if tail:
+        windows.append(tail)
 
-    replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
+    replacements: list[tuple[PivotPoint, PivotPoint]] = []
+    for window in windows:
+        anchors = _confirmed_anchors(window)
+        replacements.extend(
+            _angle_replacements(
+                window,
+                anchors,
+                geometry,
+                angle_threshold_deg,
+                protected_keys,
+            )
+        )
 
-    index = 0
-    while index < len(points) - 1:
-        direction = initial_direction(index)
-        if direction is None:
-            break
-
-        run = _Run(anchor=points[index], direction=direction)
-
-        # Provisional reversal state.
-        pullback_low: PivotPoint | None = None
-        lower_high_seen = False
-        rebound_high: PivotPoint | None = None
-        higher_low_seen = False
-
-        cursor = index + 1
-        next_anchor: PivotPoint | None = None
-        next_direction: str | None = None
-
-        while cursor < len(points):
-            item = points[cursor]
-
-            if item.day in hard_boundary_days and item.day > run.anchor.day:
-                break
-
-            if run.direction == "up":
-                if item.pivot_type == "high":
-                    if (
-                        run.current_extreme is None
-                        or item.value > run.current_extreme.value
-                    ):
-                        if run.current_extreme is None:
-                            run.first_extreme = item
-                            run.current_extreme = item
-                        else:
-                            run.angle_ordinal += 1
-                            angle = screen_origin_angle_degrees(
-                                run.anchor,
-                                run.current_extreme,
-                                item,
-                                geometry,
-                            )
-
-                            # First angle is always ignored.
-                            if (
-                                run.angle_ordinal >= 2
-                                and angle > angle_threshold_deg
-                            ):
-                                break
-
-                            run.current_extreme = item
-                            run.collapse_end = item
-
-                        pullback_low = None
-                        lower_high_seen = False
-                    elif pullback_low is not None:
-                        lower_high_seen = True
-
-                    cursor += 1
-                    continue
-
-                # low during up-run = provisional reversal candidate
-                if run.current_extreme is None:
-                    cursor += 1
-                    continue
-
-                if pullback_low is None:
-                    pullback_low = item
-                    cursor += 1
-                    continue
-
-                if lower_high_seen and item.value < pullback_low.value:
-                    # Full up -> down reversal confirmed.
-                    next_anchor = run.current_extreme
-                    next_direction = "down"
-                    break
-
-                if item.value < pullback_low.value:
-                    pullback_low = item
-
-                cursor += 1
-                continue
-
-            # run.direction == "down"
-            if item.pivot_type == "low":
-                if (
-                    run.current_extreme is None
-                    or item.value < run.current_extreme.value
-                ):
-                    if run.current_extreme is None:
-                        run.first_extreme = item
-                        run.current_extreme = item
-                    else:
-                        run.angle_ordinal += 1
-                        angle = screen_origin_angle_degrees(
-                            run.anchor,
-                            run.current_extreme,
-                            item,
-                            geometry,
-                        )
-
-                        # First angle is always ignored.
-                        if (
-                            run.angle_ordinal >= 2
-                            and angle > angle_threshold_deg
-                        ):
-                            break
-
-                        run.current_extreme = item
-                        run.collapse_end = item
-
-                    rebound_high = None
-                    higher_low_seen = False
-                elif rebound_high is not None:
-                    higher_low_seen = True
-
-                cursor += 1
-                continue
-
-            # high during down-run = provisional reversal candidate
-            if run.current_extreme is None:
-                cursor += 1
-                continue
-
-            if rebound_high is None:
-                rebound_high = item
-                cursor += 1
-                continue
-
-            if higher_low_seen and item.value > rebound_high.value:
-                # Full down -> up reversal confirmed.
-                next_anchor = run.current_extreme
-                next_direction = "up"
-                break
-
-            if item.value > rebound_high.value:
-                rebound_high = item
-
-            cursor += 1
-
-        if (
-            run.collapse_end is not None
-            and run.anchor.day < run.collapse_end.day
-        ):
-            interior = [
-                point
-                for point in points
-                if run.anchor.day < point.day < run.collapse_end.day
-            ]
-            if (
-                interior
-                and not any(_key(point) in protected_keys for point in interior)
-                and _key(run.first_extreme) not in protected_keys
-            ):
-                replacement_intervals.append(
-                    (run.anchor, run.collapse_end)
-                )
-
-        if next_anchor is not None and next_direction is not None:
-            try:
-                index = points.index(next_anchor)
-            except ValueError:
-                break
-            continue
-
-        # If no confirmed reversal occurred, continue scanning after the last
-        # processed point only when there is still unprocessed structure.
-        if cursor <= index:
-            break
-        index = max(cursor, index + 1)
-
-    if not replacement_intervals:
+    if not replacements:
         return result
 
-    # Remove overlaps, keeping the earliest run replacement.
-    replacement_intervals.sort(
-        key=lambda item: (item[0].day, item[1].day)
-    )
+    replacements.sort(key=lambda item: (item[0].day, item[1].day))
     non_overlapping: list[tuple[PivotPoint, PivotPoint]] = []
-    for start, end in replacement_intervals:
+    for start, end in replacements:
         if non_overlapping and start.day < non_overlapping[-1][1].day:
             continue
         non_overlapping.append((start, end))
-    replacement_intervals = non_overlapping
+    replacements = non_overlapping
 
-    def inside_replacement(segment: SimplifiedLineSegment) -> bool:
+    def inside(segment: SimplifiedLineSegment) -> bool:
         return any(
             start.day <= segment.start.day
             and segment.end.day <= end.day
-            for start, end in replacement_intervals
+            for start, end in replacements
         )
 
     kept_segments = [
         segment
         for segment in result.segments
-        if not inside_replacement(segment)
+        if not inside(segment)
     ]
-    for start, end in replacement_intervals:
+    for start, end in replacements:
         kept_segments.append(
-            SimplifiedLineSegment(
-                start=start,
-                end=end,
-                kind="trend",
-            )
+            SimplifiedLineSegment(start=start, end=end, kind="trend")
         )
     kept_segments.sort(
         key=lambda item: (item.start.day, item.end.day, item.kind)
@@ -322,7 +372,6 @@ def prune_same_trend_extremes(
     for segment in kept_segments:
         marker_map[_key(segment.start)] = segment.start
         marker_map[_key(segment.end)] = segment.end
-
     for point in result.markers:
         if _key(point) in standalone_keys:
             marker_map[_key(point)] = point
