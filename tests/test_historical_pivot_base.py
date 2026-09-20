@@ -230,7 +230,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertTrue(all(params["order"] == "observation_date.asc" for params in point_calls))
 
 
-    def test_spike_augmentation_preserves_base_rdp_and_adds_upward_entry_only(self):
+    def test_spike_stage_never_reintroduces_removed_upward_entry(self):
         d = date(2020, 1, 1)
         high_rdp = (
             PivotPoint(d, 5.0, "high"),
@@ -267,9 +267,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         result = augment_spike_entry_points(base, geometry)
         self.assertEqual(high_rdp, result.base.high_pivots)
         self.assertEqual(low_rdp, result.base.low_pivots)
-        self.assertEqual((PivotPoint(d + timedelta(days=6), 1.0, "low"),), result.added_low_pivots)
+        self.assertEqual((), result.added_low_pivots)
         self.assertEqual((), result.added_high_pivots)
-        self.assertTrue(all(item in result.low_pivots for item in low_rdp))
+        self.assertEqual(base.display_markers, result.display_markers)
+        self.assertEqual((), result.spike_peaks)
 
     def test_spike_allows_opposite_rdp_inside_when_it_does_not_follow_peak(self):
         d = date(2020, 1, 1)
@@ -344,7 +345,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertEqual((), result.added_high_pivots)
         self.assertEqual((), result.spike_peaks)
 
-    def test_spike_augmentation_mirrors_for_downward_spike(self):
+    def test_spike_stage_never_reintroduces_removed_downward_entry(self):
         d = date(2020, 1, 1)
         low_rdp = (
             PivotPoint(d, 5.0, "low"),
@@ -372,8 +373,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual((PivotPoint(d + timedelta(days=6), 9.0, "high"),), result.added_high_pivots)
+        self.assertEqual((), result.added_high_pivots)
         self.assertEqual((), result.added_low_pivots)
+        self.assertEqual(base.display_markers, result.display_markers)
+        self.assertEqual((), result.spike_peaks)
 
     def test_spike_reuses_existing_entry_rdp_instead_of_adding_duplicate(self):
         d = date(2020, 1, 1)
@@ -411,15 +414,17 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             PivotPoint(d + timedelta(days=20), 5.0, "high"),
             PivotPoint(d + timedelta(days=40), 6.0, "high"),
         )
+        existing_entry = PivotPoint(d + timedelta(days=6), 1.0, "low")
         low_rdp = (
             PivotPoint(d - timedelta(days=10), 0.0, "low"),
+            existing_entry,
             PivotPoint(d + timedelta(days=30), 1.0, "low"),
         )
         base = BasePivotResult(
             frequency="D",
             policy=PivotPolicy(35, 14, 17),
             high_candidates=high_rdp,
-            low_candidates=(PivotPoint(d + timedelta(days=6), 1.0, "low"),),
+            low_candidates=(existing_entry,),
             high_pivots=high_rdp,
             low_pivots=low_rdp,
         )
@@ -1001,7 +1006,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
-        result = prune_same_trend_extremes(existing, geometry, protected_markers=(peak,))
+        result = prune_same_trend_extremes(existing, geometry)
 
         self.assertIn(peak, result.markers)
         self.assertIn(SimplifiedLineSegment(entry, peak, "spike"), result.segments)
