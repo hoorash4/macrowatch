@@ -47,6 +47,9 @@ def run(code,rows,freq,start,end):
     s5=prune_unconfirmed_retracements(s4)
 
     if code=="US10Y2Y":
+        print("US10Y2Y_S3",[(str(p.day),p.value,p.pivot_type) for p in s3.markers])
+        print("US10Y2Y_S4",[(str(p.day),p.value,p.pivot_type) for p in s4.markers])
+        print("US10Y2Y_S4_SEG",[(str(x.start.day),x.start.value,x.start.pivot_type,str(x.end.day),x.end.value,x.end.pivot_type,x.kind) for x in s4.segments])
         s4keys={key(p) for p in s4.markers}
         assert (date(2006,11,15),-0.19,"low") in s4keys
         assert (date(2009,6,4),2.76,"high") in s4keys
