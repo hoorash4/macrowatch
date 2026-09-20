@@ -47,6 +47,11 @@ def run(code,rows,freq,start,end):
     s5=prune_unconfirmed_retracements(s4)
 
     if code=="NFCI":
+        print("NFCI_S2",[(str(p.day),p.value,p.pivot_type) for p in s2.display_markers if p.day.year>=2024])
+        print("NFCI_S3",[(str(p.day),p.value,p.pivot_type) for p in s3.markers if p.day.year>=2024])
+        print("NFCI_S3_SEG",[(str(x.start.day),x.start.value,x.start.pivot_type,str(x.end.day),x.end.value,x.end.pivot_type,x.kind) for x in s3.segments if x.end.day.year>=2024])
+        print("NFCI_S4",[(str(p.day),p.value,p.pivot_type) for p in s4.markers if p.day.year>=2024])
+        print("NFCI_S5",[(str(p.day),p.value,p.pivot_type) for p in s5.markers if p.day.year>=2024])
         keys={pkey(p) for p in s5.markers}
         assert (date(2024,8,2),-0.359,"high") not in keys
         assert (date(2024,12,27),-0.485,"low") in keys
