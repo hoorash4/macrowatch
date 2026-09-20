@@ -647,7 +647,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             for segment in simplified.segments
         ))
 
-    def test_post_pass_requires_two_successful_extreme_updates(self):
+    def test_post_pass_collapses_two_record_extremes_without_angle(self):
         d = date(2020, 1, 1)
         high = PivotPoint(d, 10.0, "high")
         low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
@@ -664,7 +664,77 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        self.assertEqual(existing, result)
+        self.assertEqual((high, low2), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(high, low2, "trend"),),
+            result.segments,
+        )
+
+    def test_post_pass_first_angle_never_stops_even_when_over_threshold(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 0.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
+        dip1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
+        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
+        dip2 = PivotPoint(d + timedelta(days=25), 4.0, "low")
+        high3 = PivotPoint(d + timedelta(days=90), 12.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(low, high1, dip1, high2, dip2, high3),
+            segments=(
+                SimplifiedLineSegment(low, high1, "trend"),
+                SimplifiedLineSegment(high1, dip1, "trend"),
+                SimplifiedLineSegment(dip1, high2, "trend"),
+                SimplifiedLineSegment(high2, dip2, "trend"),
+                SimplifiedLineSegment(dip2, high3, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry, angle_threshold_deg=1.0)
+
+        self.assertEqual((low, high3), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(low, high3, "trend"),),
+            result.segments,
+        )
+
+    def test_post_pass_second_angle_can_stop_before_fourth_record_extreme(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 0.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
+        dip1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
+        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
+        dip2 = PivotPoint(d + timedelta(days=25), 4.0, "low")
+        high3 = PivotPoint(d + timedelta(days=30), 12.0, "high")
+        dip3 = PivotPoint(d + timedelta(days=35), 5.0, "low")
+        high4 = PivotPoint(d + timedelta(days=95), 13.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(low, high1, dip1, high2, dip2, high3, dip3, high4),
+            segments=(
+                SimplifiedLineSegment(low, high1, "trend"),
+                SimplifiedLineSegment(high1, dip1, "trend"),
+                SimplifiedLineSegment(dip1, high2, "trend"),
+                SimplifiedLineSegment(high2, dip2, "trend"),
+                SimplifiedLineSegment(dip2, high3, "trend"),
+                SimplifiedLineSegment(high3, dip3, "trend"),
+                SimplifiedLineSegment(dip3, high4, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry, angle_threshold_deg=1.0)
+
+        self.assertIn(low, result.markers)
+        self.assertIn(high3, result.markers)
+        self.assertIn(high4, result.markers)
+        self.assertNotIn(high1, result.markers)
+        self.assertNotIn(high2, result.markers)
+        self.assertIn(
+            SimplifiedLineSegment(low, high3, "trend"),
+            result.segments,
+        )
 
     def test_post_pass_deletes_every_interior_point_after_two_record_updates(self):
         d = date(2020, 1, 1)
