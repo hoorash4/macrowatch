@@ -77,8 +77,14 @@ def run(code,rows,freq,start,end):
             (date(2022,9,30),1.68,"high"),
             (date(2023,4,6),1.06,"low"),
             (date(2023,10,25),2.52,"high"),
+            (date(2024,12,19),2.28,"high"),
         ]:
             assert target in final, f"US10Y_REAL missing required turn {target}"
+
+    if code=="US_COMMERCIAL_CH11":
+        final={key(p) for p in s5.markers}
+        assert (date(2018,6,1),306.0,"low") in final, "CH11 initial rising-wave low must survive"
+        assert (date(2024,12,1),553.0,"low") in final, "CH11 trailing down-wave low must survive"
 
     fig,ax=plt.subplots(figsize=(14,7))
     ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
