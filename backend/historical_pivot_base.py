@@ -143,26 +143,16 @@ class SimplifiedLineResult:
 
 @dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
-    """Final stage-1 RDP result after spike confirmation."""
+    """Sealed final stage-1 output.
 
-    base: BasePivotResult
-    added_high_pivots: tuple[PivotPoint, ...]
-    added_low_pivots: tuple[PivotPoint, ...]
+    Only pivots that are confirmed at the end of stage 1 are retained here.
+    Earlier plateau candidates, pre-spike RDP state, and deleted/debug points are
+    intentionally absent so later stages cannot inspect or resurrect them.
+    """
+
+    high_pivots: tuple[PivotPoint, ...]
+    low_pivots: tuple[PivotPoint, ...]
     spike_peaks: tuple[SpikePeak, ...] = ()
-
-    @property
-    def high_pivots(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(
-            (*self.base.high_pivots, *self.added_high_pivots),
-            key=lambda item: item.day,
-        ))
-
-    @property
-    def low_pivots(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(
-            (*self.base.low_pivots, *self.added_low_pivots),
-            key=lambda item: item.day,
-        ))
 
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
@@ -565,14 +555,21 @@ def augment_spike_entry_points(
             marker_only=marker_only,
         )
 
-    result = SpikeAugmentedPivotResult(
-        base=base,
-        added_high_pivots=tuple(sorted(added_high.values(), key=lambda item: item.day)),
-        added_low_pivots=tuple(sorted(added_low.values(), key=lambda item: item.day)),
+    # Seal stage 1. Candidate sets and the pre-correction BasePivotResult are
+    # deliberately not carried across this boundary.
+    final_highs = {
+        (item.day, item.value, item.pivot_type): item
+        for item in (*high_rdp, *added_high.values())
+    }
+    final_lows = {
+        (item.day, item.value, item.pivot_type): item
+        for item in (*low_rdp, *added_low.values())
+    }
+    return SpikeAugmentedPivotResult(
+        high_pivots=tuple(sorted(final_highs.values(), key=lambda item: item.day)),
+        low_pivots=tuple(sorted(final_lows.values(), key=lambda item: item.day)),
         spike_peaks=tuple(sorted(spike_peaks.values(), key=lambda item: item.point.day)),
     )
-
-    return result
 
 
 
