@@ -248,106 +248,86 @@ def _cancel_false_reversals(
     forced_anchor: PivotPoint | None,
     forced_direction: int | None,
 ) -> list[_Wave]:
-    """Cancel a provisional reversal when the old trend makes a new extreme.
+    """Cancel only the CURRENT unfinished reversal.
 
-    Example:
-        down wave -> provisional up wave LOW->HIGH -> next LOW below that LOW
-        => provisional up wave is deleted and the down wave continues to the
-           lower LOW.
+    Interior waves are already confirmed because an opposite consensus wave
+    followed them.  They must never be retroactively deleted by a much later
+    extreme.
 
-    Mirror logic applies to an apparent down reversal inside an uptrend.
+    Only the last wave in the current window is provisional.  If the first
+    opposite-side point after its endpoint fully resumes the previous trend,
+    delete that last wave and extend the preceding wave to its new record
+    extreme.
     """
     current = list(waves)
+
     while current:
-        cancelled_index: int | None = None
+        last = current[-1]
 
-        for index, wave in enumerate(current):
-            if wave.direction > 0:
-                following = _first_after(
-                    points,
-                    after=wave.end.day,
-                    pivot_type="low",
-                )
-                if following is not None and following.value < wave.start.value:
-                    cancelled_index = index
-                    break
-            else:
-                following = _first_after(
-                    points,
-                    after=wave.end.day,
-                    pivot_type="high",
-                )
-                if following is not None and following.value > wave.start.value:
-                    cancelled_index = index
-                    break
+        if last.direction > 0:
+            following = _first_after(
+                points,
+                after=last.end.day,
+                pivot_type="low",
+            )
+            cancelled = (
+                following is not None
+                and following.value < last.start.value
+            )
+        else:
+            following = _first_after(
+                points,
+                after=last.end.day,
+                pivot_type="high",
+            )
+            cancelled = (
+                following is not None
+                and following.value > last.start.value
+            )
 
-        if cancelled_index is None:
+        if not cancelled:
             break
 
-        del current[cancelled_index]
+        current.pop()
 
-        # Rebuild the remaining direction sequence from scratch.  This is not a
-        # patch/reinsertion pass: cancellation changes the wave sequence itself.
-        directions = [wave.direction for wave in current]
-        compact_directions: list[int] = []
-        for direction in directions:
-            if not compact_directions or compact_directions[-1] != direction:
-                compact_directions.append(direction)
-
-        synthetic_runs = [
-            _CandidateRun(direction=direction, intervals=[])
-            for direction in compact_directions
-        ]
-
-        # Empty synthetic runs have no natural start, so rebuild directly from
-        # surviving wave starts and then extend the final wave to the true extreme.
-        if not current:
-            if forced_anchor is not None and forced_direction is not None:
-                end = _extreme_after(points, forced_anchor, forced_direction)
-                return (
-                    [_Wave(forced_direction, forced_anchor, end)]
-                    if end is not None and forced_anchor.day < end.day
-                    else []
-                )
-            return []
-
-        rebuilt: list[_Wave] = []
-        first_start = forced_anchor or current[0].start
-        for index, direction in enumerate(compact_directions):
-            start = first_start if index == 0 else rebuilt[-1].end
-
-            later_same = next(
-                (
-                    wave
-                    for wave in current
-                    if wave.direction == direction and wave.end.day > start.day
-                ),
-                None,
+        if current:
+            previous = current[-1]
+            extended_end = _extreme_after(
+                points,
+                previous.start,
+                previous.direction,
             )
-            if index + 1 < len(compact_directions):
-                next_direction = compact_directions[index + 1]
-                next_wave = next(
-                    (
-                        wave
-                        for wave in current
-                        if wave.direction == next_direction
-                        and wave.start.day > start.day
-                    ),
-                    None,
+            if (
+                extended_end is not None
+                and previous.start.day < extended_end.day
+            ):
+                current[-1] = _Wave(
+                    previous.direction,
+                    previous.start,
+                    extended_end,
                 )
-                end = next_wave.start if next_wave is not None else None
-            else:
-                end = _extreme_after(points, start, direction)
+            continue
 
-            if end is None and later_same is not None:
-                end = later_same.end
-            if end is not None and start.day < end.day:
-                rebuilt.append(_Wave(direction, start, end))
-
-        current = rebuilt
+        if forced_anchor is not None and forced_direction is not None:
+            extended_end = _extreme_after(
+                points,
+                forced_anchor,
+                forced_direction,
+            )
+            if (
+                extended_end is not None
+                and forced_anchor.day < extended_end.day
+            ):
+                return [
+                    _Wave(
+                        forced_direction,
+                        forced_anchor,
+                        extended_end,
+                    )
+                ]
+        return []
 
     return current
-
 
 def _merge_window(
     points: Sequence[PivotPoint],
@@ -392,6 +372,30 @@ def _merge_window(
 
     if not waves:
         return [forced_anchor] if forced_anchor is not None else []
+
+    # The chart can end while the newest opposite wave is still unfinished.
+    # Keep that current final wave instead of dropping the last real endpoint.
+    last = waves[-1]
+    if last.direction > 0:
+        trailing = [
+            point
+            for point in ordered
+            if point.day > last.end.day and point.pivot_type == "low"
+        ]
+        if trailing:
+            final_low = min(trailing, key=lambda item: (item.value, item.day))
+            if final_low.day > last.end.day:
+                waves.append(_Wave(-1, last.end, final_low))
+    else:
+        trailing = [
+            point
+            for point in ordered
+            if point.day > last.end.day and point.pivot_type == "high"
+        ]
+        if trailing:
+            final_high = max(trailing, key=lambda item: (item.value, item.day))
+            if final_high.day > last.end.day:
+                waves.append(_Wave(1, last.end, final_high))
 
     vertices = [waves[0].start]
     for wave in waves:
