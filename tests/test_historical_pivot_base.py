@@ -30,6 +30,7 @@ from historical_pivot_base import (  # noqa: E402
     frontend_payload,
     plateau_extrema,
     augment_spike_entry_points,
+    finalize_sideways_protection,
     classify_sideways_reference_line,
     screen_angle_degrees,
     screen_segment_angle_degrees,
@@ -480,6 +481,81 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIsNone(
             classify_sideways_reference_line(start, end, "up", geometry)
         )
+
+
+    def test_stage2_rejects_high_sideways_when_highs_arrive_from_downtrend(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 8.0, "high"),
+            PivotPoint(d + timedelta(days=80), 8.1, "high"),
+        )
+        lows = (
+            PivotPoint(d + timedelta(days=15), 5.0, "low"),
+            PivotPoint(d + timedelta(days=50), 4.0, "low"),
+            PivotPoint(d + timedelta(days=90), 3.0, "low"),
+        )
+        stage1 = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=lows,
+            spike_peaks=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual((), stage2.high_sideways_segments)
+
+    def test_stage2_accepts_low_sideways_only_after_falling_lows(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=5), 10.0, "high"),
+            PivotPoint(d + timedelta(days=45), 9.0, "high"),
+            PivotPoint(d + timedelta(days=95), 8.0, "high"),
+        )
+        lows = (
+            PivotPoint(d + timedelta(days=10), 6.0, "low"),
+            PivotPoint(d + timedelta(days=30), 4.0, "low"),
+            PivotPoint(d + timedelta(days=80), 4.1, "low"),
+        )
+        stage1 = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=lows,
+            spike_peaks=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(1, len(stage2.low_sideways_segments))
+        self.assertEqual(lows[1], stage2.low_sideways_segments[0].start)
+        self.assertEqual(lows[2], stage2.low_sideways_segments[0].end)
+
+    def test_stage2_continues_same_sideways_run_after_valid_entry(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 2.0, "high"),
+            PivotPoint(d + timedelta(days=30), 6.0, "high"),
+            PivotPoint(d + timedelta(days=60), 6.1, "high"),
+            PivotPoint(d + timedelta(days=90), 6.0, "high"),
+        )
+        lows = (
+            PivotPoint(d + timedelta(days=20), 1.0, "low"),
+            PivotPoint(d + timedelta(days=50), 2.0, "low"),
+            PivotPoint(d + timedelta(days=80), 3.0, "low"),
+        )
+        stage1 = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=lows,
+            spike_peaks=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(2, len(stage2.high_sideways_segments))
+        self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
+        self.assertEqual(highs[3], stage2.high_sideways_segments[-1].end)
 
 
     def test_confirmed_sideways_protects_both_boundary_pivots(self):
