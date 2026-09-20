@@ -143,24 +143,26 @@ class SimplifiedLineResult:
 
 @dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
-    """Spike metadata attached to the finalized RDP point set."""
+    """Final stage-1 RDP result after spike confirmation."""
 
     base: BasePivotResult
     added_high_pivots: tuple[PivotPoint, ...]
     added_low_pivots: tuple[PivotPoint, ...]
     spike_peaks: tuple[SpikePeak, ...] = ()
 
-    def __post_init__(self) -> None:
-        if self.added_high_pivots or self.added_low_pivots:
-            raise ValueError("post-RDP stages may not add pivots")
-
     @property
     def high_pivots(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(self.base.high_pivots, key=lambda item: item.day))
+        return tuple(sorted(
+            (*self.base.high_pivots, *self.added_high_pivots),
+            key=lambda item: item.day,
+        ))
 
     @property
     def low_pivots(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(self.base.low_pivots, key=lambda item: item.day))
+        return tuple(sorted(
+            (*self.base.low_pivots, *self.added_low_pivots),
+            key=lambda item: item.day,
+        ))
 
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
@@ -423,20 +425,33 @@ def augment_spike_entry_points(
     *,
     angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
 ) -> SpikeAugmentedPivotResult:
-    """Classify spike structure using finalized RDP pivots only.
+    """Finish stage 1 by confirming spikes on top of the RDP result.
 
-    RDP is a completed stage. This stage may inspect only finalized high/low RDP
-    pivots and may never re-introduce plateau/envelope candidates removed by RDP.
+    RDP selection and spike correction belong to the same stage. This function may
+    inspect plateau candidates only to recover a missing NORMAL spike entry before
+    stage 1 is finalized.
 
-    A connected spike may use only an existing opposite-side RDP pivot as its
-    entry. A spike inside an opposite sideways segment may remain marker-only
-    without an entry. No point outside the finalized RDP set is ever added here.
+    Normal spike:
+      - keep the spike peak
+      - use an existing opposite-side RDP entry when present
+      - otherwise recover the best opposite-side plateau candidate as the entry
+      - the recovered entry becomes part of the FINAL stage-1 RDP result
+
+    Spike inside an opposite sideways segment:
+      - keep ONLY the spike peak
+      - do NOT select or add an entry point
+      - marker_only=True, so later stages never connect a line to that peak
+
+    After this function returns, stage 1 is sealed. Later stages may use only this
+    returned final point set and may not consult base candidates again.
     """
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
     high_rdp = tuple(sorted(base.high_pivots, key=lambda item: item.day))
     low_rdp = tuple(sorted(base.low_pivots, key=lambda item: item.day))
+    high_candidates = tuple(sorted(base.high_candidates, key=lambda item: item.day))
+    low_candidates = tuple(sorted(base.low_candidates, key=lambda item: item.day))
     added_high: dict[tuple[date, float], PivotPoint] = {}
     added_low: dict[tuple[date, float], PivotPoint] = {}
     spike_peaks: dict[tuple[date, float, str], SpikePeak] = {}
@@ -476,17 +491,25 @@ def augment_spike_entry_points(
         if _first_pivot_after(low_rdp, right.day) is None:
             continue
 
-        existing_entries = [
-            item for item in low_rdp
-            if left.day < item.day < pivot.day
-        ]
         marker_only = opposite_sideways_contains_spike(pivot, "up")
-        if existing_entries:
-            entry = min(existing_entries, key=lambda item: item.value)
-        elif marker_only:
+        if marker_only:
             entry = None
         else:
-            continue
+            existing_entries = [
+                item for item in low_rdp
+                if left.day < item.day < pivot.day
+            ]
+            if existing_entries:
+                entry = min(existing_entries, key=lambda item: item.value)
+            else:
+                entry_candidates = [
+                    item for item in low_candidates
+                    if left.day < item.day < pivot.day
+                ]
+                if not entry_candidates:
+                    continue
+                entry = min(entry_candidates, key=lambda item: item.value)
+                added_low[(entry.day, entry.value)] = entry
 
         spike_peaks[(pivot.day, pivot.value, "up")] = SpikePeak(
             point=pivot,
@@ -514,17 +537,25 @@ def augment_spike_entry_points(
         if _first_pivot_after(high_rdp, right.day) is None:
             continue
 
-        existing_entries = [
-            item for item in high_rdp
-            if left.day < item.day < pivot.day
-        ]
         marker_only = opposite_sideways_contains_spike(pivot, "down")
-        if existing_entries:
-            entry = max(existing_entries, key=lambda item: item.value)
-        elif marker_only:
+        if marker_only:
             entry = None
         else:
-            continue
+            existing_entries = [
+                item for item in high_rdp
+                if left.day < item.day < pivot.day
+            ]
+            if existing_entries:
+                entry = max(existing_entries, key=lambda item: item.value)
+            else:
+                entry_candidates = [
+                    item for item in high_candidates
+                    if left.day < item.day < pivot.day
+                ]
+                if not entry_candidates:
+                    continue
+                entry = max(entry_candidates, key=lambda item: item.value)
+                added_high[(entry.day, entry.value)] = entry
 
         spike_peaks[(pivot.day, pivot.value, "down")] = SpikePeak(
             point=pivot,
@@ -540,17 +571,6 @@ def augment_spike_entry_points(
         added_low_pivots=tuple(sorted(added_low.values(), key=lambda item: item.day)),
         spike_peaks=tuple(sorted(spike_peaks.values(), key=lambda item: item.point.day)),
     )
-
-    base_keys = {
-        (item.day, item.value, item.pivot_type)
-        for item in base.display_markers
-    }
-    result_keys = {
-        (item.day, item.value, item.pivot_type)
-        for item in result.display_markers
-    }
-    if not result_keys.issubset(base_keys):
-        raise RuntimeError("spike stage resurrected a pre-RDP candidate")
 
     return result
 
