@@ -673,19 +673,128 @@ def prune_same_trend_extremes(
     def first_boundary_after(day: date) -> date | None:
         return next((item for item in hard_boundaries if item > day), None)
 
-    # Anchors are the actual surviving reversal owners from the immediately
-    # previous simplified path. A low->high trend leg starts an up-run at the low;
-    # a high->low trend leg starts a down-run at the high. Do not re-infer anchors
-    # from older RDP candidates or from same-side local-extrema comparisons.
-    run_start_map: dict[tuple[date, float, str], tuple[PivotPoint, str]] = {}
-    for segment in result.segments:
-        if segment.kind != "trend":
-            continue
-        if segment.start.pivot_type == "low" and segment.end.pivot_type == "high":
-            run_start_map[key(segment.start)] = (segment.start, "up")
-        elif segment.start.pivot_type == "high" and segment.end.pivot_type == "low":
-            run_start_map[key(segment.start)] = (segment.start, "down")
+    # Only a fully confirmed trend reversal may create a NEW anchor.
+    # The chart's first surviving point is the initial anchor. After that:
+    #   down -> up: a low survives a rebound, the next low stays above it,
+    #               and a later high exceeds the rebound high.
+    #   up -> down: exact mirror.
+    # A failed reversal candidate is discarded as soon as the old trend makes
+    # a new extreme. Sideways may sit between the old and new trends; when a
+    # reversal is confirmed across sideways, the sideways END is the new anchor.
+    ordered_points = list(points)
+    sideways_segments_sorted = tuple(sorted(
+        result.sideways_segments,
+        key=lambda item: (item.start.day, item.end.day),
+    ))
 
+    def sideways_end_between(start_day: date, confirm_day: date) -> PivotPoint | None:
+        matches = [
+            item.end
+            for item in sideways_segments_sorted
+            if start_day <= item.start.day
+            and item.end.day <= confirm_day
+        ]
+        return matches[-1] if matches else None
+
+    def initial_direction() -> str | None:
+        if len(ordered_points) < 2:
+            return None
+        first = ordered_points[0]
+        for item in ordered_points[1:]:
+            if item.value > first.value:
+                return "up"
+            if item.value < first.value:
+                return "down"
+        return None
+
+    run_starts: list[tuple[PivotPoint, str]] = []
+    direction = initial_direction()
+    if ordered_points and direction is not None:
+        run_starts.append((ordered_points[0], direction))
+
+        anchor_index = 0
+        scan_index = 1
+        while scan_index < len(ordered_points):
+            if direction == "down":
+                trend_low: PivotPoint | None = None
+                rebound_high: PivotPoint | None = None
+                higher_low_seen = False
+                confirmed = False
+
+                while scan_index < len(ordered_points):
+                    item = ordered_points[scan_index]
+                    if item.pivot_type == "low":
+                        if trend_low is None or item.value < trend_low.value:
+                            trend_low = item
+                            rebound_high = None
+                            higher_low_seen = False
+                        elif rebound_high is not None and item.value > trend_low.value:
+                            higher_low_seen = True
+                    else:
+                        if trend_low is not None:
+                            if rebound_high is None:
+                                rebound_high = item
+                            elif higher_low_seen and item.value > rebound_high.value:
+                                new_anchor = sideways_end_between(
+                                    trend_low.day,
+                                    item.day,
+                                ) or trend_low
+                                run_starts.append((new_anchor, "up"))
+                                direction = "up"
+                                anchor_index = ordered_points.index(new_anchor)
+                                scan_index = anchor_index + 1
+                                confirmed = True
+                                break
+                            elif item.value > rebound_high.value:
+                                rebound_high = item
+                    scan_index += 1
+
+                if not confirmed:
+                    break
+                continue
+
+            trend_high: PivotPoint | None = None
+            pullback_low: PivotPoint | None = None
+            lower_high_seen = False
+            confirmed = False
+
+            while scan_index < len(ordered_points):
+                item = ordered_points[scan_index]
+                if item.pivot_type == "high":
+                    if trend_high is None or item.value > trend_high.value:
+                        trend_high = item
+                        pullback_low = None
+                        lower_high_seen = False
+                    elif pullback_low is not None and item.value < trend_high.value:
+                        lower_high_seen = True
+                else:
+                    if trend_high is not None:
+                        if pullback_low is None:
+                            pullback_low = item
+                        elif lower_high_seen and item.value < pullback_low.value:
+                            new_anchor = sideways_end_between(
+                                trend_high.day,
+                                item.day,
+                            ) or trend_high
+                            run_starts.append((new_anchor, "down"))
+                            direction = "down"
+                            anchor_index = ordered_points.index(new_anchor)
+                            scan_index = anchor_index + 1
+                            confirmed = True
+                            break
+                        elif item.value < pullback_low.value:
+                            pullback_low = item
+                scan_index += 1
+
+            if not confirmed:
+                break
+
+    # A point may be encountered again when a sideways END becomes the confirmed
+    # reversal anchor. Keep only its latest confirmed direction.
+    run_start_map = {
+        key(anchor): (anchor, run_direction)
+        for anchor, run_direction in run_starts
+    }
     run_starts = sorted(
         run_start_map.values(),
         key=lambda item: item[0].day,
