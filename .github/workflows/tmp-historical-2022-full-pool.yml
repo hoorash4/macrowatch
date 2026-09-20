@@ -1,0 +1,120 @@
+name: Historical 2022 full pool verify temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-historical-2022-full-pool.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Run Historical indicator pool for tightening_2022
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p tmp-historical-2022
+          PYTHONPATH=backend python - <<'PY'
+          from __future__ import annotations
+          import csv
+          from pathlib import Path
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series, ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points, PIVOT_POLICIES
+          from historical_pivot_stage2 import finalize_sideways_protection
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          from historical_pivot_stage5 import prune_unconfirmed_retracements
+
+          db = SupabaseRest()
+          case_code = "tightening_2022"
+          index_code = "NASDAQ_COMPOSITE"
+          pool_rows = db.request("GET", "historical_indicator_ai_analysis", params={
+              "select": "series_code",
+              "case_code": f"eq.{case_code}",
+              "index_code": f"eq.{index_code}",
+              "order": "series_code.asc",
+              "limit": "1000",
+          }) or []
+          pool = sorted({str(row["series_code"]) for row in pool_rows})
+          out = Path("tmp-historical-2022")
+          summary = []
+
+          for code in pool:
+              try:
+                  rows, freq, start, end = load_case_series(
+                      db, case_code=case_code, index_code=index_code, series_code=code
+                  )
+                  if freq not in PIVOT_POLICIES:
+                      summary.append([code, freq, "UNSUPPORTED_FREQUENCY", 0, 0, "", ""])
+                      print(f"SKIP {code} {freq} unsupported")
+                      continue
+                  raw = normalize_rows(rows)
+                  values = [p.value for p in raw if start <= p.day <= end]
+                  lo, hi = min(values), max(values)
+                  pad = (hi-lo)*0.08 if hi != lo else 1.0
+                  g = ChartGeometry(start, end, lo-pad, hi+pad, 1200, 600)
+
+                  s1 = augment_spike_entry_points(calculate_base_pivots(rows, freq), g)
+                  s2 = finalize_sideways_protection(s1, g)
+                  s3 = simplify_pivot_lines(s2, g)
+                  s4 = prune_same_trend_extremes(s3, g)
+                  s5 = prune_unconfirmed_retracements(s4)
+
+                  fig, ax = plt.subplots(figsize=(14, 7))
+                  ax.plot([p.day for p in raw], [p.value for p in raw], linewidth=1.0, label="raw")
+                  for seg in s5.segments:
+                      ax.plot([seg.start.day, seg.end.day], [seg.start.value, seg.end.value], linewidth=2.0)
+                  highs = [p for p in s5.markers if p.pivot_type == "high"]
+                  lows = [p for p in s5.markers if p.pivot_type == "low"]
+                  if highs:
+                      ax.scatter([p.day for p in highs], [p.value for p in highs], s=28, marker="^", label="high")
+                  if lows:
+                      ax.scatter([p.day for p in lows], [p.value for p in lows], s=28, marker="v", label="low")
+                  ax.set_xlim(start, end)
+                  ax.set_ylim(g.y_min, g.y_max)
+                  ax.set_title(f"{code} | {freq} | tightening_2022 full buffer")
+                  ax.grid(True, alpha=.2)
+                  ax.legend(loc="best")
+                  fig.tight_layout()
+                  fig.savefig(out / f"{code}.png", dpi=120)
+                  plt.close(fig)
+
+                  first = s5.markers[0].day.isoformat() if s5.markers else ""
+                  last = s5.markers[-1].day.isoformat() if s5.markers else ""
+                  summary.append([code, freq, "OK", len(raw), len(s5.markers), first, last])
+                  print(f"OK {code} {freq} raw={len(raw)} markers={len(s5.markers)} first={first} last={last}")
+              except Exception as exc:
+                  summary.append([code, "", "ERROR", 0, 0, "", str(exc)])
+                  print(f"ERROR {code}: {exc!r}")
+
+          with (out / "summary.csv").open("w", newline="", encoding="utf-8") as f:
+              writer = csv.writer(f)
+              writer.writerow(["series_code","frequency","status","raw_points","final_markers","first_marker","last_marker_or_error"])
+              writer.writerows(summary)
+
+          ok = sum(row[2] == "OK" for row in summary)
+          unsupported = sum(row[2] == "UNSUPPORTED_FREQUENCY" for row in summary)
+          errors = sum(row[2] == "ERROR" for row in summary)
+          print(f"POOL_TOTAL={len(pool)} OK={ok} UNSUPPORTED={unsupported} ERROR={errors}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: historical-2022-full-pool
+          path: tmp-historical-2022/
+          if-no-files-found: error
