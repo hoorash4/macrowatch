@@ -1,0 +1,26 @@
+name: Temporary verify adjacent final cleanup
+on:
+  push:
+    paths:
+      - "tools/tmp_verify_adjacent_cleanup.py"
+      - ".github/workflows/tmp-verify-adjacent-cleanup.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pytest matplotlib
+      - name: Regression tests
+        run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_stage_boundaries.py
+      - name: Render four charts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_verify_adjacent_cleanup.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adjacent-final-four
+          path: tmp_adjacent_final_four/*.png
