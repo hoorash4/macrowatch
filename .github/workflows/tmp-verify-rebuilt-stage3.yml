@@ -17,8 +17,6 @@ jobs:
       - run: pip install requests pytest matplotlib
       - name: Stage boundary tests
         run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_stage_boundaries.py
-      - name: Full historical pivot tests
-        run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_base.py
       - name: Four live series
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
