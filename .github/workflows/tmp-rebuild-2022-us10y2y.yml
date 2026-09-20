@@ -1,0 +1,84 @@
+name: Rebuild 2022 US10Y2Y temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-rebuild-2022-us10y2y.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Rebuild derived US10Y2Y
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALGORITHM_VERSION: ${{ github.sha }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          import os
+          from datetime import date
+          from common import SupabaseRest
+          from historical_pivot_base import _single_row, _get_rows_paginated
+          from historical_pivot_shared import buffer_bounds, ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
+          from historical_pivot_stage2 import finalize_sideways_protection
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          from historical_pivot_stage5 import prune_unconfirmed_retracements
+          from historical_pivot_store import store_pipeline_result
+
+          db=SupabaseRest()
+          cycle=_single_row(db,"historical_case_market_cycles",{
+              "select":"start_date,trough_date",
+              "case_code":"eq.tightening_2022",
+              "index_code":"eq.NASDAQ_COMPOSITE",
+              "limit":"2",
+          })
+          start,end=buffer_bounds(date.fromisoformat(cycle["start_date"][:10]),date.fromisoformat(cycle["trough_date"][:10]))
+
+          def load(code):
+              return _get_rows_paginated(db,"economic_chart_points",{
+                  "select":"observation_date,value,frequency",
+                  "series_code":f"eq.{code}",
+                  "observation_date":f"gte.{start.isoformat()}",
+                  "and":f"(observation_date.lte.{end.isoformat()})",
+                  "order":"observation_date.asc",
+              })
+
+          y10={r["observation_date"][:10]:float(r["value"]) for r in load("US10Y")}
+          y2={r["observation_date"][:10]:float(r["value"]) for r in load("US2Y")}
+          dates=sorted(set(y10)&set(y2))
+          rows=tuple({"observation_date":d,"value":y10[d]-y2[d],"frequency":"D"} for d in dates)
+          if not rows:
+              raise RuntimeError("No overlapping US10Y/US2Y rows")
+
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw]
+          lo,hi=min(vals),max(vals); pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+
+          base=calculate_base_pivots(rows,"D")
+          s1=augment_spike_entry_points(base,g)
+          s2=finalize_sideways_protection(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=prune_same_trend_extremes(s3,g)
+          s5=prune_unconfirmed_retracements(s4)
+          n=store_pipeline_result(
+              db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US10Y2Y",
+              algorithm_version=os.environ["ALGORITHM_VERSION"],source_rows=rows,frequency="D",
+              buffer_start=start,buffer_end=end,base=base,stage1=s1,stage2=s2,stage3=s3,stage4=s4,final=s5
+          )
+          print("US10Y2Y",n,[(p.day.isoformat(),p.value,p.pivot_type) for p in s5.markers])
+          PY
