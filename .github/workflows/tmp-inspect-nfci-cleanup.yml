@@ -1,0 +1,19 @@
+name: Temporary inspect NFCI final cleanup input
+on:
+  push:
+    paths:
+      - ".github/workflows/tmp-inspect-nfci-cleanup.yml"
+      - "tools/tmp_inspect_nfci_cleanup.py"
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install requests
+      - name: Inspect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_inspect_nfci_cleanup.py
