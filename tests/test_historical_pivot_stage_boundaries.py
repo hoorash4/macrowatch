@@ -277,6 +277,50 @@ class PivotStageBoundaryTests(unittest.TestCase):
             result.segments,
         )
 
+    def test_stage3_provisional_up_wave_is_cancelled_by_lower_following_low(self):
+        d = date(2020, 1, 1)
+        h0 = PivotPoint(d, 10.0, "high")
+        l1 = PivotPoint(d + timedelta(days=10), 5.0, "low")
+        h1 = PivotPoint(d + timedelta(days=20), 8.0, "high")
+        l2 = PivotPoint(d + timedelta(days=30), 4.0, "low")
+        stage2 = Stage2Result(
+            high_pivots=(h0, h1),
+            low_pivots=(l1, l2),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=40), 0.0, 12.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertIn(h0, result.markers)
+        self.assertIn(l2, result.markers)
+        self.assertNotIn(h1, result.markers)
+        self.assertIn(SimplifiedLineSegment(h0, l2, "trend"), result.segments)
+
+    def test_stage3_provisional_down_wave_is_cancelled_by_higher_following_high(self):
+        d = date(2020, 1, 1)
+        l0 = PivotPoint(d, 1.0, "low")
+        h1 = PivotPoint(d + timedelta(days=10), 6.0, "high")
+        l1 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        h2 = PivotPoint(d + timedelta(days=30), 7.0, "high")
+        stage2 = Stage2Result(
+            high_pivots=(h1, h2),
+            low_pivots=(l0, l1),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=40), 0.0, 8.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertIn(l0, result.markers)
+        self.assertIn(h2, result.markers)
+        self.assertNotIn(l1, result.markers)
+        self.assertIn(SimplifiedLineSegment(l0, h2, "trend"), result.segments)
+
     def test_stage3_ongoing_up_wave_updates_only_terminal_high(self):
         d = date(2020, 1, 1)
         h1 = PivotPoint(d, 5.0, "high")
