@@ -8,6 +8,8 @@ Supabase.  It must not alter or re-run pivot selection rules.
 from __future__ import annotations
 
 from datetime import date
+import hashlib
+import json
 from typing import Any, Iterable, Sequence
 
 from common import SupabaseRest
@@ -205,6 +207,21 @@ def build_storage_rows(
     return rows
 
 
+def source_input_sha256(source_rows: Sequence[dict[str, Any]]) -> str:
+    """Hash the exact persisted pivot input in a stable, representation-independent form."""
+    canonical = [
+        {
+            "observation_date": str(row.get("observation_date") or "")[:10],
+            "value": format(float(row["value"]), ".17g"),
+            "frequency": str(row.get("frequency") or ""),
+        }
+        for row in source_rows
+    ]
+    canonical.sort(key=lambda item: (item["observation_date"], item["frequency"], item["value"]))
+    payload = json.dumps(canonical, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def replace_stored_pivots(
     db: SupabaseRest,
     *,
@@ -212,6 +229,11 @@ def replace_stored_pivots(
     index_code: str,
     series_code: str,
     algorithm_version: str,
+    frequency: str,
+    buffer_start: date,
+    buffer_end: date,
+    source_point_count: int,
+    input_sha256: str,
     rows: Sequence[dict[str, Any]],
 ) -> int:
     """Atomically replace one stored pivot snapshot through a DB RPC."""
@@ -219,6 +241,14 @@ def replace_stored_pivots(
         raise ValueError("case_code, index_code and series_code are required")
     if not algorithm_version.strip():
         raise ValueError("algorithm_version is required")
+    if not frequency.strip():
+        raise ValueError("frequency is required")
+    if buffer_end < buffer_start:
+        raise ValueError("buffer_end must not precede buffer_start")
+    if source_point_count < 0:
+        raise ValueError("source_point_count must be non-negative")
+    if len(input_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in input_sha256):
+        raise ValueError("input_sha256 must be a lowercase SHA-256")
 
     result = db.request(
         "POST",
@@ -228,6 +258,11 @@ def replace_stored_pivots(
             "p_index_code": index_code,
             "p_series_code": series_code,
             "p_algorithm_version": algorithm_version,
+            "p_frequency": frequency,
+            "p_buffer_start": buffer_start.isoformat(),
+            "p_buffer_end": buffer_end.isoformat(),
+            "p_source_point_count": source_point_count,
+            "p_input_sha256": input_sha256,
             "p_rows": list(rows),
         },
         retry_safe=False,
@@ -242,6 +277,10 @@ def store_pipeline_result(
     index_code: str,
     series_code: str,
     algorithm_version: str,
+    source_rows: Sequence[dict[str, Any]],
+    frequency: str,
+    buffer_start: date,
+    buffer_end: date,
     base: Any,
     stage1: Any,
     stage2: Any,
@@ -264,5 +303,10 @@ def store_pipeline_result(
         index_code=index_code,
         series_code=series_code,
         algorithm_version=algorithm_version,
+        frequency=frequency,
+        buffer_start=buffer_start,
+        buffer_end=buffer_end,
+        source_point_count=len(source_rows),
+        input_sha256=source_input_sha256(source_rows),
         rows=rows,
     )
