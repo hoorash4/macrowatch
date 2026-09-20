@@ -233,7 +233,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertTrue(all(params["order"] == "observation_date.asc" for params in point_calls))
 
 
-    def test_spike_stage_never_reintroduces_removed_upward_entry(self):
+    def test_stage1_spike_correction_adds_missing_upward_entry_before_final_rdp(self):
         d = date(2020, 1, 1)
         high_rdp = (
             PivotPoint(d, 5.0, "high"),
@@ -270,10 +270,12 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         result = augment_spike_entry_points(base, geometry)
         self.assertEqual(high_rdp, result.base.high_pivots)
         self.assertEqual(low_rdp, result.base.low_pivots)
-        self.assertEqual((), result.added_low_pivots)
+        expected_entry = PivotPoint(d + timedelta(days=6), 1.0, "low")
+        self.assertEqual((expected_entry,), result.added_low_pivots)
         self.assertEqual((), result.added_high_pivots)
-        self.assertEqual(base.display_markers, result.display_markers)
-        self.assertEqual((), result.spike_peaks)
+        self.assertIn(expected_entry, result.display_markers)
+        self.assertEqual(1, len(result.spike_peaks))
+        self.assertEqual(expected_entry, result.spike_peaks[0].entry)
 
     def test_spike_allows_opposite_rdp_inside_when_it_does_not_follow_peak(self):
         d = date(2020, 1, 1)
@@ -348,7 +350,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertEqual((), result.added_high_pivots)
         self.assertEqual((), result.spike_peaks)
 
-    def test_spike_stage_never_reintroduces_removed_downward_entry(self):
+    def test_stage1_spike_correction_adds_missing_downward_entry_before_final_rdp(self):
         d = date(2020, 1, 1)
         low_rdp = (
             PivotPoint(d, 5.0, "low"),
@@ -376,10 +378,12 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual((), result.added_high_pivots)
+        expected_entry = PivotPoint(d + timedelta(days=6), 9.0, "high")
+        self.assertEqual((expected_entry,), result.added_high_pivots)
         self.assertEqual((), result.added_low_pivots)
-        self.assertEqual(base.display_markers, result.display_markers)
-        self.assertEqual((), result.spike_peaks)
+        self.assertIn(expected_entry, result.display_markers)
+        self.assertEqual(1, len(result.spike_peaks))
+        self.assertEqual(expected_entry, result.spike_peaks[0].entry)
 
     def test_spike_reuses_existing_entry_rdp_instead_of_adding_duplicate(self):
         d = date(2020, 1, 1)
@@ -697,6 +701,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         spike = augmented.spike_peaks[0]
         self.assertTrue(spike.marker_only)
         self.assertEqual(high_rdp[1], spike.point)
+        self.assertIsNone(spike.entry)
         self.assertEqual((), augmented.added_low_pivots)
 
         simplified = simplify_pivot_lines(augmented, geometry)
