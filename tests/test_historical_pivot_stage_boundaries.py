@@ -9,17 +9,79 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from historical_pivot_base import (  # noqa: E402
+    BasePivotResult,
     ChartGeometry,
     PivotPoint,
+    PivotPolicy,
+    SpikeAugmentedPivotResult,
     SimplifiedLineResult,
     SimplifiedLineSegment,
     SidewaysSegment,
+    augment_spike_entry_points,
     prune_same_trend_extremes,
     prune_unconfirmed_retracements,
+    simplify_pivot_lines,
 )
 
 
 class PivotStageBoundaryTests(unittest.TestCase):
+    def test_stage1_output_is_sealed_and_contains_no_prior_candidates(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d, 5.0, "high"),
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 5.0, "high"),
+            PivotPoint(d + timedelta(days=40), 6.0, "high"),
+        )
+        lows = (
+            PivotPoint(d - timedelta(days=10), 0.0, "low"),
+            PivotPoint(d + timedelta(days=30), 1.0, "low"),
+            PivotPoint(d + timedelta(days=50), 0.5, "low"),
+        )
+        deleted_candidate = PivotPoint(d + timedelta(days=4), 2.0, "low")
+        recovered_entry = PivotPoint(d + timedelta(days=6), 1.0, "low")
+        base = BasePivotResult(
+            frequency="D",
+            policy=PivotPolicy(35, 14, 17),
+            high_candidates=highs,
+            low_candidates=(deleted_candidate, recovered_entry),
+            high_pivots=highs,
+            low_pivots=lows,
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+
+        stage1 = augment_spike_entry_points(base, geometry)
+
+        self.assertIsInstance(stage1, SpikeAugmentedPivotResult)
+        self.assertFalse(hasattr(stage1, "base"))
+        self.assertFalse(hasattr(stage1, "added_high_pivots"))
+        self.assertFalse(hasattr(stage1, "added_low_pivots"))
+        self.assertNotIn(deleted_candidate, stage1.display_markers)
+        self.assertIn(recovered_entry, stage1.display_markers)
+
+        stage2 = simplify_pivot_lines(stage1, geometry)
+        stage1_keys = {
+            (p.day, p.value, p.pivot_type)
+            for p in stage1.display_markers
+        }
+        stage2_keys = {
+            (p.day, p.value, p.pivot_type)
+            for p in stage2.markers
+        }
+        self.assertTrue(stage2_keys.issubset(stage1_keys))
+
+    def test_stage_result_rejects_hidden_deleted_segment_endpoint(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 1.0, "low")
+        deleted_high = PivotPoint(d + timedelta(days=10), 5.0, "high")
+
+        with self.assertRaises(ValueError):
+            SimplifiedLineResult(
+                markers=(low,),
+                segments=(SimplifiedLineSegment(low, deleted_high, "trend"),),
+                sideways_segments=(),
+            )
+
     def test_first_angle_always_collapses_improved_extreme(self):
         d = date(2020, 1, 1)
         high = PivotPoint(d, 10.0, "high")
