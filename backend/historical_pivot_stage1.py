@@ -6,24 +6,76 @@ pre-spike RDP internals remain local to this stage.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable, Sequence
 
 from historical_pivot_shared import (
-    BasePivotResult,
     ChartGeometry,
-    EnvelopePoint,
     PivotPoint,
-    PivotPolicy,
-    PIVOT_POLICIES,
     SeriesPoint,
-    SpikeAugmentedPivotResult,
     SpikePeak,
-    SPIKE_ANGLE_THRESHOLD_DEG,
     classify_sideways_reference_line,
     normalize_rows,
     screen_angle_degrees,
 )
+
+SPIKE_ANGLE_THRESHOLD_DEG = 40.0
+
+@dataclass(frozen=True)
+class PivotPolicy:
+    envelope_points: int
+    rdp_points: int
+    envelope_calendar_radius_days: int | None = None
+
+PIVOT_POLICIES = {
+    "D": PivotPolicy(envelope_points=35, rdp_points=14, envelope_calendar_radius_days=17),
+    "W": PivotPolicy(envelope_points=5, rdp_points=14),
+    "M": PivotPolicy(envelope_points=3, rdp_points=10),
+}
+
+@dataclass(frozen=True)
+class EnvelopePoint:
+    day: date
+    value: float
+    upper: float
+    lower: float
+
+@dataclass(frozen=True)
+class BasePivotResult:
+    frequency: str
+    policy: PivotPolicy
+    high_candidates: tuple[PivotPoint, ...]
+    low_candidates: tuple[PivotPoint, ...]
+    high_pivots: tuple[PivotPoint, ...]
+    low_pivots: tuple[PivotPoint, ...]
+
+@dataclass(frozen=True)
+class SpikeAugmentedPivotResult:
+    """The only Stage 1 result allowed to leave this module."""
+    high_pivots: tuple[PivotPoint, ...]
+    low_pivots: tuple[PivotPoint, ...]
+    spike_peaks: tuple[SpikePeak, ...] = ()
+
+    def __post_init__(self) -> None:
+        final_keys = {
+            (item.day, item.value, item.pivot_type)
+            for item in (*self.high_pivots, *self.low_pivots)
+        }
+        for spike in self.spike_peaks:
+            if (spike.point.day, spike.point.value, spike.point.pivot_type) not in final_keys:
+                raise ValueError("stage-1 spike metadata references a non-final peak")
+            if spike.entry is not None and (
+                spike.entry.day, spike.entry.value, spike.entry.pivot_type
+            ) not in final_keys:
+                raise ValueError("stage-1 spike metadata references a non-final entry")
+
+    @property
+    def display_markers(self) -> tuple[PivotPoint, ...]:
+        return tuple(sorted(
+            (*self.high_pivots, *self.low_pivots),
+            key=lambda item: (item.day, item.pivot_type),
+        ))
 
 def build_envelope(points: Sequence[SeriesPoint], frequency: str) -> tuple[EnvelopePoint, ...]:
     policy = PIVOT_POLICIES.get(frequency)
