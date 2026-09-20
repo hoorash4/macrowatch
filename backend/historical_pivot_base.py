@@ -828,8 +828,34 @@ def prune_same_trend_extremes(
             if not confirmed:
                 break
 
-    # A point may be encountered again when a sideways END becomes the confirmed
-    # reversal anchor. Keep only its latest confirmed direction.
+    # The previous stage has already resolved provisional reversals. Any actual
+    # value-direction turn that still exists in its connected line is therefore
+    # a confirmed reversal anchor for THIS stage. The 10-degree pass must never
+    # let an earlier run cross and delete such a surviving turn.
+    connected_keys = {
+        key(point)
+        for segment in result.segments
+        for point in (segment.start, segment.end)
+    }
+    connected_points = [
+        point for point in points
+        if key(point) in connected_keys
+    ]
+    for previous, current, following in zip(
+        connected_points,
+        connected_points[1:],
+        connected_points[2:],
+    ):
+        incoming = current.value - previous.value
+        outgoing = following.value - current.value
+        if incoming == 0 or outgoing == 0 or incoming * outgoing >= 0:
+            continue
+        run_direction = "up" if outgoing > 0 else "down"
+        run_starts.append((current, run_direction))
+
+    # A point may be encountered again when a sideways END or an already
+    # simplified line turn becomes the confirmed reversal anchor. Keep only its
+    # latest confirmed direction.
     run_start_map = {
         key(anchor): (anchor, run_direction)
         for anchor, run_direction in run_starts
@@ -848,7 +874,22 @@ def prune_same_trend_extremes(
         if already_inside(anchor.day):
             continue
 
-        boundary = first_boundary_after(anchor.day)
+        structural_boundary = first_boundary_after(anchor.day)
+        next_reversal_day = next(
+            (
+                later_anchor.day
+                for later_anchor, _ in run_starts
+                if later_anchor.day > anchor.day
+            ),
+            None,
+        )
+        boundary_candidates = [
+            item
+            for item in (structural_boundary, next_reversal_day)
+            if item is not None
+        ]
+        boundary = min(boundary_candidates) if boundary_candidates else None
+
         same_side = highs if direction == "up" else lows
         candidates = [
             item for item in same_side
