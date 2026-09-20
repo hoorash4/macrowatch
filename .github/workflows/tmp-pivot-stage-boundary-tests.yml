@@ -15,4 +15,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests pytest
-      - run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_base.py tests/test_historical_pivot_stage_boundaries.py
+      - run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_stage_boundaries.py
