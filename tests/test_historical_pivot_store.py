@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from datetime import date
 
 from historical_pivot_shared import PivotPoint, SidewaysSegment, SimplifiedLineResult, SimplifiedLineSegment, SpikePeak
-from historical_pivot_store import build_storage_rows, replace_stored_pivots
+from historical_pivot_store import build_storage_rows, replace_stored_pivots, source_input_sha256
 
 
 def point(day: str, value: float, pivot_type: str) -> PivotPoint:
@@ -79,6 +79,11 @@ def test_replace_stored_pivots_uses_atomic_rpc():
         index_code="NASDAQ_COMPOSITE",
         series_code="US10Y_REAL",
         algorithm_version="test-version",
+        frequency="D",
+        buffer_start=date(2018, 3, 23),
+        buffer_end=date(2024, 12, 28),
+        source_point_count=2,
+        input_sha256="a" * 64,
         rows=[{"pivot_order": 0}],
     )
 
@@ -88,3 +93,20 @@ def test_replace_stored_pivots_uses_atomic_rpc():
     assert table == "rpc/replace_historical_indicator_pivots"
     assert kwargs["retry_safe"] is False
     assert kwargs["body"]["p_series_code"] == "US10Y_REAL"
+    assert kwargs["body"]["p_frequency"] == "D"
+    assert kwargs["body"]["p_buffer_start"] == "2018-03-23"
+    assert kwargs["body"]["p_buffer_end"] == "2024-12-28"
+    assert kwargs["body"]["p_source_point_count"] == 2
+    assert kwargs["body"]["p_input_sha256"] == "a" * 64
+
+
+def test_source_input_sha256_is_stable_for_row_order_and_numeric_representation():
+    rows_a = [
+        {"observation_date": "2020-01-02", "value": "1.50", "frequency": "D"},
+        {"observation_date": "2020-01-01", "value": 1, "frequency": "D"},
+    ]
+    rows_b = [
+        {"observation_date": "2020-01-01", "value": "1.0", "frequency": "D"},
+        {"observation_date": "2020-01-02", "value": 1.5, "frequency": "D"},
+    ]
+    assert source_input_sha256(rows_a) == source_input_sha256(rows_b)
