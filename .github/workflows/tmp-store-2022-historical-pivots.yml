@@ -1,0 +1,83 @@
+name: Store 2022 Historical pivots temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-store-2022-historical-pivots.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Generate and store 2022 Historical pivots
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALGORITHM_VERSION: ${{ github.sha }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series, ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points, PIVOT_POLICIES
+          from historical_pivot_stage2 import finalize_sideways_protection
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          from historical_pivot_stage5 import prune_unconfirmed_retracements
+          from historical_pivot_store import store_pipeline_result
+          import os
+
+          CASE="tightening_2022"
+          INDEX="NASDAQ_COMPOSITE"
+          CODES=[
+            "US2Y","US10Y","US10Y_REAL","US10Y2Y","US_POLICY_RATE_MID",
+            "NFCI_CREDIT","NFCI_RISK","WTI","RRP","TGA","REDBOOK","WEI","EMRATIO",
+            "US_RETAIL_SALES","US_CPI","US_CORE_CPI","US_PPI","US_CORE_PPI",
+            "US_PCE","US_CORE_PCE","US_SBDI_31_180","DRALACBS","US_SBDFI","US_COMMERCIAL_CH11"
+          ]
+          db=SupabaseRest()
+          version=os.environ["ALGORITHM_VERSION"]
+          ok=[]; skipped=[]; failed=[]
+          for code in CODES:
+              try:
+                  rows,freq,start,end=load_case_series(db,case_code=CASE,index_code=INDEX,series_code=code)
+                  if freq not in PIVOT_POLICIES:
+                      skipped.append((code,freq))
+                      print("SKIP",code,freq)
+                      continue
+                  raw=normalize_rows(rows)
+                  values=[p.value for p in raw if start<=p.day<=end]
+                  lo,hi=min(values),max(values)
+                  pad=(hi-lo)*.08 if hi!=lo else 1.0
+                  g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+                  base=calculate_base_pivots(rows,freq)
+                  s1=augment_spike_entry_points(base,g)
+                  s2=finalize_sideways_protection(s1,g)
+                  s3=simplify_pivot_lines(s2,g)
+                  s4=prune_same_trend_extremes(s3,g)
+                  s5=prune_unconfirmed_retracements(s4)
+                  count=store_pipeline_result(
+                      db,case_code=CASE,index_code=INDEX,series_code=code,
+                      algorithm_version=version,source_rows=rows,frequency=freq,
+                      buffer_start=start,buffer_end=end,base=base,stage1=s1,stage2=s2,
+                      stage3=s3,stage4=s4,final=s5,
+                  )
+                  ok.append((code,count))
+                  print("OK",code,freq,count)
+              except Exception as exc:
+                  failed.append((code,repr(exc)))
+                  print("ERROR",code,repr(exc))
+          print("DONE",{"ok":ok,"skipped":skipped,"failed":failed})
+          if failed:
+              raise SystemExit(1)
+          PY
