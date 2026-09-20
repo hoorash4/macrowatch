@@ -259,9 +259,12 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = prune_unconfirmed_retracements(existing)
 
-        self.assertEqual((high, low3), result.markers)
+        self.assertEqual((high, low1, low3), result.markers)
         self.assertEqual(
-            (SimplifiedLineSegment(high, low3, "trend"),),
+            (
+                SimplifiedLineSegment(high, low1, "trend"),
+                SimplifiedLineSegment(low1, low3, "trend"),
+            ),
             result.segments,
         )
 
@@ -292,9 +295,7 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = prune_unconfirmed_retracements(existing)
 
-        self.assertIn(sideways_start, result.markers)
-        self.assertIn(sideways_end, result.markers)
-        self.assertNotIn(low1, result.markers)
+        self.assertEqual(existing, result)
 
     def test_post_pass_output_is_subset_of_previous_stage_markers(self):
         d = date(2020, 1, 1)
