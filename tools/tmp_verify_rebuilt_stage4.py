@@ -56,16 +56,14 @@ def run(code,rows,freq,start,end):
         s4keys={key(p) for p in s4.markers}
         for t in [
             (date(2006,11,15),-0.19,"low"),
-            (date(2009,6,4),2.76,"high"),
+            (date(2011,3,8),2.83,"high"),
         ]:
             assert t in s4keys, f"missing {t}"
         for t in [
-            (date(2008,3,6),2.09,"high"),
-            (date(2008,9,8),1.36,"low"),
             (date(2008,11,13),2.6,"high"),
             (date(2008,12,26),1.27,"low"),
         ]:
-            assert t not in s4keys, f"10-degree collapse failed: {t}"
+            assert t not in s4keys, f"first-angle collapse failed: {t}"
 
     if code=="US10Y_REAL":
         final={key(p) for p in s5.markers}
