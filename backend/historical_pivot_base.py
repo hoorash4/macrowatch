@@ -1063,49 +1063,42 @@ def prune_unconfirmed_retracements(
     )
 
     ordered = list(original)
-    changed = True
-    while changed and len(ordered) >= 2:
-        changed = False
 
-        index = 0
-        while index < len(ordered) - 1:
-            left, right = ordered[index], ordered[index + 1]
-            if left.pivot_type != right.pivot_type:
-                index += 1
-                continue
+    # One extra normalization pass only. Do not recursively re-simplify the newly
+    # shortened path; the previous stages already own those broader decisions.
+    same_side_delete: set[tuple[date, float, str]] = set()
+    for left, right in zip(original, original[1:]):
+        if left.pivot_type != right.pivot_type:
+            continue
 
-            if left.pivot_type == "low":
-                delete_index = index if right.value < left.value else index + 1
-            else:
-                delete_index = index if right.value > left.value else index + 1
+        if left.pivot_type == "low":
+            candidate = left if right.value < left.value else right
+        else:
+            candidate = left if right.value > left.value else right
 
-            if key(ordered[delete_index]) in protected_keys:
-                index += 1
-                continue
+        if key(candidate) not in protected_keys:
+            same_side_delete.add(key(candidate))
 
-            del ordered[delete_index]
-            changed = True
-            if index:
-                index -= 1
+    ordered = [
+        point for point in ordered
+        if key(point) not in same_side_delete
+    ]
 
-        index = 0
-        while index < len(ordered) - 2:
-            left, middle, right = ordered[index:index + 3]
-            delete_middle = False
-            if left.pivot_type == right.pivot_type != middle.pivot_type:
-                if left.pivot_type == "low" and right.value < left.value:
-                    delete_middle = True
-                elif left.pivot_type == "high" and right.value > left.value:
-                    delete_middle = True
+    failed_reversal_delete: set[tuple[date, float, str]] = set()
+    for left, middle, right in zip(ordered, ordered[1:], ordered[2:]):
+        if left.pivot_type != right.pivot_type or middle.pivot_type == left.pivot_type:
+            continue
+        if key(middle) in protected_keys:
+            continue
+        if left.pivot_type == "low" and right.value < left.value:
+            failed_reversal_delete.add(key(middle))
+        elif left.pivot_type == "high" and right.value > left.value:
+            failed_reversal_delete.add(key(middle))
 
-            if delete_middle and key(middle) not in protected_keys:
-                del ordered[index + 1]
-                changed = True
-                if index:
-                    index -= 1
-                continue
-
-            index += 1
+    ordered = [
+        point for point in ordered
+        if key(point) not in failed_reversal_delete
+    ]
 
     surviving_keys = {key(point) for point in ordered}
     if not surviving_keys.issubset(input_map):
