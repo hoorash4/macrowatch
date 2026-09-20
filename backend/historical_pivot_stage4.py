@@ -1,25 +1,27 @@
-"""Stage 4: confirmed-run 10-degree simplification.
+"""Stage 4: confirmed-candidate 10-degree simplification.
 
 Stage 4 receives only Stage 3's single merged line.
 
 One algorithm:
-1. Track the current trend and a provisional opposite reversal.
-2. A provisional reversal is cancelled if the old trend makes a new extreme.
-3. A reversal is confirmed only after:
-   - opposite extreme,
-   - retracement that does not break the turn,
-   - another extreme in the new direction.
-4. The confirmed turn becomes the next run anchor.
-5. Within every active/confirmed run, same-direction record extremes are simplified:
-   - first angle is always ignored,
-   - second and later angles collapse only while <= 10 degrees,
-   - > 10 degrees starts a new same-direction angle run at the previous extreme.
-
-Stage 4 is deletion-only and never reads Stage 2/1/raw candidates.
+- Every Stage-3 turn is a possible reversal anchor.
+- A LOW candidate becomes an UP anchor only after:
+    rebound HIGH -> higher LOW -> later higher HIGH.
+  Any lower LOW before confirmation cancels it.
+- A HIGH candidate becomes a DOWN anchor only after:
+    pullback LOW -> lower HIGH -> later lower LOW.
+  Any higher HIGH before confirmation cancels it.
+- Candidate anchors are evaluated independently, so a failed outer reversal does
+  not erase a valid inner candidate.
+- The first Stage-3 point is the initial anchor; LOW starts up, HIGH starts down.
+- From each confirmed/initial anchor, the first angle is ignored.
+- Every later same-side point consumes an angle ordinal even when it does not
+  improve the connection extreme.
+- From angle #2 onward, >10 degrees stops the collapse before that point.
+- Stage 4 only deletes; it never creates a point absent from Stage 3.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Sequence
 
@@ -37,224 +39,178 @@ def _key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
 
 
-@dataclass
-class _Pending:
-    direction: str
-    turn: PivotPoint
-    first_extreme: PivotPoint
-    current_extreme: PivotPoint
-    retrace_seen: bool = False
-
-
 @dataclass(frozen=True)
 class _Anchor:
     point: PivotPoint
-    direction: str
+    direction: str  # up | down
 
 
-def _direction_from(points: Sequence[PivotPoint]) -> str | None:
-    if len(points) < 2:
+def _confirm_low_anchor(
+    points: Sequence[PivotPoint],
+    index: int,
+) -> _Anchor | None:
+    candidate = points[index]
+    if candidate.pivot_type != "low":
         return None
-    # A valid run anchor owns the direction by its side:
-    # low starts/continues an up-run, high starts/continues a down-run.
-    # Never infer "up" from a HIGH merely because the next value is higher,
-    # or "down" from a LOW merely because the next value is lower.
-    return "up" if points[0].pivot_type == "low" else "down"
 
+    rebound_high: PivotPoint | None = None
+    higher_low_seen = False
 
-def _confirmed_anchors(points: Sequence[PivotPoint]) -> list[_Anchor]:
-    """Find run anchors while continuously tracking provisional reversals."""
-    ordered = list(points)
-    direction = _direction_from(ordered)
-    if not ordered or direction is None:
-        return []
-
-    anchors: list[_Anchor] = [_Anchor(ordered[0], direction)]
-    active_extreme: PivotPoint | None = None
-    pending: _Pending | None = None
-
-    def improves_active(item: PivotPoint) -> bool:
-        if active_extreme is None:
-            return True
-        return (
-            item.value > active_extreme.value
-            if direction == "up"
-            else item.value < active_extreme.value
-        )
-
-    for item in ordered[1:]:
-        wanted_type = "high" if direction == "up" else "low"
-
-        if pending is None:
-            if item.pivot_type == wanted_type:
-                if improves_active(item):
-                    active_extreme = item
-                continue
-
-            if active_extreme is None:
-                continue
-
-            pending = _Pending(
-                direction="down" if direction == "up" else "up",
-                turn=active_extreme,
-                first_extreme=item,
-                current_extreme=item,
-            )
+    for item in points[index + 1:]:
+        if item.pivot_type == "low":
+            if item.value < candidate.value:
+                return None
+            if rebound_high is not None and item.value > candidate.value:
+                higher_low_seen = True
             continue
 
-        # Old trend resumes: provisional reversal is cancelled.
-        if direction == "up":
-            if (
-                item.pivot_type == "high"
-                and item.value > pending.turn.value
-            ):
-                active_extreme = item
-                pending = None
-                continue
+        # high
+        if rebound_high is None:
+            rebound_high = item
+            continue
 
-            if pending.direction == "down":
-                if item.pivot_type == "high":
-                    if item.value < pending.turn.value:
-                        pending.retrace_seen = True
-                    continue
+        if higher_low_seen and item.value > rebound_high.value:
+            return _Anchor(candidate, "up")
 
-                # low in provisional down-run
-                if item.value < pending.current_extreme.value:
-                    if pending.retrace_seen:
-                        anchors.append(_Anchor(pending.turn, "down"))
-                        direction = "down"
-                        active_extreme = item
-                        pending = None
-                    else:
-                        pending.current_extreme = item
-                continue
+        if not higher_low_seen and item.value > rebound_high.value:
+            rebound_high = item
 
-        else:
-            if (
-                item.pivot_type == "low"
-                and item.value < pending.turn.value
-            ):
-                active_extreme = item
-                pending = None
-                continue
+    return None
 
-            if pending.direction == "up":
-                if item.pivot_type == "low":
-                    if item.value > pending.turn.value:
-                        pending.retrace_seen = True
-                    continue
 
-                # high in provisional up-run
-                if item.value > pending.current_extreme.value:
-                    if pending.retrace_seen:
-                        anchors.append(_Anchor(pending.turn, "up"))
-                        direction = "up"
-                        active_extreme = item
-                        pending = None
-                    else:
-                        pending.current_extreme = item
-                continue
+def _confirm_high_anchor(
+    points: Sequence[PivotPoint],
+    index: int,
+) -> _Anchor | None:
+    candidate = points[index]
+    if candidate.pivot_type != "high":
+        return None
 
-    # Deduplicate in chronological order; later confirmation for the same point wins.
-    by_key = {
-        _key(anchor.point): anchor
-        for anchor in anchors
-    }
-    return sorted(
-        by_key.values(),
-        key=lambda anchor: anchor.point.day,
-    )
+    pullback_low: PivotPoint | None = None
+    lower_high_seen = False
+
+    for item in points[index + 1:]:
+        if item.pivot_type == "high":
+            if item.value > candidate.value:
+                return None
+            if pullback_low is not None and item.value < candidate.value:
+                lower_high_seen = True
+            continue
+
+        # low
+        if pullback_low is None:
+            pullback_low = item
+            continue
+
+        if lower_high_seen and item.value < pullback_low.value:
+            return _Anchor(candidate, "down")
+
+        if not lower_high_seen and item.value < pullback_low.value:
+            pullback_low = item
+
+    return None
+
+
+def _anchors(points: Sequence[PivotPoint]) -> list[_Anchor]:
+    if not points:
+        return []
+
+    # Initial anchor direction is determined by its SIDE, never by the next value.
+    result: list[_Anchor] = [
+        _Anchor(
+            points[0],
+            "up" if points[0].pivot_type == "low" else "down",
+        )
+    ]
+
+    for index in range(1, len(points)):
+        confirmed = (
+            _confirm_low_anchor(points, index)
+            if points[index].pivot_type == "low"
+            else _confirm_high_anchor(points, index)
+        )
+        if confirmed is not None:
+            result.append(confirmed)
+
+    by_key = {_key(anchor.point): anchor for anchor in result}
+    return sorted(by_key.values(), key=lambda item: item.point.day)
 
 
 def _angle_replacements(
     points: Sequence[PivotPoint],
     anchors: Sequence[_Anchor],
     geometry: ChartGeometry,
-    angle_threshold_deg: float,
+    threshold: float,
     protected_keys: set[tuple[date, float, str]],
 ) -> list[tuple[PivotPoint, PivotPoint]]:
-    """Compute only the direct replacement intervals for confirmed/active runs."""
     replacements: list[tuple[PivotPoint, PivotPoint]] = []
 
     for index, anchor_info in enumerate(anchors):
         anchor = anchor_info.point
         direction = anchor_info.direction
-        next_anchor_day = (
+        boundary = (
             anchors[index + 1].point.day
             if index + 1 < len(anchors)
             else None
         )
-
         wanted_type = "high" if direction == "up" else "low"
+
         candidates = [
             point
             for point in points
             if point.day > anchor.day
             and point.pivot_type == wanted_type
-            and (next_anchor_day is None or point.day <= next_anchor_day)
+            and (boundary is None or point.day <= boundary)
         ]
         if len(candidates) < 2:
             continue
 
-        run_anchor = anchor
         extreme = candidates[0]
         angle_ordinal = 0
         collapse_end: PivotPoint | None = None
 
         for candidate in candidates[1:]:
-            improves = (
-                candidate.value > extreme.value
-                if direction == "up"
-                else candidate.value < extreme.value
-            )
-            if not improves:
-                continue
-
+            # EVERY same-side candidate consumes an angle ordinal, including a
+            # lower high / higher low that is not a connection extreme.
             angle_ordinal += 1
             angle = screen_origin_angle_degrees(
-                run_anchor,
+                anchor,
                 extreme,
                 candidate,
                 geometry,
             )
 
-            if angle_ordinal == 1 or angle <= angle_threshold_deg:
+            improves = (
+                candidate.value > extreme.value
+                if direction == "up"
+                else candidate.value < extreme.value
+            )
+
+            # First angle is always ignored. From angle #2 onward, a wide angle
+            # stops before this candidate.
+            if angle_ordinal >= 2 and angle > threshold:
+                break
+
+            if improves:
                 extreme = candidate
                 collapse_end = candidate
-                continue
 
-            # >= second angle and >10°: preserve the previous extreme and begin
-            # a new same-direction angle run there.
-            if collapse_end is not None:
-                interior = [
-                    point
-                    for point in points
-                    if run_anchor.day < point.day < collapse_end.day
-                ]
-                if (
-                    interior
-                    and not any(_key(point) in protected_keys for point in interior)
-                    and _key(extreme) not in protected_keys
-                ):
-                    replacements.append((run_anchor, collapse_end))
+        if collapse_end is None:
+            continue
 
-            run_anchor = extreme
-            extreme = candidate
-            angle_ordinal = 0
-            collapse_end = None
+        interior = [
+            point
+            for point in points
+            if anchor.day < point.day < collapse_end.day
+        ]
+        if not interior:
+            continue
+        if any(_key(point) in protected_keys for point in interior):
+            continue
+        if _key(candidates[0]) in protected_keys:
+            continue
 
-        if collapse_end is not None:
-            interior = [
-                point
-                for point in points
-                if run_anchor.day < point.day < collapse_end.day
-            ]
-            if (
-                interior
-                and not any(_key(point) in protected_keys for point in interior)
-                and _key(candidates[0]) not in protected_keys
-            ):
-                replacements.append((run_anchor, collapse_end))
+        replacements.append((anchor, collapse_end))
 
     return replacements
 
@@ -299,7 +255,7 @@ def prune_same_trend_extremes(
     }
     protected_keys = standalone_keys | sideways_keys | spike_keys
 
-    # Split at protected structure boundaries. No 10-degree collapse may cross them.
+    # Hard structure divides Stage 4 into independent windows.
     split_days = sorted({
         segment.end.day if segment.kind == "sideways" else segment.start.day
         for segment in result.segments
@@ -307,28 +263,27 @@ def prune_same_trend_extremes(
     })
 
     windows: list[list[PivotPoint]] = []
-    start_index = 0
+    window_start = 0
     for split_day in split_days:
-        window = [
+        current = [
             point
-            for point in points[start_index:]
+            for point in points[window_start:]
             if point.day <= split_day
         ]
-        if window:
-            windows.append(window)
-            last = window[-1]
-            start_index = points.index(last)
-    tail = list(points[start_index:])
+        if current:
+            windows.append(current)
+            # Share the boundary endpoint with the next window.
+            window_start = points.index(current[-1])
+    tail = list(points[window_start:])
     if tail:
         windows.append(tail)
 
     replacements: list[tuple[PivotPoint, PivotPoint]] = []
     for window in windows:
-        anchors = _confirmed_anchors(window)
         replacements.extend(
             _angle_replacements(
                 window,
-                anchors,
+                _anchors(window),
                 geometry,
                 angle_threshold_deg,
                 protected_keys,
