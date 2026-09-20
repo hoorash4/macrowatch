@@ -55,6 +55,10 @@ def run(code,rows,freq,start,end):
         assert (date(2024,8,2),-0.359,"high") not in final
         assert (date(2024,12,27),-0.485,"low") in final
     if code=="US10Y_REAL":
+        print("US10Y_REAL_S2",[(str(p.day),p.value,p.pivot_type) for p in s2.display_markers if p.day.year>=2021])
+        print("US10Y_REAL_S3",[(str(p.day),p.value,p.pivot_type) for p in s3.markers if p.day.year>=2021])
+        print("US10Y_REAL_S4",[(str(p.day),p.value,p.pivot_type) for p in s4.markers if p.day.year>=2021])
+        print("US10Y_REAL_S5",[(str(p.day),p.value,p.pivot_type) for p in s5.markers if p.day.year>=2021])
         final={key(p) for p in s5.markers}
         for t in [(date(2022,9,30),1.68,"high"),(date(2023,4,6),1.06,"low"),(date(2023,10,25),2.52,"high")]:
             assert t in final,t
