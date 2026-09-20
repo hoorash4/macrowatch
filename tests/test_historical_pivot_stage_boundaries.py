@@ -13,6 +13,7 @@ from historical_pivot_base import (  # noqa: E402
     PivotPoint,
     SimplifiedLineResult,
     SimplifiedLineSegment,
+    SidewaysSegment,
     prune_same_trend_extremes,
 )
 
@@ -92,7 +93,8 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        self.assertIn(candidate_low, result.markers)
+        self.assertNotIn(candidate_low, result.markers)
+        self.assertIn(lower_low, result.markers)
 
     def test_reversal_confirmed_across_sideways_anchors_at_sideways_end(self):
         d = date(2020, 1, 1)
