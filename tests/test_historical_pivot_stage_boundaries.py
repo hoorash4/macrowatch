@@ -277,6 +277,30 @@ class PivotStageBoundaryTests(unittest.TestCase):
             result.segments,
         )
 
+    def test_stage3_keeps_trailing_lower_low_when_no_later_high_exists(self):
+        d = date(2020, 1, 1)
+        low1 = PivotPoint(d, 1.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        low2 = PivotPoint(d + timedelta(days=20), 0.5, "low")
+        stage2 = Stage2Result(
+            high_pivots=(high1,),
+            low_pivots=(low1, low2),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=30), 0.0, 6.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertIn(low1, result.markers)
+        self.assertIn(high1, result.markers)
+        self.assertIn(low2, result.markers)
+        self.assertIn(
+            SimplifiedLineSegment(high1, low2, "trend"),
+            result.segments,
+        )
+
     def test_stage3_ongoing_up_wave_updates_only_terminal_high(self):
         d = date(2020, 1, 1)
         h1 = PivotPoint(d, 5.0, "high")
