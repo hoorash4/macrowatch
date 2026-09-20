@@ -18,7 +18,7 @@ from historical_pivot_base import (  # noqa: E402
 
 
 class PivotStageBoundaryTests(unittest.TestCase):
-    def test_first_angle_only_does_not_confirm_collapse(self):
+    def test_first_angle_always_collapses_improved_extreme(self):
         d = date(2020, 1, 1)
         high = PivotPoint(d, 10.0, "high")
         low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
@@ -35,7 +35,11 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        self.assertEqual(existing, result)
+        self.assertEqual((high, low2), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(high, low2, "trend"),),
+            result.segments,
+        )
 
     def test_post_pass_output_is_subset_of_previous_stage_markers(self):
         d = date(2020, 1, 1)
