@@ -384,6 +384,25 @@ def build_storage_rows(
         reason_codes.append("stage5_survivor")
         reason_codes.append("standalone_marker" if standalone else "final_line_vertex")
 
+        reason_type, selection_reason = _interpretive_reason(
+            ordered,
+            pivot_order,
+            spike=spike,
+            sideways_boundaries=sideways,
+            standalone=standalone,
+        )
+        technical_reason = _technical_reason_text(
+            point,
+            base_rdp=base_rdp,
+            spike_peak=bool(spike and spike.get("role") == "peak"),
+            spike_entry=bool(spike and spike.get("role") == "entry"),
+            marker_only=bool(spike and spike.get("marker_only")),
+            sideways_boundaries=sideways,
+            stage3_vertex=point_key in stage3_keys,
+            stage4_survivor=point_key in stage4_keys,
+            standalone=standalone,
+        )
+
         rows.append({
             "pivot_order": pivot_order,
             "pivot_date": point.day.isoformat(),
@@ -392,13 +411,7 @@ def build_storage_rows(
             "next_pivot_order": next_order,
             "segment_to_next": segment_kind,
             "selection_reason_codes": reason_codes,
-            "selection_reason": _interpretive_reason(
-                ordered,
-                pivot_order,
-                spike=spike,
-                sideways_boundaries=sideways,
-                standalone=standalone,
-            )[1],
+            "selection_reason": selection_reason,
             "selection_meta": {
                 "stage_membership": {
                     "stage1": point_key in stage1_keys,
@@ -410,24 +423,8 @@ def build_storage_rows(
                 "base_rdp": base_rdp,
                 "spike": spike,
                 "sideways_boundaries": sideways,
-                "reason_type": _interpretive_reason(
-                    ordered,
-                    pivot_order,
-                    spike=spike,
-                    sideways_boundaries=sideways,
-                    standalone=standalone,
-                )[0],
-                "technical_reason": _technical_reason_text(
-                    point,
-                    base_rdp=base_rdp,
-                    spike_peak=bool(spike and spike.get("role") == "peak"),
-                    spike_entry=bool(spike and spike.get("role") == "entry"),
-                    marker_only=bool(spike and spike.get("marker_only")),
-                    sideways_boundaries=sideways,
-                    stage3_vertex=point_key in stage3_keys,
-                    stage4_survivor=point_key in stage4_keys,
-                    standalone=standalone,
-                ),
+                "reason_type": reason_type,
+                "technical_reason": technical_reason,
                 "final_role": {
                     "standalone": standalone,
                     "next_pivot_order": next_order,
