@@ -388,12 +388,6 @@ def simplify_pivot_lines(
         if direction == "up":
             next_high = next_after(highs, anchor.day)
             if next_high is None:
-                # No later high remains, but a later low can still be the final
-                # confirmed endpoint of the trailing down wave.
-                final_low = next_valid_opposite(lows, anchor.day, "down")
-                if final_low is not None:
-                    add_segment(anchor, final_low, "trend")
-                    anchor = final_low
                 break
 
             # A spike/restart can leave the current anchor on the opposite side.
@@ -448,12 +442,6 @@ def simplify_pivot_lines(
 
         next_low = next_after(lows, anchor.day)
         if next_low is None:
-            # Mirror case: no later low remains, but a later high can still be
-            # the final endpoint of the trailing up wave.
-            final_high = next_valid_opposite(highs, anchor.day, "up")
-            if final_high is not None:
-                add_segment(anchor, final_high, "trend")
-                anchor = final_high
             break
 
         # A spike/restart can leave the current anchor on the opposite side.
@@ -504,6 +492,112 @@ def simplify_pivot_lines(
         add_segment(reversal_owner, high_candidate, "trend")
         anchor = high_candidate
         direction = "up"
+
+    # Structural continuation/reversal check.
+    #
+    # The legacy connector above may tentatively connect an opposite-side point
+    # too early. Rebuild every ordinary tail from the latest confirmed structural
+    # turn using the actual trend rule:
+    #   downtrend: lower highs are provisional; lower lows extend the wave.
+    #              only a high ABOVE the governing prior high can reverse it.
+    #   uptrend:   higher lows are provisional; higher highs extend the wave.
+    #              only a low BELOW the governing prior low can reverse it.
+    #
+    # This prevents a single rebound point from becoming an anchor before the
+    # following same-side extreme is known.
+    def rebuild_structural_path(
+        points: Sequence[PivotPoint],
+    ) -> list[SimplifiedLineSegment]:
+        ordered = sorted(points, key=lambda item: (item.day, item.pivot_type))
+        if len(ordered) < 2:
+            return []
+
+        # Start from the first opposite-type pair. The first point is the governing
+        # extreme until the opposite side actually breaks it.
+        start_index = 0
+        while (
+            start_index + 1 < len(ordered)
+            and ordered[start_index].pivot_type == ordered[start_index + 1].pivot_type
+        ):
+            start_index += 1
+        if start_index + 1 >= len(ordered):
+            return []
+
+        first = ordered[start_index]
+        second = ordered[start_index + 1]
+        direction = "up" if first.pivot_type == "low" else "down"
+        governing_opposite = first
+        current_extreme = second
+        result_segments: list[SimplifiedLineSegment] = []
+
+        def flush(extreme: PivotPoint) -> None:
+            if governing_opposite.day < extreme.day:
+                result_segments.append(
+                    SimplifiedLineSegment(
+                        start=governing_opposite,
+                        end=extreme,
+                        kind="trend",
+                    )
+                )
+
+        for item in ordered[start_index + 2:]:
+            if direction == "down":
+                if item.pivot_type == "low":
+                    if (
+                        current_extreme.pivot_type != "low"
+                        or item.value < current_extreme.value
+                    ):
+                        current_extreme = item
+                    continue
+
+                # Highs inside a downtrend are only provisional until they break
+                # the governing prior high. Otherwise ignore them completely.
+                if item.value <= governing_opposite.value:
+                    continue
+
+                # True break of the governing high: close the down wave at the
+                # lowest low seen and start an up wave from there.
+                flush(current_extreme)
+                governing_opposite = current_extreme
+                current_extreme = item
+                direction = "up"
+                continue
+
+            # direction == "up"
+            if item.pivot_type == "high":
+                if (
+                    current_extreme.pivot_type != "high"
+                    or item.value > current_extreme.value
+                ):
+                    current_extreme = item
+                continue
+
+            # Lows inside an uptrend are provisional until they break the
+            # governing prior low.
+            if item.value >= governing_opposite.value:
+                continue
+
+            flush(current_extreme)
+            governing_opposite = current_extreme
+            current_extreme = item
+            direction = "down"
+
+        flush(current_extreme)
+        return result_segments
+
+    ordinary_points = [
+        point
+        for point in (*line_highs, *line_lows)
+        if point_key(point) not in protected_wave_keys
+    ]
+    structural_segments = rebuild_structural_path(ordinary_points)
+    if structural_segments:
+        protected_segments = [
+            segment
+            for segment in segments
+            if segment.kind in {"spike", "sideways"}
+        ]
+        segments = protected_segments + structural_segments
 
     if normal_wave_segments:
         # Stage 3 normal-wave decisions are authoritative. The legacy connector
