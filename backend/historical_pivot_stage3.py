@@ -122,44 +122,66 @@ def simplify_pivot_lines(
         if leg_direction(left, right) != 0
     ]
 
-    # Each node is a same-direction overlapping high/low leg pair.
-    wave_nodes: list[tuple[int, int, int]] = []
+    # Match each upper leg to at most one lower leg (and vice versa), choosing
+    # the strongest same-direction time overlap. This avoids joining two separate
+    # waves merely because their leg indexes happen to be nearby.
+    wave_candidates: list[tuple[int, int, int, int, date, date]] = []
     for high_index, high_left, high_right, high_dir in high_legs:
         for low_index, low_left, low_right, low_dir in low_legs:
             if high_dir != low_dir:
                 continue
             overlap_start = max(high_left.day, low_left.day)
             overlap_end = min(high_right.day, low_right.day)
-            if overlap_start <= overlap_end:
-                wave_nodes.append((high_index, low_index, high_dir))
+            if overlap_start > overlap_end:
+                continue
+            overlap_days = (overlap_end - overlap_start).days + 1
+            wave_candidates.append(
+                (
+                    overlap_days,
+                    high_index,
+                    low_index,
+                    high_dir,
+                    overlap_start,
+                    overlap_end,
+                )
+            )
 
-    # Merge adjacent/overlapping nodes of the same direction into one normal wave.
-    # This lets an ongoing wave update only its terminal extreme instead of
-    # connecting every following point.
-    unvisited = set(range(len(wave_nodes)))
-    components: list[list[tuple[int, int, int]]] = []
-    while unvisited:
-        seed_index = unvisited.pop()
-        component_indexes = {seed_index}
-        changed = True
-        while changed:
-            changed = False
-            for candidate_index in list(unvisited):
-                hi, li, direction = wave_nodes[candidate_index]
-                if any(
-                    direction == other_direction
-                    and (
-                        abs(hi - other_hi) <= 1
-                        and abs(li - other_li) <= 1
-                    )
-                    for other_hi, other_li, other_direction in (
-                        wave_nodes[item] for item in component_indexes
-                    )
-                ):
-                    unvisited.remove(candidate_index)
-                    component_indexes.add(candidate_index)
-                    changed = True
-        components.append([wave_nodes[item] for item in component_indexes])
+    used_high_legs: set[int] = set()
+    used_low_legs: set[int] = set()
+    matched_nodes: list[tuple[int, int, int, date, date]] = []
+    for (
+        overlap_days,
+        high_index,
+        low_index,
+        direction,
+        overlap_start,
+        overlap_end,
+    ) in sorted(wave_candidates, reverse=True):
+        if high_index in used_high_legs or low_index in used_low_legs:
+            continue
+        used_high_legs.add(high_index)
+        used_low_legs.add(low_index)
+        matched_nodes.append(
+            (high_index, low_index, direction, overlap_start, overlap_end)
+        )
+
+    # Only strictly consecutive matched leg pairs can extend the SAME normal wave.
+    # A missing/mismatched leg ends the wave instead of allowing a transitive jump.
+    matched_nodes.sort(key=lambda item: (item[3], item[4], item[0], item[1]))
+    components: list[list[tuple[int, int, int, date, date]]] = []
+    for node in matched_nodes:
+        if not components:
+            components.append([node])
+            continue
+        prev = components[-1][-1]
+        if (
+            node[2] == prev[2]
+            and node[0] == prev[0] + 1
+            and node[1] == prev[1] + 1
+        ):
+            components[-1].append(node)
+        else:
+            components.append([node])
 
     normal_wave_removed: set[tuple[date, float, str]] = set()
     normal_wave_kept: set[tuple[date, float, str]] = set()
