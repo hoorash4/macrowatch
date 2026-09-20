@@ -133,3 +133,11 @@ while direction is not None:
     if not confirmed:
         run_starts.append((current_anchor,"up")); break
 print([(str(a.day),a.value,a.pivot_type,d) for a,d in run_starts])
+
+print("INITIAL_UP_RUN_ANGLES")
+if "2000-10-23" in by_date:
+    anchor=by_date["2000-10-23"]
+    first=by_date["2003-07-29"]
+    for d in ["2008-03-06","2008-11-13","2009-06-04","2011-03-08"]:
+        if d in by_date:
+            print(d,screen_origin_angle_degrees(anchor,first,by_date[d],g))
