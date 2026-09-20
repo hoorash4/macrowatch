@@ -955,6 +955,143 @@ def prune_same_trend_extremes(
     )
 
 
+
+def prune_unconfirmed_retracements(
+    result: SimplifiedLineResult,
+) -> SimplifiedLineResult:
+    """Final deletion-only cleanup over the completed 10-degree result.
+
+    This stage sees ONLY the points that survived the previous stage.
+
+    Repeatedly:
+      - consecutive lows keep only the lower low
+      - consecutive highs keep only the higher high
+      - low -> high -> lower low removes the failed high reversal
+      - high -> low -> higher high removes the failed low reversal
+
+    Applying the same rules to the shortened sequence naturally removes chains of
+    unconfirmed retracements. Confirmed sideways/spike structure and standalone
+    marker-only points are structural boundaries and are not deleted.
+    """
+    def key(point: PivotPoint) -> tuple[date, float, str]:
+        return point.day, point.value, point.pivot_type
+
+    input_map = {key(point): point for point in result.markers}
+    ordered = list(sorted(
+        result.markers,
+        key=lambda item: (item.day, item.pivot_type),
+    ))
+    if len(ordered) < 2:
+        return result
+
+    standalone_keys = {
+        key(marker)
+        for marker in result.markers
+        if not any(
+            key(marker) in {key(segment.start), key(segment.end)}
+            for segment in result.segments
+        )
+    }
+    sideways_keys = {
+        key(point)
+        for sideways in result.sideways_segments
+        for point in sideways.pivot_points
+    }
+    spike_keys = {
+        key(point)
+        for segment in result.segments
+        if segment.kind == "spike"
+        for point in (segment.start, segment.end)
+    }
+    protected_keys = standalone_keys | sideways_keys | spike_keys
+
+    changed = True
+    while changed and len(ordered) >= 2:
+        changed = False
+
+        # No-retracement same-side continuation.
+        index = 0
+        while index < len(ordered) - 1:
+            left, right = ordered[index], ordered[index + 1]
+            if left.pivot_type != right.pivot_type:
+                index += 1
+                continue
+
+            if left.pivot_type == "low":
+                delete_index = index if right.value < left.value else index + 1
+            else:
+                delete_index = index if right.value > left.value else index + 1
+
+            if key(ordered[delete_index]) in protected_keys:
+                index += 1
+                continue
+
+            del ordered[delete_index]
+            changed = True
+            if index:
+                index -= 1
+
+        # Failed opposite-side reversal followed by a new trend extreme.
+        index = 0
+        while index < len(ordered) - 2:
+            left, middle, right = ordered[index:index + 3]
+            delete_middle = False
+            if left.pivot_type == right.pivot_type != middle.pivot_type:
+                if left.pivot_type == "low" and right.value < left.value:
+                    delete_middle = True
+                elif left.pivot_type == "high" and right.value > left.value:
+                    delete_middle = True
+
+            if delete_middle and key(middle) not in protected_keys:
+                del ordered[index + 1]
+                changed = True
+                if index:
+                    index -= 1
+                continue
+
+            index += 1
+
+    surviving_keys = {key(point) for point in ordered}
+    if not surviving_keys.issubset(input_map):
+        raise RuntimeError("final cleanup resurrected a prior-stage point")
+
+    # Preserve exact structural segments when both endpoints survive. All newly
+    # adjacent ordinary points are connected only by a direct trend segment.
+    exact_kind = {
+        (key(segment.start), key(segment.end)): segment.kind
+        for segment in result.segments
+    }
+    rebuilt_segments: list[SimplifiedLineSegment] = []
+    connected_keys: set[tuple[date, float, str]] = set()
+    line_points = [point for point in ordered if key(point) not in standalone_keys]
+    for start, end in zip(line_points, line_points[1:]):
+        kind = exact_kind.get((key(start), key(end)), "trend")
+        rebuilt_segments.append(SimplifiedLineSegment(start=start, end=end, kind=kind))
+        connected_keys.add(key(start))
+        connected_keys.add(key(end))
+
+    marker_map = {
+        key(point): point
+        for point in ordered
+        if key(point) in connected_keys or key(point) in standalone_keys
+    }
+
+    surviving_sideways = tuple(
+        segment
+        for segment in result.sideways_segments
+        if key(segment.start) in marker_map and key(segment.end) in marker_map
+    )
+
+    return SimplifiedLineResult(
+        markers=tuple(sorted(
+            marker_map.values(),
+            key=lambda item: (item.day, item.pivot_type),
+        )),
+        segments=tuple(rebuilt_segments),
+        sideways_segments=surviving_sideways,
+    )
+
+
 def simplify_pivot_lines(
     augmented: SpikeAugmentedPivotResult,
     geometry: ChartGeometry,
@@ -1269,10 +1406,11 @@ def simplify_pivot_lines(
         segments=tuple(segments),
         sideways_segments=tuple(sideways_segments),
     )
-    return prune_same_trend_extremes(
+    angle_pruned = prune_same_trend_extremes(
         simplified,
         geometry,
     )
+    return prune_unconfirmed_retracements(angle_pruned)
 
 def _single_row(
     db: SupabaseRest,
