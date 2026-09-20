@@ -50,6 +50,7 @@ class _RunState:
     extreme: PivotPoint
     angle_ordinal: int = 0
     collapse_end: PivotPoint | None = None
+    angle_blocked: bool = False
 
     # provisional opposite excursion
     opposite_extreme: PivotPoint | None = None
@@ -109,8 +110,13 @@ def _process_window(
     while index < len(ordered):
         point = ordered[index]
 
-        # Old trend resumes / continues with a new extreme.
-        if _can_extend(state, point):
+        # Every SAME-SIDE candidate consumes an angle ordinal, even when it
+        # does not improve the connection extreme. This is critical: skipping a
+        # lower high / higher low must not make a later point become "angle #1".
+        same_side = point.pivot_type == state.extreme.pivot_type
+        improves = _can_extend(state, point)
+
+        if same_side and not state.angle_blocked:
             state.angle_ordinal += 1
             angle = screen_origin_angle_degrees(
                 state.anchor,
@@ -119,25 +125,26 @@ def _process_window(
                 geometry,
             )
 
-            if (
-                state.angle_ordinal >= 2
-                and angle > threshold
-            ):
-                # Stop the previous 10-degree collapse BEFORE this point.
+            if state.angle_ordinal >= 2 and angle > threshold:
+                # Stop before this candidate. Preserve everything from here until
+                # a confirmed reversal creates a new anchor.
                 _record_collapse(intervals, state)
+                state.collapse_end = None
+                state.angle_blocked = True
 
-                # The previous extreme becomes the start of a fresh angle run.
-                state = _RunState(
-                    anchor=state.extreme,
-                    direction=state.direction,
-                    extreme=point,
-                )
+                if improves:
+                    state.extreme = point
+                    state.opposite_extreme = None
+                    state.rebound_extreme = None
+
                 index += 1
                 continue
 
-            # First angle is always ignored; later <=10° updates extend collapse.
+        # Old trend resumes / continues with a new extreme.
+        if improves:
             state.extreme = point
-            state.collapse_end = point
+            if not state.angle_blocked:
+                state.collapse_end = point
             state.opposite_extreme = None
             state.rebound_extreme = None
             index += 1
