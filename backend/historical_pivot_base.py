@@ -961,27 +961,28 @@ def prune_unconfirmed_retracements(
 ) -> SimplifiedLineResult:
     """Final deletion-only cleanup over the completed 10-degree result.
 
-    This stage sees ONLY the points that survived the previous stage.
+    This stage sees ONLY points that survived the previous stage. Confirmed trend
+    reversal anchors from that result are protected; cleanup is limited to the
+    interiors between those anchors.
 
-    Repeatedly:
+    Repeatedly inside each anchor interval:
       - consecutive lows keep only the lower low
       - consecutive highs keep only the higher high
       - low -> high -> lower low removes the failed high reversal
       - high -> low -> higher high removes the failed low reversal
 
-    Applying the same rules to the shortened sequence naturally removes chains of
-    unconfirmed retracements. Confirmed sideways/spike structure and standalone
-    marker-only points are structural boundaries and are not deleted.
+    Confirmed sideways/spike structure and standalone marker-only points are also
+    protected. No prior-stage point can ever be restored.
     """
     def key(point: PivotPoint) -> tuple[date, float, str]:
         return point.day, point.value, point.pivot_type
 
     input_map = {key(point): point for point in result.markers}
-    ordered = list(sorted(
+    original = list(sorted(
         result.markers,
         key=lambda item: (item.day, item.pivot_type),
     ))
-    if len(ordered) < 2:
+    if len(original) < 2:
         return result
 
     standalone_keys = {
@@ -1003,13 +1004,69 @@ def prune_unconfirmed_retracements(
         if segment.kind == "spike"
         for point in (segment.start, segment.end)
     }
-    protected_keys = standalone_keys | sideways_keys | spike_keys
 
+    def confirmed_reversal_keys(points: Sequence[PivotPoint]) -> set[tuple[date, float, str]]:
+        """Find only fully confirmed reversals in the current-stage point set."""
+        confirmed: set[tuple[date, float, str]] = set()
+        if points:
+            confirmed.add(key(points[0]))
+
+        for index, pivot in enumerate(points[:-1]):
+            if pivot.pivot_type == "low":
+                rebound_high: PivotPoint | None = None
+                higher_low_seen = False
+                for item in points[index + 1:]:
+                    if item.pivot_type == "low":
+                        if item.value < pivot.value:
+                            break
+                        if rebound_high is not None and item.value > pivot.value:
+                            higher_low_seen = True
+                        continue
+
+                    if rebound_high is None:
+                        rebound_high = item
+                        continue
+                    if higher_low_seen and item.value > rebound_high.value:
+                        confirmed.add(key(pivot))
+                        break
+                    if not higher_low_seen and item.value > rebound_high.value:
+                        rebound_high = item
+                continue
+
+            pullback_low: PivotPoint | None = None
+            lower_high_seen = False
+            for item in points[index + 1:]:
+                if item.pivot_type == "high":
+                    if item.value > pivot.value:
+                        break
+                    if pullback_low is not None and item.value < pivot.value:
+                        lower_high_seen = True
+                    continue
+
+                if pullback_low is None:
+                    pullback_low = item
+                    continue
+                if lower_high_seen and item.value < pullback_low.value:
+                    confirmed.add(key(pivot))
+                    break
+                if not lower_high_seen and item.value < pullback_low.value:
+                    pullback_low = item
+
+        return confirmed
+
+    confirmed_anchor_keys = confirmed_reversal_keys(original)
+    protected_keys = (
+        standalone_keys
+        | sideways_keys
+        | spike_keys
+        | confirmed_anchor_keys
+    )
+
+    ordered = list(original)
     changed = True
     while changed and len(ordered) >= 2:
         changed = False
 
-        # No-retracement same-side continuation.
         index = 0
         while index < len(ordered) - 1:
             left, right = ordered[index], ordered[index + 1]
@@ -1031,7 +1088,6 @@ def prune_unconfirmed_retracements(
             if index:
                 index -= 1
 
-        # Failed opposite-side reversal followed by a new trend extreme.
         index = 0
         while index < len(ordered) - 2:
             left, middle, right = ordered[index:index + 3]
@@ -1055,27 +1111,23 @@ def prune_unconfirmed_retracements(
     if not surviving_keys.issubset(input_map):
         raise RuntimeError("final cleanup resurrected a prior-stage point")
 
-    # Preserve exact structural segments when both endpoints survive. All newly
-    # adjacent ordinary points are connected only by a direct trend segment.
     exact_kind = {
         (key(segment.start), key(segment.end)): segment.kind
         for segment in result.segments
     }
-    rebuilt_segments: list[SimplifiedLineSegment] = []
-    connected_keys: set[tuple[date, float, str]] = set()
     line_points = [point for point in ordered if key(point) not in standalone_keys]
-    for start, end in zip(line_points, line_points[1:]):
-        kind = exact_kind.get((key(start), key(end)), "trend")
-        rebuilt_segments.append(SimplifiedLineSegment(start=start, end=end, kind=kind))
-        connected_keys.add(key(start))
-        connected_keys.add(key(end))
+    rebuilt_segments: list[SimplifiedLineSegment] = []
+    for start_point, end_point in zip(line_points, line_points[1:]):
+        kind = exact_kind.get((key(start_point), key(end_point)), "trend")
+        rebuilt_segments.append(
+            SimplifiedLineSegment(
+                start=start_point,
+                end=end_point,
+                kind=kind,
+            )
+        )
 
-    marker_map = {
-        key(point): point
-        for point in ordered
-        if key(point) in connected_keys or key(point) in standalone_keys
-    }
-
+    marker_map = {key(point): point for point in ordered}
     surviving_sideways = tuple(
         segment
         for segment in result.sideways_segments
