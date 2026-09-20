@@ -701,20 +701,20 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         high = PivotPoint(d, 10.0, "high")
         low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
         low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
-        sideways_start = PivotPoint(d + timedelta(days=15), 3.5, "low")
+        sideways_end = PivotPoint(d + timedelta(days=30), 3.2, "low")
         sideways = SidewaysSegment(
-            start=sideways_start,
-            end=low2,
+            start=low2,
+            end=sideways_end,
             prior_trend="down",
             reference_side="low",
             angle_deg=1.0,
         )
         existing = SimplifiedLineResult(
-            markers=(high, low1, sideways_start, low2),
+            markers=(high, low1, low2, sideways_end),
             segments=(
                 SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, sideways_start, "trend"),
-                SimplifiedLineSegment(sideways_start, low2, "sideways"),
+                SimplifiedLineSegment(low1, low2, "trend"),
+                SimplifiedLineSegment(low2, sideways_end, "sideways"),
             ),
             sideways_segments=(sideways,),
         )
@@ -722,11 +722,15 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        # The second record extreme is the surviving endpoint. It being protected
-        # does not by itself block the direct high -> low2 simplification.
+        # The second record extreme survives as the endpoint, so being the
+        # sideways start does not block high -> low2. The sideways structure
+        # beginning at low2 remains intact.
         self.assertIn(high, result.markers)
         self.assertIn(low2, result.markers)
+        self.assertIn(sideways_end, result.markers)
         self.assertNotIn(low1, result.markers)
+        self.assertIn(SimplifiedLineSegment(high, low2, "trend"), result.segments)
+        self.assertIn(SimplifiedLineSegment(low2, sideways_end, "sideways"), result.segments)
 
     def test_post_pass_first_angle_never_stops_even_when_over_threshold(self):
         d = date(2020, 1, 1)
