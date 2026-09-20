@@ -128,9 +128,9 @@ def prune_same_trend_extremes(
     run_starts: list[tuple[PivotPoint, str]] = []
     direction = initial_direction()
     if ordered_points and direction is not None:
-        # The first point is only a PROVISIONAL anchor. If the same-side extreme
-        # is exceeded before an opposite reversal is confirmed, that provisional
-        # anchor is cancelled and replaced by the newer extreme.
+        # The first Stage-3 vertex is the current run anchor.  Opposite-side
+        # excursions never replace it immediately; reversal confirmation always
+        # waits for the following same-side point.
         current_anchor = ordered_points[0]
         scan_index = 1
 
@@ -143,19 +143,6 @@ def prune_same_trend_extremes(
 
                 while scan_index < len(ordered_points):
                     item = ordered_points[scan_index]
-
-                    # A higher high cancels the provisional down-reversal anchor.
-                    if (
-                        item.pivot_type == "high"
-                        and current_anchor.pivot_type == "high"
-                        and item.value > current_anchor.value
-                    ):
-                        current_anchor = item
-                        trend_low = None
-                        rebound_high = None
-                        higher_low_seen = False
-                        scan_index += 1
-                        continue
 
                     if item.pivot_type == "low":
                         if trend_low is None or item.value < trend_low.value:
@@ -195,19 +182,6 @@ def prune_same_trend_extremes(
 
             while scan_index < len(ordered_points):
                 item = ordered_points[scan_index]
-
-                # A lower low cancels the provisional up-reversal anchor.
-                if (
-                    item.pivot_type == "low"
-                    and current_anchor.pivot_type == "low"
-                    and item.value < current_anchor.value
-                ):
-                    current_anchor = item
-                    trend_high = None
-                    pullback_low = None
-                    lower_high_seen = False
-                    scan_index += 1
-                    continue
 
                 if item.pivot_type == "high":
                     if trend_high is None or item.value > trend_high.value:
@@ -297,9 +271,8 @@ def prune_same_trend_extremes(
         #   - angle H1-anchor-H2 is still angle #1 and is ignored
         #   - angle H1-anchor-H3 is angle #2 and must pass the threshold
         #
-        # Existing simplify_pivot_lines() already handles provisional 100%+
-        # retracement/reversal structure by following the later same-side extreme;
-        # do not duplicate that state machine here.
+        # Stage 3 already supplies one merged line.  Stage 4 only decides
+        # confirmed run anchors and the 10-degree collapse inside each run.
         extreme = candidates[0]
         angle_ordinal = 0
         for candidate in candidates[1:]:
