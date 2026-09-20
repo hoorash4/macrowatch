@@ -55,13 +55,11 @@ class _Anchor:
 def _direction_from(points: Sequence[PivotPoint]) -> str | None:
     if len(points) < 2:
         return None
-    first = points[0]
-    for item in points[1:]:
-        if item.value > first.value:
-            return "up"
-        if item.value < first.value:
-            return "down"
-    return None
+    # A valid run anchor owns the direction by its side:
+    # low starts/continues an up-run, high starts/continues a down-run.
+    # Never infer "up" from a HIGH merely because the next value is higher,
+    # or "down" from a LOW merely because the next value is lower.
+    return "up" if points[0].pivot_type == "low" else "down"
 
 
 def _confirmed_anchors(points: Sequence[PivotPoint]) -> list[_Anchor]:
