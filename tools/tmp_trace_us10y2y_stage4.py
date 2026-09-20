@@ -71,3 +71,65 @@ checks=[
 for a,b,cdate in checks:
     if a in by_date and b in by_date and cdate in by_date:
         print(a,b,cdate,screen_origin_angle_degrees(by_date[a],by_date[b],by_date[cdate],g))
+
+print("RECONSTRUCTED_RUN_STARTS")
+ordered_points=list(s3.markers)
+def init_dir():
+    if len(ordered_points)<2: return None
+    first=ordered_points[0]
+    for item in ordered_points[1:]:
+        if item.value>first.value: return "up"
+        if item.value<first.value: return "down"
+    return None
+run_starts=[]
+direction=init_dir()
+current_anchor=ordered_points[0]
+scan_index=1
+while direction is not None:
+    if direction=="down":
+        trend_low=None; rebound_high=None; higher_low_seen=False; confirmed=False
+        while scan_index<len(ordered_points):
+            item=ordered_points[scan_index]
+            if item.pivot_type=="high" and current_anchor.pivot_type=="high" and item.value>current_anchor.value:
+                current_anchor=item; trend_low=None; rebound_high=None; higher_low_seen=False; scan_index+=1; continue
+            if item.pivot_type=="low":
+                if trend_low is None or item.value<trend_low.value:
+                    trend_low=item; rebound_high=None; higher_low_seen=False
+                elif rebound_high is not None and item.value>trend_low.value:
+                    higher_low_seen=True
+            else:
+                if trend_low is not None:
+                    if rebound_high is None:
+                        rebound_high=item
+                    elif higher_low_seen and item.value>rebound_high.value:
+                        run_starts.append((current_anchor,"down"))
+                        current_anchor=trend_low; direction="up"; scan_index=ordered_points.index(current_anchor)+1; confirmed=True; break
+                    elif item.value>rebound_high.value:
+                        rebound_high=item
+            scan_index+=1
+        if not confirmed:
+            run_starts.append((current_anchor,"down")); break
+        continue
+    trend_high=None; pullback_low=None; lower_high_seen=False; confirmed=False
+    while scan_index<len(ordered_points):
+        item=ordered_points[scan_index]
+        if item.pivot_type=="low" and current_anchor.pivot_type=="low" and item.value<current_anchor.value:
+            current_anchor=item; trend_high=None; pullback_low=None; lower_high_seen=False; scan_index+=1; continue
+        if item.pivot_type=="high":
+            if trend_high is None or item.value>trend_high.value:
+                trend_high=item; pullback_low=None; lower_high_seen=False
+            elif pullback_low is not None and item.value<trend_high.value:
+                lower_high_seen=True
+        else:
+            if trend_high is not None:
+                if pullback_low is None:
+                    pullback_low=item
+                elif lower_high_seen and item.value<pullback_low.value:
+                    run_starts.append((current_anchor,"up"))
+                    current_anchor=trend_high; direction="down"; scan_index=ordered_points.index(current_anchor)+1; confirmed=True; break
+                elif item.value<pullback_low.value:
+                    pullback_low=item
+        scan_index+=1
+    if not confirmed:
+        run_starts.append((current_anchor,"up")); break
+print([(str(a.day),a.value,a.pivot_type,d) for a,d in run_starts])
