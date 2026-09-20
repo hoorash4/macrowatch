@@ -585,11 +585,7 @@ def simplify_pivot_lines(
         flush(current_extreme)
         return result_segments
 
-    ordinary_points = [
-        point
-        for point in (*line_highs, *line_lows)
-        if point_key(point) not in protected_wave_keys
-    ]
+    ordinary_points = list((*line_highs, *line_lows))
     structural_segments = rebuild_structural_path(ordinary_points)
     if structural_segments:
         protected_segments = [
@@ -599,8 +595,8 @@ def simplify_pivot_lines(
         ]
         segments = protected_segments + structural_segments
 
-    if normal_wave_segments:
-        # Stage 3 normal-wave decisions are authoritative. The legacy connector
+    if normal_wave_segments and not structural_segments:
+        # Fallback only when the structural scanner produced no ordinary path. The legacy connector
         # may fill gaps outside them, but it may not cross or replace a confirmed
         # normal wave or skip a turning endpoint shared by two waves.
         wave_segments = sorted(
