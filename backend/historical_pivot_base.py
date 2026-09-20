@@ -589,31 +589,29 @@ def prune_same_trend_extremes(
     angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
     protected_markers: Sequence[PivotPoint] = (),
 ) -> SimplifiedLineResult:
-    """Delete only interior pivots of a confirmed same-trend extreme run.
+    """Additional deletion-only pass over the already simplified path.
 
-    This is an additive post-pass. It never rebuilds the existing trend state.
+    The existing simplification is left intact first. This pass only collapses a
+    confirmed directional run between an existing transition extreme and a later
+    same-trend extreme.
 
-    A candidate run starts only from an already-existing cross-side trend segment:
-      - low -> high starts an up-run from that low
-      - high -> low starts a down-run from that high
-
-    Up-run:
+    Uptrend:
+      - anchor = an existing low that is lower than the adjacent surviving lows
       - inspect later highs only
-      - the first high establishes the first extreme
       - lower/equal highs are ignored
-      - only a NEW higher high creates an angle comparison at the fixed low anchor
-      - <= 10 degrees: same trend, update the extreme and continue
-      - > 10 degrees: stop before that new high
+      - only strict new highs participate
+      - compare consecutive record highs from the fixed low anchor
+      - every comparison must be <= 10 degrees
+      - at least TWO successful record-high updates are required before collapsing
+        anything (H1->H2 and H2->H3)
+      - when a new record high exceeds 10 degrees, stop before that high
 
-    Down-run is the exact mirror.
+    Downtrend is the exact mirror using a local high anchor and strict new lows.
 
-    At least two successive extreme updates (therefore at least one angle comparison)
-    are required before anything is deleted. A sideways or spike segment is a hard
-    trend boundary: angle scanning stops there and never crosses it.
-
-    When a run is confirmed, only ordinary pivots strictly between its fixed anchor
-    and confirmed extreme are removed. The anchor, extreme, all spike peaks, and all
-    sideways structure remain untouched.
+    Sideways and spike segments are hard trend boundaries. The scan stops before
+    them. Once an extreme is confirmed, every ordinary segment/marker strictly
+    between anchor and extreme is removed and replaced by one direct trend segment.
+    Spike peaks and sideways structure are never deleted.
     """
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
@@ -623,7 +621,6 @@ def prune_same_trend_extremes(
 
     protected_keys = {key(item) for item in protected_markers}
 
-    # Existing segment endpoints are the only points this post-pass may inspect.
     point_map: dict[tuple[date, float, str], PivotPoint] = {}
     for segment in result.segments:
         point_map[key(segment.start)] = segment.start
@@ -638,8 +635,8 @@ def prune_same_trend_extremes(
     highs = tuple(item for item in points if item.pivot_type == "high")
     lows = tuple(item for item in points if item.pivot_type == "low")
 
-    # Sideways and spike are hard boundaries. The previous directional trend ends
-    # at the start of either segment; the post-pass may not look past that day.
+    # A spike or sideways begins a new structural regime. The 10-degree scan may
+    # never cross its start.
     hard_boundaries = tuple(sorted(
         segment.start.day
         for segment in result.segments
@@ -649,24 +646,36 @@ def prune_same_trend_extremes(
     def first_boundary_after(day: date) -> date | None:
         return next((item for item in hard_boundaries if item > day), None)
 
-    # Start only from transition anchors that the existing simplifier already made.
-    # We do not invent a new anchor or reinterpret the pre-existing trend path.
-    run_starts: list[tuple[PivotPoint, str]] = []
-    for segment in result.segments:
-        if segment.kind != "trend":
-            continue
-        if segment.start.pivot_type == "low" and segment.end.pivot_type == "high":
-            run_starts.append((segment.start, "up"))
-        elif segment.start.pivot_type == "high" and segment.end.pivot_type == "low":
-            run_starts.append((segment.start, "down"))
+    def local_transition_anchors(
+        same_side: Sequence[PivotPoint],
+        pivot_type: str,
+    ) -> list[PivotPoint]:
+        anchors: list[PivotPoint] = []
+        for index in range(1, len(same_side) - 1):
+            previous = same_side[index - 1]
+            current = same_side[index]
+            following = same_side[index + 1]
+            if pivot_type == "low":
+                if current.value < previous.value and current.value < following.value:
+                    anchors.append(current)
+            else:
+                if current.value > previous.value and current.value > following.value:
+                    anchors.append(current)
+        return anchors
+
+    run_starts: list[tuple[PivotPoint, str]] = [
+        *((item, "up") for item in local_transition_anchors(lows, "low")),
+        *((item, "down") for item in local_transition_anchors(highs, "high")),
+    ]
+    run_starts.sort(key=lambda item: item[0].day)
 
     replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
 
-    def covered(day: date) -> bool:
+    def already_inside(day: date) -> bool:
         return any(start.day < day < end.day for start, end in replacement_intervals)
 
-    for anchor, direction in sorted(run_starts, key=lambda item: item[0].day):
-        if key(anchor) in protected_keys or covered(anchor.day):
+    for anchor, direction in run_starts:
+        if already_inside(anchor.day) or key(anchor) in protected_keys:
             continue
 
         boundary = first_boundary_after(anchor.day)
@@ -674,14 +683,14 @@ def prune_same_trend_extremes(
         candidates = [
             item for item in same_side
             if item.day > anchor.day
-            and (boundary is None or item.day <= boundary)
+            and (boundary is None or item.day < boundary)
             and key(item) not in protected_keys
         ]
         if not candidates:
             continue
 
         extreme = candidates[0]
-        comparison_count = 0
+        successful_updates = 0
 
         for candidate in candidates[1:]:
             improves = (
@@ -702,28 +711,31 @@ def prune_same_trend_extremes(
                 break
 
             extreme = candidate
-            comparison_count += 1
+            successful_updates += 1
 
-        # One first extreme plus at least one later extreme update is required.
-        if comparison_count == 0:
+        # H1/H2 alone (or L1/L2 alone) is not enough. The user-approved rule
+        # requires at least two consecutive record updates before any deletion.
+        if successful_updates < 2:
             continue
+
         if anchor.day >= extreme.day:
             continue
-
-        # Never collapse across a hard boundary.
-        if boundary is not None and extreme.day > boundary:
+        if boundary is not None and extreme.day >= boundary:
             continue
 
-        # Do not cross any protected spike peak.
-        if any(anchor.day < marker.day < extreme.day for marker in protected_markers):
+        # Spike peaks are always preserved and also block collapsing across them.
+        if any(
+            anchor.day < marker.day < extreme.day
+            for marker in protected_markers
+        ):
             continue
 
-        interior = [
+        interior_points = [
             item for item in points
             if anchor.day < item.day < extreme.day
             and key(item) not in protected_keys
         ]
-        if not interior:
+        if not interior_points:
             continue
 
         replacement_intervals.append((anchor, extreme))
@@ -731,8 +743,6 @@ def prune_same_trend_extremes(
     if not replacement_intervals:
         return result
 
-    # Keep intervals non-overlapping and chronological. An interval created from an
-    # earlier confirmed trend owns its interior; later anchors inside it are ignored.
     replacement_intervals.sort(key=lambda item: (item[0].day, item[1].day))
     non_overlapping: list[tuple[PivotPoint, PivotPoint]] = []
     for start, end in replacement_intervals:
@@ -741,17 +751,16 @@ def prune_same_trend_extremes(
         non_overlapping.append((start, end))
     replacement_intervals = non_overlapping
 
-    def segment_inside_replacement(segment: SimplifiedLineSegment) -> bool:
+    def inside_interval(segment: SimplifiedLineSegment) -> bool:
         return any(
             start.day <= segment.start.day
             and segment.end.day <= end.day
             for start, end in replacement_intervals
         )
 
-    # Existing behavior outside confirmed intervals is preserved exactly.
     kept_segments = [
         segment for segment in result.segments
-        if not segment_inside_replacement(segment)
+        if not inside_interval(segment)
     ]
     for start, end in replacement_intervals:
         kept_segments.append(
