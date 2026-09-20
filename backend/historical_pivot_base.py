@@ -53,7 +53,6 @@ from historical_pivot_stage1 import (
     _has_pivot_between,
     _perpendicular_distance,
     augment_spike_entry_points,
-    build_envelope,
     calculate_base_pivots,
     fixed_count_rdp,
     plateau_extrema,
