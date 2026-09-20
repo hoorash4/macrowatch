@@ -763,9 +763,10 @@ def prune_same_trend_extremes(
                 extreme = candidate
 
         # No later same-side candidate improved on the first extreme, so there is
-        # nothing to collapse to. The first angle is informational only; a run is
-        # not confirmed until a second visible angle exists.
-        if extreme == candidates[0] or angle_ordinal < 2:
+        # nothing to collapse to. The first angle never blocks simplification:
+        # when the next candidate improves the extreme, collapse through it
+        # immediately. The 10-degree rule starts with angle #2.
+        if extreme == candidates[0]:
             continue
 
         sideways_keys = {
