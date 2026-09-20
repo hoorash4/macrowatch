@@ -786,6 +786,64 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIn((highs[1], lows[2], "trend"), pairs)
         self.assertEqual(augmented.display_markers, result.markers)
 
+    def test_angle_post_pass_allows_chart_first_point_as_initial_anchor(self):
+        d = date(2020, 1, 1)
+        first_high = PivotPoint(d, 10.0, "high")
+        low1 = PivotPoint(d + timedelta(days=10), 8.0, "low")
+        low2 = PivotPoint(d + timedelta(days=20), 7.0, "low")
+        low3 = PivotPoint(d + timedelta(days=30), 6.0, "low")
+        existing = SimplifiedLineResult(
+            markers=(first_high, low1, low2, low3),
+            segments=(
+                SimplifiedLineSegment(first_high, low1, "trend"),
+                SimplifiedLineSegment(low1, low2, "trend"),
+                SimplifiedLineSegment(low2, low3, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry, angle_threshold_deg=180.0 - 1e-6)
+
+        self.assertIn(first_high, result.markers)
+        self.assertIn(low3, result.markers)
+        self.assertNotIn(low1, result.markers)
+        self.assertNotIn(low2, result.markers)
+
+    def test_angle_post_pass_can_use_sideways_end_but_not_cross_beyond_it(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 0.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
+        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
+        sideways_end = PivotPoint(d + timedelta(days=30), 12.0, "high")
+        later_high = PivotPoint(d + timedelta(days=40), 13.0, "high")
+        sideways = SidewaysSegment(
+            start=high2,
+            end=sideways_end,
+            prior_trend="up",
+            reference_side="high",
+            angle_deg=1.0,
+        )
+        existing = SimplifiedLineResult(
+            markers=(low, high1, high2, sideways_end, later_high),
+            segments=(
+                SimplifiedLineSegment(low, high1, "trend"),
+                SimplifiedLineSegment(high1, high2, "trend"),
+                SimplifiedLineSegment(high2, sideways_end, "sideways"),
+                SimplifiedLineSegment(sideways_end, later_high, "trend"),
+            ),
+            sideways_segments=(sideways,),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry, angle_threshold_deg=180.0 - 1e-6)
+
+        self.assertIn(low, result.markers)
+        self.assertIn(sideways_end, result.markers)
+        self.assertIn(later_high, result.markers)
+        self.assertNotIn(high1, result.markers)
+        self.assertNotIn(high2, result.markers)
+
 
 if __name__ == "__main__":
     unittest.main()
