@@ -689,18 +689,26 @@ def prune_same_trend_extremes(
         if not candidates:
             continue
 
-        extreme = candidates[0]
-        successful_updates = 0
-
+        # Build only strict record extremes. Lower highs / higher lows do not
+        # participate in the angle check.
+        records: list[PivotPoint] = [candidates[0]]
         for candidate in candidates[1:]:
             improves = (
-                candidate.value > extreme.value
+                candidate.value > records[-1].value
                 if direction == "up"
-                else candidate.value < extreme.value
+                else candidate.value < records[-1].value
             )
-            if not improves:
-                continue
+            if improves:
+                records.append(candidate)
 
+        # The first extreme is only the initial post-transition point.
+        # Update #1 creates H2/L2; update #2 creates H3/L3. Only then is there
+        # a user-approved comparison angle: H2-anchor-H3 (or L2-anchor-L3).
+        if len(records) < 3:
+            continue
+
+        extreme = records[1]
+        for candidate in records[2:]:
             angle = screen_origin_angle_degrees(
                 anchor,
                 extreme,
@@ -709,14 +717,7 @@ def prune_same_trend_extremes(
             )
             if angle > angle_threshold_deg:
                 break
-
             extreme = candidate
-            successful_updates += 1
-
-        # H1/H2 alone (or L1/L2 alone) is not enough. The user-approved rule
-        # requires at least two consecutive record updates before any deletion.
-        if successful_updates < 2:
-            continue
 
         if anchor.day >= extreme.day:
             continue
