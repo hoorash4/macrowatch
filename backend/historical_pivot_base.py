@@ -1163,6 +1163,38 @@ def _single_row(
     return rows[0]
 
 
+def _get_rows_paginated(
+    db: SupabaseRest,
+    table: str,
+    params: dict[str, str],
+    *,
+    page_size: int = SUPABASE_REST_PAGE_SIZE,
+) -> list[dict[str, Any]]:
+    """Read every REST row without relying on Supabase's per-request row cap."""
+    if page_size <= 0:
+        raise ValueError("page_size must be positive")
+
+    base_params = dict(params)
+    base_params.pop("limit", None)
+    base_params.pop("offset", None)
+    rows: list[dict[str, Any]] = []
+    offset = 0
+
+    while True:
+        page_params = {
+            **base_params,
+            "limit": str(page_size),
+            "offset": str(offset),
+        }
+        page = db.request("GET", table, params=page_params) or []
+        if not isinstance(page, list):
+            raise RuntimeError(f"expected a list from {table}, got {type(page).__name__}")
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += len(page)
+
+
 def load_case_series(
     db: SupabaseRest,
     *,
@@ -1182,14 +1214,13 @@ def load_case_series(
     cycle_trough = date.fromisoformat(str(cycle["trough_date"])[:10])
     buffer_start, buffer_end = buffer_bounds(cycle_start, cycle_trough)
 
-    rows = db.request("GET", "economic_chart_points", params={
+    rows = _get_rows_paginated(db, "economic_chart_points", {
         "select": "observation_date,value,frequency",
         "series_code": f"eq.{series_code}",
         "observation_date": f"gte.{buffer_start.isoformat()}",
         "and": f"(observation_date.lte.{buffer_end.isoformat()})",
         "order": "observation_date.asc",
-        "limit": "10000",
-    }) or []
+    })
     if not rows:
         raise RuntimeError(f"No economic-chart rows for {series_code} in buffer range")
     frequencies = {str(row.get("frequency") or "") for row in rows}
