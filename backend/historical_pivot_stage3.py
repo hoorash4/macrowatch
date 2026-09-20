@@ -213,6 +213,24 @@ def simplify_pivot_lines(
         if start.day >= end.day:
             continue
 
+        # A normal-wave candidate is provisional until the NEXT opposite-side
+        # extreme is seen. If that next point fully resumes the prior trend,
+        # this candidate wave is not a real turn and must not be kept.
+        if direction > 0:
+            following_low = next(
+                (item for item in line_lows if item.day > end.day),
+                None,
+            )
+            if following_low is not None and following_low.value < start.value:
+                continue
+        else:
+            following_high = next(
+                (item for item in line_highs if item.day > end.day),
+                None,
+            )
+            if following_high is not None and following_high.value > start.value:
+                continue
+
         keep_keys = {point_key(start), point_key(end)}
         component_points = {
             **high_points,
@@ -299,6 +317,24 @@ def simplify_pivot_lines(
         ):
             return
         segments.append(SimplifiedLineSegment(start=start, end=end, kind=kind))
+
+    def replace_trend_endpoint(
+        old_end: PivotPoint,
+        new_end: PivotPoint,
+    ) -> bool:
+        for index in range(len(segments) - 1, -1, -1):
+            segment = segments[index]
+            if segment.kind != "trend" or segment.end != old_end:
+                continue
+            if segment.start.day >= new_end.day:
+                return False
+            segments[index] = SimplifiedLineSegment(
+                start=segment.start,
+                end=new_end,
+                kind="trend",
+            )
+            return True
+        return False
 
     def next_after(points: Sequence[PivotPoint], after: date) -> PivotPoint | None:
         return next((item for item in points if item.day > after), None)
@@ -420,11 +456,22 @@ def simplify_pivot_lines(
                 anchor = next_high
                 continue
 
-            # next_high is lower: anchor is the actual high-side reversal owner.
+            # next_high is lower: reversal is only PROVISIONAL.
+            # See the following high before confirming the low as a turn.
             reversal_owner = anchor
             low_candidate = next_valid_opposite(lows, reversal_owner.day, "down")
             if low_candidate is None:
                 break
+
+            following_high = next_after(highs, low_candidate.day)
+            if (
+                following_high is not None
+                and following_high.value > reversal_owner.value
+            ):
+                # Old uptrend made a new high. The pullback low was not a turn.
+                replace_trend_endpoint(reversal_owner, following_high)
+                anchor = following_high
+                continue
 
             spike = next_spike_before(reversal_owner.day, low_candidate.day)
             if spike is not None and spike.entry is not None:
@@ -474,11 +521,22 @@ def simplify_pivot_lines(
             anchor = next_low
             continue
 
-        # next_low is higher: anchor is the actual low-side reversal owner.
+        # next_low is higher: reversal is only PROVISIONAL.
+        # See the following low before confirming the high as a turn.
         reversal_owner = anchor
         high_candidate = next_valid_opposite(highs, reversal_owner.day, "up")
         if high_candidate is None:
             break
+
+        following_low = next_after(lows, high_candidate.day)
+        if (
+            following_low is not None
+            and following_low.value < reversal_owner.value
+        ):
+            # Old downtrend made a new low. The rebound high was not a turn.
+            replace_trend_endpoint(reversal_owner, following_low)
+            anchor = following_low
+            continue
 
         spike = next_spike_before(reversal_owner.day, high_candidate.day)
         if spike is not None and spike.entry is not None:
