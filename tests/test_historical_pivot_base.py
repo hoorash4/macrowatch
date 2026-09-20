@@ -22,6 +22,7 @@ from historical_pivot_base import (  # noqa: E402
     build_envelope,
     calculate_base_pivots,
     calculate_case_series,
+    load_case_series,
     fixed_count_rdp,
     frontend_payload,
     plateau_extrema,
@@ -52,6 +53,31 @@ class FakeDatabase:
                 }
                 for index in range(80)
             ]
+        return []
+
+
+class PaginatedDatabase(FakeDatabase):
+    def __init__(self):
+        super().__init__()
+        start = date(2018, 3, 23)
+        self.point_rows = [
+            {
+                "observation_date": (start + timedelta(days=index)).isoformat(),
+                "value": float(index),
+                "frequency": "D",
+            }
+            for index in range(1005)
+        ]
+
+    def request(self, method, table, params=None):
+        params = dict(params or {})
+        self.requests.append((method, table, params))
+        if table == "historical_case_market_cycles":
+            return [{"start_date": "2020-03-23", "trough_date": "2022-12-28"}]
+        if table == "economic_chart_points":
+            offset = int(params.get("offset", "0"))
+            limit = int(params.get("limit", "1000"))
+            return self.point_rows[offset:offset + limit]
         return []
 
 
@@ -177,6 +203,31 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         point_query = db.requests[1][2]
         self.assertEqual("gte.2018-03-23", point_query["observation_date"])
         self.assertIn("observation_date.lte.2024-12-28", point_query["and"])
+
+
+    def test_case_loader_paginates_past_supabase_1000_row_cap(self):
+        db = PaginatedDatabase()
+        rows, frequency, buffer_start, buffer_end = load_case_series(
+            db,
+            case_code="tightening_2022",
+            index_code="NASDAQ_COMPOSITE",
+            series_code="US10Y_REAL",
+        )
+
+        self.assertEqual(1005, len(rows))
+        self.assertEqual("D", frequency)
+        self.assertEqual(date(2018, 3, 23), buffer_start)
+        self.assertEqual(date(2024, 12, 28), buffer_end)
+        self.assertEqual("2018-03-23", rows[0]["observation_date"])
+        self.assertEqual("2020-12-21", rows[-1]["observation_date"])
+
+        point_calls = [
+            params for _, table, params in db.requests
+            if table == "economic_chart_points"
+        ]
+        self.assertEqual(["0", "1000"], [params["offset"] for params in point_calls])
+        self.assertTrue(all(params["limit"] == "1000" for params in point_calls))
+        self.assertTrue(all(params["order"] == "observation_date.asc" for params in point_calls))
 
 
     def test_spike_augmentation_preserves_base_rdp_and_adds_upward_entry_only(self):
