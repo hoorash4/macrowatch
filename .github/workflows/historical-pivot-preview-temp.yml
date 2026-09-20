@@ -1,0 +1,139 @@
+name: Historical pivot preview temp
+
+on:
+  push:
+    paths:
+      - ".github/workflows/historical-pivot-preview-temp.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Generate four latest pivot previews
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p preview-output
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date
+          import matplotlib.pyplot as plt
+          import matplotlib.dates as mdates
+          import historical_pivot_base as hp
+          from common import SupabaseRest
+
+          db = SupabaseRest()
+
+          def get_rows(series_code, start, end):
+              rows = db.request("GET", "economic_chart_points", params={
+                  "select": "observation_date,value,frequency",
+                  "series_code": f"eq.{series_code}",
+                  "observation_date": f"gte.{start.isoformat()}",
+                  "and": f"(observation_date.lte.{end.isoformat()})",
+                  "order": "observation_date.asc",
+                  "limit": "10000",
+              }) or []
+              return rows
+
+          def derive_ten2(start, end):
+              r10 = get_rows("US10Y", start, end)
+              r2 = get_rows("US2Y", start, end)
+              d10 = {str(r["observation_date"])[:10]: float(r["value"]) for r in r10}
+              d2 = {str(r["observation_date"])[:10]: float(r["value"]) for r in r2}
+              dates = sorted(d10.keys() & d2.keys())
+              return [
+                  {"observation_date": d, "value": d10[d] - d2[d], "frequency": "D"}
+                  for d in dates
+              ]
+
+          specs = [
+              ("US10Y_REAL", "US10Y_REAL", "D", date(2018,3,23), date(2024,12,28), -1.3, 2.7),
+              ("NFCI_RISK", "NFCI_RISK", "W", date(2018,3,23), date(2024,12,28), -0.8, 0.2),
+              ("US_COMMERCIAL_CH11", "US_COMMERCIAL_CH11", "M", date(2018,3,23), date(2024,12,28), 160, 1030),
+              ("US10Y2Y_GFC", None, "D", date(2000,10,9), date(2011,3,9), -0.35, 3.05),
+          ]
+
+          for name, series, freq, start, end, ymin, ymax in specs:
+              rows = derive_ten2(start, end) if series is None else get_rows(series, start, end)
+              base = hp.calculate_base_pivots(rows, freq)
+              geometry = hp.ChartGeometry(
+                  display_start=start,
+                  display_end=end,
+                  y_min=ymin,
+                  y_max=ymax,
+                  width=19.0,
+                  height=8.0,
+              )
+              augmented = hp.augment_spike_entry_points(base, geometry)
+              simplified = hp.simplify_pivot_lines(augmented, geometry)
+
+              raw_dates = [date.fromisoformat(str(r["observation_date"])[:10]) for r in rows]
+              raw_vals = [float(r["value"]) for r in rows]
+
+              fig, ax = plt.subplots(figsize=(19, 8))
+              ax.plot(raw_dates, raw_vals, lw=1.0, label="Raw")
+
+              shown = set()
+              for seg in simplified.segments:
+                  label = {
+                      "trend": "Simplified trend",
+                      "sideways": "Sideways",
+                      "spike": "Spike",
+                  }.get(seg.kind, seg.kind)
+                  kwargs = {"lw": 3}
+                  if seg.kind == "sideways":
+                      kwargs["ls"] = "--"
+                  elif seg.kind == "spike":
+                      kwargs["ls"] = ":"
+                  ax.plot(
+                      [seg.start.day, seg.end.day],
+                      [seg.start.value, seg.end.value],
+                      label=label if label not in shown else None,
+                      **kwargs,
+                  )
+                  shown.add(label)
+
+              ax.scatter(
+                  [p.day for p in simplified.markers],
+                  [p.value for p in simplified.markers],
+                  s=45,
+                  zorder=5,
+                  label="Markers",
+              )
+              ax.set_xlim(start, end)
+              ax.set_ylim(ymin, ymax)
+              ax.set_title(f"{name} — latest main")
+              ax.grid(True, alpha=0.2)
+              ax.legend(loc="best")
+              locator = mdates.AutoDateLocator()
+              ax.xaxis.set_major_locator(locator)
+              ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+              fig.tight_layout()
+              out = f"preview-output/{name.lower()}_latest_main_python.png"
+              fig.savefig(out, dpi=180, bbox_inches="tight")
+              plt.close(fig)
+
+              print(name)
+              print("markers:", [(p.day.isoformat(), p.value, p.pivot_type) for p in simplified.markers])
+              print("segments:", [
+                  (s.start.day.isoformat(), s.start.value, s.end.day.isoformat(), s.end.value, s.kind)
+                  for s in simplified.segments
+              ])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: historical-pivot-preview
+          path: preview-output/*.png
+          if-no-files-found: error
