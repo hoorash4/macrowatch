@@ -229,10 +229,19 @@ def _merge_window(
     if not waves:
         return [forced_anchor] if forced_anchor is not None else []
 
-    # One boundary can end before the other, so the final opposite-side point
-    # may not form another consensus run. Preserve that trailing point as a
-    # provisional final wave for Stage 4 to confirm/cancel.
-    last_end = waves[-1].end
+    # One boundary can end before the other, so a final opposite-side point
+    # may not form another consensus run.
+    #
+    # Preserve it ONLY when it fully exceeds the just-finished wave's start
+    # extreme, proving that the apparent final wave was actually reversed:
+    #
+    #   up wave   LOW(start) -> HIGH(end) -> lower LOW(< start)  => keep LOW
+    #   down wave HIGH(start) -> LOW(end)  -> higher HIGH(> start) => keep HIGH
+    #
+    # A merely following higher-low / lower-high is still inside the same normal
+    # wave and must disappear here.
+    last_wave = waves[-1]
+    last_end = last_wave.end
     opposite_type = "low" if last_end.pivot_type == "high" else "high"
     trailing = [
         point
@@ -245,7 +254,16 @@ def _merge_window(
             if opposite_type == "low"
             else max(trailing, key=lambda item: (item.value, item.day))
         )
-        if last_end.day < trailing_end.day:
+
+        resumes_prior_trend = (
+            opposite_type == "low"
+            and trailing_end.value < last_wave.start.value
+        ) or (
+            opposite_type == "high"
+            and trailing_end.value > last_wave.start.value
+        )
+
+        if resumes_prior_trend and last_end.day < trailing_end.day:
             waves.append(
                 _Wave(
                     direction=-1 if opposite_type == "low" else 1,
