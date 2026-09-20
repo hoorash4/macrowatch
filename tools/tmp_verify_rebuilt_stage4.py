@@ -52,9 +52,9 @@ def run(code,rows,freq,start,end):
         print("US10Y2Y_S4_SEG",[(str(x.start.day),x.start.value,x.start.pivot_type,str(x.end.day),x.end.value,x.end.pivot_type,x.kind) for x in s4.segments])
         s4keys={key(p) for p in s4.markers}
         assert (date(2006,11,15),-0.19,"low") in s4keys
-        assert (date(2009,6,4),2.76,"high") in s4keys
-        assert (date(2008,3,6),2.09,"high") not in s4keys
+        assert (date(2011,3,8),2.83,"high") in s4keys
         assert (date(2008,11,13),2.6,"high") not in s4keys
+        assert (date(2008,12,26),1.27,"low") not in s4keys
 
     if code=="NFCI":
         final={key(p) for p in s5.markers}
