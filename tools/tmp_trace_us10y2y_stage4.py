@@ -59,3 +59,15 @@ for i in range(len(m)):
                     continue
                 if a <= 30:
                     print("A",m[j].day,"anchor?",m[i].day,m[k].day,a)
+
+print("EXPECTED_STAGE4_ANGLES")
+by_date={str(p.day):p for p in s3.markers}
+checks=[
+    ("2006-11-15","2008-03-06","2008-11-13"),
+    ("2006-11-15","2008-11-13","2009-06-04"),
+    ("2006-11-15","2009-06-04","2011-03-08"),
+    ("2008-12-26","2009-06-04","2011-03-08"),
+]
+for a,b,cdate in checks:
+    if a in by_date and b in by_date and cdate in by_date:
+        print(a,b,cdate,screen_origin_angle_degrees(by_date[a],by_date[b],by_date[cdate],g))
