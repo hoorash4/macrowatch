@@ -7,7 +7,7 @@ on:
       - ".github/workflows/tmp-historical-2022-full-pool.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -118,3 +118,11 @@ jobs:
           name: historical-2022-full-pool
           path: tmp-historical-2022/
           if-no-files-found: error
+      - name: Publish temporary summary
+        run: |
+          cp tmp-historical-2022/summary.csv tmp-historical-2022-summary.csv
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tmp-historical-2022-summary.csv
+          git commit -m "Publish temporary 2022 Historical pool summary" || exit 0
+          git push
