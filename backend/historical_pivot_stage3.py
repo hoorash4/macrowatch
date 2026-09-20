@@ -585,6 +585,46 @@ def simplify_pivot_lines(
         for wave in wave_segments:
             add_segment(wave.start, wave.end, "trend")
 
+    # End-of-series continuation: an unconfirmed opposite-side bounce must not
+    # hide a later same-side record extreme. Extend the final ordinary trend
+    # endpoint to the last/largest continuation extreme.
+    trend_indexes = [
+        index for index, segment in enumerate(segments)
+        if segment.kind == "trend"
+    ]
+    if trend_indexes:
+        last_index = max(
+            trend_indexes,
+            key=lambda index: segments[index].end.day,
+        )
+        last_segment = segments[last_index]
+        end = last_segment.end
+
+        if end.pivot_type == "low":
+            later = [
+                point for point in line_lows
+                if point.day > end.day and point.value < end.value
+            ]
+            if later:
+                final_low = min(later, key=lambda point: point.value)
+                segments[last_index] = SimplifiedLineSegment(
+                    start=last_segment.start,
+                    end=final_low,
+                    kind="trend",
+                )
+        else:
+            later = [
+                point for point in line_highs
+                if point.day > end.day and point.value > end.value
+            ]
+            if later:
+                final_high = max(later, key=lambda point: point.value)
+                segments[last_index] = SimplifiedLineSegment(
+                    start=last_segment.start,
+                    end=final_high,
+                    kind="trend",
+                )
+
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_segments.sort(key=lambda item: (item.start.day, item.end.day))
 
