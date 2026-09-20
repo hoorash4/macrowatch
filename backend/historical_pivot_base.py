@@ -1000,18 +1000,16 @@ def prune_unconfirmed_retracements(
 ) -> SimplifiedLineResult:
     """Final deletion-only cleanup over the completed 10-degree result.
 
-    This stage sees ONLY points that survived the previous stage. Confirmed trend
-    reversal anchors from that result are protected; cleanup is limited to the
-    interiors between those anchors.
+    This stage sees ONLY points that survived the previous stage.
 
-    Repeatedly inside each anchor interval:
-      - consecutive lows keep only the lower low
-      - consecutive highs keep only the higher high
-      - low -> high -> lower low removes the failed high reversal
-      - high -> low -> higher high removes the failed low reversal
+    A cleanup run is allowed only when at least THREE same-side extrema continue
+    monotonically in one direction:
+      - lows: L1 > L2 > L3 ...  -> keep first/last, remove interior lows
+      - highs: H1 < H2 < H3 ... -> keep first/last, remove interior highs
 
-    Confirmed sideways/spike structure and standalone marker-only points are also
-    protected. No prior-stage point can ever be restored.
+    Two points alone are never enough. Alternating opposite-side retracement
+    points are not deleted by this pass. Confirmed sideways/spike/standalone
+    structure is preserved. No prior-stage point can ever be restored.
     """
     def key(point: PivotPoint) -> tuple[date, float, str]:
         return point.day, point.value, point.pivot_type
@@ -1021,7 +1019,7 @@ def prune_unconfirmed_retracements(
         result.markers,
         key=lambda item: (item.day, item.pivot_type),
     ))
-    if len(original) < 2:
+    if len(original) < 3:
         return result
 
     standalone_keys = {
@@ -1043,101 +1041,51 @@ def prune_unconfirmed_retracements(
         if segment.kind == "spike"
         for point in (segment.start, segment.end)
     }
+    protected_keys = standalone_keys | sideways_keys | spike_keys
 
-    def confirmed_reversal_keys(points: Sequence[PivotPoint]) -> set[tuple[date, float, str]]:
-        """Find only fully confirmed reversals in the current-stage point set."""
-        confirmed: set[tuple[date, float, str]] = set()
-        if points:
-            confirmed.add(key(points[0]))
+    delete_keys: set[tuple[date, float, str]] = set()
 
-        for index, pivot in enumerate(points[:-1]):
-            if pivot.pivot_type == "low":
-                rebound_high: PivotPoint | None = None
-                higher_low_seen = False
-                for item in points[index + 1:]:
-                    if item.pivot_type == "low":
-                        if item.value < pivot.value:
-                            break
-                        if rebound_high is not None and item.value > pivot.value:
-                            higher_low_seen = True
-                        continue
+    for pivot_type in ("low", "high"):
+        same_side = [
+            point for point in original
+            if point.pivot_type == pivot_type
+        ]
+        if len(same_side) < 3:
+            continue
 
-                    if rebound_high is None:
-                        rebound_high = item
-                        continue
-                    if higher_low_seen and item.value > rebound_high.value:
-                        confirmed.add(key(pivot))
-                        break
-                    if not higher_low_seen and item.value > rebound_high.value:
-                        rebound_high = item
+        run_start = 0
+        while run_start < len(same_side) - 2:
+            run_end = run_start + 1
+
+            def continues(left: PivotPoint, right: PivotPoint) -> bool:
+                if pivot_type == "low":
+                    return right.value < left.value
+                return right.value > left.value
+
+            if not continues(same_side[run_start], same_side[run_end]):
+                run_start += 1
                 continue
 
-            pullback_low: PivotPoint | None = None
-            lower_high_seen = False
-            for item in points[index + 1:]:
-                if item.pivot_type == "high":
-                    if item.value > pivot.value:
-                        break
-                    if pullback_low is not None and item.value < pivot.value:
-                        lower_high_seen = True
-                    continue
+            while (
+                run_end + 1 < len(same_side)
+                and continues(same_side[run_end], same_side[run_end + 1])
+            ):
+                run_end += 1
 
-                if pullback_low is None:
-                    pullback_low = item
-                    continue
-                if lower_high_seen and item.value < pullback_low.value:
-                    confirmed.add(key(pivot))
-                    break
-                if not lower_high_seen and item.value < pullback_low.value:
-                    pullback_low = item
+            run = same_side[run_start:run_end + 1]
+            if len(run) >= 3:
+                interior = run[1:-1]
+                if not any(key(point) in protected_keys for point in interior):
+                    delete_keys.update(key(point) for point in interior)
 
-        return confirmed
+            run_start = run_end
 
-    confirmed_anchor_keys = confirmed_reversal_keys(original)
-    protected_keys = (
-        standalone_keys
-        | sideways_keys
-        | spike_keys
-        | confirmed_anchor_keys
-    )
-
-    ordered = list(original)
-
-    # One extra normalization pass only. First remove a failed opposite-side
-    # retracement using the pre-cleanup sequence, then collapse the same-side
-    # points that become adjacent as a direct consequence. Do not iterate again.
-    failed_reversal_delete: set[tuple[date, float, str]] = set()
-    for left, middle, right in zip(original, original[1:], original[2:]):
-        if left.pivot_type != right.pivot_type or middle.pivot_type == left.pivot_type:
-            continue
-        if key(middle) in protected_keys:
-            continue
-        if left.pivot_type == "low" and right.value < left.value:
-            failed_reversal_delete.add(key(middle))
-        elif left.pivot_type == "high" and right.value > left.value:
-            failed_reversal_delete.add(key(middle))
+    if not delete_keys:
+        return result
 
     ordered = [
-        point for point in ordered
-        if key(point) not in failed_reversal_delete
-    ]
-
-    same_side_delete: set[tuple[date, float, str]] = set()
-    for left, right in zip(ordered, ordered[1:]):
-        if left.pivot_type != right.pivot_type:
-            continue
-
-        if left.pivot_type == "low":
-            candidate = left if right.value < left.value else right
-        else:
-            candidate = left if right.value > left.value else right
-
-        if key(candidate) not in protected_keys:
-            same_side_delete.add(key(candidate))
-
-    ordered = [
-        point for point in ordered
-        if key(point) not in same_side_delete
+        point for point in original
+        if key(point) not in delete_keys
     ]
 
     surviving_keys = {key(point) for point in ordered}
@@ -1175,7 +1123,6 @@ def prune_unconfirmed_retracements(
         segments=tuple(rebuilt_segments),
         sideways_segments=surviving_sideways,
     )
-
 
 def simplify_pivot_lines(
     augmented: SpikeAugmentedPivotResult,
