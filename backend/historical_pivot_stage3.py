@@ -1,20 +1,26 @@
-"""Stage 3: merge Stage 2 points into one wave line.
+"""Stage 3: merge Stage 2's upper/lower RDP points into one wave line.
 
-Stage 3 has exactly one responsibility:
-    Stage 2 sealed points -> one chronological wave line.
+This file intentionally contains one Stage-3 algorithm only.
 
-It never reads Stage 1 candidates, envelope data, deleted points, or any earlier
-stage result.  Ordinary points are consumed once by a single state machine.
-Protected sideways/spike structure from Stage 2 is treated as a hard boundary.
+Inputs:
+- Stage 2 final high/low points
+- Stage 2 protection metadata (sideways/spike)
 
-Normal wave rules:
-- rising wave: keep start low -> final high
-- falling wave: keep start high -> final low
-- following/internal points do not become vertices
-- an opposite-side bounce is provisional until the following same-side extreme
-  is known
-- if the old trend makes a new extreme, the provisional reversal is cancelled
-- the first chart wave keeps its real starting anchor
+Output:
+- one chronological wave line
+- protected standalone marker-only spikes
+
+Stage 3 never reads Stage 1 candidates, envelope data, deleted points, or any
+earlier-stage result.
+
+Wave rule:
+- upper and lower RDP boundaries moving together upward = one rising wave
+- upper and lower RDP boundaries moving together downward = one falling wave
+- rising wave keeps only start LOW -> final HIGH
+- falling wave keeps only start HIGH -> final LOW
+- an apparent opposite wave is provisional until its following opposite-side
+  point is checked; if the old trend makes a new extreme, that provisional wave
+  is cancelled completely.
 """
 from __future__ import annotations
 
@@ -28,7 +34,6 @@ from historical_pivot_shared import (
     SidewaysSegment,
     SimplifiedLineResult,
     SimplifiedLineSegment,
-    SpikePeak,
 )
 from historical_pivot_stage2 import Stage2Result
 
@@ -37,264 +42,41 @@ def _key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
 
 
-def _sorted_unique(points: Sequence[PivotPoint]) -> list[PivotPoint]:
+def _unique(points: Sequence[PivotPoint]) -> list[PivotPoint]:
     by_key = {_key(point): point for point in points}
     return sorted(by_key.values(), key=lambda item: (item.day, item.pivot_type))
 
 
-def _first_side_direction(points: Sequence[PivotPoint], pivot_type: str) -> int | None:
-    same_side = sorted(
-        (point for point in points if point.pivot_type == pivot_type),
-        key=lambda item: item.day,
-    )
-    for left, right in zip(same_side, same_side[1:]):
-        if right.value > left.value:
-            return 1
-        if right.value < left.value:
-            return -1
-    return None
-
-
-def _initial_direction(points: Sequence[PivotPoint]) -> str:
-    """Choose the first normal-wave direction from the two RDP boundaries."""
-    high_direction = _first_side_direction(points, "high")
-    low_direction = _first_side_direction(points, "low")
-
-    if high_direction is not None and high_direction == low_direction:
-        return "up" if high_direction > 0 else "down"
-    if high_direction is not None and low_direction is None:
-        return "up" if high_direction > 0 else "down"
-    if low_direction is not None and high_direction is None:
-        return "up" if low_direction > 0 else "down"
-
-    first = min(points, key=lambda item: (item.day, item.pivot_type))
-    return "down" if first.pivot_type == "high" else "up"
+@dataclass(frozen=True)
+class _Leg:
+    start: PivotPoint
+    end: PivotPoint
+    direction: int  # +1 up, -1 down
 
 
 @dataclass
-class _PendingReversal:
-    old_direction: str
-    old_anchor: PivotPoint
-    turn: PivotPoint
-    safe_retrace_seen: bool = False
+class _CandidateRun:
+    direction: int
+    intervals: list[tuple[date, date, _Leg, _Leg]]
 
-
-def _merge_wave_window(
-    points: Sequence[PivotPoint],
-    *,
-    forced_anchor: PivotPoint | None = None,
-    forced_direction: str | None = None,
-) -> list[PivotPoint]:
-    """Reduce one ordinary window with one state machine.
-
-    A reversal can be provisional.  If the old trend subsequently makes a new
-    extreme, the provisional turn is removed and the old wave simply extends.
-    """
-    ordered = _sorted_unique(points)
-    if forced_anchor is not None and _key(forced_anchor) not in {_key(p) for p in ordered}:
-        ordered.append(forced_anchor)
-        ordered.sort(key=lambda item: (item.day, item.pivot_type))
-    if not ordered:
-        return []
-
-    direction = forced_direction or _initial_direction(ordered)
-    anchor_type = "low" if direction == "up" else "high"
-
-    if forced_anchor is not None:
-        anchor = forced_anchor
-    else:
-        anchor = next(
-            (point for point in ordered if point.pivot_type == anchor_type),
-            ordered[0],
+    @property
+    def natural_start(self) -> PivotPoint:
+        if self.direction > 0:
+            return min(
+                (low_leg.start for _, _, _, low_leg in self.intervals),
+                key=lambda item: item.day,
+            )
+        return min(
+            (high_leg.start for _, _, high_leg, _ in self.intervals),
+            key=lambda item: item.day,
         )
 
-    confirmed: list[PivotPoint] = [anchor]
-    extreme: PivotPoint | None = None
 
-    # Ordinary reversal-candidate state.
-    pullback_low: PivotPoint | None = None
-    lower_high_seen = False
-    rebound_high: PivotPoint | None = None
-    higher_low_seen = False
-
-    # A newly detected reversal remains provisional until the new trend survives
-    # one retracement and makes another same-direction extreme.
-    pending: _PendingReversal | None = None
-
-    def reset_candidates() -> None:
-        nonlocal pullback_low, lower_high_seen, rebound_high, higher_low_seen
-        pullback_low = None
-        lower_high_seen = False
-        rebound_high = None
-        higher_low_seen = False
-
-    def start_provisional(new_direction: str, trigger: PivotPoint) -> None:
-        nonlocal direction, anchor, extreme, pending
-        if extreme is None:
-            return
-        turn = extreme
-        confirmed.append(turn)
-        pending = _PendingReversal(
-            old_direction=direction,
-            old_anchor=anchor,
-            turn=turn,
-        )
-        direction = new_direction
-        anchor = turn
-        extreme = trigger
-        reset_candidates()
-
-    def cancel_provisional(resuming_extreme: PivotPoint) -> None:
-        nonlocal direction, anchor, extreme, pending
-        assert pending is not None
-        if confirmed and confirmed[-1] == pending.turn:
-            confirmed.pop()
-        direction = pending.old_direction
-        anchor = pending.old_anchor
-        extreme = resuming_extreme
-        pending = None
-        reset_candidates()
-
-    for point in ordered:
-        if point.day <= anchor.day:
-            # Before the first opposite-side point exists, a more extreme same-side
-            # point can still replace an unprotected starting anchor.
-            if extreme is None and point.pivot_type == anchor.pivot_type:
-                if (
-                    direction == "up"
-                    and point.value < anchor.value
-                ) or (
-                    direction == "down"
-                    and point.value > anchor.value
-                ):
-                    anchor = point
-                    confirmed[0] = point
-            continue
-
-        if extreme is None:
-            wanted = "high" if direction == "up" else "low"
-            if point.pivot_type == wanted:
-                extreme = point
-            elif point.pivot_type == anchor.pivot_type:
-                if (
-                    direction == "up"
-                    and point.value < anchor.value
-                ) or (
-                    direction == "down"
-                    and point.value > anchor.value
-                ):
-                    anchor = point
-                    confirmed[-1] = point
-            continue
-
-        # A provisional reversal can still be cancelled by the old trend making
-        # a new extreme beyond the provisional turning point.
-        if pending is not None:
-            if (
-                direction == "up"
-                and point.pivot_type == "low"
-                and point.value < pending.turn.value
-            ):
-                cancel_provisional(point)
-                continue
-            if (
-                direction == "down"
-                and point.pivot_type == "high"
-                and point.value > pending.turn.value
-            ):
-                cancel_provisional(point)
-                continue
-
-            if direction == "up":
-                if point.pivot_type == "low":
-                    if point.value > pending.turn.value:
-                        pending.safe_retrace_seen = True
-                        if pullback_low is None or point.value < pullback_low.value:
-                            pullback_low = point
-                    continue
-
-                if point.value > extreme.value:
-                    if pending.safe_retrace_seen:
-                        pending = None
-                    extreme = point
-                    pullback_low = None
-                    lower_high_seen = False
-                continue
-
-            # pending downtrend
-            if point.pivot_type == "high":
-                if point.value < pending.turn.value:
-                    pending.safe_retrace_seen = True
-                    if rebound_high is None or point.value > rebound_high.value:
-                        rebound_high = point
-                continue
-
-            if point.value < extreme.value:
-                if pending.safe_retrace_seen:
-                    pending = None
-                extreme = point
-                rebound_high = None
-                higher_low_seen = False
-            continue
-
-        if direction == "up":
-            if point.pivot_type == "high":
-                if point.value > extreme.value:
-                    # Same rising wave: update only the endpoint.
-                    extreme = point
-                    pullback_low = None
-                    lower_high_seen = False
-                elif pullback_low is not None:
-                    lower_high_seen = True
-                continue
-
-            # A low inside an uptrend is provisional.
-            if pullback_low is None:
-                pullback_low = point
-                continue
-
-            if lower_high_seen and point.value < pullback_low.value:
-                start_provisional("down", point)
-                continue
-
-            if point.value < pullback_low.value:
-                pullback_low = point
-            continue
-
-        # direction == "down"
-        if point.pivot_type == "low":
-            if point.value < extreme.value:
-                # Same falling wave: update only the endpoint.
-                extreme = point
-                rebound_high = None
-                higher_low_seen = False
-            elif rebound_high is not None:
-                higher_low_seen = True
-            continue
-
-        # A high inside a downtrend is provisional.
-        if rebound_high is None:
-            rebound_high = point
-            continue
-
-        if higher_low_seen and point.value > rebound_high.value:
-            start_provisional("up", point)
-            continue
-
-        if point.value > rebound_high.value:
-            rebound_high = point
-
-    if extreme is not None and (not confirmed or confirmed[-1] != extreme):
-        confirmed.append(extreme)
-
-    # Consecutive duplicate vertices are impossible by construction, but enforce it
-    # at the boundary so Stage 4 receives one clean ordered line.
-    result: list[PivotPoint] = []
-    for point in confirmed:
-        if result and _key(result[-1]) == _key(point):
-            continue
-        result.append(point)
-    return result
+@dataclass(frozen=True)
+class _Wave:
+    direction: int
+    start: PivotPoint
+    end: PivotPoint
 
 
 @dataclass(frozen=True)
@@ -305,10 +87,319 @@ class _HardSegment:
     sideways: SidewaysSegment | None = None
 
     @property
-    def restart_direction(self) -> str:
-        # A protected high endpoint begins a possible down wave; a protected low
-        # endpoint begins a possible up wave.
-        return "down" if self.end.pivot_type == "high" else "up"
+    def restart_direction(self) -> int:
+        return -1 if self.end.pivot_type == "high" else 1
+
+
+def _legs(points: Sequence[PivotPoint], pivot_type: str) -> list[_Leg]:
+    same_side = sorted(
+        (point for point in points if point.pivot_type == pivot_type),
+        key=lambda item: item.day,
+    )
+    result: list[_Leg] = []
+    for left, right in zip(same_side, same_side[1:]):
+        if right.value == left.value:
+            continue
+        result.append(
+            _Leg(
+                start=left,
+                end=right,
+                direction=1 if right.value > left.value else -1,
+            )
+        )
+    return result
+
+
+def _consensus_runs(points: Sequence[PivotPoint]) -> list[_CandidateRun]:
+    """Find periods where upper and lower boundaries agree on direction."""
+    highs = _legs(points, "high")
+    lows = _legs(points, "low")
+    intervals: list[tuple[date, date, int, _Leg, _Leg]] = []
+
+    for high_leg in highs:
+        for low_leg in lows:
+            if high_leg.direction != low_leg.direction:
+                continue
+            start = max(high_leg.start.day, low_leg.start.day)
+            end = min(high_leg.end.day, low_leg.end.day)
+            if start > end:
+                continue
+            intervals.append(
+                (start, end, high_leg.direction, high_leg, low_leg)
+            )
+
+    intervals.sort(key=lambda item: (item[0], item[1]))
+
+    # Only a consensus change can start a new wave.  Gaps/disagreement between
+    # the two boundaries do not themselves create a turn.
+    runs: list[_CandidateRun] = []
+    for start, end, direction, high_leg, low_leg in intervals:
+        if runs and runs[-1].direction == direction:
+            runs[-1].intervals.append((start, end, high_leg, low_leg))
+            continue
+        runs.append(
+            _CandidateRun(
+                direction=direction,
+                intervals=[(start, end, high_leg, low_leg)],
+            )
+        )
+    return runs
+
+
+def _extreme_after(
+    points: Sequence[PivotPoint],
+    start: PivotPoint,
+    direction: int,
+) -> PivotPoint | None:
+    wanted = "high" if direction > 0 else "low"
+    candidates = [
+        point
+        for point in points
+        if point.day > start.day and point.pivot_type == wanted
+    ]
+    if not candidates:
+        return None
+    if direction > 0:
+        return max(candidates, key=lambda item: (item.value, item.day))
+    return min(candidates, key=lambda item: (item.value, item.day))
+
+
+def _build_waves(
+    points: Sequence[PivotPoint],
+    runs: Sequence[_CandidateRun],
+    *,
+    forced_anchor: PivotPoint | None,
+    forced_direction: int | None,
+) -> list[_Wave]:
+    """Build continuous candidate waves from consensus direction runs."""
+    if not points:
+        return []
+
+    active_runs = list(runs)
+
+    # A protected prior endpoint fixes the first wave direction.  Ignore earlier
+    # consensus noise until that direction appears.
+    if forced_direction is not None:
+        first_index = next(
+            (
+                index
+                for index, run in enumerate(active_runs)
+                if run.direction == forced_direction
+            ),
+            None,
+        )
+        if first_index is not None:
+            active_runs = active_runs[first_index:]
+
+    if not active_runs:
+        if forced_anchor is None or forced_direction is None:
+            return []
+        end = _extreme_after(points, forced_anchor, forced_direction)
+        if end is None:
+            return []
+        return [_Wave(forced_direction, forced_anchor, end)]
+
+    waves: list[_Wave] = []
+    for index, run in enumerate(active_runs):
+        if index == 0:
+            start = forced_anchor or run.natural_start
+        else:
+            start = waves[-1].end
+
+        if index + 1 < len(active_runs):
+            # The next opposite consensus run starts at the current wave's turn.
+            end = active_runs[index + 1].natural_start
+        else:
+            end = _extreme_after(points, start, run.direction)
+
+        if end is None or start.day >= end.day:
+            continue
+        wanted_end = "high" if run.direction > 0 else "low"
+        if end.pivot_type != wanted_end:
+            end = _extreme_after(points, start, run.direction)
+            if end is None or start.day >= end.day:
+                continue
+
+        waves.append(_Wave(run.direction, start, end))
+
+    return waves
+
+
+def _first_after(
+    points: Sequence[PivotPoint],
+    *,
+    after: date,
+    pivot_type: str,
+) -> PivotPoint | None:
+    return next(
+        (
+            point
+            for point in sorted(points, key=lambda item: item.day)
+            if point.day > after and point.pivot_type == pivot_type
+        ),
+        None,
+    )
+
+
+def _cancel_false_reversals(
+    points: Sequence[PivotPoint],
+    waves: Sequence[_Wave],
+    *,
+    forced_anchor: PivotPoint | None,
+    forced_direction: int | None,
+) -> list[_Wave]:
+    """Cancel a provisional reversal when the old trend makes a new extreme.
+
+    Example:
+        down wave -> provisional up wave LOW->HIGH -> next LOW below that LOW
+        => provisional up wave is deleted and the down wave continues to the
+           lower LOW.
+
+    Mirror logic applies to an apparent down reversal inside an uptrend.
+    """
+    current = list(waves)
+    while current:
+        cancelled_index: int | None = None
+
+        for index, wave in enumerate(current):
+            if wave.direction > 0:
+                following = _first_after(
+                    points,
+                    after=wave.end.day,
+                    pivot_type="low",
+                )
+                if following is not None and following.value < wave.start.value:
+                    cancelled_index = index
+                    break
+            else:
+                following = _first_after(
+                    points,
+                    after=wave.end.day,
+                    pivot_type="high",
+                )
+                if following is not None and following.value > wave.start.value:
+                    cancelled_index = index
+                    break
+
+        if cancelled_index is None:
+            break
+
+        del current[cancelled_index]
+
+        # Rebuild the remaining direction sequence from scratch.  This is not a
+        # patch/reinsertion pass: cancellation changes the wave sequence itself.
+        directions = [wave.direction for wave in current]
+        compact_directions: list[int] = []
+        for direction in directions:
+            if not compact_directions or compact_directions[-1] != direction:
+                compact_directions.append(direction)
+
+        synthetic_runs = [
+            _CandidateRun(direction=direction, intervals=[])
+            for direction in compact_directions
+        ]
+
+        # Empty synthetic runs have no natural start, so rebuild directly from
+        # surviving wave starts and then extend the final wave to the true extreme.
+        if not current:
+            if forced_anchor is not None and forced_direction is not None:
+                end = _extreme_after(points, forced_anchor, forced_direction)
+                return (
+                    [_Wave(forced_direction, forced_anchor, end)]
+                    if end is not None and forced_anchor.day < end.day
+                    else []
+                )
+            return []
+
+        rebuilt: list[_Wave] = []
+        first_start = forced_anchor or current[0].start
+        for index, direction in enumerate(compact_directions):
+            start = first_start if index == 0 else rebuilt[-1].end
+
+            later_same = next(
+                (
+                    wave
+                    for wave in current
+                    if wave.direction == direction and wave.end.day > start.day
+                ),
+                None,
+            )
+            if index + 1 < len(compact_directions):
+                next_direction = compact_directions[index + 1]
+                next_wave = next(
+                    (
+                        wave
+                        for wave in current
+                        if wave.direction == next_direction
+                        and wave.start.day > start.day
+                    ),
+                    None,
+                )
+                end = next_wave.start if next_wave is not None else None
+            else:
+                end = _extreme_after(points, start, direction)
+
+            if end is None and later_same is not None:
+                end = later_same.end
+            if end is not None and start.day < end.day:
+                rebuilt.append(_Wave(direction, start, end))
+
+        current = rebuilt
+
+    return current
+
+
+def _merge_window(
+    points: Sequence[PivotPoint],
+    *,
+    forced_anchor: PivotPoint | None = None,
+    forced_direction: int | None = None,
+) -> list[PivotPoint]:
+    ordered = _unique(points)
+    if forced_anchor is not None and _key(forced_anchor) not in {_key(p) for p in ordered}:
+        ordered.append(forced_anchor)
+        ordered.sort(key=lambda item: (item.day, item.pivot_type))
+    if not ordered:
+        return []
+
+    runs = _consensus_runs(ordered)
+
+    # With no consensus yet, a forced protected endpoint can still own the
+    # unfinished final wave.
+    if not runs:
+        if forced_anchor is not None and forced_direction is not None:
+            end = _extreme_after(ordered, forced_anchor, forced_direction)
+            return [forced_anchor, end] if end is not None else [forced_anchor]
+
+        # Initial fallback only when one boundary is too short to form a leg.
+        first = min(ordered, key=lambda item: (item.day, item.pivot_type))
+        direction = -1 if first.pivot_type == "high" else 1
+        end = _extreme_after(ordered, first, direction)
+        return [first, end] if end is not None else [first]
+
+    waves = _build_waves(
+        ordered,
+        runs,
+        forced_anchor=forced_anchor,
+        forced_direction=forced_direction,
+    )
+    waves = _cancel_false_reversals(
+        ordered,
+        waves,
+        forced_anchor=forced_anchor,
+        forced_direction=forced_direction,
+    )
+
+    if not waves:
+        return [forced_anchor] if forced_anchor is not None else []
+
+    vertices = [waves[0].start]
+    for wave in waves:
+        if vertices[-1] != wave.start:
+            vertices.append(wave.start)
+        if vertices[-1] != wave.end:
+            vertices.append(wave.end)
+    return vertices
 
 
 def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
@@ -317,32 +408,25 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
     for spike in stage2.spike_peaks:
         if spike.marker_only or spike.entry is None:
             continue
-        if spike.entry.day >= spike.point.day:
-            continue
-        segments.append(
-            _HardSegment(
-                start=spike.entry,
-                end=spike.point,
-                kind="spike",
+        if spike.entry.day < spike.point.day:
+            segments.append(
+                _HardSegment(spike.entry, spike.point, "spike")
             )
-        )
 
     for sideways in (
         *stage2.high_sideways_segments,
         *stage2.low_sideways_segments,
     ):
-        if sideways.start.day >= sideways.end.day:
-            continue
-        segments.append(
-            _HardSegment(
-                start=sideways.start,
-                end=sideways.end,
-                kind="sideways",
-                sideways=sideways,
+        if sideways.start.day < sideways.end.day:
+            segments.append(
+                _HardSegment(
+                    sideways.start,
+                    sideways.end,
+                    "sideways",
+                    sideways,
+                )
             )
-        )
 
-    # A normal spike takes precedence over any overlapping ordinary sideways span.
     segments.sort(
         key=lambda item: (
             item.start.day,
@@ -350,6 +434,9 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
             item.end.day,
         )
     )
+
+    # Protection boundaries may share an endpoint, but an overlapping interior
+    # span cannot independently own the same part of the line.
     accepted: list[_HardSegment] = []
     occupied_until: date | None = None
     for segment in segments:
@@ -364,12 +451,7 @@ def simplify_pivot_lines(
     augmented: Stage2Result,
     geometry: ChartGeometry,
 ) -> SimplifiedLineResult:
-    """Return Stage 3's single merged wave line.
-
-    geometry is intentionally unused here.  Angle/sideways classification was
-    completed before this stage; Stage 3 receives only Stage 2's sealed points
-    and protection metadata.
-    """
+    """Return one Stage-3 wave line from Stage-2 points only."""
     del geometry
 
     marker_only_spikes = tuple(
@@ -377,74 +459,61 @@ def simplify_pivot_lines(
     )
     marker_only_keys = {_key(spike.point) for spike in marker_only_spikes}
 
-    line_points = _sorted_unique(
+    points = _unique(
         tuple(
             point
             for point in (*augmented.high_pivots, *augmented.low_pivots)
             if _key(point) not in marker_only_keys
         )
     )
-    if not line_points:
-        return SimplifiedLineResult(
-            markers=tuple(
-                sorted(
-                    (spike.point for spike in marker_only_spikes),
-                    key=lambda item: (item.day, item.pivot_type),
-                )
-            ),
-            segments=(),
-            sideways_segments=(),
-        )
 
     hard = _hard_segments(augmented)
     segments: list[SimplifiedLineSegment] = []
     sideways_out: list[SidewaysSegment] = []
-    used: dict[tuple[date, float, str], PivotPoint] = {}
+    markers: dict[tuple[date, float, str], PivotPoint] = {}
 
     def remember(point: PivotPoint) -> None:
-        used[_key(point)] = point
+        markers[_key(point)] = point
 
     def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
         if start.day >= end.day:
             return
         remember(start)
         remember(end)
-        candidate = SimplifiedLineSegment(start=start, end=end, kind=kind)
-        if candidate not in segments:
-            segments.append(candidate)
+        segment = SimplifiedLineSegment(start, end, kind)
+        if segment not in segments:
+            segments.append(segment)
 
-    def add_wave_vertices(vertices: Sequence[PivotPoint]) -> None:
-        for left, right in zip(vertices, vertices[1:]):
-            add_segment(left, right, "trend")
+    def add_vertices(vertices: Sequence[PivotPoint]) -> None:
         if len(vertices) == 1:
             remember(vertices[0])
+        for left, right in zip(vertices, vertices[1:]):
+            add_segment(left, right, "trend")
 
     cursor_day: date | None = None
     forced_anchor: PivotPoint | None = None
-    forced_direction: str | None = None
+    forced_direction: int | None = None
 
     for protected in hard:
         window = [
             point
-            for point in line_points
+            for point in points
             if (cursor_day is None or point.day >= cursor_day)
-            and point.day < protected.start.day
+            and point.day <= protected.start.day
         ]
         if forced_anchor is not None:
             window.append(forced_anchor)
 
-        vertices = _merge_wave_window(
+        vertices = _merge_window(
             window,
             forced_anchor=forced_anchor,
             forced_direction=forced_direction,
         )
-        add_wave_vertices(vertices)
+        add_vertices(vertices)
 
         if vertices and vertices[-1] != protected.start:
             add_segment(vertices[-1], protected.start, "trend")
-        elif not vertices and forced_anchor is not None and forced_anchor != protected.start:
-            add_segment(forced_anchor, protected.start, "trend")
-        else:
+        elif not vertices:
             remember(protected.start)
 
         add_segment(protected.start, protected.end, protected.kind)
@@ -457,27 +526,25 @@ def simplify_pivot_lines(
 
     tail = [
         point
-        for point in line_points
+        for point in points
         if cursor_day is None or point.day >= cursor_day
     ]
     if forced_anchor is not None:
         tail.append(forced_anchor)
 
-    tail_vertices = _merge_wave_window(
-        tail,
-        forced_anchor=forced_anchor,
-        forced_direction=forced_direction,
+    add_vertices(
+        _merge_window(
+            tail,
+            forced_anchor=forced_anchor,
+            forced_direction=forced_direction,
+        )
     )
-    add_wave_vertices(tail_vertices)
 
     for spike in marker_only_spikes:
         remember(spike.point)
 
-    # Stage 3 is deletion-only relative to Stage 2.  There is no source from
-    # which an earlier candidate/deleted point could re-enter.
     stage2_keys = {_key(point) for point in augmented.display_markers}
-    output_keys = set(used)
-    if not output_keys.issubset(stage2_keys):
+    if not set(markers).issubset(stage2_keys):
         raise RuntimeError("stage3 produced a point absent from stage2")
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
@@ -486,7 +553,7 @@ def simplify_pivot_lines(
     return SimplifiedLineResult(
         markers=tuple(
             sorted(
-                used.values(),
+                markers.values(),
                 key=lambda item: (item.day, item.pivot_type),
             )
         ),
