@@ -185,6 +185,7 @@ def simplify_pivot_lines(
 
     normal_wave_removed: set[tuple[date, float, str]] = set()
     normal_wave_kept: set[tuple[date, float, str]] = set()
+    normal_wave_segments: list[SimplifiedLineSegment] = []
 
     for component in components:
         direction = component[0][2]
@@ -244,6 +245,9 @@ def simplify_pivot_lines(
 
         normal_wave_kept.update(keep_keys)
         normal_wave_removed.update(delete_keys)
+        normal_wave_segments.append(
+            SimplifiedLineSegment(start=start, end=end, kind="trend")
+        )
 
     # Keep wins when adjacent waves share a true turning endpoint.
     normal_wave_removed.difference_update(normal_wave_kept)
@@ -488,6 +492,40 @@ def simplify_pivot_lines(
         add_segment(reversal_owner, high_candidate, "trend")
         anchor = high_candidate
         direction = "up"
+
+    if normal_wave_segments:
+        # Stage 3 normal-wave decisions are authoritative. The legacy connector
+        # may fill gaps outside them, but it may not cross or replace a confirmed
+        # normal wave or skip a turning endpoint shared by two waves.
+        wave_segments = sorted(
+            normal_wave_segments,
+            key=lambda item: (item.start.day, item.end.day),
+        )
+        wave_endpoint_days = {
+            point.day
+            for segment in wave_segments
+            for point in (segment.start, segment.end)
+        }
+
+        def crosses_wave_structure(segment: SimplifiedLineSegment) -> bool:
+            if any(
+                wave.start.day <= segment.start.day
+                and segment.end.day <= wave.end.day
+                for wave in wave_segments
+            ):
+                return True
+            return any(
+                segment.start.day < endpoint_day < segment.end.day
+                for endpoint_day in wave_endpoint_days
+            )
+
+        segments = [
+            segment
+            for segment in segments
+            if not crosses_wave_structure(segment)
+        ]
+        for wave in wave_segments:
+            add_segment(wave.start, wave.end, "trend")
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_segments.sort(key=lambda item: (item.start.day, item.end.day))
