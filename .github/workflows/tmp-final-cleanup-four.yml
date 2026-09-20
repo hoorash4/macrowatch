@@ -1,0 +1,27 @@
+name: Temporary final cleanup four charts
+on:
+  push:
+    paths:
+      - ".github/workflows/tmp-final-cleanup-four.yml"
+      - "tools/tmp_final_cleanup_four.py"
+      - "backend/historical_pivot_base.py"
+      - "tests/test_historical_pivot_stage_boundaries.py"
+jobs:
+  verify-render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install requests matplotlib
+      - name: Unit tests
+        run: python -m unittest tests.test_historical_pivot_stage_boundaries -v
+      - name: Render four charts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_final_cleanup_four.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-cleanup-four-charts
+          path: tmp_final_cleanup_charts/*.png
