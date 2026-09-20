@@ -749,11 +749,13 @@ def prune_same_trend_extremes(
     run_starts: list[tuple[PivotPoint, str]] = []
     direction = initial_direction()
     if ordered_points and direction is not None:
-        run_starts.append((ordered_points[0], direction))
-
-        anchor_index = 0
+        # The first point is only a PROVISIONAL anchor. If the same-side extreme
+        # is exceeded before an opposite reversal is confirmed, that provisional
+        # anchor is cancelled and replaced by the newer extreme.
+        current_anchor = ordered_points[0]
         scan_index = 1
-        while scan_index < len(ordered_points):
+
+        while True:
             if direction == "down":
                 trend_low: PivotPoint | None = None
                 rebound_high: PivotPoint | None = None
@@ -762,6 +764,20 @@ def prune_same_trend_extremes(
 
                 while scan_index < len(ordered_points):
                     item = ordered_points[scan_index]
+
+                    # A higher high cancels the provisional down-reversal anchor.
+                    if (
+                        item.pivot_type == "high"
+                        and current_anchor.pivot_type == "high"
+                        and item.value > current_anchor.value
+                    ):
+                        current_anchor = item
+                        trend_low = None
+                        rebound_high = None
+                        higher_low_seen = False
+                        scan_index += 1
+                        continue
+
                     if item.pivot_type == "low":
                         if trend_low is None or item.value < trend_low.value:
                             trend_low = item
@@ -778,10 +794,10 @@ def prune_same_trend_extremes(
                                     trend_low.day,
                                     item.day,
                                 ) or trend_low
-                                run_starts.append((new_anchor, "up"))
+                                run_starts.append((current_anchor, "down"))
+                                current_anchor = new_anchor
                                 direction = "up"
-                                anchor_index = ordered_points.index(new_anchor)
-                                scan_index = anchor_index + 1
+                                scan_index = ordered_points.index(new_anchor) + 1
                                 confirmed = True
                                 break
                             elif item.value > rebound_high.value:
@@ -789,6 +805,7 @@ def prune_same_trend_extremes(
                     scan_index += 1
 
                 if not confirmed:
+                    run_starts.append((current_anchor, "down"))
                     break
                 continue
 
@@ -799,6 +816,20 @@ def prune_same_trend_extremes(
 
             while scan_index < len(ordered_points):
                 item = ordered_points[scan_index]
+
+                # A lower low cancels the provisional up-reversal anchor.
+                if (
+                    item.pivot_type == "low"
+                    and current_anchor.pivot_type == "low"
+                    and item.value < current_anchor.value
+                ):
+                    current_anchor = item
+                    trend_high = None
+                    pullback_low = None
+                    lower_high_seen = False
+                    scan_index += 1
+                    continue
+
                 if item.pivot_type == "high":
                     if trend_high is None or item.value > trend_high.value:
                         trend_high = item
@@ -815,10 +846,10 @@ def prune_same_trend_extremes(
                                 trend_high.day,
                                 item.day,
                             ) or trend_high
-                            run_starts.append((new_anchor, "down"))
+                            run_starts.append((current_anchor, "up"))
+                            current_anchor = new_anchor
                             direction = "down"
-                            anchor_index = ordered_points.index(new_anchor)
-                            scan_index = anchor_index + 1
+                            scan_index = ordered_points.index(new_anchor) + 1
                             confirmed = True
                             break
                         elif item.value < pullback_low.value:
@@ -826,32 +857,8 @@ def prune_same_trend_extremes(
                 scan_index += 1
 
             if not confirmed:
+                run_starts.append((current_anchor, "up"))
                 break
-
-    # The previous stage has already resolved provisional reversals. Any actual
-    # value-direction turn that still exists in its connected line is therefore
-    # a confirmed reversal anchor for THIS stage. The 10-degree pass must never
-    # let an earlier run cross and delete such a surviving turn.
-    connected_keys = {
-        key(point)
-        for segment in result.segments
-        for point in (segment.start, segment.end)
-    }
-    connected_points = [
-        point for point in points
-        if key(point) in connected_keys
-    ]
-    for previous, current, following in zip(
-        connected_points,
-        connected_points[1:],
-        connected_points[2:],
-    ):
-        incoming = current.value - previous.value
-        outgoing = following.value - current.value
-        if incoming == 0 or outgoing == 0 or incoming * outgoing >= 0:
-            continue
-        run_direction = "up" if outgoing > 0 else "down"
-        run_starts.append((current, run_direction))
 
     # A point may be encountered again when a sideways END or an already
     # simplified line turn becomes the confirmed reversal anchor. Keep only its
