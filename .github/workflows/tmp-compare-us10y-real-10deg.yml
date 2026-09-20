@@ -9,10 +9,9 @@ jobs:
       fail-fast: false
       matrix:
         ref:
-          - "ab8a32142467b2b25e38983d42cec0c53262ca58"
-          - "1564cd0c273bd2264ba99f16c5f4486b972d111f"
-          - "b7e167e47e2c71cab9821bdba5371f39a73b7103"
-          - "8efe59822ee2430023e6aa3424102ae5117116c5"
+          - "0bdf6deadee7354be3cf638353c87ee9dc19ebfa"
+          - "2691028c05a1b84dfa6ac2e980115aaab1651de8"
+          - "090c6957316b8d14107ab499e69631cb16bcd8d2"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
