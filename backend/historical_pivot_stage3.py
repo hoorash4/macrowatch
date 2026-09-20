@@ -388,6 +388,12 @@ def simplify_pivot_lines(
         if direction == "up":
             next_high = next_after(highs, anchor.day)
             if next_high is None:
+                # No later high remains, but a later low can still be the final
+                # confirmed endpoint of the trailing down wave.
+                final_low = next_valid_opposite(lows, anchor.day, "down")
+                if final_low is not None:
+                    add_segment(anchor, final_low, "trend")
+                    anchor = final_low
                 break
 
             # A spike/restart can leave the current anchor on the opposite side.
@@ -442,6 +448,12 @@ def simplify_pivot_lines(
 
         next_low = next_after(lows, anchor.day)
         if next_low is None:
+            # Mirror case: no later low remains, but a later high can still be
+            # the final endpoint of the trailing up wave.
+            final_high = next_valid_opposite(highs, anchor.day, "up")
+            if final_high is not None:
+                add_segment(anchor, final_high, "trend")
+                anchor = final_high
             break
 
         # A spike/restart can leave the current anchor on the opposite side.
