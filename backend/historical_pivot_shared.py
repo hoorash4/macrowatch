@@ -12,24 +12,9 @@ from datetime import date
 from typing import Any, Iterable, Sequence
 
 BUFFER_MONTHS = 24
-SPIKE_ANGLE_THRESHOLD_DEG = 40.0
 SIDEWAYS_ANGLE_THRESHOLD_DEG = 6.0
 SAME_TREND_ANGLE_THRESHOLD_DEG = 10.0
 SUPABASE_REST_PAGE_SIZE = 1000
-
-@dataclass(frozen=True)
-class PivotPolicy:
-    envelope_points: int
-    rdp_points: int
-    envelope_calendar_radius_days: int | None = None
-
-
-PIVOT_POLICIES = {
-    "D": PivotPolicy(envelope_points=35, rdp_points=14, envelope_calendar_radius_days=17),
-    "W": PivotPolicy(envelope_points=5, rdp_points=14),
-    "M": PivotPolicy(envelope_points=3, rdp_points=10),
-}
-
 
 @dataclass(frozen=True)
 class SeriesPoint:
@@ -38,36 +23,10 @@ class SeriesPoint:
 
 
 @dataclass(frozen=True)
-class EnvelopePoint:
-    day: date
-    value: float
-    upper: float
-    lower: float
-
-
-@dataclass(frozen=True)
 class PivotPoint:
     day: date
     value: float
     pivot_type: str
-
-
-@dataclass(frozen=True)
-class BasePivotResult:
-    frequency: str
-    policy: PivotPolicy
-    high_candidates: tuple[PivotPoint, ...]
-    low_candidates: tuple[PivotPoint, ...]
-    high_pivots: tuple[PivotPoint, ...]
-    low_pivots: tuple[PivotPoint, ...]
-
-    @property
-    def display_markers(self) -> tuple[PivotPoint, ...]:
-        """Return only marker coordinates for overlay on the untouched raw chart."""
-        return tuple(sorted(
-            (*self.high_pivots, *self.low_pivots),
-            key=lambda item: (item.day, item.pivot_type),
-        ))
 
 
 @dataclass(frozen=True)
@@ -145,49 +104,6 @@ class SimplifiedLineResult:
                     raise ValueError(
                         "stage output contains sideways metadata for a deleted marker"
                     )
-
-
-@dataclass(frozen=True)
-class SpikeAugmentedPivotResult:
-    """Sealed final stage-1 output.
-
-    Only pivots that are confirmed at the end of stage 1 are retained here.
-    Earlier plateau candidates, pre-spike RDP state, and deleted/debug points are
-    intentionally absent so later stages cannot inspect or resurrect them.
-    """
-
-    high_pivots: tuple[PivotPoint, ...]
-    low_pivots: tuple[PivotPoint, ...]
-    spike_peaks: tuple[SpikePeak, ...] = ()
-
-    def __post_init__(self) -> None:
-        final_keys = {
-            (item.day, item.value, item.pivot_type)
-            for item in (*self.high_pivots, *self.low_pivots)
-        }
-        for spike in self.spike_peaks:
-            peak_key = (
-                spike.point.day,
-                spike.point.value,
-                spike.point.pivot_type,
-            )
-            if peak_key not in final_keys:
-                raise ValueError("stage-1 spike metadata references a non-final peak")
-            if spike.entry is not None:
-                entry_key = (
-                    spike.entry.day,
-                    spike.entry.value,
-                    spike.entry.pivot_type,
-                )
-                if entry_key not in final_keys:
-                    raise ValueError("stage-1 spike metadata references a non-final entry")
-
-    @property
-    def display_markers(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(
-            (*self.high_pivots, *self.low_pivots),
-            key=lambda item: (item.day, item.pivot_type),
-        ))
 
 
 def shift_months(value: date, months: int) -> date:
