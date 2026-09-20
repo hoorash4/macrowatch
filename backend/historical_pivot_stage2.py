@@ -12,10 +12,10 @@ from historical_pivot_shared import (
     ChartGeometry,
     PivotPoint,
     SidewaysSegment,
-    SpikeAugmentedPivotResult,
     SpikePeak,
     classify_sideways_reference_line,
 )
+from historical_pivot_stage1 import SpikeAugmentedPivotResult
 
 @dataclass(frozen=True)
 class Stage2Result:
