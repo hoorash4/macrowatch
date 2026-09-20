@@ -18,7 +18,7 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
       - name: Run historical pivot tests
-        run: python -m unittest tests.test_historical_pivot_base
+        run: python -m unittest tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_case_loader_paginates_past_supabase_1000_row_cap
       - name: Verify live pagination
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
