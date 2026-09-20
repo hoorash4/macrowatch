@@ -55,13 +55,48 @@ def finalize_sideways_protection(
         points: Sequence[PivotPoint],
         prior_trend: str,
     ) -> tuple[SidewaysSegment, ...]:
+        """Keep a flat same-side pair only when that side arrived from the
+        matching trend direction.
+
+        Sideways is not defined by a flat high/high or low/low pair alone.
+        The pair must follow an already progressing same-side trend:
+        - uptrend  -> rising highs, then high/high <= 6 degrees
+        - downtrend -> falling lows, then low/low <= 6 degrees
+
+        Once a sideways run has been established, adjacent flat pairs may
+        continue that same run.
+        """
         found: list[SidewaysSegment] = []
-        for left, right in zip(points, points[1:]):
+        ordered = tuple(sorted(points, key=lambda item: item.day))
+
+        for index, (left, right) in enumerate(zip(ordered, ordered[1:])):
             segment = classify_sideways_reference_line(
                 left, right, prior_trend, geometry,
             )
-            if segment is not None:
+            if segment is None:
+                continue
+
+            continues_sideways = bool(
+                found
+                and found[-1].end == left
+                and found[-1].prior_trend == prior_trend
+            )
+            if continues_sideways:
                 found.append(segment)
+                continue
+
+            if index == 0:
+                continue
+
+            previous = ordered[index - 1]
+            arrived_from_trend = (
+                left.value > previous.value
+                if prior_trend == "up"
+                else left.value < previous.value
+            )
+            if arrived_from_trend:
+                found.append(segment)
+
         return tuple(found)
 
     return Stage2Result(
