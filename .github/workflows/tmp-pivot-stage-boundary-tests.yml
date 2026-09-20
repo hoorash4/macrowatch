@@ -1,0 +1,18 @@
+name: Temporary pivot stage-boundary tests
+on:
+  push:
+    paths:
+      - "backend/historical_pivot_base.py"
+      - "tests/test_historical_pivot_base.py"
+      - "tests/test_historical_pivot_stage_boundaries.py"
+      - ".github/workflows/tmp-pivot-stage-boundary-tests.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pytest
+      - run: PYTHONPATH=backend pytest -q tests/test_historical_pivot_base.py tests/test_historical_pivot_stage_boundaries.py
