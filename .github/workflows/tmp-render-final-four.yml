@@ -1,0 +1,24 @@
+name: Temporary render four final pivot charts
+on:
+  push:
+    paths:
+      - "tools/tmp_render_final_four.py"
+      - ".github/workflows/tmp-render-final-four.yml"
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests matplotlib
+      - name: Render
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_render_final_four.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-four-charts
+          path: tmp_final_four_charts/*.png
