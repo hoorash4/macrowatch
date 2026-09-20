@@ -55,20 +55,40 @@ class StructuralMergeTests(unittest.TestCase):
             ]))
             self.assertEqual(expected, [point.pivot_type for point in result.markers])
 
-    def test_deep_reversal_not_erased_by_distant_huge_new_high(self):
+    def test_long_recovery_not_erased_by_distant_huge_new_high(self):
         source = path([(0, 0, "low"), (100, 10, "high"), (120, 2, "low"), (1000, 100, "high")])
         result = prune_structural_trends(source)
         self.assertIn(source.markers[1], result.markers)
         self.assertIn(source.markers[2], result.markers)
-        self.assertTrue(any(item["reason"] == "deep_reversal" for item in result.merge_diagnostics))
+        self.assertTrue(any(item["reason"] == "long_recovery" for item in result.merge_diagnostics))
 
-    def test_long_recovery_and_marginal_breakout_are_not_enough(self):
+    def test_long_recovery_is_not_enough(self):
         for rows in [
             [(0, 0, "low"), (10, 10, "high"), (100, 7, "low"), (200, 13, "high")],
-            [(0, 0, "low"), (100, 10, "high"), (110, 7, "low"), (140, 10.01, "high")],
         ]:
             source = path(rows)
             self.assertEqual(source.markers, prune_structural_trends(source).markers)
+
+    def test_deep_correction_and_small_new_extreme_merge_symmetrically(self):
+        for low in (0, 0.1, 2, 7):
+            for mirror in (1, -1):
+                rows = [(0, 0, "low"), (100, 10, "high"),
+                        (110, low, "low"), (140, 10.01, "high")]
+                source = path([(day, mirror * value, side if mirror == 1 else
+                                ("high" if side == "low" else "low"))
+                               for day, value, side in rows])
+                self.assertEqual((source.markers[0], source.markers[-1]),
+                                 prune_structural_trends(source).markers)
+
+    def test_equal_extreme_and_broken_anchor_do_not_merge_symmetrically(self):
+        for low, final in ((2, 10), (-0.01, 10.01)):
+            for mirror in (1, -1):
+                source = path([(day, mirror * value, side if mirror == 1 else
+                                ("high" if side == "low" else "low"))
+                               for day, value, side in
+                               [(0, 0, "low"), (100, 10, "high"),
+                                (110, low, "low"), (140, final, "high")]])
+                self.assertEqual(source.markers, prune_structural_trends(source).markers)
 
     def test_broken_origin_or_unrecovered_tail_keeps_reversal(self):
         for final, low in [(13, -1), (9, 7)]:
@@ -130,12 +150,12 @@ class StructuralMergeTests(unittest.TestCase):
     def test_invalid_policy_rejected(self):
         for value in (0, -1, float("nan"), float("inf"), 1):
             with self.assertRaises(ValueError):
-                StructuralMergePolicy(maximum_retracement=value)
+                StructuralMergePolicy(maximum_recovery_share=value)
 
     def test_thresholds_are_configurable_without_changing_the_base_path(self):
         source = path(SAMPLE[:4])
         self.assertEqual(source.markers, prune_structural_trends(
-            source, policy=StructuralMergePolicy(maximum_retracement=0.2)
+            source, policy=StructuralMergePolicy(maximum_recovery_share=0.2)
         ).markers)
         self.assertEqual(2, len(prune_structural_trends(source).markers))
 

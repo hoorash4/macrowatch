@@ -17,14 +17,14 @@ The new retrospective post-pass consumes the existing connected pivot polyline,
 not raw observations. It holds the starting low/high fixed and evaluates later
 record highs/lows. For every intervening correction, it checks:
 
-- retracement / advance before that correction: at most 0.5;
+- original trend anchor must not be broken (touching is allowed);
 - peak-to-recovery duration / whole proposed trend duration: at most 0.5;
 - peak-to-recovery duration / preceding advance duration: at most 1.0;
-- progress beyond the former record / preceding advance: at least 0.1.
+- final endpoint must strictly exceed the preceding directional extremes.
 
 These are provisional dimensionless defaults in `StructuralMergePolicy`, not
-empirically calibrated constants. Deep reversals cannot be washed out by a much
-larger future high/low: the depth denominator is fixed at the preceding advance.
+empirically calibrated constants. The 50% retracement and 10% follow-through
+gates are removed; both ratios remain diagnostic only. Recovery-duration gates remain.
 Recovery uses the first surviving endpoint that regains the prior record. Its
 date is a conservative recovered-by date, not the exact raw-series crossing.
 No fixed daily/weekly/monthly observation count or specific date/series code is
@@ -56,3 +56,5 @@ change: six missing test imports and three old connection-rule assertions.
 Those failures are not evidence that this experiment passed the whole suite.
 Actual US10Y2Y GFC image reproduction still requires the plotting caller and its
 exact input data/geometry, which are not present in this repository.
+
+This revision can be undone independently to restore commit 34ca359.

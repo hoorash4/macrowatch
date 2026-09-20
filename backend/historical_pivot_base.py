@@ -34,18 +34,15 @@ DEFAULT_TREND_MERGE_METHOD = "structural"  # Roll back with "angle"; "none" skip
 class StructuralMergePolicy:
     """Dimensionless experimental defaults, not fitted probabilities."""
 
-    maximum_retracement: float = 0.5
     maximum_recovery_share: float = 0.5
     maximum_recovery_to_advance: float = 1.0
-    minimum_follow_through: float = 0.1
 
     def __post_init__(self) -> None:
-        values = (self.maximum_retracement, self.maximum_recovery_share,
-                  self.maximum_recovery_to_advance, self.minimum_follow_through)
+        values = (self.maximum_recovery_share, self.maximum_recovery_to_advance)
         if any(not math.isfinite(value) or value <= 0 for value in values):
             raise ValueError("structural merge limits must be finite and positive")
-        if self.maximum_retracement >= 1 or self.maximum_recovery_share >= 1:
-            raise ValueError("retracement and recovery share must be below one")
+        if self.maximum_recovery_share >= 1:
+            raise ValueError("recovery share must be below one")
 
 
 STRUCTURAL_MERGE_POLICY = StructuralMergePolicy()
@@ -816,8 +813,8 @@ def _structural_merge_evidence(
 
     Recovery time is conservatively the first surviving endpoint at/above the
     previous record, not an invented raw-series crossing date. Every excursion
-    is evaluated against the advance BEFORE it, so a distant future extreme
-    cannot dilute an earlier deep reversal.
+    must preserve the original trend anchor and end at a new directional
+    extreme. Depth and follow-through ratios are diagnostics, not gates.
     """
     anchor, end = points[0], points[-1]
     sign = 1 if anchor.pivot_type == "low" else -1
@@ -829,7 +826,7 @@ def _structural_merge_evidence(
     expected_end = "high" if sign == 1 else "low"
     if end.pivot_type != expected_end or values[-1] <= 0:
         return evidence
-    if any(value <= 0 for value in values[1:]):
+    if any(value < 0 for value in values[1:]):
         evidence["reason"] = "origin_broken"
         return evidence
     if values[-1] <= max(values[1:-1], default=0):
@@ -861,10 +858,8 @@ def _structural_merge_evidence(
         }
         evidence["excursions"].append(metrics)
         limits = (
-            (metrics["retracement"] > policy.maximum_retracement, "deep_reversal"),
             (metrics["recovery_share"] > policy.maximum_recovery_share, "long_recovery"),
             (metrics["recovery_to_advance"] > policy.maximum_recovery_to_advance, "long_recovery"),
-            (metrics["follow_through"] < policy.minimum_follow_through, "weak_follow_through"),
         )
         for failed, reason in limits:
             if failed:
@@ -942,7 +937,7 @@ def prune_structural_trends(
             diagnostics.append(evidence)
             if evidence["accepted"]:
                 best, best_evidence = index, evidence
-            elif evidence["reason"] in {"origin_broken", "deep_reversal"}:
+            elif evidence["reason"] == "origin_broken":
                 break
         if best > cursor:
             end = segments[best].end

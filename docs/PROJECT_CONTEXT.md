@@ -47,7 +47,7 @@ Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 
 
 ### Python
 
-- `backend/historical_pivot_base.py`의 선 연결 후처리는 `structural`(기본), `angle`(기존), `none`을 선택한다. 새 방식은 기존 피봇 경로의 되돌림 깊이·회복 기간 비중·회복 후 진행으로 중간 구간을 병합한다. 횡보 구간과 양 끝점은 병합 금지 경계로 보존한다. 원복 기준은 `ab8a321`이며 정책·검증 범위는 `HISTORICAL_STRUCTURAL_MERGE.md`에 기록한다. 브라우저 엔진과 원자료는 변경하지 않는다.
+- `backend/historical_pivot_base.py`의 선 연결 후처리는 `structural`(기본), `angle`(기존), `none`을 선택한다. 새 방식은 기존 피봇 경로의 시작 극점 보존·새 극점 갱신·회복 기간 조건으로 중간 구간을 병합한다. 되돌림 50%와 추가 진행 10% 제한은 제거했다. 횡보 구간과 양 끝점은 병합 금지 경계로 보존한다. 원복 기준은 `ab8a321`이며 정책·검증 범위는 `HISTORICAL_STRUCTURAL_MERGE.md`에 기록한다. 브라우저 엔진과 원자료는 변경하지 않는다.
 
 - `backend/common.py`: 환경변수, FRED, Supabase, 알림 공통 처리
 - `backend/sources`: 여러 파이프라인이 공유하는 원천 조회 어댑터
