@@ -138,18 +138,18 @@ class PivotStageBoundaryTests(unittest.TestCase):
             result.segments,
         )
 
-    def test_lower_low_cancels_provisional_up_reversal(self):
+    def test_confirmed_line_turn_stops_prior_10_degree_run(self):
         d = date(2020, 1, 1)
         start_high = PivotPoint(d, 7.0, "high")
-        provisional_low = PivotPoint(d + timedelta(days=10), 6.0, "low")
-        rebound_high = PivotPoint(d + timedelta(days=20), 10.0, "high")
-        lower_low = PivotPoint(d + timedelta(days=30), 3.0, "low")
+        first_low = PivotPoint(d + timedelta(days=10), 6.0, "low")
+        confirmed_high = PivotPoint(d + timedelta(days=20), 10.0, "high")
+        later_low = PivotPoint(d + timedelta(days=30), 3.0, "low")
         existing = SimplifiedLineResult(
-            markers=(start_high, provisional_low, rebound_high, lower_low),
+            markers=(start_high, first_low, confirmed_high, later_low),
             segments=(
-                SimplifiedLineSegment(start_high, provisional_low, "trend"),
-                SimplifiedLineSegment(provisional_low, rebound_high, "trend"),
-                SimplifiedLineSegment(rebound_high, lower_low, "trend"),
+                SimplifiedLineSegment(start_high, first_low, "trend"),
+                SimplifiedLineSegment(first_low, confirmed_high, "trend"),
+                SimplifiedLineSegment(confirmed_high, later_low, "trend"),
             ),
             sideways_segments=(),
         )
@@ -157,14 +157,14 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        self.assertNotIn(provisional_low, result.markers)
-        self.assertNotIn(rebound_high, result.markers)
-        self.assertEqual(
-            (start_high, lower_low),
-            result.markers,
+        self.assertIn(first_low, result.markers)
+        self.assertIn(confirmed_high, result.markers)
+        self.assertIn(
+            SimplifiedLineSegment(first_low, confirmed_high, "trend"),
+            result.segments,
         )
-        self.assertEqual(
-            (SimplifiedLineSegment(start_high, lower_low, "trend"),),
+        self.assertIn(
+            SimplifiedLineSegment(confirmed_high, later_low, "trend"),
             result.segments,
         )
 
