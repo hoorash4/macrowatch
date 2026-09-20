@@ -140,6 +140,26 @@ class SimplifiedLineResult:
     segments: tuple[SimplifiedLineSegment, ...]
     sideways_segments: tuple[SidewaysSegment, ...]
 
+    def __post_init__(self) -> None:
+        marker_keys = {
+            (item.day, item.value, item.pivot_type)
+            for item in self.markers
+        }
+        for segment in self.segments:
+            for point in (segment.start, segment.end):
+                point_key = (point.day, point.value, point.pivot_type)
+                if point_key not in marker_keys:
+                    raise ValueError(
+                        "stage output contains a segment endpoint that is not a surviving marker"
+                    )
+        for sideways in self.sideways_segments:
+            for point in sideways.pivot_points:
+                point_key = (point.day, point.value, point.pivot_type)
+                if point_key not in marker_keys:
+                    raise ValueError(
+                        "stage output contains sideways metadata for a deleted marker"
+                    )
+
 
 @dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
@@ -153,6 +173,28 @@ class SpikeAugmentedPivotResult:
     high_pivots: tuple[PivotPoint, ...]
     low_pivots: tuple[PivotPoint, ...]
     spike_peaks: tuple[SpikePeak, ...] = ()
+
+    def __post_init__(self) -> None:
+        final_keys = {
+            (item.day, item.value, item.pivot_type)
+            for item in (*self.high_pivots, *self.low_pivots)
+        }
+        for spike in self.spike_peaks:
+            peak_key = (
+                spike.point.day,
+                spike.point.value,
+                spike.point.pivot_type,
+            )
+            if peak_key not in final_keys:
+                raise ValueError("stage-1 spike metadata references a non-final peak")
+            if spike.entry is not None:
+                entry_key = (
+                    spike.entry.day,
+                    spike.entry.value,
+                    spike.entry.pivot_type,
+                )
+                if entry_key not in final_keys:
+                    raise ValueError("stage-1 spike metadata references a non-final entry")
 
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
@@ -1449,6 +1491,20 @@ def simplify_pivot_lines(
         segments=tuple(segments),
         sideways_segments=tuple(sideways_segments),
     )
+
+    # Hard stage boundary: stage 2 may only delete from the sealed stage-1 set.
+    # There is no legal path for a candidate/debug/deleted point to re-enter here.
+    stage1_keys = {
+        (item.day, item.value, item.pivot_type)
+        for item in augmented.display_markers
+    }
+    stage2_keys = {
+        (item.day, item.value, item.pivot_type)
+        for item in simplified.markers
+    }
+    if not stage2_keys.issubset(stage1_keys):
+        raise RuntimeError("line simplification resurrected a non-final stage-1 point")
+
     angle_pruned = prune_same_trend_extremes(
         simplified,
         geometry,
