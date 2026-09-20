@@ -1,6 +1,7 @@
-"""Stage 3: merge the sealed upper/lower Stage 2 points into one line.
+"""Stage 3: merge Stage 2's sealed points into one line.
 
-No Stage 1 candidates or Stage 1 result object is imported here.
+The merge logic is intentionally unchanged from the pre-refactor implementation.
+Only the input boundary and the hand-off to Stage 4 were separated.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from historical_pivot_shared import (
     SimplifiedLineResult,
     SimplifiedLineSegment,
     SpikePeak,
+    classify_sideways_reference_line,
 )
 from historical_pivot_stage2 import Stage2Result
 
@@ -65,21 +67,21 @@ def simplify_pivot_lines(
     def point_key(point: PivotPoint) -> tuple[date, float, str]:
         return point.day, point.value, point.pivot_type
 
-    high_sideways = augmented.high_sideways_segments
-    low_sideways = augmented.low_sideways_segments
+    def sideways_pairs(
+        points: Sequence[PivotPoint],
+        prior_trend: str,
+    ) -> tuple[SidewaysSegment, ...]:
+        found: list[SidewaysSegment] = []
+        for left, right in zip(points, points[1:]):
+            segment = classify_sideways_reference_line(
+                left, right, prior_trend, geometry,
+            )
+            if segment is not None:
+                found.append(segment)
+        return tuple(found)
 
-    def preclassified_sideways(
-        start: PivotPoint,
-        end: PivotPoint,
-        candidates: Sequence[SidewaysSegment],
-    ) -> SidewaysSegment | None:
-        return next(
-            (
-                item for item in candidates
-                if item.start == start and item.end == end
-            ),
-            None,
-        )
+    high_sideways = sideways_pairs(line_highs, "up")
+    low_sideways = sideways_pairs(line_lows, "down")
     removed_keys: set[tuple[date, float, str]] = set()
 
     def overlaps(left: SidewaysSegment, right: SidewaysSegment) -> bool:
@@ -226,7 +228,7 @@ def simplify_pivot_lines(
                 direction = "down" if spike.point.pivot_type == "high" else "up"
                 continue
 
-            sideways = preclassified_sideways(anchor, next_high, high_sideways)
+            sideways = classify_sideways_reference_line(anchor, next_high, "up", geometry)
             if sideways is not None:
                 remove_opposite_sideways(sideways)
                 refresh_points()
@@ -280,7 +282,7 @@ def simplify_pivot_lines(
             direction = "down" if spike.point.pivot_type == "high" else "up"
             continue
 
-        sideways = preclassified_sideways(anchor, next_low, low_sideways)
+        sideways = classify_sideways_reference_line(anchor, next_low, "down", geometry)
         if sideways is not None:
             remove_opposite_sideways(sideways)
             refresh_points()
