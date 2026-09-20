@@ -67,6 +67,11 @@ def run(code,rows,freq,start,end):
         assert (date(2024,8,2),-0.359,"high") not in s3keys, "unconfirmed rebound high must disappear"
         assert (date(2024,12,27),-0.485,"low") in s3keys, "later lower low must extend downtrend"
     if code=="US10Y_REAL":
+        print("US10Y_REAL_S2",[(str(p.day),p.value,p.pivot_type) for p in s2.display_markers if p.day.year>=2021])
+        print("US10Y_REAL_S3",[(str(p.day),p.value,p.pivot_type) for p in s3.markers if p.day.year>=2021])
+        print("US10Y_REAL_S3_SEG",[(str(x.start.day),x.start.value,x.start.pivot_type,str(x.end.day),x.end.value,x.end.pivot_type,x.kind) for x in s3.segments if x.end.day.year>=2021])
+        print("US10Y_REAL_S4",[(str(p.day),p.value,p.pivot_type) for p in s4.markers if p.day.year>=2021])
+        print("US10Y_REAL_S5",[(str(p.day),p.value,p.pivot_type) for p in s5.markers if p.day.year>=2021])
         final={key(p) for p in s5.markers}
         for target in [
             (date(2022,9,30),1.68,"high"),
