@@ -673,37 +673,23 @@ def prune_same_trend_extremes(
     def first_boundary_after(day: date) -> date | None:
         return next((item for item in hard_boundaries if item > day), None)
 
-    def local_transition_anchors(
-        same_side: Sequence[PivotPoint],
-        pivot_type: str,
-    ) -> list[PivotPoint]:
-        anchors: list[PivotPoint] = []
-        for index in range(1, len(same_side) - 1):
-            previous = same_side[index - 1]
-            current = same_side[index]
-            following = same_side[index + 1]
-            if pivot_type == "low":
-                if current.value < previous.value and current.value < following.value:
-                    anchors.append(current)
-            else:
-                if current.value > previous.value and current.value > following.value:
-                    anchors.append(current)
-        return anchors
+    # Anchors are the actual surviving reversal owners from the immediately
+    # previous simplified path. A low->high trend leg starts an up-run at the low;
+    # a high->low trend leg starts a down-run at the high. Do not re-infer anchors
+    # from older RDP candidates or from same-side local-extrema comparisons.
+    run_start_map: dict[tuple[date, float, str], tuple[PivotPoint, str]] = {}
+    for segment in result.segments:
+        if segment.kind != "trend":
+            continue
+        if segment.start.pivot_type == "low" and segment.end.pivot_type == "high":
+            run_start_map[key(segment.start)] = (segment.start, "up")
+        elif segment.start.pivot_type == "high" and segment.end.pivot_type == "low":
+            run_start_map[key(segment.start)] = (segment.start, "down")
 
-    run_starts: list[tuple[PivotPoint, str]] = [
-        *((item, "up") for item in local_transition_anchors(lows, "low")),
-        *((item, "down") for item in local_transition_anchors(highs, "high")),
-    ]
-
-    # The chart's very first surviving point has no earlier same-side pivot to
-    # prove a local turn. Treat it as the unavoidable initial trend anchor.
-    if points:
-        first_point = points[0]
-        initial_direction = "up" if first_point.pivot_type == "low" else "down"
-        if all(item[0] != first_point for item in run_starts):
-            run_starts.append((first_point, initial_direction))
-
-    run_starts.sort(key=lambda item: item[0].day)
+    run_starts = sorted(
+        run_start_map.values(),
+        key=lambda item: item[0].day,
+    )
 
     replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
 
