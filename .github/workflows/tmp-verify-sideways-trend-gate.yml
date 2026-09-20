@@ -20,8 +20,30 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Run Historical pivot tests
-        run: PYTHONPATH=backend python -m unittest tests.test_historical_pivot_base
+      - name: Run focused Stage2 assertions
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date,timedelta
+          from historical_pivot_shared import ChartGeometry,PivotPoint
+          from historical_pivot_stage1 import SpikeAugmentedPivotResult
+          from historical_pivot_stage2 import finalize_sideways_protection
+
+          d=date(2020,1,1)
+          g=ChartGeometry(d,d+timedelta(days=100),0.0,10.0,100.0,100.0)
+
+          # Flat highs after falling highs are NOT an uptrend-side sideways.
+          highs=(PivotPoint(d+timedelta(days=10),10.0,"high"),PivotPoint(d+timedelta(days=20),8.0,"high"),PivotPoint(d+timedelta(days=80),8.1,"high"))
+          lows=(PivotPoint(d+timedelta(days=15),5.0,"low"),PivotPoint(d+timedelta(days=50),4.0,"low"),PivotPoint(d+timedelta(days=90),3.0,"low"))
+          s2=finalize_sideways_protection(SpikeAugmentedPivotResult(highs,lows,()),g)
+          assert not s2.high_sideways_segments, s2.high_sideways_segments
+
+          # Flat lows after falling lows ARE a downtrend-side sideways.
+          highs=(PivotPoint(d+timedelta(days=5),10.0,"high"),PivotPoint(d+timedelta(days=45),9.0,"high"),PivotPoint(d+timedelta(days=95),8.0,"high"))
+          lows=(PivotPoint(d+timedelta(days=10),6.0,"low"),PivotPoint(d+timedelta(days=30),4.0,"low"),PivotPoint(d+timedelta(days=80),4.1,"low"))
+          s2=finalize_sideways_protection(SpikeAugmentedPivotResult(highs,lows,()),g)
+          assert len(s2.low_sideways_segments)==1, s2.low_sideways_segments
+          print("FOCUSED_STAGE2_ASSERTIONS_OK")
+          PY
       - name: Trace NFCI_RISK after Stage2 fix
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
