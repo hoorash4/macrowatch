@@ -268,12 +268,16 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             height=100.0,
         )
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual(high_rdp, result.base.high_pivots)
-        self.assertEqual(low_rdp, result.base.low_pivots)
+        self.assertEqual(high_rdp, result.high_pivots)
         expected_entry = PivotPoint(d + timedelta(days=6), 1.0, "low")
-        self.assertEqual((expected_entry,), result.added_low_pivots)
-        self.assertEqual((), result.added_high_pivots)
+        self.assertEqual(
+            tuple(sorted((*low_rdp, expected_entry), key=lambda item: item.day)),
+            result.low_pivots,
+        )
         self.assertIn(expected_entry, result.display_markers)
+        self.assertFalse(hasattr(result, "base"))
+        self.assertFalse(hasattr(result, "added_low_pivots"))
+        self.assertFalse(hasattr(result, "added_high_pivots"))
         self.assertEqual(1, len(result.spike_peaks))
         self.assertEqual(expected_entry, result.spike_peaks[0].entry)
 
@@ -298,7 +302,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual((), result.added_low_pivots)
         self.assertEqual(low_rdp[0], result.low_pivots[0])
         self.assertEqual(1, len(result.spike_peaks))
 
@@ -323,7 +326,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual((), result.added_low_pivots)
         self.assertEqual((), result.spike_peaks)
 
     def test_downward_spike_rejected_when_inside_high_follows_peak_below_adjacent_lows(self):
@@ -347,7 +349,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual((), result.added_high_pivots)
         self.assertEqual((), result.spike_peaks)
 
     def test_stage1_spike_correction_adds_missing_downward_entry_before_final_rdp(self):
@@ -379,8 +380,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
         expected_entry = PivotPoint(d + timedelta(days=6), 9.0, "high")
-        self.assertEqual((expected_entry,), result.added_high_pivots)
-        self.assertEqual((), result.added_low_pivots)
+        self.assertIn(expected_entry, result.high_pivots)
         self.assertIn(expected_entry, result.display_markers)
         self.assertEqual(1, len(result.spike_peaks))
         self.assertEqual(expected_entry, result.spike_peaks[0].entry)
@@ -410,7 +410,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = augment_spike_entry_points(base, geometry)
-        self.assertEqual((), result.added_low_pivots)
         self.assertIn(existing_entry, result.low_pivots)
 
     def test_spike_peak_is_recorded_separately_from_added_entry(self):
@@ -655,7 +654,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             high_pivots=highs,
             low_pivots=lows,
         )
-        augmented = SpikeAugmentedPivotResult(base, (), ())
+        augmented = SpikeAugmentedPivotResult(
+            high_pivots=base.high_pivots,
+            low_pivots=base.low_pivots,
+        )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = simplify_pivot_lines(augmented, geometry)
 
@@ -702,7 +704,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertTrue(spike.marker_only)
         self.assertEqual(high_rdp[1], spike.point)
         self.assertIsNone(spike.entry)
-        self.assertEqual((), augmented.added_low_pivots)
 
         simplified = simplify_pivot_lines(augmented, geometry)
         self.assertIn(spike.point, simplified.markers)
@@ -897,7 +898,11 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             high_pivots=(high2, high4),
             low_pivots=(low1, low3),
         )
-        augmented = SpikeAugmentedPivotResult(base, (), (), ())
+        augmented = SpikeAugmentedPivotResult(
+            high_pivots=base.high_pivots,
+            low_pivots=base.low_pivots,
+            spike_peaks=(),
+        )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
         result = simplify_pivot_lines(augmented, geometry)
@@ -925,7 +930,11 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             high_pivots=(high1, high3),
             low_pivots=(low2, low4),
         )
-        augmented = SpikeAugmentedPivotResult(base, (), (), ())
+        augmented = SpikeAugmentedPivotResult(
+            high_pivots=base.high_pivots,
+            low_pivots=base.low_pivots,
+            spike_peaks=(),
+        )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
         result = simplify_pivot_lines(augmented, geometry)
@@ -1042,10 +1051,9 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             low_pivots=lows,
         )
         augmented = SpikeAugmentedPivotResult(
-            base,
-            (),
-            (),
-            (SpikePeak(highs[1], "up", 20.0, entry),),
+            high_pivots=base.high_pivots,
+            low_pivots=base.low_pivots,
+            spike_peaks=(SpikePeak(highs[1], "up", 20.0, entry),),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
         result = simplify_pivot_lines(augmented, geometry)
