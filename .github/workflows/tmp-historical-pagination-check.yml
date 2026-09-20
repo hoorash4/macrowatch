@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
+        run: pip install requests
       - name: Run historical pivot tests
         run: python -m unittest tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_case_loader_paginates_past_supabase_1000_row_cap
       - name: Verify live pagination
