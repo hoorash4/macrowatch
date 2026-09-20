@@ -135,6 +135,36 @@ class PivotStageBoundaryTests(unittest.TestCase):
             result.segments,
         )
 
+    def test_confirmed_line_turn_stops_prior_10_degree_run(self):
+        d = date(2020, 1, 1)
+        start_high = PivotPoint(d, 7.0, "high")
+        first_low = PivotPoint(d + timedelta(days=10), 6.0, "low")
+        confirmed_high = PivotPoint(d + timedelta(days=20), 10.0, "high")
+        later_low = PivotPoint(d + timedelta(days=30), 3.0, "low")
+        existing = SimplifiedLineResult(
+            markers=(start_high, first_low, confirmed_high, later_low),
+            segments=(
+                SimplifiedLineSegment(start_high, first_low, "trend"),
+                SimplifiedLineSegment(first_low, confirmed_high, "trend"),
+                SimplifiedLineSegment(confirmed_high, later_low, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 12.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        self.assertIn(first_low, result.markers)
+        self.assertIn(confirmed_high, result.markers)
+        self.assertIn(
+            SimplifiedLineSegment(first_low, confirmed_high, "trend"),
+            result.segments,
+        )
+        self.assertIn(
+            SimplifiedLineSegment(confirmed_high, later_low, "trend"),
+            result.segments,
+        )
+
     def test_failed_reversal_candidate_never_becomes_anchor(self):
         d = date(2020, 1, 1)
         start_high = PivotPoint(d, 10.0, "high")
