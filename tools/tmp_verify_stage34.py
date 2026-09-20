@@ -51,6 +51,8 @@ def run(code,rows,freq,start,end):
         assert (date(2009,6,4),2.76,"high") in s5k, "2009 high must survive Stage5"
     if code=="NFCI":
         print("NFCI_S3",[(str(p.day),p.value,p.pivot_type) for p in s3.markers if p.day.year>=2022])
+        print("NFCI_S3_SEG",[(x.kind,str(x.start.day),x.start.value,x.start.pivot_type,str(x.end.day),x.end.value,x.end.pivot_type) for x in s3.segments if x.end.day.year>=2022])
+        print("NFCI_SIDEWAYS",[(str(x.start.day),x.start.value,str(x.end.day),x.end.value,x.reference_side) for x in s3.sideways_segments if x.end.day.year>=2022])
         print("NFCI_S4",[(str(p.day),p.value,p.pivot_type) for p in s4.markers if p.day.year>=2022])
         print("NFCI_S5",[(str(p.day),p.value,p.pivot_type) for p in s5.markers if p.day.year>=2022])
         final={key(p) for p in s5.markers}
