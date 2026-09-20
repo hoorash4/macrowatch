@@ -8,7 +8,7 @@
     return Object.freeze(out.map(Object.freeze));
   }
   function createRepository(client){
-    const seriesCache=new Map();let coverageCache=null;
+    const seriesCache=new Map(),pivotCache=new Map();let coverageCache=null;
     const catalog=indexCode=>{const allowed=INDEX_MARKET_SCOPES[indexCode]||INDEX_MARKET_SCOPES.SP500;return Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&allowed.has(item.marketScope)));};
     async function loadCoverage(){
       if(coverageCache)return coverageCache;
@@ -21,7 +21,21 @@
       const promise=window.MacroWatchFrontend.queryAll(client,'economic_chart_series_points','observation_date,value','observation_date',[['series_code',code]],configure).then(normalize);
       seriesCache.set(key,promise);promise.catch(()=>seriesCache.delete(key));return promise;
     }
-    return Object.freeze({catalog,loadCoverage,load,clearAnalysisData(){coverageCache=null;seriesCache.clear();}});
+    async function loadStoredPivots(caseCode,indexCode,seriesCode){
+      const key=`${caseCode}:${indexCode}:${seriesCode}`;if(pivotCache.has(key))return pivotCache.get(key);
+      const promise=window.MacroWatchFrontend.queryAll(client,'historical_indicator_pivots',
+        'pivot_order,pivot_date,pivot_value,pivot_type,next_pivot_order,segment_to_next,selection_reason_codes,selection_reason,selection_meta,frequency,buffer_start,buffer_end,source_point_count,input_sha256,algorithm_version',
+        'pivot_order',[['case_code',caseCode],['index_code',indexCode],['series_code',seriesCode]])
+        .then(rows=>Object.freeze((rows||[]).map(row=>Object.freeze({
+          pivotOrder:Number(row.pivot_order),pivotDate:String(row.pivot_date).slice(0,10),pivotValue:Number(row.pivot_value),pivotType:String(row.pivot_type||''),
+          nextPivotOrder:row.next_pivot_order==null?null:Number(row.next_pivot_order),segmentToNext:row.segment_to_next||null,
+          selectionReasonCodes:Object.freeze([...(row.selection_reason_codes||[])]),selectionReason:String(row.selection_reason||''),selectionMeta:Object.freeze(row.selection_meta||{}),
+          frequency:String(row.frequency||''),bufferStart:String(row.buffer_start||'').slice(0,10),bufferEnd:String(row.buffer_end||'').slice(0,10),
+          sourcePointCount:Number(row.source_point_count||0),inputSha256:String(row.input_sha256||''),algorithmVersion:String(row.algorithm_version||'')
+        }))));
+      pivotCache.set(key,promise);promise.catch(()=>pivotCache.delete(key));return promise;
+    }
+    return Object.freeze({catalog,loadCoverage,load,loadStoredPivots,clearAnalysisData(){coverageCache=null;seriesCache.clear();pivotCache.clear();}});
   }
   window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize,clearAiScores});
 
