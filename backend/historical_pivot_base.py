@@ -3,8 +3,9 @@
 The approved base pipeline is:
 raw economic-chart points -> centered envelope -> plateau extrema -> fixed-count RDP.
 
-Optional spike entry-point augmentation is a separate post-processing step. It never
-replaces or removes the base RDP pivots.
+Spike classification is a separate post-RDP step. RDP is a sealed stage boundary:
+later stages may only use pivots that survived RDP and may never restore candidates
+removed by earlier stages.
 
 It is read-only with respect to source data. The frontend must continue to draw the
 original economic series from its canonical source; this module only produces marker
