@@ -283,16 +283,29 @@ def prune_same_trend_extremes(
 
     intervals: list[tuple[PivotPoint, PivotPoint]] = []
     for window in windows:
-        intervals.extend(
-            _process_window(
-                window,
-                geometry,
-                angle_threshold_deg,
+        if len(window) < 3:
+            continue
+
+        # Run the SAME state machine from every actual value-direction turn.
+        # A failed/unfinished state before this turn must not poison later runs.
+        start_indexes = [0]
+        for idx in range(1, len(window) - 1):
+            left = _sign(window[idx].value - window[idx - 1].value)
+            right = _sign(window[idx + 1].value - window[idx].value)
+            if left != 0 and right != 0 and left != right:
+                start_indexes.append(idx)
+
+        for start_idx in start_indexes:
+            intervals.extend(
+                _process_window(
+                    window[start_idx:],
+                    geometry,
+                    angle_threshold_deg,
+                )
             )
-        )
 
     # A collapse may never cross protected structure.
-    filtered: list[tuple[PivotPoint, PivotPoint]] = []
+    candidates: list[tuple[PivotPoint, PivotPoint]] = []
     for start, end in intervals:
         if any(
             start.day < point.day < end.day
@@ -300,18 +313,36 @@ def prune_same_trend_extremes(
             for point in points
         ):
             continue
-        if any(
-            existing_start.day <= start.day
-            and end.day <= existing_end.day
-            for existing_start, existing_end in filtered
-        ):
-            continue
-        filtered.append((start, end))
+        candidates.append((start, end))
 
-    if not filtered:
+    if not candidates:
         return result
 
-    filtered.sort(key=lambda item: (item[0].day, item[1].day))
+    # Prefer the earliest valid anchor. If two intervals share an anchor, keep
+    # the farther endpoint. Later overlapping candidates are subordinate to the
+    # earlier run and are ignored.
+    candidates.sort(
+        key=lambda item: (
+            item[0].day,
+            -item[1].day.toordinal(),
+        )
+    )
+    filtered: list[tuple[PivotPoint, PivotPoint]] = []
+    for start, end in candidates:
+        if not filtered:
+            filtered.append((start, end))
+            continue
+
+        prev_start, prev_end = filtered[-1]
+        if start.day == prev_start.day:
+            if end.day > prev_end.day:
+                filtered[-1] = (start, end)
+            continue
+
+        if start.day < prev_end.day:
+            continue
+
+        filtered.append((start, end))
 
     def inside(segment: SimplifiedLineSegment) -> bool:
         return any(
