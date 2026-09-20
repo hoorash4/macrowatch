@@ -8,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+from historical_pivot_stage2 import Stage2Result  # noqa: E402
+from historical_pivot_stage3 import simplify_pivot_lines as merge_stage3  # noqa: E402
+
 from historical_pivot_base import (  # noqa: E402
     BasePivotResult,
     ChartGeometry,
@@ -227,6 +230,79 @@ class PivotStageBoundaryTests(unittest.TestCase):
             SimplifiedLineSegment(sideways_end, low5, "trend"),
             result.segments,
         )
+
+    def test_stage3_normal_up_wave_keeps_only_start_low_and_end_high(self):
+        d = date(2020, 1, 1)
+        h1 = PivotPoint(d, 5.0, "high")
+        l1 = PivotPoint(d + timedelta(days=1), 4.0, "low")
+        l2 = PivotPoint(d + timedelta(days=9), 5.0, "low")
+        h2 = PivotPoint(d + timedelta(days=10), 6.0, "high")
+        stage2 = Stage2Result(
+            high_pivots=(h1, h2),
+            low_pivots=(l1, l2),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=20), 0.0, 10.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertEqual((l1, h2), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(l1, h2, "trend"),),
+            result.segments,
+        )
+
+    def test_stage3_normal_down_wave_keeps_only_start_high_and_end_low(self):
+        d = date(2020, 1, 1)
+        h1 = PivotPoint(d, 8.0, "high")
+        l1 = PivotPoint(d + timedelta(days=1), 6.0, "low")
+        h2 = PivotPoint(d + timedelta(days=9), 7.0, "high")
+        l2 = PivotPoint(d + timedelta(days=10), 5.0, "low")
+        stage2 = Stage2Result(
+            high_pivots=(h1, h2),
+            low_pivots=(l1, l2),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=20), 0.0, 10.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertEqual((h1, l2), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(h1, l2, "trend"),),
+            result.segments,
+        )
+
+    def test_stage3_ongoing_up_wave_updates_only_terminal_high(self):
+        d = date(2020, 1, 1)
+        h1 = PivotPoint(d, 5.0, "high")
+        l1 = PivotPoint(d + timedelta(days=1), 4.0, "low")
+        h2 = PivotPoint(d + timedelta(days=10), 6.0, "high")
+        l2 = PivotPoint(d + timedelta(days=11), 5.0, "low")
+        h3 = PivotPoint(d + timedelta(days=20), 7.0, "high")
+        l3 = PivotPoint(d + timedelta(days=21), 6.0, "low")
+        stage2 = Stage2Result(
+            high_pivots=(h1, h2, h3),
+            low_pivots=(l1, l2, l3),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=30), 0.0, 10.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertIn(l1, result.markers)
+        self.assertIn(h3, result.markers)
+        self.assertNotIn(h1, result.markers)
+        self.assertNotIn(h2, result.markers)
+        self.assertNotIn(l2, result.markers)
+        self.assertNotIn(l3, result.markers)
+        self.assertIn(SimplifiedLineSegment(l1, h3, "trend"), result.segments)
 
     def test_final_cleanup_does_not_delete_with_only_two_same_side_points(self):
         d = date(2020, 1, 1)
