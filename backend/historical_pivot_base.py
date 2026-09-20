@@ -883,8 +883,8 @@ def prune_structural_trends(
 ) -> SimplifiedLineResult:
     """Retrospective upper-level path, independent of chart geometry.
 
-    Sideways/spike labels are not automatic barriers: a complete internal
-    segment may be absorbed only after passing the same recovery checks.
+    Confirmed sideways spans and both endpoints are hard boundaries. Spike
+    segments may be absorbed only after passing the same recovery checks.
     Disconnected/branching segments are never joined. Base pivots remain intact.
     """
     segments = sorted(result.segments, key=lambda segment: (segment.start.day, segment.end.day))
@@ -896,14 +896,34 @@ def prune_structural_trends(
     kept: list[SimplifiedLineSegment] = []
     removed_intervals: list[tuple[date, date]] = []
     diagnostics: list[dict[str, Any]] = []
+    sideways_spans = tuple(
+        (item.start.day, item.end.day)
+        for item in (*result.sideways_segments,
+                     *(segment for segment in segments if segment.kind == "sideways"))
+    )
+
+    def crosses_sideways(start: date, end: date) -> bool:
+        # Touching a boundary is allowed; entering a sideways span is not.
+        return any(start < right and end > left for left, right in sideways_spans)
+
     cursor = 0
     while cursor < len(segments):
         first = segments[cursor]
+        if crosses_sideways(first.start.day, first.end.day):
+            kept.append(first)
+            cursor += 1
+            continue
         points = [first.start, first.end]
         best = cursor
         best_evidence = None
         for index in range(cursor + 1, len(segments)):
             segment = segments[index]
+            if crosses_sideways(first.start.day, segment.end.day):
+                diagnostics.append({
+                    "start": first.start.day.isoformat(), "end": segment.end.day.isoformat(),
+                    "accepted": False, "reason": "protected_sideways", "excursions": [],
+                })
+                break
             if segment.start != points[-1] or segment.end.day <= segment.start.day:
                 break
             # Fail closed on overlapping branches rather than deleting their vertices.
@@ -941,13 +961,12 @@ def prune_structural_trends(
     for marker in result.markers:
         if not any(start < marker.day < end for start, end in removed_intervals):
             marker_map[(marker.day, marker.value, marker.pivot_type)] = marker
-    sideways = tuple(
-        item for item in result.sideways_segments
-        if not any(start <= item.start.day and item.end.day <= end for start, end in removed_intervals)
-    )
+    for item in result.sideways_segments:
+        for marker in (item.start, item.end):
+            marker_map[(marker.day, marker.value, marker.pivot_type)] = marker
     return SimplifiedLineResult(
         markers=tuple(sorted(marker_map.values(), key=lambda point: (point.day, point.pivot_type))),
-        segments=tuple(kept), sideways_segments=sideways,
+        segments=tuple(kept), sideways_segments=result.sideways_segments,
         merge_diagnostics=tuple(diagnostics),
     )
 

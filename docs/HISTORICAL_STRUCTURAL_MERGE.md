@@ -31,7 +31,9 @@ No fixed daily/weekly/monthly observation count or specific date/series code is
 used. Pure directional continuation can be collapsed without a correction.
 
 Every accepted interval replaces its connected segments with one trend segment.
-Ordinary, sideways and spike interiors can all be absorbed after the same checks.
+Ordinary and spike interiors can be absorbed after the same checks. Sideways spans
+(from segment kind or sideways metadata) and both endpoints are protected: merges
+stop at these boundaries, and the original sideways records are preserved.
 Marker-only spikes are included in validation. Disconnected paths are not joined.
 Diagnostics report accepted/rejected candidates, ratios, reasons and selected
 intervals in `merge_diagnostics`. `accepted` means eligible; `selected` identifies

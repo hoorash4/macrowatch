@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from historical_pivot_base import (
     BasePivotResult, ChartGeometry, PivotPoint, PivotPolicy,
-    SimplifiedLineResult, SimplifiedLineSegment, SpikeAugmentedPivotResult,
+    SimplifiedLineResult, SimplifiedLineSegment, SpikeAugmentedPivotResult, SidewaysSegment,
     StructuralMergePolicy, prune_structural_trends, simplify_pivot_lines,
 )
 
@@ -75,10 +75,46 @@ class StructuralMergeTests(unittest.TestCase):
             source = path([(0, 0, "low"), (100, 10, "high"), (110, low, "low"), (140, final, "high")])
             self.assertEqual(source.markers, prune_structural_trends(source).markers)
 
-    def test_internal_sideways_and_spike_can_be_absorbed_after_validation(self):
-        for kind in ("sideways", "spike"):
-            source = path(SAMPLE, ["trend", kind, "trend", "trend", "trend"])
-            self.assertEqual((source.markers[0], source.markers[-1]), prune_structural_trends(source).markers)
+    def test_internal_spike_can_be_absorbed_after_validation(self):
+        source = path(SAMPLE, ["trend", "spike", "trend", "trend", "trend"])
+        self.assertEqual((source.markers[0], source.markers[-1]), prune_structural_trends(source).markers)
+
+    def test_every_sideways_segment_and_both_boundaries_survive(self):
+        for location in range(len(SAMPLE) - 1):
+            for mirror in (1, -1):
+                values = [(day, mirror * value, side if mirror == 1 else
+                           ("high" if side == "low" else "low")) for day, value, side in SAMPLE]
+                kinds = ["trend"] * (len(values) - 1)
+                kinds[location] = "sideways"
+                source = path(values, kinds)
+                protected = source.segments[location]
+                result = prune_structural_trends(source)
+                self.assertIn(protected, result.segments)
+                self.assertIn(protected.start, result.markers)
+                self.assertIn(protected.end, result.markers)
+                self.assertFalse(any(
+                    segment.kind == "trend" and segment.start.day < protected.end.day
+                    and segment.end.day > protected.start.day for segment in result.segments
+                ))
+
+    def test_sideways_metadata_alone_also_blocks_merge(self):
+        source = path(SAMPLE)
+        protected = SidewaysSegment(source.markers[1], source.markers[3], "up", "high", 0)
+        source = replace(source, sideways_segments=(protected,))
+        result = prune_structural_trends(source)
+        self.assertEqual(source.sideways_segments, result.sideways_segments)
+        self.assertIn(protected.start, result.markers)
+        self.assertIn(protected.end, result.markers)
+        self.assertTrue(any(item["reason"] == "protected_sideways" for item in result.merge_diagnostics))
+
+    def test_trends_on_both_sides_can_merge_without_crossing_sideways(self):
+        source = path([(0, 0, "low"), (100, 10, "high"), (110, 7, "low"),
+                       (140, 13, "high"), (180, 13, "high"), (280, 3, "low"),
+                       (290, 6, "high"), (320, 0, "low")],
+                      ["trend", "trend", "trend", "sideways", "trend", "trend", "trend"])
+        result = prune_structural_trends(source)
+        self.assertEqual(3, len(result.segments))
+        self.assertEqual(source.segments[3], result.segments[1])
 
     def test_marker_only_spike_cannot_be_deleted_without_validation(self):
         source = path(SAMPLE[:4])
