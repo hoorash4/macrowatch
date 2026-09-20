@@ -236,10 +236,58 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = prune_unconfirmed_retracements(existing)
 
-        self.assertIn(rebound, result.markers)
-        self.assertNotIn(low2, result.markers)
-        self.assertIn(low1, result.markers)
-        self.assertIn(low3, result.markers)
+        self.assertEqual(existing, result)
+
+    def test_final_cleanup_collapses_consecutive_higher_highs(self):
+        d = date(2020, 1, 1)
+        low = PivotPoint(d, 1.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        high2 = PivotPoint(d + timedelta(days=20), 6.0, "high")
+        high3 = PivotPoint(d + timedelta(days=30), 7.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(low, high1, high2, high3),
+            segments=(
+                SimplifiedLineSegment(low, high1, "trend"),
+                SimplifiedLineSegment(high1, high2, "trend"),
+                SimplifiedLineSegment(high2, high3, "trend"),
+            ),
+            sideways_segments=(),
+        )
+
+        result = prune_unconfirmed_retracements(existing)
+
+        self.assertEqual((low, high1, high3), result.markers)
+        self.assertEqual(
+            (
+                SimplifiedLineSegment(low, high1, "trend"),
+                SimplifiedLineSegment(high1, high3, "trend"),
+            ),
+            result.segments,
+        )
+
+    def test_final_cleanup_does_not_treat_separated_highs_as_consecutive(self):
+        d = date(2020, 1, 1)
+        low0 = PivotPoint(d, 0.0, "low")
+        high1 = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        low1 = PivotPoint(d + timedelta(days=20), 1.0, "low")
+        high2 = PivotPoint(d + timedelta(days=30), 6.0, "high")
+        low2 = PivotPoint(d + timedelta(days=40), 2.0, "low")
+        high3 = PivotPoint(d + timedelta(days=50), 7.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(low0, high1, low1, high2, low2, high3),
+            segments=(
+                SimplifiedLineSegment(low0, high1, "trend"),
+                SimplifiedLineSegment(high1, low1, "trend"),
+                SimplifiedLineSegment(low1, high2, "trend"),
+                SimplifiedLineSegment(high2, low2, "trend"),
+                SimplifiedLineSegment(low2, high3, "trend"),
+            ),
+            sideways_segments=(),
+        )
+
+        result = prune_unconfirmed_retracements(existing)
+
+        self.assertEqual(existing, result)
 
     def test_final_cleanup_collapses_consecutive_lower_lows(self):
         d = date(2020, 1, 1)
