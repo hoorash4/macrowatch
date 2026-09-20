@@ -1064,10 +1064,27 @@ def prune_unconfirmed_retracements(
 
     ordered = list(original)
 
-    # One extra normalization pass only. Do not recursively re-simplify the newly
-    # shortened path; the previous stages already own those broader decisions.
+    # One extra normalization pass only. First remove a failed opposite-side
+    # retracement using the pre-cleanup sequence, then collapse the same-side
+    # points that become adjacent as a direct consequence. Do not iterate again.
+    failed_reversal_delete: set[tuple[date, float, str]] = set()
+    for left, middle, right in zip(original, original[1:], original[2:]):
+        if left.pivot_type != right.pivot_type or middle.pivot_type == left.pivot_type:
+            continue
+        if key(middle) in protected_keys:
+            continue
+        if left.pivot_type == "low" and right.value < left.value:
+            failed_reversal_delete.add(key(middle))
+        elif left.pivot_type == "high" and right.value > left.value:
+            failed_reversal_delete.add(key(middle))
+
+    ordered = [
+        point for point in ordered
+        if key(point) not in failed_reversal_delete
+    ]
+
     same_side_delete: set[tuple[date, float, str]] = set()
-    for left, right in zip(original, original[1:]):
+    for left, right in zip(ordered, ordered[1:]):
         if left.pivot_type != right.pivot_type:
             continue
 
@@ -1082,22 +1099,6 @@ def prune_unconfirmed_retracements(
     ordered = [
         point for point in ordered
         if key(point) not in same_side_delete
-    ]
-
-    failed_reversal_delete: set[tuple[date, float, str]] = set()
-    for left, middle, right in zip(ordered, ordered[1:], ordered[2:]):
-        if left.pivot_type != right.pivot_type or middle.pivot_type == left.pivot_type:
-            continue
-        if key(middle) in protected_keys:
-            continue
-        if left.pivot_type == "low" and right.value < left.value:
-            failed_reversal_delete.add(key(middle))
-        elif left.pivot_type == "high" and right.value > left.value:
-            failed_reversal_delete.add(key(middle))
-
-    ordered = [
-        point for point in ordered
-        if key(point) not in failed_reversal_delete
     ]
 
     surviving_keys = {key(point) for point in ordered}
