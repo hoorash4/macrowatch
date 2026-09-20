@@ -1,0 +1,92 @@
+name: Render four Historical pivot charts temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-render-four-historical.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Render four charts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p tmp-render-four
+          PYTHONPATH=backend python - <<'PY'
+          from pathlib import Path
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series, ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
+          from historical_pivot_stage2 import finalize_sideways_protection
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          from historical_pivot_stage5 import prune_unconfirmed_retracements
+
+          db=SupabaseRest()
+          out=Path("tmp-render-four")
+
+          def derive_us10y2y(case_code,index_code):
+              a,f1,start,end=load_case_series(db,case_code=case_code,index_code=index_code,series_code="US10Y")
+              b,f2,start2,end2=load_case_series(db,case_code=case_code,index_code=index_code,series_code="US2Y")
+              if (f1,f2,start,end)!=(f2,f2,start2,end2):
+                  raise RuntimeError("US10Y/US2Y metadata mismatch")
+              by_a={str(r["observation_date"])[:10]:float(r["value"]) for r in a}
+              by_b={str(r["observation_date"])[:10]:float(r["value"]) for r in b}
+              rows=[{"observation_date":d,"value":by_a[d]-by_b[d],"frequency":"D"} for d in sorted(by_a.keys()&by_b.keys())]
+              return rows,"D",start,end
+
+          def render(filename,code,case_code,index_code,derived=False):
+              rows,freq,start,end=derive_us10y2y(case_code,index_code) if derived else load_case_series(db,case_code=case_code,index_code=index_code,series_code=code)
+              raw=normalize_rows(rows)
+              values=[p.value for p in raw if start<=p.day<=end]
+              lo,hi=min(values),max(values)
+              pad=(hi-lo)*.08 if hi!=lo else 1.0
+              g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+              base=calculate_base_pivots(rows,freq)
+              s1=augment_spike_entry_points(base,g)
+              s2=finalize_sideways_protection(s1,g)
+              s3=simplify_pivot_lines(s2,g)
+              s4=prune_same_trend_extremes(s3,g)
+              s5=prune_unconfirmed_retracements(s4)
+
+              fig,ax=plt.subplots(figsize=(14,7))
+              ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
+              for seg in s5.segments:
+                  ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.0)
+              highs=[p for p in s5.markers if p.pivot_type=="high"]
+              lows=[p for p in s5.markers if p.pivot_type=="low"]
+              if highs: ax.scatter([p.day for p in highs],[p.value for p in highs],s=28,marker="^",label="final high")
+              if lows: ax.scatter([p.day for p in lows],[p.value for p in lows],s=28,marker="v",label="final low")
+              ax.set_xlim(start,end); ax.set_ylim(g.y_min,g.y_max); ax.grid(True,alpha=.2); ax.legend(loc="best")
+              fig.tight_layout(); fig.savefig(out/filename,dpi=160); plt.close(fig)
+              print(filename,[p.day.isoformat() for p in s5.markers])
+
+          render("US10Y_REAL.png","US10Y_REAL","tightening_2022","NASDAQ_COMPOSITE")
+          render("NFCI_RISK.png","NFCI_RISK","tightening_2022","NASDAQ_COMPOSITE")
+          render("US_COMMERCIAL_CH11.png","US_COMMERCIAL_CH11","tightening_2022","NASDAQ_COMPOSITE")
+          render("US10Y2Y_GFC.png","US10Y2Y","global_financial_crisis","SP500",derived=True)
+          PY
+      - name: Commit rendered files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tmp-render-four/*.png
+          git commit -m "Publish temporary four Historical renders"
+          git push
