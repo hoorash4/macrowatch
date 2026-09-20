@@ -48,7 +48,7 @@ def run(code,rows,freq,start,end):
 
     if code=="NFCI":
         keys={pkey(p) for p in s5.markers}
-        assert (date(2024,8,2),-0.359,"high") in keys
+        assert (date(2024,8,2),-0.359,"high") not in keys
         assert (date(2024,12,27),-0.485,"low") in keys
 
     fig,ax=plt.subplots(figsize=(14,7))
