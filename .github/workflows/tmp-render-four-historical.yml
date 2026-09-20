@@ -83,6 +83,11 @@ jobs:
           render("US_COMMERCIAL_CH11.png","US_COMMERCIAL_CH11","tightening_2022","NASDAQ_COMPOSITE")
           render("US10Y2Y_GFC.png","US10Y2Y","global_financial_crisis","SP500",derived=True)
           PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: historical-four-current-python
+          path: tmp-render-four/*.png
+          if-no-files-found: error
       - name: Commit rendered files
         run: |
           git config user.name "github-actions[bot]"
