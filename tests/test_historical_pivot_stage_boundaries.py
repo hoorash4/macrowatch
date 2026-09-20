@@ -15,6 +15,7 @@ from historical_pivot_base import (  # noqa: E402
     SimplifiedLineSegment,
     SidewaysSegment,
     prune_same_trend_extremes,
+    prune_unconfirmed_retracements,
 )
 
 
@@ -134,6 +135,83 @@ class PivotStageBoundaryTests(unittest.TestCase):
             SimplifiedLineSegment(sideways_end, low5, "trend"),
             result.segments,
         )
+
+    def test_final_cleanup_collapses_consecutive_lower_lows(self):
+        d = date(2020, 1, 1)
+        high = PivotPoint(d, 10.0, "high")
+        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
+        low2 = PivotPoint(d + timedelta(days=20), 6.0, "low")
+        low3 = PivotPoint(d + timedelta(days=30), 5.0, "low")
+        existing = SimplifiedLineResult(
+            markers=(high, low1, low2, low3),
+            segments=(
+                SimplifiedLineSegment(high, low1, "trend"),
+                SimplifiedLineSegment(low1, low2, "trend"),
+                SimplifiedLineSegment(low2, low3, "trend"),
+            ),
+            sideways_segments=(),
+        )
+
+        result = prune_unconfirmed_retracements(existing)
+
+        self.assertEqual((high, low3), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(high, low3, "trend"),),
+            result.segments,
+        )
+
+    def test_final_cleanup_removes_failed_rebound_and_prior_lows(self):
+        d = date(2020, 1, 1)
+        high = PivotPoint(d, 10.0, "high")
+        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
+        low2 = PivotPoint(d + timedelta(days=20), 6.0, "low")
+        rebound = PivotPoint(d + timedelta(days=30), 8.0, "high")
+        lower_low = PivotPoint(d + timedelta(days=40), 5.0, "low")
+        existing = SimplifiedLineResult(
+            markers=(high, low1, low2, rebound, lower_low),
+            segments=(
+                SimplifiedLineSegment(high, low1, "trend"),
+                SimplifiedLineSegment(low1, low2, "trend"),
+                SimplifiedLineSegment(low2, rebound, "trend"),
+                SimplifiedLineSegment(rebound, lower_low, "trend"),
+            ),
+            sideways_segments=(),
+        )
+
+        result = prune_unconfirmed_retracements(existing)
+
+        self.assertEqual((high, lower_low), result.markers)
+
+    def test_final_cleanup_preserves_sideways_boundary(self):
+        d = date(2020, 1, 1)
+        high = PivotPoint(d, 10.0, "high")
+        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
+        sideways_start = PivotPoint(d + timedelta(days=20), 6.0, "low")
+        sideways_end = PivotPoint(d + timedelta(days=30), 6.1, "low")
+        lower_low = PivotPoint(d + timedelta(days=40), 5.0, "low")
+        sideways = SidewaysSegment(
+            start=sideways_start,
+            end=sideways_end,
+            prior_trend="down",
+            reference_side="low",
+            angle_deg=1.0,
+        )
+        existing = SimplifiedLineResult(
+            markers=(high, low1, sideways_start, sideways_end, lower_low),
+            segments=(
+                SimplifiedLineSegment(high, low1, "trend"),
+                SimplifiedLineSegment(low1, sideways_start, "trend"),
+                SimplifiedLineSegment(sideways_start, sideways_end, "sideways"),
+                SimplifiedLineSegment(sideways_end, lower_low, "trend"),
+            ),
+            sideways_segments=(sideways,),
+        )
+
+        result = prune_unconfirmed_retracements(existing)
+
+        self.assertIn(sideways_start, result.markers)
+        self.assertIn(sideways_end, result.markers)
+        self.assertNotIn(low1, result.markers)
 
     def test_post_pass_output_is_subset_of_previous_stage_markers(self):
         d = date(2020, 1, 1)
