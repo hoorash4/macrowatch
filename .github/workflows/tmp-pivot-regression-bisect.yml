@@ -1,0 +1,20 @@
+name: Temporary pivot regression bisect
+on:
+  push:
+    paths:
+      - ".github/workflows/tmp-pivot-regression-bisect.yml"
+      - "tools/tmp_pivot_regression_bisect.py"
+jobs:
+  bisect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install requests
+      - name: Bisect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_pivot_regression_bisect.py
