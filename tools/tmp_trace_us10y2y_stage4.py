@@ -141,3 +141,7 @@ if "2000-10-23" in by_date:
     for d in ["2008-03-06","2008-11-13","2009-06-04","2011-03-08"]:
         if d in by_date:
             print(d,screen_origin_angle_degrees(anchor,first,by_date[d],g))
+
+print("S2 FIRST")
+for p in s2.display_markers[:8]:
+    print(p.day,p.value,p.pivot_type)
