@@ -732,9 +732,10 @@ def prune_same_trend_extremes(
 
         if len(records) == 2:
             extreme = records[1]
-            # If the second extreme is itself a protected structure boundary,
-            # keep the existing structure unchanged.
-            if key(extreme) in structure_protected_keys:
+            # The second extreme survives as the direct endpoint, so it may be a
+            # protected structure boundary. What must not disappear is the first
+            # record extreme: if that point is protected, do not collapse across it.
+            if key(records[0]) in structure_protected_keys:
                 continue
         else:
             # H1/L1 is the first post-transition extreme; H2/L2 is the first
