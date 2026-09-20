@@ -588,7 +588,6 @@ def prune_same_trend_extremes(
     geometry: ChartGeometry,
     *,
     angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
-    protected_markers: Sequence[PivotPoint] = (),
 ) -> SimplifiedLineResult:
     """Additional deletion-only pass over the already simplified path.
 
@@ -620,19 +619,28 @@ def prune_same_trend_extremes(
     def key(point: PivotPoint) -> tuple[date, float, str]:
         return point.day, point.value, point.pivot_type
 
-    protected_keys = {key(item) for item in protected_markers}
-
-    point_map: dict[tuple[date, float, str], PivotPoint] = {}
-    for segment in result.segments:
-        point_map[key(segment.start)] = segment.start
-        point_map[key(segment.end)] = segment.end
-    for marker in protected_markers:
-        point_map[key(marker)] = marker
-
+    # This stage may only inspect points that survived the immediately previous
+    # stage. Never re-inject points from augmented/base/raw candidate sets.
+    point_map = {key(marker): marker for marker in result.markers}
     points = tuple(sorted(
         point_map.values(),
         key=lambda item: (item.day, item.pivot_type),
     ))
+
+    segment_endpoint_keys = {
+        key(point)
+        for segment in result.segments
+        for point in (segment.start, segment.end)
+    }
+    # Standalone markers are points intentionally emitted by the previous stage
+    # without a connecting segment (for example marker-only sideways spikes).
+    # They remain protected, but protection never prevents them from acting as
+    # an anchor if they are otherwise a valid surviving point.
+    standalone_marker_keys = {
+        key(marker)
+        for marker in result.markers
+        if key(marker) not in segment_endpoint_keys
+    }
     highs = tuple(item for item in points if item.pivot_type == "high")
     lows = tuple(item for item in points if item.pivot_type == "low")
 
@@ -690,7 +698,7 @@ def prune_same_trend_extremes(
         return any(start.day < day < end.day for start, end in replacement_intervals)
 
     for anchor, direction in run_starts:
-        if already_inside(anchor.day) or key(anchor) in protected_keys:
+        if already_inside(anchor.day):
             continue
 
         boundary = first_boundary_after(anchor.day)
@@ -699,7 +707,6 @@ def prune_same_trend_extremes(
             item for item in same_side
             if item.day > anchor.day
             and (boundary is None or item.day <= boundary)
-            and key(item) not in protected_keys
         ]
         if not candidates:
             continue
@@ -743,9 +750,9 @@ def prune_same_trend_extremes(
                 extreme = candidate
 
         # No later same-side candidate improved on the first extreme, so there is
-        # nothing to collapse to. Two-candidate runs collapse directly when the
-        # second candidate improved; their only angle is angle #1 and is ignored.
-        if extreme == candidates[0]:
+        # nothing to collapse to. The first angle is informational only; a run is
+        # not confirmed until a second visible angle exists.
+        if extreme == candidates[0] or angle_ordinal < 2:
             continue
 
         sideways_keys = {
@@ -753,7 +760,7 @@ def prune_same_trend_extremes(
             for sideways in result.sideways_segments
             for point in sideways.pivot_points
         }
-        structure_protected_keys = protected_keys | sideways_keys
+        structure_protected_keys = standalone_marker_keys | sideways_keys
 
         # The first connection extreme disappears when we collapse to the final
         # extreme. Preserve it when it is a protected spike/sideways boundary.
@@ -820,8 +827,14 @@ def prune_same_trend_extremes(
     for segment in kept_segments:
         marker_map[key(segment.start)] = segment.start
         marker_map[key(segment.end)] = segment.end
-    for marker in protected_markers:
-        marker_map[key(marker)] = marker
+    for marker in result.markers:
+        if key(marker) in standalone_marker_keys:
+            marker_map[key(marker)] = marker
+
+    # Deletion-only invariant: this stage may never resurrect a point that the
+    # previous stage did not return.
+    if not set(marker_map).issubset(point_map):
+        raise RuntimeError("prune_same_trend_extremes resurrected a prior-stage point")
 
     return SimplifiedLineResult(
         markers=tuple(sorted(
@@ -1150,7 +1163,6 @@ def simplify_pivot_lines(
     return prune_same_trend_extremes(
         simplified,
         geometry,
-        protected_markers=tuple(spike.point for spike in augmented.spike_peaks),
     )
 
 def _single_row(
