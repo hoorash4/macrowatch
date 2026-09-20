@@ -304,17 +304,13 @@ class PivotStageBoundaryTests(unittest.TestCase):
         self.assertNotIn(l3, result.markers)
         self.assertIn(SimplifiedLineSegment(l1, h3, "trend"), result.segments)
 
-    def test_final_cleanup_does_not_delete_with_only_two_same_side_points(self):
+    def test_stage5_requires_at_least_three_line_points(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 6.0, "low")
+        p1 = PivotPoint(d, 10.0, "high")
+        p2 = PivotPoint(d + timedelta(days=10), 7.0, "low")
         existing = SimplifiedLineResult(
-            markers=(high, low1, low2),
-            segments=(
-                SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, low2, "trend"),
-            ),
+            markers=(p1, p2),
+            segments=(SimplifiedLineSegment(p1, p2, "trend"),),
             sideways_segments=(),
         )
 
@@ -322,71 +318,56 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         self.assertEqual(existing, result)
 
-    def test_final_cleanup_does_not_delete_opposite_retracement_marker(self):
+    def test_stage5_collapses_three_consecutive_points_moving_down(self):
         d = date(2020, 1, 1)
-        high0 = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
-        rebound = PivotPoint(d + timedelta(days=20), 8.0, "high")
-        low2 = PivotPoint(d + timedelta(days=30), 6.0, "low")
-        low3 = PivotPoint(d + timedelta(days=40), 5.0, "low")
+        p1 = PivotPoint(d, 10.0, "high")
+        p2 = PivotPoint(d + timedelta(days=10), 7.0, "low")
+        p3 = PivotPoint(d + timedelta(days=20), 6.0, "low")
         existing = SimplifiedLineResult(
-            markers=(high0, low1, rebound, low2, low3),
+            markers=(p1, p2, p3),
             segments=(
-                SimplifiedLineSegment(high0, low1, "trend"),
-                SimplifiedLineSegment(low1, rebound, "trend"),
-                SimplifiedLineSegment(rebound, low2, "trend"),
-                SimplifiedLineSegment(low2, low3, "trend"),
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
             ),
             sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
 
-        self.assertEqual(existing, result)
-
-    def test_final_cleanup_collapses_consecutive_higher_highs(self):
-        d = date(2020, 1, 1)
-        low = PivotPoint(d, 1.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 5.0, "high")
-        high2 = PivotPoint(d + timedelta(days=20), 6.0, "high")
-        high3 = PivotPoint(d + timedelta(days=30), 7.0, "high")
-        existing = SimplifiedLineResult(
-            markers=(low, high1, high2, high3),
-            segments=(
-                SimplifiedLineSegment(low, high1, "trend"),
-                SimplifiedLineSegment(high1, high2, "trend"),
-                SimplifiedLineSegment(high2, high3, "trend"),
-            ),
-            sideways_segments=(),
-        )
-
-        result = prune_unconfirmed_retracements(existing)
-
-        self.assertEqual((low, high1, high3), result.markers)
+        self.assertEqual((p1, p3), result.markers)
         self.assertEqual(
-            (
-                SimplifiedLineSegment(low, high1, "trend"),
-                SimplifiedLineSegment(high1, high3, "trend"),
-            ),
+            (SimplifiedLineSegment(p1, p3, "trend"),),
             result.segments,
         )
 
-    def test_final_cleanup_does_not_treat_separated_highs_as_consecutive(self):
+    def test_stage5_collapses_three_consecutive_points_moving_up(self):
         d = date(2020, 1, 1)
-        low0 = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 5.0, "high")
-        low1 = PivotPoint(d + timedelta(days=20), 1.0, "low")
-        high2 = PivotPoint(d + timedelta(days=30), 6.0, "high")
-        low2 = PivotPoint(d + timedelta(days=40), 2.0, "low")
-        high3 = PivotPoint(d + timedelta(days=50), 7.0, "high")
+        p1 = PivotPoint(d, 1.0, "low")
+        p2 = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        p3 = PivotPoint(d + timedelta(days=20), 6.0, "high")
         existing = SimplifiedLineResult(
-            markers=(low0, high1, low1, high2, low2, high3),
+            markers=(p1, p2, p3),
             segments=(
-                SimplifiedLineSegment(low0, high1, "trend"),
-                SimplifiedLineSegment(high1, low1, "trend"),
-                SimplifiedLineSegment(low1, high2, "trend"),
-                SimplifiedLineSegment(high2, low2, "trend"),
-                SimplifiedLineSegment(low2, high3, "trend"),
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
+            ),
+            sideways_segments=(),
+        )
+
+        result = prune_unconfirmed_retracements(existing)
+
+        self.assertEqual((p1, p3), result.markers)
+
+    def test_stage5_keeps_true_direction_change(self):
+        d = date(2020, 1, 1)
+        p1 = PivotPoint(d, 10.0, "high")
+        p2 = PivotPoint(d + timedelta(days=10), 7.0, "low")
+        p3 = PivotPoint(d + timedelta(days=20), 8.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(p1, p2, p3),
+            segments=(
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
             ),
             sideways_segments=(),
         )
@@ -395,54 +376,47 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         self.assertEqual(existing, result)
 
-    def test_final_cleanup_collapses_consecutive_lower_lows(self):
+    def test_stage5_collapses_long_monotonic_run_to_endpoints(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 6.0, "low")
-        low3 = PivotPoint(d + timedelta(days=30), 5.0, "low")
+        p1 = PivotPoint(d, 1.0, "low")
+        p2 = PivotPoint(d + timedelta(days=10), 3.0, "high")
+        p3 = PivotPoint(d + timedelta(days=20), 5.0, "low")
+        p4 = PivotPoint(d + timedelta(days=30), 7.0, "high")
         existing = SimplifiedLineResult(
-            markers=(high, low1, low2, low3),
+            markers=(p1, p2, p3, p4),
             segments=(
-                SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, low2, "trend"),
-                SimplifiedLineSegment(low2, low3, "trend"),
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
+                SimplifiedLineSegment(p3, p4, "trend"),
             ),
             sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
 
-        self.assertEqual((high, low1, low3), result.markers)
+        self.assertEqual((p1, p4), result.markers)
         self.assertEqual(
-            (
-                SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, low3, "trend"),
-            ),
+            (SimplifiedLineSegment(p1, p4, "trend"),),
             result.segments,
         )
 
-    def test_final_cleanup_preserves_sideways_boundary(self):
+    def test_stage5_does_not_cross_protected_sideways_point(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 7.0, "low")
-        sideways_start = PivotPoint(d + timedelta(days=20), 6.0, "low")
-        sideways_end = PivotPoint(d + timedelta(days=30), 6.1, "low")
-        lower_low = PivotPoint(d + timedelta(days=40), 5.0, "low")
+        p1 = PivotPoint(d, 1.0, "low")
+        p2 = PivotPoint(d + timedelta(days=10), 3.0, "high")
+        p3 = PivotPoint(d + timedelta(days=20), 5.0, "high")
         sideways = SidewaysSegment(
-            start=sideways_start,
-            end=sideways_end,
-            prior_trend="down",
-            reference_side="low",
+            start=p2,
+            end=p3,
+            prior_trend="up",
+            reference_side="high",
             angle_deg=1.0,
         )
         existing = SimplifiedLineResult(
-            markers=(high, low1, sideways_start, sideways_end, lower_low),
+            markers=(p1, p2, p3),
             segments=(
-                SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, sideways_start, "trend"),
-                SimplifiedLineSegment(sideways_start, sideways_end, "sideways"),
-                SimplifiedLineSegment(sideways_end, lower_low, "trend"),
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "sideways"),
             ),
             sideways_segments=(sideways,),
         )
