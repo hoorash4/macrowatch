@@ -92,22 +92,13 @@ def prune_same_trend_extremes(
         return next((item for item in hard_boundaries if item > day), None)
 
     # Only a fully confirmed trend reversal may create a NEW anchor.
-    #
-    # Stage 3 already supplies one merged chronological line.  Stage 4 therefore
-    # does NOT carry one global trend state from the chart start.  Doing so makes
-    # a missed early reversal hide every later valid anchor.
-    #
-    # Instead, each Stage-3 turning point is independently confirmed:
-    #
-    # low -> up anchor:
-    #   rebound high -> higher low -> later higher high
-    #   any lower low before confirmation cancels the candidate
-    #
-    # high -> down anchor:
-    #   pullback low -> lower high -> later lower low
-    #   any higher high before confirmation cancels the candidate
-    #
-    # This is the exact provisional-reversal rule and its mirror.
+    # The chart's first surviving point is the initial anchor. After that:
+    #   down -> up: a low survives a rebound, the next low stays above it,
+    #               and a later high exceeds the rebound high.
+    #   up -> down: exact mirror.
+    # A failed reversal candidate is discarded as soon as the old trend makes
+    # a new extreme. Sideways may sit between the old and new trends; when a
+    # reversal is confirmed across sideways, the sideways END is the new anchor.
     ordered_points = list(points)
     sideways_segments_sorted = tuple(sorted(
         result.sideways_segments,
@@ -134,80 +125,119 @@ def prune_same_trend_extremes(
                 return "down"
         return None
 
-    def confirm_low_anchor(index: int) -> tuple[PivotPoint, str] | None:
-        candidate = ordered_points[index]
-        if candidate.pivot_type != "low":
-            return None
-
-        rebound_high: PivotPoint | None = None
-        higher_low_seen = False
-
-        for item in ordered_points[index + 1:]:
-            if item.pivot_type == "low":
-                # Old downtrend made a new low: candidate reversal is cancelled.
-                if item.value < candidate.value:
-                    return None
-                if rebound_high is not None and item.value > candidate.value:
-                    higher_low_seen = True
-                continue
-
-            if rebound_high is None:
-                rebound_high = item
-                continue
-
-            if higher_low_seen and item.value > rebound_high.value:
-                anchor = sideways_end_between(candidate.day, item.day) or candidate
-                return anchor, "up"
-
-            if not higher_low_seen and item.value > rebound_high.value:
-                rebound_high = item
-
-        return None
-
-    def confirm_high_anchor(index: int) -> tuple[PivotPoint, str] | None:
-        candidate = ordered_points[index]
-        if candidate.pivot_type != "high":
-            return None
-
-        pullback_low: PivotPoint | None = None
-        lower_high_seen = False
-
-        for item in ordered_points[index + 1:]:
-            if item.pivot_type == "high":
-                # Old uptrend made a new high: candidate reversal is cancelled.
-                if item.value > candidate.value:
-                    return None
-                if pullback_low is not None and item.value < candidate.value:
-                    lower_high_seen = True
-                continue
-
-            if pullback_low is None:
-                pullback_low = item
-                continue
-
-            if lower_high_seen and item.value < pullback_low.value:
-                anchor = sideways_end_between(candidate.day, item.day) or candidate
-                return anchor, "down"
-
-            if not lower_high_seen and item.value < pullback_low.value:
-                pullback_low = item
-
-        return None
-
     run_starts: list[tuple[PivotPoint, str]] = []
+    direction = initial_direction()
+    if ordered_points and direction is not None:
+        # The first point is only a PROVISIONAL anchor. If the same-side extreme
+        # is exceeded before an opposite reversal is confirmed, that provisional
+        # anchor is cancelled and replaced by the newer extreme.
+        current_anchor = ordered_points[0]
+        scan_index = 1
 
-    first_direction = initial_direction()
-    if ordered_points and first_direction is not None:
-        run_starts.append((ordered_points[0], first_direction))
+        while True:
+            if direction == "down":
+                trend_low: PivotPoint | None = None
+                rebound_high: PivotPoint | None = None
+                higher_low_seen = False
+                confirmed = False
 
-    for index in range(len(ordered_points)):
-        confirmed = (
-            confirm_low_anchor(index)
-            if ordered_points[index].pivot_type == "low"
-            else confirm_high_anchor(index)
-        )
-        if confirmed is not None:
-            run_starts.append(confirmed)
+                while scan_index < len(ordered_points):
+                    item = ordered_points[scan_index]
+
+                    # A higher high cancels the provisional down-reversal anchor.
+                    if (
+                        item.pivot_type == "high"
+                        and current_anchor.pivot_type == "high"
+                        and item.value > current_anchor.value
+                    ):
+                        current_anchor = item
+                        trend_low = None
+                        rebound_high = None
+                        higher_low_seen = False
+                        scan_index += 1
+                        continue
+
+                    if item.pivot_type == "low":
+                        if trend_low is None or item.value < trend_low.value:
+                            trend_low = item
+                            rebound_high = None
+                            higher_low_seen = False
+                        elif rebound_high is not None and item.value > trend_low.value:
+                            higher_low_seen = True
+                    else:
+                        if trend_low is not None:
+                            if rebound_high is None:
+                                rebound_high = item
+                            elif higher_low_seen and item.value > rebound_high.value:
+                                new_anchor = sideways_end_between(
+                                    trend_low.day,
+                                    item.day,
+                                ) or trend_low
+                                run_starts.append((current_anchor, "down"))
+                                current_anchor = new_anchor
+                                direction = "up"
+                                scan_index = ordered_points.index(new_anchor) + 1
+                                confirmed = True
+                                break
+                            elif item.value > rebound_high.value:
+                                rebound_high = item
+                    scan_index += 1
+
+                if not confirmed:
+                    run_starts.append((current_anchor, "down"))
+                    break
+                continue
+
+            trend_high: PivotPoint | None = None
+            pullback_low: PivotPoint | None = None
+            lower_high_seen = False
+            confirmed = False
+
+            while scan_index < len(ordered_points):
+                item = ordered_points[scan_index]
+
+                # A lower low cancels the provisional up-reversal anchor.
+                if (
+                    item.pivot_type == "low"
+                    and current_anchor.pivot_type == "low"
+                    and item.value < current_anchor.value
+                ):
+                    current_anchor = item
+                    trend_high = None
+                    pullback_low = None
+                    lower_high_seen = False
+                    scan_index += 1
+                    continue
+
+                if item.pivot_type == "high":
+                    if trend_high is None or item.value > trend_high.value:
+                        trend_high = item
+                        pullback_low = None
+                        lower_high_seen = False
+                    elif pullback_low is not None and item.value < trend_high.value:
+                        lower_high_seen = True
+                else:
+                    if trend_high is not None:
+                        if pullback_low is None:
+                            pullback_low = item
+                        elif lower_high_seen and item.value < pullback_low.value:
+                            new_anchor = sideways_end_between(
+                                trend_high.day,
+                                item.day,
+                            ) or trend_high
+                            run_starts.append((current_anchor, "up"))
+                            current_anchor = new_anchor
+                            direction = "down"
+                            scan_index = ordered_points.index(new_anchor) + 1
+                            confirmed = True
+                            break
+                        elif item.value < pullback_low.value:
+                            pullback_low = item
+                scan_index += 1
+
+            if not confirmed:
+                run_starts.append((current_anchor, "up"))
+                break
 
     # A point may be encountered again when a sideways END or an already
     # simplified line turn becomes the confirmed reversal anchor. Keep only its
