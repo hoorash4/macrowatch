@@ -635,10 +635,15 @@ def prune_same_trend_extremes(
     highs = tuple(item for item in points if item.pivot_type == "high")
     lows = tuple(item for item in points if item.pivot_type == "low")
 
-    # A spike or sideways begins a new structural regime. The 10-degree scan may
-    # never cross its start.
+    # A spike still stops the active trend at its start. A sideways segment is
+    # different: both boundary pivots remain part of the just-finished trend, so
+    # the 10-degree scan may inspect through the sideways END but never beyond it.
     hard_boundaries = tuple(sorted(
-        segment.start.day
+        (
+            segment.start.day
+            if segment.kind == "spike"
+            else segment.end.day
+        )
         for segment in result.segments
         if segment.kind in {"sideways", "spike"}
     ))
@@ -667,6 +672,15 @@ def prune_same_trend_extremes(
         *((item, "up") for item in local_transition_anchors(lows, "low")),
         *((item, "down") for item in local_transition_anchors(highs, "high")),
     ]
+
+    # The chart's very first surviving point has no earlier same-side pivot to
+    # prove a local turn. Treat it as the unavoidable initial trend anchor.
+    if points:
+        first_point = points[0]
+        initial_direction = "up" if first_point.pivot_type == "low" else "down"
+        if all(item[0] != first_point for item in run_starts):
+            run_starts.append((first_point, initial_direction))
+
     run_starts.sort(key=lambda item: item[0].day)
 
     replacement_intervals: list[tuple[PivotPoint, PivotPoint]] = []
@@ -683,7 +697,7 @@ def prune_same_trend_extremes(
         candidates = [
             item for item in same_side
             if item.day > anchor.day
-            and (boundary is None or item.day < boundary)
+            and (boundary is None or item.day <= boundary)
             and key(item) not in protected_keys
         ]
         if not candidates:
@@ -721,7 +735,7 @@ def prune_same_trend_extremes(
 
         if anchor.day >= extreme.day:
             continue
-        if boundary is not None and extreme.day >= boundary:
+        if boundary is not None and extreme.day > boundary:
             continue
 
         # Spike peaks are always preserved and also block collapsing across them.
