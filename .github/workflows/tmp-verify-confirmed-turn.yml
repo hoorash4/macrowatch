@@ -2,6 +2,8 @@ name: Temporary verify confirmed-turn fix
 on:
   push:
     paths:
+      - "backend/historical_pivot_base.py"
+      - "tests/test_historical_pivot_stage_boundaries.py"
       - "tools/tmp_verify_confirmed_turn.py"
       - ".github/workflows/tmp-verify-confirmed-turn.yml"
 jobs:
