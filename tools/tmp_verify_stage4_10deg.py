@@ -96,3 +96,5 @@ def main():
     run("US10Y2Y",rows,freq,start,end)
 
 if __name__=="__main__": main()
+
+# rerun after Stage4 anchor test correction
