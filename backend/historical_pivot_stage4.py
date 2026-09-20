@@ -197,15 +197,6 @@ def prune_same_trend_extremes(
         if check.status == "confirmed":
             run_starts.append((check.point, check.direction))
 
-    # Unresolved candidates are NOT new anchors yet, but Stage 4 may not collapse
-    # across them because their reversal outcome is still unknown.
-    unresolved_days = {
-        check.point.day
-        for check in checks
-        if check.status == "unresolved"
-        and check.point != points[0]
-    }
-
     # Deduplicate anchors by point; latest classification wins only if identical.
     run_map = {
         _key(point): (point, direction)
