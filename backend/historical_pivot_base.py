@@ -142,26 +142,24 @@ class SimplifiedLineResult:
 
 @dataclass(frozen=True)
 class SpikeAugmentedPivotResult:
-    """Base RDP pivots plus additive spike-entry markers only."""
+    """Spike metadata attached to the finalized RDP point set."""
 
     base: BasePivotResult
     added_high_pivots: tuple[PivotPoint, ...]
     added_low_pivots: tuple[PivotPoint, ...]
     spike_peaks: tuple[SpikePeak, ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.added_high_pivots or self.added_low_pivots:
+            raise ValueError("post-RDP stages may not add pivots")
+
     @property
     def high_pivots(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(
-            (*self.base.high_pivots, *self.added_high_pivots),
-            key=lambda item: item.day,
-        ))
+        return tuple(sorted(self.base.high_pivots, key=lambda item: item.day))
 
     @property
     def low_pivots(self) -> tuple[PivotPoint, ...]:
-        return tuple(sorted(
-            (*self.base.low_pivots, *self.added_low_pivots),
-            key=lambda item: item.day,
-        ))
+        return tuple(sorted(self.base.low_pivots, key=lambda item: item.day))
 
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
