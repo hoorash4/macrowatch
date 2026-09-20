@@ -1,0 +1,40 @@
+name: Temporary historical pagination check
+
+on:
+  push:
+    paths:
+      - ".github/workflows/tmp-historical-pagination-check.yml"
+      - "backend/historical_pivot_base.py"
+      - "tests/test_historical_pivot_base.py"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Run historical pivot tests
+        run: python -m unittest tests.test_historical_pivot_base
+      - name: Verify live pagination
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+
+          rows, frequency, start, end = load_case_series(
+              SupabaseRest(),
+              case_code="tightening_2022",
+              index_code="NASDAQ_COMPOSITE",
+              series_code="US10Y_REAL",
+          )
+          assert len(rows) > 1000, len(rows)
+          assert rows[-1]["observation_date"] > rows[999]["observation_date"]
+          print(len(rows), frequency, start, end, rows[0]["observation_date"], rows[-1]["observation_date"])
+          PY
