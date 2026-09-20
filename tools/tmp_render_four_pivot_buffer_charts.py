@@ -19,6 +19,8 @@ from historical_pivot_base import (
 
 CASE_CODE = "tightening_2022"
 INDEX_CODE = "NASDAQ_COMPOSITE"
+TEN_TWO_CASE_CODE = "global_financial_crisis"
+TEN_TWO_INDEX_CODE = "SP500"
 WIDTH = 1200.0
 HEIGHT = 600.0
 OUT = Path("tmp_pivot_charts_buffer")
@@ -28,9 +30,9 @@ OUT.mkdir(exist_ok=True)
 def derive_us10y2y(db: SupabaseRest):
     _, _, buffer_start, buffer_end = load_case_series(
         db,
-        case_code=CASE_CODE,
-        index_code=INDEX_CODE,
-        series_code="US10Y_REAL",
+        case_code=TEN_TWO_CASE_CODE,
+        index_code=TEN_TWO_INDEX_CODE,
+        series_code="US10Y",
     )
 
     def load(code: str):
