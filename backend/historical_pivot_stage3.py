@@ -213,8 +213,30 @@ def simplify_pivot_lines(
             continue
 
         keep_keys = {point_key(start), point_key(end)}
-        component_keys = set(high_points) | set(low_points)
-        delete_keys = component_keys - keep_keys
+        component_points = {
+            **high_points,
+            **low_points,
+        }
+
+        # Delete only points that actually belong to the merged wave interval.
+        # A same-side endpoint that occurs AFTER the merged wave endpoint belongs
+        # to the next wave and must remain available there.
+        delete_keys = {
+            point_key(point)
+            for point in component_points.values()
+            if start.day <= point.day <= end.day
+            and point_key(point) not in keep_keys
+        }
+
+        # The redundant leading boundary point on the opposite side is also part
+        # of the same normal wave even when it occurs just before the retained
+        # start point (e.g. H1 before L1 in an upward wave).
+        if direction > 0:
+            leading = min(high_points.values(), key=lambda item: item.day)
+        else:
+            leading = min(low_points.values(), key=lambda item: item.day)
+        if leading.day < start.day:
+            delete_keys.add(point_key(leading))
 
         # A protected point is never silently swallowed inside a normal wave.
         if delete_keys & protected_wave_keys:
