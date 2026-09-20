@@ -1,0 +1,22 @@
+name: Temporary sealed pivot pipeline verification
+on:
+  push:
+    paths:
+      - ".github/workflows/tmp-sealed-pivot-pipeline.yml"
+      - "tools/tmp_verify_sealed_pivot_pipeline.py"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install requests
+      - name: Targeted unit tests
+        run: |
+          python -m unittest             tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_spike_stage_never_reintroduces_removed_upward_entry             tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_spike_stage_never_reintroduces_removed_downward_entry             tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_spike_reuses_existing_entry_rdp_instead_of_adding_duplicate             tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_spike_peak_is_recorded_separately_from_added_entry             tests.test_historical_pivot_base.HistoricalPivotBaseTests.test_post_pass_never_crosses_spike_peak             tests.test_historical_pivot_stage_boundaries -v
+      - name: Live subset verification
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: PYTHONPATH=backend python tools/tmp_verify_sealed_pivot_pipeline.py
