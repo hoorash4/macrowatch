@@ -568,6 +568,36 @@ class PivotStageBoundaryTests(unittest.TestCase):
         self.assertIn(trend_low, result.markers)
         self.assertIn(confirming_higher_high, result.markers)
 
+    def test_stage4_keeps_confirmed_turns_and_reanchors_chronologically(self):
+        d = date(2020, 1, 1)
+        p0 = PivotPoint(d, 3.6, "low")
+        p1 = PivotPoint(d + timedelta(days=10), 9.1, "high")
+        p2 = PivotPoint(d + timedelta(days=20), -9.7, "low")
+        p3 = PivotPoint(d + timedelta(days=30), 4.6, "high")
+        p4 = PivotPoint(d + timedelta(days=40), 0.7, "low")
+        p5 = PivotPoint(d + timedelta(days=50), 19.4, "high")
+        existing = SimplifiedLineResult(
+            markers=(p0, p1, p2, p3, p4, p5),
+            segments=(
+                SimplifiedLineSegment(p0, p1, "trend"),
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
+                SimplifiedLineSegment(p3, p4, "trend"),
+                SimplifiedLineSegment(p4, p5, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), -15.0, 25.0, 1200.0, 600.0)
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        self.assertEqual((p0, p1, p2, p5), result.markers)
+        self.assertIn(SimplifiedLineSegment(p0, p1, "trend"), result.segments)
+        self.assertIn(SimplifiedLineSegment(p1, p2, "trend"), result.segments)
+        self.assertIn(SimplifiedLineSegment(p2, p5, "trend"), result.segments)
+        self.assertNotIn(p3, result.markers)
+        self.assertNotIn(p4, result.markers)
+
 
 if __name__ == "__main__":
     unittest.main()
