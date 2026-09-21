@@ -115,9 +115,9 @@ class SixStageArchitectureTests(unittest.TestCase):
     def test_stage4_treats_opposite_wave_as_retracement_when_peak_is_rebroken(self):
         d = date(2020, 1, 1)
         entry = PivotPoint(d, 0.0, "low")
-        first_peak = PivotPoint(d + timedelta(days=10), 8.0, "high")
+        first_peak = PivotPoint(d + timedelta(days=10), 6.0, "high")
         pullback = PivotPoint(d + timedelta(days=20), 3.0, "low")
-        later_peak = PivotPoint(d + timedelta(days=30), 10.0, "high")
+        later_peak = PivotPoint(d + timedelta(days=30), 18.0, "high")
         candidate = RapidMoveCandidate(entry, later_peak, 1, 0.5)
         result = SimplifiedLineResult(
             markers=(entry, first_peak, pullback, later_peak),
