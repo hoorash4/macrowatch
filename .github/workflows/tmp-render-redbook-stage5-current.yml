@@ -1,4 +1,4 @@
-name: Trace US10Y_REAL Stage3 temp
+name: Trace US10Y_REAL spike temp
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Trace US10Y_REAL Stage3
+      - name: Trace US10Y_REAL spike
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -48,7 +48,18 @@ jobs:
           s2=finalize_sideways_protection(s1,g)
           s3=simplify_pivot_lines(s2,g)
 
-          print("STAGE3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
-          print("STAGE3_SEGMENTS",[(s.start.day.isoformat(),float(s.start.value),s.end.day.isoformat(),float(s.end.value),s.kind) for s in s3.segments])
-          print("PROTECTED",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.protected_points])
+          print("BASE_HIGH",[(p.day.isoformat(),float(p.value)) for p in base.high_pivots])
+          print("BASE_LOW",[(p.day.isoformat(),float(p.value)) for p in base.low_pivots])
+          print("SPIKES",[
+              {
+                  "point":(s.point.day.isoformat(),float(s.point.value),s.point.pivot_type),
+                  "direction":s.direction,
+                  "angle":float(s.angle_deg),
+                  "entry":None if s.entry is None else (s.entry.day.isoformat(),float(s.entry.value),s.entry.pivot_type),
+                  "marker_only":bool(s.marker_only),
+              }
+              for s in s1.spike_peaks
+          ])
+          print("S2_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.display_markers])
+          print("S3_SEGMENTS",[(s.start.day.isoformat(),s.end.day.isoformat(),s.kind) for s in s3.segments])
           PY
