@@ -53,6 +53,8 @@ jobs:
           s5=prune_unconfirmed_retracements(s4)
 
           print("BASE_HIGH",[(p.day.isoformat(),float(p.value)) for p in base.high_pivots])
+          print("LOCAL_HIGH_CAND",[(p.day.isoformat(),float(p.value)) for p in base.high_candidates if '2019-12-01' <= p.day.isoformat() <= '2020-06-30'])
+          print("LOCAL_LOW_CAND",[(p.day.isoformat(),float(p.value)) for p in base.low_candidates if '2019-12-01' <= p.day.isoformat() <= '2020-06-30'])
           print("BASE_LOW",[(p.day.isoformat(),float(p.value)) for p in base.low_pivots])
           print("SPIKES",[
               {
