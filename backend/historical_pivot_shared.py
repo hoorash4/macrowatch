@@ -157,7 +157,6 @@ class SimplifiedLineResult:
 
     markers: tuple[PivotPoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
-    sideways_segments: tuple[SidewaysSegment, ...]
     marker_only_points: tuple[PivotPoint, ...] = ()
     protected_points: tuple[PivotPoint, ...] = ()
 
@@ -165,7 +164,6 @@ class SimplifiedLineResult:
         marker_keys = _validate_line_contract(
             markers=self.markers,
             segments=self.segments,
-            sideways_segments=self.sideways_segments,
             marker_only_points=self.marker_only_points,
         )
         for point in self.protected_points:
