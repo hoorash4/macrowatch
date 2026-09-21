@@ -383,78 +383,51 @@ def _sideways_pairs(
     prior_trend: str,
     geometry: ChartGeometry,
 ) -> tuple[SidewaysSegment, ...]:
-    """Classify and merge same-side sideways runs at the approved 6 degrees."""
+    """Keep a flat same-side pair only after the matching trend direction.
+
+    Sideways is not defined by a flat high/high or low/low pair alone.
+    The pair must follow an already progressing same-side trend:
+    - uptrend   -> rising highs, then high/high <= 6 degrees
+    - downtrend -> falling lows, then low/low <= 6 degrees
+
+    Once a sideways run has been established, adjacent flat pairs may continue
+    that same run.
+    """
     found: list[SidewaysSegment] = []
     ordered = tuple(sorted(points, key=lambda item: item.day))
-    active: SidewaysSegment | None = None
 
-    for left, right in zip(ordered, ordered[1:]):
-        pair = classify_sideways_reference_line(
+    for index, (left, right) in enumerate(zip(ordered, ordered[1:])):
+        segment = classify_sideways_reference_line(
             left,
             right,
             prior_trend,
             geometry,
         )
-        if pair is None:
-            if active is not None:
-                found.append(active)
-                active = None
+        if segment is None:
             continue
 
-        if active is None:
-            active = pair
-            continue
-
-        if active.end != left:
-            found.append(active)
-            active = pair
-            continue
-
-        merged = classify_sideways_reference_line(
-            active.start,
-            right,
-            prior_trend,
-            geometry,
+        continues_sideways = bool(
+            found
+            and found[-1].end == left
+            and found[-1].prior_trend == prior_trend
         )
-        if merged is not None:
-            active = merged
-        else:
-            found.append(active)
-            active = pair
-
-    if active is not None:
-        found.append(active)
-
-    protected: list[SidewaysSegment] = []
-    for segment in found:
-        start_index = ordered.index(segment.start)
-        end_index = ordered.index(segment.end)
-
-        if start_index == 0 or end_index + 1 >= len(ordered):
-            protected.append(segment)
+        if continues_sideways:
+            found.append(segment)
             continue
 
-        previous = ordered[start_index - 1]
-        following = ordered[end_index + 1]
-        before_direction = (
-            1 if segment.start.value > previous.value
-            else -1 if segment.start.value < previous.value
-            else 0
-        )
-        after_direction = (
-            1 if following.value > segment.end.value
-            else -1 if following.value < segment.end.value
-            else 0
-        )
-        if (
-            before_direction != 0
-            and after_direction != 0
-            and before_direction != after_direction
-        ):
-            protected.append(segment)
+        if index == 0:
+            continue
 
-    return tuple(protected)
+        previous = ordered[index - 1]
+        arrived_from_trend = (
+            left.value > previous.value
+            if prior_trend == "up"
+            else left.value < previous.value
+        )
+        if arrived_from_trend:
+            found.append(segment)
 
+    return tuple(found)
 
 def classify_special_structures(
     stage1: BasePivotResult,
