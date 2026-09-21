@@ -48,8 +48,9 @@ def prune_unconfirmed_retracements(
     }
     sideways_keys = {
         key(point)
-        for sideways in result.sideways_segments
-        for point in sideways.pivot_points
+        for segment in result.segments
+        if segment.kind == "sideways"
+        for point in (segment.start, segment.end)
     }
     spike_keys = {
         key(point)
@@ -222,20 +223,12 @@ def prune_unconfirmed_retracements(
         key(point): point
         for point in surviving_markers
     }
-    surviving_sideways = tuple(
-        segment
-        for segment in result.sideways_segments
-        if key(segment.start) in marker_map
-        and key(segment.end) in marker_map
-    )
-
     return SimplifiedLineResult(
         markers=tuple(sorted(
             marker_map.values(),
             key=lambda item: (item.day, item.pivot_type),
         )),
         segments=tuple(rebuilt_segments),
-        sideways_segments=surviving_sideways,
         marker_only_points=result.marker_only_points,
         protected_points=result.protected_points,
     )
