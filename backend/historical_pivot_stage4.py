@@ -213,23 +213,24 @@ def _process_window(
             continue
 
         # Candidate turn confirmed: the next same-side point failed to retrace
-        # 100% back through the previous extreme. Freeze that extreme as the
-        # new anchor NOW; later points cannot erase it retroactively.
-        _record_collapse(intervals, state)
-        turn = state.extreme
+        # 100% back through the previous extreme. The old run is now settled
+        # through THIS deciding point, so collapse the completed structure from
+        # the old anchor directly to the deciding point. The deciding point then
+        # becomes the anchor of the newly confirmed opposite trend.
+        if state.anchor.day < point.day:
+            intervals.append((state.anchor, point))
+
         first_extreme = state.opposite_extreme
-        new_direction = _sign(first_extreme.value - turn.value)
+        new_direction = _sign(first_extreme.value - point.value)
         if new_direction == 0:
             index += 1
             continue
 
         state = _RunState(
-            anchor=turn,
+            anchor=point,
             direction=new_direction,
             extreme=first_extreme,
         )
-        # The deciding point is already the first pullback of the new run.
-        state.opposite_extreme = point
         index += 1
 
     _record_collapse(intervals, state)
