@@ -34,10 +34,11 @@ jobs:
           db=SupabaseRest()
 
           # Registry codes actually available in the historical source table.
-          series_rows = db.select(
+          series_rows = db.request(
+              "GET",
               "historical_indicator_series",
               params={"select":"series_code", "limit":"10000"},
-          )
+          ) or []
           codes = sorted({str(r["series_code"]) for r in series_rows if r.get("series_code")})
 
           hits=[]
