@@ -70,20 +70,16 @@ def prune_unconfirmed_retracements(
     }
     protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
-    # Use only the actual connected line order. Standalone marker-only points
-    # never participate in a directional run.
-    line_points: list[PivotPoint] = []
-    if result.segments:
-        ordered_segments = sorted(
-            result.segments,
-            key=lambda item: (item.start.day, item.end.day),
-        )
-        line_points.append(ordered_segments[0].start)
-        for segment in ordered_segments:
-            if not line_points or line_points[-1] != segment.start:
-                line_points.append(segment.start)
-            if line_points[-1] != segment.end:
-                line_points.append(segment.end)
+    # Use the unique chronological vertices of the connected line.  This keeps
+    # Stage 6 stable even if an upstream caller supplies overlapping segments.
+    line_map: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in result.segments:
+        line_map[key(segment.start)] = segment.start
+        line_map[key(segment.end)] = segment.end
+    line_points = sorted(
+        line_map.values(),
+        key=lambda item: (item.day, item.pivot_type),
+    )
 
     if len(line_points) < 3:
         return result
