@@ -21,6 +21,7 @@ from historical_pivot_shared import (
 )
 
 SPIKE_ANGLE_THRESHOLD_DEG = 40.0
+SPIKE_MIN_VISUAL_Y_SHARE = 0.25
 
 @dataclass(frozen=True)
 class PivotPolicy:
@@ -226,6 +227,7 @@ def augment_spike_entry_points(
     geometry: ChartGeometry,
     *,
     angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
+    min_visual_y_share: float = SPIKE_MIN_VISUAL_Y_SHARE,
 ) -> SpikeAugmentedPivotResult:
     """Finish stage 1 by confirming spikes on top of the RDP result.
 
@@ -249,6 +251,11 @@ def augment_spike_entry_points(
     """
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
+    if min_visual_y_share < 0 or min_visual_y_share > 1:
+        raise ValueError("min_visual_y_share must be between 0 and 1")
+    y_span = float(geometry.y_max - geometry.y_min)
+    if y_span <= 0:
+        raise ValueError("geometry y-axis span must be positive")
 
     high_rdp = tuple(sorted(base.high_pivots, key=lambda item: item.day))
     low_rdp = tuple(sorted(base.low_pivots, key=lambda item: item.day))
@@ -283,6 +290,9 @@ def augment_spike_entry_points(
             continue
         angle = screen_angle_degrees(left, pivot, right, geometry)
         if angle >= angle_threshold_deg:
+            continue
+        visual_y_share = abs(float(pivot.value) - float(left.value)) / y_span
+        if visual_y_share < min_visual_y_share:
             continue
         opposite_inside = [
             item for item in low_rdp
@@ -329,6 +339,9 @@ def augment_spike_entry_points(
             continue
         angle = screen_angle_degrees(left, pivot, right, geometry)
         if angle >= angle_threshold_deg:
+            continue
+        visual_y_share = abs(float(pivot.value) - float(left.value)) / y_span
+        if visual_y_share < min_visual_y_share:
             continue
         opposite_inside = [
             item for item in high_rdp
