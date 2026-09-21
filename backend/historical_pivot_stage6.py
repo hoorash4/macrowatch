@@ -28,8 +28,8 @@ def prune_unconfirmed_retracements(
     <= 10 degrees, keep collapsing. If it exceeds 10 degrees, preserve the
     bend point and start a new run there.
 
-    Protected sideways/spike/rapid endpoints and standalone markers remain hard
-    boundaries.
+    Protected sideways/spike/rapid endpoints and standalone markers remain
+    mandatory output vertices, but they do not stop chronological judgment.
 
     geometry=None preserves the previous unconditional monotonic-collapse
     behavior for compatibility callers. The production pipeline supplies
@@ -97,26 +97,9 @@ def prune_unconfirmed_retracements(
             return -1
         return 0
 
-    # Every protected point is a hard chronological boundary. Finish cleanup
-    # up to that point, keep it, then restart from the protected point. This
-    # prevents a later point from causing the whole earlier run to be discarded.
-    protected_indices = [
-        index
-        for index, point in enumerate(line_points)
-        if key(point) in protected_keys
-    ]
-    windows: list[list[PivotPoint]] = []
-    start_index = 0
-    for boundary_index in protected_indices:
-        if boundary_index < start_index:
-            continue
-        current = line_points[start_index:boundary_index + 1]
-        if current:
-            windows.append(current)
-        start_index = boundary_index
-    tail = line_points[start_index:]
-    if tail and (not windows or tail != windows[-1]):
-        windows.append(tail)
+    # Protection constrains OUTPUT, not JUDGMENT.  Judge one continuous line;
+    # protected points remain mandatory vertices when the line is rebuilt.
+    windows: list[list[PivotPoint]] = [line_points]
 
     def angle_difference(
         line_start: PivotPoint,
@@ -204,6 +187,10 @@ def prune_unconfirmed_retracements(
                 index = new_start_index + 3
 
             run_start = run_end
+
+    # A protected point may participate in the calculation but may never be
+    # deleted from the output.
+    delete_keys.difference_update(protected_keys)
 
     if not delete_keys:
         return result

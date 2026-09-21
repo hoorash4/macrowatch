@@ -16,7 +16,8 @@ For each provisional rapid entry:
     keep the rapid trend alive and apply the anchor-based 10-degree test;
   * if it does not exceed the previous extreme, the prior extreme is the end
     of this rapid move; later points may not retroactively re-join it;
-- hard spike/sideways structure ends the active rapid scan;
+- hard spike/sideways structure remains protected in output but does not stop
+  the rapid-wave judgment scan;
 - only a Stage-2 rapid entry can become the next rapid anchor;
 - after consolidation, the surviving rapid entry and final rapid peak become
   final protected points and all other rapid protection is released.
@@ -74,20 +75,6 @@ def _farther_opposite(
     )
 
 
-def _crosses_hard_structure(
-    result: SimplifiedLineResult,
-    *,
-    start: date,
-    end: date,
-) -> bool:
-    for segment in result.segments:
-        if segment.kind not in {"spike", "sideways"}:
-            continue
-        if start < segment.start.day < end or start < segment.end.day < end:
-            return True
-    return False
-
-
 def _timeline_points(result: SimplifiedLineResult) -> tuple[PivotPoint, ...]:
     """Return Stage-3 chronological points, including provisional rapid markers."""
     by_key = {_key(point): point for point in result.markers}
@@ -122,13 +109,6 @@ def _scan_from_entry(
     opposite: PivotPoint | None = None
 
     for point in points:
-        if _crosses_hard_structure(
-            result,
-            start=anchor.day,
-            end=point.day,
-        ):
-            break
-
         if extreme is None:
             if _is_same_side(point, direction):
                 extreme = point
@@ -195,13 +175,6 @@ def _expand_entry_backward(
             return anchor
 
         proposal = max(earlier, key=lambda item: (item.day, item.value))
-        if _crosses_hard_structure(
-            result,
-            start=proposal.day,
-            end=seed_peak.day,
-        ):
-            return anchor
-
         reached = _scan_from_entry(
             result,
             anchor=proposal,
@@ -282,12 +255,6 @@ def finalize_rapid_moves(
                 if other.start.day > candidate.end.day:
                     break
                 continue
-            if _crosses_hard_structure(
-                result,
-                start=anchor.day,
-                end=other.end.day,
-            ):
-                break
             group_indices.append(next_index)
             group.append(other)
 

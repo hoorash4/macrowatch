@@ -13,6 +13,7 @@ For an active run:
   extreme becomes the new confirmed anchor
 - first same-direction extreme update from an anchor ignores angle
 - second and later updates stop before an angle > 10 degrees
+- protection never stops judgment; protected points only split final output
 - Stage 5 only deletes; it never creates a point absent from Stage 4
 """
 from __future__ import annotations
@@ -55,11 +56,57 @@ class _RunState:
     opposite_extreme: PivotPoint | None = None
 
 
-def _first_nonflat_direction(points: Sequence[PivotPoint]) -> tuple[int, int] | None:
-    for index in range(len(points) - 1):
-        direction = _sign(points[index + 1].value - points[index].value)
-        if direction != 0:
-            return index, direction
+def _discover_initial_state(
+    points: Sequence[PivotPoint],
+) -> tuple[_RunState, int] | None:
+    """Infer the FIRST trend only after both high and low sides agree.
+
+    The left edge has no known incoming trend, so the first leg alone can never
+    create a reversal.  Scan forward until both sides have at least two points
+    and their latest side-to-side directions agree.  Then start one run from
+    the very first visible point and continue judgment from the confirmation
+    point onward.
+    """
+    ordered = list(points)
+    highs: list[PivotPoint] = []
+    lows: list[PivotPoint] = []
+
+    for index, point in enumerate(ordered):
+        (highs if point.pivot_type == "high" else lows).append(point)
+        if len(highs) < 2 or len(lows) < 2:
+            continue
+
+        high_direction = _sign(highs[-1].value - highs[-2].value)
+        low_direction = _sign(lows[-1].value - lows[-2].value)
+        if high_direction == 0 or high_direction != low_direction:
+            continue
+
+        direction = high_direction
+        wanted_type = "high" if direction > 0 else "low"
+        same_side = [
+            item for item in ordered[: index + 1]
+            if item.pivot_type == wanted_type
+        ]
+        if not same_side:
+            continue
+
+        extreme = same_side[-1]
+        opposite_after_extreme = [
+            item for item in ordered[: index + 1]
+            if item.day > extreme.day and item.pivot_type != wanted_type
+        ]
+        opposite = opposite_after_extreme[-1] if opposite_after_extreme else None
+
+        return (
+            _RunState(
+                anchor=ordered[0],
+                direction=direction,
+                extreme=extreme,
+                opposite_extreme=opposite,
+            ),
+            index + 1,
+        )
+
     return None
 
 
@@ -111,18 +158,12 @@ def _process_window(
     extension may be collapsed.
     """
     ordered = list(points)
-    initial = _first_nonflat_direction(ordered)
-    if initial is None:
+    discovered = _discover_initial_state(ordered)
+    if discovered is None:
         return []
 
-    start_index, direction = initial
-    state = _RunState(
-        anchor=ordered[start_index],
-        direction=direction,
-        extreme=ordered[start_index + 1],
-    )
+    state, index = discovered
     intervals: list[tuple[PivotPoint, PivotPoint]] = []
-    index = start_index + 2
 
     while index < len(ordered):
         point = ordered[index]
@@ -274,50 +315,17 @@ def prune_same_trend_extremes(
     }
     protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
-    # Every protected point is a hard chronological boundary. Processing stops
-    # at the protected point, seals the current window, then restarts from that
-    # same point as the anchor of the next window. No later point may re-judge
-    # structure on the far side of a protected boundary.
-    protected_indices = [
-        index
-        for index, point in enumerate(points)
-        if _key(point) in protected_keys
-    ]
-
-    windows: list[list[PivotPoint]] = []
-    start_index = 0
-    for boundary_index in protected_indices:
-        if boundary_index < start_index:
-            continue
-        current = list(points[start_index:boundary_index + 1])
-        if current:
-            windows.append(current)
-        start_index = boundary_index
-
-    tail = list(points[start_index:])
-    if tail and (not windows or tail != windows[-1]):
-        windows.append(tail)
-
-    intervals: list[tuple[PivotPoint, PivotPoint]] = []
-    for window in windows:
-        if len(window) < 3:
-            continue
-
-        # Exactly one chronological state machine per unprotected window.
-        # Restarting from every later turn creates overlapping collapse
-        # candidates and lets a later/final point erase a turn that was already
-        # decided earlier in the sequence.
-        intervals.extend(
-            _process_window(
-                window,
-                geometry,
-                angle_threshold_deg,
-            )
+    # Protection constrains OUTPUT, not JUDGMENT.  Run one chronological state
+    # machine across the complete Stage-4 timeline so later points may still
+    # decide earlier provisional structure.  Protected points are inserted back
+    # as mandatory split points when collapsed segments are rebuilt.
+    candidates = list(
+        _process_window(
+            points,
+            geometry,
+            angle_threshold_deg,
         )
-
-    # Windows are already cut at every protected point, so no collapse can
-    # cross protected structure.
-    candidates = list(intervals)
+    )
 
     if not candidates:
         return result
@@ -360,10 +368,26 @@ def prune_same_trend_extremes(
         for segment in result.segments
         if not inside(segment)
     ]
+    exact_kind = {
+        (_key(segment.start), _key(segment.end)): segment.kind
+        for segment in result.segments
+    }
+    protected_points_sorted = sorted(
+        (point for point in points if _key(point) in protected_keys),
+        key=lambda item: (item.day, item.pivot_type),
+    )
+
     for start, end in filtered:
-        kept_segments.append(
-            SimplifiedLineSegment(start=start, end=end, kind="trend")
-        )
+        split_points = [
+            point for point in protected_points_sorted
+            if start.day < point.day < end.day
+        ]
+        chain = [start, *split_points, end]
+        for left, right in zip(chain, chain[1:]):
+            kind = exact_kind.get((_key(left), _key(right)), "trend")
+            kept_segments.append(
+                SimplifiedLineSegment(start=left, end=right, kind=kind)
+            )
     kept_segments.sort(
         key=lambda item: (item.start.day, item.end.day, item.kind)
     )
