@@ -41,10 +41,14 @@ jobs:
           from historical_pivot_stage3 import simplify_pivot_lines
           from historical_pivot_stage4 import prune_same_trend_extremes
           from historical_pivot_stage5 import prune_unconfirmed_retracements
+          from historical_pivot_store import store_pipeline_result
+
+          import os
 
           CASE="tightening_2022"
           INDEX="NASDAQ_COMPOSITE"
           OUT="tmp-tightening-2022-stage5"
+          ALGORITHM_VERSION=os.environ.get("GITHUB_SHA","manual-rebuild")
 
           db=SupabaseRest()
           refs=db.request("GET","historical_indicator_ai_analysis",params={
@@ -75,6 +79,25 @@ jobs:
                   s3=simplify_pivot_lines(s2,g)
                   s4=prune_same_trend_extremes(s3,g)
                   s5=prune_unconfirmed_retracements(s4)
+
+                  stored_count=store_pipeline_result(
+                      db,
+                      case_code=CASE,
+                      index_code=INDEX,
+                      series_code=series,
+                      algorithm_version=ALGORITHM_VERSION,
+                      source_rows=rows,
+                      frequency=freq,
+                      buffer_start=start,
+                      buffer_end=end,
+                      base=base,
+                      stage1=s1,
+                      stage2=s2,
+                      stage3=s3,
+                      stage4=s4,
+                      final=s5,
+                  )
+                  print("STORED",series,stored_count)
 
                   protected=getattr(s3,"protected_points",()) or ()
                   summary.append({
