@@ -302,11 +302,21 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
     segments.sort(
         key=lambda item: (
             item.start.day,
+            0 if item.kind == "spike" else 1,
             item.end.day,
-            item.kind,
         )
     )
-    return segments
+
+    # Protection boundaries may share an endpoint, but an overlapping interior
+    # span cannot independently own the same part of the line.
+    accepted: list[_HardSegment] = []
+    occupied_until: date | None = None
+    for segment in segments:
+        if occupied_until is not None and segment.start.day < occupied_until:
+            continue
+        accepted.append(segment)
+        occupied_until = segment.end.day
+    return accepted
 
 
 def simplify_pivot_lines(
@@ -353,13 +363,13 @@ def simplify_pivot_lines(
 
     cursor_day: date | None = None
     forced_anchor: PivotPoint | None = None
-    remaining_hard = list(hard)
 
-    while True:
+    for protected in hard:
         window = [
             point
             for point in points
-            if cursor_day is None or point.day >= cursor_day
+            if (cursor_day is None or point.day >= cursor_day)
+            and point.day <= protected.start.day
         ]
         if forced_anchor is not None:
             window.append(forced_anchor)
@@ -368,84 +378,34 @@ def simplify_pivot_lines(
             window,
             forced_anchor=forced_anchor,
         )
-        if not vertices:
-            if forced_anchor is not None:
-                remember(forced_anchor)
-            break
+        add_vertices(vertices)
 
-        vertex_keys = {_key(point) for point in vertices}
-        vertex_index = {
-            _key(point): index
-            for index, point in enumerate(vertices)
-        }
-
-        # Protection is conditional on the merged flow actually riding the
-        # protected structure.  A protected segment is activated only when:
-        # 1) its start is on the current merged flow, and
-        # 2) that flow does not leave the start for another vertex before the
-        #    protected segment's own end.
-        #
-        # This deliberately avoids any "overlapping period wins first" rule.
-        # If the flow has already departed from a candidate structure, that
-        # structure is irrelevant and is discarded.
-        eligible: list[tuple[int, _HardSegment]] = []
-        for protected in remaining_hard:
-            start_key = _key(protected.start)
-            if start_key not in vertex_keys:
-                continue
-            idx = vertex_index[start_key]
-            next_vertex = vertices[idx + 1] if idx + 1 < len(vertices) else None
-            if next_vertex is not None and next_vertex.day < protected.end.day:
-                continue
-            eligible.append((idx, protected))
-
-        if not eligible:
-            add_vertices(vertices)
-            break
-
-        first_index = min(index for index, _ in eligible)
-        same_start = [
-            protected
-            for index, protected in eligible
-            if index == first_index
-        ]
-
-        # When multiple metadata structures begin at exactly the same flow
-        # point, only an identical endpoint is unambiguous.  Different
-        # endpoints would require inventing a priority rule, so leave them
-        # unforced and continue the normal merged flow.
-        endpoint_keys = {_key(item.end) for item in same_start}
-        if len(endpoint_keys) != 1:
-            remaining_hard = [
-                item
-                for item in remaining_hard
-                if item not in same_start
-            ]
-            add_vertices(vertices[: first_index + 1])
-            if first_index + 1 < len(vertices):
-                forced_anchor = vertices[first_index]
-                cursor_day = forced_anchor.day
-                continue
-            break
-
-        protected = same_start[0]
-        prefix = vertices[: first_index + 1]
-        add_vertices(prefix)
-        if not prefix:
+        if vertices and vertices[-1] != protected.start:
+            add_segment(vertices[-1], protected.start, "trend")
+        elif not vertices:
             remember(protected.start)
 
         add_segment(protected.start, protected.end, protected.kind)
         if protected.sideways is not None:
             sideways_out.append(protected.sideways)
 
-        remaining_hard = [
-            item
-            for item in remaining_hard
-            if item.start.day >= protected.end.day
-            and item not in same_start
-        ]
         forced_anchor = protected.end
         cursor_day = protected.end.day
+
+    tail = [
+        point
+        for point in points
+        if cursor_day is None or point.day >= cursor_day
+    ]
+    if forced_anchor is not None:
+        tail.append(forced_anchor)
+
+    add_vertices(
+        _merge_window(
+            tail,
+            forced_anchor=forced_anchor,
+        )
+    )
 
     for spike in marker_only_spikes:
         remember(spike.point)
