@@ -378,9 +378,20 @@ def augment_spike_entry_points(
             entry = min(entry_candidates, key=lambda item: item.value)
             recovered_entry = True
 
-        c_point = _first_pivot_after(low_rdp, pivot.day)
-        if c_point is None:
-            continue
+        return_points = [
+            item for item in low_rdp
+            if pivot.day < item.day < right.day
+        ]
+        if return_points:
+            c_point = min(return_points, key=lambda item: item.value)
+        else:
+            return_candidates = [
+                item for item in low_candidates
+                if pivot.day < item.day < right.day
+            ]
+            if not return_candidates:
+                continue
+            c_point = min(return_candidates, key=lambda item: item.value)
 
         passes, angle = shape_passes(entry, pivot, c_point, "up")
         if not passes:
@@ -426,9 +437,20 @@ def augment_spike_entry_points(
             entry = max(entry_candidates, key=lambda item: item.value)
             recovered_entry = True
 
-        c_point = _first_pivot_after(high_rdp, pivot.day)
-        if c_point is None:
-            continue
+        return_points = [
+            item for item in high_rdp
+            if pivot.day < item.day < right.day
+        ]
+        if return_points:
+            c_point = max(return_points, key=lambda item: item.value)
+        else:
+            return_candidates = [
+                item for item in high_candidates
+                if pivot.day < item.day < right.day
+            ]
+            if not return_candidates:
+                continue
+            c_point = max(return_candidates, key=lambda item: item.value)
 
         passes, angle = shape_passes(entry, pivot, c_point, "down")
         if not passes:
