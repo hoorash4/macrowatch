@@ -14,7 +14,7 @@ from historical_pivot_stage2 import finalize_sideways_protection
 
 
 class HistoricalPivotStage2Tests(unittest.TestCase):
-    def test_rejects_high_sideways_when_highs_arrive_from_downtrend(self):
+    def test_classifies_graph_end_sideways_regardless_of_arrival_direction(self):
         d = date(2020, 1, 1)
         highs = (
             PivotPoint(d + timedelta(days=10), 10.0, "high"),
@@ -40,7 +40,10 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
 
         stage2 = finalize_sideways_protection(stage1, geometry)
 
-        self.assertEqual((), stage2.high_sideways_segments)
+        self.assertEqual(1, len(stage2.high_sideways_segments))
+        self.assertTrue(stage2.high_sideways_segments[0].protected)
+        self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
+        self.assertEqual(highs[2], stage2.high_sideways_segments[0].end)
 
     def test_accepts_low_sideways_after_falling_lows(self):
         d = date(2020, 1, 1)
@@ -102,6 +105,94 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
         self.assertEqual(1, len(stage2.high_sideways_segments))
         self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
         self.assertEqual(highs[3], stage2.high_sideways_segments[0].end)
+
+    def test_sideways_same_direction_before_and_after_is_not_protected(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 2.0, "high"),
+            PivotPoint(d + timedelta(days=30), 6.0, "high"),
+            PivotPoint(d + timedelta(days=60), 6.1, "high"),
+            PivotPoint(d + timedelta(days=90), 9.0, "high"),
+        )
+        lows = (
+            PivotPoint(d + timedelta(days=15), 1.0, "low"),
+            PivotPoint(d + timedelta(days=45), 2.0, "low"),
+            PivotPoint(d + timedelta(days=75), 3.0, "low"),
+        )
+        stage1 = BasePivotResult(
+            frequency="W",
+            policy=PivotPolicy(5, 14),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
+        )
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(1, len(stage2.high_sideways_segments))
+        self.assertFalse(stage2.high_sideways_segments[0].protected)
+
+    def test_sideways_direction_change_protects_both_boundaries(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 2.0, "high"),
+            PivotPoint(d + timedelta(days=30), 6.0, "high"),
+            PivotPoint(d + timedelta(days=60), 6.1, "high"),
+            PivotPoint(d + timedelta(days=90), 3.0, "high"),
+        )
+        lows = (
+            PivotPoint(d + timedelta(days=15), 1.0, "low"),
+            PivotPoint(d + timedelta(days=45), 2.0, "low"),
+            PivotPoint(d + timedelta(days=75), 1.5, "low"),
+        )
+        stage1 = BasePivotResult(
+            frequency="W",
+            policy=PivotPolicy(5, 14),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
+        )
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(1, len(stage2.high_sideways_segments))
+        self.assertTrue(stage2.high_sideways_segments[0].protected)
+
+    def test_graph_start_sideways_is_protected(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 6.0, "high"),
+            PivotPoint(d + timedelta(days=40), 6.1, "high"),
+            PivotPoint(d + timedelta(days=80), 9.0, "high"),
+        )
+        lows = (
+            PivotPoint(d + timedelta(days=20), 2.0, "low"),
+            PivotPoint(d + timedelta(days=60), 3.0, "low"),
+        )
+        stage1 = BasePivotResult(
+            frequency="W",
+            policy=PivotPolicy(5, 14),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
+        )
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(1, len(stage2.high_sideways_segments))
+        self.assertTrue(stage2.high_sideways_segments[0].protected)
 
 
 if __name__ == "__main__":
