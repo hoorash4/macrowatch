@@ -24,6 +24,7 @@ from typing import Sequence
 from historical_pivot_shared import (
     ChartGeometry,
     PivotPoint,
+    RapidMoveCandidate,
     SimplifiedLineResult,
     SimplifiedLineSegment,
     SAME_TREND_ANGLE_THRESHOLD_DEG,
@@ -260,6 +261,159 @@ def _process_window(
     return intervals
 
 
+
+def _connected_line_points(
+    result: SimplifiedLineResult,
+) -> list[PivotPoint]:
+    if not result.segments:
+        return []
+    ordered_segments = sorted(
+        result.segments,
+        key=lambda item: (item.start.day, item.end.day, item.kind),
+    )
+    points = [ordered_segments[0].start]
+    for segment in ordered_segments:
+        if points[-1] != segment.start:
+            points.append(segment.start)
+        if points[-1] != segment.end:
+            points.append(segment.end)
+    return points
+
+
+def _resolve_rapid_candidate(
+    candidate: RapidMoveCandidate,
+    line_points: Sequence[PivotPoint],
+) -> str:
+    """Resolve one Stage-3 rapid candidate without adding a new threshold.
+
+    Returns:
+    - absorbed: the original direction resumes past the candidate extreme
+      before an opposite trend is structurally confirmed;
+    - confirmed: an opposite trend is structurally confirmed first;
+    - provisional: the available graph ends before either event.
+    """
+    try:
+        end_index = next(
+            index
+            for index, point in enumerate(line_points)
+            if _key(point) == _key(candidate.end)
+        )
+    except StopIteration:
+        return "provisional"
+
+    following = line_points[end_index + 1:]
+    if not following:
+        return "provisional"
+
+    if candidate.direction > 0:
+        peak = candidate.end.value
+        pullback_low: PivotPoint | None = None
+        lower_high_seen = False
+
+        for point in following:
+            if point.value > peak:
+                return "absorbed"
+
+            if pullback_low is None:
+                if point.value < peak:
+                    pullback_low = point
+                continue
+
+            if not lower_high_seen:
+                if point.value < pullback_low.value:
+                    pullback_low = point
+                    continue
+                if point.value > pullback_low.value:
+                    lower_high_seen = True
+                    if (
+                        pullback_low.value < candidate.start.value
+                        and point.value < peak
+                    ):
+                        return "confirmed"
+                continue
+
+            if point.value > peak:
+                return "absorbed"
+            if point.value < pullback_low.value:
+                return "confirmed"
+
+        return "provisional"
+
+    trough = candidate.end.value
+    rebound_high: PivotPoint | None = None
+    higher_low_seen = False
+
+    for point in following:
+        if point.value < trough:
+            return "absorbed"
+
+        if rebound_high is None:
+            if point.value > trough:
+                rebound_high = point
+            continue
+
+        if not higher_low_seen:
+            if point.value > rebound_high.value:
+                rebound_high = point
+                continue
+            if point.value < rebound_high.value:
+                higher_low_seen = True
+                if (
+                    rebound_high.value > candidate.start.value
+                    and point.value > trough
+                ):
+                    return "confirmed"
+            continue
+
+        if point.value < trough:
+            return "absorbed"
+        if point.value > rebound_high.value:
+            return "confirmed"
+
+    return "provisional"
+
+
+def _resolve_rapid_moves(
+    result: SimplifiedLineResult,
+) -> tuple[
+    tuple[PivotPoint, ...],
+    tuple[PivotPoint, ...],
+    tuple[RapidMoveCandidate, ...],
+]:
+    """Resolve provisional Stage-3 rapid candidates before normal Stage-4 cleanup."""
+    line_points = _connected_line_points(result)
+    confirmed = {_key(point): point for point in result.protected_points}
+    provisional: dict[tuple[date, float, str], PivotPoint] = {}
+    kept_candidates: list[RapidMoveCandidate] = []
+
+    for candidate in result.rapid_move_candidates:
+        status = _resolve_rapid_candidate(candidate, line_points)
+        if status == "absorbed":
+            continue
+
+        kept_candidates.append(candidate)
+        target = confirmed if status == "confirmed" else provisional
+        for point in candidate.protected_points:
+            target[_key(point)] = point
+
+    # Confirmed protection always wins when a point belongs to both sets.
+    for point_key in tuple(provisional):
+        if point_key in confirmed:
+            provisional.pop(point_key)
+
+    return (
+        tuple(sorted(
+            confirmed.values(),
+            key=lambda item: (item.day, item.pivot_type),
+        )),
+        tuple(sorted(
+            provisional.values(),
+            key=lambda item: (item.day, item.pivot_type),
+        )),
+        tuple(kept_candidates),
+    )
+
+
 def prune_same_trend_extremes(
     result: SimplifiedLineResult,
     geometry: ChartGeometry,
@@ -298,9 +452,18 @@ def prune_same_trend_extremes(
         if segment.kind == "spike"
         for point in (segment.start, segment.end)
     }
+
+    (
+        confirmed_rapid_points,
+        provisional_rapid_points,
+        surviving_rapid_candidates,
+    ) = _resolve_rapid_moves(result)
     rapid_move_keys = {
         _key(point)
-        for point in result.protected_points
+        for point in (
+            *confirmed_rapid_points,
+            *provisional_rapid_points,
+        )
     }
     protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
@@ -350,7 +513,14 @@ def prune_same_trend_extremes(
     candidates = list(intervals)
 
     if not candidates:
-        return result
+        return SimplifiedLineResult(
+            markers=result.markers,
+            segments=result.segments,
+            sideways_segments=result.sideways_segments,
+            protected_points=confirmed_rapid_points,
+            provisional_protected_points=provisional_rapid_points,
+            rapid_move_candidates=surviving_rapid_candidates,
+        )
 
     # Prefer the earliest valid anchor. If two intervals share an anchor, keep
     # the farther endpoint. Later overlapping candidates are subordinate to the
@@ -416,5 +586,7 @@ def prune_same_trend_extremes(
         )),
         segments=tuple(kept_segments),
         sideways_segments=result.sideways_segments,
-        protected_points=result.protected_points,
+        protected_points=confirmed_rapid_points,
+        provisional_protected_points=provisional_rapid_points,
+        rapid_move_candidates=surviving_rapid_candidates,
     )
