@@ -457,7 +457,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(high, low1, "trend"),
                 SimplifiedLineSegment(low1, low2, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -487,7 +486,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(high, low1, "trend"),
                 SimplifiedLineSegment(low1, low2, "sideways"),
             ),
-            sideways_segments=(sideways,),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -515,7 +513,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(low1, low2, "trend"),
                 SimplifiedLineSegment(low2, sideways_end, "sideways"),
             ),
-            sideways_segments=(sideways,),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -544,7 +541,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(high1, dip1, "trend"),
                 SimplifiedLineSegment(dip1, high2, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
@@ -573,7 +569,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(high2, dip2, "trend"),
                 SimplifiedLineSegment(dip2, high3, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
@@ -605,7 +600,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(lower_high, dip2, "trend"),
                 SimplifiedLineSegment(dip2, higher_high, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
@@ -637,7 +631,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(high2, inside_low2, "trend"),
                 SimplifiedLineSegment(inside_low2, high3, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
@@ -665,7 +658,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(entry, peak, "spike"),
                 SimplifiedLineSegment(peak, later_high, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
@@ -688,7 +680,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
                 SimplifiedLineSegment(low1, low2, "trend"),
                 SimplifiedLineSegment(low2, low3, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 

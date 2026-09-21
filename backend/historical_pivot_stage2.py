@@ -5,9 +5,10 @@ Stage 2 owns three classifications:
 - spikes (final protection; entry is selected before height testing)
 - sideways ranges (final protection)
 
-Stage 2 never changes the Stage-1 RDP set.  Rapid-move candidates are handed to
-Stage 3 as provisional points; their consolidation/finalization belongs only to
-Stage 4.
+Stage 2 never changes the Stage-1 RDP set. Rapid-move candidates carry their
+own entry/end points and are handed to Stage 3 as candidate metadata only; no
+duplicated provisional-point list is emitted. Consolidation/finalization belongs
+only to Stage 4.
 """
 from __future__ import annotations
 
@@ -48,7 +49,6 @@ class Stage2Result:
     high_sideways_segments: tuple[SidewaysSegment, ...] = ()
     low_sideways_segments: tuple[SidewaysSegment, ...] = ()
     rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
-    provisional_protected_points: tuple[PivotPoint, ...] = ()
 
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
@@ -592,12 +592,6 @@ def classify_special_structures(
         if _key(point) not in marker_only_keys
     )
 
-    provisional_map = {
-        _key(point): point
-        for candidate in rapid
-        for point in candidate.protected_points
-    }
-
     return Stage2Result(
         high_pivots=augmented_highs,
         low_pivots=augmented_lows,
@@ -605,10 +599,6 @@ def classify_special_structures(
         high_sideways_segments=_sideways_pairs(line_highs, "high", geometry),
         low_sideways_segments=_sideways_pairs(line_lows, "low", geometry),
         rapid_move_candidates=rapid,
-        provisional_protected_points=tuple(sorted(
-            provisional_map.values(),
-            key=lambda item: (item.day, item.pivot_type),
-        )),
     )
 
 

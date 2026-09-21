@@ -28,8 +28,8 @@ def prune_unconfirmed_retracements(
     <= 10 degrees, keep collapsing. If it exceeds 10 degrees, preserve the
     bend point and start a new run there.
 
-    Protected sideways/spike/rapid endpoints and standalone markers remain
-    mandatory output vertices, but they do not stop chronological judgment.
+    Protected sideways/spike/rapid endpoints and explicit marker-only spikes
+    remain mandatory output points, but they do not stop chronological judgment.
 
     geometry=None preserves the previous unconditional monotonic-collapse
     behavior for compatibility callers. The production pipeline supplies
@@ -42,18 +42,15 @@ def prune_unconfirmed_retracements(
     if len(result.markers) < 3:
         return result
 
-    standalone_keys = {
-        key(marker)
-        for marker in result.markers
-        if not any(
-            key(marker) in {key(segment.start), key(segment.end)}
-            for segment in result.segments
-        )
+    marker_only_keys = {
+        key(point)
+        for point in result.marker_only_points
     }
     sideways_keys = {
         key(point)
-        for sideways in result.sideways_segments
-        for point in sideways.pivot_points
+        for segment in result.segments
+        if segment.kind == "sideways"
+        for point in (segment.start, segment.end)
     }
     spike_keys = {
         key(point)
@@ -63,12 +60,9 @@ def prune_unconfirmed_retracements(
     }
     rapid_move_keys = {
         key(point)
-        for point in (
-            *result.protected_points,
-            *result.provisional_protected_points,
-        )
+        for point in result.protected_points
     }
-    protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
+    protected_keys = marker_only_keys | sideways_keys | spike_keys | rapid_move_keys
 
     # Use the unique chronological vertices of the connected line.  This keeps
     # Stage 6 stable even if an upstream caller supplies overlapping segments.
@@ -229,22 +223,13 @@ def prune_unconfirmed_retracements(
         key(point): point
         for point in surviving_markers
     }
-    surviving_sideways = tuple(
-        segment
-        for segment in result.sideways_segments
-        if key(segment.start) in marker_map
-        and key(segment.end) in marker_map
-    )
-
     return SimplifiedLineResult(
         markers=tuple(sorted(
             marker_map.values(),
             key=lambda item: (item.day, item.pivot_type),
         )),
         segments=tuple(rebuilt_segments),
-        sideways_segments=surviving_sideways,
+        marker_only_points=result.marker_only_points,
         protected_points=result.protected_points,
-        provisional_protected_points=result.provisional_protected_points,
-        rapid_move_candidates=result.rapid_move_candidates,
     )
 

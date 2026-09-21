@@ -1,7 +1,10 @@
 """Shared immutable types and raw-graph helpers for Historical Insight stages.
 
-Stage modules exchange only their explicit result DTOs plus the untouched raw graph
-context. No stage result contains earlier candidate sets.
+Stage modules exchange only explicit result DTOs plus untouched graph geometry.
+Stage 1 retains plateau candidates because Stage 2 must search them for entries.
+Stage 3 alone may carry rapid candidates; Stage 4+ never carries provisional or
+rapid-candidate state. Detached markers are legal only when explicitly declared
+as marker-only spikes.
 """
 from __future__ import annotations
 
@@ -92,47 +95,85 @@ class RapidMoveCandidate:
         return self.start, self.end
 
 
+def _pivot_key(point: PivotPoint) -> tuple[date, float, str]:
+    return point.day, point.value, point.pivot_type
+
+
+def _validate_line_contract(
+    *,
+    markers: Sequence[PivotPoint],
+    segments: Sequence[SimplifiedLineSegment],
+    marker_only_points: Sequence[PivotPoint],
+) -> set[tuple[date, float, str]]:
+    marker_keys = {_pivot_key(item) for item in markers}
+    endpoint_keys: set[tuple[date, float, str]] = set()
+
+    for segment in segments:
+        for point in (segment.start, segment.end):
+            point_key = _pivot_key(point)
+            if point_key not in marker_keys:
+                raise ValueError(
+                    "stage output contains a segment endpoint that is not a surviving marker"
+                )
+            endpoint_keys.add(point_key)
+
+    marker_only_keys = {_pivot_key(point) for point in marker_only_points}
+    if not marker_only_keys.issubset(marker_keys):
+        raise ValueError("stage output contains marker-only metadata for a deleted marker")
+    if marker_only_keys & endpoint_keys:
+        raise ValueError("marker-only spike may not be connected to the line")
+
+    detached = marker_keys - endpoint_keys
+    if detached != marker_only_keys:
+        raise ValueError(
+            "only explicit marker-only spikes may survive as detached markers"
+        )
+    return marker_keys
+
+
 @dataclass(frozen=True)
-class SimplifiedLineResult:
+class Stage3LineResult:
+    """Stage-3 output contract consumed by Stage 4 only."""
+
     markers: tuple[PivotPoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
-    sideways_segments: tuple[SidewaysSegment, ...]
-    protected_points: tuple[PivotPoint, ...] = ()
-    provisional_protected_points: tuple[PivotPoint, ...] = ()
+    marker_only_points: tuple[PivotPoint, ...] = ()
     rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
 
     def __post_init__(self) -> None:
-        marker_keys = {
-            (item.day, item.value, item.pivot_type)
-            for item in self.markers
-        }
-        for segment in self.segments:
-            for point in (segment.start, segment.end):
-                point_key = (point.day, point.value, point.pivot_type)
-                if point_key not in marker_keys:
+        marker_keys = _validate_line_contract(
+            markers=self.markers,
+            segments=self.segments,
+            marker_only_points=self.marker_only_points,
+        )
+        for candidate in self.rapid_move_candidates:
+            for point in candidate.protected_points:
+                if _pivot_key(point) not in marker_keys:
                     raise ValueError(
-                        "stage output contains a segment endpoint that is not a surviving marker"
+                        "stage3 contains rapid metadata for a deleted marker"
                     )
-        for sideways in self.sideways_segments:
-            for point in sideways.pivot_points:
-                point_key = (point.day, point.value, point.pivot_type)
-                if point_key not in marker_keys:
-                    raise ValueError(
-                        "stage output contains sideways metadata for a deleted marker"
-                    )
-        for point in (*self.protected_points, *self.provisional_protected_points):
-            point_key = (point.day, point.value, point.pivot_type)
-            if point_key not in marker_keys:
+
+
+@dataclass(frozen=True)
+class SimplifiedLineResult:
+    """Stage-4+ line contract; no provisional or rapid-candidate state survives."""
+
+    markers: tuple[PivotPoint, ...]
+    segments: tuple[SimplifiedLineSegment, ...]
+    marker_only_points: tuple[PivotPoint, ...] = ()
+    protected_points: tuple[PivotPoint, ...] = ()
+
+    def __post_init__(self) -> None:
+        marker_keys = _validate_line_contract(
+            markers=self.markers,
+            segments=self.segments,
+            marker_only_points=self.marker_only_points,
+        )
+        for point in self.protected_points:
+            if _pivot_key(point) not in marker_keys:
                 raise ValueError(
                     "stage output contains protected metadata for a deleted marker"
                 )
-        for candidate in self.rapid_move_candidates:
-            for point in candidate.protected_points:
-                point_key = (point.day, point.value, point.pivot_type)
-                if point_key not in marker_keys:
-                    raise ValueError(
-                        "stage output contains rapid-move metadata for a deleted marker"
-                    )
 
 
 def shift_months(value: date, months: int) -> date:

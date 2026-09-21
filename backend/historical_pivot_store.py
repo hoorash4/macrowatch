@@ -308,11 +308,9 @@ def build_storage_rows(
     order_by_key = {_key(point): index for index, point in enumerate(ordered)}
 
     segment_by_start: dict[tuple[date, float, str], tuple[PivotPoint, str]] = {}
-    endpoint_keys: set[tuple[date, float, str]] = set()
     for segment in final.segments:
         start_key = _key(segment.start)
         end_key = _key(segment.end)
-        endpoint_keys.update((start_key, end_key))
         previous = segment_by_start.get(start_key)
         if previous is not None and _key(previous[0]) != end_key:
             raise RuntimeError("final pivot result has multiple outgoing segments from one marker")
@@ -324,6 +322,7 @@ def build_storage_rows(
     stage3_keys = _keys(_stage_markers(stage3))
     stage4_keys = _keys(_stage_markers(stage4))
     stage5_keys = _keys(_stage_markers(stage5))
+    marker_only_keys = _keys(getattr(final, "marker_only_points", ()) or ())
 
     spike_meta: dict[tuple[date, float, str], dict[str, Any]] = {}
     for spike in tuple(getattr(stage2, "spike_peaks", ()) or ()):
@@ -367,7 +366,7 @@ def build_storage_rows(
         segment_kind = outgoing[1] if outgoing is not None else None
         spike = spike_meta.get(point_key)
         sideways = sideways_meta.get(point_key, [])
-        standalone = point_key not in endpoint_keys
+        standalone = point_key in marker_only_keys
 
         reason_codes: list[str] = []
         base_rdp = point_key in base_rdp_keys
