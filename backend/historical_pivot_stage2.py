@@ -2,7 +2,7 @@
 
 Stage 2 owns three classifications:
 - rapid rise/fall candidates (provisional protection only)
-- spikes (final protection)
+- spikes (final protection; entry is selected before height testing)
 - sideways ranges (final protection)
 
 Stage 2 never changes the Stage-1 RDP set.  Rapid-move candidates are handed to
@@ -28,7 +28,7 @@ from historical_pivot_stage1 import BasePivotResult
 
 
 SPIKE_ANGLE_THRESHOLD_DEG = 25.0
-SPIKE_MIN_VISUAL_Y_SHARE = 0.20
+SPIKE_MIN_VISUAL_Y_SHARE = 0.25
 SPIKE_MIN_RETRACEMENT_RATIO = 0.70
 SPIKE_MAX_BC_TO_AB_Y_RATIO = 1.50
 SPIKE_FOLLOWUP_POINTS = 2
@@ -135,6 +135,7 @@ def _spike_shape_passes(
     a_point: PivotPoint,
     peak: PivotPoint,
     c_point: PivotPoint,
+    entry: PivotPoint,
     same_side: Sequence[PivotPoint],
     geometry: ChartGeometry,
     direction: str,
@@ -160,7 +161,7 @@ def _spike_shape_passes(
     ratio = bc / ab
     if ratio < min_retracement_ratio or ratio > max_bc_to_ab_y_ratio:
         return False, 0.0
-    if max(ab, bc) / (geometry.y_max - geometry.y_min) < min_visual_y_share:
+    if _visual_y_share(entry, peak, geometry) < min_visual_y_share:
         return False, 0.0
 
     angle = screen_angle_degrees(a_point, peak, c_point, geometry)
@@ -231,10 +232,22 @@ def _classify_spikes(
         ):
             continue
 
+        marker_only = opposite_sideways_contains_spike(peak, "up")
+        entry = None if marker_only else _entry_before_peak(
+            a_point=a_point,
+            peak=peak,
+            opposite_rdp=low_rdp,
+            opposite_candidates=stage1.low_candidates,
+            direction="up",
+        )
+        if marker_only or entry is None:
+            continue
+
         passes, angle = _spike_shape_passes(
             a_point=a_point,
             peak=peak,
             c_point=c_point,
+            entry=entry,
             same_side=high_rdp,
             geometry=geometry,
             direction="up",
@@ -245,17 +258,6 @@ def _classify_spikes(
             followup_points=followup_points,
         )
         if not passes:
-            continue
-
-        marker_only = opposite_sideways_contains_spike(peak, "up")
-        entry = None if marker_only else _entry_before_peak(
-            a_point=a_point,
-            peak=peak,
-            opposite_rdp=low_rdp,
-            opposite_candidates=stage1.low_candidates,
-            direction="up",
-        )
-        if not marker_only and entry is None:
             continue
 
         spikes.append(
@@ -289,10 +291,22 @@ def _classify_spikes(
         ):
             continue
 
+        marker_only = opposite_sideways_contains_spike(peak, "down")
+        entry = None if marker_only else _entry_before_peak(
+            a_point=a_point,
+            peak=peak,
+            opposite_rdp=high_rdp,
+            opposite_candidates=stage1.high_candidates,
+            direction="down",
+        )
+        if marker_only or entry is None:
+            continue
+
         passes, angle = _spike_shape_passes(
             a_point=a_point,
             peak=peak,
             c_point=c_point,
+            entry=entry,
             same_side=low_rdp,
             geometry=geometry,
             direction="down",
@@ -303,17 +317,6 @@ def _classify_spikes(
             followup_points=followup_points,
         )
         if not passes:
-            continue
-
-        marker_only = opposite_sideways_contains_spike(peak, "down")
-        entry = None if marker_only else _entry_before_peak(
-            a_point=a_point,
-            peak=peak,
-            opposite_rdp=high_rdp,
-            opposite_candidates=stage1.high_candidates,
-            direction="down",
-        )
-        if not marker_only and entry is None:
             continue
 
         spikes.append(
