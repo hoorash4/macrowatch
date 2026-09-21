@@ -51,7 +51,11 @@ def prune_unconfirmed_retracements(
         if segment.kind == "spike"
         for point in (segment.start, segment.end)
     }
-    protected_keys = standalone_keys | sideways_keys | spike_keys
+    rapid_move_keys = {
+        key(point)
+        for point in result.protected_points
+    }
+    protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
     # Use only the actual connected line order. Standalone marker-only points
     # never participate in a directional run.
@@ -163,5 +167,6 @@ def prune_unconfirmed_retracements(
         )),
         segments=tuple(rebuilt_segments),
         sideways_segments=surviving_sideways,
+        protected_points=result.protected_points,
     )
 
