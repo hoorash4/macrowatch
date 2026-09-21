@@ -297,8 +297,9 @@ def prune_same_trend_extremes(
     }
     sideways_keys = {
         _key(point)
-        for sideways in result.sideways_segments
-        for point in sideways.pivot_points
+        for segment in result.segments
+        if segment.kind == "sideways"
+        for point in (segment.start, segment.end)
     }
     spike_keys = {
         _key(point)
@@ -403,7 +404,6 @@ def prune_same_trend_extremes(
             key=lambda item: (item.day, item.pivot_type),
         )),
         segments=tuple(kept_segments),
-        sideways_segments=result.sideways_segments,
         marker_only_points=result.marker_only_points,
         protected_points=result.protected_points,
     )
