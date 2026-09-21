@@ -89,144 +89,147 @@ def _process_window(
     geometry: ChartGeometry,
     threshold: float,
 ) -> list[tuple[PivotPoint, PivotPoint]]:
-    """Return direct-collapse intervals for one unprotected line window."""
+    """Return direct-collapse intervals from one chronological Stage-3 pass.
+
+    A Stage-3 point is always judged before it can be removed.
+
+    For the active direction, anchor -> extreme is the current structural leg.
+    After an opposite pullback appears, the very next same-side Stage-3 point
+    decides the previous extreme:
+
+    - if it exceeds the previous extreme, the old extreme was not a confirmed
+      turn; the trend continues and the intermediate pullback can be collapsed.
+    - if it does not exceed the previous extreme, the old extreme is confirmed
+      as a turn. It immediately becomes the new anchor, the pullback becomes
+      the first extreme of the opposite run, and judgment continues from there.
+
+    This is the 100% retracement rule in point form: a candidate turn is
+    cancelled only when the following same-side point fully retraces past it.
+    No later/final point may retroactively re-judge an already confirmed turn.
+
+    The first same-direction extension from a newly confirmed anchor is always
+    collapsible. Second and later same-side candidates still consume the
+    existing 10-degree ordinal; the angle only decides whether an improving
+    extension may be collapsed.
+    """
     ordered = list(points)
     initial = _first_nonflat_direction(ordered)
     if initial is None:
         return []
 
     start_index, direction = initial
-    anchor = ordered[start_index]
-    extreme = ordered[start_index + 1]
     state = _RunState(
-        anchor=anchor,
+        anchor=ordered[start_index],
         direction=direction,
-        extreme=extreme,
+        extreme=ordered[start_index + 1],
     )
-
     intervals: list[tuple[PivotPoint, PivotPoint]] = []
     index = start_index + 2
 
     while index < len(ordered):
         point = ordered[index]
 
-        # Every SAME-SIDE candidate consumes an angle ordinal, even when it
-        # does not improve the connection extreme. This is critical: skipping a
-        # lower high / higher low must not make a later point become "angle #1".
-        same_side = point.pivot_type == state.extreme.pivot_type
-        improves = _can_extend(state, point)
+        # Wait for one opposite-side pullback after the active extreme.
+        if state.opposite_extreme is None:
+            if point.pivot_type != state.extreme.pivot_type:
+                state.opposite_extreme = point
+                index += 1
+                continue
 
-        if same_side and not state.angle_blocked:
+            # Consecutive same-side Stage-3 points are still judged in order.
             state.angle_ordinal += 1
+            improves = _can_extend(state, point)
             angle = screen_origin_angle_degrees(
                 state.anchor,
                 state.extreme,
                 point,
                 geometry,
             )
-
-            if state.angle_ordinal >= 2 and angle > threshold:
-                # Stop before this candidate. Preserve everything from here until
-                # a confirmed reversal creates a new anchor.
+            if (
+                improves
+                and state.angle_ordinal >= 2
+                and angle > threshold
+            ):
                 _record_collapse(intervals, state)
-                state.collapse_end = None
-                state.angle_blocked = True
-
-                if improves:
-                    state.extreme = point
-                    state.opposite_extreme = None
-                    state.rebound_extreme = None
-
-                index += 1
-                continue
-
-        # Old trend resumes / continues with a new extreme.
-        if improves:
-            state.extreme = point
-            if not state.angle_blocked:
-                state.collapse_end = point
-            state.opposite_extreme = None
-            state.rebound_extreme = None
-            index += 1
-            continue
-
-        # Opposite excursion / failed same-direction move.
-        if state.direction > 0:
-            # Rising run: watch for high -> low -> lower high -> lower low.
-            if state.opposite_extreme is None:
-                state.opposite_extreme = point
-                index += 1
-                continue
-
-            if state.rebound_extreme is None:
-                if point.value > state.opposite_extreme.value:
-                    # rebound high candidate
-                    state.rebound_extreme = point
-                elif point.value < state.opposite_extreme.value:
-                    # deeper first pullback before rebound
-                    state.opposite_extreme = point
-                index += 1
-                continue
-
-            # The first low after the rebound high decides this candidate.
-            # A lower low confirms the down reversal. Otherwise the candidate
-            # has failed immediately; do not keep carrying the old candidate
-            # forward until some later/final point.
-            if point.value < state.opposite_extreme.value:
-                _record_collapse(intervals, state)
-
-                turn = state.extreme
                 state = _RunState(
-                    anchor=turn,
-                    direction=-1,
+                    anchor=state.extreme,
+                    direction=_sign(point.value - state.extreme.value),
                     extreme=point,
                 )
                 index += 1
                 continue
 
-            # Failed down-reversal candidate. The current higher low is now the
-            # next opposite excursion to judge, point-by-point, against the
-            # very next rebound/high-low sequence.
-            state.opposite_extreme = point
-            state.rebound_extreme = None
+            if improves:
+                state.extreme = point
+                state.collapse_end = point
             index += 1
             continue
 
-        # Falling run: watch for low -> high -> higher low -> higher high.
-        if state.opposite_extreme is None:
-            state.opposite_extreme = point
-            index += 1
-            continue
-
-        if state.rebound_extreme is None:
-            if point.value < state.opposite_extreme.value:
-                # rebound low candidate
-                state.rebound_extreme = point
-            elif point.value > state.opposite_extreme.value:
-                # higher first rebound before a pullback
+        # If Stage 3 happens to provide another opposite-side point before a
+        # same-side decision point, keep only the farther pullback for the
+        # pending judgment. Nothing is deleted yet.
+        if point.pivot_type != state.extreme.pivot_type:
+            if (
+                (state.direction > 0 and point.value < state.opposite_extreme.value)
+                or (state.direction < 0 and point.value > state.opposite_extreme.value)
+            ):
                 state.opposite_extreme = point
             index += 1
             continue
 
-        # The first high after the rebound low decides this candidate.
-        # A higher high confirms the up reversal. Otherwise the candidate has
-        # failed immediately; do not defer judgment to a later/final point.
-        if point.value > state.opposite_extreme.value:
-            _record_collapse(intervals, state)
+        # This is the next same-side point. It MUST decide the candidate now.
+        # It also consumes an angle ordinal even when it does not improve the
+        # current extreme.
+        state.angle_ordinal += 1
+        improves = _can_extend(state, point)
+        angle = screen_origin_angle_degrees(
+            state.anchor,
+            state.extreme,
+            point,
+            geometry,
+        )
 
-            turn = state.extreme
-            state = _RunState(
-                anchor=turn,
-                direction=1,
-                extreme=point,
-            )
+        if improves:
+            # Candidate turn cancelled: the following same-side point retraced
+            # more than 100% past the previous extreme, so the old trend lives.
+            if state.angle_ordinal >= 2 and angle > threshold:
+                # The direction is known, but this extension is too sharp to
+                # collapse into the old anchor. Preserve existing structure and
+                # start a fresh run from the pending pullback.
+                _record_collapse(intervals, state)
+                pending = state.opposite_extreme
+                state = _RunState(
+                    anchor=pending,
+                    direction=_sign(point.value - pending.value),
+                    extreme=point,
+                )
+                index += 1
+                continue
+
+            state.extreme = point
+            state.collapse_end = point
+            state.opposite_extreme = None
             index += 1
             continue
 
-        # Failed up-reversal candidate. The current lower high becomes the next
-        # opposite excursion and is judged from here in chronological order.
+        # Candidate turn confirmed: the next same-side point failed to retrace
+        # 100% back through the previous extreme. Freeze that extreme as the
+        # new anchor NOW; later points cannot erase it retroactively.
+        _record_collapse(intervals, state)
+        turn = state.extreme
+        first_extreme = state.opposite_extreme
+        new_direction = _sign(first_extreme.value - turn.value)
+        if new_direction == 0:
+            index += 1
+            continue
+
+        state = _RunState(
+            anchor=turn,
+            direction=new_direction,
+            extreme=first_extreme,
+        )
+        # The deciding point is already the first pullback of the new run.
         state.opposite_extreme = point
-        state.rebound_extreme = None
         index += 1
 
     _record_collapse(intervals, state)
@@ -301,23 +304,17 @@ def prune_same_trend_extremes(
         if len(window) < 3:
             continue
 
-        # Run the SAME state machine from every actual value-direction turn.
-        # A failed/unfinished state before this turn must not poison later runs.
-        start_indexes = [0]
-        for idx in range(1, len(window) - 1):
-            left = _sign(window[idx].value - window[idx - 1].value)
-            right = _sign(window[idx + 1].value - window[idx].value)
-            if left != 0 and right != 0 and left != right:
-                start_indexes.append(idx)
-
-        for start_idx in start_indexes:
-            intervals.extend(
-                _process_window(
-                    window[start_idx:],
-                    geometry,
-                    angle_threshold_deg,
-                )
+        # Exactly one chronological state machine per unprotected window.
+        # Restarting from every later turn creates overlapping collapse
+        # candidates and lets a later/final point erase a turn that was already
+        # decided earlier in the sequence.
+        intervals.extend(
+            _process_window(
+                window,
+                geometry,
+                angle_threshold_deg,
             )
+        )
 
     # A collapse may never cross protected structure.
     candidates: list[tuple[PivotPoint, PivotPoint]] = []
