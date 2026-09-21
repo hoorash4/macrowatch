@@ -14,3 +14,14 @@ jobs:
       - name: Grep references
         run: |
           grep -RIn --exclude-dir=.git -E 'provisional_protected_points|rapid_move_candidates|SimplifiedLineResult\(|standalone_keys|standalone_markers' backend tests tools .github/workflows || true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check pytest
+      - name: Compile and test pivot pipeline
+        run: |
+          python -m py_compile backend/historical_pivot_shared.py backend/historical_pivot_stage1.py backend/historical_pivot_stage2.py backend/historical_pivot_stage3.py backend/historical_pivot_stage4.py backend/historical_pivot_stage5.py backend/historical_pivot_stage6.py backend/historical_pivot_store.py
+          PYTHONPATH=backend pytest -q tests/test_historical_pivot_six_stage_architecture.py tests/test_historical_pivot_stage2.py tests/test_historical_pivot_store.py
