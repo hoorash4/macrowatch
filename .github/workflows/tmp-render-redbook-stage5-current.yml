@@ -1,4 +1,4 @@
-name: Trace US10Y_REAL spike rules temp v2
+name: Trace US10Y_REAL spike rules temp v3
 
 on:
   push:
