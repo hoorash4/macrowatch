@@ -419,12 +419,6 @@ def simplify_pivot_lines(
         if _key(candidate.start) in connected_keys
         and _key(candidate.end) in connected_keys
     )
-    surviving_provisional_map = {
-        _key(point): point
-        for candidate in surviving_rapid
-        for point in candidate.protected_points
-    }
-
     stage2_keys = {_key(point) for point in augmented.display_markers}
     if not set(markers).issubset(stage2_keys):
         raise RuntimeError("stage3 produced a point absent from stage2")
@@ -442,9 +436,9 @@ def simplify_pivot_lines(
         segments=tuple(segments),
         sideways_segments=tuple(sideways_out),
         protected_points=(),
-        provisional_protected_points=tuple(
+        standalone_markers=tuple(
             sorted(
-                surviving_provisional_map.values(),
+                (spike.point for spike in marker_only_spikes),
                 key=lambda item: (item.day, item.pivot_type),
             )
         ),
