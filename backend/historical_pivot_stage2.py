@@ -107,6 +107,7 @@ def finalize_sideways_protection(
             end_index = ordered.index(segment.end)
 
             if start_index == 0 or end_index + 1 >= len(ordered):
+                protected.append(segment)
                 continue
 
             previous = ordered[start_index - 1]
