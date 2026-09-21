@@ -106,7 +106,7 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-chart-with-indicators { display:grid; grid-template-columns:minmax(0,1fr) 220px; min-width:0; border-bottom:1px solid var(--theme-border); }
 .historical-chart-main { min-width:0; }
 .historical-indicator-rail { min-width:0; padding:14px 10px 10px; border-left:1px solid var(--theme-border); background:var(--theme-surface-elevated); }
-.historical-indicator-section { margin-top:0; padding-top:0; }
+.historical-indicator-section { position:relative; margin-top:0; padding-top:0; }
 .historical-indicator-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .historical-indicator-heading strong { color: var(--theme-text-primary); font-size: 13px; font-weight: 850; }
 .historical-indicator-heading button { padding: 4px 7px; border: 1px solid var(--theme-border); border-radius: 5px; background: var(--theme-surface); color: var(--theme-text-secondary); font-size: 9px; font-weight: 800; cursor: pointer; }
@@ -267,7 +267,7 @@ html[data-theme="dark"] .historical-d-review-grid article>button{background:#111
 .historical-indicator-row:hover .historical-indicator-actions,.historical-indicator-row:focus-within .historical-indicator-actions{opacity:1;visibility:visible;transform:translateY(-50%) translateX(0)}
 .historical-indicator-actions button{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--theme-text-muted);font-size:10px;cursor:pointer}
 .historical-indicator-actions button:hover{background:var(--theme-surface);color:#dc2626}
-.historical-indicator-hidden-menu{margin-top:7px;padding:7px;border:1px solid var(--theme-border);border-radius:7px;background:var(--theme-surface);box-shadow:0 8px 24px rgba(15,23,42,.12)}
+.historical-indicator-hidden-menu{position:absolute;z-index:120;top:34px;right:0;width:min(280px,calc(100vw - 32px));max-height:320px;overflow:auto;padding:7px;border:1px solid var(--theme-border);border-radius:8px;background:var(--theme-surface-elevated);box-shadow:0 14px 34px rgba(15,23,42,.22)}
 .historical-indicator-hidden-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:var(--theme-text-secondary);font-size:10px;font-weight:750;text-align:left;cursor:pointer}
 .historical-indicator-hidden-menu button:hover{background:var(--theme-surface-elevated);color:var(--theme-text-primary)}
 .historical-indicator-hidden-menu .historical-indicator-empty{padding:5px 4px}
