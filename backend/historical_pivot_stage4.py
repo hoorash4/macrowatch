@@ -119,6 +119,17 @@ def finalize_rapid_moves(
         if candidate.start.day >= candidate.end.day:
             continue
 
+        # A candidate that already contains an opposite Stage-3 wave is no
+        # longer one continuous rapid move.  Release it here instead of turning
+        # its later endpoint into a second protected rapid extreme.
+        if _has_opposite_wave(
+            result,
+            after=candidate.start.day,
+            through=candidate.end.day,
+            direction=candidate.direction,
+        ):
+            continue
+
         if active is None:
             active = candidate
             continue
