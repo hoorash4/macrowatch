@@ -1,0 +1,16 @@
+name: Audit pivot boundary refs temp
+on:
+  push:
+    branches: [refactor/pivot-stage-boundaries]
+    paths:
+      - ".github/workflows/tmp-audit-pivot-boundary-refs.yml"
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Grep references
+        run: |
+          grep -RIn --exclude-dir=.git -E 'provisional_protected_points|rapid_move_candidates|SimplifiedLineResult\(|standalone_keys|standalone_markers' backend tests tools .github/workflows || true
