@@ -176,6 +176,82 @@ class SixStageArchitectureTests(unittest.TestCase):
         self.assertEqual((entry1, peak1), stage4.rapid_move_candidates[0].protected_points)
         self.assertEqual((entry2, peak2), stage4.rapid_move_candidates[1].protected_points)
 
+    def test_stage4_expands_rapid_entry_backward_before_forward_scan(self):
+        d = date(2020, 1, 1)
+        earlier_entry = PivotPoint(d, 0.0, "low")
+        provisional_entry = PivotPoint(d + timedelta(days=10), 5.0, "low")
+        peak = PivotPoint(d + timedelta(days=20), 8.0, "high")
+        candidate = RapidMoveCandidate(provisional_entry, peak, 1, 0.3)
+        result = SimplifiedLineResult(
+            markers=(earlier_entry, provisional_entry, peak),
+            segments=(
+                SimplifiedLineSegment(earlier_entry, provisional_entry, "trend"),
+                SimplifiedLineSegment(provisional_entry, peak, "trend"),
+            ),
+            sideways_segments=(),
+            provisional_protected_points=(provisional_entry, peak),
+            rapid_move_candidates=(candidate,),
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), -10.0, 30.0, 1000, 500
+        )
+
+        stage4 = finalize_rapid_moves(result, geometry, angle_threshold_deg=10.0)
+
+        self.assertEqual(1, len(stage4.rapid_move_candidates))
+        self.assertEqual(earlier_entry, stage4.rapid_move_candidates[0].start)
+        self.assertEqual(peak, stage4.rapid_move_candidates[0].end)
+        self.assertIn(earlier_entry, stage4.protected_points)
+        self.assertIn(peak, stage4.protected_points)
+        self.assertNotIn(provisional_entry, stage4.protected_points)
+
+    def test_stage4_rechecks_forward_angle_after_backward_entry_changes(self):
+        d = date(2020, 1, 1)
+        earlier_entry = PivotPoint(d, 0.0, "low")
+        provisional_entry = PivotPoint(d + timedelta(days=10), 5.0, "low")
+        first_peak = PivotPoint(d + timedelta(days=20), 8.0, "high")
+        second_entry = PivotPoint(d + timedelta(days=25), 6.0, "low")
+        later_peak = PivotPoint(d + timedelta(days=50), 11.0, "high")
+
+        first = RapidMoveCandidate(provisional_entry, first_peak, 1, 0.3)
+        second = RapidMoveCandidate(second_entry, later_peak, 1, 0.3)
+        result = SimplifiedLineResult(
+            markers=(
+                earlier_entry,
+                provisional_entry,
+                first_peak,
+                second_entry,
+                later_peak,
+            ),
+            segments=(
+                SimplifiedLineSegment(earlier_entry, provisional_entry, "trend"),
+                SimplifiedLineSegment(provisional_entry, first_peak, "trend"),
+                SimplifiedLineSegment(first_peak, second_entry, "trend"),
+                SimplifiedLineSegment(second_entry, later_peak, "trend"),
+            ),
+            sideways_segments=(),
+            provisional_protected_points=(
+                provisional_entry,
+                first_peak,
+                second_entry,
+                later_peak,
+            ),
+            rapid_move_candidates=(first, second),
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), -10.0, 30.0, 1000, 500
+        )
+
+        # From provisional_entry the two rapid peak rays differ by < 10 degrees,
+        # but after the entry is expanded backward to earlier_entry they differ
+        # by > 10 degrees.  The forward scan must therefore be re-run from the
+        # NEW anchor and stop the first rapid move at first_peak.
+        stage4 = finalize_rapid_moves(result, geometry, angle_threshold_deg=10.0)
+
+        self.assertGreaterEqual(len(stage4.rapid_move_candidates), 1)
+        self.assertEqual(earlier_entry, stage4.rapid_move_candidates[0].start)
+        self.assertEqual(first_peak, stage4.rapid_move_candidates[0].end)
+
 
 if __name__ == "__main__":
     unittest.main()
