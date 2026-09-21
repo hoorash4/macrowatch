@@ -359,6 +359,18 @@ def build_storage_rows(
                     "end_date": segment.end.day.isoformat(),
                 })
 
+    standalone_keys = _keys(final.standalone_markers)
+    unexpected_detached = {
+        _key(point)
+        for point in final.markers
+        if _key(point) not in endpoint_keys
+        and _key(point) not in standalone_keys
+    }
+    if unexpected_detached:
+        raise RuntimeError(
+            "final pivot result contains a detached marker that is not an explicit marker-only spike"
+        )
+
     rows: list[dict[str, Any]] = []
     for pivot_order, point in enumerate(ordered):
         point_key = _key(point)
@@ -367,7 +379,7 @@ def build_storage_rows(
         segment_kind = outgoing[1] if outgoing is not None else None
         spike = spike_meta.get(point_key)
         sideways = sideways_meta.get(point_key, [])
-        standalone = point_key not in endpoint_keys
+        standalone = point_key in standalone_keys
 
         reason_codes: list[str] = []
         base_rdp = point_key in base_rdp_keys
