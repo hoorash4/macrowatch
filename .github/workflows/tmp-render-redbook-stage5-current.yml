@@ -32,7 +32,7 @@ jobs:
           from historical_pivot_shared import ChartGeometry, normalize_rows
           from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
           from historical_pivot_stage2 import finalize_sideways_protection
-          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage3 import simplify_pivot_lines, _consensus_runs, _build_waves, _unique
           from historical_pivot_stage4 import prune_same_trend_extremes
           from historical_pivot_stage5 import prune_unconfirmed_retracements
 
@@ -93,6 +93,16 @@ jobs:
           print("S2_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.display_markers])
           print("S2_LOW",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.low_pivots])
           print("S2_HIGH",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.high_pivots])
+          merged=_unique([*s2.high_pivots,*s2.low_pivots])
+          runs=_consensus_runs(merged)
+          waves=_build_waves(merged,runs,forced_anchor=None)
+          print("CONSENSUS_RUNS",[
+              (r.direction,
+               [(a.isoformat(),b.isoformat(),hl.start.day.isoformat(),hl.end.day.isoformat(),ll.start.day.isoformat(),ll.end.day.isoformat())
+                for a,b,hl,ll in r.intervals])
+              for r in runs
+          ])
+          print("WAVES",[(w.direction,w.start.day.isoformat(),float(w.start.value),w.start.pivot_type,w.end.day.isoformat(),float(w.end.value),w.end.pivot_type) for w in waves])
           print("S3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
           print("S3_RAPID_CAND",[
               (x.start.day.isoformat(),float(x.start.value),x.start.pivot_type,
