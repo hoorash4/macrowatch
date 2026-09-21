@@ -1,6 +1,6 @@
 """Persistence adapter for finalized Historical Insight pivot results.
 
-This module is intentionally outside the Stage 1~5 generation pipeline.
+This module is intentionally outside the Stage 1~6 generation pipeline.
 It observes already-produced stage results, serializes their final structure and
 selection evidence, and atomically replaces one case/index/series snapshot in
 Supabase.  It must not alter or re-run pivot selection rules.
@@ -48,17 +48,17 @@ def _technical_reason_text(
     stage4_survivor: bool,
     standalone: bool,
 ) -> str:
-    suffix = " Stage 4·5 삭제 조건을 통과해 최종 유지되었습니다." if stage4_survivor else " 최종 결과에 유지되었습니다."
+    suffix = " Stage 5·6 삭제 조건을 통과해 최종 유지되었습니다." if stage4_survivor else " 최종 결과에 유지되었습니다."
 
     if marker_only:
         return (
-            "Stage 1에서 spike peak로 확정되었고 반대편 sideways 내부의 marker-only spike로 보호되어 "
+            "Stage 2에서 spike peak로 확정되었고 반대편 sideways 내부의 marker-only spike로 보호되어 "
             "선 연결 없이 최종 유지되었습니다."
         )
     if spike_peak:
-        return "Stage 1에서 spike peak로 확정되어 보호 구조의 꼭짓점으로 유지되었고," + suffix
+        return "Stage 2에서 spike peak로 확정되어 보호 구조의 꼭짓점으로 유지되었고," + suffix
     if spike_entry:
-        return "Stage 1에서 spike entry로 확정되어 spike 보호 구조의 진입점으로 유지되었고," + suffix
+        return "Stage 2에서 spike entry로 확정되어 spike 보호 구조의 진입점으로 유지되었고," + suffix
     if sideways_boundaries:
         sides = "/".join(sorted({str(item["boundary"]) for item in sideways_boundaries}))
         return f"Stage 2에서 sideways 보호 구간의 {sides} 경계점으로 보호되었고," + suffix
@@ -73,7 +73,7 @@ def _technical_reason_text(
         return "Stage 3 단일 wave line의 꼭짓점으로 채택되었고," + suffix
     if standalone:
         return "최종 선 구조에 연결되지 않는 독립 보호 마커로 유지되었습니다."
-    return "기존 Stage 결과에서 최종 선 구조의 꼭짓점으로 남아 Stage 5까지 유지되었습니다."
+    return "기존 Stage 결과에서 최종 선 구조의 꼭짓점으로 남아 Stage 6까지 유지되었습니다."
 
 
 def _previous_same_side(
@@ -123,7 +123,7 @@ def _interpretive_reason(
 ) -> tuple[str, str]:
     """Describe only the already-selected final structure in plain language.
 
-    This function never changes pivot selection. It interprets final Stage-5
+    This function never changes pivot selection. It interprets final Stage-6
     vertices and existing protection metadata using value/direction relations
     that are already present in the stored result.
     """
@@ -300,9 +300,10 @@ def build_storage_rows(
     stage2: Any,
     stage3: Any,
     stage4: Any,
+    stage5: Any,
     final: SimplifiedLineResult,
 ) -> list[dict[str, Any]]:
-    """Serialize one completed Stage 1~5 result without changing generation state."""
+    """Serialize one completed Stage 1~6 result without changing generation state."""
     ordered = sorted(final.markers, key=lambda item: (item.day, item.pivot_type))
     order_by_key = {_key(point): index for index, point in enumerate(ordered)}
 
@@ -322,9 +323,10 @@ def build_storage_rows(
     stage2_keys = _keys(_stage_markers(stage2))
     stage3_keys = _keys(_stage_markers(stage3))
     stage4_keys = _keys(_stage_markers(stage4))
+    stage5_keys = _keys(_stage_markers(stage5))
 
     spike_meta: dict[tuple[date, float, str], dict[str, Any]] = {}
-    for spike in tuple(getattr(stage1, "spike_peaks", ()) or ()):
+    for spike in tuple(getattr(stage2, "spike_peaks", ()) or ()):
         peak_key = _key(spike.point)
         spike_meta.setdefault(peak_key, {}).update({
             "role": "peak",
@@ -380,8 +382,10 @@ def build_storage_rows(
         if point_key in stage3_keys:
             reason_codes.append("stage3_wave_vertex")
         if point_key in stage4_keys:
-            reason_codes.append("stage4_survivor")
-        reason_codes.append("stage5_survivor")
+            reason_codes.append("stage4_rapid_survivor")
+        if point_key in stage5_keys:
+            reason_codes.append("stage5_survivor")
+        reason_codes.append("stage6_survivor")
         reason_codes.append("standalone_marker" if standalone else "final_line_vertex")
 
         reason_type, selection_reason = _interpretive_reason(
@@ -418,7 +422,8 @@ def build_storage_rows(
                     "stage2": point_key in stage2_keys,
                     "stage3": point_key in stage3_keys,
                     "stage4": point_key in stage4_keys,
-                    "stage5": True,
+                    "stage5": point_key in stage5_keys,
+                    "stage6": True,
                 },
                 "base_rdp": base_rdp,
                 "spike": spike,
@@ -514,15 +519,17 @@ def store_pipeline_result(
     stage2: Any,
     stage3: Any,
     stage4: Any,
+    stage5: Any,
     final: SimplifiedLineResult,
 ) -> int:
-    """Build and atomically persist the already-computed Stage 1~5 result."""
+    """Build and atomically persist the already-computed Stage 1~6 result."""
     rows = build_storage_rows(
         base=base,
         stage1=stage1,
         stage2=stage2,
         stage3=stage3,
         stage4=stage4,
+        stage5=stage5,
         final=final,
     )
     return replace_stored_pivots(
