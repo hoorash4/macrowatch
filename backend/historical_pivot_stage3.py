@@ -341,7 +341,6 @@ def simplify_pivot_lines(
 
     hard = _hard_segments(augmented)
     segments: list[SimplifiedLineSegment] = []
-    sideways_out: list[SidewaysSegment] = []
     markers: dict[tuple[date, float, str], PivotPoint] = {}
 
     def remember(point: PivotPoint) -> None:
@@ -387,9 +386,6 @@ def simplify_pivot_lines(
         structural[_key(protected.start)] = protected.start
         structural[_key(protected.end)] = protected.end
         hard_kind[(_key(protected.start), _key(protected.end))] = protected.kind
-        if protected.sideways is not None:
-            sideways_out.append(protected.sideways)
-
     structural_points = sorted(
         structural.values(),
         key=lambda item: (item.day, item.pivot_type),
@@ -424,7 +420,6 @@ def simplify_pivot_lines(
         raise RuntimeError("stage3 produced a point absent from stage2")
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
-    sideways_out.sort(key=lambda item: (item.start.day, item.end.day))
 
     return Stage3LineResult(
         markers=tuple(
