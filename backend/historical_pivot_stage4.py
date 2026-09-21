@@ -145,7 +145,7 @@ def _scan_from_entry(
 
 
 def _expand_entry_backward(
-    result: SimplifiedLineResult,
+    result: Stage3LineResult,
     *,
     initial_entry: PivotPoint,
     seed_peak: PivotPoint,
