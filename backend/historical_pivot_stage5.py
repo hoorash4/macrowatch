@@ -1,4 +1,4 @@
-"""Stage 5: 10-degree cleanup on Stage 3's single line.
+"""Stage 5: 10-degree cleanup on Stage 4's finalized line.
 
 Stage 5 uses exactly one state machine and only Stage 4 output.
 
