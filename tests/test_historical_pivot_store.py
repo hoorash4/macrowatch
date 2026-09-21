@@ -19,7 +19,7 @@ def test_build_storage_rows_preserves_line_links_and_reasons():
 
     base = SimpleNamespace(high_pivots=(p1, p3), low_pivots=(p0, p2))
     spike = SpikePeak(point=p3, direction="up", angle_deg=12.0, entry=None, marker_only=True)
-    stage1 = SimpleNamespace(display_markers=(p0, p1, p2, p3), spike_peaks=(spike,))
+    stage1 = SimpleNamespace(display_markers=(p0, p1, p2, p3))
     sideways = SidewaysSegment(
         start=p1,
         end=p2,
@@ -29,6 +29,7 @@ def test_build_storage_rows_preserves_line_links_and_reasons():
     )
     stage2 = SimpleNamespace(
         display_markers=(p0, p1, p2, p3),
+        spike_peaks=(spike,),
         high_sideways_segments=(sideways,),
         low_sideways_segments=(),
     )
@@ -42,6 +43,7 @@ def test_build_storage_rows_preserves_line_links_and_reasons():
     )
     stage3 = final
     stage4 = final
+    stage5 = final
 
     rows = build_storage_rows(
         base=base,
@@ -49,6 +51,7 @@ def test_build_storage_rows_preserves_line_links_and_reasons():
         stage2=stage2,
         stage3=stage3,
         stage4=stage4,
+        stage5=stage5,
         final=final,
     )
 
