@@ -1,0 +1,26 @@
+name: Verify pivot refactor temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-pivot-refactor.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Compile pivot modules
+        run: python -m py_compile backend/historical_pivot_*.py
+      - name: Run historical pivot tests
+        run: PYTHONPATH=backend python -m unittest tests.test_historical_pivot_base tests.test_historical_pivot_stage1_spike_visual_share tests.test_historical_pivot_stage2 tests.test_historical_pivot_stage_boundaries tests.test_historical_pivot_store
