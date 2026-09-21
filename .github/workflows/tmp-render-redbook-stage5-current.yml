@@ -1,4 +1,4 @@
-name: Render US10Y_REAL Stage5 temp
+name: Rebuild tightening 2022 frontend pivots temp
 
 on:
   push:
@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  trace:
+  rebuild:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -20,12 +20,14 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Trace US10Y_REAL spike
+      - name: Rebuild and store current Stage 1-5 pivots
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALGORITHM_VERSION: ${{ github.sha }}
         run: |
           PYTHONPATH=backend python - <<'PY'
+          import os
           from common import SupabaseRest
           from historical_pivot_base import load_case_series
           from historical_pivot_shared import ChartGeometry, normalize_rows
@@ -34,62 +36,64 @@ jobs:
           from historical_pivot_stage3 import simplify_pivot_lines
           from historical_pivot_stage4 import prune_same_trend_extremes
           from historical_pivot_stage5 import prune_unconfirmed_retracements
+          from historical_pivot_store import store_pipeline_result
+
+          CASE="tightening_2022"
+          INDEX="NASDAQ_COMPOSITE"
+          SERIES=[
+              "US2Y","US10Y","US10Y_REAL","US10Y2Y",
+              "HY_OAS","NFCI_CREDIT","NFCI_RISK","EM_OAS",
+              "WTI","RRP","TGA","REDBOOK","WEI","EMRATIO",
+              "US_RETAIL_SALES","US_CPI","US_CORE_CPI","US_PPI",
+              "US_CORE_PPI","US_PCE","US_CORE_PCE","US_SBDI_31_180",
+              "US_SBDFI","US_COMMERCIAL_CH11",
+          ]
 
           db=SupabaseRest()
-          rows,freq,start,end=load_case_series(
-              db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US10Y_REAL"
-          )
-          raw=normalize_rows(rows)
-          vals=[p.value for p in raw]
-          lo,hi=min(vals),max(vals)
-          pad=(hi-lo)*.08 if hi!=lo else 1.0
-          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          version=os.environ["ALGORITHM_VERSION"]
+          total_rows=0
+          results=[]
 
-          base=calculate_base_pivots(rows,freq)
-          s1=augment_spike_entry_points(base,g)
-          s2=finalize_sideways_protection(s1,g)
-          s3=simplify_pivot_lines(s2,g)
-          s4=prune_same_trend_extremes(s3,g)
-          s5=prune_unconfirmed_retracements(s4)
+          for code in SERIES:
+              rows,freq,start,end=load_case_series(
+                  db,
+                  case_code=CASE,
+                  index_code=INDEX,
+                  series_code=code,
+              )
+              raw=normalize_rows(rows)
+              vals=[p.value for p in raw]
+              lo,hi=min(vals),max(vals)
+              pad=(hi-lo)*.08 if hi!=lo else 1.0
+              geometry=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
 
-          print("BASE_HIGH",[(p.day.isoformat(),float(p.value)) for p in base.high_pivots])
-          print("LOCAL_HIGH_CAND",[(p.day.isoformat(),float(p.value)) for p in base.high_candidates if '2019-12-01' <= p.day.isoformat() <= '2020-06-30'])
-          print("LOCAL_LOW_CAND",[(p.day.isoformat(),float(p.value)) for p in base.low_candidates if '2019-12-01' <= p.day.isoformat() <= '2020-06-30'])
-          print("BASE_LOW",[(p.day.isoformat(),float(p.value)) for p in base.low_pivots])
-          print("SPIKES",[
-              {
-                  "point":(s.point.day.isoformat(),float(s.point.value),s.point.pivot_type),
-                  "direction":s.direction,
-                  "angle":float(s.angle_deg),
-                  "entry":None if s.entry is None else (s.entry.day.isoformat(),float(s.entry.value),s.entry.pivot_type),
-                  "marker_only":bool(s.marker_only),
-              }
-              for s in s1.spike_peaks
-          ])
-          print("S2_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.display_markers])
-          print("S3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
-          print("S3_SEGMENTS",[(s.start.day.isoformat(),s.end.day.isoformat(),s.kind) for s in s3.segments])
-          print("S4_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s4.markers])
-          print("S5_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s5.markers])
+              base=calculate_base_pivots(rows,freq)
+              s1=augment_spike_entry_points(base,geometry)
+              s2=finalize_sideways_protection(s1,geometry)
+              s3=simplify_pivot_lines(s2,geometry)
+              s4=prune_same_trend_extremes(s3,geometry)
+              s5=prune_unconfirmed_retracements(s4)
 
-          import matplotlib.pyplot as plt
-          xs=[p.day for p in raw]
-          ys=[p.value for p in raw]
-          fig,ax=plt.subplots(figsize=(14,7))
-          ax.plot(xs,ys,linewidth=1.1,label="US10Y_REAL raw")
-          ordered=sorted(s5.markers,key=lambda p:(p.day,p.pivot_type))
-          ax.plot([p.day for p in ordered],[p.value for p in ordered],marker="o",linewidth=2.2,label="Stage 5")
-          for p in ordered:
-              ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",ha="center",fontsize=7)
-          ax.set_title("US10Y_REAL · tightening_2022 · Stage 5")
-          ax.set_ylabel("Percent")
-          ax.grid(True,alpha=.25)
-          ax.legend()
-          fig.tight_layout()
-          fig.savefig("us10y_real_stage5.png",dpi=180)
+              stored=store_pipeline_result(
+                  db,
+                  case_code=CASE,
+                  index_code=INDEX,
+                  series_code=code,
+                  algorithm_version=version,
+                  source_rows=rows,
+                  frequency=freq,
+                  buffer_start=start,
+                  buffer_end=end,
+                  base=base,
+                  stage1=s1,
+                  stage2=s2,
+                  stage3=s3,
+                  stage4=s4,
+                  final=s5,
+              )
+              total_rows += stored
+              results.append((code,freq,len(s5.markers),stored))
+              print("SAVED",code,freq,"markers",len(s5.markers),"rows",stored)
+
+          print("DONE",len(results),"series",total_rows,"rows",version)
           PY
-      - name: Upload chart
-        uses: actions/upload-artifact@v4
-        with:
-          name: us10y-real-stage5
-          path: us10y_real_stage5.png
