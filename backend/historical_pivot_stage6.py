@@ -28,8 +28,8 @@ def prune_unconfirmed_retracements(
     <= 10 degrees, keep collapsing. If it exceeds 10 degrees, preserve the
     bend point and start a new run there.
 
-    Protected sideways/spike/rapid endpoints and standalone markers remain
-    mandatory output vertices, but they do not stop chronological judgment.
+    Protected sideways/spike/rapid endpoints and explicit marker-only spikes
+    remain mandatory output points, but they do not stop chronological judgment.
 
     geometry=None preserves the previous unconditional monotonic-collapse
     behavior for compatibility callers. The production pipeline supplies
