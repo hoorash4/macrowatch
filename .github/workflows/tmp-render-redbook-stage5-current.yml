@@ -1,4 +1,4 @@
-name: Trace US10Y_REAL spike temp
+name: Trace US10Y_REAL spike rules temp
 
 on:
   push:
@@ -32,6 +32,8 @@ jobs:
           from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
           from historical_pivot_stage2 import finalize_sideways_protection
           from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          from historical_pivot_stage5 import prune_unconfirmed_retracements
 
           db=SupabaseRest()
           rows,freq,start,end=load_case_series(
@@ -47,6 +49,8 @@ jobs:
           s1=augment_spike_entry_points(base,g)
           s2=finalize_sideways_protection(s1,g)
           s3=simplify_pivot_lines(s2,g)
+          s4=prune_same_trend_extremes(s3,g)
+          s5=prune_unconfirmed_retracements(s4)
 
           print("BASE_HIGH",[(p.day.isoformat(),float(p.value)) for p in base.high_pivots])
           print("BASE_LOW",[(p.day.isoformat(),float(p.value)) for p in base.low_pivots])
@@ -61,5 +65,8 @@ jobs:
               for s in s1.spike_peaks
           ])
           print("S2_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.display_markers])
+          print("S3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
           print("S3_SEGMENTS",[(s.start.day.isoformat(),s.end.day.isoformat(),s.kind) for s in s3.segments])
+          print("S4_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s4.markers])
+          print("S5_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s5.markers])
           PY
