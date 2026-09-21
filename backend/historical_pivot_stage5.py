@@ -356,48 +356,52 @@ def prune_same_trend_extremes(
 
         filtered.append((start, end))
 
-    def inside(segment: SimplifiedLineSegment) -> bool:
-        return any(
-            start.day <= segment.start.day
-            and segment.end.day <= end.day
-            for start, end in filtered
-        )
-
-    kept_segments = [
-        segment
-        for segment in result.segments
-        if not inside(segment)
-    ]
     exact_kind = {
         (_key(segment.start), _key(segment.end)): segment.kind
         for segment in result.segments
     }
-    protected_points_sorted = sorted(
-        (point for point in points if _key(point) in protected_keys),
-        key=lambda item: (item.day, item.pivot_type),
-    )
+
+    # Rebuild ONE chronological line instead of appending collapsed segments to
+    # partially-overlapping old segments.  A point strictly inside a collapse
+    # interval disappears unless it is protected.  Final rapid endpoints are
+    # connected mandatory vertices; true marker-only points stay standalone.
+    rapid_protected_keys = rapid_move_keys
+    marker_only_keys = standalone_keys - rapid_protected_keys
+
+    connected_map: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in result.segments:
+        connected_map[_key(segment.start)] = segment.start
+        connected_map[_key(segment.end)] = segment.end
+    for point in result.markers:
+        if _key(point) in rapid_protected_keys:
+            connected_map[_key(point)] = point
 
     for start, end in filtered:
-        split_points = [
-            point for point in protected_points_sorted
-            if start.day < point.day < end.day
-        ]
-        chain = [start, *split_points, end]
-        for left, right in zip(chain, chain[1:]):
-            kind = exact_kind.get((_key(left), _key(right)), "trend")
-            kept_segments.append(
-                SimplifiedLineSegment(start=left, end=right, kind=kind)
-            )
-    kept_segments.sort(
-        key=lambda item: (item.start.day, item.end.day, item.kind)
-    )
+        for point_key, point in list(connected_map.items()):
+            if (
+                start.day < point.day < end.day
+                and point_key not in protected_keys
+            ):
+                connected_map.pop(point_key, None)
+        connected_map[_key(start)] = start
+        connected_map[_key(end)] = end
 
-    marker_map: dict[tuple[date, float, str], PivotPoint] = {}
-    for segment in kept_segments:
-        marker_map[_key(segment.start)] = segment.start
-        marker_map[_key(segment.end)] = segment.end
+    connected_points = sorted(
+        connected_map.values(),
+        key=lambda item: (item.day, item.pivot_type),
+    )
+    kept_segments: list[SimplifiedLineSegment] = []
+    for left, right in zip(connected_points, connected_points[1:]):
+        kind = exact_kind.get((_key(left), _key(right)), "trend")
+        kept_segments.append(
+            SimplifiedLineSegment(start=left, end=right, kind=kind)
+        )
+
+    marker_map: dict[tuple[date, float, str], PivotPoint] = {
+        _key(point): point for point in connected_points
+    }
     for point in result.markers:
-        if _key(point) in standalone_keys:
+        if _key(point) in marker_only_keys:
             marker_map[_key(point)] = point
 
     if not set(marker_map).issubset(point_map):
