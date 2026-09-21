@@ -274,7 +274,11 @@ def prune_same_trend_extremes(
         if segment.kind == "spike"
         for point in (segment.start, segment.end)
     }
-    protected_keys = standalone_keys | sideways_keys | spike_keys
+    rapid_move_keys = {
+        _key(point)
+        for point in result.protected_points
+    }
+    protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
     # Hard structure splits the line. The boundary point belongs to both sides.
     split_days = sorted({
@@ -394,4 +398,5 @@ def prune_same_trend_extremes(
         )),
         segments=tuple(kept_segments),
         sideways_segments=result.sideways_segments,
+        protected_points=result.protected_points,
     )
