@@ -82,3 +82,5 @@ jobs:
           actual={(p.day.isoformat(),round(p.value,1),p.pivot_type) for p in s5.markers}
           assert expected.issubset(actual), (expected, actual)
           PY
+
+# rerun focused after opposite-wave rapid fix
