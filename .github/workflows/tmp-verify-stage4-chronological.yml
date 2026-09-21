@@ -1,0 +1,49 @@
+name: Verify Stage4 chronological decisions temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-stage4-chronological.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Run Stage4 tests
+        run: PYTHONPATH=backend python -m unittest tests.test_historical_pivot_stage_boundaries
+      - name: Trace REDBOOK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
+          from historical_pivot_stage2 import finalize_sideways_protection
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import prune_same_trend_extremes
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="REDBOOK")
+          raw=normalize_rows(rows); vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals); pad=(hi-lo)*.08
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          s1=augment_spike_entry_points(calculate_base_pivots(rows,freq),g)
+          s2=finalize_sideways_protection(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=prune_same_trend_extremes(s3,g)
+          print("S3",[(p.day.isoformat(),p.value,p.pivot_type) for p in s3.markers])
+          print("S4",[(p.day.isoformat(),p.value,p.pivot_type) for p in s4.markers])
+          PY
