@@ -1,4 +1,4 @@
-name: Recalculate tightening 2022 pivots temp
+name: Recalculate tightening 2022 US pivots temp
 
 on:
   push:
@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  recalculate:
+  recalculate-us:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Recalculate and store tightening 2022 pivots
+      - name: Recalculate and store US/global tightening 2022 pivots
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -28,11 +28,10 @@ jobs:
         run: |
           PYTHONPATH=backend python - <<'PY'
           import os
-          import traceback
+          from datetime import date
 
           from common import SupabaseRest
-          from historical_pivot_base import load_case_series
-          from historical_pivot_shared import ChartGeometry, normalize_rows
+          from historical_pivot_shared import ChartGeometry, normalize_rows, buffer_bounds
           from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
           from historical_pivot_stage2 import finalize_sideways_protection
           from historical_pivot_stage3 import simplify_pivot_lines
@@ -43,63 +42,86 @@ jobs:
           CASE="tightening_2022"
           INDEX="NASDAQ_COMPOSITE"
           VERSION=os.environ["ALGORITHM_VERSION"]
+          SERIES=[
+              "US2Y","US10Y","US10Y_REAL","US10Y2Y",
+              "HY_OAS","NFCI_CREDIT","NFCI_RISK","EM_OAS",
+              "WTI","RRP","TGA","REDBOOK","WEI","EMRATIO",
+              "US_RETAIL_SALES","US_CPI","US_CORE_CPI","US_PPI",
+              "US_CORE_PPI","US_PCE","US_CORE_PCE","US_SBDI_31_180",
+              "US_SBDFI","US_COMMERCIAL_CH11",
+          ]
 
           db=SupabaseRest()
-          refs=db.request("GET","historical_indicator_ai_analysis",params={
-              "select":"series_code,index_code",
+          cycle=(db.request("GET","historical_case_market_cycles",params={
+              "select":"start_date,trough_date",
               "case_code":f"eq.{CASE}",
               "index_code":f"eq.{INDEX}",
-              "order":"series_code.asc",
-          }) or []
-          series_codes=sorted({str(r["series_code"]) for r in refs if r.get("series_code")})
-          print("SERIES_COUNT",len(series_codes))
+              "limit":"2",
+          }) or [])[0]
+          cycle_start=date.fromisoformat(str(cycle["start_date"])[:10])
+          cycle_trough=date.fromisoformat(str(cycle["trough_date"])[:10])
+          start,end=buffer_bounds(cycle_start,cycle_trough)
 
-          ok=[]
-          errors=[]
-          for n,series in enumerate(series_codes,1):
-              print(f"[{n}/{len(series_codes)}] {series}")
-              try:
-                  rows,freq,start,end=load_case_series(
-                      db,case_code=CASE,index_code=INDEX,series_code=series
-                  )
-                  raw=normalize_rows(rows)
-                  vals=[p.value for p in raw if start<=p.day<=end]
-                  lo,hi=min(vals),max(vals)
-                  pad=(hi-lo)*.08 if hi!=lo else 1.0
-                  geometry=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          def load_rows(series):
+              rows=[]
+              offset=0
+              while True:
+                  page=db.request("GET","economic_chart_series_points",params={
+                      "select":"observation_date,value,frequency",
+                      "series_code":f"eq.{series}",
+                      "observation_date":f"gte.{start.isoformat()}",
+                      "and":f"(observation_date.lte.{end.isoformat()})",
+                      "order":"observation_date.asc",
+                      "limit":"1000",
+                      "offset":str(offset),
+                  }) or []
+                  rows.extend(page)
+                  if len(page)<1000:
+                      break
+                  offset += len(page)
+              if not rows:
+                  raise RuntimeError(f"No rows for {series}")
+              freqs={str(r.get("frequency") or "") for r in rows}
+              if len(freqs)!=1:
+                  raise RuntimeError(f"{series} has multiple frequencies: {sorted(freqs)}")
+              freq=next(iter(freqs))
+              if freq not in {"D","W","M"}:
+                  raise RuntimeError(f"{series} unsupported frequency {freq}")
+              return rows,freq
 
-                  base=calculate_base_pivots(rows,freq)
-                  stage1=augment_spike_entry_points(base,geometry)
-                  stage2=finalize_sideways_protection(stage1,geometry)
-                  stage3=simplify_pivot_lines(stage2,geometry)
-                  stage4=prune_same_trend_extremes(stage3,geometry)
-                  final=prune_unconfirmed_retracements(stage4)
+          for n,series in enumerate(SERIES,1):
+              rows,freq=load_rows(series)
+              raw=normalize_rows(rows)
+              vals=[p.value for p in raw]
+              lo,hi=min(vals),max(vals)
+              pad=(hi-lo)*.08 if hi!=lo else 1.0
+              geometry=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
 
-                  stored=store_pipeline_result(
-                      db,
-                      case_code=CASE,
-                      index_code=INDEX,
-                      series_code=series,
-                      algorithm_version=VERSION,
-                      source_rows=rows,
-                      frequency=freq,
-                      buffer_start=start,
-                      buffer_end=end,
-                      base=base,
-                      stage1=stage1,
-                      stage2=stage2,
-                      stage3=stage3,
-                      stage4=stage4,
-                      final=final,
-                  )
-                  ok.append((series,stored,len(final.markers)))
-                  print(" STORED",stored,"FINAL_MARKERS",len(final.markers))
-              except Exception as exc:
-                  traceback.print_exc()
-                  errors.append((series,f"{type(exc).__name__}: {exc}"))
+              base=calculate_base_pivots(rows,freq)
+              stage1=augment_spike_entry_points(base,geometry)
+              stage2=finalize_sideways_protection(stage1,geometry)
+              stage3=simplify_pivot_lines(stage2,geometry)
+              stage4=prune_same_trend_extremes(stage3,geometry)
+              final=prune_unconfirmed_retracements(stage4)
 
-          print("DONE",{"total":len(series_codes),"ok":len(ok),"errors":len(errors)})
-          if errors:
-              print("ERRORS",errors)
-              raise SystemExit(1)
+              stored=store_pipeline_result(
+                  db,
+                  case_code=CASE,
+                  index_code=INDEX,
+                  series_code=series,
+                  algorithm_version=VERSION,
+                  source_rows=rows,
+                  frequency=freq,
+                  buffer_start=start,
+                  buffer_end=end,
+                  base=base,
+                  stage1=stage1,
+                  stage2=stage2,
+                  stage3=stage3,
+                  stage4=stage4,
+                  final=final,
+              )
+              print(f"[{n}/{len(SERIES)}] {series}: stored={stored}, final={len(final.markers)}")
+
+          print("DONE",len(SERIES))
           PY
