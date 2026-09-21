@@ -64,6 +64,20 @@ def prune_unconfirmed_retracements(
         key(point)
         for point in result.protected_points
     }
+    # Use the unique chronological vertices of the connected line.  This keeps
+    # Stage 6 stable even if an upstream caller supplies overlapping segments.
+    line_map: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in result.segments:
+        line_map[key(segment.start)] = segment.start
+        line_map[key(segment.end)] = segment.end
+    line_points = sorted(
+        line_map.values(),
+        key=lambda item: (item.day, item.pivot_type),
+    )
+
+    if len(line_points) < 3:
+        return result
+
     isolated_gap_keys = {
         key(point)
         for index, point in enumerate(line_points[1:-1], start=1)
@@ -79,20 +93,6 @@ def prune_unconfirmed_retracements(
         | rapid_move_keys
         | isolated_gap_keys
     )
-
-    # Use the unique chronological vertices of the connected line.  This keeps
-    # Stage 6 stable even if an upstream caller supplies overlapping segments.
-    line_map: dict[tuple[date, float, str], PivotPoint] = {}
-    for segment in result.segments:
-        line_map[key(segment.start)] = segment.start
-        line_map[key(segment.end)] = segment.end
-    line_points = sorted(
-        line_map.values(),
-        key=lambda item: (item.day, item.pivot_type),
-    )
-
-    if len(line_points) < 3:
-        return result
 
     delete_keys: set[tuple[date, float, str]] = set()
 
