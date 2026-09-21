@@ -98,12 +98,10 @@ class SixStageArchitectureTests(unittest.TestCase):
             SimplifiedLineResult(
                 markers=(start, detached, end),
                 segments=(SimplifiedLineSegment(start, end, "trend"),),
-                sideways_segments=(),
-            )
+                )
         result = SimplifiedLineResult(
             markers=(start, detached, end),
             segments=(SimplifiedLineSegment(start, end, "trend"),),
-            sideways_segments=(),
             marker_only_points=(detached,),
         )
         self.assertEqual((detached,), result.marker_only_points)
@@ -133,7 +131,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(entry2, peak1, "trend"),
                 SimplifiedLineSegment(peak1, peak2, "trend"),
             ),
-            sideways_segments=(),
             rapid_move_candidates=(c1, c2),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 1000, 500)
@@ -153,7 +150,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(entry, mid, "trend"),
                 SimplifiedLineSegment(mid, peak, "trend"),
             ),
-            sideways_segments=(),
             protected_points=(entry, peak),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 1000, 500)
@@ -176,7 +172,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(first_peak, pullback, "trend"),
                 SimplifiedLineSegment(pullback, later_peak, "trend"),
             ),
-            sideways_segments=(),
             rapid_move_candidates=(candidate,),
         )
         geometry = ChartGeometry(
@@ -205,7 +200,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(failed_recovery, entry2, "trend"),
                 SimplifiedLineSegment(entry2, peak2, "trend"),
             ),
-            sideways_segments=(),
             rapid_move_candidates=(c1, c2),
         )
         geometry = ChartGeometry(
@@ -229,7 +223,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(earlier_entry, provisional_entry, "trend"),
                 SimplifiedLineSegment(provisional_entry, peak, "trend"),
             ),
-            sideways_segments=(),
             rapid_move_candidates=(candidate,),
         )
         geometry = ChartGeometry(
@@ -263,7 +256,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(first_peak, second_entry, "trend"),
                 SimplifiedLineSegment(second_entry, later_peak, "trend"),
             ),
-            sideways_segments=(),
             rapid_move_candidates=(first, second),
         )
         geometry = ChartGeometry(
