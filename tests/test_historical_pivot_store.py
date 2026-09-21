@@ -39,7 +39,7 @@ def test_build_storage_rows_preserves_line_links_and_reasons():
             SimplifiedLineSegment(p0, p1, "trend"),
             SimplifiedLineSegment(p1, p2, "sideways"),
         ),
-        sideways_segments=(sideways,),
+        marker_only_points=(p3,),
     )
     stage3 = final
     stage4 = final
