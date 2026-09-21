@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from historical_pivot_stage2 import Stage2Result  # noqa: E402
+from historical_pivot_shared import RapidMoveCandidate  # noqa: E402
 from historical_pivot_stage3 import simplify_pivot_lines as merge_stage3  # noqa: E402
 
 from historical_pivot_base import (  # noqa: E402
@@ -223,6 +224,42 @@ class PivotStageBoundaryTests(unittest.TestCase):
             SimplifiedLineSegment(sideways_end, low5, "trend"),
             result.segments,
         )
+
+    def test_stage3_keeps_rapid_candidate_endpoints_connected_until_stage4(self):
+        d = date(2020, 1, 1)
+        l0 = PivotPoint(d, 1.0, "low")
+        l1 = PivotPoint(d + timedelta(days=10), 2.0, "low")
+        h0 = PivotPoint(d + timedelta(days=20), 5.0, "high")
+        h1 = PivotPoint(d + timedelta(days=30), 7.0, "high")
+        stage2 = Stage2Result(
+            high_pivots=(h0, h1),
+            low_pivots=(l0, l1),
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+            rapid_move_candidates=(
+                RapidMoveCandidate(
+                    start=l0,
+                    end=h0,
+                    direction=1,
+                    visual_y_share=0.4,
+                ),
+            ),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=40), 0.0, 10.0, 100.0, 100.0)
+
+        result = merge_stage3(stage2, geometry)
+
+        self.assertIn(l0, result.markers)
+        self.assertIn(h0, result.markers)
+        self.assertEqual(stage2.rapid_move_candidates, result.rapid_move_candidates)
+        connected = {
+            (p.day, p.value, p.pivot_type)
+            for segment in result.segments
+            for p in (segment.start, segment.end)
+        }
+        self.assertIn((l0.day, l0.value, l0.pivot_type), connected)
+        self.assertIn((h0.day, h0.value, h0.pivot_type), connected)
 
     def test_stage3_normal_up_wave_keeps_only_start_low_and_end_high(self):
         d = date(2020, 1, 1)
