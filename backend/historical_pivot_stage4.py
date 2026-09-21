@@ -75,20 +75,6 @@ def _farther_opposite(
     )
 
 
-def _crosses_hard_structure(
-    result: SimplifiedLineResult,
-    *,
-    start: date,
-    end: date,
-) -> bool:
-    for segment in result.segments:
-        if segment.kind not in {"spike", "sideways"}:
-            continue
-        if start < segment.start.day < end or start < segment.end.day < end:
-            return True
-    return False
-
-
 def _timeline_points(result: SimplifiedLineResult) -> tuple[PivotPoint, ...]:
     """Return Stage-3 chronological points, including provisional rapid markers."""
     by_key = {_key(point): point for point in result.markers}
