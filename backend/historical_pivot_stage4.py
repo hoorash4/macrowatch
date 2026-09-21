@@ -50,11 +50,9 @@ class _RunState:
     extreme: PivotPoint
     angle_ordinal: int = 0
     collapse_end: PivotPoint | None = None
-    angle_blocked: bool = False
 
     # provisional opposite excursion
     opposite_extreme: PivotPoint | None = None
-    rebound_extreme: PivotPoint | None = None
 
 
 def _first_nonflat_direction(points: Sequence[PivotPoint]) -> tuple[int, int] | None:
@@ -212,55 +210,51 @@ def _process_window(
             index += 1
             continue
 
-        # Candidate turn confirmed: the next same-side point failed to retrace
-        # 100% back through the previous extreme.
+        # The next same-side point failed to extend the old trend.
         #
-        # First decide whether the opposite excursion actually broke the old
-        # run's START anchor. Only then may the whole old run be reinterpreted
-        # as reversed. If the anchor was not broken, the old trend remains a
-        # valid completed trend and its prior extreme becomes the new opposite
-        # trend anchor.
-        first_extreme = state.opposite_extreme
-        broke_anchor = (
+        # That alone does NOT confirm a reversal. The opposite-side extreme
+        # must first break the old run's start anchor:
+        #
+        #   up run:   opposite LOW < start LOW, then lower HIGH => downtrend
+        #   down run: opposite HIGH > start HIGH, then higher LOW => uptrend
+        #
+        # If the start anchor was not broken, the completed old trend remains
+        # valid. Preserve its extreme as the new opposite-trend anchor.
+        opposite = state.opposite_extreme
+        anchor_broken = (
             state.direction > 0
-            and first_extreme.value < state.anchor.value
+            and opposite.value < state.anchor.value
         ) or (
             state.direction < 0
-            and first_extreme.value > state.anchor.value
+            and opposite.value > state.anchor.value
         )
 
-        if broke_anchor:
-            if state.anchor.day < point.day:
-                intervals.append((state.anchor, point))
-
-            new_direction = _sign(first_extreme.value - point.value)
-            if new_direction == 0:
-                index += 1
-                continue
-
+        if anchor_broken:
+            # The old trend has been structurally invalidated: the opposite
+            # extreme broke the start anchor and this deciding same-side point
+            # also failed to recover the old extreme. Collapse the invalidated
+            # old structure through the deciding point and restart there.
+            intervals.append((state.anchor, point))
             state = _RunState(
                 anchor=point,
-                direction=new_direction,
-                extreme=first_extreme,
+                direction=_sign(opposite.value - point.value),
+                extreme=opposite,
             )
             index += 1
             continue
 
+        # The opposite excursion never broke the old start anchor. The old
+        # trend therefore remains a valid completed trend. Keep its extreme as
+        # the turn anchor and start the opposite run from there.
         _record_collapse(intervals, state)
         turn = state.extreme
-        new_direction = _sign(first_extreme.value - turn.value)
-        if new_direction == 0:
-            index += 1
-            continue
-
         state = _RunState(
             anchor=turn,
-            direction=new_direction,
-            extreme=first_extreme,
+            direction=_sign(opposite.value - turn.value),
+            extreme=opposite,
+            opposite_extreme=point,
         )
-        # The deciding same-side point is already the first pullback against
-        # the newly confirmed opposite trend.
-        state.opposite_extreme = point
+        index += 1
         index += 1
 
     _record_collapse(intervals, state)
