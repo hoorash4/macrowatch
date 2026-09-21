@@ -76,7 +76,6 @@ def prune_unconfirmed_retracements(
         return result
 
     delete_keys: set[tuple[date, float, str]] = set()
-    run_start = 0
 
     def direction(left: PivotPoint, right: PivotPoint) -> int:
         if right.value > left.value:
@@ -85,32 +84,53 @@ def prune_unconfirmed_retracements(
             return -1
         return 0
 
-    while run_start < len(line_points) - 2:
-        first_direction = direction(
-            line_points[run_start],
-            line_points[run_start + 1],
-        )
-        if first_direction == 0:
-            run_start += 1
+    # Every protected point is a hard chronological boundary. Finish cleanup
+    # up to that point, keep it, then restart from the protected point. This
+    # prevents a later point from causing the whole earlier run to be discarded.
+    protected_indices = [
+        index
+        for index, point in enumerate(line_points)
+        if key(point) in protected_keys
+    ]
+    windows: list[list[PivotPoint]] = []
+    start_index = 0
+    for boundary_index in protected_indices:
+        if boundary_index < start_index:
             continue
+        current = line_points[start_index:boundary_index + 1]
+        if current:
+            windows.append(current)
+        start_index = boundary_index
+    tail = line_points[start_index:]
+    if tail and (not windows or tail != windows[-1]):
+        windows.append(tail)
 
-        run_end = run_start + 1
-        while run_end + 1 < len(line_points):
-            next_direction = direction(
-                line_points[run_end],
-                line_points[run_end + 1],
+    for window in windows:
+        run_start = 0
+        while run_start < len(window) - 2:
+            first_direction = direction(
+                window[run_start],
+                window[run_start + 1],
             )
-            if next_direction != first_direction:
-                break
-            run_end += 1
+            if first_direction == 0:
+                run_start += 1
+                continue
 
-        if run_end - run_start + 1 >= 3:
-            interior = line_points[run_start + 1:run_end]
-            # Protected structure breaks the cleanup rather than being crossed.
-            if not any(key(point) in protected_keys for point in interior):
+            run_end = run_start + 1
+            while run_end + 1 < len(window):
+                next_direction = direction(
+                    window[run_end],
+                    window[run_end + 1],
+                )
+                if next_direction != first_direction:
+                    break
+                run_end += 1
+
+            if run_end - run_start + 1 >= 3:
+                interior = window[run_start + 1:run_end]
                 delete_keys.update(key(point) for point in interior)
 
-        run_start = run_end
+            run_start = run_end
 
     if not delete_keys:
         return result
