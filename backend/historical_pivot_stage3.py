@@ -31,12 +31,91 @@ from historical_pivot_shared import (
     SidewaysSegment,
     Stage3LineResult,
     SimplifiedLineSegment,
+    screen_angle_degrees,
 )
 from historical_pivot_stage2 import Stage2Result
 
 
+TRANSIENT_EXCURSION_MAX_ANGLE_DEG = 30.0
+
+
 def _key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
+
+
+
+def _transient_excursion_keys(
+    stage2: Stage2Result,
+    geometry: ChartGeometry,
+) -> set[tuple[date, float, str]]:
+    """Return ordinary same-side RDP peaks/troughs that immediately mean-revert.
+
+    For three consecutive same-side RDP points A-B-C:
+    - HIGH side: B > A and C < A
+    - LOW side:  B < A and C > A
+    - the screen-space interior angle at B is <= 30 degrees
+
+    Such B is a merge target, not a protected structure. Any spike, protected
+    sideways boundary, or rapid-move provisional endpoint outranks this rule
+    and is therefore never returned here.
+    """
+    protected: set[tuple[date, float, str]] = set()
+
+    for spike in stage2.spike_peaks:
+        protected.add(_key(spike.point))
+        if spike.entry is not None:
+            protected.add(_key(spike.entry))
+
+    for sideways in (
+        *stage2.high_sideways_segments,
+        *stage2.low_sideways_segments,
+    ):
+        if getattr(sideways, "protected", True):
+            protected.add(_key(sideways.start))
+            protected.add(_key(sideways.end))
+
+    for rapid in stage2.rapid_move_candidates:
+        protected.add(_key(rapid.start))
+        protected.add(_key(rapid.end))
+
+    merge_targets: set[tuple[date, float, str]] = set()
+    for pivot_type, points in (
+        ("high", stage2.high_pivots),
+        ("low", stage2.low_pivots),
+    ):
+        ordered = sorted(points, key=lambda item: item.day)
+        for a_point, b_point, c_point in zip(
+            ordered,
+            ordered[1:],
+            ordered[2:],
+        ):
+            b_key = _key(b_point)
+            if b_key in protected:
+                continue
+
+            if pivot_type == "high":
+                reverted = (
+                    b_point.value > a_point.value
+                    and c_point.value < a_point.value
+                )
+            else:
+                reverted = (
+                    b_point.value < a_point.value
+                    and c_point.value > a_point.value
+                )
+            if not reverted:
+                continue
+
+            angle = screen_angle_degrees(
+                a_point,
+                b_point,
+                c_point,
+                geometry,
+            )
+            if angle <= TRANSIENT_EXCURSION_MAX_ANGLE_DEG:
+                merge_targets.add(b_key)
+
+    return merge_targets
 
 
 def _unique(points: Sequence[PivotPoint]) -> list[PivotPoint]:
@@ -336,11 +415,14 @@ def simplify_pivot_lines(
     )
     marker_only_keys = {_key(spike.point) for spike in marker_only_spikes}
 
+    merge_target_keys = _transient_excursion_keys(augmented, geometry)
+
     points = _unique(
         tuple(
             point
             for point in (*augmented.high_pivots, *augmented.low_pivots)
             if _key(point) not in marker_only_keys
+            and _key(point) not in merge_target_keys
         )
     )
 
