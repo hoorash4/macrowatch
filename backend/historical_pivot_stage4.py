@@ -213,24 +213,54 @@ def _process_window(
             continue
 
         # Candidate turn confirmed: the next same-side point failed to retrace
-        # 100% back through the previous extreme. The old run is now settled
-        # through THIS deciding point, so collapse the completed structure from
-        # the old anchor directly to the deciding point. The deciding point then
-        # becomes the anchor of the newly confirmed opposite trend.
-        if state.anchor.day < point.day:
-            intervals.append((state.anchor, point))
-
+        # 100% back through the previous extreme.
+        #
+        # First decide whether the opposite excursion actually broke the old
+        # run's START anchor. Only then may the whole old run be reinterpreted
+        # as reversed. If the anchor was not broken, the old trend remains a
+        # valid completed trend and its prior extreme becomes the new opposite
+        # trend anchor.
         first_extreme = state.opposite_extreme
-        new_direction = _sign(first_extreme.value - point.value)
+        broke_anchor = (
+            state.direction > 0
+            and first_extreme.value < state.anchor.value
+        ) or (
+            state.direction < 0
+            and first_extreme.value > state.anchor.value
+        )
+
+        if broke_anchor:
+            if state.anchor.day < point.day:
+                intervals.append((state.anchor, point))
+
+            new_direction = _sign(first_extreme.value - point.value)
+            if new_direction == 0:
+                index += 1
+                continue
+
+            state = _RunState(
+                anchor=point,
+                direction=new_direction,
+                extreme=first_extreme,
+            )
+            index += 1
+            continue
+
+        _record_collapse(intervals, state)
+        turn = state.extreme
+        new_direction = _sign(first_extreme.value - turn.value)
         if new_direction == 0:
             index += 1
             continue
 
         state = _RunState(
-            anchor=point,
+            anchor=turn,
             direction=new_direction,
             extreme=first_extreme,
         )
+        # The deciding same-side point is already the first pullback against
+        # the newly confirmed opposite trend.
+        state.opposite_extreme = point
         index += 1
 
     _record_collapse(intervals, state)
