@@ -23,7 +23,7 @@ from historical_pivot_shared import (
 SPIKE_ANGLE_THRESHOLD_DEG = 25.0
 SPIKE_MIN_VISUAL_Y_SHARE = 0.20
 SPIKE_MIN_RETRACEMENT_RATIO = 0.70
-SPIKE_MAX_BC_TO_AB_TIME_RATIO = 1.50
+SPIKE_MAX_BC_TO_AB_Y_RATIO = 1.50
 SPIKE_FOLLOWUP_POINTS = 2
 
 @dataclass(frozen=True)
@@ -232,7 +232,7 @@ def augment_spike_entry_points(
     angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
     min_visual_y_share: float = SPIKE_MIN_VISUAL_Y_SHARE,
     min_retracement_ratio: float = SPIKE_MIN_RETRACEMENT_RATIO,
-    max_bc_to_ab_time_ratio: float = SPIKE_MAX_BC_TO_AB_TIME_RATIO,
+    max_bc_to_ab_y_ratio: float = SPIKE_MAX_BC_TO_AB_Y_RATIO,
     followup_points: int = SPIKE_FOLLOWUP_POINTS,
 ) -> SpikeAugmentedPivotResult:
     """Finish Stage 1 by confirming spike shapes on top of the RDP result.
@@ -245,7 +245,7 @@ def augment_spike_entry_points(
     - the larger of AB/BC vertical screen travels must cover >= 20% of the
       visible y-axis by default.
     - BC must retrace >= 70% of AB by default.
-    - BC elapsed time must be <= 1.5 * AB elapsed time by default.
+    - BC vertical magnitude must be <= 1.5 * AB vertical magnitude by default.
     - after C, inspect only C+1 and C+2 in chronological Stage-1 RDP order.
       If either point exceeds B again in the AB direction, B belongs to the
       continuing move and is not a spike.
@@ -259,8 +259,8 @@ def augment_spike_entry_points(
         raise ValueError("min_visual_y_share must be between 0 and 1")
     if min_retracement_ratio < 0:
         raise ValueError("min_retracement_ratio must be non-negative")
-    if max_bc_to_ab_time_ratio <= 1:
-        raise ValueError("max_bc_to_ab_time_ratio must be greater than 1")
+    if max_bc_to_ab_y_ratio < min_retracement_ratio:
+        raise ValueError("max_bc_to_ab_y_ratio must be >= min_retracement_ratio")
     if followup_points < 0:
         raise ValueError("followup_points must be non-negative")
 
@@ -317,13 +317,6 @@ def augment_spike_entry_points(
         if not (a_point.day < pivot.day < c_point.day):
             return False, 0.0
 
-        ab_days = (pivot.day - a_point.day).days
-        bc_days = (c_point.day - pivot.day).days
-        if ab_days <= 0 or bc_days <= 0:
-            return False, 0.0
-        if bc_days > max_bc_to_ab_time_ratio * ab_days:
-            return False, 0.0
-
         if direction == "up":
             ab = float(pivot.value) - float(a_point.value)
             bc = float(pivot.value) - float(c_point.value)
@@ -333,7 +326,8 @@ def augment_spike_entry_points(
 
         if ab <= 0 or bc <= 0:
             return False, 0.0
-        if bc / ab < min_retracement_ratio:
+        ratio = bc / ab
+        if ratio < min_retracement_ratio or ratio > max_bc_to_ab_y_ratio:
             return False, 0.0
         if max(ab, bc) / y_span < min_visual_y_share:
             return False, 0.0
