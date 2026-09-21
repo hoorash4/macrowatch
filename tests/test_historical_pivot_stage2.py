@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from historical_pivot_shared import ChartGeometry, PivotPoint
-from historical_pivot_stage1 import SpikeAugmentedPivotResult
+from historical_pivot_stage1 import BasePivotResult, PivotPolicy
 from historical_pivot_stage2 import finalize_sideways_protection
 
 
@@ -26,7 +26,14 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
             PivotPoint(d + timedelta(days=50), 4.0, "low"),
             PivotPoint(d + timedelta(days=90), 3.0, "low"),
         )
-        stage1 = SpikeAugmentedPivotResult(highs, lows, ())
+        stage1 = BasePivotResult(
+            frequency="W",
+            policy=PivotPolicy(5, 14),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
         geometry = ChartGeometry(
             d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
         )
@@ -47,7 +54,14 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
             PivotPoint(d + timedelta(days=30), 4.0, "low"),
             PivotPoint(d + timedelta(days=80), 4.1, "low"),
         )
-        stage1 = SpikeAugmentedPivotResult(highs, lows, ())
+        stage1 = BasePivotResult(
+            frequency="W",
+            policy=PivotPolicy(5, 14),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
         geometry = ChartGeometry(
             d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
         )
@@ -71,7 +85,14 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
             PivotPoint(d + timedelta(days=50), 2.0, "low"),
             PivotPoint(d + timedelta(days=80), 3.0, "low"),
         )
-        stage1 = SpikeAugmentedPivotResult(highs, lows, ())
+        stage1 = BasePivotResult(
+            frequency="W",
+            policy=PivotPolicy(5, 14),
+            high_candidates=highs,
+            low_candidates=lows,
+            high_pivots=highs,
+            low_pivots=lows,
+        )
         geometry = ChartGeometry(
             d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
         )
