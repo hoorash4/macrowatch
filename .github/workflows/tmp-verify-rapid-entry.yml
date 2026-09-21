@@ -25,7 +25,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          python -m unittest tests.test_historical_pivot_stage2
+          python -m unittest \
+            tests.test_historical_pivot_stage2.HistoricalPivotStage2Tests.test_rapid_up_entry_falls_back_to_a_when_no_lower_plateau_exists \
+            tests.test_historical_pivot_stage2.HistoricalPivotStage2Tests.test_rapid_down_entry_falls_back_to_a_when_no_higher_plateau_exists \
+            tests.test_historical_pivot_stage2.HistoricalPivotStage2Tests.test_rapid_entry_uses_only_plateau_that_improves_on_a
           PYTHONPATH=backend python - <<'PY'
           from common import SupabaseRest
           from historical_pivot_base import load_case_series
