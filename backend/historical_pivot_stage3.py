@@ -287,6 +287,8 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
         *stage2.high_sideways_segments,
         *stage2.low_sideways_segments,
     ):
+        if not getattr(sideways, "protected", True):
+            continue
         if sideways.start.day < sideways.end.day:
             segments.append(
                 _HardSegment(
