@@ -98,7 +98,7 @@ class SimplifiedLineResult:
     segments: tuple[SimplifiedLineSegment, ...]
     sideways_segments: tuple[SidewaysSegment, ...]
     protected_points: tuple[PivotPoint, ...] = ()
-    provisional_protected_points: tuple[PivotPoint, ...] = ()
+    standalone_markers: tuple[PivotPoint, ...] = ()
     rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
 
     def __post_init__(self) -> None:
@@ -120,11 +120,26 @@ class SimplifiedLineResult:
                     raise ValueError(
                         "stage output contains sideways metadata for a deleted marker"
                     )
-        for point in (*self.protected_points, *self.provisional_protected_points):
+        segment_endpoint_keys = {
+            (point.day, point.value, point.pivot_type)
+            for segment in self.segments
+            for point in (segment.start, segment.end)
+        }
+        for point in self.protected_points:
             point_key = (point.day, point.value, point.pivot_type)
             if point_key not in marker_keys:
                 raise ValueError(
                     "stage output contains protected metadata for a deleted marker"
+                )
+        for point in self.standalone_markers:
+            point_key = (point.day, point.value, point.pivot_type)
+            if point_key not in marker_keys:
+                raise ValueError(
+                    "stage output contains standalone metadata for a deleted marker"
+                )
+            if point_key in segment_endpoint_keys:
+                raise ValueError(
+                    "standalone marker may not also be a connected line vertex"
                 )
         for candidate in self.rapid_move_candidates:
             for point in candidate.protected_points:
