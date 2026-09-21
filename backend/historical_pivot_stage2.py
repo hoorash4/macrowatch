@@ -22,6 +22,7 @@ from historical_pivot_shared import (
     SpikePeak,
     classify_sideways_reference_line,
     screen_angle_degrees,
+    screen_segment_angle_degrees,
 )
 from historical_pivot_stage1 import BasePivotResult
 
@@ -380,69 +381,101 @@ def _classify_rapid_moves(
 
 def _sideways_pairs(
     points: Sequence[PivotPoint],
-    prior_trend: str,
+    reference_side: str,
     geometry: ChartGeometry,
 ) -> tuple[SidewaysSegment, ...]:
-    """Classify and merge same-side sideways runs at the approved 6 degrees.
+    """Classify/merge sideways runs using only the approved 6-degree rule.
 
-    A run may start only after the matching same-side trend:
-    - uptrend   -> rising highs, then a flat high/high pair
-    - downtrend -> falling lows, then a flat low/low pair
+    Sideways classification itself is direction-agnostic.  A contiguous run
+    remains one sideways segment while the direct line from the run start to the
+    new endpoint stays within 6 degrees.
 
-    Once established, adjacent flat pairs belong to the same sideways structure
-    while the direct line from the run start to the new end also remains within
-    6 degrees.  If that direct line leaves the sideways band, the old run is
-    sealed and the current flat pair starts a new run.
+    Protection is decided only after the run is known:
+    - if the same-side trend before and after the sideways run differs, protect
+      both boundaries;
+    - if the before/after trend is the same, classify it but do not protect it;
+    - if either side is unavailable because the sideways run touches the graph
+      start or graph end, protect both boundaries.
     """
-    found: list[SidewaysSegment] = []
     ordered = tuple(sorted(points, key=lambda item: item.day))
-    active: SidewaysSegment | None = None
+    if len(ordered) < 2:
+        return ()
 
-    for index, (left, right) in enumerate(zip(ordered, ordered[1:])):
-        pair = classify_sideways_reference_line(
-            left,
-            right,
-            prior_trend,
-            geometry,
-        )
-        if pair is None:
-            if active is not None:
-                found.append(active)
-                active = None
+    raw_runs: list[tuple[int, int, float]] = []
+    run_start: int | None = None
+    run_end: int | None = None
+    run_angle = 0.0
+
+    def flush() -> None:
+        nonlocal run_start, run_end, run_angle
+        if run_start is not None and run_end is not None and run_end > run_start:
+            raw_runs.append((run_start, run_end, run_angle))
+        run_start = None
+        run_end = None
+        run_angle = 0.0
+
+    for idx in range(len(ordered) - 1):
+        left = ordered[idx]
+        right = ordered[idx + 1]
+        pair_angle = screen_segment_angle_degrees(left, right, geometry)
+
+        if abs(pair_angle) > 6.0:
+            flush()
             continue
 
-        if active is not None and active.end == left:
-            merged = classify_sideways_reference_line(
-                active.start,
+        if run_start is None:
+            run_start = idx
+            run_end = idx + 1
+            run_angle = pair_angle
+            continue
+
+        if run_end == idx:
+            merged_angle = screen_segment_angle_degrees(
+                ordered[run_start],
                 right,
-                prior_trend,
                 geometry,
             )
-            if merged is not None:
-                active = merged
-            else:
-                found.append(active)
-                active = pair
-            continue
+            if abs(merged_angle) <= 6.0:
+                run_end = idx + 1
+                run_angle = merged_angle
+                continue
 
-        if active is not None:
-            found.append(active)
-            active = None
+        flush()
+        run_start = idx
+        run_end = idx + 1
+        run_angle = pair_angle
 
-        if index == 0:
-            continue
+    flush()
 
-        previous = ordered[index - 1]
-        arrived_from_trend = (
-            left.value > previous.value
-            if prior_trend == "up"
-            else left.value < previous.value
+    found: list[SidewaysSegment] = []
+    for start_idx, end_idx, angle in raw_runs:
+        start_point = ordered[start_idx]
+        end_point = ordered[end_idx]
+
+        previous = ordered[start_idx - 1] if start_idx > 0 else None
+        following = ordered[end_idx + 1] if end_idx + 1 < len(ordered) else None
+
+        incoming = 0
+        outgoing = 0
+        if previous is not None:
+            incoming = 1 if start_point.value > previous.value else -1 if start_point.value < previous.value else 0
+        if following is not None:
+            outgoing = 1 if following.value > end_point.value else -1 if following.value < end_point.value else 0
+
+        edge_unknown = previous is None or following is None
+        protected = edge_unknown or incoming == 0 or outgoing == 0 or incoming != outgoing
+        prior_trend = "up" if incoming > 0 else "down" if incoming < 0 else "unknown"
+
+        found.append(
+            SidewaysSegment(
+                start=start_point,
+                end=end_point,
+                prior_trend=prior_trend,
+                reference_side=reference_side,
+                angle_deg=angle,
+                protected=protected,
+            )
         )
-        if arrived_from_trend:
-            active = pair
-
-    if active is not None:
-        found.append(active)
 
     return tuple(found)
 
@@ -512,8 +545,8 @@ def classify_special_structures(
         high_pivots=tuple(stage1.high_pivots),
         low_pivots=tuple(stage1.low_pivots),
         spike_peaks=spikes,
-        high_sideways_segments=_sideways_pairs(line_highs, "up", geometry),
-        low_sideways_segments=_sideways_pairs(line_lows, "down", geometry),
+        high_sideways_segments=_sideways_pairs(line_highs, "high", geometry),
+        low_sideways_segments=_sideways_pairs(line_lows, "low", geometry),
         rapid_move_candidates=rapid,
         provisional_protected_points=tuple(sorted(
             provisional_map.values(),
