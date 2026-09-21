@@ -271,3 +271,5 @@ html[data-theme="dark"] .historical-d-review-grid article>button{background:#111
 .historical-indicator-hidden-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:var(--theme-text-secondary);font-size:10px;font-weight:750;text-align:left;cursor:pointer}
 .historical-indicator-hidden-menu button:hover{background:var(--theme-surface-elevated);color:var(--theme-text-primary)}
 .historical-indicator-hidden-menu .historical-indicator-empty{padding:5px 4px}
+
+.historical-indicator-hidden-menu[hidden]{display:none}
