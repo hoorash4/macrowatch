@@ -386,9 +386,12 @@ def _sideways_pairs(
 ) -> tuple[SidewaysSegment, ...]:
     """Classify/merge sideways runs using only the approved 6-degree rule.
 
-    Sideways classification itself is direction-agnostic.  A contiguous run
-    remains one sideways segment while the direct line from the run start to the
-    new endpoint stays within 6 degrees.
+    The 6-degree angle test itself is direction-agnostic, but the reference
+    side must match the trend entering the run:
+    - after an uptrend, only a HIGH-side flat run can be a sideways range;
+    - after a downtrend, only a LOW-side flat run can be a sideways range.
+    When there is no previous same-side point at the graph edge, the incoming
+    trend is unknown and the run may still be classified.
 
     Protection is decided only after the run is known:
     - if the same-side trend before and after the sideways run differs, protect
@@ -461,6 +464,16 @@ def _sideways_pairs(
             incoming = 1 if start_point.value > previous.value else -1 if start_point.value < previous.value else 0
         if following is not None:
             outgoing = 1 if following.value > end_point.value else -1 if following.value < end_point.value else 0
+
+        # A sideways range belongs to the boundary that the incoming trend
+        # is actually riding.  A falling trend rides LOW-side flats; a rising
+        # trend rides HIGH-side flats.  Do not create an opposite-side
+        # "sideways" merely because that same-side RDP pair happens to be flat.
+        if previous is not None:
+            if reference_side == "high" and incoming <= 0:
+                continue
+            if reference_side == "low" and incoming >= 0:
+                continue
 
         edge_unknown = previous is None or following is None
         protected = edge_unknown or incoming == 0 or outgoing == 0 or incoming != outgoing
