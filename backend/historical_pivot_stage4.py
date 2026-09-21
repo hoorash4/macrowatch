@@ -1,20 +1,22 @@
-"""Stage 4: finalize and consolidate Stage-2 rapid-move candidates.
+"""Stage 4: finalize rapid-move candidates from Stage 2/3.
 
-Stage 3 has already built the single wave line and carried every provisional
-rapid-move endpoint through without deleting it.  Stage 4 is the ONLY stage
-allowed to release or consolidate those provisional points.
+Stage 4 applies the SAME chronological wave/retracement judgment used by the
+general Stage-5 cleanup, but only rapid-move ENTRY points may start an anchor.
 
-Rules:
-- rapid candidates of the same direction may extend one another only while
-  there is no opposite Stage-3 wave between them;
-- extension is measured from the original rapid-move entry anchor;
-- the angle between anchor->previous peak and anchor->new peak must be <= the
-  approved 10-degree same-trend threshold;
-- a hard spike/sideways boundary ends the extension;
-- after this stage, surviving rapid-move endpoints become final protected
-  points and all provisional protection is cleared.
+For each rapid entry anchor:
+- walk the completed Stage-3 line in chronological order;
+- an opposite wave is provisional, not an automatic rapid-move terminator;
+- the very next same-side extreme decides it:
+  * if it exceeds the previous extreme, the opposite wave was a retracement;
+    keep the rapid trend alive and apply the anchor-based 10-degree test;
+  * if it does not exceed the previous extreme, the prior extreme is the end
+    of this rapid move; later points may not retroactively re-join it;
+- hard spike/sideways structure ends the active rapid scan;
+- only a Stage-2 rapid entry can become the next rapid anchor;
+- after consolidation, the surviving rapid entry and final rapid peak become
+  final protected points and all other rapid protection is released.
 
-Stage 4 does not perform the general trend/reversal cleanup.  That is Stage 5.
+Stage 4 never performs the general Stage-5 cleanup.
 """
 from __future__ import annotations
 
@@ -43,23 +45,28 @@ def _segment_direction(start: PivotPoint, end: PivotPoint) -> int:
     return 0
 
 
-def _has_opposite_wave(
-    result: SimplifiedLineResult,
-    *,
-    after: date,
-    through: date,
+def _is_same_side(point: PivotPoint, direction: int) -> bool:
+    return point.pivot_type == ("high" if direction > 0 else "low")
+
+
+def _improves(point: PivotPoint, extreme: PivotPoint, direction: int) -> bool:
+    return (
+        point.value > extreme.value
+        if direction > 0
+        else point.value < extreme.value
+    )
+
+
+def _farther_opposite(
+    point: PivotPoint,
+    current: PivotPoint,
     direction: int,
 ) -> bool:
-    """Return True only for an actual connected Stage-3 opposite trend wave."""
-    for segment in result.segments:
-        if segment.kind != "trend":
-            continue
-        if segment.end.day <= after or segment.start.day >= through:
-            continue
-        seg_direction = _segment_direction(segment.start, segment.end)
-        if seg_direction != 0 and seg_direction != direction:
-            return True
-    return False
+    return (
+        point.value < current.value
+        if direction > 0
+        else point.value > current.value
+    )
 
 
 def _crosses_hard_structure(
@@ -76,13 +83,97 @@ def _crosses_hard_structure(
     return False
 
 
+def _timeline_points(result: SimplifiedLineResult) -> tuple[PivotPoint, ...]:
+    """Return Stage-3 chronological points, including provisional rapid markers."""
+    by_key = {_key(point): point for point in result.markers}
+    for segment in result.segments:
+        by_key[_key(segment.start)] = segment.start
+        by_key[_key(segment.end)] = segment.end
+    return tuple(sorted(
+        by_key.values(),
+        key=lambda item: (item.day, item.pivot_type),
+    ))
+
+
+def _scan_from_entry(
+    result: SimplifiedLineResult,
+    *,
+    anchor: PivotPoint,
+    direction: int,
+    latest_candidate_end: date,
+    candidate_end_keys: set[tuple[date, float, str]],
+    geometry: ChartGeometry,
+    angle_threshold_deg: float,
+) -> PivotPoint | None:
+    """Run Stage-5-style wave judgment from one rapid ENTRY anchor only."""
+    points = [
+        point
+        for point in _timeline_points(result)
+        if anchor.day < point.day <= latest_candidate_end
+    ]
+    if not points:
+        return None
+
+    extreme: PivotPoint | None = None
+    opposite: PivotPoint | None = None
+
+    for point in points:
+        if _crosses_hard_structure(
+            result,
+            start=anchor.day,
+            end=point.day,
+        ):
+            break
+
+        if extreme is None:
+            if _is_same_side(point, direction):
+                extreme = point
+            continue
+
+        if not _is_same_side(point, direction):
+            if opposite is None or _farther_opposite(point, opposite, direction):
+                opposite = point
+            continue
+
+        # Same-side point after either no pullback or a provisional pullback.
+        # This is the Stage-5 rule: it decides the prior extreme immediately.
+        if not _improves(point, extreme, direction):
+            # Failed to recover/extend the prior extreme. The prior extreme is
+            # final for this rapid run; later points cannot re-join it.
+            break
+
+        angle = screen_origin_angle_degrees(
+            anchor,
+            extreme,
+            point,
+            geometry,
+        )
+        if angle > angle_threshold_deg:
+            break
+
+        # The old extreme was exceeded. Any opposite move since then was only
+        # a retracement, so the rapid trend continues.
+        extreme = point
+        opposite = None
+
+    if extreme is None:
+        return None
+
+    # Stage 4 may only finalize a peak that Stage 2 actually identified as a
+    # rapid endpoint. Ordinary Stage-3 points can judge the wave but cannot
+    # invent a new rapid endpoint.
+    if _key(extreme) not in candidate_end_keys:
+        return None
+    return extreme
+
+
 def finalize_rapid_moves(
     result: SimplifiedLineResult,
     geometry: ChartGeometry,
     *,
     angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
 ) -> SimplifiedLineResult:
-    """Finalize Stage-2 rapid candidates against the completed Stage-3 line."""
+    """Finalize rapid candidates using entry-anchored Stage-5 wave logic."""
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
@@ -107,94 +198,85 @@ def finalize_rapid_moves(
         raise ValueError("geometry y-axis span must be positive")
 
     finalized: list[RapidMoveCandidate] = []
-    active: RapidMoveCandidate | None = None
+    consumed: set[int] = set()
 
-    def flush() -> None:
-        nonlocal active
-        if active is not None:
-            finalized.append(active)
-            active = None
-
-    for candidate in candidates:
-        if candidate.start.day >= candidate.end.day:
+    for index, candidate in enumerate(candidates):
+        if index in consumed or candidate.start.day >= candidate.end.day:
             continue
 
-        # A candidate that already contains an opposite Stage-3 wave is no
-        # longer one continuous rapid move.  Release it here instead of turning
-        # its later endpoint into a second protected rapid extreme.
-        if _has_opposite_wave(
+        anchor = candidate.start
+        direction = candidate.direction
+
+        # Only candidates that can plausibly belong to this entry-anchored run
+        # are offered to the scan. A different direction or a hard structure
+        # starts a separate run.
+        group_indices: list[int] = []
+        group: list[RapidMoveCandidate] = []
+        for next_index in range(index, len(candidates)):
+            other = candidates[next_index]
+            if next_index in consumed:
+                continue
+            if other.start.day < anchor.day:
+                continue
+            if other.direction != direction:
+                if other.start.day > candidate.end.day:
+                    break
+                continue
+            if _crosses_hard_structure(
+                result,
+                start=anchor.day,
+                end=other.end.day,
+            ):
+                break
+            group_indices.append(next_index)
+            group.append(other)
+
+        if not group:
+            continue
+
+        candidate_end_keys = {_key(item.end) for item in group}
+        latest_end = max(item.end.day for item in group)
+        final_peak = _scan_from_entry(
             result,
-            after=candidate.start.day,
-            through=candidate.end.day,
-            direction=candidate.direction,
-        ):
-            continue
-
-        if active is None:
-            active = candidate
-            continue
-
-        # Nested/duplicate candidate with no later extreme adds nothing.
-        if (
-            candidate.direction == active.direction
-            and candidate.end.day <= active.end.day
-        ):
-            continue
-
-        if candidate.direction != active.direction:
-            flush()
-            active = candidate
-            continue
-
-        if _crosses_hard_structure(
-            result,
-            start=active.start.day,
-            end=candidate.end.day,
-        ):
-            flush()
-            active = candidate
-            continue
-
-        # Any real opposite Stage-3 wave ends the rapid move at the prior peak.
-        if _has_opposite_wave(
-            result,
-            after=active.end.day,
-            through=candidate.end.day,
-            direction=active.direction,
-        ):
-            flush()
-            active = candidate
-            continue
-
-        angle = screen_origin_angle_degrees(
-            active.start,
-            active.end,
-            candidate.end,
-            geometry,
-        )
-        if angle > angle_threshold_deg:
-            flush()
-            active = candidate
-            continue
-
-        active = RapidMoveCandidate(
-            start=active.start,
-            end=candidate.end,
-            direction=active.direction,
-            visual_y_share=abs(
-                float(candidate.end.value) - float(active.start.value)
-            ) / y_span,
+            anchor=anchor,
+            direction=direction,
+            latest_candidate_end=latest_end,
+            candidate_end_keys=candidate_end_keys,
+            geometry=geometry,
+            angle_threshold_deg=angle_threshold_deg,
         )
 
-    flush()
+        if final_peak is None:
+            # This entry did not survive the wave/retracement judgment. Release
+            # only this candidate; later rapid entries remain eligible anchors.
+            consumed.add(index)
+            continue
+
+        finalized.append(
+            RapidMoveCandidate(
+                start=anchor,
+                end=final_peak,
+                direction=direction,
+                visual_y_share=abs(
+                    float(final_peak.value) - float(anchor.value)
+                ) / y_span,
+            )
+        )
+
+        # Any rapid candidates fully contained inside the finalized run have
+        # been consolidated into this entry->final_peak structure.
+        for group_index in group_indices:
+            other = candidates[group_index]
+            if other.start.day >= anchor.day and other.end.day <= final_peak.day:
+                consumed.add(group_index)
 
     final_protected_map = {
         _key(point): point
         for point in result.protected_points
     }
     for candidate in finalized:
-        for point in candidate.protected_points:
-            final_protected_map[_key(point)] = point
+        final_protected_map[_key(candidate.start)] = candidate.start
+        final_protected_map[_key(candidate.end)] = candidate.end
 
     connected_keys = {
         _key(point)
@@ -208,18 +290,18 @@ def finalize_rapid_moves(
         for point in (segment.start, segment.end)
     }
     finalized_keys = set(final_protected_map)
+    provisional_keys = {
+        _key(point) for point in result.provisional_protected_points
+    }
 
-    # Only Stage 4 may release provisional rapid points.  If a released point
-    # is merely a standalone provisional marker, remove it now.  If it is also
-    # a real Stage-3 line vertex or hard-protected point, keep the marker but
-    # remove its rapid protection so Stage 5 can judge it normally.
+    # Stage 4 alone releases rapid provisional protection. Standalone
+    # provisional markers that did not survive are removed; real Stage-3 line
+    # vertices remain as ordinary unprotected points for Stage 5 to judge.
     markers = tuple(
         point
         for point in result.markers
         if (
-            _key(point) not in {
-                _key(p) for p in result.provisional_protected_points
-            }
+            _key(point) not in provisional_keys
             or _key(point) in finalized_keys
             or _key(point) in connected_keys
             or _key(point) in hard_keys
