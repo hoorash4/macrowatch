@@ -61,14 +61,12 @@ class SixStageArchitectureTests(unittest.TestCase):
             high_pivots=(provisional_peak, later_peak),
             low_pivots=(entry, later_low),
             rapid_move_candidates=(candidate,),
-            provisional_protected_points=(entry, provisional_peak),
         )
         geometry = ChartGeometry(d, d + timedelta(days=60), -5.0, 15.0, 600, 300)
         stage3 = simplify_pivot_lines(stage2, geometry)
         self.assertIn(entry, stage3.markers)
         self.assertIn(later_peak, stage3.markers)
         self.assertNotIn(provisional_peak, stage3.markers)
-        self.assertEqual((), stage3.provisional_protected_points)
         self.assertEqual((), stage3.rapid_move_candidates)
 
     def test_stage3_keeps_rapid_candidate_when_both_endpoints_survive_line(self):
@@ -81,13 +79,11 @@ class SixStageArchitectureTests(unittest.TestCase):
             high_pivots=(peak,),
             low_pivots=(entry,),
             rapid_move_candidates=(candidate,),
-            provisional_protected_points=(entry, peak),
         )
         geometry = ChartGeometry(d, d + timedelta(days=60), -5.0, 15.0, 600, 300)
         stage3 = simplify_pivot_lines(stage2, geometry)
         # With no two-boundary wave, neither endpoint is on a Stage-3 line;
         # rapid metadata must not manufacture a detached structure.
-        self.assertEqual((), stage3.provisional_protected_points)
         self.assertEqual((), stage3.rapid_move_candidates)
 
     def test_stage4_extends_same_direction_rapid_move_within_ten_degrees(self):
@@ -101,15 +97,13 @@ class SixStageArchitectureTests(unittest.TestCase):
             markers=(entry, peak1, peak2, c2.start),
             segments=(SimplifiedLineSegment(entry, peak2, "trend"),),
             sideways_segments=(),
-            provisional_protected_points=(entry, peak1, c2.start, peak2),
             rapid_move_candidates=(c1, c2),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 1000, 500)
         stage4 = finalize_rapid_moves(result, geometry, angle_threshold_deg=10.0)
-        self.assertEqual(1, len(stage4.rapid_move_candidates))
-        self.assertEqual(entry, stage4.rapid_move_candidates[0].start)
-        self.assertEqual(peak2, stage4.rapid_move_candidates[0].end)
-        self.assertEqual((), stage4.provisional_protected_points)
+        self.assertEqual((), stage4.rapid_move_candidates)
+        self.assertIn(entry, stage4.protected_points)
+        self.assertIn(peak2, stage4.protected_points)
         self.assertIn(entry, stage4.protected_points)
         self.assertIn(peak2, stage4.protected_points)
 
@@ -126,7 +120,6 @@ class SixStageArchitectureTests(unittest.TestCase):
             ),
             sideways_segments=(),
             protected_points=(entry, peak),
-            rapid_move_candidates=(RapidMoveCandidate(entry, peak, 1, 0.5),),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 1000, 500)
         stage5 = prune_same_trend_extremes(result, geometry)
@@ -149,7 +142,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(pullback, later_peak, "trend"),
             ),
             sideways_segments=(),
-            provisional_protected_points=(entry, later_peak),
             rapid_move_candidates=(candidate,),
         )
         geometry = ChartGeometry(
@@ -158,12 +150,9 @@ class SixStageArchitectureTests(unittest.TestCase):
 
         stage4 = finalize_rapid_moves(result, geometry)
 
-        self.assertEqual(1, len(stage4.rapid_move_candidates))
-        self.assertEqual(entry, stage4.rapid_move_candidates[0].start)
-        self.assertEqual(later_peak, stage4.rapid_move_candidates[0].end)
+        self.assertEqual((), stage4.rapid_move_candidates)
         self.assertIn(entry, stage4.protected_points)
         self.assertIn(later_peak, stage4.protected_points)
-        self.assertEqual((), stage4.provisional_protected_points)
 
     def test_stage4_confirms_prior_peak_when_first_recovery_fails(self):
         d = date(2020, 1, 1)
@@ -185,7 +174,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(entry2, peak2, "trend"),
             ),
             sideways_segments=(),
-            provisional_protected_points=(entry1, peak1, entry2, peak2),
             rapid_move_candidates=(c1, c2),
         )
         geometry = ChartGeometry(
@@ -194,9 +182,11 @@ class SixStageArchitectureTests(unittest.TestCase):
 
         stage4 = finalize_rapid_moves(result, geometry)
 
-        self.assertEqual(2, len(stage4.rapid_move_candidates))
-        self.assertEqual((entry1, peak1), stage4.rapid_move_candidates[0].protected_points)
-        self.assertEqual((entry2, peak2), stage4.rapid_move_candidates[1].protected_points)
+        self.assertEqual((), stage4.rapid_move_candidates)
+        self.assertIn(entry1, stage4.protected_points)
+        self.assertIn(peak1, stage4.protected_points)
+        self.assertIn(entry2, stage4.protected_points)
+        self.assertIn(peak2, stage4.protected_points)
 
     def test_stage4_expands_rapid_entry_backward_before_forward_scan(self):
         d = date(2020, 1, 1)
@@ -211,7 +201,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(provisional_entry, peak, "trend"),
             ),
             sideways_segments=(),
-            provisional_protected_points=(provisional_entry, peak),
             rapid_move_candidates=(candidate,),
         )
         geometry = ChartGeometry(
@@ -220,9 +209,9 @@ class SixStageArchitectureTests(unittest.TestCase):
 
         stage4 = finalize_rapid_moves(result, geometry, angle_threshold_deg=10.0)
 
-        self.assertEqual(1, len(stage4.rapid_move_candidates))
-        self.assertEqual(earlier_entry, stage4.rapid_move_candidates[0].start)
-        self.assertEqual(peak, stage4.rapid_move_candidates[0].end)
+        self.assertEqual((), stage4.rapid_move_candidates)
+        self.assertIn(earlier_entry, stage4.protected_points)
+        self.assertIn(peak, stage4.protected_points)
         self.assertIn(earlier_entry, stage4.protected_points)
         self.assertIn(peak, stage4.protected_points)
         self.assertNotIn(provisional_entry, stage4.protected_points)
@@ -252,12 +241,6 @@ class SixStageArchitectureTests(unittest.TestCase):
                 SimplifiedLineSegment(second_entry, later_peak, "trend"),
             ),
             sideways_segments=(),
-            provisional_protected_points=(
-                provisional_entry,
-                first_peak,
-                second_entry,
-                later_peak,
-            ),
             rapid_move_candidates=(first, second),
         )
         geometry = ChartGeometry(
@@ -270,9 +253,9 @@ class SixStageArchitectureTests(unittest.TestCase):
         # NEW anchor and stop the first rapid move at first_peak.
         stage4 = finalize_rapid_moves(result, geometry, angle_threshold_deg=10.0)
 
-        self.assertGreaterEqual(len(stage4.rapid_move_candidates), 1)
-        self.assertEqual(earlier_entry, stage4.rapid_move_candidates[0].start)
-        self.assertEqual(first_peak, stage4.rapid_move_candidates[0].end)
+        self.assertEqual((), stage4.rapid_move_candidates)
+        self.assertIn(earlier_entry, stage4.protected_points)
+        self.assertIn(first_peak, stage4.protected_points)
 
 
 if __name__ == "__main__":
