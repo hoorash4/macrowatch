@@ -1,4 +1,4 @@
-name: Render KR Corp Rehab Stage3 Stage6 temp
+name: Render US Commercial Chapter 11 Stage3 Stage6 temp
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
           from historical_pivot_stage6 import prune_unconfirmed_retracements
 
           db=SupabaseRest()
-          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="KR_CORP_REHAB")
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US_COMMERCIAL_CH11")
           raw=normalize_rows(rows)
           vals=[p.value for p in raw if start<=p.day<=end]
           lo,hi=min(vals),max(vals)
@@ -66,10 +66,10 @@ jobs:
               if lows: ax.scatter([p.day for p in lows],[p.value for p in lows],s=42,marker="v",label=f"Stage {stage} low")
               for p in result.markers:
                   ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",fontsize=7,ha="center")
-              ax.set_title(f"KR Corp Rehabilitation Cases · Stage {stage} · current")
+              ax.set_title(f"US Commercial Chapter 11 Cases · Stage {stage} · current")
               ax.set_xlim(start,end); ax.set_ylim(g.y_min,g.y_max); ax.grid(True,alpha=.2); ax.legend(loc="best")
               fig.tight_layout()
-              fig.savefig(f"tmp-rehab-stage36/KR_CORP_REHAB_STAGE{stage}.png",dpi=160)
+              fig.savefig(f"tmp-rehab-stage36/US_COMMERCIAL_CH11_STAGE{stage}.png",dpi=160)
               plt.close(fig)
 
           render(s3,3)
