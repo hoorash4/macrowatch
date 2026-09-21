@@ -8,14 +8,16 @@ Inputs:
 Output:
 - one chronological wave line
 - explicit marker-only spike points, if any
-- only rapid candidates whose endpoints survive on the Stage-3 line
+- all Stage-2 rapid candidates carried provisionally into Stage 4
 
 Spike/sideways line structure is encoded directly in segment kinds; Stage 3 does
 not pass a second copy of sideways metadata downstream.
 
-Stage 3 does not reclassify rapid moves, but a rapid candidate whose endpoint is
-removed by the wave merge is already structurally invalid and is discarded here.
-Only marker-only spikes may remain as detached standalone markers.
+Stage 3 does not reclassify rapid moves. Rapid candidate entry/end points are
+provisional protected vertices: normal-wave judgment is still built first, but
+those endpoints are forced back onto the connected line so Stage 4—not Stage 3—
+decides whether the rapid move survives. Only marker-only spikes may remain as
+detached standalone markers.
 """
 from __future__ import annotations
 
@@ -384,6 +386,15 @@ def simplify_pivot_lines(
     structural: dict[tuple[date, float, str], PivotPoint] = {
         _key(point): point for point in filtered_base
     }
+
+    # Rapid candidates are only provisional at Stage 2. Stage 3 may judge the
+    # normal wave without them, but it must not delete their entry/end points:
+    # Stage 4 owns the rapid-move confirmation/rejection decision. Keep both
+    # endpoints as connected vertices (never as detached standalone markers).
+    for candidate in augmented.rapid_move_candidates:
+        structural[_key(candidate.start)] = candidate.start
+        structural[_key(candidate.end)] = candidate.end
+
     hard_kind: dict[tuple[tuple[date, float, str], tuple[date, float, str]], str] = {}
     for protected in hard:
         structural[_key(protected.start)] = protected.start
@@ -403,21 +414,20 @@ def simplify_pivot_lines(
         remember(spike.point)
 
     # Only marker-only spikes may survive as true standalone markers.
-    # Rapid protection is provisional evidence attached to a line structure:
-    # if either endpoint is absent from the completed Stage-3 line, the rapid
-    # candidate has already been absorbed/rejected by the wave merge and must
-    # be discarded here rather than resurrected as a detached marker.
+    # Rapid endpoints are provisional connected vertices and must all reach
+    # Stage 4, which owns their final confirmation/rejection.
     connected_keys = {
         _key(point)
         for segment in segments
         for point in (segment.start, segment.end)
     }
-    surviving_rapid = tuple(
-        candidate
-        for candidate in augmented.rapid_move_candidates
-        if _key(candidate.start) in connected_keys
-        and _key(candidate.end) in connected_keys
-    )
+    surviving_rapid = tuple(augmented.rapid_move_candidates)
+    if any(
+        _key(candidate.start) not in connected_keys
+        or _key(candidate.end) not in connected_keys
+        for candidate in surviving_rapid
+    ):
+        raise RuntimeError("stage3 failed to connect a rapid candidate endpoint")
     stage2_keys = {_key(point) for point in augmented.display_markers}
     if not set(markers).issubset(stage2_keys):
         raise RuntimeError("stage3 produced a point absent from stage2")
