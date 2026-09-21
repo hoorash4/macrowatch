@@ -258,3 +258,16 @@ html[data-theme="dark"] #historical-case-auto-analyze,html[data-theme="dark"] #h
 .historical-pivot-review-actions button.is-delete{border-color:#fecaca;color:#dc2626}
 .historical-pivot-review-status{display:block;min-height:16px;margin-top:8px;color:#dc2626;font-size:10px;font-weight:750}
 html[data-theme="dark"] .historical-d-review-grid article>button{background:#111c2f;color:#c4b5fd}
+
+.historical-indicator-heading-actions{display:flex;align-items:center;gap:5px}
+#historical-indicator-add{width:24px;height:24px;padding:0;font-size:17px;line-height:1}
+.historical-indicator-row{position:relative;display:block}
+.historical-indicator-row>label{width:100%;box-sizing:border-box}
+.historical-indicator-actions{position:absolute;z-index:5;right:7px;top:50%;display:flex;gap:3px;padding:3px;border:1px solid var(--theme-border);border-radius:7px;background:var(--theme-surface-elevated);box-shadow:0 5px 16px rgba(15,23,42,.16);opacity:0;visibility:hidden;transform:translateY(-50%) translateX(4px);transition:opacity .12s ease,transform .12s ease,visibility .12s ease}
+.historical-indicator-row:hover .historical-indicator-actions,.historical-indicator-row:focus-within .historical-indicator-actions{opacity:1;visibility:visible;transform:translateY(-50%) translateX(0)}
+.historical-indicator-actions button{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--theme-text-muted);font-size:10px;cursor:pointer}
+.historical-indicator-actions button:hover{background:var(--theme-surface);color:#dc2626}
+.historical-indicator-hidden-menu{margin-top:7px;padding:7px;border:1px solid var(--theme-border);border-radius:7px;background:var(--theme-surface);box-shadow:0 8px 24px rgba(15,23,42,.12)}
+.historical-indicator-hidden-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:var(--theme-text-secondary);font-size:10px;font-weight:750;text-align:left;cursor:pointer}
+.historical-indicator-hidden-menu button:hover{background:var(--theme-surface-elevated);color:var(--theme-text-primary)}
+.historical-indicator-hidden-menu .historical-indicator-empty{padding:5px 4px}
