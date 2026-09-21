@@ -1,7 +1,10 @@
 """Shared immutable types and raw-graph helpers for Historical Insight stages.
 
-Stage modules exchange only their explicit result DTOs plus the untouched raw graph
-context. No stage result contains earlier candidate sets.
+Stage modules exchange only explicit result DTOs plus untouched graph geometry.
+Stage 1 retains plateau candidates because Stage 2 must search them for entries.
+Stage 3 alone may carry rapid candidates; Stage 4+ never carries provisional or
+rapid-candidate state. Detached markers are legal only when explicitly declared
+as marker-only spikes.
 """
 from __future__ import annotations
 
