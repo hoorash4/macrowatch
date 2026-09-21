@@ -1,4 +1,4 @@
-name: Trace US10Y_REAL spike rules temp v3
+name: Render US10Y_REAL Stage5 temp
 
 on:
   push:
@@ -71,4 +71,25 @@ jobs:
           print("S3_SEGMENTS",[(s.start.day.isoformat(),s.end.day.isoformat(),s.kind) for s in s3.segments])
           print("S4_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s4.markers])
           print("S5_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s5.markers])
+
+          import matplotlib.pyplot as plt
+          xs=[p.day for p in raw]
+          ys=[p.value for p in raw]
+          fig,ax=plt.subplots(figsize=(14,7))
+          ax.plot(xs,ys,linewidth=1.1,label="US10Y_REAL raw")
+          ordered=sorted(s5.markers,key=lambda p:(p.day,p.pivot_type))
+          ax.plot([p.day for p in ordered],[p.value for p in ordered],marker="o",linewidth=2.2,label="Stage 5")
+          for p in ordered:
+              ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",ha="center",fontsize=7)
+          ax.set_title("US10Y_REAL · tightening_2022 · Stage 5")
+          ax.set_ylabel("Percent")
+          ax.grid(True,alpha=.25)
+          ax.legend()
+          fig.tight_layout()
+          fig.savefig("us10y_real_stage5.png",dpi=180)
           PY
+      - name: Upload chart
+        uses: actions/upload-artifact@v4
+        with:
+          name: us10y-real-stage5
+          path: us10y_real_stage5.png
