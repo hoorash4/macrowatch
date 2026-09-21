@@ -3,8 +3,13 @@
 Stage 4 applies the SAME chronological wave/retracement judgment used by the
 general Stage-5 cleanup, but only rapid-move ENTRY points may start an anchor.
 
-For each rapid entry anchor:
-- walk the completed Stage-3 line in chronological order;
+For each provisional rapid entry:
+- FIRST walk backward through the completed Stage-3 line and test whether an
+  earlier opposite-side point can be the same rapid-wave entry;
+- whenever backward integration succeeds, replace the entry anchor immediately
+  and test again from that NEW anchor;
+- only after the earliest valid entry is fixed, walk forward from that new
+  anchor through the completed Stage-3 line;
 - an opposite wave is provisional, not an automatic rapid-move terminator;
 - the very next same-side extreme decides it:
   * if it exceeds the previous extreme, the opposite wave was a retracement;
@@ -100,8 +105,7 @@ def _scan_from_entry(
     *,
     anchor: PivotPoint,
     direction: int,
-    latest_candidate_end: date,
-    candidate_end_keys: set[tuple[date, float, str]],
+    through: date,
     geometry: ChartGeometry,
     angle_threshold_deg: float,
 ) -> PivotPoint | None:
@@ -109,7 +113,7 @@ def _scan_from_entry(
     points = [
         point
         for point in _timeline_points(result)
-        if anchor.day < point.day <= latest_candidate_end
+        if anchor.day < point.day <= through
     ]
     if not points:
         return None
@@ -156,15 +160,60 @@ def _scan_from_entry(
         extreme = point
         opposite = None
 
-    if extreme is None:
-        return None
-
-    # Stage 4 may only finalize a peak that Stage 2 actually identified as a
-    # rapid endpoint. Ordinary Stage-3 points can judge the wave but cannot
-    # invent a new rapid endpoint.
-    if _key(extreme) not in candidate_end_keys:
-        return None
     return extreme
+
+
+def _expand_entry_backward(
+    result: SimplifiedLineResult,
+    *,
+    initial_entry: PivotPoint,
+    seed_peak: PivotPoint,
+    direction: int,
+    geometry: ChartGeometry,
+    angle_threshold_deg: float,
+) -> PivotPoint:
+    """Move a provisional rapid entry backward before any forward extension.
+
+    Candidate anchors are earlier opposite-side Stage-3 points, tested nearest
+    first.  A candidate is accepted only when the SAME Stage-5-style
+    wave/retracement + 10-degree logic, re-run from that candidate anchor,
+    still reaches the seed rapid peak.  After acceptance the anchor is replaced
+    immediately and the search continues farther backward from the new anchor.
+    """
+    timeline = _timeline_points(result)
+    anchor = initial_entry
+    wanted_entry_type = "low" if direction > 0 else "high"
+
+    while True:
+        earlier = [
+            point
+            for point in timeline
+            if point.day < anchor.day
+            and point.pivot_type == wanted_entry_type
+        ]
+        if not earlier:
+            return anchor
+
+        proposal = max(earlier, key=lambda item: (item.day, item.value))
+        if _crosses_hard_structure(
+            result,
+            start=proposal.day,
+            end=seed_peak.day,
+        ):
+            return anchor
+
+        reached = _scan_from_entry(
+            result,
+            anchor=proposal,
+            direction=direction,
+            through=seed_peak.day,
+            geometry=geometry,
+            angle_threshold_deg=angle_threshold_deg,
+        )
+        if reached is None or _key(reached) != _key(seed_peak):
+            return anchor
+
+        anchor = proposal
 
 
 def finalize_rapid_moves(
@@ -204,12 +253,23 @@ def finalize_rapid_moves(
         if index in consumed or candidate.start.day >= candidate.end.day:
             continue
 
-        anchor = candidate.start
         direction = candidate.direction
 
-        # Only candidates that can plausibly belong to this entry-anchored run
-        # are offered to the scan. A different direction or a hard structure
-        # starts a separate run.
+        # Backward extension MUST happen before any forward judgment.  The
+        # Stage-2 entry is provisional; if an earlier Stage-3 point belongs to
+        # the same rapid wave, make it the new entry anchor first.  All forward
+        # 10-degree judgments are then re-run from that new anchor.
+        anchor = _expand_entry_backward(
+            result,
+            initial_entry=candidate.start,
+            seed_peak=candidate.end,
+            direction=direction,
+            geometry=geometry,
+            angle_threshold_deg=angle_threshold_deg,
+        )
+
+        # Only candidates that can plausibly belong to this FINAL entry-anchored
+        # run are offered to the forward scan.
         group_indices: list[int] = []
         group: list[RapidMoveCandidate] = []
         for next_index in range(index, len(candidates)):
@@ -240,11 +300,15 @@ def finalize_rapid_moves(
             result,
             anchor=anchor,
             direction=direction,
-            latest_candidate_end=latest_end,
-            candidate_end_keys=candidate_end_keys,
+            through=latest_end,
             geometry=geometry,
             angle_threshold_deg=angle_threshold_deg,
         )
+
+        # Ordinary Stage-3 points may judge the wave, but Stage 4 may finalize
+        # only a peak that Stage 2 actually identified as a rapid endpoint.
+        if final_peak is not None and _key(final_peak) not in candidate_end_keys:
+            final_peak = None
 
         if final_peak is None:
             # This entry did not survive the wave/retracement judgment. Release
