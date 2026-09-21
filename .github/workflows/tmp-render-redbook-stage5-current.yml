@@ -1,4 +1,4 @@
-name: Render tightening 2022 all Stage5 temp
+name: Recalculate tightening 2022 pivots temp
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  render:
+  recalculate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -19,19 +19,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: |
-          pip install --disable-pip-version-check -r backend/requirements.txt
-          pip install --disable-pip-version-check matplotlib
-      - name: Render tightening 2022 all Stage5
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Recalculate and store tightening 2022 pivots
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALGORITHM_VERSION: ${{ github.sha }}
         run: |
-          mkdir -p tmp-tightening-2022-stage5/charts
           PYTHONPATH=backend python - <<'PY'
-          import csv
+          import os
           import traceback
-          import matplotlib.pyplot as plt
 
           from common import SupabaseRest
           from historical_pivot_base import load_case_series
@@ -43,12 +40,9 @@ jobs:
           from historical_pivot_stage5 import prune_unconfirmed_retracements
           from historical_pivot_store import store_pipeline_result
 
-          import os
-
           CASE="tightening_2022"
           INDEX="NASDAQ_COMPOSITE"
-          OUT="tmp-tightening-2022-stage5"
-          ALGORITHM_VERSION=os.environ.get("GITHUB_SHA","manual-rebuild")
+          VERSION=os.environ["ALGORITHM_VERSION"]
 
           db=SupabaseRest()
           refs=db.request("GET","historical_indicator_ai_analysis",params={
@@ -60,7 +54,8 @@ jobs:
           series_codes=sorted({str(r["series_code"]) for r in refs if r.get("series_code")})
           print("SERIES_COUNT",len(series_codes))
 
-          summary=[]
+          ok=[]
+          errors=[]
           for n,series in enumerate(series_codes,1):
               print(f"[{n}/{len(series_codes)}] {series}")
               try:
@@ -71,95 +66,40 @@ jobs:
                   vals=[p.value for p in raw if start<=p.day<=end]
                   lo,hi=min(vals),max(vals)
                   pad=(hi-lo)*.08 if hi!=lo else 1.0
-                  g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+                  geometry=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
 
                   base=calculate_base_pivots(rows,freq)
-                  s1=augment_spike_entry_points(base,g)
-                  s2=finalize_sideways_protection(s1,g)
-                  s3=simplify_pivot_lines(s2,g)
-                  s4=prune_same_trend_extremes(s3,g)
-                  s5=prune_unconfirmed_retracements(s4)
+                  stage1=augment_spike_entry_points(base,geometry)
+                  stage2=finalize_sideways_protection(stage1,geometry)
+                  stage3=simplify_pivot_lines(stage2,geometry)
+                  stage4=prune_same_trend_extremes(stage3,geometry)
+                  final=prune_unconfirmed_retracements(stage4)
 
-                  stored_count=store_pipeline_result(
+                  stored=store_pipeline_result(
                       db,
                       case_code=CASE,
                       index_code=INDEX,
                       series_code=series,
-                      algorithm_version=ALGORITHM_VERSION,
+                      algorithm_version=VERSION,
                       source_rows=rows,
                       frequency=freq,
                       buffer_start=start,
                       buffer_end=end,
                       base=base,
-                      stage1=s1,
-                      stage2=s2,
-                      stage3=s3,
-                      stage4=s4,
-                      final=s5,
+                      stage1=stage1,
+                      stage2=stage2,
+                      stage3=stage3,
+                      stage4=stage4,
+                      final=final,
                   )
-                  print("STORED",series,stored_count)
-
-                  protected=getattr(s3,"protected_points",()) or ()
-                  summary.append({
-                      "series_code":series,
-                      "frequency":freq,
-                      "source_points":len(rows),
-                      "stage3_markers":len(s3.markers),
-                      "stage4_markers":len(s4.markers),
-                      "stage5_markers":len(s5.markers),
-                      "rapid_protected":len(protected),
-                      "status":"ok",
-                      "error":"",
-                  })
-
-                  fig,ax=plt.subplots(figsize=(14,7))
-                  ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=.9,label="raw")
-                  for seg in s5.segments:
-                      ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.2)
-                  highs=[p for p in s5.markers if p.pivot_type=="high"]
-                  lows=[p for p in s5.markers if p.pivot_type=="low"]
-                  if highs:
-                      ax.scatter([p.day for p in highs],[p.value for p in highs],s=36,marker="^",label="Stage 5 high")
-                  if lows:
-                      ax.scatter([p.day for p in lows],[p.value for p in lows],s=36,marker="v",label="Stage 5 low")
-                  for p in protected:
-                      ax.scatter([p.day],[p.value],s=80,facecolors="none",edgecolors="black",linewidths=1.3)
-                  ax.set_title(f"{series} · tightening_2022 · Stage 5")
-                  ax.set_xlim(start,end)
-                  ax.set_ylim(g.y_min,g.y_max)
-                  ax.grid(True,alpha=.2)
-                  ax.legend(loc="best")
-                  fig.tight_layout()
-                  fig.savefig(f"{OUT}/charts/{series}.png",dpi=140)
-                  plt.close(fig)
+                  ok.append((series,stored,len(final.markers)))
+                  print(" STORED",stored,"FINAL_MARKERS",len(final.markers))
               except Exception as exc:
                   traceback.print_exc()
-                  summary.append({
-                      "series_code":series,
-                      "frequency":"",
-                      "source_points":"",
-                      "stage3_markers":"",
-                      "stage4_markers":"",
-                      "stage5_markers":"",
-                      "rapid_protected":"",
-                      "status":"error",
-                      "error":f"{type(exc).__name__}: {exc}",
-                  })
+                  errors.append((series,f"{type(exc).__name__}: {exc}"))
 
-          with open(f"{OUT}/summary.csv","w",newline="",encoding="utf-8") as fp:
-              writer=csv.DictWriter(fp,fieldnames=[
-                  "series_code","frequency","source_points","stage3_markers",
-                  "stage4_markers","stage5_markers","rapid_protected","status","error"
-              ])
-              writer.writeheader()
-              writer.writerows(summary)
-
-          ok=sum(1 for r in summary if r["status"]=="ok")
-          bad=len(summary)-ok
-          print("DONE",{"total":len(summary),"ok":ok,"error":bad})
+          print("DONE",{"total":len(series_codes),"ok":len(ok),"errors":len(errors)})
+          if errors:
+              print("ERRORS",errors)
+              raise SystemExit(1)
           PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tightening-2022-stage5-all
-          path: tmp-tightening-2022-stage5
-          if-no-files-found: error
