@@ -49,7 +49,29 @@ class SixStageArchitectureTests(unittest.TestCase):
         self.assertEqual(stage1.high_pivots, stage2.high_pivots)
         self.assertEqual(stage1.low_pivots, stage2.low_pivots)
 
-    def test_stage3_carries_provisional_rapid_points_untouched(self):
+    def test_stage3_drops_rapid_candidate_when_wave_merge_drops_endpoint(self):
+        d = date(2020, 1, 1)
+        entry = PivotPoint(d, 0.0, "low")
+        provisional_peak = PivotPoint(d + timedelta(days=20), 8.0, "high")
+        later_peak = PivotPoint(d + timedelta(days=30), 10.0, "high")
+        later_low = PivotPoint(d + timedelta(days=31), 2.0, "low")
+        candidate = RapidMoveCandidate(entry, provisional_peak, 1, 0.4)
+        from historical_pivot_stage2 import Stage2Result
+        stage2 = Stage2Result(
+            high_pivots=(provisional_peak, later_peak),
+            low_pivots=(entry, later_low),
+            rapid_move_candidates=(candidate,),
+            provisional_protected_points=(entry, provisional_peak),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=60), -5.0, 15.0, 600, 300)
+        stage3 = simplify_pivot_lines(stage2, geometry)
+        self.assertIn(entry, stage3.markers)
+        self.assertIn(later_peak, stage3.markers)
+        self.assertNotIn(provisional_peak, stage3.markers)
+        self.assertEqual((), stage3.provisional_protected_points)
+        self.assertEqual((), stage3.rapid_move_candidates)
+
+    def test_stage3_keeps_rapid_candidate_when_both_endpoints_survive_line(self):
         d = date(2020, 1, 1)
         entry = PivotPoint(d, 0.0, "low")
         peak = PivotPoint(d + timedelta(days=20), 8.0, "high")
@@ -63,10 +85,10 @@ class SixStageArchitectureTests(unittest.TestCase):
         )
         geometry = ChartGeometry(d, d + timedelta(days=60), -5.0, 15.0, 600, 300)
         stage3 = simplify_pivot_lines(stage2, geometry)
-        self.assertIn(entry, stage3.markers)
-        self.assertIn(peak, stage3.markers)
-        self.assertEqual((entry, peak), stage3.provisional_protected_points)
-        self.assertEqual((candidate,), stage3.rapid_move_candidates)
+        # With no two-boundary wave, neither endpoint is on a Stage-3 line;
+        # rapid metadata must not manufacture a detached structure.
+        self.assertEqual((), stage3.provisional_protected_points)
+        self.assertEqual((), stage3.rapid_move_candidates)
 
     def test_stage4_extends_same_direction_rapid_move_within_ten_degrees(self):
         d = date(2020, 1, 1)
