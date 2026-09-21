@@ -208,7 +208,6 @@ def finalize_rapid_moves(
         return SimplifiedLineResult(
             markers=result.markers,
             segments=result.segments,
-            sideways_segments=result.sideways_segments,
             marker_only_points=result.marker_only_points,
             protected_points=(),
         )
@@ -312,7 +311,6 @@ def finalize_rapid_moves(
     return SimplifiedLineResult(
         markers=result.markers,
         segments=result.segments,
-        sideways_segments=result.sideways_segments,
         marker_only_points=result.marker_only_points,
         protected_points=protected,
     )
