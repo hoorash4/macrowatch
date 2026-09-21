@@ -7,7 +7,7 @@ Inputs:
 
 Output:
 - one chronological wave line
-- hard-protected spike/sideways structure
+- hard-protected spike/sideways structure that constrains output only
 - rapid-move provisional points carried through untouched
 
 Stage 3 does not classify or post-process rapid moves.  Provisional rapid points
@@ -361,51 +361,43 @@ def simplify_pivot_lines(
         for left, right in zip(vertices, vertices[1:]):
             add_segment(left, right, "trend")
 
-    cursor_day: date | None = None
-    forced_anchor: PivotPoint | None = None
+    # Protection constrains OUTPUT, not JUDGMENT.  Build the normal wave over
+    # the complete Stage-2 timeline first.  Then force protected structure back
+    # into that line as mandatory vertices/segments without allowing a direct
+    # connection to skip across it.
+    base_vertices = _merge_window(points)
 
-    for protected in hard:
-        window = [
-            point
-            for point in points
-            if (cursor_day is None or point.day >= cursor_day)
-            and point.day <= protected.start.day
-        ]
-        if forced_anchor is not None:
-            window.append(forced_anchor)
-
-        vertices = _merge_window(
-            window,
-            forced_anchor=forced_anchor,
+    # A normal-wave vertex inside a hard segment must not split that protected
+    # structure.  The hard segment owns its whole interior span.
+    filtered_base = [
+        point
+        for point in base_vertices
+        if not any(
+            protected.start.day < point.day < protected.end.day
+            for protected in hard
         )
-        add_vertices(vertices)
+    ]
 
-        if vertices and vertices[-1] != protected.start:
-            add_segment(vertices[-1], protected.start, "trend")
-        elif not vertices:
-            remember(protected.start)
-
-        add_segment(protected.start, protected.end, protected.kind)
+    structural: dict[tuple[date, float, str], PivotPoint] = {
+        _key(point): point for point in filtered_base
+    }
+    hard_kind: dict[tuple[tuple[date, float, str], tuple[date, float, str]], str] = {}
+    for protected in hard:
+        structural[_key(protected.start)] = protected.start
+        structural[_key(protected.end)] = protected.end
+        hard_kind[(_key(protected.start), _key(protected.end))] = protected.kind
         if protected.sideways is not None:
             sideways_out.append(protected.sideways)
 
-        forced_anchor = protected.end
-        cursor_day = protected.end.day
-
-    tail = [
-        point
-        for point in points
-        if cursor_day is None or point.day >= cursor_day
-    ]
-    if forced_anchor is not None:
-        tail.append(forced_anchor)
-
-    add_vertices(
-        _merge_window(
-            tail,
-            forced_anchor=forced_anchor,
-        )
+    structural_points = sorted(
+        structural.values(),
+        key=lambda item: (item.day, item.pivot_type),
     )
+    if len(structural_points) == 1:
+        remember(structural_points[0])
+    for left, right in zip(structural_points, structural_points[1:]):
+        kind = hard_kind.get((_key(left), _key(right)), "trend")
+        add_segment(left, right, kind)
 
     for spike in marker_only_spikes:
         remember(spike.point)
