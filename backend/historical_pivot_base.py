@@ -43,6 +43,7 @@ from historical_pivot_stage1 import (
     PIVOT_POLICIES,
     PivotPolicy,
     _perpendicular_distance,
+    build_envelope,
     calculate_base_pivots,
     fixed_count_rdp,
     plateau_extrema,
