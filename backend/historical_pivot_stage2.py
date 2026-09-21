@@ -72,29 +72,44 @@ def _entry_before_peak(
     *,
     a_point: PivotPoint,
     peak: PivotPoint,
-    opposite: Sequence[PivotPoint],
+    opposite_rdp: Sequence[PivotPoint],
+    opposite_candidates: Sequence[PivotPoint],
     direction: str,
 ) -> PivotPoint | None:
-    """Return the first qualifying opposite point when walking backward from B.
+    """Return the extreme plateau entry inside the A-B interval.
 
-    Up move:   nearest low before B whose value is below A.
-    Down move: nearest high before B whose value is above A.
+    The entry is NOT limited to already-selected RDP pivots.
+
+    Up move:
+      choose the lowest plateau LOW between A and B.
+    Down move:
+      choose the highest plateau HIGH between A and B.
+
+    If that plateau point already exists in the selected opposite-side RDP set,
+    reuse that exact point. Otherwise return the plateau candidate so Stage 2
+    can add it to the RDP set.
 
     This entry rule is shared by rapid-move and spike classification.
     """
     eligible = [
         point
-        for point in opposite
-        if point.day < peak.day
-        and (
-            point.value < a_point.value
-            if direction == "up"
-            else point.value > a_point.value
-        )
+        for point in opposite_candidates
+        if a_point.day < point.day < peak.day
     ]
     if not eligible:
         return None
-    return max(eligible, key=lambda item: item.day)
+
+    selected = (
+        min(eligible, key=lambda item: (item.value, item.day))
+        if direction == "up"
+        else max(eligible, key=lambda item: (item.value, item.day))
+    )
+
+    selected_key = _key(selected)
+    for point in opposite_rdp:
+        if _key(point) == selected_key:
+            return point
+    return selected
 
 
 def _followup_rebreaks_peak(
@@ -236,7 +251,8 @@ def _classify_spikes(
         entry = None if marker_only else _entry_before_peak(
             a_point=a_point,
             peak=peak,
-            opposite=low_rdp,
+            opposite_rdp=low_rdp,
+            opposite_candidates=stage1.low_candidates,
             direction="up",
         )
         if not marker_only and entry is None:
@@ -293,7 +309,8 @@ def _classify_spikes(
         entry = None if marker_only else _entry_before_peak(
             a_point=a_point,
             peak=peak,
-            opposite=high_rdp,
+            opposite_rdp=high_rdp,
+            opposite_candidates=stage1.high_candidates,
             direction="down",
         )
         if not marker_only and entry is None:
@@ -333,7 +350,8 @@ def _classify_rapid_moves(
         entry = _entry_before_peak(
             a_point=a_point,
             peak=peak,
-            opposite=low_rdp,
+            opposite_rdp=low_rdp,
+            opposite_candidates=stage1.low_candidates,
             direction="up",
         )
         if entry is None:
@@ -357,7 +375,8 @@ def _classify_rapid_moves(
         entry = _entry_before_peak(
             a_point=a_point,
             peak=peak,
-            opposite=high_rdp,
+            opposite_rdp=high_rdp,
+            opposite_candidates=stage1.high_candidates,
             direction="down",
         )
         if entry is None:
@@ -528,26 +547,48 @@ def classify_special_structures(
         max_bc_to_ab_y_ratio=spike_max_bc_to_ab_y_ratio,
         followup_points=spike_followup_points,
     )
-    marker_only_keys = {
-        _key(spike.point)
-        for spike in spikes
-        if spike.marker_only
-    }
-    line_highs = tuple(
-        point for point in stage1.high_pivots
-        if _key(point) not in marker_only_keys
-    )
-    line_lows = tuple(
-        point for point in stage1.low_pivots
-        if _key(point) not in marker_only_keys
-    )
-
     rapid = _classify_rapid_moves(
         stage1,
         geometry,
         min_visual_y_share=rapid_min_visual_y_share,
         spike_peaks=spikes,
     )
+
+    # Spike/rapid entry points may come from the full plateau-extrema candidate
+    # set rather than the fixed-count RDP subset. Stage 2 adds those selected
+    # entries back into the corresponding RDP side.
+    added_entries = [
+        point
+        for point in (
+            *(spike.entry for spike in spikes if spike.entry is not None),
+            *(candidate.start for candidate in rapid),
+        )
+    ]
+    high_map = {_key(point): point for point in stage1.high_pivots}
+    low_map = {_key(point): point for point in stage1.low_pivots}
+    for point in added_entries:
+        if point.pivot_type == "high":
+            high_map[_key(point)] = point
+        elif point.pivot_type == "low":
+            low_map[_key(point)] = point
+
+    augmented_highs = tuple(sorted(high_map.values(), key=lambda item: item.day))
+    augmented_lows = tuple(sorted(low_map.values(), key=lambda item: item.day))
+
+    marker_only_keys = {
+        _key(spike.point)
+        for spike in spikes
+        if spike.marker_only
+    }
+    line_highs = tuple(
+        point for point in augmented_highs
+        if _key(point) not in marker_only_keys
+    )
+    line_lows = tuple(
+        point for point in augmented_lows
+        if _key(point) not in marker_only_keys
+    )
+
     provisional_map = {
         _key(point): point
         for candidate in rapid
@@ -555,8 +596,8 @@ def classify_special_structures(
     }
 
     return Stage2Result(
-        high_pivots=tuple(stage1.high_pivots),
-        low_pivots=tuple(stage1.low_pivots),
+        high_pivots=augmented_highs,
+        low_pivots=augmented_lows,
         spike_peaks=spikes,
         high_sideways_segments=_sideways_pairs(line_highs, "high", geometry),
         low_sideways_segments=_sideways_pairs(line_lows, "low", geometry),
