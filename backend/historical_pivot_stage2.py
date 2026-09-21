@@ -48,7 +48,6 @@ class Stage2Result:
     high_sideways_segments: tuple[SidewaysSegment, ...] = ()
     low_sideways_segments: tuple[SidewaysSegment, ...] = ()
     rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
-    provisional_protected_points: tuple[PivotPoint, ...] = ()
 
     @property
     def display_markers(self) -> tuple[PivotPoint, ...]:
@@ -592,12 +591,6 @@ def classify_special_structures(
         if _key(point) not in marker_only_keys
     )
 
-    provisional_map = {
-        _key(point): point
-        for candidate in rapid
-        for point in candidate.protected_points
-    }
-
     return Stage2Result(
         high_pivots=augmented_highs,
         low_pivots=augmented_lows,
@@ -605,10 +598,6 @@ def classify_special_structures(
         high_sideways_segments=_sideways_pairs(line_highs, "high", geometry),
         low_sideways_segments=_sideways_pairs(line_lows, "low", geometry),
         rapid_move_candidates=rapid,
-        provisional_protected_points=tuple(sorted(
-            provisional_map.values(),
-            key=lambda item: (item.day, item.pivot_type),
-        )),
     )
 
 
