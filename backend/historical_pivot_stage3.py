@@ -24,7 +24,7 @@ from historical_pivot_shared import (
     ChartGeometry,
     PivotPoint,
     SidewaysSegment,
-    SimplifiedLineResult,
+    Stage3LineResult,
     SimplifiedLineSegment,
 )
 from historical_pivot_stage2 import Stage2Result
@@ -323,7 +323,7 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
 def simplify_pivot_lines(
     augmented: Stage2Result,
     geometry: ChartGeometry,
-) -> SimplifiedLineResult:
+) -> Stage3LineResult:
     """Return one Stage-3 wave line from Stage-2 points only."""
 
     marker_only_spikes = tuple(
@@ -419,12 +419,6 @@ def simplify_pivot_lines(
         if _key(candidate.start) in connected_keys
         and _key(candidate.end) in connected_keys
     )
-    surviving_provisional_map = {
-        _key(point): point
-        for candidate in surviving_rapid
-        for point in candidate.protected_points
-    }
-
     stage2_keys = {_key(point) for point in augmented.display_markers}
     if not set(markers).issubset(stage2_keys):
         raise RuntimeError("stage3 produced a point absent from stage2")
@@ -432,7 +426,7 @@ def simplify_pivot_lines(
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_out.sort(key=lambda item: (item.start.day, item.end.day))
 
-    return SimplifiedLineResult(
+    return Stage3LineResult(
         markers=tuple(
             sorted(
                 markers.values(),
@@ -441,10 +435,9 @@ def simplify_pivot_lines(
         ),
         segments=tuple(segments),
         sideways_segments=tuple(sideways_out),
-        protected_points=(),
-        provisional_protected_points=tuple(
+        marker_only_points=tuple(
             sorted(
-                surviving_provisional_map.values(),
+                (spike.point for spike in marker_only_spikes),
                 key=lambda item: (item.day, item.pivot_type),
             )
         ),
