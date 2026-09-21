@@ -2,13 +2,16 @@
 
 Inputs:
 - Stage 2 final high/low RDP points
-- Stage 2 hard protection metadata (sideways/spike)
-- Stage 2 provisional rapid-move points
+- Stage 2 spike/sideways classification metadata
+- Stage 2 rapid-move candidates
 
 Output:
 - one chronological wave line
-- hard-protected spike/sideways structure that constrains output only
+- explicit marker-only spike points, if any
 - only rapid candidates whose endpoints survive on the Stage-3 line
+
+Spike/sideways line structure is encoded directly in segment kinds; Stage 3 does
+not pass a second copy of sideways metadata downstream.
 
 Stage 3 does not reclassify rapid moves, but a rapid candidate whose endpoint is
 removed by the wave merge is already structurally invalid and is discarded here.
