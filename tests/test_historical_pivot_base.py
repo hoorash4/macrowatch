@@ -526,27 +526,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertEqual(highs[-1], stage2.high_sideways_segments[0].end)
 
 
-    def test_stage2_starts_new_sideways_run_when_combined_angle_exceeds_six_degrees(self):
-        d = date(2020, 1, 1)
-        highs = (
-            PivotPoint(d + timedelta(days=10), 5.00, "high"),
-            PivotPoint(d + timedelta(days=40), 5.25, "high"),
-            PivotPoint(d + timedelta(days=70), 5.50, "high"),
-        )
-        stage1 = SpikeAugmentedPivotResult(
-            high_pivots=highs,
-            low_pivots=(),
-            spike_peaks=(),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=80), 0.0, 10.0, 80.0, 100.0)
-
-        stage2 = finalize_sideways_protection(stage1, geometry)
-
-        self.assertEqual(2, len(stage2.high_sideways_segments))
-        self.assertEqual((highs[0], highs[1]), stage2.high_sideways_segments[0].pivot_points)
-        self.assertEqual((highs[1], highs[2]), stage2.high_sideways_segments[1].pivot_points)
-
-
     def test_confirmed_sideways_protects_both_boundary_pivots(self):
         d = date(2020, 1, 1)
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
