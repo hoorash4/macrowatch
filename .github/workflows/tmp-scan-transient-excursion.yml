@@ -1,0 +1,85 @@
+name: Scan transient excursion rule temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-scan-transient-excursion.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Scan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_shared import ChartGeometry, normalize_rows, screen_angle_degrees
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_base import load_case_series
+
+          db=SupabaseRest()
+
+          # Registry codes actually available in the historical source table.
+          series_rows = db.select(
+              "historical_indicator_series",
+              params={"select":"series_code", "limit":"10000"},
+          )
+          codes = sorted({str(r["series_code"]) for r in series_rows if r.get("series_code")})
+
+          hits=[]
+          scanned=0
+          for code in codes:
+              try:
+                  rows,freq,start,end=load_case_series(
+                      db,
+                      case_code="tightening_2022",
+                      index_code="NASDAQ_COMPOSITE",
+                      series_code=code,
+                  )
+              except Exception:
+                  continue
+              if not rows:
+                  continue
+              raw=normalize_rows(rows)
+              vals=[p.value for p in raw if start<=p.day<=end]
+              if not vals:
+                  continue
+              lo,hi=min(vals),max(vals)
+              pad=(hi-lo)*.08 if hi!=lo else 1.0
+              g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+              try:
+                  s1=calculate_base_pivots(rows,freq)
+              except Exception:
+                  continue
+              scanned+=1
+
+              for side,pts in (("high",s1.high_pivots),("low",s1.low_pivots)):
+                  ordered=sorted(pts,key=lambda p:p.day)
+                  for a,b,c in zip(ordered,ordered[1:],ordered[2:]):
+                      angle=screen_angle_degrees(a,b,c,g)
+                      if side=="high":
+                          is_exc=(b.value>a.value and c.value<a.value)
+                      else:
+                          is_exc=(b.value<a.value and c.value>a.value)
+                      if is_exc and angle<=30.0:
+                          hits.append((code,side,a.day.isoformat(),a.value,b.day.isoformat(),b.value,c.day.isoformat(),c.value,round(angle,2)))
+
+          print("SCANNED",scanned)
+          print("HIT_COUNT",len(hits))
+          for x in hits:
+              print("HIT",x)
+          PY
