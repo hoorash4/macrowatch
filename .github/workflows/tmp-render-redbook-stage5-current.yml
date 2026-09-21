@@ -1,4 +1,4 @@
-name: Render NFCI_RISK Stage2 temp
+name: Trace NFCI spike after Y-ratio fix
 
 on:
   push:
