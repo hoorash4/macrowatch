@@ -101,7 +101,36 @@ def finalize_sideways_protection(
         if active is not None:
             found.append(active)
 
-        return tuple(found)
+        protected: list[SidewaysSegment] = []
+        for segment in found:
+            start_index = ordered.index(segment.start)
+            end_index = ordered.index(segment.end)
+
+            if start_index == 0 or end_index + 1 >= len(ordered):
+                continue
+
+            previous = ordered[start_index - 1]
+            following = ordered[end_index + 1]
+
+            before_direction = (
+                1 if segment.start.value > previous.value
+                else -1 if segment.start.value < previous.value
+                else 0
+            )
+            after_direction = (
+                1 if following.value > segment.end.value
+                else -1 if following.value < segment.end.value
+                else 0
+            )
+
+            if (
+                before_direction != 0
+                and after_direction != 0
+                and before_direction != after_direction
+            ):
+                protected.append(segment)
+
+        return tuple(protected)
 
     return Stage2Result(
         high_pivots=tuple(stage1.high_pivots),
