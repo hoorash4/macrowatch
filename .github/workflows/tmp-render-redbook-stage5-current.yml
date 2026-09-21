@@ -1,4 +1,4 @@
-name: Render NFCI_RISK Stage3 Stage5 temp
+name: Render NFCI_RISK Stage2 temp
 
 on:
   push:
@@ -56,6 +56,25 @@ jobs:
           s4=prune_same_trend_extremes(s3,g)
           s5=prune_unconfirmed_retracements(s4)
 
+          def render_stage2(result,title,path):
+              fig,ax=plt.subplots(figsize=(14,7))
+              ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.1,label="NFCI_RISK raw")
+              highs=sorted(result.high_pivots,key=lambda p:p.day)
+              lows=sorted(result.low_pivots,key=lambda p:p.day)
+              if highs:
+                  ax.plot([p.day for p in highs],[p.value for p in highs],marker="o",linewidth=2.0,label="Stage 2 high")
+              if lows:
+                  ax.plot([p.day for p in lows],[p.value for p in lows],marker="o",linewidth=2.0,label="Stage 2 low")
+              for p in [*highs,*lows]:
+                  ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",ha="center",fontsize=7)
+              ax.set_title(f"NFCI_RISK · tightening_2022 · {title}")
+              ax.set_ylabel("Index")
+              ax.grid(True,alpha=.25)
+              ax.legend()
+              fig.tight_layout()
+              fig.savefig(path,dpi=180)
+              plt.close(fig)
+
           def render(result,title,path):
               fig,ax=plt.subplots(figsize=(14,7))
               ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.1,label="NFCI_RISK raw")
@@ -91,13 +110,10 @@ jobs:
               for x in s4.rapid_move_candidates
           ])
           print("S5_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s5.markers])
-          render(s3,"Stage 3","nfci_risk_stage3.png")
-          render(s5,"Stage 5","nfci_risk_stage5.png")
+          render_stage2(s2,"Stage 2","nfci_risk_stage2.png")
           PY
       - name: Upload charts
         uses: actions/upload-artifact@v4
         with:
-          name: nfci-risk-stage3-stage5
-          path: |
-            nfci_risk_stage3.png
-            nfci_risk_stage5.png
+          name: nfci-risk-stage2
+          path: nfci_risk_stage2.png
