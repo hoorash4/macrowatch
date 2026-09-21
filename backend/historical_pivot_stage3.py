@@ -8,10 +8,11 @@ Inputs:
 Output:
 - one chronological wave line
 - hard-protected spike/sideways structure that constrains output only
-- rapid-move provisional points carried through untouched
+- only rapid candidates whose endpoints survive on the Stage-3 line
 
-Stage 3 does not classify or post-process rapid moves.  Provisional rapid points
-may not be deleted here; Stage 4 alone owns rapid-move consolidation/finalization.
+Stage 3 does not reclassify rapid moves, but a rapid candidate whose endpoint is
+removed by the wave merge is already structurally invalid and is discarded here.
+Only marker-only spikes may remain as detached standalone markers.
 """
 from __future__ import annotations
 
@@ -402,12 +403,27 @@ def simplify_pivot_lines(
     for spike in marker_only_spikes:
         remember(spike.point)
 
-    # Stage-2 rapid-move points are provisional hard-preserve markers for
-    # Stage 3 only.  They are carried through even when the normal wave merge
-    # would otherwise omit them.  Stage 3 does not connect, delete, merge, or
-    # finalize them.
-    for point in augmented.provisional_protected_points:
-        remember(point)
+    # Only marker-only spikes may survive as true standalone markers.
+    # Rapid protection is provisional evidence attached to a line structure:
+    # if either endpoint is absent from the completed Stage-3 line, the rapid
+    # candidate has already been absorbed/rejected by the wave merge and must
+    # be discarded here rather than resurrected as a detached marker.
+    connected_keys = {
+        _key(point)
+        for segment in segments
+        for point in (segment.start, segment.end)
+    }
+    surviving_rapid = tuple(
+        candidate
+        for candidate in augmented.rapid_move_candidates
+        if _key(candidate.start) in connected_keys
+        and _key(candidate.end) in connected_keys
+    )
+    surviving_provisional_map = {
+        _key(point): point
+        for candidate in surviving_rapid
+        for point in candidate.protected_points
+    }
 
     stage2_keys = {_key(point) for point in augmented.display_markers}
     if not set(markers).issubset(stage2_keys):
@@ -427,7 +443,10 @@ def simplify_pivot_lines(
         sideways_segments=tuple(sideways_out),
         protected_points=(),
         provisional_protected_points=tuple(
-            augmented.provisional_protected_points
+            sorted(
+                surviving_provisional_map.values(),
+                key=lambda item: (item.day, item.pivot_type),
+            )
         ),
-        rapid_move_candidates=tuple(augmented.rapid_move_candidates),
+        rapid_move_candidates=surviving_rapid,
     )
