@@ -17,6 +17,7 @@ from typing import Any, Iterable, Sequence
 BUFFER_MONTHS = 24
 SIDEWAYS_ANGLE_THRESHOLD_DEG = 6.0
 SAME_TREND_ANGLE_THRESHOLD_DEG = 10.0
+PIVOT_X_GAP_PROTECTION_SHARE = 0.20
 SUPABASE_REST_PAGE_SIZE = 1000
 
 @dataclass(frozen=True)
@@ -219,6 +220,19 @@ def _screen_xy(point: PivotPoint, geometry: ChartGeometry) -> tuple[float, float
     x = (point.day - geometry.display_start).days / x_span * geometry.width
     y = (geometry.y_max - point.value) / (geometry.y_max - geometry.y_min) * geometry.height
     return x, y
+
+
+
+def screen_x_span_share(
+    left: PivotPoint,
+    right: PivotPoint,
+    geometry: ChartGeometry,
+) -> float:
+    """Return the horizontal screen-distance share of the visible x-axis."""
+    if right.day < left.day:
+        left, right = right, left
+    x_span_days = (geometry.display_end - geometry.display_start).days
+    return (right.day - left.day).days / x_span_days
 
 
 
