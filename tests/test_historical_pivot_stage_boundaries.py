@@ -28,7 +28,7 @@ from historical_pivot_base import (  # noqa: E402
 
 
 class PivotStageBoundaryTests(unittest.TestCase):
-    def test_stage1_output_is_sealed_and_contains_no_prior_candidates(self):
+    def test_stage1_is_rdp_only_and_stage2_never_recovers_deleted_candidates(self):
         d = date(2020, 1, 1)
         highs = (
             PivotPoint(d, 5.0, "high"),
@@ -42,36 +42,38 @@ class PivotStageBoundaryTests(unittest.TestCase):
             PivotPoint(d + timedelta(days=50), 0.5, "low"),
         )
         deleted_candidate = PivotPoint(d + timedelta(days=4), 2.0, "low")
-        recovered_entry = PivotPoint(d + timedelta(days=6), 1.0, "low")
-        base = BasePivotResult(
+        deleted_entry_candidate = PivotPoint(d + timedelta(days=6), 1.0, "low")
+        stage1 = BasePivotResult(
             frequency="D",
             policy=PivotPolicy(35, 14, 17),
             high_candidates=highs,
-            low_candidates=(deleted_candidate, recovered_entry),
+            low_candidates=(deleted_candidate, deleted_entry_candidate),
             high_pivots=highs,
             low_pivots=lows,
         )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0
+        )
 
-        stage1 = augment_spike_entry_points(base, geometry)
-
-        self.assertIsInstance(stage1, SpikeAugmentedPivotResult)
-        self.assertFalse(hasattr(stage1, "base"))
-        self.assertFalse(hasattr(stage1, "added_high_pivots"))
-        self.assertFalse(hasattr(stage1, "added_low_pivots"))
         self.assertNotIn(deleted_candidate, stage1.display_markers)
-        self.assertIn(recovered_entry, stage1.display_markers)
+        self.assertNotIn(deleted_entry_candidate, stage1.display_markers)
 
-        stage2 = simplify_pivot_lines(stage1, geometry)
+        stage2 = augment_spike_entry_points(stage1, geometry)
+        self.assertIsInstance(stage2, SpikeAugmentedPivotResult)
+        self.assertEqual(stage1.display_markers, stage2.display_markers)
+        self.assertNotIn(deleted_candidate, stage2.display_markers)
+        self.assertNotIn(deleted_entry_candidate, stage2.display_markers)
+
+        final = simplify_pivot_lines(stage2, geometry)
         stage1_keys = {
-            (p.day, p.value, p.pivot_type)
-            for p in stage1.display_markers
+            (point.day, point.value, point.pivot_type)
+            for point in stage1.display_markers
         }
-        stage2_keys = {
-            (p.day, p.value, p.pivot_type)
-            for p in stage2.markers
+        final_keys = {
+            (point.day, point.value, point.pivot_type)
+            for point in final.markers
         }
-        self.assertTrue(stage2_keys.issubset(stage1_keys))
+        self.assertTrue(final_keys.issubset(stage1_keys))
 
     def test_stage_result_rejects_hidden_deleted_segment_endpoint(self):
         d = date(2020, 1, 1)
