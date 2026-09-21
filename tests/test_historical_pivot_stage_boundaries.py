@@ -600,6 +600,84 @@ class PivotStageBoundaryTests(unittest.TestCase):
         self.assertNotIn(p3, result.markers)
         self.assertNotIn(p4, result.markers)
 
+    def test_stage6_ignores_first_angle_then_preserves_large_second_bend(self):
+        d = date(2020, 1, 1)
+        p1 = PivotPoint(d, 0.0, "low")
+        p2 = PivotPoint(d + timedelta(days=10), 10.0, "high")
+        p3 = PivotPoint(d + timedelta(days=20), 20.0, "high")
+        p4 = PivotPoint(d + timedelta(days=30), 21.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(p1, p2, p3, p4),
+            segments=(
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
+                SimplifiedLineSegment(p3, p4, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(
+            d,
+            d + timedelta(days=40),
+            -5.0,
+            25.0,
+            400.0,
+            300.0,
+        )
+
+        result = prune_unconfirmed_retracements(
+            existing,
+            geometry,
+            angle_threshold_deg=10.0,
+        )
+
+        # p2 is removed because the first interior angle is ignored.
+        # p3 remains because the next segment bends more than 10 degrees away
+        # from the last accepted p1->p3 trend line.
+        self.assertEqual((p1, p3, p4), result.markers)
+        self.assertEqual(
+            (
+                SimplifiedLineSegment(p1, p3, "trend"),
+                SimplifiedLineSegment(p3, p4, "trend"),
+            ),
+            result.segments,
+        )
+
+    def test_stage6_collapses_second_bend_when_within_ten_degrees(self):
+        d = date(2020, 1, 1)
+        p1 = PivotPoint(d, 0.0, "low")
+        p2 = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        p3 = PivotPoint(d + timedelta(days=20), 10.0, "high")
+        p4 = PivotPoint(d + timedelta(days=30), 15.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(p1, p2, p3, p4),
+            segments=(
+                SimplifiedLineSegment(p1, p2, "trend"),
+                SimplifiedLineSegment(p2, p3, "trend"),
+                SimplifiedLineSegment(p3, p4, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(
+            d,
+            d + timedelta(days=40),
+            -5.0,
+            20.0,
+            400.0,
+            300.0,
+        )
+
+        result = prune_unconfirmed_retracements(
+            existing,
+            geometry,
+            angle_threshold_deg=10.0,
+        )
+
+        self.assertEqual((p1, p4), result.markers)
+        self.assertEqual(
+            (SimplifiedLineSegment(p1, p4, "trend"),),
+            result.segments,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
