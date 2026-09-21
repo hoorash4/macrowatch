@@ -1,0 +1,126 @@
+name: Render US10Y Real Stage2 Stage3 temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-render-real-23.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Render and inspect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p tmp-real-23
+          PYTHONPATH=backend python - <<'PY'
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows, screen_angle_degrees
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures, _spike_shape_passes
+          from historical_pivot_stage3 import simplify_pivot_lines
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(
+              db,
+              case_code="tightening_2022",
+              index_code="NASDAQ_COMPOSITE",
+              series_code="US10Y_REAL",
+          )
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals)
+          pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+
+          s1=calculate_base_pivots(rows,freq)
+          s2=classify_special_structures(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+
+          print("FREQ",freq)
+          print("HIGH",[(p.day.isoformat(),round(p.value,6)) for p in s2.high_pivots])
+          print("LOW",[(p.day.isoformat(),round(p.value,6)) for p in s2.low_pivots])
+          print("SPIKES",[(s.point.day.isoformat(),round(s.point.value,6),s.direction,round(s.angle_deg,3), None if s.entry is None else s.entry.day.isoformat(),s.marker_only) for s in s2.spike_peaks])
+          print("SIDEWAYS_H",[(s.start.day.isoformat(),s.end.day.isoformat(),round(s.angle_deg,3),s.prior_trend,s.protected) for s in s2.high_sideways_segments])
+          print("SIDEWAYS_L",[(s.start.day.isoformat(),s.end.day.isoformat(),round(s.angle_deg,3),s.prior_trend,s.protected) for s in s2.low_sideways_segments])
+          print("S3",[(p.day.isoformat(),round(p.value,6),p.pivot_type) for p in s3.markers])
+
+          # Explain every local same-side spike candidate and each rejection gate.
+          highs=tuple(sorted(s1.high_pivots,key=lambda p:p.day))
+          lows=tuple(sorted(s1.low_pivots,key=lambda p:p.day))
+          def inspect(side, opposite, direction):
+              for i in range(1,len(side)-1):
+                  a,b,c=side[i-1],side[i],side[i+1]
+                  local=(b.value>a.value and b.value>c.value) if direction=="up" else (b.value<a.value and b.value<c.value)
+                  if not local: continue
+                  if direction=="up":
+                      opp_bad=any(x.value>max(a.value,c.value) for x in opposite if a.day<=x.day<=c.day)
+                      ab=b.value-a.value; bc=b.value-c.value
+                  else:
+                      opp_bad=any(x.value<min(a.value,c.value) for x in opposite if a.day<=x.day<=c.day)
+                      ab=a.value-b.value; bc=c.value-b.value
+                  angle=screen_angle_degrees(a,b,c,g)
+                  ratio=(bc/ab) if ab>0 else None
+                  visual=max(ab,bc)/(g.y_max-g.y_min) if ab>0 and bc>0 else None
+                  follow=[x for x in side if x.day>c.day][:2]
+                  rebreak=any(x.value>b.value for x in follow) if direction=="up" else any(x.value<b.value for x in follow)
+                  print("SPIKE_CAND",direction,
+                        a.day.isoformat(),round(a.value,6),
+                        b.day.isoformat(),round(b.value,6),
+                        c.day.isoformat(),round(c.value,6),
+                        "angle",round(angle,3),
+                        "ratio",None if ratio is None else round(ratio,3),
+                        "visual",None if visual is None else round(visual,3),
+                        "opp_bad",opp_bad,"rebreak",rebreak)
+          inspect(highs,lows,"up")
+          inspect(lows,highs,"down")
+
+          fig,ax=plt.subplots(figsize=(14,7))
+          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
+          ax.plot([p.day for p in s2.high_pivots],[p.value for p in s2.high_pivots],linewidth=1.8,label="upper RDP")
+          ax.plot([p.day for p in s2.low_pivots],[p.value for p in s2.low_pivots],linewidth=1.8,label="lower RDP")
+          ax.scatter([p.day for p in s2.high_pivots],[p.value for p in s2.high_pivots],s=34,marker="^")
+          ax.scatter([p.day for p in s2.low_pivots],[p.value for p in s2.low_pivots],s=34,marker="v")
+          for sp in s2.spike_peaks:
+              ax.scatter([sp.point.day],[sp.point.value],s=110,marker="*",label="spike")
+              if sp.entry is not None:
+                  ax.plot([sp.entry.day,sp.point.day],[sp.entry.value,sp.point.value],linewidth=3)
+          for seg in (*s2.high_sideways_segments,*s2.low_sideways_segments):
+              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=4,alpha=.7)
+          ax.set_title("US 10Y Real Yield · Stage 2 · current")
+          ax.set_xlim(start,end); ax.set_ylim(g.y_min,g.y_max); ax.grid(True,alpha=.2); ax.legend(loc="best")
+          fig.tight_layout(); fig.savefig("tmp-real-23/US10Y_REAL_STAGE2_CURRENT.png",dpi=160); plt.close(fig)
+
+          fig,ax=plt.subplots(figsize=(14,7))
+          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
+          for seg in s3.segments:
+              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.4)
+          highs3=[p for p in s3.markers if p.pivot_type=="high"]; lows3=[p for p in s3.markers if p.pivot_type=="low"]
+          if highs3: ax.scatter([p.day for p in highs3],[p.value for p in highs3],s=40,marker="^",label="Stage 3 high")
+          if lows3: ax.scatter([p.day for p in lows3],[p.value for p in lows3],s=40,marker="v",label="Stage 3 low")
+          ax.set_title("US 10Y Real Yield · Stage 3 · current")
+          ax.set_xlim(start,end); ax.set_ylim(g.y_min,g.y_max); ax.grid(True,alpha=.2); ax.legend(loc="best")
+          fig.tight_layout(); fig.savefig("tmp-real-23/US10Y_REAL_STAGE3_CURRENT.png",dpi=160); plt.close(fig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real-23-current
+          path: tmp-real-23/*.png
+          if-no-files-found: error
