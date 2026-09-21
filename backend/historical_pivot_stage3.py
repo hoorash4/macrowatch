@@ -398,7 +398,7 @@ def _rapid_move_entry_points(
             continue
 
         if direction == active_direction:
-            active_share = max(active_share, share)
+            active_share = share
             continue
 
         if share > active_share:
