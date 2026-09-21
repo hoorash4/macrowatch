@@ -1,24 +1,18 @@
 """Historical Insight staged pivot pipeline compatibility facade.
 
-The implementation is physically separated into five stage modules. Each downstream
-stage receives only the untouched raw-graph context it needs plus the immediately
-previous stage result. Earlier candidate sets are not carried forward.
-
-Stage 1: RDP + spike correction/protection
-Stage 2: sideways classification/protection boundary
-Stage 3: upper/lower merge into one line
-Stage 4: 10-degree simplification
-Stage 5: consecutive-point cleanup
-
-This module keeps the existing public imports/call signatures stable for the rest of
-MacroWatch while delegating the actual work to the stage modules.
+Stage 1: finish upper/lower RDP sets only
+Stage 2: classify rapid moves, spikes, and sideways structures
+Stage 3: merge upper/lower RDP into one wave line while preserving rapid candidates
+Stage 4: rapid-move post-processing/final protection
+Stage 5: general trend/reversal/10-degree state machine
+Stage 6: final consecutive-direction cleanup
 """
 from __future__ import annotations
 
 import argparse
 import json
 from datetime import date
-from typing import Any
+from typing import Any, Sequence
 
 from common import SupabaseRest
 
@@ -29,6 +23,7 @@ from historical_pivot_shared import (
     SUPABASE_REST_PAGE_SIZE,
     ChartGeometry,
     PivotPoint,
+    RapidMoveCandidate,
     SeriesPoint,
     SidewaysSegment,
     SimplifiedLineResult,
@@ -47,31 +42,91 @@ from historical_pivot_stage1 import (
     EnvelopePoint,
     PIVOT_POLICIES,
     PivotPolicy,
-    SPIKE_ANGLE_THRESHOLD_DEG,
-    SpikeAugmentedPivotResult,
-    _first_pivot_after,
-    _has_pivot_between,
     _perpendicular_distance,
-    augment_spike_entry_points,
     calculate_base_pivots,
     fixed_count_rdp,
     plateau_extrema,
 )
-from historical_pivot_stage2 import Stage2Result, finalize_sideways_protection
+from historical_pivot_stage2 import (
+    RAPID_MOVE_MIN_VISUAL_Y_SHARE,
+    SPIKE_ANGLE_THRESHOLD_DEG,
+    SPIKE_FOLLOWUP_POINTS,
+    SPIKE_MAX_BC_TO_AB_Y_RATIO,
+    SPIKE_MIN_RETRACEMENT_RATIO,
+    SPIKE_MIN_VISUAL_Y_SHARE,
+    Stage2Result,
+    classify_special_structures,
+    finalize_sideways_protection,
+)
 from historical_pivot_stage3 import simplify_pivot_lines as merge_pivot_lines_stage3
-from historical_pivot_stage4 import prune_same_trend_extremes
-from historical_pivot_stage5 import prune_unconfirmed_retracements
+from historical_pivot_stage4 import finalize_rapid_moves
+from historical_pivot_stage5 import prune_same_trend_extremes
+from historical_pivot_stage6 import prune_unconfirmed_retracements
+
+
+# Compatibility type name used by older callers.  Special-structure output is
+# now Stage 2, not Stage 1.
+SpikeAugmentedPivotResult = Stage2Result
+
+
+def _has_pivot_between(
+    pivots: Sequence[PivotPoint],
+    start: date,
+    end: date,
+) -> bool:
+    return any(start <= item.day <= end for item in pivots)
+
+
+def _first_pivot_after(
+    pivots: Sequence[PivotPoint],
+    after: date,
+) -> PivotPoint | None:
+    return next(
+        (
+            item
+            for item in sorted(pivots, key=lambda point: point.day)
+            if item.day > after
+        ),
+        None,
+    )
+
+
+def augment_spike_entry_points(
+    base: BasePivotResult,
+    geometry: ChartGeometry,
+    *,
+    angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
+    min_visual_y_share: float = SPIKE_MIN_VISUAL_Y_SHARE,
+    min_retracement_ratio: float = SPIKE_MIN_RETRACEMENT_RATIO,
+    max_bc_to_ab_y_ratio: float = SPIKE_MAX_BC_TO_AB_Y_RATIO,
+    followup_points: int = SPIKE_FOLLOWUP_POINTS,
+) -> Stage2Result:
+    """Compatibility wrapper for callers that previously invoked Stage-1 spike logic."""
+    return classify_special_structures(
+        base,
+        geometry,
+        spike_angle_threshold_deg=angle_threshold_deg,
+        spike_min_visual_y_share=min_visual_y_share,
+        spike_min_retracement_ratio=min_retracement_ratio,
+        spike_max_bc_to_ab_y_ratio=max_bc_to_ab_y_ratio,
+        spike_followup_points=followup_points,
+    )
 
 
 def simplify_pivot_lines(
-    augmented: SpikeAugmentedPivotResult,
+    source: BasePivotResult | Stage2Result,
     geometry: ChartGeometry,
 ) -> SimplifiedLineResult:
-    """Compatibility entry point: execute Stages 2->5 without exposing older data."""
-    stage2 = finalize_sideways_protection(augmented, geometry)
+    """Compatibility entry point: execute the current pipeline through Stage 6."""
+    stage2 = (
+        source
+        if isinstance(source, Stage2Result)
+        else classify_special_structures(source, geometry)
+    )
     stage3 = merge_pivot_lines_stage3(stage2, geometry)
-    stage4 = prune_same_trend_extremes(stage3, geometry)
-    return prune_unconfirmed_retracements(stage4)
+    stage4 = finalize_rapid_moves(stage3, geometry)
+    stage5 = prune_same_trend_extremes(stage4, geometry)
+    return prune_unconfirmed_retracements(stage5)
 
 
 def _single_row(
