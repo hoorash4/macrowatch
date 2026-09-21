@@ -43,9 +43,9 @@ def _key(point: PivotPoint) -> tuple:
 class Stage2Result:
     high_pivots: tuple[PivotPoint, ...]
     low_pivots: tuple[PivotPoint, ...]
-    spike_peaks: tuple[SpikePeak, ...]
-    high_sideways_segments: tuple[SidewaysSegment, ...]
-    low_sideways_segments: tuple[SidewaysSegment, ...]
+    spike_peaks: tuple[SpikePeak, ...] = ()
+    high_sideways_segments: tuple[SidewaysSegment, ...] = ()
+    low_sideways_segments: tuple[SidewaysSegment, ...] = ()
     rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
     provisional_protected_points: tuple[PivotPoint, ...] = ()
 
