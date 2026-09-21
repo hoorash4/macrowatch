@@ -1,0 +1,65 @@
+name: Inspect WTI stages 2 to 6 temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-inspect-wti-23456.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import finalize_rapid_moves
+          from historical_pivot_stage5 import prune_same_trend_extremes
+          from historical_pivot_stage6 import prune_unconfirmed_retracements
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="WTI")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals)
+          pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+
+          s1=calculate_base_pivots(rows,freq)
+          s2=classify_special_structures(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=finalize_rapid_moves(s3,g)
+          s5=prune_same_trend_extremes(s4,g)
+          s6=prune_unconfirmed_retracements(s5,g)
+
+          print("SIDEWAYS_H",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,round(s.angle_deg,3),s.prior_trend,s.protected) for s in s2.high_sideways_segments])
+          print("SIDEWAYS_L",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,round(s.angle_deg,3),s.prior_trend,s.protected) for s in s2.low_sideways_segments])
+          print("SPIKES",[(s.point.day.isoformat(),s.point.value,s.direction,None if s.entry is None else (s.entry.day.isoformat(),s.entry.value),s.marker_only) for s in s2.spike_peaks])
+          print("RAPID",[(c.start.day.isoformat(),c.start.value,c.start.pivot_type,c.end.day.isoformat(),c.end.value,c.end.pivot_type,c.direction,round(c.visual_y_share,3)) for c in s2.rapid_move_candidates])
+
+          def dump(name,r):
+              print(name+"_MARKERS",[(p.day.isoformat(),p.value,p.pivot_type) for p in r.markers])
+              print(name+"_SEGS",[(s.start.day.isoformat(),s.start.value,s.start.pivot_type,s.end.day.isoformat(),s.end.value,s.end.pivot_type,s.kind) for s in r.segments])
+              print(name+"_PROT",[(p.day.isoformat(),p.value,p.pivot_type) for p in r.protected_points])
+              print(name+"_PROV",[(p.day.isoformat(),p.value,p.pivot_type) for p in r.provisional_protected_points])
+          dump("S3",s3); dump("S4",s4); dump("S5",s5); dump("S6",s6)
+          PY
