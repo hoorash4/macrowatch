@@ -22,7 +22,9 @@ For each provisional rapid entry:
 - after consolidation, the surviving rapid entry and final rapid peak become
   final protected points and all other rapid protection is released.
 
-Stage 4 never performs the general Stage-5 cleanup.
+Stage 4 never performs the general Stage-5 cleanup. Its output contains only
+the line, explicit marker-only spikes, and final rapid protected endpoints;
+rapid candidates and provisional state end here.
 """
 from __future__ import annotations
 
