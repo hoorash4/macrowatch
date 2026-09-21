@@ -279,23 +279,21 @@ def prune_same_trend_extremes(
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
+    line_map: dict[tuple[date, float, str], PivotPoint] = {}
+    for segment in result.segments:
+        line_map[_key(segment.start)] = segment.start
+        line_map[_key(segment.end)] = segment.end
     points = tuple(sorted(
-        result.markers,
+        line_map.values(),
         key=lambda item: (item.day, item.pivot_type),
     ))
     if len(points) < 3:
         return result
 
-    point_map = {_key(point): point for point in points}
-    endpoint_keys = {
+    point_map = {_key(point): point for point in result.markers}
+    marker_only_keys = {
         _key(point)
-        for segment in result.segments
-        for point in (segment.start, segment.end)
-    }
-    standalone_keys = {
-        _key(point)
-        for point in result.markers
-        if _key(point) not in endpoint_keys
+        for point in result.marker_only_points
     }
     sideways_keys = {
         _key(point)
@@ -313,7 +311,7 @@ def prune_same_trend_extremes(
         _key(point)
         for point in result.protected_points
     }
-    protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
+    protected_keys = marker_only_keys | sideways_keys | spike_keys | rapid_move_keys
 
     # Protection constrains OUTPUT, not JUDGMENT.  Run one chronological state
     # machine across the complete Stage-4 timeline so later points may still
@@ -365,17 +363,10 @@ def prune_same_trend_extremes(
     # partially-overlapping old segments.  A point strictly inside a collapse
     # interval disappears unless it is protected.  Final rapid endpoints are
     # connected mandatory vertices; true marker-only points stay standalone.
-    rapid_protected_keys = rapid_move_keys
-    marker_only_keys = standalone_keys - rapid_protected_keys
-
     connected_map: dict[tuple[date, float, str], PivotPoint] = {}
     for segment in result.segments:
         connected_map[_key(segment.start)] = segment.start
         connected_map[_key(segment.end)] = segment.end
-    for point in result.markers:
-        if _key(point) in rapid_protected_keys:
-            connected_map[_key(point)] = point
-
     for start, end in filtered:
         for point_key, point in list(connected_map.items()):
             if (
@@ -400,9 +391,8 @@ def prune_same_trend_extremes(
     marker_map: dict[tuple[date, float, str], PivotPoint] = {
         _key(point): point for point in connected_points
     }
-    for point in result.markers:
-        if _key(point) in marker_only_keys:
-            marker_map[_key(point)] = point
+    for point in result.marker_only_points:
+        marker_map[_key(point)] = point
 
     if not set(marker_map).issubset(point_map):
         raise RuntimeError("stage5 produced a point absent from stage4")
@@ -414,7 +404,6 @@ def prune_same_trend_extremes(
         )),
         segments=tuple(kept_segments),
         sideways_segments=result.sideways_segments,
+        marker_only_points=result.marker_only_points,
         protected_points=result.protected_points,
-        provisional_protected_points=result.provisional_protected_points,
-        rapid_move_candidates=result.rapid_move_candidates,
     )
