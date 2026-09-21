@@ -71,6 +71,9 @@ jobs:
               fig.savefig(path,dpi=180)
               plt.close(fig)
 
+          print("S2_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.display_markers])
+          print("S2_LOW",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.low_pivots])
+          print("S2_HIGH",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s2.high_pivots])
           print("S3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
           print("S3_RAPID_CAND",[
               (x.start.day.isoformat(),float(x.start.value),x.start.pivot_type,
