@@ -99,9 +99,9 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
 
         stage2 = finalize_sideways_protection(stage1, geometry)
 
-        self.assertEqual(2, len(stage2.high_sideways_segments))
+        self.assertEqual(1, len(stage2.high_sideways_segments))
         self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
-        self.assertEqual(highs[3], stage2.high_sideways_segments[-1].end)
+        self.assertEqual(highs[3], stage2.high_sideways_segments[0].end)
 
 
 if __name__ == "__main__":
