@@ -84,8 +84,7 @@ class PivotStageBoundaryTests(unittest.TestCase):
             SimplifiedLineResult(
                 markers=(low,),
                 segments=(SimplifiedLineSegment(low, deleted_high, "trend"),),
-                sideways_segments=(),
-            )
+                )
 
     def test_first_angle_always_collapses_improved_extreme(self):
         d = date(2020, 1, 1)
@@ -98,7 +97,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(high, low1, "trend"),
                 SimplifiedLineSegment(low1, low2, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -125,7 +123,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(high2, higher_low, "trend"),
                 SimplifiedLineSegment(higher_low, high4, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -153,7 +150,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(provisional_low, rebound_high, "trend"),
                 SimplifiedLineSegment(rebound_high, lower_low, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 12.0, 100.0, 100.0)
 
@@ -182,7 +178,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(rebound_high, lower_low, "trend"),
                 SimplifiedLineSegment(lower_low, later_high, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -215,7 +210,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(low3, lower_high, "trend"),
                 SimplifiedLineSegment(lower_high, low5, "trend"),
             ),
-            sideways_segments=(sideways,),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
@@ -354,7 +348,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
         existing = SimplifiedLineResult(
             markers=(p1, p2),
             segments=(SimplifiedLineSegment(p1, p2, "trend"),),
-            sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
@@ -372,7 +365,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p1, p2, "trend"),
                 SimplifiedLineSegment(p2, p3, "trend"),
             ),
-            sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
@@ -394,7 +386,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p1, p2, "trend"),
                 SimplifiedLineSegment(p2, p3, "trend"),
             ),
-            sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
@@ -412,7 +403,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p1, p2, "trend"),
                 SimplifiedLineSegment(p2, p3, "trend"),
             ),
-            sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
@@ -432,7 +422,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p2, p3, "trend"),
                 SimplifiedLineSegment(p3, p4, "trend"),
             ),
-            sideways_segments=(),
         )
 
         result = prune_unconfirmed_retracements(existing)
@@ -461,7 +450,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p1, p2, "trend"),
                 SimplifiedLineSegment(p2, p3, "sideways"),
             ),
-            sideways_segments=(sideways,),
         )
 
         result = prune_unconfirmed_retracements(existing)
@@ -485,7 +473,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(high2, dip2, "trend"),
                 SimplifiedLineSegment(dip2, high3, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
@@ -522,7 +509,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(higher_low, next_rebound_high, "trend"),
                 SimplifiedLineSegment(next_rebound_high, confirming_lower_low, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 100.0, 100.0)
 
@@ -561,7 +547,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(lower_high, next_rebound_low, "trend"),
                 SimplifiedLineSegment(next_rebound_low, confirming_higher_high, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 100.0, 100.0)
 
@@ -587,7 +572,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p3, p4, "trend"),
                 SimplifiedLineSegment(p4, p5, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), -15.0, 25.0, 1200.0, 600.0)
 
@@ -613,7 +597,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p2, p3, "trend"),
                 SimplifiedLineSegment(p3, p4, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(
             d,
@@ -655,7 +638,6 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 SimplifiedLineSegment(p2, p3, "trend"),
                 SimplifiedLineSegment(p3, p4, "trend"),
             ),
-            sideways_segments=(),
         )
         geometry = ChartGeometry(
             d,
