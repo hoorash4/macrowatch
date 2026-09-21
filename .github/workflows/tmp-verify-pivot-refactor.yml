@@ -24,3 +24,5 @@ jobs:
         run: python -m py_compile backend/historical_pivot_*.py
       - name: Run historical pivot tests
         run: PYTHONPATH=backend python -m unittest tests.test_historical_pivot_base tests.test_historical_pivot_stage1_spike_visual_share tests.test_historical_pivot_stage2 tests.test_historical_pivot_stage_boundaries tests.test_historical_pivot_store
+
+# rerun 2
