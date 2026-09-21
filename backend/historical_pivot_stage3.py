@@ -434,7 +434,6 @@ def simplify_pivot_lines(
             )
         ),
         segments=tuple(segments),
-        sideways_segments=tuple(sideways_out),
         marker_only_points=tuple(
             sorted(
                 (spike.point for spike in marker_only_spikes),
