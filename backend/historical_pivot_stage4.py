@@ -76,8 +76,8 @@ def _farther_opposite(
 
 
 def _timeline_points(result: SimplifiedLineResult) -> tuple[PivotPoint, ...]:
-    """Return Stage-3 chronological points, including provisional rapid markers."""
-    by_key = {_key(point): point for point in result.markers}
+    """Return only connected Stage-3 line vertices in chronological order."""
+    by_key = {}
     for segment in result.segments:
         by_key[_key(segment.start)] = segment.start
         by_key[_key(segment.end)] = segment.end
@@ -204,14 +204,12 @@ def finalize_rapid_moves(
         key=lambda item: (item.start.day, item.end.day, item.direction),
     )
     if not candidates:
-        if not result.provisional_protected_points:
-            return result
         return SimplifiedLineResult(
             markers=result.markers,
             segments=result.segments,
             sideways_segments=result.sideways_segments,
             protected_points=result.protected_points,
-            provisional_protected_points=(),
+            standalone_markers=result.standalone_markers,
             rapid_move_candidates=(),
         )
 
@@ -309,37 +307,7 @@ def finalize_rapid_moves(
         final_protected_map[_key(candidate.start)] = candidate.start
         final_protected_map[_key(candidate.end)] = candidate.end
 
-    connected_keys = {
-        _key(point)
-        for segment in result.segments
-        for point in (segment.start, segment.end)
-    }
-    hard_keys = {
-        _key(point)
-        for segment in result.segments
-        if segment.kind in {"spike", "sideways"}
-        for point in (segment.start, segment.end)
-    }
-    finalized_keys = set(final_protected_map)
-    provisional_keys = {
-        _key(point) for point in result.provisional_protected_points
-    }
-
-    # Stage 4 alone releases rapid provisional protection. Standalone
-    # provisional markers that did not survive are removed; real Stage-3 line
-    # vertices remain as ordinary unprotected points for Stage 5 to judge.
-    markers = tuple(
-        point
-        for point in result.markers
-        if (
-            _key(point) not in provisional_keys
-            or _key(point) in finalized_keys
-            or _key(point) in connected_keys
-            or _key(point) in hard_keys
-        )
-    )
-
-    marker_keys = {_key(point) for point in markers}
+    marker_keys = {_key(point) for point in result.markers}
     protected = tuple(sorted(
         (
             point
@@ -350,13 +318,10 @@ def finalize_rapid_moves(
     ))
 
     return SimplifiedLineResult(
-        markers=tuple(sorted(
-            markers,
-            key=lambda item: (item.day, item.pivot_type),
-        )),
+        markers=result.markers,
         segments=result.segments,
         sideways_segments=result.sideways_segments,
         protected_points=protected,
-        provisional_protected_points=(),
-        rapid_move_candidates=tuple(finalized),
+        standalone_markers=result.standalone_markers,
+        rapid_move_candidates=(),
     )
