@@ -279,23 +279,22 @@ def prune_same_trend_extremes(
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
+    line_map = {
+        _key(point): point
+        for segment in result.segments
+        for point in (segment.start, segment.end)
+    }
     points = tuple(sorted(
-        result.markers,
+        line_map.values(),
         key=lambda item: (item.day, item.pivot_type),
     ))
     if len(points) < 3:
         return result
 
-    point_map = {_key(point): point for point in points}
-    endpoint_keys = {
-        _key(point)
-        for segment in result.segments
-        for point in (segment.start, segment.end)
-    }
+    point_map = {_key(point): point for point in result.markers}
     standalone_keys = {
         _key(point)
-        for point in result.markers
-        if _key(point) not in endpoint_keys
+        for point in result.standalone_markers
     }
     sideways_keys = {
         _key(point)
@@ -365,17 +364,12 @@ def prune_same_trend_extremes(
     # partially-overlapping old segments.  A point strictly inside a collapse
     # interval disappears unless it is protected.  Final rapid endpoints are
     # connected mandatory vertices; true marker-only points stay standalone.
-    rapid_protected_keys = rapid_move_keys
-    marker_only_keys = standalone_keys - rapid_protected_keys
+    marker_only_keys = standalone_keys
 
     connected_map: dict[tuple[date, float, str], PivotPoint] = {}
     for segment in result.segments:
         connected_map[_key(segment.start)] = segment.start
         connected_map[_key(segment.end)] = segment.end
-    for point in result.markers:
-        if _key(point) in rapid_protected_keys:
-            connected_map[_key(point)] = point
-
     for start, end in filtered:
         for point_key, point in list(connected_map.items()):
             if (
@@ -415,6 +409,9 @@ def prune_same_trend_extremes(
         segments=tuple(kept_segments),
         sideways_segments=result.sideways_segments,
         protected_points=result.protected_points,
-        provisional_protected_points=result.provisional_protected_points,
-        rapid_move_candidates=result.rapid_move_candidates,
+        standalone_markers=tuple(
+            point for point in result.standalone_markers
+            if _key(point) in marker_map
+        ),
+        rapid_move_candidates=(),
     )
