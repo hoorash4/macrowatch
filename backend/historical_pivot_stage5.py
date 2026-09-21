@@ -28,7 +28,9 @@ from historical_pivot_shared import (
     SimplifiedLineResult,
     SimplifiedLineSegment,
     SAME_TREND_ANGLE_THRESHOLD_DEG,
+    PIVOT_X_GAP_PROTECTION_SHARE,
     screen_origin_angle_degrees,
+    screen_x_span_share,
 )
 
 
@@ -312,7 +314,21 @@ def prune_same_trend_extremes(
         _key(point)
         for point in result.protected_points
     }
-    protected_keys = marker_only_keys | sideways_keys | spike_keys | rapid_move_keys
+    isolated_gap_keys = {
+        _key(point)
+        for index, point in enumerate(points[1:-1], start=1)
+        if screen_x_span_share(points[index - 1], point, geometry)
+        >= PIVOT_X_GAP_PROTECTION_SHARE
+        and screen_x_span_share(point, points[index + 1], geometry)
+        >= PIVOT_X_GAP_PROTECTION_SHARE
+    }
+    protected_keys = (
+        marker_only_keys
+        | sideways_keys
+        | spike_keys
+        | rapid_move_keys
+        | isolated_gap_keys
+    )
 
     # Protection constrains OUTPUT, not JUDGMENT.  Run one chronological state
     # machine across the complete Stage-4 timeline so later points may still
