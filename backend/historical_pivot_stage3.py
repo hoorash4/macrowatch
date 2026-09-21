@@ -360,8 +360,8 @@ def _rapid_move_entry_points(
     Candidates are judged chronologically:
     - same-direction candidates belong to the same move, so only the first
       entry point stays protected;
-    - an opposite-direction candidate replaces the active move only when its
-      screen amplitude is larger;
+    - a larger opposite-direction candidate starts a new protected move while
+      the earlier protected entry remains protected;
     - smaller opposite candidates are treated as retracements and do not gain
       protection;
     - sideways/spike hard segments end the current rapid-move comparison run.
@@ -402,12 +402,6 @@ def _rapid_move_entry_points(
             continue
 
         if share > active_share:
-            if active_entry is not None:
-                protected = [
-                    point
-                    for point in protected
-                    if _key(point) != _key(active_entry)
-                ]
             active_direction = direction
             active_share = share
             active_entry = segment.start
