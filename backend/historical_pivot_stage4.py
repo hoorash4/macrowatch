@@ -1,33 +1,32 @@
-"""Stage 4: 10-degree cleanup on Stage 3's single line.
+"""Stage 4: finalize and consolidate Stage-2 rapid-move candidates.
 
-Stage 4 uses exactly one state machine and only Stage 3 output.
+Stage 3 has already built the single wave line and carried every provisional
+rapid-move endpoint through without deleting it.  Stage 4 is the ONLY stage
+allowed to release or consolidate those provisional points.
 
-The trend direction is the ACTUAL line direction (value rising/falling), not the
-original high/low label.
+Rules:
+- rapid candidates of the same direction may extend one another only while
+  there is no opposite Stage-3 wave between them;
+- extension is measured from the original rapid-move entry anchor;
+- the angle between anchor->previous peak and anchor->new peak must be <= the
+  approved 10-degree same-trend threshold;
+- a hard spike/sideways boundary ends the extension;
+- after this stage, surviving rapid-move endpoints become final protected
+  points and all provisional protection is cleared.
 
-For an active run:
-- same-direction new extreme keeps the old trend alive
-- an opposite excursion is provisional
-- if the old trend makes a new extreme, the provisional reversal is cancelled
-- if the opposite excursion completes a full reversal pattern, the current
-  extreme becomes the new confirmed anchor
-- first same-direction extreme update from an anchor ignores angle
-- second and later updates stop before an angle > 10 degrees
-- Stage 4 only deletes; it never creates a point absent from Stage 3
+Stage 4 does not perform the general trend/reversal cleanup.  That is Stage 5.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from typing import Sequence
 
 from historical_pivot_shared import (
+    SAME_TREND_ANGLE_THRESHOLD_DEG,
     ChartGeometry,
     PivotPoint,
     RapidMoveCandidate,
     SimplifiedLineResult,
-    SimplifiedLineSegment,
-    SAME_TREND_ANGLE_THRESHOLD_DEG,
     screen_origin_angle_degrees,
 )
 
@@ -36,557 +35,204 @@ def _key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
 
 
-def _sign(value: float) -> int:
-    if value > 0:
+def _segment_direction(start: PivotPoint, end: PivotPoint) -> int:
+    if end.value > start.value:
         return 1
-    if value < 0:
+    if end.value < start.value:
         return -1
     return 0
 
 
-@dataclass
-class _RunState:
-    anchor: PivotPoint
-    direction: int  # +1 rising, -1 falling
-    extreme: PivotPoint
-    angle_ordinal: int = 0
-    collapse_end: PivotPoint | None = None
-
-    # provisional opposite excursion
-    opposite_extreme: PivotPoint | None = None
-
-
-def _first_nonflat_direction(points: Sequence[PivotPoint]) -> tuple[int, int] | None:
-    for index in range(len(points) - 1):
-        direction = _sign(points[index + 1].value - points[index].value)
-        if direction != 0:
-            return index, direction
-    return None
-
-
-def _can_extend(state: _RunState, point: PivotPoint) -> bool:
-    return (
-        point.value > state.extreme.value
-        if state.direction > 0
-        else point.value < state.extreme.value
-    )
-
-
-def _record_collapse(
-    intervals: list[tuple[PivotPoint, PivotPoint]],
-    state: _RunState,
-) -> None:
-    if (
-        state.collapse_end is not None
-        and state.anchor.day < state.collapse_end.day
-    ):
-        intervals.append((state.anchor, state.collapse_end))
-
-
-def _process_window(
-    points: Sequence[PivotPoint],
-    geometry: ChartGeometry,
-    threshold: float,
-) -> list[tuple[PivotPoint, PivotPoint]]:
-    """Return direct-collapse intervals from one chronological Stage-3 pass.
-
-    A Stage-3 point is always judged before it can be removed.
-
-    For the active direction, anchor -> extreme is the current structural leg.
-    After an opposite pullback appears, the very next same-side Stage-3 point
-    decides the previous extreme:
-
-    - if it exceeds the previous extreme, the old extreme was not a confirmed
-      turn; the trend continues and the intermediate pullback can be collapsed.
-    - if it does not exceed the previous extreme, the old extreme is confirmed
-      as a turn. It immediately becomes the new anchor, the pullback becomes
-      the first extreme of the opposite run, and judgment continues from there.
-
-    This is the 100% retracement rule in point form: a candidate turn is
-    cancelled only when the following same-side point fully retraces past it.
-    No later/final point may retroactively re-judge an already confirmed turn.
-
-    The first same-direction extension from a newly confirmed anchor is always
-    collapsible. Second and later same-side candidates still consume the
-    existing 10-degree ordinal; the angle only decides whether an improving
-    extension may be collapsed.
-    """
-    ordered = list(points)
-    initial = _first_nonflat_direction(ordered)
-    if initial is None:
-        return []
-
-    start_index, direction = initial
-    state = _RunState(
-        anchor=ordered[start_index],
-        direction=direction,
-        extreme=ordered[start_index + 1],
-    )
-    intervals: list[tuple[PivotPoint, PivotPoint]] = []
-    index = start_index + 2
-
-    while index < len(ordered):
-        point = ordered[index]
-
-        # Wait for one opposite-side pullback after the active extreme.
-        if state.opposite_extreme is None:
-            if point.pivot_type != state.extreme.pivot_type:
-                state.opposite_extreme = point
-                index += 1
-                continue
-
-            # Consecutive same-side Stage-3 points are still judged in order.
-            state.angle_ordinal += 1
-            improves = _can_extend(state, point)
-            angle = screen_origin_angle_degrees(
-                state.anchor,
-                state.extreme,
-                point,
-                geometry,
-            )
-            if (
-                improves
-                and state.angle_ordinal >= 2
-                and angle > threshold
-            ):
-                _record_collapse(intervals, state)
-                state = _RunState(
-                    anchor=state.extreme,
-                    direction=_sign(point.value - state.extreme.value),
-                    extreme=point,
-                )
-                index += 1
-                continue
-
-            if improves:
-                state.extreme = point
-                state.collapse_end = point
-            index += 1
-            continue
-
-        # If Stage 3 happens to provide another opposite-side point before a
-        # same-side decision point, keep only the farther pullback for the
-        # pending judgment. Nothing is deleted yet.
-        if point.pivot_type != state.extreme.pivot_type:
-            if (
-                (state.direction > 0 and point.value < state.opposite_extreme.value)
-                or (state.direction < 0 and point.value > state.opposite_extreme.value)
-            ):
-                state.opposite_extreme = point
-            index += 1
-            continue
-
-        # This is the next same-side point. It MUST decide the candidate now.
-        # It also consumes an angle ordinal even when it does not improve the
-        # current extreme.
-        state.angle_ordinal += 1
-        improves = _can_extend(state, point)
-        angle = screen_origin_angle_degrees(
-            state.anchor,
-            state.extreme,
-            point,
-            geometry,
-        )
-
-        if improves:
-            # Candidate turn cancelled: the following same-side point retraced
-            # more than 100% past the previous extreme, so the old trend lives.
-            if state.angle_ordinal >= 2 and angle > threshold:
-                # The direction is known, but this extension is too sharp to
-                # collapse into the old anchor. Preserve existing structure and
-                # start a fresh run from the pending pullback.
-                _record_collapse(intervals, state)
-                pending = state.opposite_extreme
-                state = _RunState(
-                    anchor=pending,
-                    direction=_sign(point.value - pending.value),
-                    extreme=point,
-                )
-                index += 1
-                continue
-
-            state.extreme = point
-            state.collapse_end = point
-            state.opposite_extreme = None
-            index += 1
-            continue
-
-        # The next same-side point failed to extend the old trend.
-        #
-        # That alone does NOT confirm a reversal. The opposite-side extreme
-        # must first break the old run's start anchor:
-        #
-        #   up run:   opposite LOW < start LOW, then lower HIGH => downtrend
-        #   down run: opposite HIGH > start HIGH, then higher LOW => uptrend
-        #
-        # If the start anchor was not broken, the completed old trend remains
-        # valid. Preserve its extreme as the new opposite-trend anchor.
-        opposite = state.opposite_extreme
-        anchor_broken = (
-            state.direction > 0
-            and opposite.value < state.anchor.value
-        ) or (
-            state.direction < 0
-            and opposite.value > state.anchor.value
-        )
-
-        if anchor_broken:
-            # The old trend has been structurally invalidated: the opposite
-            # extreme broke the start anchor and this deciding same-side point
-            # also failed to recover the old extreme. Collapse the invalidated
-            # old structure through the deciding point and restart there.
-            intervals.append((state.anchor, point))
-            state = _RunState(
-                anchor=point,
-                direction=_sign(opposite.value - point.value),
-                extreme=opposite,
-            )
-            index += 1
-            continue
-
-        # The opposite excursion never broke the old start anchor. The old
-        # trend therefore remains a valid completed trend. Keep its extreme as
-        # the turn anchor and start the opposite run from there.
-        _record_collapse(intervals, state)
-        turn = state.extreme
-        state = _RunState(
-            anchor=turn,
-            direction=_sign(opposite.value - turn.value),
-            extreme=opposite,
-            opposite_extreme=point,
-        )
-        index += 1
-
-    _record_collapse(intervals, state)
-    return intervals
-
-
-
-def _connected_line_points(
+def _has_opposite_wave(
     result: SimplifiedLineResult,
-) -> list[PivotPoint]:
-    if not result.segments:
-        return []
-    ordered_segments = sorted(
-        result.segments,
-        key=lambda item: (item.start.day, item.end.day, item.kind),
-    )
-    points = [ordered_segments[0].start]
-    for segment in ordered_segments:
-        if points[-1] != segment.start:
-            points.append(segment.start)
-        if points[-1] != segment.end:
-            points.append(segment.end)
-    return points
-
-
-def _resolve_rapid_candidate(
-    candidate: RapidMoveCandidate,
-    line_points: Sequence[PivotPoint],
-) -> str:
-    """Resolve one Stage-3 rapid candidate without adding a new threshold.
-
-    Returns:
-    - absorbed: the original direction resumes past the candidate extreme
-      before an opposite trend is structurally confirmed;
-    - confirmed: an opposite trend is structurally confirmed first;
-    - provisional: the available graph ends before either event.
-    """
-    try:
-        end_index = next(
-            index
-            for index, point in enumerate(line_points)
-            if _key(point) == _key(candidate.end)
-        )
-    except StopIteration:
-        return "provisional"
-
-    following = line_points[end_index + 1:]
-    if not following:
-        return "provisional"
-
-    if candidate.direction > 0:
-        peak = candidate.end.value
-        pullback_low: PivotPoint | None = None
-        lower_high_seen = False
-
-        for point in following:
-            if point.value > peak:
-                return "absorbed"
-
-            if pullback_low is None:
-                if point.value < peak:
-                    pullback_low = point
-                continue
-
-            if not lower_high_seen:
-                if point.value < pullback_low.value:
-                    pullback_low = point
-                    continue
-                if point.value > pullback_low.value:
-                    lower_high_seen = True
-                    if (
-                        pullback_low.value < candidate.start.value
-                        and point.value < peak
-                    ):
-                        return "confirmed"
-                continue
-
-            if point.value > peak:
-                return "absorbed"
-            if point.value < pullback_low.value:
-                return "confirmed"
-
-        return "provisional"
-
-    trough = candidate.end.value
-    rebound_high: PivotPoint | None = None
-    higher_low_seen = False
-
-    for point in following:
-        if point.value < trough:
-            return "absorbed"
-
-        if rebound_high is None:
-            if point.value > trough:
-                rebound_high = point
+    *,
+    after: date,
+    through: date,
+    direction: int,
+) -> bool:
+    """Return True only for an actual connected Stage-3 opposite trend wave."""
+    for segment in result.segments:
+        if segment.kind != "trend":
             continue
-
-        if not higher_low_seen:
-            if point.value > rebound_high.value:
-                rebound_high = point
-                continue
-            if point.value < rebound_high.value:
-                higher_low_seen = True
-                if (
-                    rebound_high.value > candidate.start.value
-                    and point.value > trough
-                ):
-                    return "confirmed"
+        if segment.end.day <= after or segment.start.day >= through:
             continue
-
-        if point.value < trough:
-            return "absorbed"
-        if point.value > rebound_high.value:
-            return "confirmed"
-
-    return "provisional"
+        seg_direction = _segment_direction(segment.start, segment.end)
+        if seg_direction != 0 and seg_direction != direction:
+            return True
+    return False
 
 
-def _resolve_rapid_moves(
+def _crosses_hard_structure(
     result: SimplifiedLineResult,
-) -> tuple[
-    tuple[PivotPoint, ...],
-    tuple[PivotPoint, ...],
-    tuple[RapidMoveCandidate, ...],
-]:
-    """Resolve provisional Stage-3 rapid candidates before normal Stage-4 cleanup."""
-    line_points = _connected_line_points(result)
-    confirmed = {_key(point): point for point in result.protected_points}
-    provisional: dict[tuple[date, float, str], PivotPoint] = {}
-    kept_candidates: list[RapidMoveCandidate] = []
-
-    for candidate in result.rapid_move_candidates:
-        status = _resolve_rapid_candidate(candidate, line_points)
-        if status == "absorbed":
+    *,
+    start: date,
+    end: date,
+) -> bool:
+    for segment in result.segments:
+        if segment.kind not in {"spike", "sideways"}:
             continue
-
-        kept_candidates.append(candidate)
-        target = confirmed if status == "confirmed" else provisional
-        for point in candidate.protected_points:
-            target[_key(point)] = point
-
-    # Confirmed protection always wins when a point belongs to both sets.
-    for point_key in tuple(provisional):
-        if point_key in confirmed:
-            provisional.pop(point_key)
-
-    return (
-        tuple(sorted(
-            confirmed.values(),
-            key=lambda item: (item.day, item.pivot_type),
-        )),
-        tuple(sorted(
-            provisional.values(),
-            key=lambda item: (item.day, item.pivot_type),
-        )),
-        tuple(kept_candidates),
-    )
+        if start < segment.start.day < end or start < segment.end.day < end:
+            return True
+    return False
 
 
-def prune_same_trend_extremes(
+def finalize_rapid_moves(
     result: SimplifiedLineResult,
     geometry: ChartGeometry,
     *,
     angle_threshold_deg: float = SAME_TREND_ANGLE_THRESHOLD_DEG,
 ) -> SimplifiedLineResult:
+    """Finalize Stage-2 rapid candidates against the completed Stage-3 line."""
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
-    points = tuple(sorted(
-        result.markers,
-        key=lambda item: (item.day, item.pivot_type),
-    ))
-    if len(points) < 3:
-        return result
-
-    point_map = {_key(point): point for point in points}
-    endpoint_keys = {
-        _key(point)
-        for segment in result.segments
-        for point in (segment.start, segment.end)
-    }
-    standalone_keys = {
-        _key(point)
-        for point in result.markers
-        if _key(point) not in endpoint_keys
-    }
-    sideways_keys = {
-        _key(point)
-        for sideways in result.sideways_segments
-        for point in sideways.pivot_points
-    }
-    spike_keys = {
-        _key(point)
-        for segment in result.segments
-        if segment.kind == "spike"
-        for point in (segment.start, segment.end)
-    }
-
-    (
-        confirmed_rapid_points,
-        provisional_rapid_points,
-        surviving_rapid_candidates,
-    ) = _resolve_rapid_moves(result)
-    rapid_move_keys = {
-        _key(point)
-        for point in (
-            *confirmed_rapid_points,
-            *provisional_rapid_points,
-        )
-    }
-    protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
-
-    # Every protected point is a hard chronological boundary. Processing stops
-    # at the protected point, seals the current window, then restarts from that
-    # same point as the anchor of the next window. No later point may re-judge
-    # structure on the far side of a protected boundary.
-    protected_indices = [
-        index
-        for index, point in enumerate(points)
-        if _key(point) in protected_keys
-    ]
-
-    windows: list[list[PivotPoint]] = []
-    start_index = 0
-    for boundary_index in protected_indices:
-        if boundary_index < start_index:
-            continue
-        current = list(points[start_index:boundary_index + 1])
-        if current:
-            windows.append(current)
-        start_index = boundary_index
-
-    tail = list(points[start_index:])
-    if tail and (not windows or tail != windows[-1]):
-        windows.append(tail)
-
-    intervals: list[tuple[PivotPoint, PivotPoint]] = []
-    for window in windows:
-        if len(window) < 3:
-            continue
-
-        # Exactly one chronological state machine per unprotected window.
-        # Restarting from every later turn creates overlapping collapse
-        # candidates and lets a later/final point erase a turn that was already
-        # decided earlier in the sequence.
-        intervals.extend(
-            _process_window(
-                window,
-                geometry,
-                angle_threshold_deg,
-            )
-        )
-
-    # Windows are already cut at every protected point, so no collapse can
-    # cross protected structure.
-    candidates = list(intervals)
-
+    candidates = sorted(
+        result.rapid_move_candidates,
+        key=lambda item: (item.start.day, item.end.day, item.direction),
+    )
     if not candidates:
+        if not result.provisional_protected_points:
+            return result
         return SimplifiedLineResult(
             markers=result.markers,
             segments=result.segments,
             sideways_segments=result.sideways_segments,
-            protected_points=confirmed_rapid_points,
-            provisional_protected_points=provisional_rapid_points,
-            rapid_move_candidates=surviving_rapid_candidates,
+            protected_points=result.protected_points,
+            provisional_protected_points=(),
+            rapid_move_candidates=(),
         )
 
-    # Prefer the earliest valid anchor. If two intervals share an anchor, keep
-    # the farther endpoint. Later overlapping candidates are subordinate to the
-    # earlier run and are ignored.
-    candidates.sort(
-        key=lambda item: (
-            item[0].day,
-            -item[1].day.toordinal(),
+    y_span = float(geometry.y_max - geometry.y_min)
+    if y_span <= 0:
+        raise ValueError("geometry y-axis span must be positive")
+
+    finalized: list[RapidMoveCandidate] = []
+    active: RapidMoveCandidate | None = None
+
+    def flush() -> None:
+        nonlocal active
+        if active is not None:
+            finalized.append(active)
+            active = None
+
+    for candidate in candidates:
+        if candidate.start.day >= candidate.end.day:
+            continue
+
+        if active is None:
+            active = candidate
+            continue
+
+        # Nested/duplicate candidate with no later extreme adds nothing.
+        if (
+            candidate.direction == active.direction
+            and candidate.end.day <= active.end.day
+        ):
+            continue
+
+        if candidate.direction != active.direction:
+            flush()
+            active = candidate
+            continue
+
+        if _crosses_hard_structure(
+            result,
+            start=active.start.day,
+            end=candidate.end.day,
+        ):
+            flush()
+            active = candidate
+            continue
+
+        # Any real opposite Stage-3 wave ends the rapid move at the prior peak.
+        if _has_opposite_wave(
+            result,
+            after=active.end.day,
+            through=candidate.end.day,
+            direction=active.direction,
+        ):
+            flush()
+            active = candidate
+            continue
+
+        angle = screen_origin_angle_degrees(
+            active.start,
+            active.end,
+            candidate.end,
+            geometry,
         )
-    )
-    filtered: list[tuple[PivotPoint, PivotPoint]] = []
-    for start, end in candidates:
-        if not filtered:
-            filtered.append((start, end))
+        if angle > angle_threshold_deg:
+            flush()
+            active = candidate
             continue
 
-        prev_start, prev_end = filtered[-1]
-        if start.day == prev_start.day:
-            if end.day > prev_end.day:
-                filtered[-1] = (start, end)
-            continue
-
-        if start.day < prev_end.day:
-            continue
-
-        filtered.append((start, end))
-
-    def inside(segment: SimplifiedLineSegment) -> bool:
-        return any(
-            start.day <= segment.start.day
-            and segment.end.day <= end.day
-            for start, end in filtered
+        active = RapidMoveCandidate(
+            start=active.start,
+            end=candidate.end,
+            direction=active.direction,
+            visual_y_share=abs(
+                float(candidate.end.value) - float(active.start.value)
+            ) / y_span,
         )
 
-    kept_segments = [
-        segment
+    flush()
+
+    final_protected_map = {
+        _key(point): point
+        for point in result.protected_points
+    }
+    for candidate in finalized:
+        for point in candidate.protected_points:
+            final_protected_map[_key(point)] = point
+
+    connected_keys = {
+        _key(point)
         for segment in result.segments
-        if not inside(segment)
-    ]
-    for start, end in filtered:
-        kept_segments.append(
-            SimplifiedLineSegment(start=start, end=end, kind="trend")
+        for point in (segment.start, segment.end)
+    }
+    hard_keys = {
+        _key(point)
+        for segment in result.segments
+        if segment.kind in {"spike", "sideways"}
+        for point in (segment.start, segment.end)
+    }
+    finalized_keys = set(final_protected_map)
+
+    # Only Stage 4 may release provisional rapid points.  If a released point
+    # is merely a standalone provisional marker, remove it now.  If it is also
+    # a real Stage-3 line vertex or hard-protected point, keep the marker but
+    # remove its rapid protection so Stage 5 can judge it normally.
+    markers = tuple(
+        point
+        for point in result.markers
+        if (
+            _key(point) not in {
+                _key(p) for p in result.provisional_protected_points
+            }
+            or _key(point) in finalized_keys
+            or _key(point) in connected_keys
+            or _key(point) in hard_keys
         )
-    kept_segments.sort(
-        key=lambda item: (item.start.day, item.end.day, item.kind)
     )
 
-    marker_map: dict[tuple[date, float, str], PivotPoint] = {}
-    for segment in kept_segments:
-        marker_map[_key(segment.start)] = segment.start
-        marker_map[_key(segment.end)] = segment.end
-    for point in result.markers:
-        if _key(point) in standalone_keys:
-            marker_map[_key(point)] = point
-
-    if not set(marker_map).issubset(point_map):
-        raise RuntimeError("stage4 produced a point absent from stage3")
+    marker_keys = {_key(point) for point in markers}
+    protected = tuple(sorted(
+        (
+            point
+            for key, point in final_protected_map.items()
+            if key in marker_keys
+        ),
+        key=lambda item: (item.day, item.pivot_type),
+    ))
 
     return SimplifiedLineResult(
         markers=tuple(sorted(
-            marker_map.values(),
+            markers,
             key=lambda item: (item.day, item.pivot_type),
         )),
-        segments=tuple(kept_segments),
+        segments=result.segments,
         sideways_segments=result.sideways_segments,
-        protected_points=confirmed_rapid_points,
-        provisional_protected_points=provisional_rapid_points,
-        rapid_move_candidates=surviving_rapid_candidates,
+        protected_points=protected,
+        provisional_protected_points=(),
+        rapid_move_candidates=tuple(finalized),
     )
