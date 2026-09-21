@@ -42,14 +42,7 @@ jobs:
           INDEX="NASDAQ_COMPOSITE"
           ALGO="f157cd64ab58e24dbe0f5ddec8f196077af618b3"
 
-          SERIES = [
-              "US2Y","US10Y","US10Y_REAL","US10Y2Y",
-              "HY_OAS","NFCI_CREDIT","NFCI_RISK","EM_OAS",
-              "WTI","RRP","TGA","REDBOOK","WEI","EMRATIO",
-              "US_RETAIL_SALES","US_CPI","US_CORE_CPI","US_PPI",
-              "US_CORE_PPI","US_PCE","US_CORE_PCE","US_SBDI_31_180",
-              "US_SBDFI","US_COMMERCIAL_CH11",
-          ]
+          SERIES = ["US_RETAIL_SALES"]
 
           db=SupabaseRest()
           cycle=_single_row(db,"historical_case_market_cycles",{
@@ -96,25 +89,12 @@ jobs:
                   s5=prune_same_trend_extremes(s4,g)
                   s6=prune_unconfirmed_retracements(s5,g)
 
-                  stored=store_pipeline_result(
-                      db,
-                      case_code=CASE,
-                      index_code=INDEX,
-                      series_code=code,
-                      algorithm_version=ALGO,
-                      source_rows=rows,
-                      frequency=freq,
-                      buffer_start=buffer_start,
-                      buffer_end=buffer_end,
-                      base=s1,
-                      stage1=s1,
-                      stage2=s2,
-                      stage3=s3,
-                      stage4=s4,
-                      stage5=s5,
-                      final=s6,
-                  )
-                  print(f"OK {code} {freq} source={len(rows)} pivots={len(s6.markers)} stored={stored}")
+                  print("S2_SIDEWAYS",[(x.start.day.isoformat(),x.end.day.isoformat(),x.protected) for x in (*s2.high_sideways_segments,*s2.low_sideways_segments)])
+                  print("S2_SPIKES",[(x.point.day.isoformat(), None if x.entry is None else x.entry.day.isoformat(), x.marker_only) for x in s2.spike_peaks])
+                  print("S4_PROT",[(p.day.isoformat(),p.pivot_type) for p in s4.protected_points])
+                  for name,res in [("S3",s3),("S4",s4),("S5",s5),("S6",s6)]:
+                      print(name+"_MARKERS",[(p.day.isoformat(),round(p.value,3),p.pivot_type) for p in res.markers])
+                      print(name+"_SEGS",[(seg.start.day.isoformat(),seg.start.pivot_type,seg.end.day.isoformat(),seg.end.pivot_type,seg.kind) for seg in res.segments])
               except Exception as exc:
                   failures.append((code,repr(exc)))
                   print(f"FAIL {code}: {exc}")
