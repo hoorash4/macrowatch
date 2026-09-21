@@ -210,42 +210,10 @@ def _process_window(
             index += 1
             continue
 
-        # The next same-side point failed to extend the old trend.
-        #
-        # That alone does NOT confirm a reversal. The opposite-side extreme
-        # must first break the old run's start anchor:
-        #
-        #   up run:   opposite LOW < start LOW, then lower HIGH => downtrend
-        #   down run: opposite HIGH > start HIGH, then higher LOW => uptrend
-        #
-        # If the start anchor was not broken, the completed old trend remains
-        # valid. Preserve its extreme as the new opposite-trend anchor.
+        # The next same-side point failed to recover/extend the old extreme.
+        # The old extreme is therefore confirmed as the turn immediately.
+        # Freeze it now; later points may not retroactively erase that turn.
         opposite = state.opposite_extreme
-        anchor_broken = (
-            state.direction > 0
-            and opposite.value < state.anchor.value
-        ) or (
-            state.direction < 0
-            and opposite.value > state.anchor.value
-        )
-
-        if anchor_broken:
-            # The old trend has been structurally invalidated: the opposite
-            # extreme broke the start anchor and this deciding same-side point
-            # also failed to recover the old extreme. Collapse the invalidated
-            # old structure through the deciding point and restart there.
-            intervals.append((state.anchor, point))
-            state = _RunState(
-                anchor=point,
-                direction=_sign(opposite.value - point.value),
-                extreme=opposite,
-            )
-            index += 1
-            continue
-
-        # The opposite excursion never broke the old start anchor. The old
-        # trend therefore remains a valid completed trend. Keep its extreme as
-        # the turn anchor and start the opposite run from there.
         _record_collapse(intervals, state)
         turn = state.extreme
         state = _RunState(
