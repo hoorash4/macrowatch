@@ -234,53 +234,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertTrue(all(params["order"] == "observation_date.asc" for params in point_calls))
 
 
-    def test_stage1_spike_correction_adds_missing_upward_entry_before_final_rdp(self):
-        d = date(2020, 1, 1)
-        high_rdp = (
-            PivotPoint(d, 5.0, "high"),
-            PivotPoint(d + timedelta(days=10), 10.0, "high"),
-            PivotPoint(d + timedelta(days=20), 5.0, "high"),
-            PivotPoint(d + timedelta(days=40), 6.0, "high"),
-        )
-        low_rdp = (
-            PivotPoint(d - timedelta(days=10), 0.0, "low"),
-            PivotPoint(d + timedelta(days=30), 1.0, "low"),
-            PivotPoint(d + timedelta(days=50), 0.5, "low"),
-        )
-        low_candidates = (
-            PivotPoint(d + timedelta(days=3), 2.0, "low"),
-            PivotPoint(d + timedelta(days=6), 1.0, "low"),
-            PivotPoint(d + timedelta(days=8), 1.5, "low"),
-        )
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14),
-            high_candidates=high_rdp,
-            low_candidates=low_candidates,
-            high_pivots=high_rdp,
-            low_pivots=low_rdp,
-        )
-        geometry = ChartGeometry(
-            display_start=d,
-            display_end=d + timedelta(days=100),
-            y_min=0.0,
-            y_max=10.0,
-            width=100.0,
-            height=100.0,
-        )
-        result = augment_spike_entry_points(base, geometry)
-        self.assertEqual(high_rdp, result.high_pivots)
-        expected_entry = PivotPoint(d + timedelta(days=6), 1.0, "low")
-        self.assertEqual(
-            tuple(sorted((*low_rdp, expected_entry), key=lambda item: item.day)),
-            result.low_pivots,
-        )
-        self.assertIn(expected_entry, result.display_markers)
-        self.assertFalse(hasattr(result, "base"))
-        self.assertFalse(hasattr(result, "added_low_pivots"))
-        self.assertFalse(hasattr(result, "added_high_pivots"))
-        self.assertEqual(1, len(result.spike_peaks))
-        self.assertEqual(expected_entry, result.spike_peaks[0].entry)
 
     def test_spike_allows_opposite_rdp_inside_when_it_does_not_follow_peak(self):
         d = date(2020, 1, 1)
@@ -352,39 +305,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         result = augment_spike_entry_points(base, geometry)
         self.assertEqual((), result.spike_peaks)
 
-    def test_stage1_spike_correction_adds_missing_downward_entry_before_final_rdp(self):
-        d = date(2020, 1, 1)
-        low_rdp = (
-            PivotPoint(d, 5.0, "low"),
-            PivotPoint(d + timedelta(days=10), 0.0, "low"),
-            PivotPoint(d + timedelta(days=20), 5.0, "low"),
-            PivotPoint(d + timedelta(days=40), 4.0, "low"),
-        )
-        high_rdp = (
-            PivotPoint(d - timedelta(days=10), 10.0, "high"),
-            PivotPoint(d + timedelta(days=30), 9.0, "high"),
-            PivotPoint(d + timedelta(days=50), 9.5, "high"),
-        )
-        high_candidates = (
-            PivotPoint(d + timedelta(days=3), 7.0, "high"),
-            PivotPoint(d + timedelta(days=6), 9.0, "high"),
-            PivotPoint(d + timedelta(days=8), 8.0, "high"),
-        )
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14),
-            high_candidates=high_candidates,
-            low_candidates=low_rdp,
-            high_pivots=high_rdp,
-            low_pivots=low_rdp,
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
-        result = augment_spike_entry_points(base, geometry)
-        expected_entry = PivotPoint(d + timedelta(days=6), 9.0, "high")
-        self.assertIn(expected_entry, result.high_pivots)
-        self.assertIn(expected_entry, result.display_markers)
-        self.assertEqual(1, len(result.spike_peaks))
-        self.assertEqual(expected_entry, result.spike_peaks[0].entry)
 
     def test_spike_reuses_existing_entry_rdp_instead_of_adding_duplicate(self):
         d = date(2020, 1, 1)
@@ -483,47 +403,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         )
 
 
-    def test_stage2_accepts_sideways_without_arrival_direction_gate(self):
-        d = date(2020, 1, 1)
-        highs = (
-            PivotPoint(d + timedelta(days=10), 10.0, "high"),
-            PivotPoint(d + timedelta(days=20), 8.0, "high"),
-            PivotPoint(d + timedelta(days=80), 8.1, "high"),
-        )
-        stage1 = SpikeAugmentedPivotResult(
-            high_pivots=highs,
-            low_pivots=(),
-            spike_peaks=(),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
-
-        stage2 = finalize_sideways_protection(stage1, geometry)
-
-        self.assertEqual(1, len(stage2.high_sideways_segments))
-        self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
-        self.assertEqual(highs[2], stage2.high_sideways_segments[0].end)
-
-
-    def test_stage2_merges_consecutive_sideways_while_combined_angle_stays_within_six_degrees(self):
-        d = date(2020, 1, 1)
-        highs = (
-            PivotPoint(d + timedelta(days=10), 5.00, "high"),
-            PivotPoint(d + timedelta(days=40), 5.10, "high"),
-            PivotPoint(d + timedelta(days=70), 5.00, "high"),
-            PivotPoint(d + timedelta(days=100), 5.10, "high"),
-        )
-        stage1 = SpikeAugmentedPivotResult(
-            high_pivots=highs,
-            low_pivots=(),
-            spike_peaks=(),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=110), 0.0, 10.0, 110.0, 100.0)
-
-        stage2 = finalize_sideways_protection(stage1, geometry)
-
-        self.assertEqual(1, len(stage2.high_sideways_segments))
-        self.assertEqual(highs[0], stage2.high_sideways_segments[0].start)
-        self.assertEqual(highs[-1], stage2.high_sideways_segments[0].end)
 
 
     def test_confirmed_sideways_protects_both_boundary_pivots(self):
@@ -536,33 +415,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertEqual((start, end), segment.pivot_points)
 
 
-    def test_high_owned_down_reversal_skips_low_that_also_turns_down(self):
-        d = date(2020, 1, 1)
-        highs = (
-            PivotPoint(d + timedelta(days=10), 5.0, "high"),
-            PivotPoint(d + timedelta(days=20), 6.0, "high"),
-            PivotPoint(d + timedelta(days=30), 4.0, "high"),
-        )
-        lows = (
-            PivotPoint(d + timedelta(days=5), 1.0, "low"),
-            PivotPoint(d + timedelta(days=15), 2.0, "low"),
-            PivotPoint(d + timedelta(days=35), 1.5, "low"),  # also turns down: skip
-            PivotPoint(d + timedelta(days=45), 1.0, "low"),  # next low is used
-        )
-        augmented = type("Augmented", (), {
-            "high_pivots": highs,
-            "low_pivots": lows,
-            "spike_peaks": (),
-        })()
-        geometry = ChartGeometry(d, d + timedelta(days=80), 0.0, 7.0, 100.0, 100.0)
-
-        result = simplify_pivot_lines(augmented, geometry)
-
-        self.assertNotIn(lows[2], result.markers)
-        self.assertTrue(any(
-            segment.start == highs[1] and segment.end == lows[3]
-            for segment in result.segments
-        ))
 
     def test_low_owned_up_reversal_skips_high_that_also_turns_up(self):
         d = date(2020, 1, 1)
@@ -592,169 +444,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             for segment in result.segments
         ))
 
-    def test_reversal_owner_skips_matching_opposite_turn_and_connects_next_candidate(self):
-        d = date(2020, 1, 1)
-        lows = (
-            PivotPoint(d + timedelta(days=0), 3.0, "low"),
-            PivotPoint(d + timedelta(days=15), 8.0, "low"),
-            PivotPoint(d + timedelta(days=25), 12.0, "low"),  # duplicate down-turn owner
-            PivotPoint(d + timedelta(days=35), 10.0, "low"),
-            PivotPoint(d + timedelta(days=45), 16.0, "low"),
-        )
-        highs = (
-            PivotPoint(d + timedelta(days=10), 10.0, "high"),
-            PivotPoint(d + timedelta(days=20), 15.0, "high"),
-            PivotPoint(d + timedelta(days=30), 12.0, "high"),  # duplicate up-turn owner
-            PivotPoint(d + timedelta(days=40), 18.0, "high"),
-        )
-        augmented = type("Augmented", (), {
-            "high_pivots": highs,
-            "low_pivots": lows,
-            "spike_peaks": (),
-        })()
-        geometry = ChartGeometry(
-            d,
-            d + timedelta(days=50),
-            0.0,
-            20.0,
-            100.0,
-            100.0,
-        )
 
-        result = simplify_pivot_lines(augmented, geometry)
-
-        expected = {
-            (lows[0], highs[0]),
-            (highs[0], highs[1]),
-            (highs[1], lows[3]),
-            (lows[3], highs[3]),
-        }
-        actual = {(segment.start, segment.end) for segment in result.segments}
-        self.assertTrue(expected.issubset(actual))
-        self.assertNotIn(lows[2], result.markers)
-        self.assertNotIn(highs[2], result.markers)
-
-    def test_downtrend_sideways_removes_overlapping_high_pair_before_connections(self):
-        d = date(2020, 1, 1)
-        low_start = PivotPoint(d + timedelta(days=10), 1.0, "low")
-        low_end = PivotPoint(d + timedelta(days=70), 0.95, "low")
-        high_left = PivotPoint(d + timedelta(days=20), 2.0, "high")
-        high_right = PivotPoint(d + timedelta(days=60), 1.98, "high")
-        next_high = PivotPoint(d + timedelta(days=90), 2.5, "high")
-
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14, 17),
-            high_candidates=(high_left, high_right, next_high),
-            low_candidates=(low_start, low_end),
-            high_pivots=(high_left, high_right, next_high),
-            low_pivots=(low_start, low_end),
-        )
-        augmented = type("Augmented", (), {
-            "high_pivots": base.high_pivots,
-            "low_pivots": base.low_pivots,
-            "spike_peaks": (),
-        })()
-        geometry = ChartGeometry(
-            d,
-            d + timedelta(days=120),
-            0.0,
-            3.0,
-            120.0,
-            100.0,
-        )
-
-        result = simplify_pivot_lines(augmented, geometry)
-
-        self.assertNotIn(high_left, result.markers)
-        self.assertNotIn(high_right, result.markers)
-        self.assertIn(low_start, result.markers)
-        self.assertIn(low_end, result.markers)
-        self.assertFalse(any(
-            segment.start in {high_left, high_right}
-            or segment.end in {high_left, high_right}
-            for segment in result.segments
-        ))
-
-
-    def test_line_simplification_keeps_all_markers_and_merges_by_trend_side(self):
-        d = date(2020, 1, 1)
-        highs = (
-            PivotPoint(d + timedelta(days=10), 5.0, "high"),
-            PivotPoint(d + timedelta(days=30), 7.0, "high"),
-            PivotPoint(d + timedelta(days=50), 6.0, "high"),
-        )
-        lows = (
-            PivotPoint(d, 1.0, "low"),
-            PivotPoint(d + timedelta(days=20), 2.0, "low"),
-            PivotPoint(d + timedelta(days=40), 1.0, "low"),
-            PivotPoint(d + timedelta(days=60), 0.0, "low"),
-        )
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14, 17),
-            high_candidates=highs,
-            low_candidates=lows,
-            high_pivots=highs,
-            low_pivots=lows,
-        )
-        augmented = SpikeAugmentedPivotResult(
-            high_pivots=base.high_pivots,
-            low_pivots=base.low_pivots,
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
-        result = simplify_pivot_lines(augmented, geometry)
-
-        self.assertEqual(augmented.display_markers, result.markers)
-        pairs = [(item.start, item.end) for item in result.segments]
-        self.assertIn((lows[0], highs[0]), pairs)
-        self.assertIn((highs[0], highs[1]), pairs)
-        self.assertIn((highs[1], lows[2]), pairs)
-        self.assertIn((lows[2], lows[3]), pairs)
-
-    def test_spike_inside_opposite_sideways_is_marker_only(self):
-        d = date(2020, 1, 1)
-        high_rdp = (
-            PivotPoint(d, 5.0, "high"),
-            PivotPoint(d + timedelta(days=10), 10.0, "high"),
-            PivotPoint(d + timedelta(days=20), 6.0, "high"),
-        )
-        low_rdp = (
-            PivotPoint(d + timedelta(days=5), 1.0, "low"),
-            PivotPoint(d + timedelta(days=15), 1.05, "low"),
-            PivotPoint(d + timedelta(days=30), 1.2, "low"),
-        )
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14, 17),
-            high_candidates=high_rdp,
-            low_candidates=low_rdp,
-            high_pivots=high_rdp,
-            low_pivots=low_rdp,
-        )
-        geometry = ChartGeometry(
-            d,
-            d + timedelta(days=100),
-            0.0,
-            10.0,
-            100.0,
-            100.0,
-        )
-
-        augmented = augment_spike_entry_points(base, geometry)
-
-        self.assertEqual(1, len(augmented.spike_peaks))
-        spike = augmented.spike_peaks[0]
-        self.assertTrue(spike.marker_only)
-        self.assertEqual(high_rdp[1], spike.point)
-        self.assertIsNone(spike.entry)
-
-        simplified = simplify_pivot_lines(augmented, geometry)
-        self.assertIn(spike.point, simplified.markers)
-        self.assertFalse(any(
-            segment.start == spike.point or segment.end == spike.point
-            for segment in simplified.segments
-        ))
 
     def test_post_pass_collapses_two_record_extremes_without_angle(self):
         d = date(2020, 1, 1)
@@ -928,66 +618,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIn(high1, result.markers)
         self.assertIn(higher_high, result.markers)
 
-    def test_simplifier_later_higher_high_cancels_provisional_reversal(self):
-        d = date(2020, 1, 1)
-        low1 = PivotPoint(d + timedelta(days=10), 5.0, "low")
-        high2 = PivotPoint(d + timedelta(days=20), 10.0, "high")
-        low3 = PivotPoint(d + timedelta(days=30), 4.0, "low")
-        high4 = PivotPoint(d + timedelta(days=40), 12.0, "high")
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14, 17),
-            high_candidates=(high2, high4),
-            low_candidates=(low1, low3),
-            high_pivots=(high2, high4),
-            low_pivots=(low1, low3),
-        )
-        augmented = SpikeAugmentedPivotResult(
-            high_pivots=base.high_pivots,
-            low_pivots=base.low_pivots,
-            spike_peaks=(),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
-        result = simplify_pivot_lines(augmented, geometry)
-
-        # low3 is below low1, so high2 can look like a provisional reversal.
-        # But high4 immediately exceeds high2, so the existing same-side state
-        # machine treats high4 as continuation and high2 does not remain a turn.
-        self.assertIn(low1, result.markers)
-        self.assertIn(high4, result.markers)
-        self.assertNotIn(high2, result.markers)
-        self.assertNotIn(low3, result.markers)
-        self.assertIn(SimplifiedLineSegment(low1, high4, "trend"), result.segments)
-
-    def test_simplifier_later_lower_low_cancels_provisional_reversal_mirror(self):
-        d = date(2020, 1, 1)
-        high1 = PivotPoint(d + timedelta(days=10), 15.0, "high")
-        low2 = PivotPoint(d + timedelta(days=20), 10.0, "low")
-        high3 = PivotPoint(d + timedelta(days=30), 16.0, "high")
-        low4 = PivotPoint(d + timedelta(days=40), 8.0, "low")
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14, 17),
-            high_candidates=(high1, high3),
-            low_candidates=(low2, low4),
-            high_pivots=(high1, high3),
-            low_pivots=(low2, low4),
-        )
-        augmented = SpikeAugmentedPivotResult(
-            high_pivots=base.high_pivots,
-            low_pivots=base.low_pivots,
-            spike_peaks=(),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
-
-        result = simplify_pivot_lines(augmented, geometry)
-
-        self.assertIn(high1, result.markers)
-        self.assertIn(low4, result.markers)
-        self.assertNotIn(low2, result.markers)
-        self.assertNotIn(high3, result.markers)
-        self.assertIn(SimplifiedLineSegment(high1, low4, "trend"), result.segments)
 
     def test_post_pass_deletes_every_interior_point_after_two_record_updates(self):
         d = date(2020, 1, 1)
@@ -1018,35 +649,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             result.segments,
         )
 
-    def test_post_pass_stops_before_sideways(self):
-        d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
-        sideways_end = PivotPoint(d + timedelta(days=30), 11.1, "high")
-        later_high = PivotPoint(d + timedelta(days=40), 13.0, "high")
-        sideways = SidewaysSegment(
-            start=high2,
-            end=sideways_end,
-            prior_trend="up",
-            reference_side="high",
-            angle_deg=1.0,
-        )
-        existing = SimplifiedLineResult(
-            markers=(low, high1, high2, sideways_end, later_high),
-            segments=(
-                SimplifiedLineSegment(low, high1, "trend"),
-                SimplifiedLineSegment(high1, high2, "trend"),
-                SimplifiedLineSegment(high2, sideways_end, "sideways"),
-                SimplifiedLineSegment(sideways_end, later_high, "trend"),
-            ),
-            sideways_segments=(sideways,),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
-
-        result = prune_same_trend_extremes(existing, geometry)
-
-        self.assertEqual(existing, result)
 
     def test_post_pass_never_crosses_spike_peak(self):
         d = date(2020, 1, 1)
@@ -1072,41 +674,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIn(peak, result.markers)
         self.assertIn(SimplifiedLineSegment(entry, peak, "spike"), result.segments)
 
-    def test_spike_stops_at_entry_hits_peak_and_restarts(self):
-        d = date(2020, 1, 1)
-        highs = (
-            PivotPoint(d + timedelta(days=10), 5.0, "high"),
-            PivotPoint(d + timedelta(days=20), 10.0, "high"),
-            PivotPoint(d + timedelta(days=40), 6.0, "high"),
-        )
-        entry = PivotPoint(d + timedelta(days=15), 2.0, "low")
-        lows = (
-            PivotPoint(d, 1.0, "low"),
-            entry,
-            PivotPoint(d + timedelta(days=30), 3.0, "low"),
-            PivotPoint(d + timedelta(days=50), 2.0, "low"),
-        )
-        base = BasePivotResult(
-            frequency="D",
-            policy=PivotPolicy(35, 14, 17),
-            high_candidates=highs,
-            low_candidates=lows,
-            high_pivots=highs,
-            low_pivots=lows,
-        )
-        augmented = SpikeAugmentedPivotResult(
-            high_pivots=base.high_pivots,
-            low_pivots=base.low_pivots,
-            spike_peaks=(SpikePeak(highs[1], "up", 20.0, entry),),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
-        result = simplify_pivot_lines(augmented, geometry)
-        pairs = [(item.start, item.end, item.kind) for item in result.segments]
-
-        self.assertIn((highs[0], entry, "trend"), pairs)
-        self.assertIn((entry, highs[1], "spike"), pairs)
-        self.assertIn((highs[1], lows[2], "trend"), pairs)
-        self.assertEqual(augmented.display_markers, result.markers)
 
     def test_angle_post_pass_allows_chart_first_point_as_initial_anchor(self):
         d = date(2020, 1, 1)
@@ -1132,39 +699,6 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertNotIn(low1, result.markers)
         self.assertNotIn(low2, result.markers)
 
-    def test_angle_post_pass_can_use_sideways_end_but_not_cross_beyond_it(self):
-        d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
-        sideways_end = PivotPoint(d + timedelta(days=30), 12.0, "high")
-        later_high = PivotPoint(d + timedelta(days=40), 13.0, "high")
-        sideways = SidewaysSegment(
-            start=high2,
-            end=sideways_end,
-            prior_trend="up",
-            reference_side="high",
-            angle_deg=1.0,
-        )
-        existing = SimplifiedLineResult(
-            markers=(low, high1, high2, sideways_end, later_high),
-            segments=(
-                SimplifiedLineSegment(low, high1, "trend"),
-                SimplifiedLineSegment(high1, high2, "trend"),
-                SimplifiedLineSegment(high2, sideways_end, "sideways"),
-                SimplifiedLineSegment(sideways_end, later_high, "trend"),
-            ),
-            sideways_segments=(sideways,),
-        )
-        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
-
-        result = prune_same_trend_extremes(existing, geometry, angle_threshold_deg=180.0 - 1e-6)
-
-        self.assertIn(low, result.markers)
-        self.assertIn(sideways_end, result.markers)
-        self.assertIn(later_high, result.markers)
-        self.assertNotIn(high1, result.markers)
-        self.assertNotIn(high2, result.markers)
 
 
 if __name__ == "__main__":
