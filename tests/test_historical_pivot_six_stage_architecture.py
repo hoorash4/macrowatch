@@ -112,6 +112,34 @@ class SixStageArchitectureTests(unittest.TestCase):
         self.assertIn(entry, stage6.markers)
         self.assertIn(peak, stage6.markers)
 
+    def test_stage4_releases_rapid_candidate_that_spans_opposite_wave(self):
+        d = date(2020, 1, 1)
+        entry = PivotPoint(d, 0.0, "low")
+        first_peak = PivotPoint(d + timedelta(days=10), 8.0, "high")
+        pullback = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        later_peak = PivotPoint(d + timedelta(days=30), 10.0, "high")
+        candidate = RapidMoveCandidate(entry, later_peak, 1, 0.5)
+        result = SimplifiedLineResult(
+            markers=(entry, first_peak, pullback, later_peak),
+            segments=(
+                SimplifiedLineSegment(entry, first_peak, "trend"),
+                SimplifiedLineSegment(first_peak, pullback, "trend"),
+                SimplifiedLineSegment(pullback, later_peak, "trend"),
+            ),
+            sideways_segments=(),
+            provisional_protected_points=(entry, later_peak),
+            rapid_move_candidates=(candidate,),
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), -10.0, 20.0, 1000, 500
+        )
+
+        stage4 = finalize_rapid_moves(result, geometry)
+
+        self.assertEqual((), stage4.rapid_move_candidates)
+        self.assertEqual((), stage4.protected_points)
+        self.assertEqual((), stage4.provisional_protected_points)
+
 
 if __name__ == "__main__":
     unittest.main()
