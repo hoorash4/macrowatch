@@ -1,4 +1,4 @@
-name: Render REDBOOK Stage5 current temp
+name: Render tightening 2022 all Stage5 temp
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -22,14 +22,17 @@ jobs:
         run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
           pip install --disable-pip-version-check matplotlib
-      - name: Render REDBOOK Stage5 current
+      - name: Render tightening 2022 all Stage5
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          mkdir -p tmp-redbook-stage5-current
+          mkdir -p tmp-tightening-2022-stage5/charts
           PYTHONPATH=backend python - <<'PY'
+          import csv
+          import traceback
           import matplotlib.pyplot as plt
+
           from common import SupabaseRest
           from historical_pivot_base import load_case_series
           from historical_pivot_shared import ChartGeometry, normalize_rows
@@ -39,47 +42,101 @@ jobs:
           from historical_pivot_stage4 import prune_same_trend_extremes
           from historical_pivot_stage5 import prune_unconfirmed_retracements
 
+          CASE="tightening_2022"
+          INDEX="NASDAQ_COMPOSITE"
+          OUT="tmp-tightening-2022-stage5"
+
           db=SupabaseRest()
-          rows,freq,start,end=load_case_series(
-              db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="REDBOOK"
-          )
-          raw=normalize_rows(rows)
-          vals=[p.value for p in raw if start<=p.day<=end]
-          lo,hi=min(vals),max(vals)
-          pad=(hi-lo)*.08 if hi!=lo else 1.0
-          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          refs=db.request("GET","historical_indicator_ai_analysis",params={
+              "select":"series_code,index_code",
+              "case_code":f"eq.{CASE}",
+              "index_code":f"eq.{INDEX}",
+              "order":"series_code.asc",
+          }) or []
+          series_codes=sorted({str(r["series_code"]) for r in refs if r.get("series_code")})
+          print("SERIES_COUNT",len(series_codes))
 
-          s1=augment_spike_entry_points(calculate_base_pivots(rows,freq),g)
-          s2=finalize_sideways_protection(s1,g)
-          s3=simplify_pivot_lines(s2,g)
-          s4=prune_same_trend_extremes(s3,g)
-          s5=prune_unconfirmed_retracements(s4)
+          summary=[]
+          for n,series in enumerate(series_codes,1):
+              print(f"[{n}/{len(series_codes)}] {series}")
+              try:
+                  rows,freq,start,end=load_case_series(
+                      db,case_code=CASE,index_code=INDEX,series_code=series
+                  )
+                  raw=normalize_rows(rows)
+                  vals=[p.value for p in raw if start<=p.day<=end]
+                  lo,hi=min(vals),max(vals)
+                  pad=(hi-lo)*.08 if hi!=lo else 1.0
+                  g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
 
-          print("S4",[(p.day.isoformat(),round(p.value,4),p.pivot_type) for p in s4.markers])
-          print("S5",[(p.day.isoformat(),round(p.value,4),p.pivot_type) for p in s5.markers])
+                  base=calculate_base_pivots(rows,freq)
+                  s1=augment_spike_entry_points(base,g)
+                  s2=finalize_sideways_protection(s1,g)
+                  s3=simplify_pivot_lines(s2,g)
+                  s4=prune_same_trend_extremes(s3,g)
+                  s5=prune_unconfirmed_retracements(s4)
 
-          fig,ax=plt.subplots(figsize=(14,7))
-          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
-          for seg in s5.segments:
-              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.2)
-          highs=[p for p in s5.markers if p.pivot_type=="high"]
-          lows=[p for p in s5.markers if p.pivot_type=="low"]
-          if highs:
-              ax.scatter([p.day for p in highs],[p.value for p in highs],s=38,marker="^",label="Stage 5 high")
-          if lows:
-              ax.scatter([p.day for p in lows],[p.value for p in lows],s=38,marker="v",label="Stage 5 low")
-          for p in s5.markers:
-              ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",fontsize=7,ha="center")
-          ax.set_title("REDBOOK · Stage 5 · current Stage 4 anchor logic")
-          ax.set_xlim(start,end)
-          ax.set_ylim(g.y_min,g.y_max)
-          ax.grid(True,alpha=.2)
-          ax.legend(loc="best")
-          fig.tight_layout()
-          fig.savefig("tmp-redbook-stage5-current/REDBOOK_STAGE5_CURRENT.png",dpi=160)
+                  protected=getattr(s3,"protected_points",()) or ()
+                  summary.append({
+                      "series_code":series,
+                      "frequency":freq,
+                      "source_points":len(rows),
+                      "stage3_markers":len(s3.markers),
+                      "stage4_markers":len(s4.markers),
+                      "stage5_markers":len(s5.markers),
+                      "rapid_protected":len(protected),
+                      "status":"ok",
+                      "error":"",
+                  })
+
+                  fig,ax=plt.subplots(figsize=(14,7))
+                  ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=.9,label="raw")
+                  for seg in s5.segments:
+                      ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.2)
+                  highs=[p for p in s5.markers if p.pivot_type=="high"]
+                  lows=[p for p in s5.markers if p.pivot_type=="low"]
+                  if highs:
+                      ax.scatter([p.day for p in highs],[p.value for p in highs],s=36,marker="^",label="Stage 5 high")
+                  if lows:
+                      ax.scatter([p.day for p in lows],[p.value for p in lows],s=36,marker="v",label="Stage 5 low")
+                  for p in protected:
+                      ax.scatter([p.day],[p.value],s=80,facecolors="none",edgecolors="black",linewidths=1.3)
+                  ax.set_title(f"{series} · tightening_2022 · Stage 5")
+                  ax.set_xlim(start,end)
+                  ax.set_ylim(g.y_min,g.y_max)
+                  ax.grid(True,alpha=.2)
+                  ax.legend(loc="best")
+                  fig.tight_layout()
+                  fig.savefig(f"{OUT}/charts/{series}.png",dpi=140)
+                  plt.close(fig)
+              except Exception as exc:
+                  traceback.print_exc()
+                  summary.append({
+                      "series_code":series,
+                      "frequency":"",
+                      "source_points":"",
+                      "stage3_markers":"",
+                      "stage4_markers":"",
+                      "stage5_markers":"",
+                      "rapid_protected":"",
+                      "status":"error",
+                      "error":f"{type(exc).__name__}: {exc}",
+                  })
+
+          with open(f"{OUT}/summary.csv","w",newline="",encoding="utf-8") as fp:
+              writer=csv.DictWriter(fp,fieldnames=[
+                  "series_code","frequency","source_points","stage3_markers",
+                  "stage4_markers","stage5_markers","rapid_protected","status","error"
+              ])
+              writer.writeheader()
+              writer.writerows(summary)
+
+          ok=sum(1 for r in summary if r["status"]=="ok")
+          bad=len(summary)-ok
+          print("DONE",{"total":len(summary),"ok":ok,"error":bad})
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: redbook-stage5-current
-          path: tmp-redbook-stage5-current/REDBOOK_STAGE5_CURRENT.png
+          name: tightening-2022-stage5-all
+          path: tmp-tightening-2022-stage5
           if-no-files-found: error
