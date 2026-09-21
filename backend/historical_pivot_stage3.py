@@ -1,26 +1,17 @@
 """Stage 3: merge Stage 2's upper/lower RDP points into one wave line.
 
-This file intentionally contains one Stage-3 algorithm only.
-
 Inputs:
-- Stage 2 final high/low points
-- Stage 2 protection metadata (sideways/spike)
+- Stage 2 final high/low RDP points
+- Stage 2 hard protection metadata (sideways/spike)
+- Stage 2 provisional rapid-move points
 
 Output:
 - one chronological wave line
-- protected standalone marker-only spikes
+- hard-protected spike/sideways structure
+- rapid-move provisional points carried through untouched
 
-Stage 3 never reads Stage 1 candidates, envelope data, deleted points, or any
-earlier-stage result.
-
-Wave rule:
-- upper and lower RDP boundaries moving together upward = one rising wave
-- upper and lower RDP boundaries moving together downward = one falling wave
-- rising wave keeps only start LOW -> final HIGH
-- falling wave keeps only start HIGH -> final LOW
-- every consensus direction change is preserved for Stage 4
-- provisional reversal confirmation/cancellation belongs only to Stage 4
-- the final unmatched opposite-side extreme is passed as a provisional endpoint
+Stage 3 does not classify or post-process rapid moves.  Provisional rapid points
+may not be deleted here; Stage 4 alone owns rapid-move consolidation/finalization.
 """
 from __future__ import annotations
 
@@ -31,15 +22,11 @@ from typing import Sequence
 from historical_pivot_shared import (
     ChartGeometry,
     PivotPoint,
-    RapidMoveCandidate,
     SidewaysSegment,
     SimplifiedLineResult,
     SimplifiedLineSegment,
 )
 from historical_pivot_stage2 import Stage2Result
-
-
-RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.30
 
 
 def _key(point: PivotPoint) -> tuple[date, float, str]:
@@ -330,91 +317,6 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
     return accepted
 
 
-def _visual_y_share(
-    start: PivotPoint,
-    end: PivotPoint,
-    geometry: ChartGeometry,
-) -> float:
-    """Return vertical screen travel as a share of the visible chart height."""
-    start_y = (
-        (geometry.y_max - start.value)
-        / (geometry.y_max - geometry.y_min)
-        * geometry.height
-    )
-    end_y = (
-        (geometry.y_max - end.value)
-        / (geometry.y_max - geometry.y_min)
-        * geometry.height
-    )
-    return abs(end_y - start_y) / geometry.height
-
-
-def _rapid_move_candidates(
-    segments: Sequence[SimplifiedLineSegment],
-    geometry: ChartGeometry,
-) -> tuple[RapidMoveCandidate, ...]:
-    """Return provisional rapid-move candidates from the finished Stage-3 line.
-
-    The 30% visual-height rule only creates candidates here. It does NOT confirm
-    protection. Consecutive qualifying trend segments moving in the same
-    direction are one candidate run, so only the run's first entry and latest
-    extreme are provisionally protected.
-    """
-    candidates: list[RapidMoveCandidate] = []
-    active: RapidMoveCandidate | None = None
-
-    def flush() -> None:
-        nonlocal active
-        if active is not None:
-            candidates.append(active)
-            active = None
-
-    for segment in sorted(
-        segments,
-        key=lambda item: (item.start.day, item.end.day, item.kind),
-    ):
-        if segment.kind != "trend":
-            flush()
-            continue
-
-        delta = segment.end.value - segment.start.value
-        if delta == 0:
-            flush()
-            continue
-
-        direction = 1 if delta > 0 else -1
-        share = _visual_y_share(segment.start, segment.end, geometry)
-        if share < RAPID_MOVE_MIN_VISUAL_Y_SHARE:
-            flush()
-            continue
-
-        if (
-            active is not None
-            and active.direction == direction
-            and active.end == segment.start
-        ):
-            active = RapidMoveCandidate(
-                start=active.start,
-                end=segment.end,
-                direction=direction,
-                visual_y_share=_visual_y_share(
-                    active.start, segment.end, geometry,
-                ),
-            )
-            continue
-
-        flush()
-        active = RapidMoveCandidate(
-            start=segment.start,
-            end=segment.end,
-            direction=direction,
-            visual_y_share=share,
-        )
-
-    flush()
-    return tuple(candidates)
-
-
 def simplify_pivot_lines(
     augmented: Stage2Result,
     geometry: ChartGeometry,
@@ -506,18 +408,19 @@ def simplify_pivot_lines(
     for spike in marker_only_spikes:
         remember(spike.point)
 
+    # Stage-2 rapid-move points are provisional hard-preserve markers for
+    # Stage 3 only.  They are carried through even when the normal wave merge
+    # would otherwise omit them.  Stage 3 does not connect, delete, merge, or
+    # finalize them.
+    for point in augmented.provisional_protected_points:
+        remember(point)
+
     stage2_keys = {_key(point) for point in augmented.display_markers}
     if not set(markers).issubset(stage2_keys):
         raise RuntimeError("stage3 produced a point absent from stage2")
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_out.sort(key=lambda item: (item.start.day, item.end.day))
-    rapid_move_candidates = _rapid_move_candidates(segments, geometry)
-    provisional_map = {
-        _key(point): point
-        for candidate in rapid_move_candidates
-        for point in candidate.protected_points
-    }
 
     return SimplifiedLineResult(
         markers=tuple(
@@ -530,10 +433,7 @@ def simplify_pivot_lines(
         sideways_segments=tuple(sideways_out),
         protected_points=(),
         provisional_protected_points=tuple(
-            sorted(
-                provisional_map.values(),
-                key=lambda item: (item.day, item.pivot_type),
-            )
+            augmented.provisional_protected_points
         ),
-        rapid_move_candidates=rapid_move_candidates,
+        rapid_move_candidates=tuple(augmented.rapid_move_candidates),
     )
