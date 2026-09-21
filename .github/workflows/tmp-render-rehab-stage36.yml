@@ -77,7 +77,7 @@ jobs:
           for name,r in [("S3",s3),("S4",s4),("S5",s5),("S6",s6)]:
               print(name+"_MARKERS",[(p.day.isoformat(),p.value,p.pivot_type) for p in r.markers])
               print(name+"_SEGS",[(s.start.day.isoformat(),s.start.value,s.start.pivot_type,s.end.day.isoformat(),s.end.value,s.end.pivot_type,s.kind) for s in r.segments])
-              print(name+"_PROT",[(p.day.isoformat(),p.value,p.pivot_type) for p in r.protected_points])
+              print(name+"_PROT",[(p.day.isoformat(),p.value,p.pivot_type) for p in getattr(r,"protected_points",())])
           PY
       - uses: actions/upload-artifact@v4
         with:
