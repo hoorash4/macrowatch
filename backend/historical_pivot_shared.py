@@ -62,13 +62,14 @@ class SpikePeak:
 class SidewaysSegment:
     start: PivotPoint
     end: PivotPoint
-    prior_trend: str  # up | down
+    prior_trend: str  # up | down | unknown
     reference_side: str  # high | low
     angle_deg: float
+    protected: bool = True
 
     @property
     def pivot_points(self) -> tuple[PivotPoint, PivotPoint]:
-        """A confirmed sideways segment always protects both boundary pivots."""
+        """Return the two boundaries of the classified sideways segment."""
         return self.start, self.end
 
 
