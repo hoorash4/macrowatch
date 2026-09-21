@@ -23,7 +23,7 @@ from historical_pivot_shared import (
 SPIKE_ANGLE_THRESHOLD_DEG = 25.0
 SPIKE_MIN_VISUAL_Y_SHARE = 0.20
 SPIKE_MIN_RETRACEMENT_RATIO = 0.70
-SPIKE_MAX_AC_TO_AB_TIME_RATIO = 1.50
+SPIKE_MAX_BC_TO_AB_TIME_RATIO = 1.50
 SPIKE_FOLLOWUP_POINTS = 2
 
 @dataclass(frozen=True)
@@ -232,21 +232,20 @@ def augment_spike_entry_points(
     angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
     min_visual_y_share: float = SPIKE_MIN_VISUAL_Y_SHARE,
     min_retracement_ratio: float = SPIKE_MIN_RETRACEMENT_RATIO,
-    max_ac_to_ab_time_ratio: float = SPIKE_MAX_AC_TO_AB_TIME_RATIO,
+    max_bc_to_ab_time_ratio: float = SPIKE_MAX_BC_TO_AB_TIME_RATIO,
     followup_points: int = SPIKE_FOLLOWUP_POINTS,
 ) -> SpikeAugmentedPivotResult:
     """Finish Stage 1 by confirming spike shapes on top of the RDP result.
 
     A spike candidate is judged from the actual A -> B -> C excursion:
     - B is a local same-side RDP extreme.
-    - A is the opposite-side entry immediately before B; if RDP omitted it,
-      recover the strongest opposite-side plateau candidate before B.
-    - C is the first opposite-side RDP point after B.
+    - A, B, C are three consecutive same-side RDP pivots; B is the local
+      spike extreme.
     - angle ABC must be <= 25 degrees by default.
     - the larger of AB/BC vertical screen travels must cover >= 20% of the
       visible y-axis by default.
     - BC must retrace >= 70% of AB by default.
-    - AC elapsed time must be <= 1.5 * AB elapsed time by default.
+    - BC elapsed time must be <= 1.5 * AB elapsed time by default.
     - after C, inspect only C+1 and C+2 in chronological Stage-1 RDP order.
       If either point exceeds B again in the AB direction, B belongs to the
       continuing move and is not a spike.
@@ -260,8 +259,8 @@ def augment_spike_entry_points(
         raise ValueError("min_visual_y_share must be between 0 and 1")
     if min_retracement_ratio < 0:
         raise ValueError("min_retracement_ratio must be non-negative")
-    if max_ac_to_ab_time_ratio <= 1:
-        raise ValueError("max_ac_to_ab_time_ratio must be greater than 1")
+    if max_bc_to_ab_time_ratio <= 1:
+        raise ValueError("max_bc_to_ab_time_ratio must be greater than 1")
     if followup_points < 0:
         raise ValueError("followup_points must be non-negative")
 
@@ -273,11 +272,6 @@ def augment_spike_entry_points(
     low_rdp = tuple(sorted(base.low_pivots, key=lambda item: item.day))
     high_candidates = tuple(sorted(base.high_candidates, key=lambda item: item.day))
     low_candidates = tuple(sorted(base.low_candidates, key=lambda item: item.day))
-    chronological_rdp = tuple(sorted(
-        (*high_rdp, *low_rdp),
-        key=lambda item: (item.day, item.pivot_type),
-    ))
-
     added_high: dict[tuple[date, float], PivotPoint] = {}
     added_low: dict[tuple[date, float], PivotPoint] = {}
     spike_peaks: dict[tuple[date, float, str], SpikePeak] = {}
@@ -304,40 +298,37 @@ def augment_spike_entry_points(
         c_point: PivotPoint,
         direction: str,
     ) -> bool:
+        same_side = high_rdp if direction == "up" else low_rdp
         after_c = [
             point
-            for point in chronological_rdp
+            for point in same_side
             if point.day > c_point.day
         ][:followup_points]
         if direction == "up":
-            return any(
-                point.pivot_type == "high" and point.value > pivot.value
-                for point in after_c
-            )
-        return any(
-            point.pivot_type == "low" and point.value < pivot.value
-            for point in after_c
-        )
+            return any(point.value > pivot.value for point in after_c)
+        return any(point.value < pivot.value for point in after_c)
 
     def shape_passes(
-        entry: PivotPoint,
+        a_point: PivotPoint,
         pivot: PivotPoint,
         c_point: PivotPoint,
         direction: str,
     ) -> tuple[bool, float]:
-        if not (entry.day < pivot.day < c_point.day):
+        if not (a_point.day < pivot.day < c_point.day):
             return False, 0.0
 
-        ab_days = (pivot.day - entry.day).days
-        ac_days = (c_point.day - entry.day).days
-        if ab_days <= 0 or ac_days > max_ac_to_ab_time_ratio * ab_days:
+        ab_days = (pivot.day - a_point.day).days
+        bc_days = (c_point.day - pivot.day).days
+        if ab_days <= 0 or bc_days <= 0:
+            return False, 0.0
+        if bc_days > max_bc_to_ab_time_ratio * ab_days:
             return False, 0.0
 
         if direction == "up":
-            ab = float(pivot.value) - float(entry.value)
+            ab = float(pivot.value) - float(a_point.value)
             bc = float(pivot.value) - float(c_point.value)
         else:
-            ab = float(entry.value) - float(pivot.value)
+            ab = float(a_point.value) - float(pivot.value)
             bc = float(c_point.value) - float(pivot.value)
 
         if ab <= 0 or bc <= 0:
@@ -347,7 +338,7 @@ def augment_spike_entry_points(
         if max(ab, bc) / y_span < min_visual_y_share:
             return False, 0.0
 
-        angle = screen_angle_degrees(entry, pivot, c_point, geometry)
+        angle = screen_angle_degrees(a_point, pivot, c_point, geometry)
         if angle > angle_threshold_deg:
             return False, angle
         if followup_rebreaks_peak(pivot, c_point, direction):
@@ -361,55 +352,35 @@ def augment_spike_entry_points(
         if not (pivot.value > left.value and pivot.value > right.value):
             continue
 
-        existing_entries = [
-            item for item in low_rdp
-            if left.day < item.day < pivot.day
-        ]
-        recovered_entry = False
-        if existing_entries:
-            entry = min(existing_entries, key=lambda item: item.value)
-        else:
-            entry_candidates = [
-                item for item in low_candidates
-                if left.day < item.day < pivot.day
-            ]
-            if not entry_candidates:
-                continue
-            entry = min(entry_candidates, key=lambda item: item.value)
-            recovered_entry = True
-
-        return_points = [
-            item for item in low_rdp
-            if pivot.day < item.day < right.day
-        ]
-        if return_points:
-            c_point = min(return_points, key=lambda item: item.value)
-        else:
-            return_candidates = [
-                item for item in low_candidates
-                if pivot.day < item.day < right.day
-            ]
-            if not return_candidates:
-                continue
-            c_point = min(return_candidates, key=lambda item: item.value)
-
-        passes, angle = shape_passes(entry, pivot, c_point, "up")
+        passes, angle = shape_passes(left, pivot, right, "up")
         if not passes:
             continue
 
         marker_only = opposite_sideways_contains_spike(pivot, "up")
         if marker_only:
-            final_entry = None
+            entry = None
         else:
-            final_entry = entry
-            if recovered_entry:
+            existing_entries = [
+                item for item in low_rdp
+                if left.day < item.day < pivot.day
+            ]
+            if existing_entries:
+                entry = min(existing_entries, key=lambda item: item.value)
+            else:
+                entry_candidates = [
+                    item for item in low_candidates
+                    if left.day < item.day < pivot.day
+                ]
+                if not entry_candidates:
+                    continue
+                entry = min(entry_candidates, key=lambda item: item.value)
                 added_low[(entry.day, entry.value)] = entry
 
         spike_peaks[(pivot.day, pivot.value, "up")] = SpikePeak(
             point=pivot,
             direction="up",
             angle_deg=angle,
-            entry=final_entry,
+            entry=entry,
             marker_only=marker_only,
         )
 
@@ -420,55 +391,35 @@ def augment_spike_entry_points(
         if not (pivot.value < left.value and pivot.value < right.value):
             continue
 
-        existing_entries = [
-            item for item in high_rdp
-            if left.day < item.day < pivot.day
-        ]
-        recovered_entry = False
-        if existing_entries:
-            entry = max(existing_entries, key=lambda item: item.value)
-        else:
-            entry_candidates = [
-                item for item in high_candidates
-                if left.day < item.day < pivot.day
-            ]
-            if not entry_candidates:
-                continue
-            entry = max(entry_candidates, key=lambda item: item.value)
-            recovered_entry = True
-
-        return_points = [
-            item for item in high_rdp
-            if pivot.day < item.day < right.day
-        ]
-        if return_points:
-            c_point = max(return_points, key=lambda item: item.value)
-        else:
-            return_candidates = [
-                item for item in high_candidates
-                if pivot.day < item.day < right.day
-            ]
-            if not return_candidates:
-                continue
-            c_point = max(return_candidates, key=lambda item: item.value)
-
-        passes, angle = shape_passes(entry, pivot, c_point, "down")
+        passes, angle = shape_passes(left, pivot, right, "down")
         if not passes:
             continue
 
         marker_only = opposite_sideways_contains_spike(pivot, "down")
         if marker_only:
-            final_entry = None
+            entry = None
         else:
-            final_entry = entry
-            if recovered_entry:
+            existing_entries = [
+                item for item in high_rdp
+                if left.day < item.day < pivot.day
+            ]
+            if existing_entries:
+                entry = max(existing_entries, key=lambda item: item.value)
+            else:
+                entry_candidates = [
+                    item for item in high_candidates
+                    if left.day < item.day < pivot.day
+                ]
+                if not entry_candidates:
+                    continue
+                entry = max(entry_candidates, key=lambda item: item.value)
                 added_high[(entry.day, entry.value)] = entry
 
         spike_peaks[(pivot.day, pivot.value, "down")] = SpikePeak(
             point=pivot,
             direction="down",
             angle_deg=angle,
-            entry=final_entry,
+            entry=entry,
             marker_only=marker_only,
         )
 
