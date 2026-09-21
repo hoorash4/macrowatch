@@ -75,29 +75,36 @@ def _entry_before_peak(
     opposite_rdp: Sequence[PivotPoint],
     opposite_candidates: Sequence[PivotPoint],
     direction: str,
-) -> PivotPoint | None:
-    """Return the extreme plateau entry inside the A-B interval.
+) -> PivotPoint:
+    """Return the effective A-B entry point.
 
     The entry is NOT limited to already-selected RDP pivots.
 
     Up move:
-      choose the lowest plateau LOW between A and B.
+      only a plateau LOW below A can replace A; choose the lowest one.
     Down move:
-      choose the highest plateau HIGH between A and B.
+      only a plateau HIGH above A can replace A; choose the highest one.
 
-    If that plateau point already exists in the selected opposite-side RDP set,
-    reuse that exact point. Otherwise return the plateau candidate so Stage 2
-    can add it to the RDP set.
+    If no plateau point improves on A in the move's opposite direction, A
+    itself remains the entry. If the selected plateau point already exists in
+    the selected opposite-side RDP set, reuse that exact point. Otherwise
+    return the plateau candidate so Stage 2 can add it to the RDP set.
 
     This entry rule is shared by rapid-move and spike classification.
     """
     eligible = [
         point
         for point in opposite_candidates
-        if a_point.day < point.day < peak.day
+        if (
+            a_point.day < point.day < peak.day
+            and (
+                (direction == "up" and point.value < a_point.value)
+                or (direction == "down" and point.value > a_point.value)
+            )
+        )
     ]
     if not eligible:
-        return None
+        return a_point
 
     selected = (
         min(eligible, key=lambda item: (item.value, item.day))
