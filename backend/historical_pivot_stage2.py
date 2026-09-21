@@ -5,9 +5,10 @@ Stage 2 owns three classifications:
 - spikes (final protection; entry is selected before height testing)
 - sideways ranges (final protection)
 
-Stage 2 never changes the Stage-1 RDP set.  Rapid-move candidates are handed to
-Stage 3 as provisional points; their consolidation/finalization belongs only to
-Stage 4.
+Stage 2 never changes the Stage-1 RDP set. Rapid-move candidates carry their
+own entry/end points and are handed to Stage 3 as candidate metadata only; no
+duplicated provisional-point list is emitted. Consolidation/finalization belongs
+only to Stage 4.
 """
 from __future__ import annotations
 
