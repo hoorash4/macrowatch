@@ -112,7 +112,7 @@ class SixStageArchitectureTests(unittest.TestCase):
         self.assertIn(entry, stage6.markers)
         self.assertIn(peak, stage6.markers)
 
-    def test_stage4_releases_rapid_candidate_that_spans_opposite_wave(self):
+    def test_stage4_treats_opposite_wave_as_retracement_when_peak_is_rebroken(self):
         d = date(2020, 1, 1)
         entry = PivotPoint(d, 0.0, "low")
         first_peak = PivotPoint(d + timedelta(days=10), 8.0, "high")
@@ -136,9 +136,45 @@ class SixStageArchitectureTests(unittest.TestCase):
 
         stage4 = finalize_rapid_moves(result, geometry)
 
-        self.assertEqual((), stage4.rapid_move_candidates)
-        self.assertEqual((), stage4.protected_points)
+        self.assertEqual(1, len(stage4.rapid_move_candidates))
+        self.assertEqual(entry, stage4.rapid_move_candidates[0].start)
+        self.assertEqual(later_peak, stage4.rapid_move_candidates[0].end)
+        self.assertIn(entry, stage4.protected_points)
+        self.assertIn(later_peak, stage4.protected_points)
         self.assertEqual((), stage4.provisional_protected_points)
+
+    def test_stage4_confirms_prior_peak_when_first_recovery_fails(self):
+        d = date(2020, 1, 1)
+        entry1 = PivotPoint(d, 0.0, "low")
+        peak1 = PivotPoint(d + timedelta(days=10), 8.0, "high")
+        pullback1 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        failed_recovery = PivotPoint(d + timedelta(days=30), 7.0, "high")
+        entry2 = PivotPoint(d + timedelta(days=40), 2.0, "low")
+        peak2 = PivotPoint(d + timedelta(days=50), 10.0, "high")
+        c1 = RapidMoveCandidate(entry1, peak1, 1, 0.4)
+        c2 = RapidMoveCandidate(entry2, peak2, 1, 0.4)
+        result = SimplifiedLineResult(
+            markers=(entry1, peak1, pullback1, failed_recovery, entry2, peak2),
+            segments=(
+                SimplifiedLineSegment(entry1, peak1, "trend"),
+                SimplifiedLineSegment(peak1, pullback1, "trend"),
+                SimplifiedLineSegment(pullback1, failed_recovery, "trend"),
+                SimplifiedLineSegment(failed_recovery, entry2, "trend"),
+                SimplifiedLineSegment(entry2, peak2, "trend"),
+            ),
+            sideways_segments=(),
+            provisional_protected_points=(entry1, peak1, entry2, peak2),
+            rapid_move_candidates=(c1, c2),
+        )
+        geometry = ChartGeometry(
+            d, d + timedelta(days=100), -10.0, 20.0, 1000, 500
+        )
+
+        stage4 = finalize_rapid_moves(result, geometry)
+
+        self.assertEqual(2, len(stage4.rapid_move_candidates))
+        self.assertEqual((entry1, peak1), stage4.rapid_move_candidates[0].protected_points)
+        self.assertEqual((entry2, peak2), stage4.rapid_move_candidates[1].protected_points)
 
 
 if __name__ == "__main__":
