@@ -84,6 +84,7 @@ class SimplifiedLineResult:
     markers: tuple[PivotPoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
     sideways_segments: tuple[SidewaysSegment, ...]
+    protected_points: tuple[PivotPoint, ...] = ()
 
     def __post_init__(self) -> None:
         marker_keys = {
@@ -104,6 +105,12 @@ class SimplifiedLineResult:
                     raise ValueError(
                         "stage output contains sideways metadata for a deleted marker"
                     )
+        for point in self.protected_points:
+            point_key = (point.day, point.value, point.pivot_type)
+            if point_key not in marker_keys:
+                raise ValueError(
+                    "stage output contains protected metadata for a deleted marker"
+                )
 
 
 def shift_months(value: date, months: int) -> date:
