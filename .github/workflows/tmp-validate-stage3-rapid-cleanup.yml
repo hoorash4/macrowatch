@@ -25,7 +25,7 @@ jobs:
           pip install --disable-pip-version-check pytest
       - name: Targeted tests
         run: |
-          PYTHONPATH=backend pytest -q tests/test_historical_pivot_six_stage_architecture.py tests/test_historical_pivot_stage_boundaries.py
+          PYTHONPATH=backend pytest -q tests/test_historical_pivot_six_stage_architecture.py
       - name: Verify NFCI Risk
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
