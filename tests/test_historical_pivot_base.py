@@ -28,6 +28,7 @@ from historical_pivot_base import (  # noqa: E402
     load_case_series,
     fixed_count_rdp,
     frontend_payload,
+    finalize_sideways_protection,
     plateau_extrema,
     augment_spike_entry_points,
     classify_sideways_reference_line,
@@ -480,6 +481,70 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIsNone(
             classify_sideways_reference_line(start, end, "up", geometry)
         )
+
+
+    def test_stage2_accepts_sideways_without_arrival_direction_gate(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 10.0, "high"),
+            PivotPoint(d + timedelta(days=20), 8.0, "high"),
+            PivotPoint(d + timedelta(days=80), 8.1, "high"),
+        )
+        stage1 = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=(),
+            spike_peaks=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 10.0, 100.0, 100.0)
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(1, len(stage2.high_sideways_segments))
+        self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
+        self.assertEqual(highs[2], stage2.high_sideways_segments[0].end)
+
+
+    def test_stage2_merges_consecutive_sideways_while_combined_angle_stays_within_six_degrees(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 5.00, "high"),
+            PivotPoint(d + timedelta(days=40), 5.10, "high"),
+            PivotPoint(d + timedelta(days=70), 5.00, "high"),
+            PivotPoint(d + timedelta(days=100), 5.10, "high"),
+        )
+        stage1 = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=(),
+            spike_peaks=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=110), 0.0, 10.0, 110.0, 100.0)
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(1, len(stage2.high_sideways_segments))
+        self.assertEqual(highs[0], stage2.high_sideways_segments[0].start)
+        self.assertEqual(highs[-1], stage2.high_sideways_segments[0].end)
+
+
+    def test_stage2_starts_new_sideways_run_when_combined_angle_exceeds_six_degrees(self):
+        d = date(2020, 1, 1)
+        highs = (
+            PivotPoint(d + timedelta(days=10), 5.00, "high"),
+            PivotPoint(d + timedelta(days=40), 5.25, "high"),
+            PivotPoint(d + timedelta(days=70), 5.50, "high"),
+        )
+        stage1 = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=(),
+            spike_peaks=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=80), 0.0, 10.0, 80.0, 100.0)
+
+        stage2 = finalize_sideways_protection(stage1, geometry)
+
+        self.assertEqual(2, len(stage2.high_sideways_segments))
+        self.assertEqual((highs[0], highs[1]), stage2.high_sideways_segments[0].pivot_points)
+        self.assertEqual((highs[1], highs[2]), stage2.high_sideways_segments[1].pivot_points)
 
 
     def test_confirmed_sideways_protects_both_boundary_pivots(self):
