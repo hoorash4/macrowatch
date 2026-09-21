@@ -39,6 +39,7 @@ from historical_pivot_shared import (
     SimplifiedLineResult,
     Stage3LineResult,
     screen_origin_angle_degrees,
+    screen_segment_angle_degrees,
 )
 
 
@@ -157,11 +158,14 @@ def _expand_entry_backward(
 ) -> PivotPoint:
     """Move a provisional rapid entry backward before any forward extension.
 
-    Candidate anchors are earlier opposite-side Stage-3 points, tested nearest
-    first.  A candidate is accepted only when the SAME Stage-5-style
-    wave/retracement + 10-degree logic, re-run from that candidate anchor,
-    still reaches the seed rapid peak.  After acceptance the anchor is replaced
-    immediately and the search continues farther backward from the new anchor.
+    The CURRENT entry->seed-peak trend direction is the fixed 10-degree
+    reference. An earlier same-side proposal may replace the entry only when
+    proposal->the SAME seed peak stays within that existing trend direction by
+    the approved angle threshold. Only after that geometric gate passes do we
+    run the existing wave/retracement scan from the proposal.
+
+    This prevents a proposal from redefining the reference line first and then
+    judging itself against its own newly-created trend direction.
     """
     timeline = _timeline_points(result)
     anchor = initial_entry
@@ -178,6 +182,20 @@ def _expand_entry_backward(
             return anchor
 
         proposal = max(earlier, key=lambda item: (item.day, item.value))
+
+        current_angle = screen_segment_angle_degrees(
+            anchor,
+            seed_peak,
+            geometry,
+        )
+        proposal_angle = screen_segment_angle_degrees(
+            proposal,
+            seed_peak,
+            geometry,
+        )
+        if abs(proposal_angle - current_angle) > angle_threshold_deg:
+            return anchor
+
         reached = _scan_from_entry(
             result,
             anchor=proposal,
@@ -227,10 +245,10 @@ def finalize_rapid_moves(
 
         direction = candidate.direction
 
-        # Backward extension MUST happen before any forward judgment.  The
-        # Stage-2 entry is provisional; if an earlier Stage-3 point belongs to
-        # the same rapid wave, make it the new entry anchor first.  All forward
-        # 10-degree judgments are then re-run from that new anchor.
+        # Backward extension MUST happen before any forward judgment. The
+        # current entry->seed-peak direction remains the 10-degree reference;
+        # only a backward proposal aligned with that existing direction may
+        # replace the entry. Wave/retracement judgment runs only after that.
         anchor = _expand_entry_backward(
             result,
             initial_entry=candidate.start,
