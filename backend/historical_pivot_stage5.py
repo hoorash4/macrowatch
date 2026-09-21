@@ -53,7 +53,10 @@ def prune_unconfirmed_retracements(
     }
     rapid_move_keys = {
         key(point)
-        for point in result.protected_points
+        for point in (
+            *result.protected_points,
+            *result.provisional_protected_points,
+        )
     }
     protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
@@ -188,5 +191,7 @@ def prune_unconfirmed_retracements(
         segments=tuple(rebuilt_segments),
         sideways_segments=surviving_sideways,
         protected_points=result.protected_points,
+        provisional_protected_points=result.provisional_protected_points,
+        rapid_move_candidates=result.rapid_move_candidates,
     )
 
