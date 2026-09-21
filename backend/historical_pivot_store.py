@@ -347,6 +347,8 @@ def build_storage_rows(
     sideways_meta: dict[tuple[date, float, str], list[dict[str, Any]]] = {}
     for group_name in ("high_sideways_segments", "low_sideways_segments"):
         for segment in tuple(getattr(stage2, group_name, ()) or ()):
+            if not getattr(segment, "protected", True):
+                continue
             for point, boundary in ((segment.start, "start"), (segment.end, "end")):
                 sideways_meta.setdefault(_key(point), []).append({
                     "boundary": boundary,
