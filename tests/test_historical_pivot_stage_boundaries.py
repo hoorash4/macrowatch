@@ -493,6 +493,81 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         self.assertTrue(after.issubset(before))
 
+    def test_failed_down_reversal_is_decided_then_next_candidate_is_judged(self):
+        d = date(2020, 1, 1)
+        start_low = PivotPoint(d, 0.0, "low")
+        trend_high = PivotPoint(d + timedelta(days=10), 10.0, "high")
+        candidate_low = PivotPoint(d + timedelta(days=20), -5.0, "low")
+        rebound_high = PivotPoint(d + timedelta(days=30), 6.0, "high")
+        higher_low = PivotPoint(d + timedelta(days=40), -1.0, "low")
+        next_rebound_high = PivotPoint(d + timedelta(days=50), 8.0, "high")
+        confirming_lower_low = PivotPoint(d + timedelta(days=60), -2.0, "low")
+        existing = SimplifiedLineResult(
+            markers=(
+                start_low,
+                trend_high,
+                candidate_low,
+                rebound_high,
+                higher_low,
+                next_rebound_high,
+                confirming_lower_low,
+            ),
+            segments=(
+                SimplifiedLineSegment(start_low, trend_high, "trend"),
+                SimplifiedLineSegment(trend_high, candidate_low, "trend"),
+                SimplifiedLineSegment(candidate_low, rebound_high, "trend"),
+                SimplifiedLineSegment(rebound_high, higher_low, "trend"),
+                SimplifiedLineSegment(higher_low, next_rebound_high, "trend"),
+                SimplifiedLineSegment(next_rebound_high, confirming_lower_low, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        # -5 -> 6 -> -1 fails as a down-reversal candidate at -1.
+        # The new candidate starts at -1, so 8 -> -2 confirms the next
+        # down reversal instead of waiting for a later/final point.
+        self.assertIn(trend_high, result.markers)
+        self.assertIn(confirming_lower_low, result.markers)
+
+    def test_failed_up_reversal_is_decided_then_next_candidate_is_judged(self):
+        d = date(2020, 1, 1)
+        start_high = PivotPoint(d, 10.0, "high")
+        trend_low = PivotPoint(d + timedelta(days=10), 0.0, "low")
+        candidate_high = PivotPoint(d + timedelta(days=20), 15.0, "high")
+        rebound_low = PivotPoint(d + timedelta(days=30), 4.0, "low")
+        lower_high = PivotPoint(d + timedelta(days=40), 11.0, "high")
+        next_rebound_low = PivotPoint(d + timedelta(days=50), 2.0, "low")
+        confirming_higher_high = PivotPoint(d + timedelta(days=60), 12.0, "high")
+        existing = SimplifiedLineResult(
+            markers=(
+                start_high,
+                trend_low,
+                candidate_high,
+                rebound_low,
+                lower_high,
+                next_rebound_low,
+                confirming_higher_high,
+            ),
+            segments=(
+                SimplifiedLineSegment(start_high, trend_low, "trend"),
+                SimplifiedLineSegment(trend_low, candidate_high, "trend"),
+                SimplifiedLineSegment(candidate_high, rebound_low, "trend"),
+                SimplifiedLineSegment(rebound_low, lower_high, "trend"),
+                SimplifiedLineSegment(lower_high, next_rebound_low, "trend"),
+                SimplifiedLineSegment(next_rebound_low, confirming_higher_high, "trend"),
+            ),
+            sideways_segments=(),
+        )
+        geometry = ChartGeometry(d, d + timedelta(days=100), -10.0, 20.0, 100.0, 100.0)
+
+        result = prune_same_trend_extremes(existing, geometry)
+
+        self.assertIn(trend_low, result.markers)
+        self.assertIn(confirming_higher_high, result.markers)
+
 
 if __name__ == "__main__":
     unittest.main()
