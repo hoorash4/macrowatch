@@ -72,6 +72,21 @@ jobs:
               plt.close(fig)
 
           print("S3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
+          print("S3_RAPID_CAND",[
+              (x.start.day.isoformat(),float(x.start.value),x.start.pivot_type,
+               x.end.day.isoformat(),float(x.end.value),x.end.pivot_type,
+               x.direction,float(x.visual_y_share))
+              for x in s3.rapid_move_candidates
+          ])
+          print("S3_PROV",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.provisional_protected_points])
+          print("S4_CONF",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s4.protected_points])
+          print("S4_PROV",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s4.provisional_protected_points])
+          print("S4_CAND",[
+              (x.start.day.isoformat(),float(x.start.value),x.start.pivot_type,
+               x.end.day.isoformat(),float(x.end.value),x.end.pivot_type,
+               x.direction,float(x.visual_y_share))
+              for x in s4.rapid_move_candidates
+          ])
           print("S5_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s5.markers])
           render(s3,"Stage 3","nfci_risk_stage3.png")
           render(s5,"Stage 5","nfci_risk_stage5.png")
