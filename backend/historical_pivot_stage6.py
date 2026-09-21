@@ -42,13 +42,9 @@ def prune_unconfirmed_retracements(
     if len(result.markers) < 3:
         return result
 
-    standalone_keys = {
-        key(marker)
-        for marker in result.markers
-        if not any(
-            key(marker) in {key(segment.start), key(segment.end)}
-            for segment in result.segments
-        )
+    marker_only_keys = {
+        key(point)
+        for point in result.marker_only_points
     }
     sideways_keys = {
         key(point)
@@ -63,12 +59,9 @@ def prune_unconfirmed_retracements(
     }
     rapid_move_keys = {
         key(point)
-        for point in (
-            *result.protected_points,
-            *result.provisional_protected_points,
-        )
+        for point in result.protected_points
     }
-    protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
+    protected_keys = marker_only_keys | sideways_keys | spike_keys | rapid_move_keys
 
     # Use the unique chronological vertices of the connected line.  This keeps
     # Stage 6 stable even if an upstream caller supplies overlapping segments.
@@ -243,8 +236,7 @@ def prune_unconfirmed_retracements(
         )),
         segments=tuple(rebuilt_segments),
         sideways_segments=surviving_sideways,
+        marker_only_points=result.marker_only_points,
         protected_points=result.protected_points,
-        provisional_protected_points=result.provisional_protected_points,
-        rapid_move_candidates=result.rapid_move_candidates,
     )
 
