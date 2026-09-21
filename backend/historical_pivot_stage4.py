@@ -280,27 +280,28 @@ def prune_same_trend_extremes(
     }
     protected_keys = standalone_keys | sideways_keys | spike_keys | rapid_move_keys
 
-    # Hard structure splits the line. The boundary point belongs to both sides.
-    split_days = sorted({
-        segment.end.day if segment.kind == "sideways" else segment.start.day
-        for segment in result.segments
-        if segment.kind in {"sideways", "spike"}
-    })
+    # Every protected point is a hard chronological boundary. Processing stops
+    # at the protected point, seals the current window, then restarts from that
+    # same point as the anchor of the next window. No later point may re-judge
+    # structure on the far side of a protected boundary.
+    protected_indices = [
+        index
+        for index, point in enumerate(points)
+        if _key(point) in protected_keys
+    ]
 
     windows: list[list[PivotPoint]] = []
     start_index = 0
-    for split_day in split_days:
-        current = [
-            point
-            for point in points[start_index:]
-            if point.day <= split_day
-        ]
+    for boundary_index in protected_indices:
+        if boundary_index < start_index:
+            continue
+        current = list(points[start_index:boundary_index + 1])
         if current:
             windows.append(current)
-            start_index = points.index(current[-1])
+        start_index = boundary_index
 
     tail = list(points[start_index:])
-    if tail:
+    if tail and (not windows or tail != windows[-1]):
         windows.append(tail)
 
     intervals: list[tuple[PivotPoint, PivotPoint]] = []
@@ -320,16 +321,9 @@ def prune_same_trend_extremes(
             )
         )
 
-    # A collapse may never cross protected structure.
-    candidates: list[tuple[PivotPoint, PivotPoint]] = []
-    for start, end in intervals:
-        if any(
-            start.day < point.day < end.day
-            and _key(point) in protected_keys
-            for point in points
-        ):
-            continue
-        candidates.append((start, end))
+    # Windows are already cut at every protected point, so no collapse can
+    # cross protected structure.
+    candidates = list(intervals)
 
     if not candidates:
         return result
