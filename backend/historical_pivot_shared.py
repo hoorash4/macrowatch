@@ -80,11 +80,25 @@ class SimplifiedLineSegment:
 
 
 @dataclass(frozen=True)
+class RapidMoveCandidate:
+    start: PivotPoint
+    end: PivotPoint
+    direction: int  # +1 up, -1 down
+    visual_y_share: float
+
+    @property
+    def protected_points(self) -> tuple[PivotPoint, PivotPoint]:
+        return self.start, self.end
+
+
+@dataclass(frozen=True)
 class SimplifiedLineResult:
     markers: tuple[PivotPoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
     sideways_segments: tuple[SidewaysSegment, ...]
     protected_points: tuple[PivotPoint, ...] = ()
+    provisional_protected_points: tuple[PivotPoint, ...] = ()
+    rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
 
     def __post_init__(self) -> None:
         marker_keys = {
@@ -105,12 +119,19 @@ class SimplifiedLineResult:
                     raise ValueError(
                         "stage output contains sideways metadata for a deleted marker"
                     )
-        for point in self.protected_points:
+        for point in (*self.protected_points, *self.provisional_protected_points):
             point_key = (point.day, point.value, point.pivot_type)
             if point_key not in marker_keys:
                 raise ValueError(
                     "stage output contains protected metadata for a deleted marker"
                 )
+        for candidate in self.rapid_move_candidates:
+            for point in candidate.protected_points:
+                point_key = (point.day, point.value, point.pivot_type)
+                if point_key not in marker_keys:
+                    raise ValueError(
+                        "stage output contains rapid-move metadata for a deleted marker"
+                    )
 
 
 def shift_months(value: date, months: int) -> date:
