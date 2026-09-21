@@ -100,7 +100,6 @@ def _validate_line_contract(
     *,
     markers: Sequence[PivotPoint],
     segments: Sequence[SimplifiedLineSegment],
-    sideways_segments: Sequence[SidewaysSegment],
     marker_only_points: Sequence[PivotPoint],
 ) -> set[tuple[date, float, str]]:
     marker_keys = {_pivot_key(item) for item in markers}
@@ -114,14 +113,6 @@ def _validate_line_contract(
                     "stage output contains a segment endpoint that is not a surviving marker"
                 )
             endpoint_keys.add(point_key)
-
-    for sideways in sideways_segments:
-        for point in sideways.pivot_points:
-            point_key = _pivot_key(point)
-            if point_key not in marker_keys:
-                raise ValueError(
-                    "stage output contains sideways metadata for a deleted marker"
-                )
 
     marker_only_keys = {_pivot_key(point) for point in marker_only_points}
     if not marker_only_keys.issubset(marker_keys):
@@ -143,7 +134,6 @@ class Stage3LineResult:
 
     markers: tuple[PivotPoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
-    sideways_segments: tuple[SidewaysSegment, ...]
     marker_only_points: tuple[PivotPoint, ...] = ()
     rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
 
@@ -151,7 +141,6 @@ class Stage3LineResult:
         marker_keys = _validate_line_contract(
             markers=self.markers,
             segments=self.segments,
-            sideways_segments=self.sideways_segments,
             marker_only_points=self.marker_only_points,
         )
         for candidate in self.rapid_move_candidates:
