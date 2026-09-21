@@ -383,37 +383,51 @@ def _sideways_pairs(
     prior_trend: str,
     geometry: ChartGeometry,
 ) -> tuple[SidewaysSegment, ...]:
-    """Keep a flat same-side pair only after the matching trend direction.
+    """Classify and merge same-side sideways runs at the approved 6 degrees.
 
-    Sideways is not defined by a flat high/high or low/low pair alone.
-    The pair must follow an already progressing same-side trend:
-    - uptrend   -> rising highs, then high/high <= 6 degrees
-    - downtrend -> falling lows, then low/low <= 6 degrees
+    A run may start only after the matching same-side trend:
+    - uptrend   -> rising highs, then a flat high/high pair
+    - downtrend -> falling lows, then a flat low/low pair
 
-    Once a sideways run has been established, adjacent flat pairs may continue
-    that same run.
+    Once established, adjacent flat pairs belong to the same sideways structure
+    while the direct line from the run start to the new end also remains within
+    6 degrees.  If that direct line leaves the sideways band, the old run is
+    sealed and the current flat pair starts a new run.
     """
     found: list[SidewaysSegment] = []
     ordered = tuple(sorted(points, key=lambda item: item.day))
+    active: SidewaysSegment | None = None
 
     for index, (left, right) in enumerate(zip(ordered, ordered[1:])):
-        segment = classify_sideways_reference_line(
+        pair = classify_sideways_reference_line(
             left,
             right,
             prior_trend,
             geometry,
         )
-        if segment is None:
+        if pair is None:
+            if active is not None:
+                found.append(active)
+                active = None
             continue
 
-        continues_sideways = bool(
-            found
-            and found[-1].end == left
-            and found[-1].prior_trend == prior_trend
-        )
-        if continues_sideways:
-            found.append(segment)
+        if active is not None and active.end == left:
+            merged = classify_sideways_reference_line(
+                active.start,
+                right,
+                prior_trend,
+                geometry,
+            )
+            if merged is not None:
+                active = merged
+            else:
+                found.append(active)
+                active = pair
             continue
+
+        if active is not None:
+            found.append(active)
+            active = None
 
         if index == 0:
             continue
@@ -425,7 +439,10 @@ def _sideways_pairs(
             else left.value < previous.value
         )
         if arrived_from_trend:
-            found.append(segment)
+            active = pair
+
+    if active is not None:
+        found.append(active)
 
     return tuple(found)
 
