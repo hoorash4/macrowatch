@@ -10,10 +10,75 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from historical_pivot_shared import ChartGeometry, PivotPoint
 from historical_pivot_stage1 import BasePivotResult, PivotPolicy
-from historical_pivot_stage2 import finalize_sideways_protection
+from historical_pivot_stage2 import _entry_before_peak, finalize_sideways_protection
 
 
 class HistoricalPivotStage2Tests(unittest.TestCase):
+
+    def test_rapid_up_entry_falls_back_to_a_when_no_lower_plateau_exists(self):
+        d = date(2020, 1, 1)
+        a = PivotPoint(d, 5.0, "low")
+        b = PivotPoint(d + timedelta(days=20), 9.0, "high")
+        plateau = PivotPoint(d + timedelta(days=10), 6.0, "low")
+
+        entry = _entry_before_peak(
+            a_point=a,
+            peak=b,
+            opposite_rdp=(plateau,),
+            opposite_candidates=(plateau,),
+            direction="up",
+        )
+
+        self.assertEqual(a, entry)
+
+    def test_rapid_down_entry_falls_back_to_a_when_no_higher_plateau_exists(self):
+        d = date(2020, 1, 1)
+        a = PivotPoint(d, 5.0, "high")
+        b = PivotPoint(d + timedelta(days=20), 1.0, "low")
+        plateau = PivotPoint(d + timedelta(days=10), 4.0, "high")
+
+        entry = _entry_before_peak(
+            a_point=a,
+            peak=b,
+            opposite_rdp=(plateau,),
+            opposite_candidates=(plateau,),
+            direction="down",
+        )
+
+        self.assertEqual(a, entry)
+
+    def test_rapid_entry_uses_only_plateau_that_improves_on_a(self):
+        d = date(2020, 1, 1)
+        up_a = PivotPoint(d, 5.0, "low")
+        up_b = PivotPoint(d + timedelta(days=30), 10.0, "high")
+        up_nonqualifying = PivotPoint(d + timedelta(days=5), 6.0, "low")
+        up_qualifying = PivotPoint(d + timedelta(days=10), 4.0, "low")
+        down_a = PivotPoint(d, 5.0, "high")
+        down_b = PivotPoint(d + timedelta(days=30), 0.0, "low")
+        down_nonqualifying = PivotPoint(d + timedelta(days=5), 4.0, "high")
+        down_qualifying = PivotPoint(d + timedelta(days=10), 7.0, "high")
+
+        self.assertEqual(
+            up_qualifying,
+            _entry_before_peak(
+                a_point=up_a,
+                peak=up_b,
+                opposite_rdp=(up_qualifying,),
+                opposite_candidates=(up_nonqualifying, up_qualifying),
+                direction="up",
+            ),
+        )
+        self.assertEqual(
+            down_qualifying,
+            _entry_before_peak(
+                a_point=down_a,
+                peak=down_b,
+                opposite_rdp=(down_qualifying,),
+                opposite_candidates=(down_nonqualifying, down_qualifying),
+                direction="down",
+            ),
+        )
+
     def test_classifies_graph_end_sideways_regardless_of_arrival_direction(self):
         d = date(2020, 1, 1)
         highs = (
