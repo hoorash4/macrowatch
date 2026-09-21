@@ -5,11 +5,13 @@ from datetime import date
 
 from historical_pivot_shared import (
     SAME_TREND_ANGLE_THRESHOLD_DEG,
+    PIVOT_X_GAP_PROTECTION_SHARE,
     ChartGeometry,
     PivotPoint,
     SimplifiedLineResult,
     SimplifiedLineSegment,
     screen_segment_angle_degrees,
+    screen_x_span_share,
 )
 
 def prune_unconfirmed_retracements(
@@ -62,7 +64,21 @@ def prune_unconfirmed_retracements(
         key(point)
         for point in result.protected_points
     }
-    protected_keys = marker_only_keys | sideways_keys | spike_keys | rapid_move_keys
+    isolated_gap_keys = {
+        key(point)
+        for index, point in enumerate(line_points[1:-1], start=1)
+        if screen_x_span_share(line_points[index - 1], point, geometry)
+        >= PIVOT_X_GAP_PROTECTION_SHARE
+        and screen_x_span_share(point, line_points[index + 1], geometry)
+        >= PIVOT_X_GAP_PROTECTION_SHARE
+    } if geometry is not None else set()
+    protected_keys = (
+        marker_only_keys
+        | sideways_keys
+        | spike_keys
+        | rapid_move_keys
+        | isolated_gap_keys
+    )
 
     # Use the unique chronological vertices of the connected line.  This keeps
     # Stage 6 stable even if an upstream caller supplies overlapping segments.
