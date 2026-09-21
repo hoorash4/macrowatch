@@ -127,7 +127,7 @@ def simplify_pivot_lines(
     stage3 = merge_pivot_lines_stage3(stage2, geometry)
     stage4 = finalize_rapid_moves(stage3, geometry)
     stage5 = prune_same_trend_extremes(stage4, geometry)
-    return prune_unconfirmed_retracements(stage5)
+    return prune_unconfirmed_retracements(stage5, geometry)
 
 
 def _single_row(
