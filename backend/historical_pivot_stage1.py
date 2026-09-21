@@ -346,6 +346,16 @@ def augment_spike_entry_points(
         if not (pivot.value > left.value and pivot.value > right.value):
             continue
 
+        opposite_inside = [
+            item for item in low_rdp
+            if left.day <= item.day <= right.day
+        ]
+        if any(
+            item.value > max(left.value, right.value)
+            for item in opposite_inside
+        ):
+            continue
+
         passes, angle = shape_passes(left, pivot, right, "up")
         if not passes:
             continue
@@ -383,6 +393,16 @@ def augment_spike_entry_points(
         if not (geometry.display_start <= pivot.day <= geometry.display_end):
             continue
         if not (pivot.value < left.value and pivot.value < right.value):
+            continue
+
+        opposite_inside = [
+            item for item in high_rdp
+            if left.day <= item.day <= right.day
+        ]
+        if any(
+            item.value < min(left.value, right.value)
+            for item in opposite_inside
+        ):
             continue
 
         passes, angle = shape_passes(left, pivot, right, "down")
