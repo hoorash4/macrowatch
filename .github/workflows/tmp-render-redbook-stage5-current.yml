@@ -1,4 +1,4 @@
-name: Rebuild tightening 2022 frontend pivots temp
+name: Render NFCI_RISK Stage3 Stage5 temp
 
 on:
   push:
@@ -10,105 +10,76 @@ permissions:
   contents: read
 
 jobs:
-  rebuild:
+  render:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install --disable-pip-version-check -r backend/requirements.txt
-      - name: Rebuild and store current Stage 1-5 pivots
+        run: pip install --disable-pip-version-check -r backend/requirements.txt matplotlib
+      - name: Render NFCI_RISK Stage 3 and Stage 5
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          ALGORITHM_VERSION: ${{ github.sha }}
         run: |
           PYTHONPATH=backend python - <<'PY'
-          import os
+          import matplotlib.pyplot as plt
           from common import SupabaseRest
-          from datetime import date
-          from historical_pivot_base import _get_rows_paginated
-          from historical_pivot_shared import ChartGeometry, normalize_rows, buffer_bounds
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows
           from historical_pivot_stage1 import calculate_base_pivots, augment_spike_entry_points
           from historical_pivot_stage2 import finalize_sideways_protection
           from historical_pivot_stage3 import simplify_pivot_lines
           from historical_pivot_stage4 import prune_same_trend_extremes
           from historical_pivot_stage5 import prune_unconfirmed_retracements
-          from historical_pivot_store import store_pipeline_result
-
-          CASE="tightening_2022"
-          INDEX="NASDAQ_COMPOSITE"
-          SERIES={
-              "US2Y":"D","US10Y":"D","US10Y_REAL":"D","US10Y2Y":"D",
-              "HY_OAS":"D","NFCI_CREDIT":"W","NFCI_RISK":"W","EM_OAS":"D",
-              "WTI":"D","RRP":"D","TGA":"W","REDBOOK":"W","WEI":"W","EMRATIO":"M",
-              "US_RETAIL_SALES":"M","US_CPI":"M","US_CORE_CPI":"M","US_PPI":"M",
-              "US_CORE_PPI":"M","US_PCE":"M","US_CORE_PCE":"M","US_SBDI_31_180":"M",
-              "US_SBDFI":"M","US_COMMERCIAL_CH11":"M",
-          }
 
           db=SupabaseRest()
-          cycle_rows=db.request("GET","historical_case_market_cycles",params={
-              "select":"start_date,trough_date",
-              "case_code":f"eq.{CASE}",
-              "index_code":f"eq.{INDEX}",
-              "limit":"1",
-          })
-          if not cycle_rows:
-              raise RuntimeError("missing tightening_2022 NASDAQ cycle")
-          cycle_start=date.fromisoformat(str(cycle_rows[0]["start_date"])[:10])
-          cycle_trough=date.fromisoformat(str(cycle_rows[0]["trough_date"])[:10])
-          start,end=buffer_bounds(cycle_start,cycle_trough)
-          version=os.environ["ALGORITHM_VERSION"]
-          total_rows=0
-          results=[]
+          rows,freq,start,end=load_case_series(
+              db,
+              case_code="tightening_2022",
+              index_code="NASDAQ_COMPOSITE",
+              series_code="NFCI_RISK",
+          )
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw]
+          lo,hi=min(vals),max(vals)
+          pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
 
-          for code,freq in SERIES.items():
-              rows=_get_rows_paginated(db,"economic_chart_series_points",{
-                  "select":"observation_date,value",
-                  "series_code":f"eq.{code}",
-                  "observation_date":f"gte.{start.isoformat()}",
-                  "and":f"(observation_date.lte.{end.isoformat()})",
-                  "order":"observation_date.asc",
-              })
-              if not rows:
-                  raise RuntimeError(f"No economic-chart rows for {code} in buffer range")
-              raw=normalize_rows(rows)
-              vals=[p.value for p in raw]
-              lo,hi=min(vals),max(vals)
-              pad=(hi-lo)*.08 if hi!=lo else 1.0
-              geometry=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          base=calculate_base_pivots(rows,freq)
+          s1=augment_spike_entry_points(base,g)
+          s2=finalize_sideways_protection(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=prune_same_trend_extremes(s3,g)
+          s5=prune_unconfirmed_retracements(s4)
 
-              base=calculate_base_pivots(rows,freq)
-              s1=augment_spike_entry_points(base,geometry)
-              s2=finalize_sideways_protection(s1,geometry)
-              s3=simplify_pivot_lines(s2,geometry)
-              s4=prune_same_trend_extremes(s3,geometry)
-              s5=prune_unconfirmed_retracements(s4)
+          def render(result,title,path):
+              fig,ax=plt.subplots(figsize=(14,7))
+              ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.1,label="NFCI_RISK raw")
+              ordered=sorted(result.markers,key=lambda p:(p.day,p.pivot_type))
+              ax.plot([p.day for p in ordered],[p.value for p in ordered],marker="o",linewidth=2.2,label=title)
+              for p in ordered:
+                  ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",ha="center",fontsize=7)
+              ax.set_title(f"NFCI_RISK · tightening_2022 · {title}")
+              ax.set_ylabel("Index")
+              ax.grid(True,alpha=.25)
+              ax.legend()
+              fig.tight_layout()
+              fig.savefig(path,dpi=180)
+              plt.close(fig)
 
-              stored=store_pipeline_result(
-                  db,
-                  case_code=CASE,
-                  index_code=INDEX,
-                  series_code=code,
-                  algorithm_version=version,
-                  source_rows=rows,
-                  frequency=freq,
-                  buffer_start=start,
-                  buffer_end=end,
-                  base=base,
-                  stage1=s1,
-                  stage2=s2,
-                  stage3=s3,
-                  stage4=s4,
-                  final=s5,
-              )
-              total_rows += stored
-              results.append((code,freq,len(s5.markers),stored))
-              print("SAVED",code,freq,"markers",len(s5.markers),"rows",stored)
-
-          print("DONE",len(results),"series",total_rows,"rows",version)
+          print("S3_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s3.markers])
+          print("S5_MARKERS",[(p.day.isoformat(),float(p.value),p.pivot_type) for p in s5.markers])
+          render(s3,"Stage 3","nfci_risk_stage3.png")
+          render(s5,"Stage 5","nfci_risk_stage5.png")
           PY
+      - name: Upload charts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfci-risk-stage3-stage5
+          path: |
+            nfci_risk_stage3.png
+            nfci_risk_stage5.png
