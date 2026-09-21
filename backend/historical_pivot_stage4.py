@@ -168,7 +168,10 @@ def _process_window(
                 index += 1
                 continue
 
-            # Full down reversal confirmed by a lower low.
+            # The first low after the rebound high decides this candidate.
+            # A lower low confirms the down reversal. Otherwise the candidate
+            # has failed immediately; do not keep carrying the old candidate
+            # forward until some later/final point.
             if point.value < state.opposite_extreme.value:
                 _record_collapse(intervals, state)
 
@@ -181,9 +184,11 @@ def _process_window(
                 index += 1
                 continue
 
-            # Still inside provisional reversal.
-            if point.value > state.rebound_extreme.value:
-                state.rebound_extreme = point
+            # Failed down-reversal candidate. The current higher low is now the
+            # next opposite excursion to judge, point-by-point, against the
+            # very next rebound/high-low sequence.
+            state.opposite_extreme = point
+            state.rebound_extreme = None
             index += 1
             continue
 
@@ -203,7 +208,9 @@ def _process_window(
             index += 1
             continue
 
-        # Full up reversal confirmed by a higher high.
+        # The first high after the rebound low decides this candidate.
+        # A higher high confirms the up reversal. Otherwise the candidate has
+        # failed immediately; do not defer judgment to a later/final point.
         if point.value > state.opposite_extreme.value:
             _record_collapse(intervals, state)
 
@@ -216,9 +223,10 @@ def _process_window(
             index += 1
             continue
 
-        # Still inside provisional reversal.
-        if point.value < state.rebound_extreme.value:
-            state.rebound_extreme = point
+        # Failed up-reversal candidate. The current lower high becomes the next
+        # opposite excursion and is judged from here in chronological order.
+        state.opposite_extreme = point
+        state.rebound_extreme = None
         index += 1
 
     _record_collapse(intervals, state)
