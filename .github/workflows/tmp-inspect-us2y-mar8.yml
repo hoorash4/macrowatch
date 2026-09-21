@@ -1,0 +1,63 @@
+name: Inspect US2Y Mar8 excursion temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-inspect-us2y-mar8.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows, screen_angle_degrees
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import _entry_before_peak, _visual_y_share
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US2Y")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals);pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          s1=calculate_base_pivots(rows,freq)
+          highs=tuple(sorted(s1.high_pivots,key=lambda p:p.day))
+          lows=tuple(sorted(s1.low_pivots,key=lambda p:p.day))
+          target=next(p for p in highs if p.day.isoformat()=="2023-03-08")
+          idx=highs.index(target)
+          a=highs[idx-1]; c=highs[idx+1]
+          entry=_entry_before_peak(a_point=a,peak=target,opposite_rdp=lows,opposite_candidates=s1.low_candidates,direction="up")
+          ab=target.value-a.value
+          bc=target.value-c.value
+          ratio=bc/ab if ab else None
+          share_a=_visual_y_share(a,target,g)
+          share_entry=_visual_y_share(entry,target,g)
+          angle=screen_angle_degrees(a,target,c,g)
+          print("A",a.day.isoformat(),a.value,a.pivot_type)
+          print("B",target.day.isoformat(),target.value,target.pivot_type)
+          print("C",c.day.isoformat(),c.value,c.pivot_type)
+          print("ENTRY",entry.day.isoformat(),entry.value,entry.pivot_type)
+          print("YSPAN",g.y_max-g.y_min)
+          print("AB",ab,"BC",bc,"BC_AB",ratio)
+          print("SHARE_A",share_a)
+          print("SHARE_ENTRY",share_entry)
+          print("ANGLE",angle)
+          PY
