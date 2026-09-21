@@ -1,0 +1,91 @@
+name: Rebuild 2022 US historical pivots after Stage3 fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-rebuild-2022-us-after-stage3-fix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Rebuild and store
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date
+          from common import SupabaseRest
+          from historical_pivot_base import _single_row, _get_rows_paginated
+          from historical_pivot_shared import ChartGeometry, buffer_bounds, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import finalize_rapid_moves
+          from historical_pivot_stage5 import prune_same_trend_extremes
+          from historical_pivot_stage6 import prune_unconfirmed_retracements
+          from historical_pivot_store import store_pipeline_result
+
+          CASE="tightening_2022"
+          INDEX="NASDAQ_COMPOSITE"
+          ALGO="79830861c74a0b9aec643d483d1c64caae769097"
+          SERIES=[
+              "US2Y","US10Y","US10Y_REAL","US10Y2Y",
+              "HY_OAS","NFCI_CREDIT","NFCI_RISK","EM_OAS",
+              "WTI","RRP","TGA","REDBOOK","WEI","EMRATIO",
+              "US_RETAIL_SALES","US_CPI","US_CORE_CPI","US_PPI",
+              "US_CORE_PPI","US_PCE","US_CORE_PCE","US_SBDI_31_180",
+              "US_SBDFI","US_COMMERCIAL_CH11",
+          ]
+
+          db=SupabaseRest()
+          cycle=_single_row(db,"historical_case_market_cycles",{
+              "select":"start_date,trough_date",
+              "case_code":f"eq.{CASE}",
+              "index_code":f"eq.{INDEX}",
+              "limit":"2",
+          })
+          bs,be=buffer_bounds(
+              date.fromisoformat(str(cycle["start_date"])[:10]),
+              date.fromisoformat(str(cycle["trough_date"])[:10]),
+          )
+
+          for code in SERIES:
+              rows=_get_rows_paginated(db,"economic_chart_series_points",{
+                  "select":"observation_date,value,frequency",
+                  "series_code":f"eq.{code}",
+                  "observation_date":f"gte.{bs.isoformat()}",
+                  "and":f"(observation_date.lte.{be.isoformat()})",
+                  "order":"observation_date.asc",
+              })
+              freq=next(iter({str(r.get("frequency") or "") for r in rows}))
+              raw=normalize_rows(rows)
+              vals=[p.value for p in raw]
+              lo,hi=min(vals),max(vals); pad=(hi-lo)*.08 if hi!=lo else 1.0
+              g=ChartGeometry(bs,be,lo-pad,hi+pad,1200,600)
+              s1=calculate_base_pivots(rows,freq)
+              s2=classify_special_structures(s1,g)
+              s3=simplify_pivot_lines(s2,g)
+              s4=finalize_rapid_moves(s3,g)
+              s5=prune_same_trend_extremes(s4,g)
+              s6=prune_unconfirmed_retracements(s5,g)
+              store_pipeline_result(
+                  db,case_code=CASE,index_code=INDEX,series_code=code,
+                  algorithm_version=ALGO,source_rows=rows,frequency=freq,
+                  buffer_start=bs,buffer_end=be,base=s1,stage1=s1,stage2=s2,
+                  stage3=s3,stage4=s4,stage5=s5,final=s6,
+              )
+              print("OK",code,len(s6.markers))
+          PY
