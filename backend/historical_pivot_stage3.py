@@ -352,24 +352,33 @@ def _rapid_move_entry_points(
     segments: Sequence[SimplifiedLineSegment],
     geometry: ChartGeometry,
 ) -> tuple[PivotPoint, ...]:
-    """Protect only the entry anchor of a dominant rapid directional move.
+    """Protect both boundaries of confirmed rapid directional moves.
 
     A normal Stage-3 trend segment is a rapid-move candidate when its vertical
     screen travel is at least 30% of the visible chart height.
 
-    Candidates are judged chronologically:
-    - same-direction candidates belong to the same move, so only the first
-      entry point stays protected;
-    - a larger opposite-direction candidate starts a new protected move while
-      the earlier protected entry remains protected;
-    - smaller opposite candidates are treated as retracements and do not gain
-      protection;
-    - sideways/spike hard segments end the current rapid-move comparison run.
+    Candidates are judged chronologically and symmetrically for up/down moves:
+    - consecutive same-direction candidates form one rapid-move run;
+      protect only the run's first entry and latest extreme;
+    - a smaller opposite-direction candidate is treated as a retracement and
+      gains no protection;
+    - a larger opposite-direction candidate starts a new confirmed rapid move;
+      keep the previous run's protection and also protect the new run's entry
+      and extreme;
+    - sideways/spike hard segments end the current comparison run.
     """
-    protected: list[PivotPoint] = []
+    protected: dict[tuple[date, float, str], PivotPoint] = {}
     active_direction: int | None = None
     active_share = 0.0
     active_entry: PivotPoint | None = None
+    active_extreme: PivotPoint | None = None
+
+    def protect(point: PivotPoint) -> None:
+        protected[_key(point)] = point
+
+    def unprotect(point: PivotPoint | None) -> None:
+        if point is not None:
+            protected.pop(_key(point), None)
 
     for segment in sorted(
         segments,
@@ -379,11 +388,13 @@ def _rapid_move_entry_points(
             active_direction = None
             active_share = 0.0
             active_entry = None
+            active_extreme = None
             continue
 
         delta = segment.end.value - segment.start.value
         if delta == 0:
             continue
+
         direction = 1 if delta > 0 else -1
         share = _visual_y_share(segment.start, segment.end, geometry)
 
@@ -394,22 +405,35 @@ def _rapid_move_entry_points(
             active_direction = direction
             active_share = share
             active_entry = segment.start
-            protected.append(segment.start)
+            active_extreme = segment.end
+            protect(active_entry)
+            protect(active_extreme)
             continue
 
         if direction == active_direction:
+            # Same rapid-move run: keep the original entry, replace the prior
+            # protected extreme with this run's latest extreme.
+            unprotect(active_extreme)
             active_share = share
+            active_extreme = segment.end
+            protect(active_extreme)
             continue
 
         if share > active_share:
+            # Stronger opposite move: previous run remains confirmed and this
+            # opposite move starts a new confirmed rapid-move run.
             active_direction = direction
             active_share = share
             active_entry = segment.start
-            protected.append(segment.start)
+            active_extreme = segment.end
+            protect(active_entry)
+            protect(active_extreme)
 
-    by_key = {_key(point): point for point in protected}
     return tuple(
-        sorted(by_key.values(), key=lambda item: (item.day, item.pivot_type))
+        sorted(
+            protected.values(),
+            key=lambda item: (item.day, item.pivot_type),
+        )
     )
 
 
