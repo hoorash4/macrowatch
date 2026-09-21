@@ -38,6 +38,9 @@ from historical_pivot_shared import (
 from historical_pivot_stage2 import Stage2Result
 
 
+RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.30
+
+
 def _key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
 
@@ -326,12 +329,101 @@ def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
     return accepted
 
 
+def _visual_y_share(
+    start: PivotPoint,
+    end: PivotPoint,
+    geometry: ChartGeometry,
+) -> float:
+    """Return vertical screen travel as a share of the visible chart height."""
+    start_y = (
+        (geometry.y_max - start.value)
+        / (geometry.y_max - geometry.y_min)
+        * geometry.height
+    )
+    end_y = (
+        (geometry.y_max - end.value)
+        / (geometry.y_max - geometry.y_min)
+        * geometry.height
+    )
+    return abs(end_y - start_y) / geometry.height
+
+
+def _rapid_move_entry_points(
+    segments: Sequence[SimplifiedLineSegment],
+    geometry: ChartGeometry,
+) -> tuple[PivotPoint, ...]:
+    """Protect only the entry anchor of a dominant rapid directional move.
+
+    A normal Stage-3 trend segment is a rapid-move candidate when its vertical
+    screen travel is at least 30% of the visible chart height.
+
+    Candidates are judged chronologically:
+    - same-direction candidates belong to the same move, so only the first
+      entry point stays protected;
+    - an opposite-direction candidate replaces the active move only when its
+      screen amplitude is larger;
+    - smaller opposite candidates are treated as retracements and do not gain
+      protection;
+    - sideways/spike hard segments end the current rapid-move comparison run.
+    """
+    protected: list[PivotPoint] = []
+    active_direction: int | None = None
+    active_share = 0.0
+    active_entry: PivotPoint | None = None
+
+    for segment in sorted(
+        segments,
+        key=lambda item: (item.start.day, item.end.day, item.kind),
+    ):
+        if segment.kind != "trend":
+            active_direction = None
+            active_share = 0.0
+            active_entry = None
+            continue
+
+        delta = segment.end.value - segment.start.value
+        if delta == 0:
+            continue
+        direction = 1 if delta > 0 else -1
+        share = _visual_y_share(segment.start, segment.end, geometry)
+
+        if share < RAPID_MOVE_MIN_VISUAL_Y_SHARE:
+            continue
+
+        if active_direction is None:
+            active_direction = direction
+            active_share = share
+            active_entry = segment.start
+            protected.append(segment.start)
+            continue
+
+        if direction == active_direction:
+            active_share = max(active_share, share)
+            continue
+
+        if share > active_share:
+            if active_entry is not None:
+                protected = [
+                    point
+                    for point in protected
+                    if _key(point) != _key(active_entry)
+                ]
+            active_direction = direction
+            active_share = share
+            active_entry = segment.start
+            protected.append(segment.start)
+
+    by_key = {_key(point): point for point in protected}
+    return tuple(
+        sorted(by_key.values(), key=lambda item: (item.day, item.pivot_type))
+    )
+
+
 def simplify_pivot_lines(
     augmented: Stage2Result,
     geometry: ChartGeometry,
 ) -> SimplifiedLineResult:
     """Return one Stage-3 wave line from Stage-2 points only."""
-    del geometry
 
     marker_only_spikes = tuple(
         spike for spike in augmented.spike_peaks if spike.marker_only
@@ -424,6 +516,7 @@ def simplify_pivot_lines(
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
     sideways_out.sort(key=lambda item: (item.start.day, item.end.day))
+    protected_points = _rapid_move_entry_points(segments, geometry)
 
     return SimplifiedLineResult(
         markers=tuple(
@@ -434,4 +527,5 @@ def simplify_pivot_lines(
         ),
         segments=tuple(segments),
         sideways_segments=tuple(sideways_out),
+        protected_points=protected_points,
     )
