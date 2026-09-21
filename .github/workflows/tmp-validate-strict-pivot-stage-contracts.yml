@@ -1,0 +1,30 @@
+name: Validate strict pivot stage contracts temp
+
+on:
+  push:
+    branches:
+      - refactor/strict-pivot-stage-contracts
+    paths:
+      - ".github/workflows/tmp-validate-strict-pivot-stage-contracts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check pytest
+      - name: Compile pivot modules
+        run: python -m compileall -q backend/historical_pivot_*.py
+      - name: Run historical pivot tests
+        run: |
+          PYTHONPATH=backend pytest -q             tests/test_historical_pivot_base.py             tests/test_historical_pivot_six_stage_architecture.py             tests/test_historical_pivot_stage1_spike_visual_share.py             tests/test_historical_pivot_stage2.py             tests/test_historical_pivot_stage_boundaries.py             tests/test_historical_pivot_store.py
