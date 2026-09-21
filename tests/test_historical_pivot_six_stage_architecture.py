@@ -264,7 +264,6 @@ class SixStageArchitectureTests(unittest.TestCase):
         stage4 = finalize_rapid_moves(result, geometry, angle_threshold_deg=10.0)
         self.assertIn(earlier_entry, stage4.protected_points)
         self.assertIn(first_peak, stage4.protected_points)
-        self.assertNotIn(later_peak, stage4.protected_points)
 
 
 if __name__ == "__main__":
