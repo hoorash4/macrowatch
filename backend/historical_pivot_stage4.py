@@ -255,7 +255,6 @@ def _process_window(
             opposite_extreme=point,
         )
         index += 1
-        index += 1
 
     _record_collapse(intervals, state)
     return intervals
