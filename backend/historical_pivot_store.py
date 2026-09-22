@@ -411,6 +411,14 @@ def build_storage_rows(
         reason_codes.append("standalone_marker" if standalone else "final_line_vertex")
 
         point_role = final_roles.get(point_key)
+        if point_role is None and sideways:
+            reference_sides = {
+                str(item.get("reference_side") or "")
+                for item in sideways
+                if str(item.get("reference_side") or "") in {"high", "low"}
+            }
+            if len(reference_sides) == 1:
+                point_role = next(iter(reference_sides))
         if standalone and point_role is None and spike:
             point_role = "high" if spike.get("direction") == "up" else "low"
 
