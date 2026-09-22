@@ -34,20 +34,21 @@ from typing import Sequence
 from historical_pivot_shared import (
     SAME_TREND_ANGLE_THRESHOLD_DEG,
     ChartGeometry,
-    PivotPoint,
-    RapidMoveCandidate,
+    LinePoint,
+    LineRapidMoveCandidate,
     SimplifiedLineResult,
     Stage3LineResult,
+    line_role_map,
     screen_origin_angle_degrees,
     screen_segment_angle_degrees,
 )
 
 
-def _key(point: PivotPoint) -> tuple[date, float, str]:
-    return point.day, point.value, point.pivot_type
+def _key(point: LinePoint) -> tuple[date, float]:
+    return point.day, point.value
 
 
-def _segment_direction(start: PivotPoint, end: PivotPoint) -> int:
+def _segment_direction(start: LinePoint, end: LinePoint) -> int:
     if end.value > start.value:
         return 1
     if end.value < start.value:
@@ -55,11 +56,15 @@ def _segment_direction(start: PivotPoint, end: PivotPoint) -> int:
     return 0
 
 
-def _is_same_side(point: PivotPoint, direction: int) -> bool:
-    return point.pivot_type == ("high" if direction > 0 else "low")
+def _is_same_side(
+    point: LinePoint,
+    direction: int,
+    roles: dict[tuple[date, float], str | None],
+) -> bool:
+    return roles.get(_key(point)) == ("high" if direction > 0 else "low")
 
 
-def _improves(point: PivotPoint, extreme: PivotPoint, direction: int) -> bool:
+def _improves(point: LinePoint, extreme: LinePoint, direction: int) -> bool:
     return (
         point.value > extreme.value
         if direction > 0
@@ -68,8 +73,8 @@ def _improves(point: PivotPoint, extreme: PivotPoint, direction: int) -> bool:
 
 
 def _farther_opposite(
-    point: PivotPoint,
-    current: PivotPoint,
+    point: LinePoint,
+    current: LinePoint,
     direction: int,
 ) -> bool:
     return (
@@ -79,15 +84,15 @@ def _farther_opposite(
     )
 
 
-def _timeline_points(result: Stage3LineResult) -> tuple[PivotPoint, ...]:
+def _timeline_points(result: Stage3LineResult) -> tuple[LinePoint, ...]:
     """Return only connected Stage-3 line vertices in chronological order."""
-    by_key: dict[tuple[date, float, str], PivotPoint] = {}
+    by_key: dict[tuple[date, float], LinePoint] = {}
     for segment in result.segments:
         by_key[_key(segment.start)] = segment.start
         by_key[_key(segment.end)] = segment.end
     return tuple(sorted(
         by_key.values(),
-        key=lambda item: (item.day, item.pivot_type),
+        key=lambda item: item.day,
     ))
 
 
@@ -99,7 +104,7 @@ def _scan_from_entry(
     through: date,
     geometry: ChartGeometry,
     angle_threshold_deg: float,
-) -> PivotPoint | None:
+) -> LinePoint | None:
     """Run Stage-5-style wave judgment from one rapid ENTRY anchor only."""
     points = [
         point
@@ -109,16 +114,18 @@ def _scan_from_entry(
     if not points:
         return None
 
-    extreme: PivotPoint | None = None
-    opposite: PivotPoint | None = None
+    timeline = _timeline_points(result)
+    roles = line_role_map(timeline)
+    extreme: LinePoint | None = None
+    opposite: LinePoint | None = None
 
     for point in points:
         if extreme is None:
-            if _is_same_side(point, direction):
+            if _is_same_side(point, direction, roles):
                 extreme = point
             continue
 
-        if not _is_same_side(point, direction):
+        if not _is_same_side(point, direction, roles):
             if opposite is None or _farther_opposite(point, opposite, direction):
                 opposite = point
             continue
@@ -150,12 +157,12 @@ def _scan_from_entry(
 def _expand_entry_backward(
     result: Stage3LineResult,
     *,
-    initial_entry: PivotPoint,
-    seed_peak: PivotPoint,
+    initial_entry: LinePoint,
+    seed_peak: LinePoint,
     direction: int,
     geometry: ChartGeometry,
     angle_threshold_deg: float,
-) -> PivotPoint:
+) -> LinePoint:
     """Move a provisional rapid entry backward before any forward extension.
 
     The CURRENT entry->seed-peak trend direction is the fixed 10-degree
@@ -168,15 +175,16 @@ def _expand_entry_backward(
     judging itself against its own newly-created trend direction.
     """
     timeline = _timeline_points(result)
+    roles = line_role_map(timeline)
     anchor = initial_entry
-    wanted_entry_type = "low" if direction > 0 else "high"
+    wanted_entry_role = "low" if direction > 0 else "high"
 
     while True:
         earlier = [
             point
             for point in timeline
             if point.day < anchor.day
-            and point.pivot_type == wanted_entry_type
+            and roles.get(_key(point)) == wanted_entry_role
         ]
         if not earlier:
             return anchor
@@ -236,7 +244,7 @@ def finalize_rapid_moves(
     if y_span <= 0:
         raise ValueError("geometry y-axis span must be positive")
 
-    finalized: list[RapidMoveCandidate] = []
+    finalized: list[LineRapidMoveCandidate] = []
     consumed: set[int] = set()
 
     for index, candidate in enumerate(candidates):
@@ -261,7 +269,7 @@ def finalize_rapid_moves(
         # Only candidates that can plausibly belong to this FINAL entry-anchored
         # run are offered to the forward scan.
         group_indices: list[int] = []
-        group: list[RapidMoveCandidate] = []
+        group: list[LineRapidMoveCandidate] = []
         for next_index in range(index, len(candidates)):
             other = candidates[next_index]
             if next_index in consumed:
@@ -301,7 +309,7 @@ def finalize_rapid_moves(
             continue
 
         finalized.append(
-            RapidMoveCandidate(
+            LineRapidMoveCandidate(
                 start=anchor,
                 end=final_peak,
                 direction=direction,
@@ -318,14 +326,14 @@ def finalize_rapid_moves(
             if other.start.day >= anchor.day and other.end.day <= final_peak.day:
                 consumed.add(group_index)
 
-    final_protected_map: dict[tuple[date, float, str], PivotPoint] = {}
+    final_protected_map: dict[tuple[date, float], LinePoint] = {}
     for candidate in finalized:
         final_protected_map[_key(candidate.start)] = candidate.start
         final_protected_map[_key(candidate.end)] = candidate.end
 
     protected = tuple(sorted(
         final_protected_map.values(),
-        key=lambda item: (item.day, item.pivot_type),
+        key=lambda item: item.day,
     ))
 
     return SimplifiedLineResult(
