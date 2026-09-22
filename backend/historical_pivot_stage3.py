@@ -556,7 +556,7 @@ def simplify_pivot_lines(
 
     return Stage3LineResult(
         markers=line_markers,
-        segments=line_segments,
+        segments=tuple(segments),
         marker_only_points=line_marker_only_points,
         rapid_move_candidates=line_rapid_candidates,
     )
