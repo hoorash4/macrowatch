@@ -77,7 +77,7 @@ jobs:
 
           # Vertical frame: map the indicator's visible-case min/max to the full
           # 464-px plot height. Buffer does not rescale the frame.
-          visible=[p for p in raw if display_start.date() <= p.day <= display_end.date()]
+          visible=[p for p in raw if display_start <= p.day <= display_end]
           lo=min(p.value for p in visible)
           hi=max(p.value for p in visible)
           if hi==lo:
@@ -86,7 +86,7 @@ jobs:
           # ChartGeometry accepts dates, so use exact dates bracketing the intended
           # fractional display bounds. x-scale remains anchored by START/TROUGH.
           geom=ChartGeometry(
-              display_start.date(), display_end.date(),
+              display_start, display_end,
               lo, hi,
               FRAME_W, FRAME_H,
           )
@@ -104,8 +104,8 @@ jobs:
           print("SIDEWAYS_L",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,round(s.angle_deg,6),s.protected) for s in s2.low_sideways_segments])
 
           # Full-buffer canvas extends horizontally only. 950x464 case frame remains untouched.
-          extra_left=(display_start.date()-buffer_start).days*px_per_day
-          extra_right=(buffer_end-display_end.date()).days*px_per_day
+          extra_left=(display_start-buffer_start).days*px_per_day
+          extra_right=(buffer_end-display_end).days*px_per_day
           full_w=extra_left+FRAME_W+extra_right
           full_h=FRAME_H
 
@@ -115,7 +115,7 @@ jobs:
 
           # Convert date to full-buffer x pixel, keeping the exact same px/day.
           def x_of(d):
-              return extra_left + (d-display_start.date()).days*px_per_day
+              return extra_left + (d-display_start).days*px_per_day
 
           def y_of(v):
               return (v-lo)/(hi-lo)*FRAME_H
