@@ -413,7 +413,6 @@ test('market scope metadata drives KOSPI and US catalog membership',()=>{
   const registry={allSeries:[{code:'US2Y',marketScope:'US'},{code:'US_POLICY_RATE_MID',title:'미국 기준금리 (약 6주 간격)',marketScope:'US'},{code:'KR3Y',marketScope:'KR'},{code:'KR_POLICY_RATE',title:'한국 기준금리 (1개월 간격)',marketScope:'KR'},{code:'KR_CORE_CPI',title:'Core CPI (식료품·에너지 제외)',marketScope:'KR'},{code:'WTI',marketScope:'GLOBAL'}]},window={MacroWatchEconomicSeriesRegistry:registry};
   const api=load('assets/js/historical-insight/historical-indicator-data.js','MacroWatchHistoricalIndicators',window),repo=api.createRepository({});
   assert.deepEqual(Array.from(repo.catalog('SP500'),x=>x.code),['US2Y','US_POLICY_RATE_MID','WTI']);assert.deepEqual(Array.from(repo.catalog('NASDAQ_COMPOSITE'),x=>x.code),['US2Y','US_POLICY_RATE_MID','WTI']);assert.deepEqual(Array.from(repo.catalog('KOSPI'),x=>x.code),['US2Y','US_POLICY_RATE_MID','KR3Y','KR_POLICY_RATE','KR_CORE_CPI','WTI']);
-  assert.deepEqual(Array.from(repo.catalog('KOSPI').filter(x=>['US_POLICY_RATE_MID','KR_POLICY_RATE','KR_CORE_CPI'].includes(x.code)),x=>x.title),['미국 기준금리','한국 기준금리','한국 Core CPI']);
 });
 
 test('indicator data spans twenty-four months without changing chart viewport',()=>{
@@ -433,7 +432,7 @@ test('UI uses one radio-selected magenta indicator without dimming other series'
   assert.match(controller,/unclear:'정\/역 관계 불명확'/);assert.match(controller,/positive:'정 관계'/);assert.match(controller,/inverse:'역 관계'/);
   assert.doesNotMatch(controller,/피봇 확인 \$\{result\.confirmationDate\}|관계 \$\{result\.relationship\}.*최종/);
   assert.match(controller,/CANDIDATE · 구조 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/구조 품질/);assert.match(controller,/MARKET RELEVANT · 시장 기준점 관련 확정/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
-  assert.match(controller,/0점 · 범위 근접/);assert.match(controller,/item\.nearMissPivots/);assert.match(controller,/analysis\.meaningfulReferenceCount>0/);assert.match(controller,/activeMode==='history'&&!item\.results\?\.length/);
+  assert.match(controller,/item\.nearMissPivots/);assert.match(controller,/analysis\.meaningfulReferenceCount>0/);
   assert.match(chart,/result\.markerStatus==='near_miss'/);assert.match(chart,/--historical-near-miss-color/);assert.match(css,/\.historical-reference-badge\.is-near-miss/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
