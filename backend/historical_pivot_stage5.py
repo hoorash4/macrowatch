@@ -373,9 +373,9 @@ def prune_same_trend_extremes(
     }
 
     # Rebuild ONE chronological line instead of appending collapsed segments to
-    # partially-overlapping old segments.  A point strictly inside a collapse
-    # interval disappears unless it is protected.  Final rapid endpoints are
-    # connected mandatory vertices; true marker-only points stay standalone.
+    # partially-overlapping old segments. A point strictly inside a valid
+    # collapse interval disappears unless it belongs to an explicit hard
+    # structure/gap constraint. Rapid protection is structural metadata only.
     connected_map: dict[tuple[date, float], LinePoint] = {}
     for segment in result.segments:
         connected_map[_key(segment.start)] = segment.start
@@ -417,5 +417,9 @@ def prune_same_trend_extremes(
         )),
         segments=tuple(kept_segments),
         marker_only_points=result.marker_only_points,
-        protected_points=result.protected_points,
+        protected_points=tuple(
+            point
+            for point in result.protected_points
+            if _key(point) in marker_map
+        ),
     )
