@@ -569,17 +569,6 @@ def _sideways_pairs(
         right = ordered[idx + 1]
         pair_angle = screen_segment_angle_degrees(left, right, geometry)
 
-        if run_start is not None and run_end == idx:
-            merged_angle = screen_segment_angle_degrees(
-                ordered[run_start],
-                right,
-                geometry,
-            )
-            if abs(merged_angle) <= 6.0:
-                run_end = idx + 1
-                run_angle = merged_angle
-                continue
-
         if abs(pair_angle) > 6.0:
             flush()
             continue
@@ -589,6 +578,17 @@ def _sideways_pairs(
             run_end = idx + 1
             run_angle = pair_angle
             continue
+
+        if run_end == idx:
+            merged_angle = screen_segment_angle_degrees(
+                ordered[run_start],
+                right,
+                geometry,
+            )
+            if abs(merged_angle) <= 6.0:
+                run_end = idx + 1
+                run_angle = merged_angle
+                continue
 
         flush()
         run_start = idx
