@@ -686,7 +686,7 @@ class SourceContractTests(unittest.TestCase):
         order_js = (ROOT / "assets/js/admin/admin-card-order.js").read_text(encoding="utf-8")
         control = (ROOT / "supabase/functions/admin-control/index.ts").read_text(encoding="utf-8")
 
-        self.assertEqual(admin_html.count('data-admin-card-id='), 9)
+        self.assertEqual(admin_html.count('data-admin-card-id='), 10)
         self.assertIn('assets/js/admin/admin-card-order.js?v=2', admin_html)
         self.assertIn("initializeAdminCardOrder", admin_js)
         self.assertIn("get_admin_card_order", admin_js)
