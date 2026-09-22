@@ -43,13 +43,7 @@ jobs:
           ALGO="stage6-canonical-frontend-case-x-19x8-v1"
 
           # Historical US-index universe: US + GLOBAL, D/W/M pipeline.
-          SERIES=[
-              "US2Y","US10Y","US10Y_REAL","US10Y2Y",
-              "HY_OAS","NFCI_CREDIT","NFCI_RISK","EM_OAS",
-              "WTI","RRP","TGA","REDBOOK","WEI","EMRATIO","US_RETAIL_SALES",
-              "US_CPI","US_CORE_CPI","US_PPI","US_CORE_PPI","US_PCE","US_CORE_PCE",
-              "US_SBDI_31_180","US_SBDFI","US_COMMERCIAL_CH11",
-          ]
+          SERIES=["EMRATIO"]
 
           db=SupabaseRest()
           cycle=_single_row(db,"historical_case_market_cycles",{
