@@ -13,11 +13,10 @@ Output:
 Spike/sideways line structure is encoded directly in segment kinds; Stage 3 does
 not pass a second copy of sideways metadata downstream.
 
-Stage 3 does not reclassify rapid moves. Rapid candidate entry/end points are
-provisional protected vertices: normal-wave judgment is still built first, but
-those endpoints are forced back onto the connected line so Stage 4—not Stage 3—
-decides whether the rapid move survives. Only marker-only spikes may remain as
-detached standalone markers.
+Stage 3 does not reclassify or clean up the merged wave. Rapid candidate
+entry/end points and hard spike/sideways endpoints are kept on the connected
+line so Stage 4 receives the full merged chronology. Only marker-only spikes
+may remain as detached standalone markers.
 """
 from __future__ import annotations
 
@@ -461,14 +460,14 @@ def simplify_pivot_lines(
     )
     marker_only_keys = {_key(spike.point) for spike in marker_only_spikes}
 
-    merge_target_keys = _transient_excursion_keys(augmented, geometry)
-
+    # Stage 3 owns only the upper/lower RDP-line merge.  Cleanup decisions
+    # belong downstream, so no transient-excursion or post-merge point pruning
+    # is applied here.
     points = _unique(
         tuple(
             point
             for point in (*augmented.high_pivots, *augmented.low_pivots)
             if _key(point) not in marker_only_keys
-            and _key(point) not in merge_target_keys
         )
     )
 
@@ -546,11 +545,8 @@ def simplify_pivot_lines(
         _key(protected.end)
         for protected in hard
     }
-    structural_points = _collapse_same_direction_interiors(
-        structural_points,
-        mandatory_keys,
-    )
-
+    # Do not prune merged vertices in Stage 3.  The merged chronology is the
+    # complete input handed to Stage 4.
     if len(structural_points) == 1:
         remember(structural_points[0])
     for left, right in zip(structural_points, structural_points[1:]):
