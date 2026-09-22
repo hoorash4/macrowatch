@@ -451,27 +451,23 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
 
 
-    def test_post_pass_collapses_two_record_extremes_without_angle(self):
+    def test_stage5_leaves_monotonic_non_extreme_for_stage6(self):
         d = date(2020, 1, 1)
         high = LinePoint(d, 10.0)
-        low1 = LinePoint(d + timedelta(days=10), 4.0)
-        low2 = LinePoint(d + timedelta(days=20), 3.0)
+        middle = LinePoint(d + timedelta(days=10), 4.0)
+        low = LinePoint(d + timedelta(days=20), 3.0)
         existing = SimplifiedLineResult(
-            markers=(high, low1, low2),
+            markers=(high, middle, low),
             segments=(
-                SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, low2, "trend"),
+                SimplifiedLineSegment(high, middle, "trend"),
+                SimplifiedLineSegment(middle, low, "trend"),
             ),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        self.assertEqual((high, low2), result.markers)
-        self.assertEqual(
-            (SimplifiedLineSegment(high, low2, "trend"),),
-            result.segments,
-        )
+        self.assertEqual(existing, result)
 
     def test_post_pass_two_extremes_keeps_first_when_first_is_sideways_boundary(self):
         d = date(2020, 1, 1)
@@ -523,15 +519,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry)
 
-        # The second record extreme survives as the endpoint, so being the
-        # sideways start does not block high -> low2. The sideways structure
-        # beginning at low2 remains intact.
-        self.assertIn(high, result.markers)
-        self.assertIn(low2, result.markers)
-        self.assertIn(sideways_end, result.markers)
-        self.assertNotIn(low1, result.markers)
-        self.assertIn(SimplifiedLineSegment(high, low2, "trend"), result.segments)
-        self.assertIn(SimplifiedLineSegment(low2, sideways_end, "sideways"), result.segments)
+        # low1 is not a relative low on the merged line because low2 is lower.
+        # Stage 5 therefore leaves it for the Stage-6 monotonic cleanup, while
+        # the protected sideways segment remains intact.
+        self.assertEqual(existing, result)
 
     def test_post_pass_first_angle_never_stops_even_when_over_threshold(self):
         d = date(2020, 1, 1)
@@ -672,7 +663,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         self.assertIn(SimplifiedLineSegment(entry, peak, "spike"), result.segments)
 
 
-    def test_angle_post_pass_allows_chart_first_point_as_initial_anchor(self):
+    def test_stage5_does_not_treat_monotonic_interior_points_as_relative_lows(self):
         d = date(2020, 1, 1)
         first_high = LinePoint(d, 10.0)
         low1 = LinePoint(d + timedelta(days=10), 8.0)
@@ -690,10 +681,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
         result = prune_same_trend_extremes(existing, geometry, angle_threshold_deg=180.0 - 1e-6)
 
-        self.assertIn(first_high, result.markers)
-        self.assertIn(low3, result.markers)
-        self.assertNotIn(low1, result.markers)
-        self.assertNotIn(low2, result.markers)
+        self.assertEqual(existing, result)
 
 
 
