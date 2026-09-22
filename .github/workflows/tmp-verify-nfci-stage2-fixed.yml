@@ -25,15 +25,22 @@ jobs:
       - name: Measure actual frontend chart host
         run: |
           python -m http.server 8765 >/tmp/http.log 2>&1 &
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8765/historical-insight.html >/dev/null; then break; fi
+            sleep 0.5
+          done
           python - <<'PY'
+          import json
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
               b=p.chromium.launch(headless=True)
               page=b.new_page(viewport={"width":1286,"height":2560})
-              page.goto("http://127.0.0.1:8765/historical-insight.html",wait_until="domcontentloaded")
-              page.wait_for_timeout(1500)
+              resp=page.goto("http://127.0.0.1:8765/historical-insight.html",wait_until="domcontentloaded",timeout=15000)
+              page.wait_for_selector("#historical-chart-host",timeout=5000)
+              page.wait_for_timeout(500)
               box=page.locator("#historical-chart-host").bounding_box()
               print("HOST_BOX",box)
+              with open("/tmp/host_box.json","w") as fh: json.dump(box,fh)
               b.close()
           PY
       - name: Render corrected Stage2
@@ -52,8 +59,10 @@ jobs:
           from historical_pivot_stage1 import calculate_base_pivots
           from historical_pivot_stage2 import classify_special_structures
 
-          # actual desktop frontend host measured for current page width: 1026 x 510
-          HOST_W=1026.0; HOST_H=510.0
+          import json
+          with open("/tmp/host_box.json") as fh:
+              host=json.load(fh)
+          HOST_W=float(host["width"]); HOST_H=float(host["height"])
 
           db=SupabaseRest(); CASE="tightening_2022"; INDEX="NASDAQ_COMPOSITE"; CODE="NFCI_RISK"
           cycle=_single_row(db,"historical_case_market_cycles",{"select":"start_date,trough_date","case_code":f"eq.{CASE}","index_code":f"eq.{INDEX}","limit":"2"})
