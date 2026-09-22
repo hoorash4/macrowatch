@@ -9,7 +9,7 @@
   }
   function createRepository(client){
     const seriesCache=new Map(),pivotCache=new Map(),manualPivotCache=new Map();let coverageCache=null,visibilityCache=null;
-    const catalog=indexCode=>{const allowed=INDEX_MARKET_SCOPES[indexCode]||INDEX_MARKET_SCOPES.SP500;return Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&allowed.has(item.marketScope)));};
+    const catalog=(indexCode,allMarkets=false)=>{const allowed=INDEX_MARKET_SCOPES[indexCode]||INDEX_MARKET_SCOPES.SP500;return Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&(allMarkets||allowed.has(item.marketScope))));};
     async function loadVisibility(){
       if(visibilityCache)return visibilityCache;
       const {data,error}=await client.from('economic_chart_catalog_settings')
@@ -65,16 +65,16 @@
       const key=`${caseCode}:${indexCode}:${seriesCode}`;
       if(manualPivotCache.has(key))return manualPivotCache.get(key);
       const promise=window.MacroWatchFrontend.queryAll(client,'historical_indicator_manual_pivots',
-        'source_date,pivot_date,pivot_value,relationship,reason,comment,key_reference,is_deleted',
-        'source_date',[['case_code',caseCode],['index_code',indexCode],['series_code',seriesCode]])
+        'source_date,pivot_date,pivot_value,relationship,reason,comment,key_references,is_deleted',
+        'source_date',[['case_code',caseCode],['series_code',seriesCode]])
         .then(rows=>Object.freeze((rows||[]).map(row=>Object.freeze({
           sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
           pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship:row.relationship||null,
-          reason:row.reason||'',comment:row.comment||'',keyReference:row.key_reference||null,isDeleted:row.is_deleted===true
+          reason:row.reason||'',comment:row.comment||'',keyReference:row.key_references?.[indexCode]||null,isDeleted:row.is_deleted===true
         }))));
       manualPivotCache.set(key,promise);promise.catch(()=>manualPivotCache.delete(key));return promise;
     }
-    function clearManualPivots(caseCode,indexCode,seriesCode){manualPivotCache.delete(`${caseCode}:${indexCode}:${seriesCode}`);}
+    function clearManualPivots(caseCode,indexCode,seriesCode){for(const code of INDEX_CODES)manualPivotCache.delete(`${caseCode}:${code}:${seriesCode}`);}
     return Object.freeze({catalog,loadVisibility,setHidden,loadCoverage,load,loadStoredPivots,loadManualPivots,clearManualPivots,clearAnalysisData(){coverageCache=null;seriesCache.clear();pivotCache.clear();manualPivotCache.clear();}});
   }
   window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize,clearAiScores});
@@ -151,3 +151,4 @@
     }
   });
 })();
+
