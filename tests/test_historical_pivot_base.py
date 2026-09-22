@@ -13,7 +13,6 @@ from historical_pivot_base import (  # noqa: E402
     PIVOT_POLICIES,
     BasePivotResult,
     ChartGeometry,
-    LinePoint,
     PivotPoint,
     PivotPolicy,
     SeriesPoint,
