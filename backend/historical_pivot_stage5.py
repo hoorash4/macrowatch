@@ -13,7 +13,8 @@ For an active run:
   extreme becomes the new confirmed anchor
 - first same-direction extreme update from an anchor ignores angle
 - second and later updates stop before an angle > 10 degrees
-- protection never stops judgment; protected points only split final output
+- protection never stops judgment and rapid protection is structural metadata,
+  not an unconditional keep rule
 - Stage 5 only deletes; it never creates a point absent from Stage 4
 """
 from __future__ import annotations
@@ -319,20 +320,21 @@ def prune_same_trend_extremes(
         marker_only_keys
         | sideways_keys
         | spike_keys
-        | rapid_move_keys
         | isolated_gap_keys
     )
 
-    # Protection constrains OUTPUT, not JUDGMENT.  Run one chronological state
-    # machine across the complete Stage-4 timeline so later points may still
-    # decide earlier provisional structure.  Protected points are inserted back
-    # as mandatory split points when collapsed segments are rebuilt.
+    # Protection never constrains chronological judgment. Run one state
+    # machine across the complete Stage-4 timeline. Final rapid endpoints carry
+    # structural metadata only: if a valid larger trend absorbs one of them,
+    # that interior rapid point may disappear. Explicit hard structures
+    # (marker-only spike / spike / sideways) and isolated-gap guards remain
+    # output constraints because their structure cannot be represented by a
+    # simple trend merge.
     candidates = list(
         _process_window(
             points,
             geometry,
             angle_threshold_deg,
-            reset_keys=rapid_move_keys,
         )
     )
 
