@@ -2,8 +2,8 @@
 
 Stage 2 owns three classifications:
 - rapid rise/fall candidates (provisional protection only)
-- spikes (final protection; entry is selected before height testing)
-- sideways ranges (final protection)
+- spike candidates (provisional protection only)
+- sideways ranges
 
 Stage 2 never changes the Stage-1 RDP set. Rapid-move candidates carry their
 own entry/end points and are handed to Stage 3 as candidate metadata only; no
@@ -22,17 +22,10 @@ from historical_pivot_shared import (
     SidewaysSegment,
     SpikePeak,
     classify_sideways_reference_line,
-    screen_angle_degrees,
     screen_segment_angle_degrees,
 )
 from historical_pivot_stage1 import BasePivotResult
 
-
-SPIKE_ANGLE_THRESHOLD_DEG = 25.0
-SPIKE_MIN_VISUAL_Y_SHARE = 0.25
-SPIKE_MIN_RETRACEMENT_RATIO = 0.70
-SPIKE_MAX_BC_TO_AB_Y_RATIO = 1.50
-SPIKE_FOLLOWUP_POINTS = 2
 
 RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.30
 RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG = 45.0
@@ -124,224 +117,96 @@ def _entry_before_peak(
     return selected
 
 
-def _followup_rebreaks_peak(
-    same_side: Sequence[PivotPoint],
-    *,
-    peak: PivotPoint,
-    c_point: PivotPoint,
-    direction: str,
-    followup_points: int,
-) -> bool:
-    after_c = [
-        point
-        for point in same_side
-        if point.day > c_point.day
-    ][:followup_points]
-    if direction == "up":
-        return any(point.value > peak.value for point in after_c)
-    return any(point.value < peak.value for point in after_c)
-
-
-def _spike_shape_passes(
-    *,
-    a_point: PivotPoint,
-    peak: PivotPoint,
-    c_point: PivotPoint,
-    entry: PivotPoint,
-    same_side: Sequence[PivotPoint],
-    geometry: ChartGeometry,
-    direction: str,
-    angle_threshold_deg: float,
-    min_visual_y_share: float,
-    min_retracement_ratio: float,
-    max_bc_to_ab_y_ratio: float,
-    followup_points: int,
-) -> tuple[bool, float]:
-    if not (a_point.day < peak.day < c_point.day):
-        return False, 0.0
-
-    if direction == "up":
-        ab = float(peak.value) - float(a_point.value)
-        bc = float(peak.value) - float(c_point.value)
-    else:
-        ab = float(a_point.value) - float(peak.value)
-        bc = float(c_point.value) - float(peak.value)
-
-    if ab <= 0 or bc <= 0:
-        return False, 0.0
-
-    ratio = bc / ab
-    if ratio < min_retracement_ratio or ratio > max_bc_to_ab_y_ratio:
-        return False, 0.0
-    if _visual_y_share(entry, peak, geometry) < min_visual_y_share:
-        return False, 0.0
-
-    angle = screen_angle_degrees(a_point, peak, c_point, geometry)
-    if angle > angle_threshold_deg:
-        return False, angle
-    if _followup_rebreaks_peak(
-        same_side,
-        peak=peak,
-        c_point=c_point,
-        direction=direction,
-        followup_points=followup_points,
-    ):
-        return False, angle
-    return True, angle
-
-
-def _classify_spikes(
+def _classify_spike_candidates(
     stage1: BasePivotResult,
-    geometry: ChartGeometry,
-    *,
-    angle_threshold_deg: float,
-    min_visual_y_share: float,
-    min_retracement_ratio: float,
-    max_bc_to_ab_y_ratio: float,
-    followup_points: int,
+    rapid_candidates: Sequence[RapidMoveCandidate],
 ) -> tuple[SpikePeak, ...]:
+    """Mark rapid moves with no follow-in opposite RDP as spike candidates.
+
+    Stage 2 does not measure spike angles or finalize spike structure.
+    It only uses the still-separated upper/lower RDP boundaries to answer the
+    one question that cannot be answered after Stage 3 merge:
+
+      Did the opposite-side RDP boundary follow the move inside A-C?
+
+    Up move:
+      find the HIGH RDP A immediately before the rapid peak B and the HIGH RDP
+      C immediately after B. If any LOW RDP between A and C rises above
+      max(A, C), the opposite boundary followed the move, so it is not a spike
+      candidate.
+
+    Down move is the exact mirror.
+
+    When no such follow-in point exists, keep the rapid entry/peak provisionally
+    protected through the existing rapid-candidate protection and tag the peak
+    as a spike candidate. No angle/retracement/follow-up judgment is done here.
+    """
     high_rdp = tuple(sorted(stage1.high_pivots, key=lambda item: item.day))
     low_rdp = tuple(sorted(stage1.low_pivots, key=lambda item: item.day))
-    spikes: list[SpikePeak] = []
+    found: list[SpikePeak] = []
 
-    def opposite_sideways_contains_spike(
-        peak: PivotPoint,
-        direction: str,
-    ) -> bool:
-        opposite = low_rdp if direction == "up" else high_rdp
-        prior_trend = "down" if direction == "up" else "up"
-        for left, right in zip(opposite, opposite[1:]):
-            sideways = classify_sideways_reference_line(
-                left,
-                right,
-                prior_trend,
-                geometry,
+    for rapid in rapid_candidates:
+        if rapid.direction > 0:
+            peak_index = next(
+                (
+                    idx for idx, point in enumerate(high_rdp)
+                    if _key(point) == _key(rapid.end)
+                ),
+                None,
             )
-            if sideways is not None and left.day < peak.day < right.day:
-                return True
-        return False
-
-    for index in range(1, len(high_rdp) - 1):
-        a_point, peak, c_point = (
-            high_rdp[index - 1],
-            high_rdp[index],
-            high_rdp[index + 1],
-        )
-        if not (geometry.display_start <= peak.day <= geometry.display_end):
-            continue
-        if not (peak.value > a_point.value and peak.value > c_point.value):
-            continue
-
-        opposite_inside = [
-            item for item in low_rdp
-            if a_point.day <= item.day <= c_point.day
-        ]
-        # A real spike cannot have the opposite boundary following the peak
-        # above both adjacent same-side points.
-        if any(
-            item.value > max(a_point.value, c_point.value)
-            for item in opposite_inside
-        ):
-            continue
-
-        marker_only = opposite_sideways_contains_spike(peak, "up")
-        entry = None if marker_only else _entry_before_peak(
-            a_point=a_point,
-            peak=peak,
-            opposite_rdp=low_rdp,
-            opposite_candidates=stage1.low_candidates,
-            direction="up",
-        )
-        if marker_only or entry is None:
-            continue
-
-        passes, angle = _spike_shape_passes(
-            a_point=a_point,
-            peak=peak,
-            c_point=c_point,
-            entry=entry,
-            same_side=high_rdp,
-            geometry=geometry,
-            direction="up",
-            angle_threshold_deg=angle_threshold_deg,
-            min_visual_y_share=min_visual_y_share,
-            min_retracement_ratio=min_retracement_ratio,
-            max_bc_to_ab_y_ratio=max_bc_to_ab_y_ratio,
-            followup_points=followup_points,
-        )
-        if not passes:
-            continue
-
-        spikes.append(
-            SpikePeak(
-                point=peak,
-                direction="up",
-                angle_deg=angle,
-                entry=entry,
-                marker_only=marker_only,
+            if peak_index is None or peak_index == 0 or peak_index + 1 >= len(high_rdp):
+                continue
+            a_point = high_rdp[peak_index - 1]
+            peak = high_rdp[peak_index]
+            c_point = high_rdp[peak_index + 1]
+            followed = any(
+                item.value > max(a_point.value, c_point.value)
+                for item in low_rdp
+                if a_point.day <= item.day <= c_point.day
             )
-        )
-
-    for index in range(1, len(low_rdp) - 1):
-        a_point, peak, c_point = (
-            low_rdp[index - 1],
-            low_rdp[index],
-            low_rdp[index + 1],
-        )
-        if not (geometry.display_start <= peak.day <= geometry.display_end):
+            if followed:
+                continue
+            found.append(
+                SpikePeak(
+                    point=peak,
+                    direction="up",
+                    angle_deg=0.0,
+                    entry=rapid.start,
+                    marker_only=False,
+                )
+            )
             continue
-        if not (peak.value < a_point.value and peak.value < c_point.value):
-            continue
 
-        opposite_inside = [
-            item for item in high_rdp
-            if a_point.day <= item.day <= c_point.day
-        ]
-        if any(
+        peak_index = next(
+            (
+                idx for idx, point in enumerate(low_rdp)
+                if _key(point) == _key(rapid.end)
+            ),
+            None,
+        )
+        if peak_index is None or peak_index == 0 or peak_index + 1 >= len(low_rdp):
+            continue
+        a_point = low_rdp[peak_index - 1]
+        peak = low_rdp[peak_index]
+        c_point = low_rdp[peak_index + 1]
+        followed = any(
             item.value < min(a_point.value, c_point.value)
-            for item in opposite_inside
-        ):
-            continue
-
-        marker_only = opposite_sideways_contains_spike(peak, "down")
-        entry = None if marker_only else _entry_before_peak(
-            a_point=a_point,
-            peak=peak,
-            opposite_rdp=high_rdp,
-            opposite_candidates=stage1.high_candidates,
-            direction="down",
+            for item in high_rdp
+            if a_point.day <= item.day <= c_point.day
         )
-        if marker_only or entry is None:
+        if followed:
             continue
-
-        passes, angle = _spike_shape_passes(
-            a_point=a_point,
-            peak=peak,
-            c_point=c_point,
-            entry=entry,
-            same_side=low_rdp,
-            geometry=geometry,
-            direction="down",
-            angle_threshold_deg=angle_threshold_deg,
-            min_visual_y_share=min_visual_y_share,
-            min_retracement_ratio=min_retracement_ratio,
-            max_bc_to_ab_y_ratio=max_bc_to_ab_y_ratio,
-            followup_points=followup_points,
-        )
-        if not passes:
-            continue
-
-        spikes.append(
+        found.append(
             SpikePeak(
                 point=peak,
                 direction="down",
-                angle_deg=angle,
-                entry=entry,
-                marker_only=marker_only,
+                angle_deg=0.0,
+                entry=rapid.start,
+                marker_only=False,
             )
         )
 
-    return tuple(sorted(spikes, key=lambda item: item.point.day))
+    return tuple(sorted(found, key=lambda item: item.point.day))
 
 
 def _rapid_move_allowed_vertical_angle(share: float) -> float:
@@ -448,18 +313,14 @@ def _classify_rapid_moves(
     geometry: ChartGeometry,
     *,
     min_visual_y_share: float,
-    spike_peaks: Sequence[SpikePeak],
 ) -> tuple[RapidMoveCandidate, ...]:
     """Create provisional rapid-move candidates from the separate RDP sides."""
     high_rdp = tuple(sorted(stage1.high_pivots, key=lambda item: item.day))
     low_rdp = tuple(sorted(stage1.low_pivots, key=lambda item: item.day))
-    spike_peak_keys = {_key(spike.point) for spike in spike_peaks}
     found: dict[tuple, RapidMoveCandidate] = {}
 
     for a_point, peak in zip(high_rdp, high_rdp[1:]):
         if peak.value <= a_point.value:
-            continue
-        if _key(peak) in spike_peak_keys:
             continue
         entry = _entry_before_peak(
             a_point=a_point,
@@ -643,54 +504,25 @@ def classify_special_structures(
     stage1: BasePivotResult,
     geometry: ChartGeometry,
     *,
-    spike_angle_threshold_deg: float = SPIKE_ANGLE_THRESHOLD_DEG,
-    spike_min_visual_y_share: float = SPIKE_MIN_VISUAL_Y_SHARE,
-    spike_min_retracement_ratio: float = SPIKE_MIN_RETRACEMENT_RATIO,
-    spike_max_bc_to_ab_y_ratio: float = SPIKE_MAX_BC_TO_AB_Y_RATIO,
-    spike_followup_points: int = SPIKE_FOLLOWUP_POINTS,
     rapid_min_visual_y_share: float = RAPID_MOVE_MIN_VISUAL_Y_SHARE,
 ) -> Stage2Result:
     """Classify all Stage-2 special structures without changing Stage-1 RDP."""
-    if spike_angle_threshold_deg <= 0 or spike_angle_threshold_deg >= 180:
-        raise ValueError("spike_angle_threshold_deg must be between 0 and 180")
-    if not 0 <= spike_min_visual_y_share <= 1:
-        raise ValueError("spike_min_visual_y_share must be between 0 and 1")
-    if spike_min_retracement_ratio < 0:
-        raise ValueError("spike_min_retracement_ratio must be non-negative")
-    if spike_max_bc_to_ab_y_ratio < spike_min_retracement_ratio:
-        raise ValueError(
-            "spike_max_bc_to_ab_y_ratio must be >= spike_min_retracement_ratio"
-        )
-    if spike_followup_points < 0:
-        raise ValueError("spike_followup_points must be non-negative")
     if not 0 <= rapid_min_visual_y_share <= 1:
         raise ValueError("rapid_min_visual_y_share must be between 0 and 1")
 
-    spikes = _classify_spikes(
-        stage1,
-        geometry,
-        angle_threshold_deg=spike_angle_threshold_deg,
-        min_visual_y_share=spike_min_visual_y_share,
-        min_retracement_ratio=spike_min_retracement_ratio,
-        max_bc_to_ab_y_ratio=spike_max_bc_to_ab_y_ratio,
-        followup_points=spike_followup_points,
-    )
     rapid = _classify_rapid_moves(
         stage1,
         geometry,
         min_visual_y_share=rapid_min_visual_y_share,
-        spike_peaks=spikes,
     )
+    spikes = _classify_spike_candidates(stage1, rapid)
 
-    # Spike/rapid entry points may come from the full plateau-extrema candidate
+    # Rapid entry points may come from the full plateau-extrema candidate
     # set rather than the fixed-count RDP subset. Stage 2 adds those selected
     # entries back into the corresponding RDP side.
     added_entries = [
-        point
-        for point in (
-            *(spike.entry for spike in spikes if spike.entry is not None),
-            *(candidate.start for candidate in rapid),
-        )
+        candidate.start
+        for candidate in rapid
     ]
     high_map = {_key(point): point for point in stage1.high_pivots}
     low_map = {_key(point): point for point in stage1.low_pivots}
