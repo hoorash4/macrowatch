@@ -78,6 +78,16 @@ test('list badges use final pivot colors, including colored PEAK and gray START'
   assert.deepEqual(Array.from(summary.nearMisses),['START']);
 });
 
+test('a dark pivot is still listed when another pivot is colored for the same reference',()=>{
+  const item={storedPivots:[],manualPivots:[
+    {sourceDate:'2021-10-05',pivotDate:'2021-10-05',pivotValue:1,reason:'관리자 선택',keyReference:null,isDeleted:false},
+    {sourceDate:'2022-01-05',pivotDate:'2022-01-05',pivotValue:2,reason:'관리자 선택',keyReference:'START',isDeleted:false}
+  ]};
+  const summary=badges(item,{mode:'history',cycle:{startDate:'2022-01-05'}});
+  assert.deepEqual(Array.from(summary.anchors),['START']);
+  assert.deepEqual(Array.from(summary.nearMisses),['START']);
+});
+
 test('the auxiliary pivot reason section is removed without deleting saved reasons',()=>{
   assert.doesNotMatch(controller,/기타 피봇 판정 근거|appendAuxiliaryPivotReasons/);
   assert.match(controller,/pivotReasonFor\(item,result\)/);
@@ -97,3 +107,30 @@ test('only explicit case deletion may physically delete manual rows',()=>{
   assert.match(sql,/if p_delete_manual_pivots then/);
   assert.doesNotMatch(sql,/case_code text not null references public\.historical_cases/);
 });
+
+test('one case-indicator pivot set is shared while key designations stay index-specific',()=>{
+  const repository=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
+  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260923090000_share_historical_indicator_pivots.sql'),'utf8');
+  assert.match(controller,/loadStoredPivots\(activeCase\.code,activeCase\.primaryIndex,item\.code\)/);
+  assert.match(controller,/catalog\(activeCode\)/);
+  assert.match(controller,/loadManualPivots\(activeCase\.code,activeCode,item\.code\)/);
+  assert.match(repository,/allowed\.has\(item\.marketScope\)/);
+  assert.match(repository,/row\.key_references\?\.\[indexCode\]/);
+  assert.match(repository,/\[\['case_code',caseCode\],\['series_code',seriesCode\]\]/);
+  assert.match(migration,/historical_manual_source_shared_unique/);
+  assert.match(migration,/m\.case_code=new\.case_code and m\.series_code=new\.series_code/);
+  assert.doesNotMatch(migration,/m\.index_code=new\.index_code/);
+  assert.match(migration,/key_references=jsonb_build_object\(index_code,key_reference\)/);
+  assert.match(migration,/next_keys=coalesce\(prior\.key_references,'\{\}'::jsonb\)-p_index_code/);
+  assert.match(migration,/delete from public\.historical_indicator_pivots a/);
+  assert.doesNotMatch(migration,/delete from public\.historical_indicator_manual_pivots/);
+});
+
+test('reason presets contain matching rise and fall language without the redundant old choice',()=>{
+  assert.match(controller,/오랫동안 이어진 상승이 멈추고 고점권 횡보로 국면이 바뀌었습니다/);
+  assert.match(controller,/오랫동안 이어진 하락이 멈추고 저점권 횡보로 국면이 바뀌었습니다/);
+  assert.match(controller,/상승 막바지에 급등한 뒤 방향을 되돌렸고, 이후 하락 흐름이 이어졌습니다/);
+  assert.match(controller,/하락 막바지에 급락한 뒤 방향을 되돌렸고, 이후 상승 흐름이 이어졌습니다/);
+  assert.doesNotMatch(controller,/장기 하락을 마친 뒤 상승 흐름이 이어지기 시작했습니다/);
+});
+
