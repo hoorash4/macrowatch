@@ -195,6 +195,11 @@ def _process_window(
                 index += 1
                 continue
 
+            # The active trend survived from its anchor through its latest
+            # extreme. Freeze that completed wave before starting the confirmed
+            # opposite trend from the latest extreme.
+            _record_collapse(intervals, state)
+
             old_anchor = state.anchor
             old_direction = state.direction
             new_anchor = state.extreme
