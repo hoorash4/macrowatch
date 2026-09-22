@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from datetime import date
 
-from historical_pivot_shared import PivotPoint, SidewaysSegment, SimplifiedLineResult, SimplifiedLineSegment, SpikePeak
+from historical_pivot_shared import LinePoint, PivotPoint, SidewaysSegment, SimplifiedLineResult, SimplifiedLineSegment, SpikePeak
 from historical_pivot_store import build_storage_rows, replace_stored_pivots, source_input_sha256
 
 
@@ -33,13 +33,18 @@ def test_build_storage_rows_preserves_line_links_and_reasons():
         high_sideways_segments=(sideways,),
         low_sideways_segments=(),
     )
+    l0 = LinePoint(p0.day, p0.value)
+    l1 = LinePoint(p1.day, p1.value)
+    l2 = LinePoint(p2.day, p2.value)
+    l3 = LinePoint(p3.day, p3.value)
+
     final = SimplifiedLineResult(
-        markers=(p0, p1, p3, p2),
+        markers=(l0, l1, l3, l2),
         segments=(
-            SimplifiedLineSegment(p0, p1, "trend"),
-            SimplifiedLineSegment(p1, p2, "sideways"),
+            SimplifiedLineSegment(l0, l1, "trend"),
+            SimplifiedLineSegment(l1, l2, "sideways"),
         ),
-        marker_only_points=(p3,),
+        marker_only_points=(l3,),
     )
     stage3 = final
     stage4 = final
