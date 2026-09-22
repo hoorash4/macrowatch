@@ -38,6 +38,7 @@ from historical_pivot_shared import (
     LineRapidMoveCandidate,
     SimplifiedLineResult,
     Stage3LineResult,
+    line_role_map,
     screen_origin_angle_degrees,
     screen_segment_angle_degrees,
 )
