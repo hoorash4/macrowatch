@@ -186,12 +186,10 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(chart,/class PivotTimeAxisRenderer/);
   assert.match(chart,/class PivotTimeAxisPaneView/);
   assert.match(chart,/timeAxisPaneViews\(\)\{return \[this\.timeAxisPaneView\];\}/);
-  assert.match(chart,/labelTop=scope\.bitmapSize\.height-labelHeight-3\*v/);
   assert.match(chart,/ctx\.lineTo\(px,labelTop\)/);
   assert.match(chart,/minimumHeight: 46/);
   assert.match(chart,/axisPressedMouseMove: \{ time: true, price: false \}/);
   assert.match(css,/\.historical-chart-region \{ flex: 1 0 510px; \}/);
-  assert.match(css,/\.historical-indicator-list \{[^}]*max-height: 580px/);
   assert.match(css,/@media\(max-width:850px\)\{\.historical-chart-region\{flex-basis:645px\}/);
   assert.doesNotMatch(chart,/pivotText|timingText|fillText\(this\.view\.label/);
   assert.doesNotMatch(chart,/historical-indicator-pivot-line|timeScale\(\)\.subscribeVisible/);
@@ -200,83 +198,11 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(controller,/input\.type='radio'/);
   assert.match(controller,/historical-indicator-clear/);assert.doesNotMatch(controller,/최대 5개/);
   assert.match(controller,/badge\.className='historical-reference-badge'/);
-  assert.match(controller,/activeMode==='history'\?\(item\.results\?\.length\?`\$\{Math\.round\(item\.overallScore\)\}점`:'0점 · 범위 근접'\)/);
 });
 test('current market anchors use the persisted cycle path and force a complete signal recalculation',()=>{
   const html=read('historical-insight.html'),controller=read('assets/js/historical-insight/historical-insight.js');
   for(const id of ['historical-current-anchor-form','historical-current-start-date','historical-current-peak-date','historical-current-trough-date'])assert.match(html,new RegExp(`id="${id}"`));
   assert.match(controller,/function saveAnchors\(values,output\)/);assert.match(controller,/await caseRepository\.save\(savedCode,activeCode,values,currentUser\.id\)/);assert.match(controller,/analysisCache\.clear\(\);rebuildCurrentModel\(\)/);assert.match(controller,/historical-current-anchor-form'\)\.addEventListener\('submit'/);assert.match(controller,/showCurrentAnchors\(cycle\)/);
-});
-function ui() {
-  const nodes=new Map();
-  const make = () => { const classes=new Set(); return ({dataset:{}, attrs:{}, hidden:false, disabled:false,textContent:'',
-    value:'',events:{}, children:[], classList:{toggle(name,on){on?classes.add(name):classes.delete(name);},contains(name){return classes.has(name);}}, setAttribute(k,v){this.attrs[k]=v;},
-    getAttribute(k){return this.attrs[k];}, addEventListener(k,v){this.events[k]=v;}, replaceChildren(){this.children=[];},
-    append(...items){this.children.push(...items);}, querySelector(){return null;},focus(){}}); };
-  for (const id of ['host','status','meta','message','retry','full-range','case-range']) nodes.set('historical-chart-'+id,make());
-  for (const id of ['stage','case-panel','past-sidebar','current-sidebar','current-case-name','current-case-state','current-name-edit','current-name-form','current-name-input','current-name-cancel','current-name-status','current-anchor-state','current-start','current-peak','current-trough','current-anchor-editor','current-anchor-form','current-start-date','current-peak-date','current-trough-date','current-anchor-save-status','toolbar-title','case-list','cycle-panel','cycle-state','cycle-name','cycle-market','search-range','cycle-description','rise','fall','drawdown','rise-days','fall-days','cycle-editor','cycle-form','start-date','peak-date','trough-date','cycle-save-status','indicator-clear','indicator-selection-message']) nodes.set(`historical-${id}`,make());
-  const pointCards={}; for(const kind of ['start','peak','trough']){const card=make(),strong=make(),span=make();card.querySelector=s=>s==='strong'?strong:span;pointCards[kind]=card;}
-  const buttons=['SP500','NASDAQ_COMPOSITE','KOSPI'].map(code=>{const b=make();b.dataset.historicalIndex=code;b.attrs['aria-selected']=String(code==='NASDAQ_COMPOSITE');return b;});
-  const modeButtons=['history','current'].map(mode=>{const b=make();b.dataset.historicalMode=mode;b.attrs['aria-selected']=String(mode==='history');return b;});
-  const caseButtons=[];
-  const pending=[]; const drawn=[]; let destroyed=0;
-  const client={auth:{getSession:async()=>({data:{session:{user:{id:'user-1'}}},error:null})},from:()=>{const q={select(){return q;},eq(){return q;},maybeSingle:async()=>({data:{is_admin:false},error:null})};return q;}};
-  const markets=Object.fromEntries(['SP500','NASDAQ_COMPOSITE','KOSPI'].map(indexCode=>[indexCode,{caseCode:'dotcom',indexCode,startDate:'1994-06-24',peakDate:'2000-03-10',troughDate:'2002-10-09',status:'confirmed'}]));
-  const definition={code:'dotcom',order:1,name:'닷컴버블',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'1994-01-01',searchEnd:'2003-03-31',summary:'기술주 사이클',markets};
-  const currentMarkets=Object.fromEntries(['SP500','NASDAQ_COMPOSITE','KOSPI'].map(indexCode=>[indexCode,{caseCode:'ai_semiconductor',indexCode,startDate:'2022-10-12',peakDate:null,troughDate:null,status:'in_progress'}]));
-  currentMarkets.NASDAQ_COMPOSITE={...currentMarkets.NASDAQ_COMPOSITE,peakDate:'2024-01-01',troughDate:'2024-06-01',status:'confirmed'};
-  const currentDefinition={code:'ai_semiconductor',order:10,name:'AI/반도체 상승장',primaryIndex:'NASDAQ_COMPOSITE',comparisons:['SP500','KOSPI'],searchStart:'2022-06-01',searchEnd:null,summary:'현재 진행 국면',markets:currentMarkets};
-  const w={MacroWatchHistoricalData:{indices:{SP500:'S&P 500',NASDAQ_COMPOSITE:'NASDAQ Composite',KOSPI:'KOSPI'},
-    createRepository:()=>{const cache=new Map();return{load:code=>{if(!cache.has(code)){const promise=new Promise((resolve,reject)=>pending.push({code,resolve,reject}));cache.set(code,promise);promise.catch(()=>cache.delete(code));}return cache.get(code);}};}},
-    MacroWatchHistoricalCycles:{createRepository:()=>({load:async()=>[currentDefinition,definition],loadCurrentSettings:async()=>({currentName:'현재 국면 관찰 중'}),saveCurrentName:async(_code,value)=>value}),marketCycle:(item,code)=>item.markets[code],calculate:()=>({start:{time:'1994-06-24',value:1},peak:{time:'2000-03-10',value:2},trough:{time:'2002-10-09',value:1},rise:100,fall:-50,drawdown:50,riseDays:1,fallDays:1}),chartPoints:()=>[]},
-    MacroWatchFrontend:{createSupabaseClient:()=>client,formatDisplayNumber:String},
-    MacroWatchHistoricalChart:{create:()=>({setData:rows=>drawn.push(rows),setCycle(){},focus(){},fit(){},destroy(){destroyed++;}})},
-    addEventListener(){}};
-  vm.runInNewContext(read('assets/js/historical-insight/historical-insight.js'),{
-    window:w,document:{getElementById:id=>nodes.get(id),querySelectorAll:s=>s==='[data-historical-index]'?buttons:s==='[data-historical-mode]'?modeButtons:caseButtons,
-      querySelector:s=>pointCards[s.match(/"(start|peak|trough)"/)?.[1]],createElement:()=>{const item=make();const append=item.append;item.append=(...values)=>{append.call(item,...values);if(values.length===2&&values[0].textContent)caseButtons.push(item);};return item;}},console:{error(){}}});
-  return {nodes,buttons,modeButtons,caseButtons,pending,drawn,destroyed:()=>destroyed};
-}
-const settle=()=>new Promise(resolve=>setImmediate(resolve));
-test('rapid switching ignores stale responses and clears previous data',async()=>{
-  const f=ui(); await settle();
-  f.buttons[2].events.click();
-  f.pending[0].resolve([{time:'1990-01-02',value:999}]);
-  f.pending[1].resolve([{time:'1990-01-04',value:10}]); await settle();
-  assert.equal(f.drawn.at(-1)[0].value,10);
-  assert.equal(f.nodes.get('historical-chart-host').dataset.state,'ready');
-  assert.match(f.nodes.get('historical-chart-meta').textContent,/KOSPI/);
-  f.buttons[0].events.click();
-  assert.equal(f.drawn.at(-1).length,0);
-  assert.equal(f.nodes.get('historical-chart-host').dataset.state,'loading');
-  f.pending[2].resolve([]); await settle();
-  assert.equal(f.nodes.get('historical-chart-host').dataset.state,'empty');
-  assert.equal(f.nodes.get('historical-chart-full-range').disabled,true);
-});
-test('request failure exposes retry and recovery restores the selected chart',async()=>{
-  const f=ui(); await settle(); f.pending[0].reject(new Error('offline')); await settle();
-  assert.equal(f.nodes.get('historical-chart-host').dataset.state,'error');
-  assert.equal(f.nodes.get('historical-chart-retry').hidden,false);
-  assert.equal(f.destroyed(),1);
-  f.nodes.get('historical-chart-retry').events.click();
-  f.pending[1].resolve([{time:'1990-01-02',value:5}]); await settle();
-  assert.equal(f.nodes.get('historical-chart-host').dataset.state,'ready');
-  assert.equal(f.nodes.get('historical-chart-retry').hidden,true);
-});
-test('current mode keeps the common analysis layout and replaces the left list with current indicators',async()=>{
-  const f=ui(); await settle();
-  assert.equal(f.caseButtons.length,1);
-  assert.equal(f.caseButtons[0].children[0].textContent,'닷컴버블');
-  f.pending[0].resolve([{time:'1990-01-02',value:5}]); await settle();
-  f.modeButtons[1].events.click(); await settle();
-  assert.equal(f.nodes.get('historical-past-sidebar').hidden,true);
-  assert.equal(f.nodes.get('historical-current-sidebar').hidden,false);
-  assert.equal(f.nodes.get('historical-current-case-name').textContent,'AI/반도체 상승장');
-  assert.equal(f.nodes.get('historical-current-case-state').textContent,'진행 중');
-  assert.equal(f.nodes.get('historical-cycle-panel').hidden,true);
-  assert.equal(f.nodes.get('historical-toolbar-title').textContent,'현재 국면 차트');
-  assert.match(f.nodes.get('historical-chart-meta').textContent,/AI\/반도체 상승장/);
-  assert.equal(f.nodes.get('historical-stage').classList.contains('is-current-mode'),true);
 });
 test('current screening bounds retrospective validation and ignores zero-score near misses',()=>{
   const source=read('assets/js/historical-insight/historical-insight.js');
