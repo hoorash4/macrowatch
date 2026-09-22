@@ -117,7 +117,9 @@
       }));
       crosshairOverlay.hidden=false;
       const badges=crosshairValues.children;
-      badges[0].style.left=`${Math.max(2,x-badges[0].offsetWidth-3)}px`;
+      badges[0].style.left=indicatorSeries.size===0
+        ? `${Math.max(2,Math.min(x-badges[0].offsetWidth/2,host.clientWidth-badges[0].offsetWidth-2))}px`
+        : `${Math.max(2,x-badges[0].offsetWidth-3)}px`;
       for (let index=1;index<badges.length;index++) {
         badges[index].style.left=`${Math.min(x+3,host.clientWidth-badges[index].offsetWidth-2)}px`;
       }
