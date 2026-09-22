@@ -9,7 +9,7 @@
   }
   function createRepository(client){
     const seriesCache=new Map(),pivotCache=new Map(),manualPivotCache=new Map();let coverageCache=null,visibilityCache=null;
-    const catalog=(indexCode,allMarkets=false)=>{const allowed=INDEX_MARKET_SCOPES[indexCode]||INDEX_MARKET_SCOPES.SP500;return Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&(allMarkets||allowed.has(item.marketScope))));};
+    const catalog=indexCode=>{const allowed=INDEX_MARKET_SCOPES[indexCode]||INDEX_MARKET_SCOPES.SP500;return Object.freeze((window.MacroWatchEconomicSeriesRegistry?.allSeries||[]).filter(item=>!INDEX_CODES.has(item.code)&&allowed.has(item.marketScope)));};
     async function loadVisibility(){
       if(visibilityCache)return visibilityCache;
       const {data,error}=await client.from('economic_chart_catalog_settings')
