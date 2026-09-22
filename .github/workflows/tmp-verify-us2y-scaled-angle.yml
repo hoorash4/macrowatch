@@ -1,0 +1,54 @@
+name: Verify US2Y scaled rapid angle temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-us2y-scaled-angle.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows, screen_segment_angle_degrees
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures, _rapid_move_allowed_vertical_angle
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US2Y")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals); pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          s2=classify_special_structures(calculate_base_pivots(rows,freq),g)
+
+          print("ANGLE_CHECK",[(s,round(_rapid_move_allowed_vertical_angle(s),4)) for s in (0.20,0.30,0.50,0.80,0.90)])
+          print("RAPID",[
+              (
+                  c.start.day.isoformat(),c.start.value,
+                  c.end.day.isoformat(),c.end.value,
+                  c.direction,round(c.visual_y_share,4),
+                  round(90.0-abs(screen_segment_angle_degrees(c.start,c.end,g)),2),
+                  round(_rapid_move_allowed_vertical_angle(c.visual_y_share),2),
+              )
+              for c in s2.rapid_move_candidates
+          ])
+          PY
