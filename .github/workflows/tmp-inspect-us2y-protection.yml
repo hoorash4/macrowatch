@@ -1,0 +1,59 @@
+name: Inspect US2Y point protection temp
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-inspect-us2y-protection.yml"
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Inspect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows, screen_x_span_share
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import finalize_rapid_moves
+          from historical_pivot_stage5 import prune_same_trend_extremes
+          from historical_pivot_stage6 import prune_unconfirmed_retracements
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US2Y")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals);pad=(hi-lo)*.08 if hi!=lo else 1
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          s1=calculate_base_pivots(rows,freq);s2=classify_special_structures(s1,g);s3=simplify_pivot_lines(s2,g);s4=finalize_rapid_moves(s3,g);s5=prune_same_trend_extremes(s4,g);s6=prune_unconfirmed_retracements(s5,g)
+          targets={"2021-08-02","2021-09-21"}
+          print("S4_PROTECTED",[(p.day.isoformat(),p.value) for p in s4.protected_points])
+          print("S5_SEGMENTS",[(x.start.day.isoformat(),x.start.value,x.end.day.isoformat(),x.end.value,x.kind) for x in s5.segments])
+          line=[]
+          seen={}
+          for seg in s5.segments:
+              seen[(seg.start.day,seg.start.value)]=seg.start;seen[(seg.end.day,seg.end.value)]=seg.end
+          line=sorted(seen.values(),key=lambda p:p.day)
+          for i,p in enumerate(line):
+              if p.day.isoformat() in targets:
+                  prev=line[i-1] if i>0 else None
+                  nxt=line[i+1] if i+1<len(line) else None
+                  print("TARGET",p.day.isoformat(),p.value,
+                        "rapid", any((q.day,q.value)==(p.day,p.value) for q in s4.protected_points),
+                        "prev_gap", screen_x_span_share(prev,p,g) if prev else None,
+                        "next_gap", screen_x_span_share(p,nxt,g) if nxt else None,
+                        "adj", (prev.day.isoformat(),prev.value) if prev else None, (nxt.day.isoformat(),nxt.value) if nxt else None)
+          print("S6",[(p.day.isoformat(),p.value) for p in s6.markers])
+          PY
