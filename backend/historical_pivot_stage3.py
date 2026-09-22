@@ -1,26 +1,21 @@
-"""Stage 3: merge Stage 2's upper/lower RDP points into one wave line.
+"""Stage 3: merge Stage 2 upper/lower RDP lines into one wave line.
 
-Inputs:
-- Stage 2 final high/low RDP points
-- Stage 2 spike/sideways classification metadata
-- Stage 2 rapid-move candidates
+Stage 3 does only the merge. It does not perform the Stage-4/5 cleanup.
 
-Output:
-- one chronological wave line
-- explicit marker-only spike points, if any
-- all Stage-2 rapid candidates carried provisionally into Stage 4
-
-Spike/sideways line structure is encoded directly in segment kinds; Stage 3 does
-not pass a second copy of sideways metadata downstream.
-
-Stage 3 does not reclassify or clean up the merged wave. Rapid candidate
-entry/end points and hard spike/sideways endpoints are kept on the connected
-line so Stage 4 receives the full merged chronology. Only marker-only spikes
-may remain as detached standalone markers.
+Merge rule:
+- uptrend: low -> high, then compare HIGHs; a higher HIGH extends high -> high.
+- if the next HIGH is lower, the previous HIGH owns the down reversal and
+  connects to the first later LOW, unless the old uptrend immediately resumes
+  with a new HIGH above the reversal owner.
+- downtrend is the exact mirror: high -> low, then compare LOWs; a lower LOW
+  extends low -> low.
+- therefore, after high -> low, the LOW is the active reference. Intervening
+  HIGHs do not become vertices merely because they occur earlier in time.
+- Stage-2 spike/sideways structure is carried as segment kind metadata.
+- Stage-2 rapid candidate endpoints must survive connected into Stage 4.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from typing import Sequence
 
@@ -29,517 +24,238 @@ from historical_pivot_shared import (
     LinePoint,
     LineRapidMoveCandidate,
     PivotPoint,
-    SidewaysSegment,
-    Stage3LineResult,
     SimplifiedLineSegment,
-    screen_angle_degrees,
+    Stage3LineResult,
 )
 from historical_pivot_stage2 import Stage2Result
-
-
-TRANSIENT_EXCURSION_MAX_ANGLE_DEG = 30.0
 
 
 def _key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
 
 
+def _line_key(point: PivotPoint | LinePoint) -> tuple[date, float]:
+    return point.day, point.value
 
-def _transient_excursion_keys(
-    stage2: Stage2Result,
-    geometry: ChartGeometry,
-) -> set[tuple[date, float, str]]:
-    """Return ordinary same-side RDP peaks/troughs that immediately mean-revert.
 
-    For three consecutive same-side RDP points A-B-C:
-    - HIGH side: B > A and C < A
-    - LOW side:  B < A and C > A
-    - the screen-space interior angle at B is <= 30 degrees
+def _next_after(points: Sequence[PivotPoint], after: date) -> PivotPoint | None:
+    return next((item for item in points if item.day > after), None)
 
-    Such B is a merge target, not a protected structure. Any spike, protected
-    sideways boundary, or rapid-move provisional endpoint outranks this rule
-    and is therefore never returned here.
-    """
-    protected: set[tuple[date, float, str]] = set()
 
-    for spike in stage2.spike_peaks:
-        protected.add(_key(spike.point))
-        if spike.entry is not None:
-            protected.add(_key(spike.entry))
+def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
+    """Merge the two RDP boundaries using the approved active-side rule."""
+    marker_only_keys = {
+        _key(spike.point)
+        for spike in stage2.spike_peaks
+        if spike.marker_only
+    }
+    highs = [
+        point
+        for point in sorted(stage2.high_pivots, key=lambda item: item.day)
+        if _key(point) not in marker_only_keys
+    ]
+    lows = [
+        point
+        for point in sorted(stage2.low_pivots, key=lambda item: item.day)
+        if _key(point) not in marker_only_keys
+    ]
+    if not highs or not lows:
+        return []
 
-    for sideways in (
-        *stage2.high_sideways_segments,
-        *stage2.low_sideways_segments,
-    ):
-        if getattr(sideways, "protected", True):
-            protected.add(_key(sideways.start))
-            protected.add(_key(sideways.end))
+    first_high = highs[0]
+    first_low = lows[0]
+    if first_low.day < first_high.day:
+        direction = "up"
+        anchor = first_low
+        current = _next_after(highs, anchor.day)
+    else:
+        direction = "down"
+        anchor = first_high
+        current = _next_after(lows, anchor.day)
 
-    for rapid in stage2.rapid_move_candidates:
-        protected.add(_key(rapid.start))
-        protected.add(_key(rapid.end))
+    if current is None:
+        return []
 
-    merge_targets: set[tuple[date, float, str]] = set()
-    for pivot_type, points in (
-        ("high", stage2.high_pivots),
-        ("low", stage2.low_pivots),
-    ):
-        ordered = sorted(points, key=lambda item: item.day)
-        for a_point, b_point, c_point in zip(
-            ordered,
-            ordered[1:],
-            ordered[2:],
+    segments: list[tuple[PivotPoint, PivotPoint]] = [(anchor, current)]
+    anchor = current
+
+    def replace_last_endpoint(old_end: PivotPoint, new_end: PivotPoint) -> bool:
+        for idx in range(len(segments) - 1, -1, -1):
+            left, right = segments[idx]
+            if _key(right) != _key(old_end):
+                continue
+            if left.day >= new_end.day:
+                return False
+            segments[idx] = (left, new_end)
+            return True
+        return False
+
+    while True:
+        if direction == "up":
+            # After a cross-side restart, finish LOW -> HIGH once. From then on,
+            # HIGH is the active side and only HIGHs decide continuation.
+            if anchor.pivot_type == "low":
+                next_high = _next_after(highs, anchor.day)
+                if next_high is None:
+                    break
+                segments.append((anchor, next_high))
+                anchor = next_high
+                continue
+
+            next_high = _next_after(highs, anchor.day)
+            if next_high is None:
+                break
+
+            if next_high.value > anchor.value:
+                # Same uptrend: HIGH -> HIGH.
+                segments.append((anchor, next_high))
+                anchor = next_high
+                continue
+
+            # Lower HIGH: previous HIGH owns a possible down reversal.
+            reversal_owner = anchor
+            low_candidate = _next_after(lows, reversal_owner.day)
+            if low_candidate is None:
+                break
+
+            # If the old uptrend immediately makes a new HIGH above the owner,
+            # the low was only a pullback; extend the old trend instead.
+            following_high = _next_after(highs, low_candidate.day)
+            if (
+                following_high is not None
+                and following_high.value > reversal_owner.value
+            ):
+                if not replace_last_endpoint(reversal_owner, following_high):
+                    segments.append((reversal_owner, following_high))
+                anchor = following_high
+                continue
+
+            segments.append((reversal_owner, low_candidate))
+            anchor = low_candidate
+            direction = "down"
+            continue
+
+        # direction == "down"
+        # After HIGH -> LOW, LOW is the active side. Compare LOWs, not the
+        # intervening HIGHs.
+        if anchor.pivot_type == "high":
+            next_low = _next_after(lows, anchor.day)
+            if next_low is None:
+                break
+            segments.append((anchor, next_low))
+            anchor = next_low
+            continue
+
+        next_low = _next_after(lows, anchor.day)
+        if next_low is None:
+            break
+
+        if next_low.value < anchor.value:
+            # Same downtrend: LOW -> LOW.
+            segments.append((anchor, next_low))
+            anchor = next_low
+            continue
+
+        # Higher LOW: previous LOW owns a possible up reversal.
+        reversal_owner = anchor
+        high_candidate = _next_after(highs, reversal_owner.day)
+        if high_candidate is None:
+            break
+
+        following_low = _next_after(lows, high_candidate.day)
+        if (
+            following_low is not None
+            and following_low.value < reversal_owner.value
         ):
-            b_key = _key(b_point)
-            if b_key in protected:
-                continue
-
-            if pivot_type == "high":
-                reverted = (
-                    b_point.value > a_point.value
-                    and c_point.value < a_point.value
-                )
-            else:
-                reverted = (
-                    b_point.value < a_point.value
-                    and c_point.value > a_point.value
-                )
-            if not reverted:
-                continue
-
-            angle = screen_angle_degrees(
-                a_point,
-                b_point,
-                c_point,
-                geometry,
-            )
-            if angle <= TRANSIENT_EXCURSION_MAX_ANGLE_DEG:
-                merge_targets.add(b_key)
-
-    return merge_targets
-
-
-def _unique(points: Sequence[PivotPoint]) -> list[PivotPoint]:
-    by_key = {_key(point): point for point in points}
-    return sorted(by_key.values(), key=lambda item: (item.day, item.pivot_type))
-
-
-@dataclass(frozen=True)
-class _Leg:
-    start: PivotPoint
-    end: PivotPoint
-    direction: int  # +1 up, -1 down
-
-
-@dataclass
-class _CandidateRun:
-    direction: int
-    intervals: list[tuple[date, date, _Leg, _Leg]]
-
-    @property
-    def natural_start(self) -> PivotPoint:
-        if self.direction > 0:
-            return min(
-                (low_leg.start for _, _, _, low_leg in self.intervals),
-                key=lambda item: item.day,
-            )
-        return min(
-            (high_leg.start for _, _, high_leg, _ in self.intervals),
-            key=lambda item: item.day,
-        )
-
-
-@dataclass(frozen=True)
-class _Wave:
-    direction: int
-    start: PivotPoint
-    end: PivotPoint
-
-
-@dataclass(frozen=True)
-class _HardSegment:
-    start: PivotPoint
-    end: PivotPoint
-    kind: str
-    sideways: SidewaysSegment | None = None
-
-
-def _legs(points: Sequence[PivotPoint], pivot_type: str) -> list[_Leg]:
-    same_side = sorted(
-        (point for point in points if point.pivot_type == pivot_type),
-        key=lambda item: item.day,
-    )
-    result: list[_Leg] = []
-    for left, right in zip(same_side, same_side[1:]):
-        if right.value == left.value:
+            # Old downtrend resumed with a new LOW; the rebound HIGH was not a
+            # turn. Extend LOW -> LOW.
+            if not replace_last_endpoint(reversal_owner, following_low):
+                segments.append((reversal_owner, following_low))
+            anchor = following_low
             continue
-        result.append(
-            _Leg(
-                start=left,
-                end=right,
-                direction=1 if right.value > left.value else -1,
-            )
-        )
-    return result
 
+        segments.append((reversal_owner, high_candidate))
+        anchor = high_candidate
+        direction = "up"
 
-def _consensus_runs(points: Sequence[PivotPoint]) -> list[_CandidateRun]:
-    """Find periods where upper and lower boundaries agree on direction."""
-    highs = _legs(points, "high")
-    lows = _legs(points, "low")
-    intervals: list[tuple[date, date, int, _Leg, _Leg]] = []
-
-    for high_leg in highs:
-        for low_leg in lows:
-            if high_leg.direction != low_leg.direction:
-                continue
-            start = max(high_leg.start.day, low_leg.start.day)
-            end = min(high_leg.end.day, low_leg.end.day)
-            if start > end:
-                continue
-            intervals.append(
-                (start, end, high_leg.direction, high_leg, low_leg)
-            )
-
-    intervals.sort(key=lambda item: (item[0], item[1]))
-
-    # Only a consensus change can start a new wave.  Gaps/disagreement between
-    # the two boundaries do not themselves create a turn.
-    runs: list[_CandidateRun] = []
-    for start, end, direction, high_leg, low_leg in intervals:
-        if runs and runs[-1].direction == direction:
-            runs[-1].intervals.append((start, end, high_leg, low_leg))
-            continue
-        runs.append(
-            _CandidateRun(
-                direction=direction,
-                intervals=[(start, end, high_leg, low_leg)],
-            )
-        )
-    return runs
-
-
-def _extreme_after(
-    points: Sequence[PivotPoint],
-    start: PivotPoint,
-    direction: int,
-) -> PivotPoint | None:
-    wanted = "high" if direction > 0 else "low"
-    candidates = [
-        point
-        for point in points
-        if point.day > start.day and point.pivot_type == wanted
-    ]
-    if not candidates:
-        return None
-    if direction > 0:
-        return max(candidates, key=lambda item: (item.value, item.day))
-    return min(candidates, key=lambda item: (item.value, item.day))
-
-
-def _build_waves(
-    points: Sequence[PivotPoint],
-    runs: Sequence[_CandidateRun],
-    *,
-    forced_anchor: PivotPoint | None,
-) -> list[_Wave]:
-    """Build continuous candidate waves from consensus direction runs."""
-    if not points:
-        return []
-
-    active_runs = list(runs)
-
-    if not active_runs:
-        return []
-
-    waves: list[_Wave] = []
-    for index, run in enumerate(active_runs):
-        if index == 0:
-            start = forced_anchor or run.natural_start
-        else:
-            start = waves[-1].end
-
-        if index + 1 < len(active_runs):
-            # The next opposite consensus run starts at the current wave's turn.
-            end = active_runs[index + 1].natural_start
-        else:
-            end = _extreme_after(points, start, run.direction)
-
-        if end is None or start.day >= end.day:
-            continue
-        wanted_end = "high" if run.direction > 0 else "low"
-        if end.pivot_type != wanted_end:
-            end = _extreme_after(points, start, run.direction)
-            if end is None or start.day >= end.day:
-                continue
-
-        waves.append(_Wave(run.direction, start, end))
-
-    return waves
-
-
-def _merge_window(
-    points: Sequence[PivotPoint],
-    *,
-    forced_anchor: PivotPoint | None = None,
-) -> list[PivotPoint]:
-    ordered = _unique(points)
-    if forced_anchor is not None and _key(forced_anchor) not in {_key(p) for p in ordered}:
-        ordered.append(forced_anchor)
-        ordered.sort(key=lambda item: (item.day, item.pivot_type))
-    if not ordered:
-        return []
-
-    runs = _consensus_runs(ordered)
-
-    if not runs:
-        # Not enough two-boundary information to define a normal wave.
-        # Keep only a protected incoming anchor if one exists.
-        return [forced_anchor] if forced_anchor is not None else []
-
-    waves = _build_waves(
-        ordered,
-        runs,
-        forced_anchor=forced_anchor,
-    )
-
-    if not waves:
-        return [forced_anchor] if forced_anchor is not None else []
-
-    # One boundary can end before the other, so a final opposite-side point
-    # may not form another consensus run.
-    #
-    # Preserve it ONLY when it fully exceeds the just-finished wave's start
-    # extreme, proving that the apparent final wave was actually reversed:
-    #
-    #   up wave   LOW(start) -> HIGH(end) -> lower LOW(< start)  => keep LOW
-    #   down wave HIGH(start) -> LOW(end)  -> higher HIGH(> start) => keep HIGH
-    #
-    # A merely following higher-low / lower-high is still inside the same normal
-    # wave and must disappear here.
-    last_wave = waves[-1]
-    last_end = last_wave.end
-    opposite_type = "low" if last_end.pivot_type == "high" else "high"
-    trailing = [
-        point
-        for point in ordered
-        if point.day > last_end.day and point.pivot_type == opposite_type
-    ]
-    if trailing:
-        trailing_end = (
-            min(trailing, key=lambda item: (item.value, item.day))
-            if opposite_type == "low"
-            else max(trailing, key=lambda item: (item.value, item.day))
-        )
-
-        resumes_prior_trend = (
-            opposite_type == "low"
-            and trailing_end.value < last_wave.start.value
-        ) or (
-            opposite_type == "high"
-            and trailing_end.value > last_wave.start.value
-        )
-
-        if resumes_prior_trend and last_end.day < trailing_end.day:
-            waves.append(
-                _Wave(
-                    direction=-1 if opposite_type == "low" else 1,
-                    start=last_end,
-                    end=trailing_end,
-                )
-            )
-
-    vertices = [waves[0].start]
-    for wave in waves:
-        if vertices[-1] != wave.start:
-            vertices.append(wave.start)
-        if vertices[-1] != wave.end:
-            vertices.append(wave.end)
-    return vertices
-
-
-def _collapse_same_direction_interiors(
-    points: Sequence[PivotPoint],
-    mandatory_keys: set[tuple[date, float, str]],
-) -> list[PivotPoint]:
-    """Remove non-mandatory interior vertices that do not change direction.
-
-    Once the upper/lower lines have been merged into one chronological line,
-    a point between two points moving in the same direction is not a wave
-    vertex. Mandatory protected/provisional structure endpoints remain so the
-    stage that owns that structure can still decide it.
-    """
-    result = list(points)
-    changed = True
-    while changed and len(result) >= 3:
-        changed = False
-        collapsed = [result[0]]
-        for index in range(1, len(result) - 1):
-            previous = collapsed[-1]
-            current = result[index]
-            following = result[index + 1]
-
-            if _key(current) in mandatory_keys:
-                collapsed.append(current)
-                continue
-
-            first_delta = current.value - previous.value
-            second_delta = following.value - current.value
-            same_direction = (
-                first_delta != 0
-                and second_delta != 0
-                and (first_delta > 0) == (second_delta > 0)
-            )
-            if same_direction:
-                changed = True
-                continue
-
-            collapsed.append(current)
-
-        collapsed.append(result[-1])
-        result = collapsed
-
-    return result
-
-
-def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
-    segments: list[_HardSegment] = []
-
-    for spike in stage2.spike_peaks:
-        if spike.marker_only or spike.entry is None:
-            continue
-        if spike.entry.day < spike.point.day:
-            segments.append(
-                _HardSegment(spike.entry, spike.point, "spike")
-            )
-
-    for sideways in (
-        *stage2.high_sideways_segments,
-        *stage2.low_sideways_segments,
-    ):
-        if not getattr(sideways, "protected", True):
-            continue
-        if sideways.start.day < sideways.end.day:
-            segments.append(
-                _HardSegment(
-                    sideways.start,
-                    sideways.end,
-                    "sideways",
-                    sideways,
-                )
-            )
-
-    segments.sort(
-        key=lambda item: (
-            item.start.day,
-            0 if item.kind == "spike" else 1,
-            item.end.day,
-        )
-    )
-
-    # Protection boundaries may share an endpoint, but an overlapping interior
-    # span cannot independently own the same part of the line.
-    accepted: list[_HardSegment] = []
-    occupied_until: date | None = None
-    for segment in segments:
-        if occupied_until is not None and segment.start.day < occupied_until:
-            continue
-        accepted.append(segment)
-        occupied_until = segment.end.day
-    return accepted
+    return segments
 
 
 def simplify_pivot_lines(
     augmented: Stage2Result,
     geometry: ChartGeometry,
 ) -> Stage3LineResult:
-    """Merge Stage-2 upper/lower RDP points into one chronological line only.
+    """Merge Stage-2 RDP boundaries and hand the merged line to Stage 4."""
+    del geometry  # Stage 3 merge itself has no angle/cleanup judgment.
 
-    Stage 3 performs no wave judgment and no cleanup. Every connected Stage-2
-    RDP point survives into the merged chronology, except explicit marker-only
-    spikes which remain detached by definition. Exact same-day/same-value
-    duplicates from the high/low sides collapse to one line vertex.
-    """
+    raw_segments = _merge_only(augmented)
 
     marker_only_spikes = tuple(
         spike for spike in augmented.spike_peaks if spike.marker_only
     )
-    marker_only_keys = {_key(spike.point) for spike in marker_only_spikes}
 
-    # Literal upper/lower merge: keep every Stage-2 line point and sort only by
-    # time. High/low identity ends here; exact same day/value duplicates become
-    # one LinePoint because Stage 3+ no longer carries pivot_type.
-    merged_by_line_key: dict[tuple[date, float], PivotPoint] = {}
-    for point in (*augmented.high_pivots, *augmented.low_pivots):
-        if _key(point) in marker_only_keys:
-            continue
-        merged_by_line_key[(point.day, point.value)] = point
-
-    merged_points = sorted(
-        merged_by_line_key.values(),
-        key=lambda item: (item.day, item.value),
-    )
-
-    # Hard Stage-2 structures only label an already-adjacent merged segment;
-    # they do not remove or reorder any point.
     hard_kind: dict[tuple[tuple[date, float], tuple[date, float]], str] = {}
     for spike in augmented.spike_peaks:
         if spike.marker_only or spike.entry is None:
             continue
-        hard_kind[
-            ((spike.entry.day, spike.entry.value), (spike.point.day, spike.point.value))
-        ] = "spike"
+        hard_kind[(_line_key(spike.entry), _line_key(spike.point))] = "spike"
     for sideways in (
         *augmented.high_sideways_segments,
         *augmented.low_sideways_segments,
     ):
         if not getattr(sideways, "protected", True):
             continue
-        hard_kind[
-            ((sideways.start.day, sideways.start.value), (sideways.end.day, sideways.end.value))
-        ] = "sideways"
+        hard_kind[(_line_key(sideways.start), _line_key(sideways.end))] = "sideways"
 
-    line_by_key = {
-        (point.day, point.value): LinePoint(point.day, point.value)
-        for point in merged_points
-    }
+    # Stage-2 rapid candidates are provisional but must survive Stage 3 so that
+    # Stage 4, not Stage 3, decides whether they remain. If a candidate endpoint
+    # lies inside a merged segment, split that segment at the endpoint.
+    mandatory: dict[tuple[date, float], PivotPoint] = {}
+    for candidate in augmented.rapid_move_candidates:
+        mandatory[_line_key(candidate.start)] = candidate.start
+        mandatory[_line_key(candidate.end)] = candidate.end
 
-    line_markers = tuple(line_by_key.values())
-    line_segments: list[SimplifiedLineSegment] = []
-    for left, right in zip(merged_points, merged_points[1:]):
-        if left.day >= right.day:
-            raise RuntimeError(
-                "stage3 chronological merge encountered multiple distinct values on the same date"
-            )
-        kind = hard_kind.get(
-            ((left.day, left.value), (right.day, right.value)),
-            "trend",
+    split_segments: list[tuple[PivotPoint, PivotPoint]] = []
+    for left, right in raw_segments:
+        interior = sorted(
+            (
+                point for point in mandatory.values()
+                if left.day < point.day < right.day
+            ),
+            key=lambda item: item.day,
         )
+        chain = [left, *interior, right]
+        for a, b in zip(chain, chain[1:]):
+            if a.day < b.day:
+                split_segments.append((a, b))
+
+    point_map: dict[tuple[date, float], LinePoint] = {}
+    for left, right in split_segments:
+        point_map[_line_key(left)] = LinePoint(left.day, left.value)
+        point_map[_line_key(right)] = LinePoint(right.day, right.value)
+
+    line_segments: list[SimplifiedLineSegment] = []
+    for left, right in split_segments:
+        kind = hard_kind.get((_line_key(left), _line_key(right)), "trend")
         line_segments.append(
             SimplifiedLineSegment(
-                start=line_by_key[(left.day, left.value)],
-                end=line_by_key[(right.day, right.value)],
+                start=point_map[_line_key(left)],
+                end=point_map[_line_key(right)],
                 kind=kind,
             )
         )
 
-    line_marker_only_points = tuple(sorted(
+    marker_only_points = tuple(sorted(
         (
             LinePoint(spike.point.day, spike.point.value)
             for spike in marker_only_spikes
         ),
         key=lambda item: item.day,
     ))
+    for point in marker_only_points:
+        point_map[(point.day, point.value)] = point
 
-    # Marker-only spikes are detached and therefore also belong to markers.
-    if line_marker_only_points:
-        marker_map = {
-            (point.day, point.value): point
-            for point in line_markers
-        }
-        for point in line_marker_only_points:
-            marker_map[(point.day, point.value)] = point
-        line_markers = tuple(sorted(marker_map.values(), key=lambda item: item.day))
+    markers = tuple(sorted(point_map.values(), key=lambda item: item.day))
 
     line_rapid_candidates = tuple(
         LineRapidMoveCandidate(
@@ -552,8 +268,8 @@ def simplify_pivot_lines(
     )
 
     return Stage3LineResult(
-        markers=line_markers,
+        markers=markers,
         segments=tuple(line_segments),
-        marker_only_points=line_marker_only_points,
+        marker_only_points=marker_only_points,
         rapid_move_candidates=line_rapid_candidates,
     )
