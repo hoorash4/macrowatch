@@ -42,9 +42,22 @@ def _next_after(points: Sequence[PivotPoint], after: date) -> PivotPoint | None:
 
 
 def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
-    """Merge upper/lower RDP boundaries using only the active-side rule."""
+    """Merge upper/lower RDP boundaries using only the active-side rule.
+
+    Stage-2 rapid entry/end points are protected merge vertices. They participate
+    in the merge from the start and are never removed and reinserted later.
+    """
     highs = list(sorted(stage2.high_pivots, key=lambda item: item.day))
     lows = list(sorted(stage2.low_pivots, key=lambda item: item.day))
+    protected = {
+        _key(point): point
+        for candidate in stage2.rapid_move_candidates
+        for point in (candidate.start, candidate.end)
+    }
+    protected_ordered = sorted(
+        protected.values(),
+        key=lambda item: (item.day, item.pivot_type),
+    )
     if not highs or not lows:
         return []
 
@@ -65,14 +78,39 @@ def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
     segments: list[tuple[PivotPoint, PivotPoint]] = [(anchor, current)]
     anchor = current
 
+    def protected_before(
+        proposed: PivotPoint,
+    ) -> PivotPoint | None:
+        return next(
+            (
+                point
+                for point in protected_ordered
+                if anchor.day < point.day < proposed.day
+            ),
+            None,
+        )
+
+    def connect(proposed: PivotPoint) -> bool:
+        nonlocal anchor, direction
+        protected_point = protected_before(proposed)
+        if protected_point is not None:
+            segments.append((anchor, protected_point))
+            anchor = protected_point
+            direction = "up" if anchor.pivot_type == "high" else "down"
+            return False
+
+        segments.append((anchor, proposed))
+        anchor = proposed
+        return True
+
     while True:
         if direction == "up":
             if anchor.pivot_type == "low":
                 next_high = _next_after(highs, anchor.day)
                 if next_high is None:
                     break
-                segments.append((anchor, next_high))
-                anchor = next_high
+                if not connect(next_high):
+                    continue
                 continue
 
             next_high = _next_after(highs, anchor.day)
@@ -80,15 +118,15 @@ def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
                 break
 
             if next_high.value > anchor.value:
-                segments.append((anchor, next_high))
-                anchor = next_high
+                if not connect(next_high):
+                    continue
                 continue
 
             next_low = _next_after(lows, anchor.day)
             if next_low is None:
                 break
-            segments.append((anchor, next_low))
-            anchor = next_low
+            if not connect(next_low):
+                continue
             direction = "down"
             continue
 
@@ -96,24 +134,24 @@ def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
             next_low = _next_after(lows, anchor.day)
             if next_low is None:
                 break
-            segments.append((anchor, next_low))
-            anchor = next_low
-            continue
+            if not connect(next_low):
+                    continue
+                continue
 
         next_low = _next_after(lows, anchor.day)
         if next_low is None:
             break
 
         if next_low.value < anchor.value:
-            segments.append((anchor, next_low))
-            anchor = next_low
-            continue
+            if not connect(next_low):
+                    continue
+                continue
 
         next_high = _next_after(highs, anchor.day)
         if next_high is None:
             break
-        segments.append((anchor, next_high))
-        anchor = next_high
+        if not connect(next_high):
+            continue
         direction = "up"
 
     return segments
@@ -127,31 +165,9 @@ def simplify_pivot_lines(
 
     raw_segments = _merge_only(augmented)
 
-    # Rapid candidate entry/end protection is survival-only. It must not affect
-    # the RDP merge judgment, but those endpoints must reach Stage 4. Insert
-    # them only after the merge by splitting the already-decided segment.
-    mandatory: dict[tuple[date, float], PivotPoint] = {}
-    for candidate in augmented.rapid_move_candidates:
-        mandatory[_line_key(candidate.start)] = candidate.start
-        mandatory[_line_key(candidate.end)] = candidate.end
-
-    split_segments: list[tuple[PivotPoint, PivotPoint]] = []
-    for left, right in raw_segments:
-        interior = sorted(
-            (
-                point for point in mandatory.values()
-                if left.day < point.day < right.day
-            ),
-            key=lambda item: item.day,
-        )
-        chain = [left, *interior, right]
-        for a, b in zip(chain, chain[1:]):
-            if a.day < b.day:
-                split_segments.append((a, b))
-
     point_map: dict[tuple[date, float], LinePoint] = {}
     line_segments: list[SimplifiedLineSegment] = []
-    for left, right in split_segments:
+    for left, right in raw_segments:
         left_line = point_map.setdefault(
             _line_key(left),
             LinePoint(left.day, left.value),
