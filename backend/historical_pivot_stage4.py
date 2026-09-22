@@ -38,7 +38,6 @@ from historical_pivot_shared import (
     LineRapidMoveCandidate,
     SimplifiedLineResult,
     Stage3LineResult,
-    line_role_map,
     screen_origin_angle_degrees,
     screen_segment_angle_degrees,
 )
@@ -105,7 +104,14 @@ def _scan_from_entry(
     geometry: ChartGeometry,
     angle_threshold_deg: float,
 ) -> LinePoint | None:
-    """Run Stage-5-style wave judgment from one rapid ENTRY anchor only."""
+    """Inspect the rapid wave from its entry using only the merged line.
+
+    The rapid entry is the fixed anchor. A pullback does not end the rapid wave
+    merely because direction turned. The rapid wave ends only if the opposite
+    move actually crosses the entry anchor. While the anchor holds, a later new
+    extreme continues the same rapid wave and is still subject to the existing
+    anchor-based 10-degree check.
+    """
     points = [
         point
         for point in _timeline_points(result)
@@ -114,38 +120,29 @@ def _scan_from_entry(
     if not points:
         return None
 
-    timeline = _timeline_points(result)
-    roles = line_role_map(timeline)
     extreme: LinePoint | None = None
-    opposite: LinePoint | None = None
-
-    wanted_role = "high" if direction > 0 else "low"
-    opposite_role = "low" if direction > 0 else "high"
 
     for point in points:
-        point_role = roles.get(_key(point))
-        if point_role is None:
-            continue
-
         if extreme is None:
-            if point_role == wanted_role:
+            if (
+                (direction > 0 and point.value > anchor.value)
+                or (direction < 0 and point.value < anchor.value)
+            ):
                 extreme = point
             continue
 
-        if point_role == opposite_role:
-            if opposite is None or _farther_opposite(point, opposite, direction):
-                opposite = point
-            continue
-
-        if point_role != wanted_role:
-            continue
-
-        # Same-side point after either no pullback or a provisional pullback.
-        # This is the Stage-5 rule: it decides the prior extreme immediately.
-        if not _improves(point, extreme, direction):
-            # Failed to recover/extend the prior extreme. The prior extreme is
-            # final for this rapid run; later points cannot re-join it.
+        # Crossing the rapid entry anchor is a real trend reversal. Merely
+        # turning back inside the anchor/extreme range is only a retracement.
+        crossed_anchor = (
+            point.value < anchor.value
+            if direction > 0
+            else point.value > anchor.value
+        )
+        if crossed_anchor:
             break
+
+        if not _improves(point, extreme, direction):
+            continue
 
         angle = screen_origin_angle_degrees(
             anchor,
@@ -156,10 +153,7 @@ def _scan_from_entry(
         if angle > angle_threshold_deg:
             break
 
-        # The old extreme was exceeded. Any opposite move since then was only
-        # a retracement, so the rapid trend continues.
         extreme = point
-        opposite = None
 
     return extreme
 
