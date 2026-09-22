@@ -34,6 +34,14 @@ class PivotPoint:
 
 
 @dataclass(frozen=True)
+class LinePoint:
+    """Stage-3+ point. Original upper/lower RDP identity is intentionally gone."""
+
+    day: date
+    value: float
+
+
+@dataclass(frozen=True)
 class ChartGeometry:
     """Visible chart coordinate system used to measure the angle seen on screen."""
 
@@ -79,8 +87,8 @@ class SidewaysSegment:
 
 @dataclass(frozen=True)
 class SimplifiedLineSegment:
-    start: PivotPoint
-    end: PivotPoint
+    start: LinePoint
+    end: LinePoint
     kind: str  # trend | sideways | spike
 
 
@@ -96,29 +104,96 @@ class RapidMoveCandidate:
         return self.start, self.end
 
 
+@dataclass(frozen=True)
+class LineRapidMoveCandidate:
+    start: LinePoint
+    end: LinePoint
+    direction: int  # +1 up, -1 down
+    visual_y_share: float
+
+    @property
+    def protected_points(self) -> tuple[LinePoint, LinePoint]:
+        return self.start, self.end
+
+
 def _pivot_key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, point.value, point.pivot_type
 
 
+def _line_key(point: LinePoint) -> tuple[date, float]:
+    return point.day, point.value
+
+
+def line_point_role(
+    points: Sequence[LinePoint],
+    index: int,
+) -> str | None:
+    """Return high/low from the Stage-3+ line's relative geometry only."""
+    if index < 0 or index >= len(points):
+        raise IndexError("line point index out of range")
+    if len(points) < 2:
+        return None
+
+    point = points[index]
+    if index == 0:
+        following = points[1]
+        if point.value < following.value:
+            return "low"
+        if point.value > following.value:
+            return "high"
+        return None
+
+    if index == len(points) - 1:
+        previous = points[index - 1]
+        if point.value > previous.value:
+            return "high"
+        if point.value < previous.value:
+            return "low"
+        return None
+
+    previous = points[index - 1]
+    following = points[index + 1]
+    if point.value > previous.value and point.value > following.value:
+        return "high"
+    if point.value < previous.value and point.value < following.value:
+        return "low"
+    return None
+
+
+def line_role_map(
+    points: Sequence[LinePoint],
+) -> dict[tuple[date, float], str | None]:
+    return {
+        _line_key(point): line_point_role(points, index)
+        for index, point in enumerate(points)
+    }
+
+
 def _validate_line_contract(
     *,
-    markers: Sequence[PivotPoint],
+    markers: Sequence[LinePoint],
     segments: Sequence[SimplifiedLineSegment],
-    marker_only_points: Sequence[PivotPoint],
-) -> set[tuple[date, float, str]]:
-    marker_keys = {_pivot_key(item) for item in markers}
-    endpoint_keys: set[tuple[date, float, str]] = set()
+    marker_only_points: Sequence[LinePoint],
+) -> set[tuple[date, float]]:
+    marker_keys = {_line_key(item) for item in markers}
+    endpoint_keys: set[tuple[date, float]] = set()
+
+    for point in markers:
+        if not isinstance(point, LinePoint):
+            raise TypeError("Stage-3+ markers must be LinePoint without pivot_type")
 
     for segment in segments:
         for point in (segment.start, segment.end):
-            point_key = _pivot_key(point)
+            if not isinstance(point, LinePoint):
+                raise TypeError("Stage-3+ segment endpoints must be LinePoint")
+            point_key = _line_key(point)
             if point_key not in marker_keys:
                 raise ValueError(
                     "stage output contains a segment endpoint that is not a surviving marker"
                 )
             endpoint_keys.add(point_key)
 
-    marker_only_keys = {_pivot_key(point) for point in marker_only_points}
+    marker_only_keys = {_line_key(point) for point in marker_only_points}
     if not marker_only_keys.issubset(marker_keys):
         raise ValueError("stage output contains marker-only metadata for a deleted marker")
     if marker_only_keys & endpoint_keys:
@@ -136,10 +211,10 @@ def _validate_line_contract(
 class Stage3LineResult:
     """Stage-3 output contract consumed by Stage 4 only."""
 
-    markers: tuple[PivotPoint, ...]
+    markers: tuple[LinePoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
-    marker_only_points: tuple[PivotPoint, ...] = ()
-    rapid_move_candidates: tuple[RapidMoveCandidate, ...] = ()
+    marker_only_points: tuple[LinePoint, ...] = ()
+    rapid_move_candidates: tuple[LineRapidMoveCandidate, ...] = ()
 
     def __post_init__(self) -> None:
         marker_keys = _validate_line_contract(
@@ -149,7 +224,7 @@ class Stage3LineResult:
         )
         for candidate in self.rapid_move_candidates:
             for point in candidate.protected_points:
-                if _pivot_key(point) not in marker_keys:
+                if _line_key(point) not in marker_keys:
                     raise ValueError(
                         "stage3 contains rapid metadata for a deleted marker"
                     )
@@ -159,10 +234,10 @@ class Stage3LineResult:
 class SimplifiedLineResult:
     """Stage-4+ line contract; no provisional or rapid-candidate state survives."""
 
-    markers: tuple[PivotPoint, ...]
+    markers: tuple[LinePoint, ...]
     segments: tuple[SimplifiedLineSegment, ...]
-    marker_only_points: tuple[PivotPoint, ...] = ()
-    protected_points: tuple[PivotPoint, ...] = ()
+    marker_only_points: tuple[LinePoint, ...] = ()
+    protected_points: tuple[LinePoint, ...] = ()
 
     def __post_init__(self) -> None:
         marker_keys = _validate_line_contract(
@@ -171,7 +246,7 @@ class SimplifiedLineResult:
             marker_only_points=self.marker_only_points,
         )
         for point in self.protected_points:
-            if _pivot_key(point) not in marker_keys:
+            if _line_key(point) not in marker_keys:
                 raise ValueError(
                     "stage output contains protected metadata for a deleted marker"
                 )
@@ -215,7 +290,7 @@ def normalize_rows(rows: Iterable[dict[str, Any]]) -> tuple[SeriesPoint, ...]:
 
 
 
-def _screen_xy(point: PivotPoint, geometry: ChartGeometry) -> tuple[float, float]:
+def _screen_xy(point: PivotPoint | LinePoint, geometry: ChartGeometry) -> tuple[float, float]:
     x_span = (geometry.display_end - geometry.display_start).days
     x = (point.day - geometry.display_start).days / x_span * geometry.width
     y = (geometry.y_max - point.value) / (geometry.y_max - geometry.y_min) * geometry.height
@@ -224,8 +299,8 @@ def _screen_xy(point: PivotPoint, geometry: ChartGeometry) -> tuple[float, float
 
 
 def screen_x_span_share(
-    left: PivotPoint,
-    right: PivotPoint,
+    left: PivotPoint | LinePoint,
+    right: PivotPoint | LinePoint,
     geometry: ChartGeometry,
 ) -> float:
     """Return the horizontal screen-distance share of the visible x-axis."""
@@ -237,9 +312,9 @@ def screen_x_span_share(
 
 
 def screen_angle_degrees(
-    left: PivotPoint,
-    pivot: PivotPoint,
-    right: PivotPoint,
+    left: PivotPoint | LinePoint,
+    pivot: PivotPoint | LinePoint,
+    right: PivotPoint | LinePoint,
     geometry: ChartGeometry,
 ) -> float:
     """Measure the pivot's interior angle in the chart's visible coordinate system."""
@@ -259,8 +334,8 @@ def screen_angle_degrees(
 
 
 def screen_segment_angle_degrees(
-    start: PivotPoint,
-    end: PivotPoint,
+    start: PivotPoint | LinePoint,
+    end: PivotPoint | LinePoint,
     geometry: ChartGeometry,
 ) -> float:
     """Signed chart angle from the x-axis; positive means rising."""
@@ -308,9 +383,9 @@ def classify_sideways_reference_line(
 
 
 def screen_origin_angle_degrees(
-    origin: PivotPoint,
-    left: PivotPoint,
-    right: PivotPoint,
+    origin: PivotPoint | LinePoint,
+    left: PivotPoint | LinePoint,
+    right: PivotPoint | LinePoint,
     geometry: ChartGeometry,
 ) -> float:
     """Angle at origin between two candidate extremes in screen coordinates."""
