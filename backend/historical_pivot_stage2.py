@@ -531,9 +531,9 @@ def _sideways_pairs(
     reference_side: str,
     geometry: ChartGeometry,
 ) -> tuple[SidewaysSegment, ...]:
-    """Classify/merge sideways runs using only the approved 6-degree rule.
+    """Classify/merge sideways runs using only the approved 5-degree rule.
 
-    The 6-degree angle test itself is direction-agnostic, but the reference
+    The 5-degree angle test itself is direction-agnostic, but the reference
     side must match the trend entering the run:
     - after an uptrend, only a HIGH-side flat run can be a sideways range;
     - after a downtrend, only a LOW-side flat run can be a sideways range.
@@ -569,7 +569,7 @@ def _sideways_pairs(
         right = ordered[idx + 1]
         pair_angle = screen_segment_angle_degrees(left, right, geometry)
 
-        if abs(pair_angle) > 6.0:
+        if abs(pair_angle) > 5.0:
             flush()
             continue
 
@@ -585,7 +585,7 @@ def _sideways_pairs(
                 right,
                 geometry,
             )
-            if abs(merged_angle) <= 6.0:
+            if abs(merged_angle) <= 5.0:
                 run_end = idx + 1
                 run_angle = merged_angle
                 continue
