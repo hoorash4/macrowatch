@@ -1,0 +1,91 @@
+name: Verify and render US2Y sideways merge temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-render-us2y-sideways-merge.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Verify and render
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python -m unittest tests.test_historical_pivot_stage2 || true
+          mkdir -p out
+          PYTHONPATH=backend python - <<'PY'
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows, line_role_map
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import finalize_rapid_moves
+          from historical_pivot_stage5 import prune_same_trend_extremes
+          from historical_pivot_stage6 import prune_unconfirmed_retracements
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US2Y")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals); pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+
+          s1=calculate_base_pivots(rows,freq)
+          s2=classify_special_structures(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=finalize_rapid_moves(s3,g)
+          s5=prune_same_trend_extremes(s4,g)
+          s6=prune_unconfirmed_retracements(s5,g)
+
+          print("SIDEWAYS_LOW",[(x.start.day.isoformat(),x.start.value,x.end.day.isoformat(),x.end.value,x.angle_deg,x.protected) for x in s2.low_sideways_segments])
+          print("S4_PROTECTED",[(p.day.isoformat(),p.value) for p in s4.protected_points])
+          print("S6",[(p.day.isoformat(),p.value) for p in s6.markers])
+
+          connected={}
+          for seg in s6.segments:
+              connected[(seg.start.day,seg.start.value)]=seg.start
+              connected[(seg.end.day,seg.end.value)]=seg.end
+          ordered=sorted(connected.values(),key=lambda p:p.day)
+          roles=line_role_map(ordered)
+
+          fig,ax=plt.subplots(figsize=(15,7.5))
+          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
+          for seg in s6.segments:
+              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.8)
+          highs=[p for p in ordered if roles.get((p.day,p.value))=="high"]
+          lows=[p for p in ordered if roles.get((p.day,p.value))=="low"]
+          if highs: ax.scatter([p.day for p in highs],[p.value for p in highs],s=65,marker="^",label="high")
+          if lows: ax.scatter([p.day for p in lows],[p.value for p in lows],s=65,marker="v",label="low")
+          for p in ordered:
+              role=roles.get((p.day,p.value))
+              ax.annotate(f"{p.day:%Y-%m-%d}\n{role or ''}",(p.day,p.value),xytext=(0,10),textcoords="offset points",fontsize=7,ha="center")
+          ax.set_title("US2Y · Stage 6 · sideways merged to 2021-09-21 when total angle <= 6°")
+          ax.set_xlim(start,end); ax.set_ylim(g.y_min,g.y_max)
+          ax.grid(True,alpha=.2); ax.legend(loc="best")
+          fig.tight_layout()
+          fig.savefig("out/US2Y_STAGE6_SIDEWAYS_MERGED.png",dpi=180)
+          plt.close(fig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: us2y-stage6-sideways-merged
+          path: out/US2Y_STAGE6_SIDEWAYS_MERGED.png
+          if-no-files-found: error
