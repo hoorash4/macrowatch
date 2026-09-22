@@ -127,9 +127,31 @@ def simplify_pivot_lines(
 
     raw_segments = _merge_only(augmented)
 
+    # Rapid candidate entry/end protection is survival-only. It must not affect
+    # the RDP merge judgment, but those endpoints must reach Stage 4. Insert
+    # them only after the merge by splitting the already-decided segment.
+    mandatory: dict[tuple[date, float], PivotPoint] = {}
+    for candidate in augmented.rapid_move_candidates:
+        mandatory[_line_key(candidate.start)] = candidate.start
+        mandatory[_line_key(candidate.end)] = candidate.end
+
+    split_segments: list[tuple[PivotPoint, PivotPoint]] = []
+    for left, right in raw_segments:
+        interior = sorted(
+            (
+                point for point in mandatory.values()
+                if left.day < point.day < right.day
+            ),
+            key=lambda item: item.day,
+        )
+        chain = [left, *interior, right]
+        for a, b in zip(chain, chain[1:]):
+            if a.day < b.day:
+                split_segments.append((a, b))
+
     point_map: dict[tuple[date, float], LinePoint] = {}
     line_segments: list[SimplifiedLineSegment] = []
-    for left, right in raw_segments:
+    for left, right in split_segments:
         left_line = point_map.setdefault(
             _line_key(left),
             LinePoint(left.day, left.value),
@@ -147,11 +169,8 @@ def simplify_pivot_lines(
         )
 
     markers = tuple(sorted(point_map.values(), key=lambda item: item.day))
-
-    # Stage 3 does not classify, protect, split, or delete for Stage-2 special
-    # structures. It only carries rapid metadata forward when both endpoints
-    # naturally survived the RDP merge.
     marker_keys = {(point.day, point.value) for point in markers}
+
     rapid = tuple(
         LineRapidMoveCandidate(
             start=LinePoint(candidate.start.day, candidate.start.value),
