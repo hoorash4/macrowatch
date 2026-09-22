@@ -249,6 +249,10 @@ def prune_unconfirmed_retracements(
         )),
         segments=tuple(rebuilt_segments),
         marker_only_points=result.marker_only_points,
-        protected_points=result.protected_points,
+        protected_points=tuple(
+            point
+            for point in result.protected_points
+            if key(point) in marker_map
+        ),
     )
 
