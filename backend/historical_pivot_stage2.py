@@ -35,6 +35,7 @@ SPIKE_MAX_BC_TO_AB_Y_RATIO = 1.50
 SPIKE_FOLLOWUP_POINTS = 2
 
 RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.30
+RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG = 45.0
 
 
 def _key(point: PivotPoint) -> tuple:
@@ -369,6 +370,11 @@ def _classify_rapid_moves(
         share = _visual_y_share(entry, peak, geometry)
         if share < min_visual_y_share:
             continue
+        vertical_angle = 90.0 - abs(
+            screen_segment_angle_degrees(entry, peak, geometry)
+        )
+        if vertical_angle > RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG:
+            continue
         candidate = RapidMoveCandidate(
             start=entry,
             end=peak,
@@ -393,6 +399,11 @@ def _classify_rapid_moves(
             continue
         share = _visual_y_share(entry, peak, geometry)
         if share < min_visual_y_share:
+            continue
+        vertical_angle = 90.0 - abs(
+            screen_segment_angle_degrees(entry, peak, geometry)
+        )
+        if vertical_angle > RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG:
             continue
         candidate = RapidMoveCandidate(
             start=entry,
