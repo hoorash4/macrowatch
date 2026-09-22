@@ -29,7 +29,7 @@ jobs:
           from historical_pivot_shared import ChartGeometry,normalize_rows,buffer_bounds
           from historical_pivot_stage1 import calculate_base_pivots
           from historical_pivot_stage2 import classify_special_structures
-          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage3 import simplify_pivot_lines, _transient_excursion_keys, _unique, _consensus_runs, _build_waves, _merge_window
           from historical_pivot_stage4 import finalize_rapid_moves
           from historical_pivot_stage5 import prune_same_trend_extremes
           from historical_pivot_stage6 import prune_unconfirmed_retracements
@@ -57,6 +57,15 @@ jobs:
           g=ChartGeometry(ds,de,lo-pad,hi+pad,19.0,8.0)
           s1=calculate_base_pivots(rows,freq)
           s2=classify_special_structures(s1,g)
+          merge_keys=_transient_excursion_keys(s2,g)
+          points=_unique(tuple(p for p in (*s2.high_pivots,*s2.low_pivots) if (p.day,p.value,p.pivot_type) not in merge_keys))
+          runs=_consensus_runs(points)
+          waves=_build_waves(points,runs,forced_anchor=None)
+          base_vertices=_merge_window(points)
+          print("MERGE_TARGETS",sorted((d.isoformat(),v,t) for d,v,t in merge_keys))
+          print("RUNS",[(r.direction,[(a.isoformat(),b.isoformat(),hl.start.day.isoformat(),hl.end.day.isoformat(),ll.start.day.isoformat(),ll.end.day.isoformat()) for a,b,hl,ll in r.intervals],r.natural_start.day.isoformat(),r.natural_start.value,r.natural_start.pivot_type) for r in runs])
+          print("WAVES",[(w.direction,w.start.day.isoformat(),w.start.value,w.start.pivot_type,w.end.day.isoformat(),w.end.value,w.end.pivot_type) for w in waves])
+          print("BASE_VERTICES",[(p.day.isoformat(),p.value,p.pivot_type) for p in base_vertices])
           s3=simplify_pivot_lines(s2,g)
           s4=finalize_rapid_moves(s3,g)
           s5=prune_same_trend_extremes(s4,g)
