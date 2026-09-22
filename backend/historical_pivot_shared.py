@@ -128,7 +128,12 @@ def line_point_role(
     points: Sequence[LinePoint],
     index: int,
 ) -> str | None:
-    """Return high/low from the Stage-3+ line's relative geometry only."""
+    """Return the point's Stage-3+ role relative to chronological progression.
+
+    Every point after the first is compared only with the immediately previous
+    line point: higher = high, lower = low. The first point is classified from
+    the first segment in the opposite role of the second point.
+    """
     if index < 0 or index >= len(points):
         raise IndexError("line point index out of range")
     if len(points) < 2:
@@ -143,19 +148,10 @@ def line_point_role(
             return "high"
         return None
 
-    if index == len(points) - 1:
-        previous = points[index - 1]
-        if point.value > previous.value:
-            return "high"
-        if point.value < previous.value:
-            return "low"
-        return None
-
     previous = points[index - 1]
-    following = points[index + 1]
-    if point.value > previous.value and point.value > following.value:
+    if point.value > previous.value:
         return "high"
-    if point.value < previous.value and point.value < following.value:
+    if point.value < previous.value:
         return "low"
     return None
 
