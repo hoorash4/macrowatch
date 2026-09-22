@@ -30,6 +30,9 @@
     let series = null;
     let data = [];
     const indicatorSeries = new Map();
+    let crosshairOverlay = null;
+    let crosshairValues = null;
+    const crosshairMarkers = new Map();
     const indicatorColor='#c026d3';
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
@@ -37,6 +40,87 @@
     const referenceOnlyStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
     const nearMissStyle=()=>({color:document.documentElement.dataset.theme==='dark'?'#475569':'#64748b',textColor:'#fff'});
     const pivotStyle=(result,color)=>result.markerStatus==='near_miss'?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
+    const displayValue=value=>window.MacroWatchFrontend.formatDisplayNumber(value);
+    function isoDate(time) {
+      if (typeof time==='string') return time.slice(0,10);
+      if (time && Number.isInteger(time.year) && Number.isInteger(time.month) && Number.isInteger(time.day)) {
+        return `${time.year}-${String(time.month).padStart(2,'0')}-${String(time.day).padStart(2,'0')}`;
+      }
+      return '';
+    }
+    function pointValueAt(rows, time) {
+      const target=isoDate(time);
+      if (!target || !rows.length || target<rows[0].time || target>rows.at(-1).time) return null;
+      let left=0, right=rows.length-1;
+      while (left<=right) {
+        const middle=Math.floor((left+right)/2), point=rows[middle];
+        if (point.time===target) return point.value;
+        if (point.time<target) left=middle+1; else right=middle-1;
+      }
+      const before=rows[right], after=rows[left];
+      if (!before || !after) return null;
+      const from=Date.parse(before.time), to=Date.parse(after.time), at=Date.parse(target);
+      if (!Number.isFinite(from)||!Number.isFinite(to)||!Number.isFinite(at)||to===from) return null;
+      return before.value+(after.value-before.value)*(at-from)/(to-from);
+    }
+    function ensureCrosshairOverlay() {
+      if (crosshairOverlay) return;
+      crosshairOverlay=document.createElement('div');
+      crosshairOverlay.className='historical-crosshair-overlay';
+      crosshairValues=document.createElement('div');
+      crosshairValues.className='historical-crosshair-values';
+      crosshairOverlay.append(crosshairValues);
+      host.append(crosshairOverlay);
+    }
+    function hideCrosshairOverlay() {
+      if (!crosshairOverlay) return;
+      crosshairOverlay.hidden=true;
+      for (const marker of crosshairMarkers.values()) marker.remove();
+      crosshairMarkers.clear();
+      crosshairValues.replaceChildren();
+    }
+    function markerFor(code, color) {
+      let marker=crosshairMarkers.get(code);
+      if (marker) return marker;
+      marker=document.createElement('i');
+      marker.className='historical-crosshair-marker';
+      marker.style.setProperty('--crosshair-marker-color',color);
+      crosshairOverlay.append(marker);
+      crosshairMarkers.set(code,marker);
+      return marker;
+    }
+    function updateCrosshair(param) {
+      if (!param?.point || !param.time || !series || !data.length) return hideCrosshairOverlay();
+      const indexValue=pointValueAt(data,param.time);
+      if (!Number.isFinite(indexValue)) return hideCrosshairOverlay();
+      ensureCrosshairOverlay();
+      const x=Math.round(param.point.x), entries=[{code:'index',value:indexValue,color:lineColor(),series}];
+      for (const [code,item] of indicatorSeries) {
+        const value=pointValueAt(item.rows,param.time);
+        if (Number.isFinite(value)) entries.push({code,value,color:item.color,series:item.series});
+      }
+      crosshairValues.replaceChildren(...entries.map(entry=>{
+        const value=document.createElement('span');
+        value.style.color=entry.color;
+        value.textContent=displayValue(entry.value);
+        return value;
+      }));
+      crosshairValues.style.left=`${x}px`;
+      const active=new Set(entries.map(entry=>entry.code));
+      for (const [code,marker] of crosshairMarkers) {
+        if (active.has(code)) continue;
+        marker.remove();
+        crosshairMarkers.delete(code);
+      }
+      for (const entry of entries) {
+        const y=entry.series.priceToCoordinate(entry.value);
+        if (y===null) continue;
+        const marker=markerFor(entry.code,entry.color);
+        marker.style.left=`${x}px`;
+        marker.style.top=`${Math.round(y)}px`;
+      }
+      crosshairOverlay.hidden=false;
+    }
     function ensure() {
       if (chart) return;
       if (!window.LightweightCharts) throw new Error('차트 라이브러리를 불러오지 못했습니다.');
@@ -47,13 +131,16 @@
         rightPriceScale: { scaleMargins: { top: .08, bottom: .08 } },
         leftPriceScale: { visible: true, scaleMargins: { top: .08, bottom: .08 }, borderVisible: false, minimumWidth: 34 },
         timeScale: { timeVisible: false, secondsVisible: false, rightOffset: 8, minBarSpacing: .01, minimumHeight: 46 },
-        crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
+        crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal,
+          horzLine: { labelVisible: false } },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
         handleScale: { axisPressedMouseMove: { time: true, price: false }, mouseWheel: true, pinch: true },
       });
       series = chart.addLineSeries({ color: lineColor(), lineWidth: 2, priceLineVisible: false,
         lastValueVisible: true, priceFormat: { type: 'custom', minMove: .01,
           formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value) } });
+      ensureCrosshairOverlay();
+      chart.subscribeCrosshairMove(updateCrosshair);
       window.addEventListener('macrowatch:themechange', updateLine);
     }
     return Object.freeze({
@@ -79,12 +166,13 @@
         const visibleRange=chart?.timeScale().getVisibleRange();
         for(const entry of indicatorSeries.values()){for(const primitive of entry.primitives)entry.series.detachPrimitive(primitive);chart?.removeSeries(entry.series);}
         indicatorSeries.clear();
+        hideCrosshairOverlay();
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
           const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='near_miss'?1:2, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
-          indicatorSeries.set(item.meta.code,{series:line,color,primitives});
+          indicatorSeries.set(item.meta.code,{series:line,color,primitives,rows:item.displayRows});
         });
         if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
       },
@@ -104,10 +192,15 @@
       fit() { chart?.timeScale().fitContent(); },
       destroy() {
         window.removeEventListener('macrowatch:themechange', updateLine);
+        chart?.unsubscribeCrosshairMove(updateCrosshair);
         chart?.remove();
         chart = null;
         series = null;
         indicatorSeries.clear();
+        crosshairOverlay?.remove();
+        crosshairOverlay=null;
+        crosshairValues=null;
+        crosshairMarkers.clear();
         data = [];
       },
     });

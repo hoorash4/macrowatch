@@ -26,8 +26,8 @@ class PivotPolicy:
 
 PIVOT_POLICIES = {
     "D": PivotPolicy(envelope_points=35, rdp_points=14, envelope_calendar_radius_days=17),
-    "W": PivotPolicy(envelope_points=5, rdp_points=14),
-    "M": PivotPolicy(envelope_points=3, rdp_points=10),
+    "W": PivotPolicy(envelope_points=5, rdp_points=12),
+    "M": PivotPolicy(envelope_points=3, rdp_points=8),
 }
 
 
