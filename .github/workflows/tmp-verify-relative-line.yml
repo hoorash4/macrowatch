@@ -1,0 +1,31 @@
+name: Verify relative Stage3+ line contract temp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-relative-line.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Run pivot tests
+        run: |
+          python -m unittest \
+            tests.test_historical_pivot_base \
+            tests.test_historical_pivot_six_stage_architecture \
+            tests.test_historical_pivot_stage1_spike_visual_share \
+            tests.test_historical_pivot_stage2 \
+            tests.test_historical_pivot_stage_boundaries \
+            tests.test_historical_pivot_store
