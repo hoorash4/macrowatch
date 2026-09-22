@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from historical_pivot_stage2 import Stage2Result  # noqa: E402
-from historical_pivot_shared import RapidMoveCandidate  # noqa: E402
+from historical_pivot_shared import LinePoint, LineRapidMoveCandidate, RapidMoveCandidate  # noqa: E402
 from historical_pivot_stage3 import simplify_pivot_lines as merge_stage3  # noqa: E402
 
 from historical_pivot_base import (  # noqa: E402
@@ -26,6 +26,10 @@ from historical_pivot_base import (  # noqa: E402
     prune_unconfirmed_retracements,
     simplify_pivot_lines,
 )
+
+
+def line_point(point: PivotPoint) -> LinePoint:
+    return LinePoint(point.day, point.value)
 
 
 class PivotStageBoundaryTests(unittest.TestCase):
@@ -78,8 +82,8 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage_result_rejects_hidden_deleted_segment_endpoint(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 1.0, "low")
-        deleted_high = PivotPoint(d + timedelta(days=10), 5.0, "high")
+        low = LinePoint(d, 1.0)
+        deleted_high = LinePoint(d + timedelta(days=10), 5.0)
 
         with self.assertRaises(ValueError):
             SimplifiedLineResult(
@@ -89,9 +93,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_first_angle_always_collapses_improved_extreme(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        high = LinePoint(d, 10.0)
+        low1 = LinePoint(d + timedelta(days=10), 4.0)
+        low2 = LinePoint(d + timedelta(days=20), 3.0)
         existing = SimplifiedLineResult(
             markers=(high, low1, low2),
             segments=(
@@ -111,11 +115,11 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_confirmed_reversal_becomes_new_anchor_and_first_angle_collapses(self):
         d = date(2020, 1, 1)
-        start_high = PivotPoint(d, 10.0, "high")
-        reversal_low = PivotPoint(d + timedelta(days=10), 5.0, "low")
-        high2 = PivotPoint(d + timedelta(days=20), 8.0, "high")
-        higher_low = PivotPoint(d + timedelta(days=30), 6.0, "low")
-        high4 = PivotPoint(d + timedelta(days=40), 9.0, "high")
+        start_high = LinePoint(d, 10.0)
+        reversal_low = LinePoint(d + timedelta(days=10), 5.0)
+        high2 = LinePoint(d + timedelta(days=20), 8.0)
+        higher_low = LinePoint(d + timedelta(days=30), 6.0)
+        high4 = LinePoint(d + timedelta(days=40), 9.0)
         existing = SimplifiedLineResult(
             markers=(start_high, reversal_low, high2, higher_low, high4),
             segments=(
@@ -140,10 +144,10 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_lower_low_cancels_provisional_up_reversal(self):
         d = date(2020, 1, 1)
-        start_high = PivotPoint(d, 7.0, "high")
-        provisional_low = PivotPoint(d + timedelta(days=10), 6.0, "low")
-        rebound_high = PivotPoint(d + timedelta(days=20), 10.0, "high")
-        lower_low = PivotPoint(d + timedelta(days=30), 3.0, "low")
+        start_high = LinePoint(d, 7.0)
+        provisional_low = LinePoint(d + timedelta(days=10), 6.0)
+        rebound_high = LinePoint(d + timedelta(days=20), 10.0)
+        lower_low = LinePoint(d + timedelta(days=30), 3.0)
         existing = SimplifiedLineResult(
             markers=(start_high, provisional_low, rebound_high, lower_low),
             segments=(
@@ -166,11 +170,11 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_failed_reversal_candidate_never_becomes_anchor(self):
         d = date(2020, 1, 1)
-        start_high = PivotPoint(d, 10.0, "high")
-        candidate_low = PivotPoint(d + timedelta(days=10), 5.0, "low")
-        rebound_high = PivotPoint(d + timedelta(days=20), 8.0, "high")
-        lower_low = PivotPoint(d + timedelta(days=30), 4.0, "low")
-        later_high = PivotPoint(d + timedelta(days=40), 9.0, "high")
+        start_high = LinePoint(d, 10.0)
+        candidate_low = LinePoint(d + timedelta(days=10), 5.0)
+        rebound_high = LinePoint(d + timedelta(days=20), 8.0)
+        lower_low = LinePoint(d + timedelta(days=30), 4.0)
+        later_high = LinePoint(d + timedelta(days=40), 9.0)
         existing = SimplifiedLineResult(
             markers=(start_high, candidate_low, rebound_high, lower_low, later_high),
             segments=(
@@ -189,12 +193,12 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_reversal_confirmed_across_sideways_anchors_at_sideways_end(self):
         d = date(2020, 1, 1)
-        low0 = PivotPoint(d, 1.0, "low")
-        sideways_start = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        sideways_end = PivotPoint(d + timedelta(days=20), 10.1, "high")
-        low3 = PivotPoint(d + timedelta(days=30), 7.0, "low")
-        lower_high = PivotPoint(d + timedelta(days=40), 9.0, "high")
-        low5 = PivotPoint(d + timedelta(days=50), 6.0, "low")
+        low0 = LinePoint(d, 1.0)
+        sideways_start = LinePoint(d + timedelta(days=10), 10.0)
+        sideways_end = LinePoint(d + timedelta(days=20), 10.1)
+        low3 = LinePoint(d + timedelta(days=30), 7.0)
+        lower_high = LinePoint(d + timedelta(days=40), 9.0)
+        low5 = LinePoint(d + timedelta(days=50), 6.0)
         sideways = SidewaysSegment(
             start=sideways_start,
             end=sideways_end,
@@ -250,16 +254,26 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = merge_stage3(stage2, geometry)
 
-        self.assertIn(l0, result.markers)
-        self.assertIn(h0, result.markers)
-        self.assertEqual(stage2.rapid_move_candidates, result.rapid_move_candidates)
+        self.assertIn(line_point(l0), result.markers)
+        self.assertIn(line_point(h0), result.markers)
+        self.assertEqual(
+            (
+                LineRapidMoveCandidate(
+                    start=line_point(l0),
+                    end=line_point(h0),
+                    direction=1,
+                    visual_y_share=0.4,
+                ),
+            ),
+            result.rapid_move_candidates,
+        )
         connected = {
-            (p.day, p.value, p.pivot_type)
+            (p.day, p.value)
             for segment in result.segments
             for p in (segment.start, segment.end)
         }
-        self.assertIn((l0.day, l0.value, l0.pivot_type), connected)
-        self.assertIn((h0.day, h0.value, h0.pivot_type), connected)
+        self.assertIn((l0.day, l0.value), connected)
+        self.assertIn((h0.day, h0.value), connected)
 
     def test_stage3_normal_up_wave_keeps_only_start_low_and_end_high(self):
         d = date(2020, 1, 1)
@@ -278,9 +292,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = merge_stage3(stage2, geometry)
 
-        self.assertEqual((l1, h2), result.markers)
+        self.assertEqual((line_point(l1), line_point(h2)), result.markers)
         self.assertEqual(
-            (SimplifiedLineSegment(l1, h2, "trend"),),
+            (SimplifiedLineSegment(line_point(l1), line_point(h2), "trend"),),
             result.segments,
         )
 
@@ -301,9 +315,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = merge_stage3(stage2, geometry)
 
-        self.assertEqual((h1, l2), result.markers)
+        self.assertEqual((line_point(h1), line_point(l2)), result.markers)
         self.assertEqual(
-            (SimplifiedLineSegment(h1, l2, "trend"),),
+            (SimplifiedLineSegment(line_point(h1), line_point(l2), "trend"),),
             result.segments,
         )
 
@@ -324,10 +338,10 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = merge_stage3(stage2, geometry)
 
-        self.assertIn(h0, result.markers)
-        self.assertIn(l2, result.markers)
-        self.assertNotIn(h1, result.markers)
-        self.assertIn(SimplifiedLineSegment(h0, l2, "trend"), result.segments)
+        self.assertIn(line_point(h0), result.markers)
+        self.assertIn(line_point(l2), result.markers)
+        self.assertNotIn(line_point(h1), result.markers)
+        self.assertIn(SimplifiedLineSegment(line_point(h0), line_point(l2), "trend"), result.segments)
 
     def test_stage3_provisional_down_wave_is_cancelled_by_higher_following_high(self):
         d = date(2020, 1, 1)
@@ -346,10 +360,10 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = merge_stage3(stage2, geometry)
 
-        self.assertIn(l0, result.markers)
-        self.assertIn(h2, result.markers)
-        self.assertNotIn(l1, result.markers)
-        self.assertIn(SimplifiedLineSegment(l0, h2, "trend"), result.segments)
+        self.assertIn(line_point(l0), result.markers)
+        self.assertIn(line_point(h2), result.markers)
+        self.assertNotIn(line_point(l1), result.markers)
+        self.assertIn(SimplifiedLineSegment(line_point(l0), line_point(h2), "trend"), result.segments)
 
     def test_stage3_ongoing_up_wave_updates_only_terminal_high(self):
         d = date(2020, 1, 1)
@@ -370,18 +384,18 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
         result = merge_stage3(stage2, geometry)
 
-        self.assertIn(l1, result.markers)
-        self.assertIn(h3, result.markers)
-        self.assertNotIn(h1, result.markers)
-        self.assertNotIn(h2, result.markers)
-        self.assertNotIn(l2, result.markers)
-        self.assertNotIn(l3, result.markers)
-        self.assertIn(SimplifiedLineSegment(l1, h3, "trend"), result.segments)
+        self.assertIn(line_point(l1), result.markers)
+        self.assertIn(line_point(h3), result.markers)
+        self.assertNotIn(line_point(h1), result.markers)
+        self.assertNotIn(line_point(h2), result.markers)
+        self.assertNotIn(line_point(l2), result.markers)
+        self.assertNotIn(line_point(l3), result.markers)
+        self.assertIn(SimplifiedLineSegment(line_point(l1), line_point(h3), "trend"), result.segments)
 
     def test_stage5_requires_at_least_three_line_points(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 10.0, "high")
-        p2 = PivotPoint(d + timedelta(days=10), 7.0, "low")
+        p1 = LinePoint(d, 10.0)
+        p2 = LinePoint(d + timedelta(days=10), 7.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2),
             segments=(SimplifiedLineSegment(p1, p2, "trend"),),
@@ -393,9 +407,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage5_collapses_three_consecutive_points_moving_down(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 10.0, "high")
-        p2 = PivotPoint(d + timedelta(days=10), 7.0, "low")
-        p3 = PivotPoint(d + timedelta(days=20), 6.0, "low")
+        p1 = LinePoint(d, 10.0)
+        p2 = LinePoint(d + timedelta(days=10), 7.0)
+        p3 = LinePoint(d + timedelta(days=20), 6.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2, p3),
             segments=(
@@ -414,9 +428,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage5_collapses_three_consecutive_points_moving_up(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 1.0, "low")
-        p2 = PivotPoint(d + timedelta(days=10), 5.0, "high")
-        p3 = PivotPoint(d + timedelta(days=20), 6.0, "high")
+        p1 = LinePoint(d, 1.0)
+        p2 = LinePoint(d + timedelta(days=10), 5.0)
+        p3 = LinePoint(d + timedelta(days=20), 6.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2, p3),
             segments=(
@@ -431,9 +445,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage5_keeps_true_direction_change(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 10.0, "high")
-        p2 = PivotPoint(d + timedelta(days=10), 7.0, "low")
-        p3 = PivotPoint(d + timedelta(days=20), 8.0, "high")
+        p1 = LinePoint(d, 10.0)
+        p2 = LinePoint(d + timedelta(days=10), 7.0)
+        p3 = LinePoint(d + timedelta(days=20), 8.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2, p3),
             segments=(
@@ -448,10 +462,10 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage5_collapses_long_monotonic_run_to_endpoints(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 1.0, "low")
-        p2 = PivotPoint(d + timedelta(days=10), 3.0, "high")
-        p3 = PivotPoint(d + timedelta(days=20), 5.0, "low")
-        p4 = PivotPoint(d + timedelta(days=30), 7.0, "high")
+        p1 = LinePoint(d, 1.0)
+        p2 = LinePoint(d + timedelta(days=10), 3.0)
+        p3 = LinePoint(d + timedelta(days=20), 5.0)
+        p4 = LinePoint(d + timedelta(days=30), 7.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2, p3, p4),
             segments=(
@@ -471,9 +485,9 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage5_does_not_cross_protected_sideways_point(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 1.0, "low")
-        p2 = PivotPoint(d + timedelta(days=10), 3.0, "high")
-        p3 = PivotPoint(d + timedelta(days=20), 5.0, "high")
+        p1 = LinePoint(d, 1.0)
+        p2 = LinePoint(d + timedelta(days=10), 3.0)
+        p3 = LinePoint(d + timedelta(days=20), 5.0)
         sideways = SidewaysSegment(
             start=p2,
             end=p3,
@@ -495,12 +509,12 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_post_pass_output_is_subset_of_previous_stage_markers(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        dip1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
-        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
-        dip2 = PivotPoint(d + timedelta(days=25), 4.0, "low")
-        high3 = PivotPoint(d + timedelta(days=30), 12.0, "high")
+        low = LinePoint(d, 0.0)
+        high1 = LinePoint(d + timedelta(days=10), 10.0)
+        dip1 = LinePoint(d + timedelta(days=15), 3.0)
+        high2 = LinePoint(d + timedelta(days=20), 11.0)
+        dip2 = LinePoint(d + timedelta(days=25), 4.0)
+        high3 = LinePoint(d + timedelta(days=30), 12.0)
         existing = SimplifiedLineResult(
             markers=(low, high1, dip1, high2, dip2, high3),
             segments=(
@@ -514,20 +528,20 @@ class PivotStageBoundaryTests(unittest.TestCase):
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 100.0, 100.0, 100.0)
 
         result = prune_same_trend_extremes(existing, geometry)
-        before = {(p.day, p.value, p.pivot_type) for p in existing.markers}
-        after = {(p.day, p.value, p.pivot_type) for p in result.markers}
+        before = {(p.day, p.value) for p in existing.markers}
+        after = {(p.day, p.value) for p in result.markers}
 
         self.assertTrue(after.issubset(before))
 
     def test_failed_down_reversal_is_decided_then_next_candidate_is_judged(self):
         d = date(2020, 1, 1)
-        start_low = PivotPoint(d, 0.0, "low")
-        trend_high = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        candidate_low = PivotPoint(d + timedelta(days=20), -5.0, "low")
-        rebound_high = PivotPoint(d + timedelta(days=30), 6.0, "high")
-        higher_low = PivotPoint(d + timedelta(days=40), -1.0, "low")
-        next_rebound_high = PivotPoint(d + timedelta(days=50), 8.0, "high")
-        confirming_lower_low = PivotPoint(d + timedelta(days=60), -2.0, "low")
+        start_low = LinePoint(d, 0.0)
+        trend_high = LinePoint(d + timedelta(days=10), 10.0)
+        candidate_low = LinePoint(d + timedelta(days=20), -5.0)
+        rebound_high = LinePoint(d + timedelta(days=30), 6.0)
+        higher_low = LinePoint(d + timedelta(days=40), -1.0)
+        next_rebound_high = LinePoint(d + timedelta(days=50), 8.0)
+        confirming_lower_low = LinePoint(d + timedelta(days=60), -2.0)
         existing = SimplifiedLineResult(
             markers=(
                 start_low,
@@ -559,13 +573,13 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_failed_up_reversal_is_decided_then_next_candidate_is_judged(self):
         d = date(2020, 1, 1)
-        start_high = PivotPoint(d, 10.0, "high")
-        trend_low = PivotPoint(d + timedelta(days=10), 0.0, "low")
-        candidate_high = PivotPoint(d + timedelta(days=20), 15.0, "high")
-        rebound_low = PivotPoint(d + timedelta(days=30), 4.0, "low")
-        lower_high = PivotPoint(d + timedelta(days=40), 11.0, "high")
-        next_rebound_low = PivotPoint(d + timedelta(days=50), 2.0, "low")
-        confirming_higher_high = PivotPoint(d + timedelta(days=60), 12.0, "high")
+        start_high = LinePoint(d, 10.0)
+        trend_low = LinePoint(d + timedelta(days=10), 0.0)
+        candidate_high = LinePoint(d + timedelta(days=20), 15.0)
+        rebound_low = LinePoint(d + timedelta(days=30), 4.0)
+        lower_high = LinePoint(d + timedelta(days=40), 11.0)
+        next_rebound_low = LinePoint(d + timedelta(days=50), 2.0)
+        confirming_higher_high = LinePoint(d + timedelta(days=60), 12.0)
         existing = SimplifiedLineResult(
             markers=(
                 start_high,
@@ -594,12 +608,12 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage4_keeps_confirmed_turns_and_reanchors_chronologically(self):
         d = date(2020, 1, 1)
-        p0 = PivotPoint(d, 3.6, "low")
-        p1 = PivotPoint(d + timedelta(days=10), 9.1, "high")
-        p2 = PivotPoint(d + timedelta(days=20), -9.7, "low")
-        p3 = PivotPoint(d + timedelta(days=30), 4.6, "high")
-        p4 = PivotPoint(d + timedelta(days=40), 0.7, "low")
-        p5 = PivotPoint(d + timedelta(days=50), 19.4, "high")
+        p0 = LinePoint(d, 3.6)
+        p1 = LinePoint(d + timedelta(days=10), 9.1)
+        p2 = LinePoint(d + timedelta(days=20), -9.7)
+        p3 = LinePoint(d + timedelta(days=30), 4.6)
+        p4 = LinePoint(d + timedelta(days=40), 0.7)
+        p5 = LinePoint(d + timedelta(days=50), 19.4)
         existing = SimplifiedLineResult(
             markers=(p0, p1, p2, p3, p4, p5),
             segments=(
@@ -623,10 +637,10 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage6_ignores_first_angle_then_preserves_large_second_bend(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 0.0, "low")
-        p2 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        p3 = PivotPoint(d + timedelta(days=20), 20.0, "high")
-        p4 = PivotPoint(d + timedelta(days=30), 21.0, "high")
+        p1 = LinePoint(d, 0.0)
+        p2 = LinePoint(d + timedelta(days=10), 10.0)
+        p3 = LinePoint(d + timedelta(days=20), 20.0)
+        p4 = LinePoint(d + timedelta(days=30), 21.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2, p3, p4),
             segments=(
@@ -664,10 +678,10 @@ class PivotStageBoundaryTests(unittest.TestCase):
 
     def test_stage6_collapses_second_bend_when_within_ten_degrees(self):
         d = date(2020, 1, 1)
-        p1 = PivotPoint(d, 0.0, "low")
-        p2 = PivotPoint(d + timedelta(days=10), 5.0, "high")
-        p3 = PivotPoint(d + timedelta(days=20), 10.0, "high")
-        p4 = PivotPoint(d + timedelta(days=30), 15.0, "high")
+        p1 = LinePoint(d, 0.0)
+        p2 = LinePoint(d + timedelta(days=10), 5.0)
+        p3 = LinePoint(d + timedelta(days=20), 10.0)
+        p4 = LinePoint(d + timedelta(days=30), 15.0)
         existing = SimplifiedLineResult(
             markers=(p1, p2, p3, p4),
             segments=(
