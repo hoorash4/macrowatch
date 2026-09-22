@@ -1,0 +1,49 @@
+name: Simulate NFCI stage3 with added C
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-sim-nfci-stage3-added-c.yml"
+permissions: {contents: read}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.12"}
+      - run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Simulate
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date,timedelta
+          from dataclasses import replace
+          from common import SupabaseRest
+          from historical_pivot_base import _get_rows_paginated,_single_row
+          from historical_pivot_shared import ChartGeometry,normalize_rows,buffer_bounds
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures,Stage2Result
+          from historical_pivot_stage3 import simplify_pivot_lines
+          CASE='tightening_2022';INDEX='NASDAQ_COMPOSITE';CODE='NFCI_RISK'
+          W=950.;H=464.;SX=W*.12;TX=W*.88;TOP=H*.08;BOT=H*.08;DATA_H=H-TOP-BOT
+          db=SupabaseRest()
+          cyc=_single_row(db,'historical_case_market_cycles',{'select':'start_date,trough_date','case_code':f'eq.{CASE}','index_code':f'eq.{INDEX}','limit':'2'})
+          s=date.fromisoformat(str(cyc['start_date'])[:10]);t=date.fromisoformat(str(cyc['trough_date'])[:10]);bs,be=buffer_bounds(s,t)
+          ppd=(TX-SX)/(t-s).days;ds=s-timedelta(days=SX/ppd);de=t+timedelta(days=(W-TX)/ppd)
+          rows=_get_rows_paginated(db,'economic_chart_series_points',{'select':'observation_date,value,frequency','series_code':f'eq.{CODE}','observation_date':f'gte.{bs.isoformat()}','and':f'(observation_date.lte.{be.isoformat()})','order':'observation_date.asc'})
+          raw=normalize_rows(rows);vis=[p for p in raw if ds<=p.day<=de];lo=min(p.value for p in vis);hi=max(p.value for p in vis);span=hi-lo;ypad=span*(.08/.84)
+          g=ChartGeometry(ds,de,lo-ypad,hi+ypad,W,H)
+          s1=calculate_base_pivots(rows,rows[0]['frequency']);s2=classify_special_structures(s1,g)
+          c=next(p for p in s1.low_candidates if p.day.isoformat()=='2020-08-21')
+          lows={ (p.day,p.value,p.pivot_type):p for p in s2.low_pivots};lows[(c.day,c.value,c.pivot_type)]=c
+          s2x=Stage2Result(high_pivots=s2.high_pivots,low_pivots=tuple(sorted(lows.values(),key=lambda p:p.day)),spike_peaks=s2.spike_peaks,high_sideways_segments=s2.high_sideways_segments,low_sideways_segments=s2.low_sideways_segments,rapid_move_candidates=s2.rapid_move_candidates)
+          s3=simplify_pivot_lines(s2x,g)
+          print('ADDED_C',c.day.isoformat(),c.value,c.pivot_type)
+          print('S3_MARKERS',[(p.day.isoformat(),p.value) for p in s3.markers])
+          print('S3_SEGMENTS',[(x.start.day.isoformat(),x.start.value,x.end.day.isoformat(),x.end.value,x.kind) for x in s3.segments])
+          print('RAPID',[(x.start.day.isoformat(),x.start.value,x.end.day.isoformat(),x.end.value) for x in s3.rapid_move_candidates])
+          PY
