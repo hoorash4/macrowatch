@@ -165,13 +165,6 @@ class _HardSegment:
     sideways: SidewaysSegment | None = None
 
 
-@dataclass(frozen=True)
-class _LineHardSegment:
-    start: LinePoint
-    end: LinePoint
-    kind: str
-
-
 def _legs(points: Sequence[PivotPoint], pivot_type: str) -> list[_Leg]:
     same_side = sorted(
         (point for point in points if point.pivot_type == pivot_type),
@@ -436,48 +429,13 @@ def simplify_pivot_lines(
     )
 
     hard = _hard_segments(augmented)
-
-    # Build the upper/lower RDP merge while original high/low identity still
-    # exists. This is the boundary: from the moment the two lines are merged,
-    # original PivotPoint.pivot_type must not exist in downstream Stage-3 work.
-    base_vertices = _merge_window(points)
-
-    line_base_vertices = tuple(
-        LinePoint(point.day, point.value)
-        for point in base_vertices
-    )
-    line_hard = tuple(
-        _LineHardSegment(
-            start=LinePoint(segment.start.day, segment.start.value),
-            end=LinePoint(segment.end.day, segment.end.value),
-            kind=segment.kind,
-        )
-        for segment in hard
-    )
-    line_marker_only_points = tuple(
-        LinePoint(spike.point.day, spike.point.value)
-        for spike in marker_only_spikes
-    )
-    line_rapid_candidates = tuple(
-        LineRapidMoveCandidate(
-            start=LinePoint(candidate.start.day, candidate.start.value),
-            end=LinePoint(candidate.end.day, candidate.end.value),
-            direction=candidate.direction,
-            visual_y_share=candidate.visual_y_share,
-        )
-        for candidate in augmented.rapid_move_candidates
-    )
-
-    def line_key(point: LinePoint) -> tuple[date, float]:
-        return point.day, point.value
-
     segments: list[SimplifiedLineSegment] = []
-    markers: dict[tuple[date, float], LinePoint] = {}
+    markers: dict[tuple[date, float, str], PivotPoint] = {}
 
-    def remember(point: LinePoint) -> None:
-        markers[line_key(point)] = point
+    def remember(point: PivotPoint) -> None:
+        markers[_key(point)] = point
 
-    def add_segment(start: LinePoint, end: LinePoint, kind: str) -> None:
+    def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
         if start.day >= end.day:
             return
         remember(start)
@@ -486,77 +444,116 @@ def simplify_pivot_lines(
         if segment not in segments:
             segments.append(segment)
 
-    # A normal-wave vertex inside a protected segment must not split that
-    # protected structure. All comparisons from here use only time/value.
+    def add_vertices(vertices: Sequence[PivotPoint]) -> None:
+        if len(vertices) == 1:
+            remember(vertices[0])
+        for left, right in zip(vertices, vertices[1:]):
+            add_segment(left, right, "trend")
+
+    # Protection constrains OUTPUT, not JUDGMENT.  Build the normal wave over
+    # the complete Stage-2 timeline first.  Then force protected structure back
+    # into that line as mandatory vertices/segments without allowing a direct
+    # connection to skip across it.
+    base_vertices = _merge_window(points)
+
+    # A normal-wave vertex inside a hard segment must not split that protected
+    # structure.  The hard segment owns its whole interior span.
     filtered_base = [
         point
-        for point in line_base_vertices
+        for point in base_vertices
         if not any(
             protected.start.day < point.day < protected.end.day
-            for protected in line_hard
+            for protected in hard
         )
     ]
 
-    structural: dict[tuple[date, float], LinePoint] = {
-        line_key(point): point for point in filtered_base
+    structural: dict[tuple[date, float, str], PivotPoint] = {
+        _key(point): point for point in filtered_base
     }
 
-    # Rapid endpoints remain provisional connected vertices for Stage 4.
-    for candidate in line_rapid_candidates:
-        structural[line_key(candidate.start)] = candidate.start
-        structural[line_key(candidate.end)] = candidate.end
+    # Rapid candidates are only provisional at Stage 2. Stage 3 may judge the
+    # normal wave without them, but it must not delete their entry/end points:
+    # Stage 4 owns the rapid-move confirmation/rejection decision. Keep both
+    # endpoints as connected vertices (never as detached standalone markers).
+    for candidate in augmented.rapid_move_candidates:
+        structural[_key(candidate.start)] = candidate.start
+        structural[_key(candidate.end)] = candidate.end
 
-    hard_kind: dict[
-        tuple[tuple[date, float], tuple[date, float]],
-        str,
-    ] = {}
-    for protected in line_hard:
-        structural[line_key(protected.start)] = protected.start
-        structural[line_key(protected.end)] = protected.end
-        hard_kind[(line_key(protected.start), line_key(protected.end))] = protected.kind
-
+    hard_kind: dict[tuple[tuple[date, float, str], tuple[date, float, str]], str] = {}
+    for protected in hard:
+        structural[_key(protected.start)] = protected.start
+        structural[_key(protected.end)] = protected.end
+        hard_kind[(_key(protected.start), _key(protected.end))] = protected.kind
     structural_points = sorted(
         structural.values(),
-        key=lambda item: item.day,
+        key=lambda item: (item.day, item.pivot_type),
     )
     if len(structural_points) == 1:
         remember(structural_points[0])
     for left, right in zip(structural_points, structural_points[1:]):
-        kind = hard_kind.get((line_key(left), line_key(right)), "trend")
+        kind = hard_kind.get((_key(left), _key(right)), "trend")
         add_segment(left, right, kind)
 
-    for point in line_marker_only_points:
-        remember(point)
+    for spike in marker_only_spikes:
+        remember(spike.point)
 
+    # Only marker-only spikes may survive as true standalone markers.
+    # Rapid endpoints are provisional connected vertices and must all reach
+    # Stage 4, which owns their final confirmation/rejection.
     connected_keys = {
-        line_key(point)
+        _key(point)
         for segment in segments
         for point in (segment.start, segment.end)
     }
+    surviving_rapid = tuple(augmented.rapid_move_candidates)
     if any(
-        line_key(candidate.start) not in connected_keys
-        or line_key(candidate.end) not in connected_keys
-        for candidate in line_rapid_candidates
+        _key(candidate.start) not in connected_keys
+        or _key(candidate.end) not in connected_keys
+        for candidate in surviving_rapid
     ):
         raise RuntimeError("stage3 failed to connect a rapid candidate endpoint")
-
-    stage2_keys = {
-        (point.day, point.value)
-        for point in augmented.display_markers
-    }
+    stage2_keys = {_key(point) for point in augmented.display_markers}
     if not set(markers).issubset(stage2_keys):
         raise RuntimeError("stage3 produced a point absent from stage2")
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
 
+    line_by_pivot_key = {
+        _key(point): LinePoint(point.day, point.value)
+        for point in markers.values()
+    }
     line_markers = tuple(sorted(
-        markers.values(),
+        line_by_pivot_key.values(),
         key=lambda item: item.day,
     ))
+    line_segments = tuple(
+        SimplifiedLineSegment(
+            start=line_by_pivot_key[_key(segment.start)],
+            end=line_by_pivot_key[_key(segment.end)],
+            kind=segment.kind,
+        )
+        for segment in segments
+    )
+    line_marker_only_points = tuple(sorted(
+        (
+            line_by_pivot_key[_key(spike.point)]
+            for spike in marker_only_spikes
+        ),
+        key=lambda item: item.day,
+    ))
+    line_rapid_candidates = tuple(
+        LineRapidMoveCandidate(
+            start=line_by_pivot_key[_key(candidate.start)],
+            end=line_by_pivot_key[_key(candidate.end)],
+            direction=candidate.direction,
+            visual_y_share=candidate.visual_y_share,
+        )
+        for candidate in surviving_rapid
+    )
 
     return Stage3LineResult(
         markers=line_markers,
-        segments=tuple(segments),
+        segments=line_segments,
         marker_only_points=line_marker_only_points,
         rapid_move_candidates=line_rapid_candidates,
     )
