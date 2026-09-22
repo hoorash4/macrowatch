@@ -33,6 +33,7 @@ on:
       - "Refresh U.S. market stress"
       - "Refresh U.S. small business risk"
       - "Refresh liquidity pressure and capacity"
+      - "Notify new GPT models"
     types: [completed]
 
 permissions:
