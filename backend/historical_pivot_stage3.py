@@ -453,166 +453,107 @@ def simplify_pivot_lines(
     augmented: Stage2Result,
     geometry: ChartGeometry,
 ) -> Stage3LineResult:
-    """Return one Stage-3 wave line from Stage-2 points only."""
+    """Merge Stage-2 upper/lower RDP points into one chronological line only.
+
+    Stage 3 performs no wave judgment and no cleanup. Every connected Stage-2
+    RDP point survives into the merged chronology, except explicit marker-only
+    spikes which remain detached by definition. Exact same-day/same-value
+    duplicates from the high/low sides collapse to one line vertex.
+    """
 
     marker_only_spikes = tuple(
         spike for spike in augmented.spike_peaks if spike.marker_only
     )
     marker_only_keys = {_key(spike.point) for spike in marker_only_spikes}
 
-    # Stage 3 owns only the upper/lower RDP-line merge.  Cleanup decisions
-    # belong downstream, so no transient-excursion or post-merge point pruning
-    # is applied here.
-    points = _unique(
-        tuple(
-            point
-            for point in (*augmented.high_pivots, *augmented.low_pivots)
-            if _key(point) not in marker_only_keys
-        )
+    # Literal upper/lower merge: keep every Stage-2 line point and sort only by
+    # time. High/low identity ends here; exact same day/value duplicates become
+    # one LinePoint because Stage 3+ no longer carries pivot_type.
+    merged_by_line_key: dict[tuple[date, float], PivotPoint] = {}
+    for point in (*augmented.high_pivots, *augmented.low_pivots):
+        if _key(point) in marker_only_keys:
+            continue
+        merged_by_line_key[(point.day, point.value)] = point
+
+    merged_points = sorted(
+        merged_by_line_key.values(),
+        key=lambda item: (item.day, item.value),
     )
 
-    hard = _hard_segments(augmented)
-    segments: list[SimplifiedLineSegment] = []
-    markers: dict[tuple[date, float, str], PivotPoint] = {}
-
-    def remember(point: PivotPoint) -> None:
-        markers[_key(point)] = point
-
-    def add_segment(start: PivotPoint, end: PivotPoint, kind: str) -> None:
-        if start.day >= end.day:
-            return
-        remember(start)
-        remember(end)
-        segment = SimplifiedLineSegment(start, end, kind)
-        if segment not in segments:
-            segments.append(segment)
-
-    def add_vertices(vertices: Sequence[PivotPoint]) -> None:
-        if len(vertices) == 1:
-            remember(vertices[0])
-        for left, right in zip(vertices, vertices[1:]):
-            add_segment(left, right, "trend")
-
-    # Protection constrains OUTPUT, not JUDGMENT.  Build the normal wave over
-    # the complete Stage-2 timeline first.  Then force protected structure back
-    # into that line as mandatory vertices/segments without allowing a direct
-    # connection to skip across it.
-    base_vertices = _merge_window(points)
-
-    # A normal-wave vertex inside a hard segment must not split that protected
-    # structure.  The hard segment owns its whole interior span.
-    filtered_base = [
-        point
-        for point in base_vertices
-        if not any(
-            protected.start.day < point.day < protected.end.day
-            for protected in hard
-        )
-    ]
-
-    structural: dict[tuple[date, float, str], PivotPoint] = {
-        _key(point): point for point in filtered_base
-    }
-
-    # Rapid candidates are only provisional at Stage 2. Stage 3 may judge the
-    # normal wave without them, but it must not delete their entry/end points:
-    # Stage 4 owns the rapid-move confirmation/rejection decision. Keep both
-    # endpoints as connected vertices (never as detached standalone markers).
-    for candidate in augmented.rapid_move_candidates:
-        structural[_key(candidate.start)] = candidate.start
-        structural[_key(candidate.end)] = candidate.end
-
-    hard_kind: dict[tuple[tuple[date, float, str], tuple[date, float, str]], str] = {}
-    for protected in hard:
-        structural[_key(protected.start)] = protected.start
-        structural[_key(protected.end)] = protected.end
-        hard_kind[(_key(protected.start), _key(protected.end))] = protected.kind
-    structural_points = sorted(
-        structural.values(),
-        key=lambda item: (item.day, item.pivot_type),
-    )
-
-    mandatory_keys = {
-        _key(candidate.start)
-        for candidate in augmented.rapid_move_candidates
-    } | {
-        _key(candidate.end)
-        for candidate in augmented.rapid_move_candidates
-    } | {
-        _key(protected.start)
-        for protected in hard
-    } | {
-        _key(protected.end)
-        for protected in hard
-    }
-    # Do not prune merged vertices in Stage 3.  The merged chronology is the
-    # complete input handed to Stage 4.
-    if len(structural_points) == 1:
-        remember(structural_points[0])
-    for left, right in zip(structural_points, structural_points[1:]):
-        kind = hard_kind.get((_key(left), _key(right)), "trend")
-        add_segment(left, right, kind)
-
-    for spike in marker_only_spikes:
-        remember(spike.point)
-
-    # Only marker-only spikes may survive as true standalone markers.
-    # Rapid endpoints are provisional connected vertices and must all reach
-    # Stage 4, which owns their final confirmation/rejection.
-    connected_keys = {
-        _key(point)
-        for segment in segments
-        for point in (segment.start, segment.end)
-    }
-    surviving_rapid = tuple(augmented.rapid_move_candidates)
-    if any(
-        _key(candidate.start) not in connected_keys
-        or _key(candidate.end) not in connected_keys
-        for candidate in surviving_rapid
+    # Hard Stage-2 structures only label an already-adjacent merged segment;
+    # they do not remove or reorder any point.
+    hard_kind: dict[tuple[tuple[date, float], tuple[date, float]], str] = {}
+    for spike in augmented.spike_peaks:
+        if spike.marker_only or spike.entry is None:
+            continue
+        hard_kind[
+            ((spike.entry.day, spike.entry.value), (spike.point.day, spike.point.value))
+        ] = "spike"
+    for sideways in (
+        *augmented.high_sideways_segments,
+        *augmented.low_sideways_segments,
     ):
-        raise RuntimeError("stage3 failed to connect a rapid candidate endpoint")
-    stage2_keys = {_key(point) for point in augmented.display_markers}
-    if not set(markers).issubset(stage2_keys):
-        raise RuntimeError("stage3 produced a point absent from stage2")
+        if not getattr(sideways, "protected", True):
+            continue
+        hard_kind[
+            ((sideways.start.day, sideways.start.value), (sideways.end.day, sideways.end.value))
+        ] = "sideways"
 
-    segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
-
-    line_by_pivot_key = {
-        _key(point): LinePoint(point.day, point.value)
-        for point in markers.values()
+    line_by_key = {
+        (point.day, point.value): LinePoint(point.day, point.value)
+        for point in merged_points
     }
-    line_markers = tuple(sorted(
-        line_by_pivot_key.values(),
-        key=lambda item: item.day,
-    ))
-    line_segments = tuple(
-        SimplifiedLineSegment(
-            start=line_by_pivot_key[_key(segment.start)],
-            end=line_by_pivot_key[_key(segment.end)],
-            kind=segment.kind,
+
+    line_markers = tuple(line_by_key.values())
+    line_segments: list[SimplifiedLineSegment] = []
+    for left, right in zip(merged_points, merged_points[1:]):
+        if left.day >= right.day:
+            raise RuntimeError(
+                "stage3 chronological merge encountered multiple distinct values on the same date"
+            )
+        kind = hard_kind.get(
+            ((left.day, left.value), (right.day, right.value)),
+            "trend",
         )
-        for segment in segments
-    )
+        line_segments.append(
+            SimplifiedLineSegment(
+                start=line_by_key[(left.day, left.value)],
+                end=line_by_key[(right.day, right.value)],
+                kind=kind,
+            )
+        )
+
     line_marker_only_points = tuple(sorted(
         (
-            line_by_pivot_key[_key(spike.point)]
+            LinePoint(spike.point.day, spike.point.value)
             for spike in marker_only_spikes
         ),
         key=lambda item: item.day,
     ))
+
+    # Marker-only spikes are detached and therefore also belong to markers.
+    if line_marker_only_points:
+        marker_map = {
+            (point.day, point.value): point
+            for point in line_markers
+        }
+        for point in line_marker_only_points:
+            marker_map[(point.day, point.value)] = point
+        line_markers = tuple(sorted(marker_map.values(), key=lambda item: item.day))
+
     line_rapid_candidates = tuple(
         LineRapidMoveCandidate(
-            start=line_by_pivot_key[_key(candidate.start)],
-            end=line_by_pivot_key[_key(candidate.end)],
+            start=LinePoint(candidate.start.day, candidate.start.value),
+            end=LinePoint(candidate.end.day, candidate.end.value),
             direction=candidate.direction,
             visual_y_share=candidate.visual_y_share,
         )
-        for candidate in surviving_rapid
+        for candidate in augmented.rapid_move_candidates
     )
 
     return Stage3LineResult(
         markers=line_markers,
-        segments=line_segments,
+        segments=tuple(line_segments),
         marker_only_points=line_marker_only_points,
         rapid_move_candidates=line_rapid_candidates,
     )
