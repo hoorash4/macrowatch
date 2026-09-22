@@ -1,0 +1,76 @@
+name: Render NFCI Risk Stage2 canonical temp
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-render-nfci-stage2-canonical.yml"
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Render
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p out
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date
+          import math
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import _get_rows_paginated,_single_row
+          from historical_pivot_shared import ChartGeometry,normalize_rows,buffer_bounds
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+
+          db=SupabaseRest(); CASE="tightening_2022"; INDEX="NASDAQ_COMPOSITE"; CODE="NFCI_RISK"
+          cycle=_single_row(db,"historical_case_market_cycles",{"select":"start_date,trough_date","case_code":f"eq.{CASE}","index_code":f"eq.{INDEX}","limit":"2"})
+          cs=date.fromisoformat(cycle["start_date"]); ct=date.fromisoformat(cycle["trough_date"]); bs,be=buffer_bounds(cs,ct)
+          market=_get_rows_paginated(db,"market_index_prices",{"select":"market_date,close","index_code":f"eq.{INDEX}","market_date":"gte.1990-01-01","order":"market_date.asc"})
+          market=[r for r in market if r.get("market_date") and r.get("close") is not None]
+          si=next(i for i,r in enumerate(market) if str(r["market_date"])[:10]>=cs.isoformat()); ei=max(i for i,r in enumerate(market) if str(r["market_date"])[:10]<=ct.isoformat())
+          span=max(1,ei-si); context=max(1,span*.12/(1-.24))
+          ds=date.fromisoformat(str(market[int(max(0,si-context))]["market_date"])[:10]); de=date.fromisoformat(str(market[int(math.ceil(min(len(market)-1,ei+context)))]["market_date"])[:10])
+          rows=_get_rows_paginated(db,"economic_chart_series_points",{"select":"observation_date,value,frequency","series_code":f"eq.{CODE}","observation_date":f"gte.{bs.isoformat()}","and":f"(observation_date.lte.{be.isoformat()})","order":"observation_date.asc"})
+          raw=normalize_rows(rows); vals=[p.value for p in raw]; lo,hi=min(vals),max(vals); pad=(hi-lo)*.05 if hi!=lo else 1
+          g=ChartGeometry(ds,de,lo-pad,hi+pad,19.0,8.0)
+          s1=calculate_base_pivots(rows,rows[0]["frequency"]); s2=classify_special_structures(s1,g)
+
+          print("SIDEWAYS_H",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,s.prior_trend,s.reference_side,round(s.angle_deg,6),s.protected) for s in s2.high_sideways_segments])
+          print("SIDEWAYS_L",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,s.prior_trend,s.reference_side,round(s.angle_deg,6),s.protected) for s in s2.low_sideways_segments])
+          print("SPIKES",[(s.point.day.isoformat(),s.point.value,s.direction,None if s.entry is None else (s.entry.day.isoformat(),s.entry.value),s.marker_only) for s in s2.spike_peaks])
+          print("RAPID",[(c.start.day.isoformat(),c.start.value,c.end.day.isoformat(),c.end.value,c.direction,round(c.visual_y_share,6)) for c in s2.rapid_move_candidates])
+
+          fig,ax=plt.subplots(figsize=(15.2,6.4))
+          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.2,label="raw")
+          ax.plot([p.day for p in s2.high_pivots],[p.value for p in s2.high_pivots],linewidth=1.6,marker="^",markersize=5,label="Stage2 high RDP")
+          ax.plot([p.day for p in s2.low_pivots],[p.value for p in s2.low_pivots],linewidth=1.6,marker="v",markersize=5,label="Stage2 low RDP")
+          for seg in (*s2.high_sideways_segments,*s2.low_sideways_segments):
+              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=4,label="sideways protected")
+          for c in s2.rapid_move_candidates:
+              ax.plot([c.start.day,c.end.day],[c.start.value,c.end.value],linewidth=4,label="rapid candidate")
+          for p in s2.display_markers:
+              if date(2020,1,1)<=p.day<=date(2022,12,31):
+                  ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,8),textcoords="offset points",fontsize=7,ha="center")
+          ax.set_xlim(ds,de); ax.set_ylim(g.y_min,g.y_max); ax.grid(True,alpha=.2)
+          handles,labels=ax.get_legend_handles_labels()
+          uniq=dict(zip(labels,handles)); ax.legend(uniq.values(),uniq.keys(),loc="best")
+          ax.set_title("NFCI RISK · Stage 2 · current canonical rerun")
+          fig.tight_layout(); fig.savefig("out/NFCI_RISK_STAGE2.png",dpi=180); plt.close(fig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nfci-risk-stage2
+          path: out/NFCI_RISK_STAGE2.png
+          if-no-files-found: error
