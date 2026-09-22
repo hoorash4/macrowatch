@@ -44,7 +44,7 @@ jobs:
           g=ChartGeometry(ds,de,lo-yp,hi+yp,W,H)
           s1=calculate_base_pivots(rows,rows[0]["frequency"]); s2=classify_special_structures(s1,g); s3=simplify_pivot_lines(s2,g); s4=finalize_rapid_moves(s3,g); s5=prune_same_trend_extremes(s4,g); s6=prune_unconfirmed_retracements(s5,g)
           print("S2_RAPID",[(x.start.day.isoformat(),x.end.day.isoformat(),x.direction) for x in s2.rapid_move_candidates])
-          print("S2_SPIKES",[(x.entry.day.isoformat(),x.peak.day.isoformat()) for x in s2.spikes])
+          print("S2_SPIKES",[(x.entry.day.isoformat(),x.peak.day.isoformat()) for x in s2.spike_peaks])
           print("S2_SIDE_H",[(x.start.day.isoformat(),x.end.day.isoformat(),x.protected) for x in s2.high_sideways_segments])
           print("S2_SIDE_L",[(x.start.day.isoformat(),x.end.day.isoformat(),x.protected) for x in s2.low_sideways_segments])
           print("S4_PROTECTED",[(p.day.isoformat(),p.value) for p in s4.protected_points])
