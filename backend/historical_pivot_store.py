@@ -13,18 +13,22 @@ import json
 from typing import Any, Iterable, Sequence
 
 from common import SupabaseRest
-from historical_pivot_shared import PivotPoint, SimplifiedLineResult
+from historical_pivot_shared import LinePoint, PivotPoint, SimplifiedLineResult, line_role_map
 
 
-def _key(point: PivotPoint) -> tuple[date, float, str]:
+def _pivot_key(point: PivotPoint) -> tuple[date, float, str]:
     return point.day, float(point.value), point.pivot_type
 
 
-def _keys(points: Iterable[PivotPoint]) -> set[tuple[date, float, str]]:
-    return {_key(point) for point in points}
+def _line_key(point: PivotPoint | LinePoint) -> tuple[date, float]:
+    return point.day, float(point.value)
 
 
-def _stage_markers(stage: Any) -> tuple[PivotPoint, ...]:
+def _line_keys(points: Iterable[PivotPoint | LinePoint]) -> set[tuple[date, float]]:
+    return {_line_line_key(point) for point in points}
+
+
+def _stage_markers(stage: Any) -> tuple[Any, ...]:
     markers = getattr(stage, "markers", None)
     if markers is not None:
         return tuple(markers)
@@ -37,9 +41,10 @@ def _stage_markers(stage: Any) -> tuple[PivotPoint, ...]:
 
 
 def _technical_reason_text(
-    point: PivotPoint,
+    point: LinePoint,
     *,
     base_rdp: bool,
+    base_rdp_type: str | None,
     spike_peak: bool,
     spike_entry: bool,
     marker_only: bool,
@@ -64,11 +69,11 @@ def _technical_reason_text(
         return f"Stage 2에서 sideways 보호 구간의 {sides} 경계점으로 보호되었고," + suffix
     if base_rdp and stage3_vertex:
         return (
-            f"Stage 1 RDP {point.pivot_type}로 선정된 뒤 Stage 3 단일 wave line의 꼭짓점으로 채택되었고,"
+            f"Stage 1 RDP {base_rdp_type or 'pivot'}로 선정된 뒤 Stage 3 단일 wave line의 꼭짓점으로 채택되었고,"
             + suffix
         )
     if base_rdp:
-        return f"Stage 1 RDP {point.pivot_type}로 선정되었고," + suffix
+        return f"Stage 1 RDP {base_rdp_type or 'pivot'}로 선정되었고," + suffix
     if stage3_vertex:
         return "Stage 3 단일 wave line의 꼭짓점으로 채택되었고," + suffix
     if standalone:
@@ -77,28 +82,33 @@ def _technical_reason_text(
 
 
 def _previous_same_side(
-    ordered: Sequence[PivotPoint],
+    ordered: Sequence[LinePoint],
     index: int,
-) -> PivotPoint | None:
-    point = ordered[index]
+    roles: dict[tuple[date, float], str | None],
+) -> LinePoint | None:
+    role = roles.get(_line_key(ordered[index]))
+    if role is None:
+        return None
     for candidate in reversed(ordered[:index]):
-        if candidate.pivot_type == point.pivot_type:
+        if roles.get(_line_key(candidate)) == role:
             return candidate
     return None
 
 
 def _next_same_side(
-    ordered: Sequence[PivotPoint],
+    ordered: Sequence[LinePoint],
     index: int,
-) -> PivotPoint | None:
-    point = ordered[index]
+    roles: dict[tuple[date, float], str | None],
+) -> LinePoint | None:
+    role = roles.get(_line_key(ordered[index]))
+    if role is None:
+        return None
     for candidate in ordered[index + 1:]:
-        if candidate.pivot_type == point.pivot_type:
+        if roles.get(_line_key(candidate)) == role:
             return candidate
     return None
 
-
-def _direction(left: PivotPoint | None, right: PivotPoint | None) -> int:
+def _direction(left: LinePoint | None, right: LinePoint | None) -> int:
     if left is None or right is None:
         return 0
     if right.value > left.value:
@@ -114,7 +124,7 @@ def _format_value(value: float) -> str:
 
 
 def _interpretive_reason(
-    ordered: Sequence[PivotPoint],
+    ordered: Sequence[LinePoint],
     index: int,
     *,
     spike: dict[str, Any] | None,
@@ -128,10 +138,12 @@ def _interpretive_reason(
     that are already present in the stored result.
     """
     point = ordered[index]
+    roles = line_role_map(ordered)
+    point_role = roles.get(_line_line_key(point))
     previous = ordered[index - 1] if index > 0 else None
     following = ordered[index + 1] if index + 1 < len(ordered) else None
-    previous_same = _previous_same_side(ordered, index)
-    next_same = _next_same_side(ordered, index)
+    previous_same = _previous_same_side(ordered, index, roles)
+    next_same = _next_same_side(ordered, index, roles)
     incoming = _direction(previous, point)
     outgoing = _direction(point, following)
     value = _format_value(point.value)
@@ -190,34 +202,34 @@ def _interpretive_reason(
 
     if following is None:
         if previous_same is not None:
-            if point.pivot_type == "low" and point.value < previous_same.value:
+            if point_role == "low" and point.value < previous_same.value:
                 return (
                     "final_lower_low",
                     f"직전 주요 저점 {_format_value(previous_same.value)}보다 더 낮은 {value}의 저점을 만들며 하락 흐름의 최종 극값을 형성했습니다.",
                 )
-            if point.pivot_type == "low" and point.value > previous_same.value:
+            if point_role == "low" and point.value > previous_same.value:
                 return (
                     "final_higher_low",
                     f"직전 주요 저점 {_format_value(previous_same.value)}보다 높은 {value}에서 저점이 형성돼 하락 압력이 약해진 상태로 끝났습니다.",
                 )
-            if point.pivot_type == "high" and point.value > previous_same.value:
+            if point_role == "high" and point.value > previous_same.value:
                 return (
                     "final_higher_high",
                     f"직전 주요 고점 {_format_value(previous_same.value)}을 넘어 {value}의 새 고점을 만들며 상승 흐름의 최종 극값을 형성했습니다.",
                 )
-            if point.pivot_type == "high" and point.value < previous_same.value:
+            if point_role == "high" and point.value < previous_same.value:
                 return (
                     "final_lower_high",
                     f"직전 주요 고점 {_format_value(previous_same.value)}을 넘지 못하고 {value}에서 고점이 형성돼 상승 탄력이 약해진 상태로 끝났습니다.",
                 )
-        word = "고점" if point.pivot_type == "high" else "저점"
+        word = "고점" if point_role == "high" else "저점"
         return (
             "final_extreme",
             f"이 구간에서 마지막으로 확인된 주요 {word}으로 최종 피봇 구조의 끝점입니다.",
         )
 
     if incoming and outgoing and incoming != outgoing:
-        if point.pivot_type == "high":
+        if point_role == "high":
             if previous_same is not None and point.value > previous_same.value:
                 if next_same is not None and next_same.value < point.value:
                     return (
@@ -228,8 +240,8 @@ def _interpretive_reason(
                     "higher_high_turn",
                     f"직전 주요 고점을 넘어 {value}의 새 고점을 만든 뒤 상승 흐름이 멈추고 방향이 전환된 지점입니다.",
                 )
-            if previous is not None and following is not None and following.pivot_type == "low":
-                prior_low = previous if previous.pivot_type == "low" else None
+            if previous is not None and following is not None and roles.get(_line_key(following)) == "low":
+                prior_low = previous if roles.get(_line_key(previous)) == "low" else None
                 if prior_low is not None and following.value < prior_low.value:
                     return (
                         "failed_rebound_in_downtrend",
@@ -240,7 +252,7 @@ def _interpretive_reason(
                 f"{value}에서 반등이 멈추고 이후 하락 방향으로 전환된 주요 고점입니다.",
             )
 
-        if point.pivot_type == "low":
+        if point_role == "low":
             if previous_same is not None and point.value < previous_same.value:
                 if next_same is not None and next_same.value > point.value:
                     return (
@@ -251,8 +263,8 @@ def _interpretive_reason(
                     "lower_low_turn",
                     f"직전 주요 저점보다 낮은 {value}의 새 저점을 만든 뒤 하락 흐름이 멈추고 방향이 전환된 지점입니다.",
                 )
-            if previous is not None and following is not None and following.pivot_type == "high":
-                prior_high = previous if previous.pivot_type == "high" else None
+            if previous is not None and following is not None and roles.get(_line_key(following)) == "high":
+                prior_high = previous if roles.get(_line_key(previous)) == "high" else None
                 if prior_high is not None and following.value > prior_high.value:
                     return (
                         "failed_pullback_in_uptrend",
@@ -263,7 +275,7 @@ def _interpretive_reason(
                 f"{value}에서 하락이 멈추고 이후 상승 방향으로 전환된 주요 저점입니다.",
             )
 
-    if point.pivot_type == "high" and previous_same is not None:
+    if point_role == "high" and previous_same is not None:
         if point.value > previous_same.value:
             return (
                 "higher_high_continuation",
@@ -275,7 +287,7 @@ def _interpretive_reason(
                 f"반등이 {value}에서 멈추며 직전 주요 고점을 회복하지 못해 상승 탄력이 약해진 구조입니다.",
             )
 
-    if point.pivot_type == "low" and previous_same is not None:
+    if point_role == "low" and previous_same is not None:
         if point.value < previous_same.value:
             return (
                 "lower_low_continuation",
@@ -287,7 +299,7 @@ def _interpretive_reason(
                 f"저점이 직전 주요 저점보다 높은 {value}에서 형성돼 하락 압력이 약해진 구조입니다.",
             )
 
-    word = "고점" if point.pivot_type == "high" else "저점"
+    word = "고점" if point_role == "high" else "저점"
     return (
         "final_structure_pivot",
         f"주변의 작은 변동을 제거한 뒤에도 최종 구조에 남은 주요 {word}입니다.",
@@ -304,29 +316,38 @@ def build_storage_rows(
     final: SimplifiedLineResult,
 ) -> list[dict[str, Any]]:
     """Serialize one completed Stage 1~6 result without changing generation state."""
-    ordered = sorted(final.markers, key=lambda item: (item.day, item.pivot_type))
-    order_by_key = {_key(point): index for index, point in enumerate(ordered)}
+    ordered = sorted(final.markers, key=lambda item: item.day)
+    order_by_key = {_line_line_key(point): index for index, point in enumerate(ordered)}
 
-    segment_by_start: dict[tuple[date, float, str], tuple[PivotPoint, str]] = {}
+    connected_map: dict[tuple[date, float], LinePoint] = {}
     for segment in final.segments:
-        start_key = _key(segment.start)
-        end_key = _key(segment.end)
+        connected_map[_line_key(segment.start)] = segment.start
+        connected_map[_line_key(segment.end)] = segment.end
+    connected_ordered = sorted(connected_map.values(), key=lambda item: item.day)
+    final_roles = line_role_map(connected_ordered)
+
+    segment_by_start: dict[tuple[date, float], tuple[LinePoint, str]] = {}
+    for segment in final.segments:
+        start_key = _line_key(segment.start)
+        end_key = _line_key(segment.end)
         previous = segment_by_start.get(start_key)
-        if previous is not None and _key(previous[0]) != end_key:
+        if previous is not None and _line_key(previous[0]) != end_key:
             raise RuntimeError("final pivot result has multiple outgoing segments from one marker")
         segment_by_start[start_key] = (segment.end, segment.kind)
 
-    base_rdp_keys = _keys((*getattr(base, "high_pivots", ()), *getattr(base, "low_pivots", ())))
-    stage1_keys = _keys(_stage_markers(stage1))
-    stage2_keys = _keys(_stage_markers(stage2))
-    stage3_keys = _keys(_stage_markers(stage3))
-    stage4_keys = _keys(_stage_markers(stage4))
-    stage5_keys = _keys(_stage_markers(stage5))
-    marker_only_keys = _keys(getattr(final, "marker_only_points", ()) or ())
+    base_points = (*getattr(base, "high_pivots", ()), *getattr(base, "low_pivots", ()))
+    base_rdp_keys = _line_keys(base_points)
+    base_rdp_type_by_key = {_line_line_key(point): point.pivot_type for point in base_points}
+    stage1_keys = _line_keys(_stage_markers(stage1))
+    stage2_keys = _line_keys(_stage_markers(stage2))
+    stage3_keys = _line_keys(_stage_markers(stage3))
+    stage4_keys = _line_keys(_stage_markers(stage4))
+    stage5_keys = _line_keys(_stage_markers(stage5))
+    marker_only_keys = _line_keys(getattr(final, "marker_only_points", ()) or ())
 
     spike_meta: dict[tuple[date, float, str], dict[str, Any]] = {}
     for spike in tuple(getattr(stage2, "spike_peaks", ()) or ()):
-        peak_key = _key(spike.point)
+        peak_key = _line_key(spike.point)
         spike_meta.setdefault(peak_key, {}).update({
             "role": "peak",
             "direction": spike.direction,
@@ -334,7 +355,7 @@ def build_storage_rows(
             "marker_only": bool(spike.marker_only),
         })
         if spike.entry is not None:
-            entry_key = _key(spike.entry)
+            entry_key = _line_key(spike.entry)
             spike_meta.setdefault(entry_key, {}).update({
                 "role": "entry",
                 "direction": spike.direction,
@@ -349,7 +370,7 @@ def build_storage_rows(
             if not getattr(segment, "protected", True):
                 continue
             for point, boundary in ((segment.start, "start"), (segment.end, "end")):
-                sideways_meta.setdefault(_key(point), []).append({
+                sideways_meta.setdefault(_line_key(point), []).append({
                     "boundary": boundary,
                     "prior_trend": segment.prior_trend,
                     "reference_side": segment.reference_side,
@@ -360,9 +381,9 @@ def build_storage_rows(
 
     rows: list[dict[str, Any]] = []
     for pivot_order, point in enumerate(ordered):
-        point_key = _key(point)
+        point_key = _line_key(point)
         outgoing = segment_by_start.get(point_key)
-        next_order = order_by_key.get(_key(outgoing[0])) if outgoing is not None else None
+        next_order = order_by_key.get(_line_key(outgoing[0])) if outgoing is not None else None
         segment_kind = outgoing[1] if outgoing is not None else None
         spike = spike_meta.get(point_key)
         sideways = sideways_meta.get(point_key, [])
@@ -389,6 +410,10 @@ def build_storage_rows(
         reason_codes.append("stage6_survivor")
         reason_codes.append("standalone_marker" if standalone else "final_line_vertex")
 
+        point_role = final_roles.get(point_key)
+        if standalone and point_role is None and spike:
+            point_role = "high" if spike.get("direction") == "up" else "low"
+
         reason_type, selection_reason = _interpretive_reason(
             ordered,
             pivot_order,
@@ -399,6 +424,7 @@ def build_storage_rows(
         technical_reason = _technical_reason_text(
             point,
             base_rdp=base_rdp,
+            base_rdp_type=base_rdp_type_by_key.get(point_key),
             spike_peak=bool(spike and spike.get("role") == "peak"),
             spike_entry=bool(spike and spike.get("role") == "entry"),
             marker_only=bool(spike and spike.get("marker_only")),
@@ -412,7 +438,7 @@ def build_storage_rows(
             "pivot_order": pivot_order,
             "pivot_date": point.day.isoformat(),
             "pivot_value": float(point.value),
-            "pivot_type": point.pivot_type,
+            "pivot_type": point_role,
             "next_pivot_order": next_order,
             "segment_to_next": segment_kind,
             "selection_reason_codes": reason_codes,
