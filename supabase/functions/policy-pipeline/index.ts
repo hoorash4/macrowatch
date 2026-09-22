@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { configuredAiModel } from "../_shared/policy/ai-model-selection.ts";
 import { recomputePolicyScores } from "../_shared/policy/policy-score-store.ts";
 import { POLICY_SCORE_PROFILE } from "../_shared/policy/policy-scoring.ts";
 import { FOMC_POLICY_PROMPT_V2 } from "./fomc-prompt-v2.ts";
@@ -56,7 +57,6 @@ const POLICY_PROMPT_VERSION = "v2.0";
 const REASON_CONFIDENCE_THRESHOLD = 0.55;
 const UNCERTAIN_CONFIDENCE_MAX = 0.549;
 // FOMC 브리핑은 뉴스 분석과 독립적으로 더 높은 추론 모델을 사용한다.
-const FOMC_MODEL = "gpt-6-sol";
 
 const RESPONSE_SCHEMA = {
   type: "object", additionalProperties: false,
@@ -391,7 +391,7 @@ function systemPrompt() {
   return prompt.replace(/\{\{(?:meeting_metadata|previous_policy_context|fomc_statement|previous_fomc_statement|implementation_note|press_conference_transcript|liquidity_context)\}\}/g, "").trim();
 }
 
-async function analyzeStatement(statement: string, meetingDate: string, previous: EventRow | null, previousStatement: string | null, implementationNote: string | null, pressConferenceUrl: string | null, liquidityContext: unknown): Promise<Analysis> {
+async function analyzeStatement(statement: string, meetingDate: string, previous: EventRow | null, previousStatement: string | null, implementationNote: string | null, pressConferenceUrl: string | null, liquidityContext: unknown, model: string): Promise<Analysis> {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   const input = {
@@ -407,7 +407,7 @@ async function analyzeStatement(statement: string, meetingDate: string, previous
   if (pressConferenceUrl) userContent.push({ type: "input_file", file_url: pressConferenceUrl });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: FOMC_MODEL, reasoning: { effort: "low" }, max_output_tokens: 6_000, prompt_cache_key: "macrowatch-fomc-policy-v2.0", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: userContent }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
+    body: JSON.stringify({ model, reasoning: { effort: "low" }, max_output_tokens: 6_000, prompt_cache_key: "macrowatch-fomc-policy-v2.0", input: [{ role: "system", content: [{ type: "input_text", text: systemPrompt() }] }, { role: "user", content: userContent }], text: { format: { type: "json_schema", name: "fomc_policy_analysis", strict: true, schema: RESPONSE_SCHEMA } } }),
   });
   if (!response.ok) throw new Error(`OpenAI FOMC 분석 오류 (${response.status}): ${await response.text()}`);
   const payload = await response.json();
@@ -539,7 +539,8 @@ Deno.serve(async (request) => {
         if (previousError) throw previousError;
         const previous = previousRows?.[0] as EventRow || null;
         const previousStatement = previousRows?.[0]?.source_url ? await getStatement(previousRows[0].source_url) : null;
-        const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous, previousStatement, implementationNote, pressConferenceUrl, sourceState.liquidity_context), previous);
+        const model = await configuredAiModel(supabase, "fomc");
+        const analysis = normalizeAnalysis(await analyzeStatement(statement, source.meetingDate, previous, previousStatement, implementationNote, pressConferenceUrl, sourceState.liquidity_context, model), previous);
         const liquidityFallback = liquidityOperationsFallback(sourceState.liquidity_context);
         if (liquidityFallback && !analysis.briefing.liquidity_operations?.trim()) analysis.briefing.liquidity_operations = liquidityFallback;
         const now = new Date().toISOString();

@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { configuredAiModel } from "../_shared/policy/ai-model-selection.ts";
 import { PIVOT_ANALYSIS_SCHEMA, PIVOT_SCHEMA_VERSION, type PivotAnalysisOutput } from "../_shared/pivot/pivot-schema.ts";
 
 const PROMPT_VERSION = Deno.env.get("PIVOT_ANALYSIS_PROMPT_VERSION") || "pivot-v1";
-const MODEL = "gpt-6-luna";
 const MAX_SERIES_POINTS = 1200;
 const ANOMALY_VALIDATION_VERSION = "web-search-v1";
 const PIVOT_REASON_INSTRUCTION = `
@@ -200,6 +200,7 @@ Deno.serve(async (req) => {
     const prompt = Deno.env.get("PIVOT_ANALYSIS_PROMPT"), apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!prompt) throw new Error("PIVOT_ANALYSIS_PROMPT가 설정되지 않았습니다.");
     if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
+    const model = await configuredAiModel(supabaseClient(), "standard");
     const compact = compactPoints(input.indicator_points);
     const metadata = {
       case_code: input.case_code, case_name: input.case_name || null, index_code: input.index_code,
@@ -215,7 +216,7 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         reasoning: { effort: "medium" },
         max_output_tokens: 5_000,
         prompt_cache_key: "macrowatch-pivot-analysis-v5",
@@ -243,7 +244,7 @@ Deno.serve(async (req) => {
       case_code: input.case_code, index_code: input.index_code, series_code: input.series_code,
       display_start: input.display_window.start_date, display_end: input.display_window.end_date,
       cycle_start: input.cycle.start_date, cycle_peak: input.cycle.peak_date, cycle_trough: input.cycle.trough_date,
-      model: MODEL, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION,
+      model, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION,
       regimes: analysis.regimes, pivots: analysis.pivots, anomalies: analysis.anomalies,
       anomaly_validation_version: ANOMALY_VALIDATION_VERSION,
       source_point_count: input.indicator_points.length, chart_sha256: input.chart_sha256 || null,
@@ -252,7 +253,7 @@ Deno.serve(async (req) => {
     const supabase = supabaseClient();
     const { error } = await supabase.from("historical_indicator_ai_analysis").upsert(row, { onConflict: "case_code,index_code,series_code" });
     if (error) throw error;
-    return json({ ok: true, model: MODEL, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION, anomaly_validation_version: ANOMALY_VALIDATION_VERSION, analysis });
+    return json({ ok: true, model, prompt_version: PROMPT_VERSION, schema_version: PIVOT_SCHEMA_VERSION, anomaly_validation_version: ANOMALY_VALIDATION_VERSION, analysis });
   } catch (error) {
     console.error(error);
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);

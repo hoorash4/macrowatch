@@ -3,6 +3,9 @@ project_id = "xhghpywvthjuvespzdul"
 [functions.news-pipeline]
 verify_jwt = false
 
+[functions.ai-model-monitor]
+verify_jwt = false
+
 [functions.kis-market-test]
 verify_jwt = true
 

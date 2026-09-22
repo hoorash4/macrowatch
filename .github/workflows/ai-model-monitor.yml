@@ -1,0 +1,32 @@
+name: Notify new GPT models
+
+on:
+  schedule:
+    # 09:00 KST on the first day of each month (GitHub cron uses UTC).
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macrowatch-ai-model-monitor
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check GPT models and email administrator if a new version is available
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
+          EMAIL_APP_KEY: ${{ secrets.EMAIL_APP_KEY }}
+          EMAIL_RCV_ADDRESS: ${{ secrets.EMAIL_RCV_ADDRESS }}
+        run: python backend/ai_model_monitor.py

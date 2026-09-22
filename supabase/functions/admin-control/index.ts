@@ -7,6 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listPolicyReviews, resolvePolicyReview } from "../_shared/policy/policy-admin.ts";
 import { createKisRequestRunner, fetchKisDailyPriceBundle, fetchKisEtfTopHoldings, getKisAccessToken, loadKisCredentials } from "../_shared/market/kis-client.ts";
 import { incompletePriceHistoryIds } from "../_shared/market/sector-flow.ts";
+import { AI_MODEL_ALERT_SETTINGS_KEY, AI_MODEL_SETTINGS_KEY, availableAiModels, configuredAiModel, selectableAiModels, type AiModelRole } from "../_shared/policy/ai-model-selection.ts";
 
 const ALLOWED_ORIGIN = "https://hoorash4.github.io";
 const CHECK_WORKFLOW = "check-targets.yml";
@@ -104,13 +105,13 @@ function historicalOutputText(payload: Record<string, unknown>) {
   return null;
 }
 
-async function generateHistoricalSummary(input: {
+async function generateHistoricalSummary(admin: any, input: {
   name: string; primaryIndex: HistoricalIndexCode; searchStart: string; searchEnd: string;
   cycle: ReturnType<typeof historicalCycleCandidate>;
 }) {
   const key = Deno.env.get("OPENAI_API_KEY");
   if (!key) return input.name + " 전후 시장 상승과 급락, 이후 조정이 이어진 주요 시장 사이클";
-  const model = "gpt-6-luna";
+  const model = await configuredAiModel(admin, "standard");
   const schema = {
     type: "object", additionalProperties: false,
     properties: { summary: { type: "string", minLength: 20, maxLength: 140 } },
@@ -438,6 +439,53 @@ export default {
         return json({ order }, 200, origin);
       }
 
+      if (action === "get_ai_models") {
+        const [fomc, standard, alertStatus] = await Promise.all([
+          configuredAiModel(admin, "fomc"), configuredAiModel(admin, "standard"),
+          admin.from("app_settings").select("value").eq("key", AI_MODEL_ALERT_SETTINGS_KEY).maybeSingle(),
+        ]);
+        if (alertStatus.error) throw alertStatus.error;
+        const lastEmail = alertStatus.data?.value || {};
+        return json({
+          fomc, standard,
+          last_email_at: lastEmail.last_email_at || null,
+          last_email_success: typeof lastEmail.last_email_success === "boolean" ? lastEmail.last_email_success : null,
+          last_checked_at: lastEmail.last_checked_at || null,
+        }, 200, origin);
+      }
+
+      if (action === "list_ai_model_candidates" || action === "update_ai_model") {
+        const role = String(body?.role || "");
+        if (role !== "fomc" && role !== "standard") {
+          return json({ error: "AI 모델 종류가 올바르지 않습니다." }, 400, origin);
+        }
+        const selectedRole = role as AiModelRole;
+        const current = await configuredAiModel(admin, selectedRole);
+        const apiKey = Deno.env.get("OPENAI_API_KEY");
+        if (!apiKey) throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
+        const choices = selectableAiModels(await availableAiModels(apiKey), current, selectedRole);
+        if (action === "list_ai_model_candidates") {
+          return json({ role, current, choices }, 200, origin);
+        }
+        const selected = String(body?.model_id || "");
+        if (!choices.some((choice) => choice.id === selected)) {
+          return json({ error: "선택한 AI 모델이 현재 사용 가능한 후보에 없습니다." }, 400, origin);
+        }
+        if (selected === current) return json({ role, model_id: current, updated: false }, 200, origin);
+        const { data: settings, error: settingsError } = await admin.from("app_settings")
+          .select("value").eq("key", AI_MODEL_SETTINGS_KEY).maybeSingle();
+        if (settingsError) throw settingsError;
+        const value = settings?.value && typeof settings.value === "object" ? settings.value : {};
+        const { error } = await admin.from("app_settings").upsert({
+          key: AI_MODEL_SETTINGS_KEY,
+          value: { ...value, [selectedRole]: selected },
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: "key" });
+        if (error) throw error;
+        return json({ role, model_id: selected, updated: true }, 200, origin);
+      }
+
       if (action === "list_uncertain_news") {
         const { data, error } = await admin.from("news_article_sentiments")
           .select("id,published_at,source_name,derived_keywords,uncertain_summary")
@@ -564,7 +612,7 @@ export default {
         const cycles = await historicalCyclesForWindow(admin, searchStart, searchEnd);
         const primaryCycle = cycles[primaryIndex];
         if (!primaryCycle) return json({ error: "대표지수의 자동 피봇을 계산할 수 없습니다." }, 422, origin);
-        const summary = await generateHistoricalSummary({ name, primaryIndex, searchStart, searchEnd, cycle: primaryCycle });
+        const summary = await generateHistoricalSummary(admin, { name, primaryIndex, searchStart, searchEnd, cycle: primaryCycle });
         return json({
           summary,
           cycles: HISTORICAL_INDEX_CODES.flatMap((indexCode) => cycles[indexCode] ? [{

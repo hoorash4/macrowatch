@@ -7,6 +7,8 @@
     news: { button: 'run-news-button', badge: 'news-badge', action: 'run_news', idleLabel: '뉴스 분석 테스트', success: '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.' },
   };
   let adminCardOrder = null;
+  let aiModelSelection = null;
+  let aiModelRequest = 0;
 
   function formatTime(value) {
     if (!value) return '기록 없음';
@@ -77,6 +79,74 @@
   async function loadAdminCardOrder() {
     const result = await invokeAdmin('get_admin_card_order');
     adminCardOrder?.apply(result.order || []);
+  }
+
+  async function loadAiModels() {
+    try {
+      const models = await invokeAdmin('get_ai_models');
+      document.getElementById('ai-model-fomc').textContent = models.fomc;
+      document.getElementById('ai-model-standard').textContent = models.standard;
+      document.getElementById('ai-model-email-status').textContent = models.last_email_success == null
+        ? '마지막 이메일 알림: 발송 이력 없음'
+        : `마지막 이메일 알림: ${models.last_email_success ? 'SMTP 발송 성공' : '발송 실패'} · ${formatTime(models.last_email_at)}`;
+    } catch (error) {
+      document.getElementById('ai-model-fomc').textContent = '조회 실패';
+      document.getElementById('ai-model-standard').textContent = '조회 실패';
+      document.getElementById('ai-model-email-status').textContent = '마지막 이메일 알림: 조회 실패';
+      throw error;
+    }
+  }
+
+  function closeAiModelModal() {
+    aiModelRequest += 1;
+    document.getElementById('ai-model-modal').classList.add('hidden');
+    aiModelSelection = null;
+  }
+
+  async function openAiModelModal(role) {
+    const requestId = ++aiModelRequest;
+    const modal = document.getElementById('ai-model-modal');
+    const description = document.getElementById('ai-model-modal-description');
+    const options = document.getElementById('ai-model-options');
+    const selectedId = document.getElementById('ai-model-selected-id');
+    const saveButton = document.getElementById('ai-model-save');
+    aiModelSelection = null;
+    document.getElementById('ai-model-modal-title').textContent = role === 'fomc' ? 'FOMC 분석 모델 교체' : '기타 AI 분석 모델 교체';
+    description.textContent = '사용 가능한 모델을 확인하는 중입니다.';
+    options.textContent = '';
+    selectedId.value = '';
+    saveButton.disabled = true;
+    modal.classList.remove('hidden');
+    try {
+      const result = await invokeAdmin('list_ai_model_candidates', { role });
+      if (requestId !== aiModelRequest || modal.classList.contains('hidden')) return;
+      aiModelSelection = { role, current: result.current };
+      selectedId.value = result.current;
+      description.textContent = result.choices.length > 1
+        ? '현재 모델과 그 이후에 나온 같은 등급의 모델입니다.'
+        : '현재 모델 이후의 같은 등급 모델이 없습니다.';
+      options.innerHTML = result.choices.map((choice) => `<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-white"><input type="radio" name="ai-model-choice" value="${escapeHtml(choice.id)}" ${choice.current ? 'checked' : ''} class="accent-indigo-500"><span class="font-mono">${escapeHtml(choice.id)}</span>${choice.current ? '<span class="ml-auto text-xs text-slate-400">현재</span>' : ''}</label>`).join('');
+    } catch (error) {
+      if (requestId === aiModelRequest && !modal.classList.contains('hidden')) description.textContent = error.message || '모델 목록을 불러오지 못했습니다.';
+    }
+  }
+
+  async function saveAiModel() {
+    if (!aiModelSelection) return;
+    const modelId = document.getElementById('ai-model-selected-id').value;
+    if (!modelId || modelId === aiModelSelection.current) return;
+    const saveButton = document.getElementById('ai-model-save');
+    saveButton.disabled = true;
+    try {
+      await invokeAdmin('update_ai_model', { role: aiModelSelection.role, model_id: modelId });
+    } catch (error) {
+      document.getElementById('ai-model-modal-description').textContent = error.message || '모델을 교체하지 못했습니다.';
+      saveButton.disabled = false;
+      return;
+    }
+    closeAiModelModal();
+    try { await loadAiModels(); } catch { /* The saved model is still active; the card shows its read error. */ }
+    showNotice('모델 교체 완료', `${modelId} 모델이 이후 분석에 적용됩니다.`);
   }
 
   window.MacroWatchAdminApi = Object.freeze({ invoke: invokeAdmin, notice: showNotice, setListAttentionCount });
@@ -447,6 +517,7 @@
     button.disabled = true;
     button.classList.add('opacity-60');
     try {
+      try { await loadAiModels(); } catch { /* The model card shows its own read error. */ }
       const status = await invokeAdmin('status');
       applyStatus(status);
       await loadEarningsV2Pending();
@@ -553,6 +624,19 @@
     document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
     document.getElementById('member-form').addEventListener('submit', createMember);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
+    document.querySelectorAll('[data-change-ai-model]').forEach((button) => {
+      button.addEventListener('click', () => openAiModelModal(button.dataset.changeAiModel));
+    });
+    document.getElementById('ai-model-options').addEventListener('change', (event) => {
+      if (event.target.name !== 'ai-model-choice' || !aiModelSelection) return;
+      document.getElementById('ai-model-selected-id').value = event.target.value;
+      document.getElementById('ai-model-save').disabled = event.target.value === aiModelSelection.current;
+    });
+    document.getElementById('ai-model-cancel').addEventListener('click', closeAiModelModal);
+    document.getElementById('ai-model-save').addEventListener('click', saveAiModel);
+    document.getElementById('ai-model-modal').addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) closeAiModelModal();
+    });
     document.getElementById('operation-modal').addEventListener('click', (event) => {
       if (event.target === event.currentTarget) hideNotice();
     });

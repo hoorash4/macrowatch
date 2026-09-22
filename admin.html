@@ -163,6 +163,22 @@
       <div id="policy-review-list" class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60"><p class="p-4 text-center text-sm text-slate-500">관리자 권한 확인 후 불러옵니다.</p></div>
     </section>
 
+    <section data-admin-card-id="ai-model-settings" class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+      <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-brain mr-2 text-indigo-400"></i>GPT 분석 모델</h2>
+      <p class="mt-1 text-sm text-slate-400">현재 사용 중인 모델을 확인하고, 같은 등급의 이후 버전으로 교체합니다.</p>
+      <div class="mt-4 space-y-2">
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <div><p class="text-xs text-slate-400">FOMC 분석</p><p id="ai-model-fomc" class="mt-1 font-bold text-white">불러오는 중</p></div>
+          <button type="button" data-change-ai-model="fomc" class="rounded-lg border border-indigo-700 px-3 py-2 text-sm font-bold text-indigo-200 hover:bg-indigo-950">교체</button>
+        </div>
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <div><p class="text-xs text-slate-400">뉴스·과거 국면 요약·피봇 분석</p><p id="ai-model-standard" class="mt-1 font-bold text-white">불러오는 중</p></div>
+          <button type="button" data-change-ai-model="standard" class="rounded-lg border border-indigo-700 px-3 py-2 text-sm font-bold text-indigo-200 hover:bg-indigo-950">교체</button>
+        </div>
+      </div>
+      <p id="ai-model-email-status" class="mt-4 text-xs text-slate-400">마지막 이메일 알림: 불러오는 중</p>
+    </section>
+
     <section data-admin-card-id="automation-schedules" class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div><h2 class="text-lg font-bold text-white"><i class="fa-solid fa-clock-rotate-left mr-2 text-blue-400"></i>자동 수집 일정</h2><p class="mt-1 text-sm leading-relaxed text-slate-400">카드와 수집 단계를 시간순으로 관리합니다. 시간은 한국 표준시이며, 삭제는 확인 창에서 한 번 더 확인한 뒤 실행됩니다.</p></div>
@@ -231,11 +247,24 @@
     </section>
   </div>
 
+  <div id="ai-model-modal" class="hidden fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="ai-model-modal-title">
+    <section class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+      <h2 id="ai-model-modal-title" class="text-lg font-bold text-white">GPT 모델 교체</h2>
+      <p id="ai-model-modal-description" class="mt-2 text-sm text-slate-400">모델 목록을 확인하는 중입니다.</p>
+      <div id="ai-model-options" class="mt-4 max-h-72 space-y-2 overflow-y-auto" role="radiogroup" aria-label="모델 버전"></div>
+      <label class="mt-4 block text-xs text-slate-400">선택한 모델 ID<input id="ai-model-selected-id" readonly class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-white"></label>
+      <div class="mt-5 flex gap-2">
+        <button id="ai-model-cancel" type="button" class="flex-1 rounded-lg border border-slate-700 py-2.5 text-sm font-bold text-slate-300">취소</button>
+        <button id="ai-model-save" type="button" disabled class="flex-1 rounded-lg bg-indigo-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">저장</button>
+      </div>
+    </section>
+  </div>
+
   <script src="assets/js/core/config.js?v=1"></script>
   <script src="assets/js/core/frontend-core.js?v=3"></script>
   <script src="assets/js/admin/admin-graph-catalog.js?v=3"></script>
   <script src="assets/js/admin/admin-card-order.js?v=2"></script>
-  <script src="assets/js/admin/admin.js?v=30"></script>
+  <script src="assets/js/admin/admin.js?v=32"></script>
   <script src="assets/js/admin/admin-schedule-guard.js?v=1"></script>
   <script src="assets/js/admin/admin-policy-review.js?v=16"></script>
 </body>

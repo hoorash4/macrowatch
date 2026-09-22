@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { jsonResponse as json } from "../_shared/http.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { analyzeCandidates } from "../_shared/news/openai-adapter.ts";
+import { configuredAiModel } from "../_shared/policy/ai-model-selection.ts";
 import { loadMarketContext } from "../_shared/market/market-context.ts";
 import type { ArticleSentiment, Candidate, ExtremeNewsRule, SourceName } from "../_shared/news/news-types.ts";
 
@@ -400,7 +401,8 @@ Deno.serve(async (request) => {
     stage = "기존 결정적 뉴스 사건 조회";
     const existingDecisiveEventKeys = dryRun ? [] : await loadWeeklyDecisiveEventKeys(serverClient(), runDate);
     stage = "AI 분석";
-    const outputs = await analyzeCandidates(batch, marketContext, extremeRules, existingDecisiveEventKeys);
+    const model = await configuredAiModel(serverClient(), "standard");
+    const outputs = await analyzeCandidates(batch, marketContext, extremeRules, model, existingDecisiveEventKeys);
     stage = "결과 저장";
     const hasMore = offset + batch.length < candidates.length;
     const persisted = dryRun

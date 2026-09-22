@@ -874,8 +874,10 @@ class SourceContractTests(unittest.TestCase):
 
     def test_fomc_pipeline_normalizes_ai_output_before_storage(self) -> None:
         pipeline = (ROOT / "supabase/functions/policy-pipeline/index.ts").read_text(encoding="utf-8")
-        self.assertIn('const FOMC_MODEL = "gpt-6-sol"', pipeline)
-        self.assertIn("model: FOMC_MODEL", pipeline)
+        model_policy = (ROOT / "supabase/functions/_shared/policy/ai-policy.ts").read_text(encoding="utf-8")
+        self.assertIn('fomcModel: "gpt-6-sol"', model_policy)
+        self.assertIn('configuredAiModel(supabase, "fomc")', pipeline)
+        self.assertIn("body: JSON.stringify({ model, reasoning:", pipeline)
         self.assertNotIn('Deno.env.get("AI_MODEL_STANDARD")', pipeline)
         self.assertIn("const REASON_CONFIDENCE_THRESHOLD = 0.55", pipeline)
         self.assertIn("function normalizedChangeBps", pipeline)

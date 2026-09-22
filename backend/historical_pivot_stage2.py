@@ -308,8 +308,6 @@ def _classify_rapid_moves(
     for a_point, peak in zip(low_rdp, low_rdp[1:]):
         if peak.value >= a_point.value:
             continue
-        if _key(peak) in spike_peak_keys:
-            continue
         entry = _entry_before_peak(
             a_point=a_point,
             peak=peak,

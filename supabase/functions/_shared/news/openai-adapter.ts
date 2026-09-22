@@ -1,5 +1,4 @@
 import type { ArticleSentiment, Candidate, ExtremeNewsRule } from "./news-types.ts";
-import { AI_POLICY } from "../policy/ai-policy.ts";
 import type { MarketContext } from "../market/market-indicators.ts";
 
 const SENTIMENTS = ["positive", "neutral", "negative", "uncertain"] as const;
@@ -194,8 +193,8 @@ async function requestAnalysis(
   }
 }
 
-async function analyzeOne(candidate: Candidate, marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[], existingDecisiveEventKeys: string[]) {
-  const output = await requestAnalysis(AI_POLICY.standardModel, [candidate], marketContext, extremeRules, existingDecisiveEventKeys);
+async function analyzeOne(candidate: Candidate, marketContext: MarketContext | null, extremeRules: ExtremeNewsRule[], existingDecisiveEventKeys: string[], model: string) {
+  const output = await requestAnalysis(model, [candidate], marketContext, extremeRules, existingDecisiveEventKeys);
   if (output.length !== 1) throw new AnalysisFormatError("기사별 분석 결과가 하나가 아닙니다.");
   return normalizeOutput({ ...output[0], itemHash: candidate.itemHash });
 }
@@ -204,18 +203,19 @@ export async function analyzeCandidates(
   candidates: Candidate[],
   marketContext: MarketContext | null,
   extremeRules: ExtremeNewsRule[],
+  model: string,
   existingDecisiveEventKeys: string[] = [],
 ) {
   if (!candidates.length) return [];
 
   let outputs: ArticleSentiment[];
   try {
-    outputs = await requestAnalysis(AI_POLICY.standardModel, candidates, marketContext, extremeRules, existingDecisiveEventKeys);
+    outputs = await requestAnalysis(model, candidates, marketContext, extremeRules, existingDecisiveEventKeys);
   } catch (error) {
     // 네트워크·인증 오류에는 무의미한 반복 호출을 하지 않는다.
     // 구조화 출력 형식만 깨진 경우에 한해 기사별로 한 번씩 복구한다.
     if (!(error instanceof AnalysisFormatError) || candidates.length === 1) throw error;
-    return Promise.all(candidates.map((candidate) => analyzeOne(candidate, marketContext, extremeRules, existingDecisiveEventKeys)));
+    return Promise.all(candidates.map((candidate) => analyzeOne(candidate, marketContext, extremeRules, existingDecisiveEventKeys, model)));
   }
 
   const expectedHashes = new Set(candidates.map((candidate) => candidate.itemHash));
@@ -226,7 +226,7 @@ export async function analyzeCandidates(
 
   // 잘못된 해시나 중복 응답 때문에 정상 기사까지 다시 호출하지 않고 누락 기사만 복구한다.
   const missing = candidates.filter((candidate) => !byHash.has(candidate.itemHash));
-  const recovered = await Promise.all(missing.map((candidate) => analyzeOne(candidate, marketContext, extremeRules, existingDecisiveEventKeys)));
+  const recovered = await Promise.all(missing.map((candidate) => analyzeOne(candidate, marketContext, extremeRules, existingDecisiveEventKeys, model)));
   recovered.forEach((output) => byHash.set(output.itemHash, output));
 
   return candidates.map((candidate) => {
