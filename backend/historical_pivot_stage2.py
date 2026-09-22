@@ -27,12 +27,10 @@ from historical_pivot_shared import (
 from historical_pivot_stage1 import BasePivotResult
 
 
-RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.30
+RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.20
 RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG = 45.0
-RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE = 0.20
-RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG = 20.0
+RAPID_MOVE_MIN_VERTICAL_ANGLE_DEG = 20.0
 RAPID_MOVE_FULL_ANGLE_SHARE = 0.80
-RAPID_MOVE_AUX_MAX_SAME_SIDE_RETRACEMENT = 0.30
 
 
 def _key(point: PivotPoint) -> tuple:
@@ -216,23 +214,23 @@ def _rapid_move_allowed_vertical_angle(share: float) -> float:
     80% visual height -> 45 degrees.
     Above 80% -> fixed at 45 degrees.
     """
-    if share <= RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE:
-        return RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG
+    if share <= RAPID_MOVE_MIN_VISUAL_Y_SHARE:
+        return RAPID_MOVE_MIN_VERTICAL_ANGLE_DEG
     if share >= RAPID_MOVE_FULL_ANGLE_SHARE:
         return RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG
 
     ratio = (
-        share - RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE
+        share - RAPID_MOVE_MIN_VISUAL_Y_SHARE
     ) / (
         RAPID_MOVE_FULL_ANGLE_SHARE
-        - RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE
+        - RAPID_MOVE_MIN_VISUAL_Y_SHARE
     )
     return (
-        RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG
+        RAPID_MOVE_MIN_VERTICAL_ANGLE_DEG
         + ratio
         * (
             RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG
-            - RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG
+            - RAPID_MOVE_MIN_VERTICAL_ANGLE_DEG
         )
     )
 
@@ -246,66 +244,24 @@ def _rapid_move_passes(
     geometry: ChartGeometry,
     min_visual_y_share: float,
 ) -> tuple[bool, float]:
-    """Apply the primary or auxiliary rapid-move gate.
+    """Apply the single variable-angle rapid-move gate.
 
-    Primary gate:
-      visual height >= 30% and vertical-axis deviation <= 45 degrees.
-
-    Auxiliary gate:
-      20% <= visual height < 30%,
-      vertical-axis deviation <= 20 degrees,
-      and the next same-side RDP retraces < 30% of the move.
-      For an up move this means the next HIGH; for a down move the next LOW.
-      If that next same-side point extends the trend instead of reversing it,
-      retracement is zero.
+    visual height must be at least 20%.
+    Allowed vertical-axis deviation scales continuously:
+      20% -> 20 degrees
+      80% -> 45 degrees
+      above 80% -> 45 degrees
     """
     share = _visual_y_share(entry, peak, geometry)
     vertical_angle = 90.0 - abs(
         screen_segment_angle_degrees(entry, peak, geometry)
     )
 
-    if share < RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE:
+    if share < min_visual_y_share:
         return False, share
 
     allowed_vertical_angle = _rapid_move_allowed_vertical_angle(share)
-    if vertical_angle > allowed_vertical_angle:
-        return False, share
-
-    if share >= min_visual_y_share:
-        return True, share
-
-    following_same_side = next(
-        (
-            point
-            for point in same_side_rdp
-            if point.day > peak.day
-        ),
-        None,
-    )
-    if following_same_side is None:
-        return True, share
-
-    move = abs(float(peak.value) - float(entry.value))
-    if move <= 0:
-        return False, share
-
-    if direction > 0:
-        retracement = (
-            (float(peak.value) - float(following_same_side.value)) / move
-            if following_same_side.value < peak.value
-            else 0.0
-        )
-    else:
-        retracement = (
-            (float(following_same_side.value) - float(peak.value)) / move
-            if following_same_side.value > peak.value
-            else 0.0
-        )
-
-    return (
-        retracement < RAPID_MOVE_AUX_MAX_SAME_SIDE_RETRACEMENT,
-        share,
-    )
+    return vertical_angle <= allowed_vertical_angle, share
 
 
 def _classify_rapid_moves(
