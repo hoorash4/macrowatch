@@ -37,6 +37,7 @@ from historical_pivot_base import (  # noqa: E402
     simplify_pivot_lines,
     prune_same_trend_extremes,
 )
+from historical_pivot_shared import LinePoint  # noqa: E402
 
 
 class FakeDatabase:
