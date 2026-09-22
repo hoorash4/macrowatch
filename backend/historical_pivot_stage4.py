@@ -9,7 +9,8 @@ For each provisional rapid entry:
 - whenever backward integration succeeds, replace the entry anchor immediately
   and test again from that NEW anchor;
 - only after the earliest valid entry is fixed, walk forward from that new
-  anchor through the completed Stage-3 line;
+  anchor through the ENTIRE completed Stage-3 chronology; Stage-2 candidate
+  endpoints are never scan boundaries;
 - an opposite wave is provisional, not an automatic rapid-move terminator;
 - the very next same-side extreme decides it:
   * if it exceeds the previous extreme, the opposite wave was a retracement;
@@ -19,8 +20,9 @@ For each provisional rapid entry:
 - hard spike/sideways structure remains protected in output but does not stop
   the rapid-wave judgment scan;
 - only a Stage-2 rapid entry can become the next rapid anchor;
-- after consolidation, the surviving rapid entry and final rapid peak become
-  final protected points and all other rapid protection is released.
+- after consolidation, the surviving rapid entry and final rapid peak carry
+  structural protection metadata into later cleanup; that metadata is not a
+  scan boundary and does not make either vertex unconditionally undeletable.
 
 Stage 4 never performs the general Stage-5 cleanup. Its output contains only
 the line, explicit marker-only spikes, and final rapid protected endpoints;
@@ -101,7 +103,7 @@ def _scan_from_entry(
     *,
     anchor: LinePoint,
     direction: int,
-    through: date,
+    through: date | None,
     geometry: ChartGeometry,
     angle_threshold_deg: float,
 ) -> LinePoint | None:
@@ -116,7 +118,8 @@ def _scan_from_entry(
     points = [
         point
         for point in _timeline_points(result)
-        if anchor.day < point.day <= through
+        if anchor.day < point.day
+        and (through is None or point.day <= through)
     ]
     if not points:
         return None
@@ -140,7 +143,10 @@ def _scan_from_entry(
             else point.value > anchor.value
         )
         if crossed_anchor:
-            break
+            # A move that fully crosses its entry is no longer the same rapid
+            # structure.  Reject the provisional rapid candidate instead of
+            # freezing the prior peak as a protected endpoint.
+            return None
 
         if not _improves(point, extreme, direction):
             continue
@@ -184,6 +190,22 @@ def _expand_entry_backward(
     anchor = initial_entry
     wanted_entry_role = "low" if direction > 0 else "high"
 
+    # The backward 10-degree test must use the first real Stage-3 extreme
+    # reached from the provisional entry, not a later Stage-2 seed endpoint
+    # that may skip one or more intermediate waves.
+    reference_peak = next(
+        (
+            point
+            for point in timeline
+            if initial_entry.day < point.day <= seed_peak.day
+            and (
+                (direction > 0 and point.value > initial_entry.value)
+                or (direction < 0 and point.value < initial_entry.value)
+            )
+        ),
+        seed_peak,
+    )
+
     while True:
         earlier = [
             point
@@ -198,12 +220,12 @@ def _expand_entry_backward(
 
         current_angle = screen_segment_angle_degrees(
             anchor,
-            seed_peak,
+            reference_peak,
             geometry,
         )
         proposal_angle = screen_segment_angle_degrees(
             proposal,
-            seed_peak,
+            reference_peak,
             geometry,
         )
         if abs(proposal_angle - current_angle) > angle_threshold_deg:
@@ -213,11 +235,11 @@ def _expand_entry_backward(
             result,
             anchor=proposal,
             direction=direction,
-            through=seed_peak.day,
+            through=reference_peak.day,
             geometry=geometry,
             angle_threshold_deg=angle_threshold_deg,
         )
-        if reached is None or _key(reached) != _key(seed_peak):
+        if reached is None or _key(reached) != _key(reference_peak):
             return anchor
 
         anchor = proposal
@@ -291,23 +313,31 @@ def finalize_rapid_moves(
         if not group:
             continue
 
-        candidate_end_keys = {_key(item.end) for item in group}
-        latest_end = max(item.end.day for item in group)
+        # Stage-2 endpoints are provisional survival metadata only. They must
+        # never limit Stage-4 judgment. Scan the complete Stage-3 chronology
+        # from the finalized entry until the structure itself terminates.
         final_peak = _scan_from_entry(
             result,
             anchor=anchor,
             direction=direction,
-            through=latest_end,
+            through=None,
             geometry=geometry,
             angle_threshold_deg=angle_threshold_deg,
         )
 
-        # Ordinary Stage-3 points may judge the wave, but Stage 4 may finalize
-        # only a peak that Stage 2 actually identified as a rapid endpoint.
-        if final_peak is not None and _key(final_peak) not in candidate_end_keys:
-            final_peak = None
+        # The provisional seed must at least be reached by the finalized
+        # structure. If chronological judgment terminates before that seed,
+        # the Stage-2 candidate is rejected.
+        seed_reached = (
+            final_peak is not None
+            and final_peak.day >= candidate.end.day
+            and (
+                (direction > 0 and final_peak.value >= candidate.end.value)
+                or (direction < 0 and final_peak.value <= candidate.end.value)
+            )
+        )
 
-        if final_peak is None:
+        if not seed_reached:
             # This entry did not survive the wave/retracement judgment. Release
             # only this candidate; later rapid entries remain eligible anchors.
             consumed.add(index)
