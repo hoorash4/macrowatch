@@ -110,13 +110,13 @@
         return value;
       }));
       crosshairValues.style.left=`${Math.min(x+3,Math.max(2,host.clientWidth-crosshairValues.offsetWidth-2))}px`;
-      const active=new Set(entries.map(entry=>entry.code));
+      const active=new Set(entries.slice(1).map(entry=>entry.code));
       for (const [code,marker] of crosshairMarkers) {
         if (active.has(code)) continue;
         marker.remove();
         crosshairMarkers.delete(code);
       }
-      for (const entry of entries) {
+      for (const entry of entries.slice(1)) {
         const y=entry.series.priceToCoordinate(entry.value);
         if (y===null) continue;
         const marker=markerFor(entry.code,entry.color);
