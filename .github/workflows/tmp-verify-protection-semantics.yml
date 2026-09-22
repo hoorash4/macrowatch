@@ -1,4 +1,4 @@
-name: Verify protection semantics temp
+name: Verify protection semantics temp v2
 on:
   push:
     branches: [main]
