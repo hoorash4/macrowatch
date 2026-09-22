@@ -27,6 +27,8 @@ from typing import Sequence
 
 from historical_pivot_shared import (
     ChartGeometry,
+    LinePoint,
+    LineRapidMoveCandidate,
     PivotPoint,
     SidewaysSegment,
     Stage3LineResult,
@@ -516,19 +518,42 @@ def simplify_pivot_lines(
 
     segments.sort(key=lambda item: (item.start.day, item.end.day, item.kind))
 
+    line_by_pivot_key = {
+        _key(point): LinePoint(point.day, point.value)
+        for point in markers.values()
+    }
+    line_markers = tuple(sorted(
+        line_by_pivot_key.values(),
+        key=lambda item: item.day,
+    ))
+    line_segments = tuple(
+        SimplifiedLineSegment(
+            start=line_by_pivot_key[_key(segment.start)],
+            end=line_by_pivot_key[_key(segment.end)],
+            kind=segment.kind,
+        )
+        for segment in segments
+    )
+    line_marker_only_points = tuple(sorted(
+        (
+            line_by_pivot_key[_key(spike.point)]
+            for spike in marker_only_spikes
+        ),
+        key=lambda item: item.day,
+    ))
+    line_rapid_candidates = tuple(
+        LineRapidMoveCandidate(
+            start=line_by_pivot_key[_key(candidate.start)],
+            end=line_by_pivot_key[_key(candidate.end)],
+            direction=candidate.direction,
+            visual_y_share=candidate.visual_y_share,
+        )
+        for candidate in surviving_rapid
+    )
+
     return Stage3LineResult(
-        markers=tuple(
-            sorted(
-                markers.values(),
-                key=lambda item: (item.day, item.pivot_type),
-            )
-        ),
-        segments=tuple(segments),
-        marker_only_points=tuple(
-            sorted(
-                (spike.point for spike in marker_only_spikes),
-                key=lambda item: (item.day, item.pivot_type),
-            )
-        ),
-        rapid_move_candidates=surviving_rapid,
+        markers=line_markers,
+        segments=line_segments,
+        marker_only_points=line_marker_only_points,
+        rapid_move_candidates=line_rapid_candidates,
     )
