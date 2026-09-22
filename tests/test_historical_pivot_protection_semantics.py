@@ -31,7 +31,7 @@ class HistoricalPivotProtectionSemanticsTests(unittest.TestCase):
                 LineRapidMoveCandidate(entry, peak, 1, 0.5),
             ),
         )
-        geometry = ChartGeometry(d, d + timedelta(days=40), -5.0, 15.0, 400.0, 200.0)
+        geometry = ChartGeometry(d, d + timedelta(days=200), -5.0, 15.0, 400.0, 200.0)
 
         result = finalize_rapid_moves(stage3, geometry)
 
@@ -70,7 +70,7 @@ class HistoricalPivotProtectionSemanticsTests(unittest.TestCase):
             segments=(seg(p0, p1), seg(p1, p2)),
             protected_points=(p1,),
         )
-        geometry = ChartGeometry(d, d + timedelta(days=40), -5.0, 15.0, 400.0, 200.0)
+        geometry = ChartGeometry(d, d + timedelta(days=200), -5.0, 15.0, 400.0, 200.0)
 
         result = prune_same_trend_extremes(existing, geometry)
 
@@ -87,7 +87,7 @@ class HistoricalPivotProtectionSemanticsTests(unittest.TestCase):
             segments=(seg(p0, p1), seg(p1, p2)),
             protected_points=(p1,),
         )
-        geometry = ChartGeometry(d, d + timedelta(days=40), -5.0, 15.0, 400.0, 200.0)
+        geometry = ChartGeometry(d, d + timedelta(days=200), -5.0, 15.0, 400.0, 200.0)
 
         result = prune_unconfirmed_retracements(existing, geometry)
 
@@ -106,7 +106,7 @@ class HistoricalPivotProtectionSemanticsTests(unittest.TestCase):
                 SimplifiedLineSegment(p1, p2, "sideways"),
             ),
         )
-        geometry = ChartGeometry(d, d + timedelta(days=40), -5.0, 15.0, 400.0, 200.0)
+        geometry = ChartGeometry(d, d + timedelta(days=200), -5.0, 15.0, 400.0, 200.0)
 
         result = prune_same_trend_extremes(existing, geometry)
 
