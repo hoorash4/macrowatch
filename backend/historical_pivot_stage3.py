@@ -359,6 +359,50 @@ def _merge_window(
     return vertices
 
 
+def _collapse_same_direction_interiors(
+    points: Sequence[PivotPoint],
+    mandatory_keys: set[tuple[date, float, str]],
+) -> list[PivotPoint]:
+    """Remove non-mandatory interior vertices that do not change direction.
+
+    Once the upper/lower lines have been merged into one chronological line,
+    a point between two points moving in the same direction is not a wave
+    vertex. Mandatory protected/provisional structure endpoints remain so the
+    stage that owns that structure can still decide it.
+    """
+    result = list(points)
+    changed = True
+    while changed and len(result) >= 3:
+        changed = False
+        collapsed = [result[0]]
+        for index in range(1, len(result) - 1):
+            previous = collapsed[-1]
+            current = result[index]
+            following = result[index + 1]
+
+            if _key(current) in mandatory_keys:
+                collapsed.append(current)
+                continue
+
+            first_delta = current.value - previous.value
+            second_delta = following.value - current.value
+            same_direction = (
+                first_delta != 0
+                and second_delta != 0
+                and (first_delta > 0) == (second_delta > 0)
+            )
+            if same_direction:
+                changed = True
+                continue
+
+            collapsed.append(current)
+
+        collapsed.append(result[-1])
+        result = collapsed
+
+    return result
+
+
 def _hard_segments(stage2: Stage2Result) -> list[_HardSegment]:
     segments: list[_HardSegment] = []
 
@@ -488,6 +532,25 @@ def simplify_pivot_lines(
         structural.values(),
         key=lambda item: (item.day, item.pivot_type),
     )
+
+    mandatory_keys = {
+        _key(candidate.start)
+        for candidate in augmented.rapid_move_candidates
+    } | {
+        _key(candidate.end)
+        for candidate in augmented.rapid_move_candidates
+    } | {
+        _key(protected.start)
+        for protected in hard
+    } | {
+        _key(protected.end)
+        for protected in hard
+    }
+    structural_points = _collapse_same_direction_interiors(
+        structural_points,
+        mandatory_keys,
+    )
+
     if len(structural_points) == 1:
         remember(structural_points[0])
     for left, right in zip(structural_points, structural_points[1:]):
