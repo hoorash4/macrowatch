@@ -94,7 +94,7 @@ def prune_unconfirmed_retracements(
         | isolated_gap_keys
     )
 
-    delete_keys: set[tuple[date, float, str]] = set()
+    delete_keys: set[tuple[date, float]] = set()
 
     def direction(left: LinePoint, right: LinePoint) -> int:
         if right.value > left.value:
