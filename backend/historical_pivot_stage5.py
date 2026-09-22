@@ -29,7 +29,6 @@ from historical_pivot_shared import (
     SimplifiedLineSegment,
     SAME_TREND_ANGLE_THRESHOLD_DEG,
     PIVOT_X_GAP_PROTECTION_SHARE,
-    line_role_map,
     screen_origin_angle_degrees,
     screen_x_span_share,
 )
@@ -55,14 +54,21 @@ class _RunState:
     angle_ordinal: int = 0
     collapse_end: LinePoint | None = None
 
-    # provisional opposite excursion
-    opposite_extreme: LinePoint | None = None
+    # Opposite move that has turned away from the active extreme but has not
+    # yet broken the active anchor.
+    pullback: LinePoint | None = None
+
+    # When an anchor is broken, the prior trend is kept only long enough to
+    # detect an immediate failed reversal. Once the new trend survives a
+    # pullback and extends again, these rollback fields are cleared.
+    rollback_anchor: LinePoint | None = None
+    rollback_direction: int | None = None
 
 
 def _discover_initial_state(
     points: Sequence[LinePoint],
 ) -> tuple[_RunState, int] | None:
-    """Start from the first actual segment of the merged Stage-3+ line."""
+    """Start from the first actual segment of the merged line."""
     ordered = list(points)
     for index in range(len(ordered) - 1):
         direction = _sign(
@@ -80,11 +86,30 @@ def _discover_initial_state(
         )
     return None
 
+
 def _can_extend(state: _RunState, point: LinePoint) -> bool:
     return (
         point.value > state.extreme.value
         if state.direction > 0
         else point.value < state.extreme.value
+    )
+
+
+def _breaks_anchor(state: _RunState, point: LinePoint) -> bool:
+    return (
+        point.value < state.anchor.value
+        if state.direction > 0
+        else point.value > state.anchor.value
+    )
+
+
+def _farther_pullback(state: _RunState, point: LinePoint) -> bool:
+    if state.pullback is None:
+        return True
+    return (
+        point.value < state.pullback.value
+        if state.direction > 0
+        else point.value > state.pullback.value
     )
 
 
@@ -103,144 +128,127 @@ def _process_window(
     points: Sequence[LinePoint],
     geometry: ChartGeometry,
     threshold: float,
+    *,
+    reset_keys: set[tuple[date, float]] | None = None,
 ) -> list[tuple[LinePoint, LinePoint]]:
-    """Return direct-collapse intervals from one chronological Stage-3 pass.
+    """Inspect only the merged chronological wave.
 
-    A Stage-3 point is always judged before it can be removed.
+    The active anchor remains the anchor while its trend continues.
 
-    For the active direction, anchor -> extreme is the current structural leg.
-    After an opposite pullback appears, the very next same-side Stage-3 point
-    decides the previous extreme:
-
-    - if it exceeds the previous extreme, the old extreme was not a confirmed
-      turn; the trend continues and the intermediate pullback can be collapsed.
-    - if it does not exceed the previous extreme, the old extreme is confirmed
-      as a turn. It immediately becomes the new anchor, the pullback becomes
-      the first extreme of the opposite run, and judgment continues from there.
-
-    This is the 100% retracement rule in point form: a candidate turn is
-    cancelled only when the following same-side point fully retraces past it.
-    No later/final point may retroactively re-judge an already confirmed turn.
-
-    The first same-direction extension from a newly confirmed anchor is always
-    collapsible. Second and later same-side candidates still consume the
-    existing 10-degree ordinal; the angle only decides whether an improving
-    extension may be collapsed.
+    - Turning direction alone does not change the anchor.
+    - If an opposite move crosses the active anchor, the previous trend extreme
+      becomes the new opposite-trend anchor.
+    - That reversal remains provisional until a pullback holds the new anchor
+      and the new trend then extends its extreme.
+    - If the new anchor is broken before that confirmation, the reversal failed
+      and the prior anchor/trend is restored.
+    - Same-trend intermediate points collapse into anchor -> latest extreme.
+    - The existing 10-degree extension rule is left unchanged.
     """
     ordered = list(points)
-    roles = line_role_map(ordered)
-    decision_points = [
-        point for point in ordered
-        if roles.get(_key(point)) is not None
-    ]
-    discovered = _discover_initial_state(decision_points)
+    reset_keys = reset_keys or set()
+    intervals: list[tuple[LinePoint, LinePoint]] = []
+
+    discovered = _discover_initial_state(ordered)
     if discovered is None:
         return []
 
     state, index = discovered
-    intervals: list[tuple[LinePoint, LinePoint]] = []
 
-    while index < len(decision_points):
-        point = decision_points[index]
+    while index < len(ordered):
+        point = ordered[index]
 
-        wanted_role = "high" if state.direction > 0 else "low"
-        point_role = roles.get(_key(point))
+        # A finalized rapid endpoint starts a fresh post-rapid wave inspection.
+        # Protected output behavior is unchanged; this affects only wave state.
+        if _key(point) in reset_keys and index + 1 < len(ordered):
+            direction = _sign(ordered[index + 1].value - point.value)
+            if direction != 0:
+                state = _RunState(
+                    anchor=point,
+                    direction=direction,
+                    extreme=ordered[index + 1],
+                )
+                index += 2
+                continue
 
-        # Wait for one opposite-side pullback after the active extreme.
-        if state.opposite_extreme is None:
-            if point_role != wanted_role:
-                state.opposite_extreme = point
+        # A true reversal requires crossing the active anchor, not merely
+        # turning away from the current extreme.
+        if _breaks_anchor(state, point):
+            if (
+                state.rollback_anchor is not None
+                and state.rollback_direction is not None
+            ):
+                # The new trend failed before confirmation. Restore the prior
+                # anchor/trend and absorb the failed reversal into it.
+                old_anchor = state.rollback_anchor
+                old_direction = state.rollback_direction
+                state = _RunState(
+                    anchor=old_anchor,
+                    direction=old_direction,
+                    extreme=point,
+                    collapse_end=point,
+                )
                 index += 1
                 continue
 
-            # Consecutive same-side Stage-3 points are still judged in order.
+            old_anchor = state.anchor
+            old_direction = state.direction
+            new_anchor = state.extreme
+            state = _RunState(
+                anchor=new_anchor,
+                direction=-old_direction,
+                extreme=point,
+                rollback_anchor=old_anchor,
+                rollback_direction=old_direction,
+            )
+            index += 1
+            continue
+
+        if _can_extend(state, point):
             state.angle_ordinal += 1
-            improves = _can_extend(state, point)
             angle = screen_origin_angle_degrees(
                 state.anchor,
                 state.extreme,
                 point,
                 geometry,
             )
-            if (
-                improves
-                and state.angle_ordinal >= 2
-                and angle > threshold
-            ):
-                _record_collapse(intervals, state)
-                state = _RunState(
-                    anchor=state.extreme,
-                    direction=_sign(point.value - state.extreme.value),
-                    extreme=point,
-                )
-                index += 1
-                continue
 
-            if improves:
-                state.extreme = point
-                state.collapse_end = point
-            index += 1
-            continue
-
-        # If Stage 3 happens to provide another opposite-side point before a
-        # same-side decision point, keep only the farther pullback for the
-        # pending judgment. Nothing is deleted yet.
-        if point_role != wanted_role:
-            if (
-                (state.direction > 0 and point.value < state.opposite_extreme.value)
-                or (state.direction < 0 and point.value > state.opposite_extreme.value)
-            ):
-                state.opposite_extreme = point
-            index += 1
-            continue
-
-        # This is the next same-side point. It MUST decide the candidate now.
-        # It also consumes an angle ordinal even when it does not improve the
-        # current extreme.
-        state.angle_ordinal += 1
-        improves = _can_extend(state, point)
-        angle = screen_origin_angle_degrees(
-            state.anchor,
-            state.extreme,
-            point,
-            geometry,
-        )
-
-        if improves:
-            # Candidate turn cancelled: the following same-side point retraced
-            # more than 100% past the previous extreme, so the old trend lives.
+            # Keep the existing 10-degree behavior exactly: first extension is
+            # free; second and later extensions stop the collapse when the
+            # anchor-based angle exceeds the threshold.
             if state.angle_ordinal >= 2 and angle > threshold:
-                # The direction is known, but this extension is too sharp to
-                # collapse into the old anchor. Preserve existing structure and
-                # start a fresh run from the pending pullback.
                 _record_collapse(intervals, state)
-                pending = state.opposite_extreme
-                state = _RunState(
-                    anchor=pending,
-                    direction=_sign(point.value - pending.value),
-                    extreme=point,
-                )
+                if state.pullback is not None:
+                    state = _RunState(
+                        anchor=state.pullback,
+                        direction=_sign(point.value - state.pullback.value),
+                        extreme=point,
+                    )
+                else:
+                    state = _RunState(
+                        anchor=state.extreme,
+                        direction=_sign(point.value - state.extreme.value),
+                        extreme=point,
+                    )
                 index += 1
                 continue
 
             state.extreme = point
             state.collapse_end = point
-            state.opposite_extreme = None
+
+            # Surviving a pullback and then extending the trend confirms a
+            # provisional reversal anchor.
+            if state.pullback is not None:
+                state.rollback_anchor = None
+                state.rollback_direction = None
+            state.pullback = None
             index += 1
             continue
 
-        # The next same-side point failed to recover/extend the old extreme.
-        # The old extreme is therefore confirmed as the turn immediately.
-        # Freeze it now; later points may not retroactively erase that turn.
-        opposite = state.opposite_extreme
-        _record_collapse(intervals, state)
-        turn = state.extreme
-        state = _RunState(
-            anchor=turn,
-            direction=_sign(opposite.value - turn.value),
-            extreme=opposite,
-            opposite_extreme=point,
-        )
+        # The point is inside the active anchor/extreme range. It is only a
+        # pullback. Keep the farther pullback, but do not change the anchor.
+        if _farther_pullback(state, point):
+            state.pullback = point
         index += 1
 
     _record_collapse(intervals, state)
@@ -315,6 +323,7 @@ def prune_same_trend_extremes(
             points,
             geometry,
             angle_threshold_deg,
+            reset_keys=rapid_move_keys,
         )
     )
 
