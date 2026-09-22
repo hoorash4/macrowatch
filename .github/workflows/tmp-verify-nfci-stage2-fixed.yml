@@ -1,0 +1,105 @@
+name: Verify NFCI stage2 fixed temp
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-nfci-stage2-fixed.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib playwright
+          playwright install chromium
+      - name: Run focused tests
+        run: |
+          PYTHONPATH=backend python -m unittest tests.test_historical_pivot_stage2
+      - name: Measure actual frontend chart host
+        run: |
+          python -m http.server 8765 >/tmp/http.log 2>&1 &
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True)
+              page=b.new_page(viewport={"width":1286,"height":2560})
+              page.goto("http://127.0.0.1:8765/historical-insight.html",wait_until="domcontentloaded")
+              page.wait_for_timeout(1500)
+              box=page.locator("#historical-chart-host").bounding_box()
+              print("HOST_BOX",box)
+              b.close()
+          PY
+      - name: Render corrected Stage2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p out
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date
+          import math
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import _get_rows_paginated,_single_row
+          from historical_pivot_shared import ChartGeometry,normalize_rows,buffer_bounds
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+
+          # actual desktop frontend host measured for current page width: 1026 x 510
+          HOST_W=1026.0; HOST_H=510.0
+
+          db=SupabaseRest(); CASE="tightening_2022"; INDEX="NASDAQ_COMPOSITE"; CODE="NFCI_RISK"
+          cycle=_single_row(db,"historical_case_market_cycles",{"select":"start_date,trough_date","case_code":f"eq.{CASE}","index_code":f"eq.{INDEX}","limit":"2"})
+          cs=date.fromisoformat(cycle["start_date"]); ct=date.fromisoformat(cycle["trough_date"]); bs,be=buffer_bounds(cs,ct)
+          market=_get_rows_paginated(db,"market_index_prices",{"select":"market_date,close","index_code":f"eq.{INDEX}","market_date":"gte.1990-01-01","order":"market_date.asc"})
+          market=[r for r in market if r.get("market_date") and r.get("close") is not None]
+          si=next(i for i,r in enumerate(market) if str(r["market_date"])[:10]>=cs.isoformat()); ei=max(i for i,r in enumerate(market) if str(r["market_date"])[:10]<=ct.isoformat())
+          span=max(1,ei-si); context=max(1,span*.12/(1-.24))
+          ds=date.fromisoformat(str(market[int(max(0,si-context))]["market_date"])[:10]); de=date.fromisoformat(str(market[int(math.ceil(min(len(market)-1,ei+context)))]["market_date"])[:10])
+          rows=_get_rows_paginated(db,"economic_chart_series_points",{"select":"observation_date,value,frequency","series_code":f"eq.{CODE}","observation_date":f"gte.{bs.isoformat()}","and":f"(observation_date.lte.{be.isoformat()})","order":"observation_date.asc"})
+          raw=normalize_rows(rows)
+          # frontend visible case-range values only define vertical scale; buffer does not rescale it
+          case_vals=[p.value for p in raw if ds<=p.day<=de]
+          lo,hi=min(case_vals),max(case_vals); pad=(hi-lo)*.08 if hi!=lo else 1.0
+          g=ChartGeometry(ds,de,lo-pad,hi+pad,HOST_W,HOST_H)
+          s1=calculate_base_pivots(rows,rows[0]["frequency"]); s2=classify_special_structures(s1,g)
+
+          print("DISPLAY",ds,de,"BUFFER",bs,be)
+          print("SIDEWAYS_H",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,round(s.angle_deg,6),s.protected) for s in s2.high_sideways_segments])
+          print("SIDEWAYS_L",[(s.start.day.isoformat(),s.start.value,s.end.day.isoformat(),s.end.value,round(s.angle_deg,6),s.protected) for s in s2.low_sideways_segments])
+
+          # extend canvas horizontally at the SAME px/day scale so buffer is visible without compression
+          visible_days=(de-ds).days
+          buffer_days=(be-bs).days
+          full_w=HOST_W*(buffer_days/visible_days)
+          fig_h=6.5
+          fig_w=fig_h*(full_w/HOST_H)
+          fig,ax=plt.subplots(figsize=(fig_w,fig_h))
+          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.2,label="raw")
+          ax.plot([p.day for p in s2.high_pivots],[p.value for p in s2.high_pivots],linewidth=1.5,marker="^",markersize=4,label="Stage2 high")
+          ax.plot([p.day for p in s2.low_pivots],[p.value for p in s2.low_pivots],linewidth=1.5,marker="v",markersize=4,label="Stage2 low")
+          for seg in (*s2.high_sideways_segments,*s2.low_sideways_segments):
+              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=4,label=f"sideways {seg.reference_side} {seg.angle_deg:.2f}°")
+          for c in s2.rapid_move_candidates:
+              ax.plot([c.start.day,c.end.day],[c.start.value,c.end.value],linewidth=4,label="rapid candidate")
+          ax.axvspan(ds,de,alpha=.08,label="frontend case range")
+          ax.axvline(ds,linestyle="--",linewidth=1); ax.axvline(de,linestyle="--",linewidth=1)
+          for p in s2.display_markers:
+              ax.annotate(p.day.strftime("%Y-%m-%d"),(p.day,p.value),xytext=(0,7),textcoords="offset points",fontsize=6,ha="center")
+          ax.set_xlim(bs,be); ax.set_ylim(g.y_min,g.y_max); ax.grid(True,alpha=.2)
+          handles,labels=ax.get_legend_handles_labels(); uniq=dict(zip(labels,handles)); ax.legend(uniq.values(),uniq.keys(),loc="best")
+          ax.set_title("NFCI RISK · Stage 2 corrected · full ±24m buffer · fixed index-chart case scale")
+          fig.tight_layout(); fig.savefig("out/NFCI_RISK_STAGE2_CORRECTED_FULL_BUFFER.png",dpi=170); plt.close(fig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nfci-risk-stage2-corrected-full-buffer
+          path: out/NFCI_RISK_STAGE2_CORRECTED_FULL_BUFFER.png
+          if-no-files-found: error
