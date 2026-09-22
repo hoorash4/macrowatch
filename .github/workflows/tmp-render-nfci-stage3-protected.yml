@@ -74,3 +74,5 @@ jobs:
         with:
           name: nfci-stage3-protected
           path: out/*.png
+
+# rerun after Stage3 syntax fix
