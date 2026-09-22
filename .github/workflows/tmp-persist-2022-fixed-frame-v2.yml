@@ -26,6 +26,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
           PYTHONPATH=backend python - <<'PY'
           from datetime import date, timedelta
@@ -41,6 +42,7 @@ jobs:
           from historical_pivot_stage5 import prune_same_trend_extremes
           from historical_pivot_stage6 import prune_unconfirmed_retracements
           from historical_pivot_store import store_pipeline_result
+          from signals.economic_chart_pipeline import _fred_rows
 
           CASE="tightening_2022"
           INDEX="NASDAQ_COMPOSITE"
@@ -88,13 +90,26 @@ jobs:
 
           for code in SERIES:
               try:
-                  rows=_get_rows_paginated(db,"economic_chart_points",{
-                      "select":"observation_date,value,frequency",
-                      "series_code":f"eq.{code}",
-                      "observation_date":f"gte.{buffer_start.isoformat()}",
-                      "and":f"(observation_date.lte.{buffer_end.isoformat()})",
-                      "order":"observation_date.asc",
-                  })
+                  if code == "US10Y2Y":
+                      rows=_get_rows_paginated(db,"economic_chart_derived_points",{
+                          "select":"observation_date,value,frequency",
+                          "series_code":f"eq.{code}",
+                          "observation_date":f"gte.{buffer_start.isoformat()}",
+                          "and":f"(observation_date.lte.{buffer_end.isoformat()})",
+                          "order":"observation_date.asc",
+                      })
+                  elif code == "HY_OAS":
+                      rows=_fred_rows(code,"BAMLH0A0HYM2","D",buffer_start,buffer_end)
+                  elif code == "EM_OAS":
+                      rows=_fred_rows(code,"BAMLEMCBPIOAS","D",buffer_start,buffer_end)
+                  else:
+                      rows=_get_rows_paginated(db,"economic_chart_points",{
+                          "select":"observation_date,value,frequency",
+                          "series_code":f"eq.{code}",
+                          "observation_date":f"gte.{buffer_start.isoformat()}",
+                          "and":f"(observation_date.lte.{buffer_end.isoformat()})",
+                          "order":"observation_date.asc",
+                      })
                   if not rows:
                       raise RuntimeError("no source rows in 24-month buffer")
                   freqs={str(r.get("frequency") or "") for r in rows}
