@@ -1,0 +1,73 @@
+name: Render NFCI stage3 active-side
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-render-nfci-stage3-active-side.yml"
+permissions: {contents: read}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.12"}
+      - run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib pytest
+      - name: Test and render
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python -m pytest -q tests/test_historical_pivot_protection_semantics.py
+          mkdir -p out
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date,timedelta
+          import matplotlib.pyplot as plt
+          from matplotlib.patches import Rectangle
+          from common import SupabaseRest
+          from historical_pivot_base import _get_rows_paginated,_single_row
+          from historical_pivot_shared import ChartGeometry,normalize_rows,buffer_bounds
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          CASE='tightening_2022';INDEX='NASDAQ_COMPOSITE';CODE='NFCI_RISK'
+          W=950.;H=464.;SX=W*.12;TX=W*.88;TOP=H*.08;BOT=H*.08;DATA_H=H-TOP-BOT
+          db=SupabaseRest()
+          cyc=_single_row(db,'historical_case_market_cycles',{'select':'start_date,trough_date','case_code':f'eq.{CASE}','index_code':f'eq.{INDEX}','limit':'2'})
+          s=date.fromisoformat(str(cyc['start_date'])[:10]);t=date.fromisoformat(str(cyc['trough_date'])[:10]);bs,be=buffer_bounds(s,t)
+          ppd=(TX-SX)/(t-s).days;ds=s-timedelta(days=SX/ppd);de=t+timedelta(days=(W-TX)/ppd)
+          rows=_get_rows_paginated(db,'economic_chart_series_points',{'select':'observation_date,value,frequency','series_code':f'eq.{CODE}','observation_date':f'gte.{bs.isoformat()}','and':f'(observation_date.lte.{be.isoformat()})','order':'observation_date.asc'})
+          raw=normalize_rows(rows);vis=[p for p in raw if ds<=p.day<=de];lo=min(p.value for p in vis);hi=max(p.value for p in vis);span=hi-lo;ypad=span*(.08/.84)
+          g=ChartGeometry(ds,de,lo-ypad,hi+ypad,W,H)
+          s1=calculate_base_pivots(rows,rows[0]['frequency']);s2=classify_special_structures(s1,g);s3=simplify_pivot_lines(s2,g)
+          print('S3_MARKERS',[(p.day.isoformat(),p.value) for p in s3.markers])
+          print('S3_SEGMENTS',[(x.start.day.isoformat(),x.start.value,x.end.day.isoformat(),x.end.value,x.kind) for x in s3.segments])
+
+          raw_min=min(p.value for p in raw);raw_max=max(p.value for p in raw);pxv=DATA_H/span
+          extra_bot=max(0.,(lo-ypad-raw_min)*pxv)+36;extra_top=max(0.,(raw_max-(hi+ypad))*pxv)+36
+          extra_left=(ds-bs).days*ppd;extra_right=(be-de).days*ppd;full_w=extra_left+W+extra_right;full_h=extra_bot+H+extra_top
+          def x(day):return extra_left+(day-ds).days*ppd
+          def y(v):return extra_bot+TOP+(v-lo)/span*DATA_H
+          scale=2.;dpi=180
+          fig=plt.figure(figsize=((full_w*scale)/dpi,(full_h*scale)/dpi),dpi=dpi);ax=fig.add_axes([0,0,1,1])
+          ax.plot([scale*x(p.day) for p in raw],[scale*y(p.value) for p in raw],linewidth=1.1)
+          for seg in s3.segments:
+              ax.plot([scale*x(seg.start.day),scale*x(seg.end.day)],[scale*y(seg.start.value),scale*y(seg.end.value)],linewidth=2.8)
+          for p in s3.markers:
+              ax.scatter([scale*x(p.day)],[scale*y(p.value)],s=48)
+              ax.annotate(p.day.strftime('%Y-%m-%d'),(scale*x(p.day),scale*y(p.value)),xytext=(0,8),textcoords='offset points',fontsize=7,ha='center')
+          L=scale*extra_left;B=scale*extra_bot
+          ax.add_patch(Rectangle((L,B),scale*W,scale*H,facecolor='#d9edf7',edgecolor='#69a9d6',alpha=.22,linewidth=1.5))
+          ax.axvline(L+scale*SX,linestyle='--',linewidth=1);ax.axvline(L+scale*TX,linestyle='--',linewidth=1)
+          ax.text(L+scale*SX,B+scale*H-16,'START',ha='center',va='top',fontsize=9);ax.text(L+scale*TX,B+scale*H-16,'TROUGH',ha='center',va='top',fontsize=9)
+          ax.set_xlim(0,scale*full_w);ax.set_ylim(0,scale*full_h);ax.set_xticks([]);ax.set_yticks([])
+          ax.set_title('NFCI_RISK_STAGE3_ACTIVE_SIDE_2X',fontsize=11,pad=10)
+          fig.savefig('out/NFCI_RISK_STAGE3_ACTIVE_SIDE_2X.png',dpi=dpi);plt.close(fig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nfci-stage3-active-side
+          path: out/*.png
