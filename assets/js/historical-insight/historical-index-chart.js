@@ -43,6 +43,9 @@
     const displayValue=value=>window.MacroWatchFrontend.formatDisplayNumber(value);
     function isoDate(time) {
       if (typeof time==='string') return time.slice(0,10);
+      if (typeof time==='number' && Number.isFinite(time)) {
+        return new Date(time*1000).toISOString().slice(0,10);
+      }
       if (time && Number.isInteger(time.year) && Number.isInteger(time.month) && Number.isInteger(time.day)) {
         return `${time.year}-${String(time.month).padStart(2,'0')}-${String(time.day).padStart(2,'0')}`;
       }
@@ -101,11 +104,12 @@
       }
       crosshairValues.replaceChildren(...entries.map(entry=>{
         const value=document.createElement('span');
-        value.style.color=entry.color;
+        value.className='historical-crosshair-value';
+        value.style.backgroundColor=entry.color;
         value.textContent=displayValue(entry.value);
         return value;
       }));
-      crosshairValues.style.left=`${x}px`;
+      crosshairValues.style.left=`${Math.min(x+3,Math.max(2,host.clientWidth-crosshairValues.offsetWidth-2))}px`;
       const active=new Set(entries.map(entry=>entry.code));
       for (const [code,marker] of crosshairMarkers) {
         if (active.has(code)) continue;

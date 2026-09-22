@@ -6,7 +6,7 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-chart-region { position: relative; min-width: 0; min-height: 510px; }
 .historical-crosshair-overlay{position:absolute;inset:0;z-index:8;pointer-events:none}
 .historical-crosshair-marker{position:absolute;width:8px;height:8px;border:1.5px solid #fff;border-radius:999px;background:var(--crosshair-marker-color);box-shadow:0 0 0 1px color-mix(in srgb,var(--crosshair-marker-color) 45%,transparent);transform:translate(-50%,-50%)}
-.historical-crosshair-values{position:absolute;top:6px;display:flex;align-items:center;gap:7px;padding:3px 6px;border-radius:3px;background:color-mix(in srgb,var(--theme-surface-elevated,#fff) 92%,transparent);box-shadow:0 1px 3px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.2;white-space:nowrap;transform:translateX(-50%)}
+.historical-crosshair-values{position:absolute;top:6px;display:flex;align-items:center;gap:2px;font-size:11px;font-weight:800;line-height:1.2;white-space:nowrap}.historical-crosshair-value{padding:3px 6px;border-radius:3px;color:#fff;box-shadow:0 1px 3px rgba(15,23,42,.12)}
 .historical-chart-message { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 20px; text-align: center; color: var(--theme-text-secondary); pointer-events: none; }
 .historical-chart-message[hidden], .historical-range-tools button[hidden] { display: none; }
 .historical-range-tools { display: flex; gap: 6px; }
