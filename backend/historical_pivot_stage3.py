@@ -135,8 +135,8 @@ def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
             if next_low is None:
                 break
             if not connect(next_low):
-                    continue
                 continue
+            continue
 
         next_low = _next_after(lows, anchor.day)
         if next_low is None:
@@ -144,8 +144,8 @@ def _merge_only(stage2: Stage2Result) -> list[tuple[PivotPoint, PivotPoint]]:
 
         if next_low.value < anchor.value:
             if not connect(next_low):
-                    continue
                 continue
+            continue
 
         next_high = _next_after(highs, anchor.day)
         if next_high is None:
