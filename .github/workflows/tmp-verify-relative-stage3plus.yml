@@ -26,6 +26,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python -m py_compile backend/historical_pivot_shared.py backend/historical_pivot_stage3.py backend/historical_pivot_stage4.py backend/historical_pivot_stage5.py backend/historical_pivot_stage6.py backend/historical_pivot_store.py
+          pytest -q tests/test_historical_pivot_six_stage_architecture.py tests/test_historical_pivot_stage_boundaries.py tests/test_historical_pivot_store.py
           PYTHONPATH=backend python - <<'PY'
           from common import SupabaseRest
           from historical_pivot_base import load_case_series
