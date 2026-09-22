@@ -346,7 +346,7 @@ class HistoricalPivotBaseTests(unittest.TestCase):
         low_rdp = (
             PivotPoint(d - timedelta(days=10), 0.0, "low"),
             existing_entry,
-            PivotPoint(d + timedelta(days=30), 1.0, "low"),
+            PivotPoint(d + timedelta(days=30), 2.0, "low"),
         )
         base = BasePivotResult(
             frequency="D",
@@ -430,18 +430,22 @@ class HistoricalPivotBaseTests(unittest.TestCase):
             PivotPoint(d + timedelta(days=35), 5.5, "high"),  # also turns up: skip
             PivotPoint(d + timedelta(days=45), 6.0, "high"),  # next high is used
         )
-        augmented = type("Augmented", (), {
-            "high_pivots": highs,
-            "low_pivots": lows,
-            "spike_peaks": (),
-        })()
+        augmented = SpikeAugmentedPivotResult(
+            high_pivots=highs,
+            low_pivots=lows,
+            spike_peaks=(),
+            high_sideways_segments=(),
+            low_sideways_segments=(),
+            rapid_move_candidates=(),
+        )
         geometry = ChartGeometry(d, d + timedelta(days=80), 0.0, 7.0, 100.0, 100.0)
 
         result = simplify_pivot_lines(augmented, geometry)
 
-        self.assertNotIn(highs[2], result.markers)
+        self.assertNotIn(LinePoint(highs[2].day, highs[2].value), result.markers)
         self.assertTrue(any(
-            segment.start == lows[1] and segment.end == highs[3]
+            segment.start == LinePoint(lows[1].day, lows[1].value)
+            and segment.end == LinePoint(highs[3].day, highs[3].value)
             for segment in result.segments
         ))
 
