@@ -1,0 +1,163 @@
+name: Rebuild 2022 Historical targets temp
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-rebuild-2022-historical.yml"
+permissions:
+  contents: read
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check -r backend/requirements.txt
+      - name: Build Historical candidate set from economic-chart registry
+        run: |
+          node - <<'NODE' > /tmp/historical_candidates.json
+          global.window={};
+          require('./assets/js/charts/economic-series-catalog.js');
+          const out=window.MacroWatchEconomicSeriesRegistry.allSeries
+            .filter(item=>['US','GLOBAL'].includes(item.marketScope))
+            .map(item=>({code:item.code,frequency:item.frequency,marketScope:item.marketScope}));
+          process.stdout.write(JSON.stringify(out));
+          NODE
+          cat /tmp/historical_candidates.json
+      - name: Recalculate eligible 2022 indicators and persist
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          PYTHONPATH=backend python - <<'PY'
+          from datetime import date, timedelta
+          import json
+
+          from common import SupabaseRest
+          from historical_pivot_base import _get_rows_paginated, _single_row
+          from historical_pivot_shared import ChartGeometry, normalize_rows, buffer_bounds
+          from historical_pivot_stage1 import calculate_base_pivots, PIVOT_POLICIES
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import finalize_rapid_moves
+          from historical_pivot_stage5 import prune_same_trend_extremes
+          from historical_pivot_stage6 import prune_unconfirmed_retracements
+          from historical_pivot_store import store_pipeline_result
+
+          CASE="tightening_2022"
+          INDEX="NASDAQ_COMPOSITE"
+          ALGO="stage6-frontend-950x464-pad8-sideways5-v1"
+          FRAME_W=950.0
+          FRAME_H=464.0
+          START_X=FRAME_W*0.12
+          TROUGH_X=FRAME_W*0.88
+
+          with open("/tmp/historical_candidates.json","r",encoding="utf-8") as f:
+              candidates=json.load(f)
+
+          db=SupabaseRest()
+          cycle=_single_row(db,"historical_case_market_cycles",{
+              "select":"start_date,trough_date",
+              "case_code":f"eq.{CASE}",
+              "index_code":f"eq.{INDEX}",
+              "limit":"2",
+          })
+          start=date.fromisoformat(str(cycle["start_date"])[:10])
+          trough=date.fromisoformat(str(cycle["trough_date"])[:10])
+          buffer_start,buffer_end=buffer_bounds(start,trough)
+
+          inner_w=TROUGH_X-START_X
+          px_per_day=inner_w/(trough-start).days
+          display_start=start-timedelta(days=START_X/px_per_day)
+          display_end=trough+timedelta(days=(FRAME_W-TROUGH_X)/px_per_day)
+
+          coverage_rows=_get_rows_paginated(db,"economic_chart_series_coverage",{
+              "select":"series_code,first_date,last_date,point_count",
+              "order":"series_code.asc",
+          })
+          coverage={str(r["series_code"]):r for r in coverage_rows}
+          eligible=[]
+          excluded_coverage=[]
+          for item in candidates:
+              c=coverage.get(item["code"])
+              if c and str(c["first_date"])[:10] <= buffer_start.isoformat() and str(c["last_date"])[:10] >= buffer_end.isoformat():
+                  eligible.append(item)
+              else:
+                  excluded_coverage.append({
+                      **item,
+                      "first_date": None if not c else str(c["first_date"])[:10],
+                      "last_date": None if not c else str(c["last_date"])[:10],
+                  })
+
+          print("CANDIDATES",json.dumps(candidates,ensure_ascii=False))
+          print("BUFFER",buffer_start.isoformat(),buffer_end.isoformat())
+          print("ELIGIBLE",json.dumps(eligible,ensure_ascii=False))
+          print("EXCLUDED_COVERAGE",json.dumps(excluded_coverage,ensure_ascii=False))
+
+          stored=[]
+          unsupported=[]
+          failed=[]
+
+          for item in eligible:
+              code=item["code"]
+              freq=item["frequency"]
+              if freq not in PIVOT_POLICIES:
+                  unsupported.append(item)
+                  print("UNSUPPORTED",json.dumps(item,ensure_ascii=False))
+                  continue
+              try:
+                  rows=_get_rows_paginated(db,"economic_chart_series_points",{
+                      "select":"observation_date,value,frequency",
+                      "series_code":f"eq.{code}",
+                      "observation_date":f"gte.{buffer_start.isoformat()}",
+                      "and":f"(observation_date.lte.{buffer_end.isoformat()})",
+                      "order":"observation_date.asc",
+                  })
+                  if not rows:
+                      raise RuntimeError("no source rows in required 24-month buffer")
+                  raw=normalize_rows(rows)
+                  visible=[p for p in raw if display_start <= p.day <= display_end]
+                  if not visible:
+                      raise RuntimeError("no points inside frontend case frame")
+                  lo=min(p.value for p in visible)
+                  hi=max(p.value for p in visible)
+                  span=hi-lo
+                  ypad=1.0 if span==0 else span*(0.08/0.84)
+                  geom=ChartGeometry(display_start,display_end,lo-ypad,hi+ypad,FRAME_W,FRAME_H)
+
+                  s1=calculate_base_pivots(rows,freq)
+                  s2=classify_special_structures(s1,geom)
+                  s3=simplify_pivot_lines(s2,geom)
+                  s4=finalize_rapid_moves(s3,geom)
+                  s5=prune_same_trend_extremes(s4,geom)
+                  s6=prune_unconfirmed_retracements(s5,geom)
+
+                  n=store_pipeline_result(
+                      db,
+                      case_code=CASE,index_code=INDEX,series_code=code,
+                      algorithm_version=ALGO,source_rows=rows,frequency=freq,
+                      buffer_start=buffer_start,buffer_end=buffer_end,
+                      base=s1,stage1=s1,stage2=s2,stage3=s3,stage4=s4,stage5=s5,final=s6,
+                  )
+                  result={"series":code,"frequency":freq,"source_points":len(rows),"stage6_pivots":len(s6.markers),"stored":n}
+                  stored.append(result)
+                  print("STORED",json.dumps(result,ensure_ascii=False))
+              except Exception as exc:
+                  result={"series":code,"frequency":freq,"error":f"{type(exc).__name__}: {exc}"}
+                  failed.append(result)
+                  print("FAILED",json.dumps(result,ensure_ascii=False))
+
+          print("SUMMARY_JSON",json.dumps({
+              "candidate_count":len(candidates),
+              "eligible_count":len(eligible),
+              "excluded_coverage":excluded_coverage,
+              "stored":stored,
+              "unsupported":unsupported,
+              "failed":failed,
+          },ensure_ascii=False))
+          if failed:
+              raise SystemExit(2)
+          PY
