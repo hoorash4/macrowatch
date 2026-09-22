@@ -38,6 +38,7 @@ RAPID_MOVE_MIN_VISUAL_Y_SHARE = 0.30
 RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG = 45.0
 RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE = 0.20
 RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG = 20.0
+RAPID_MOVE_FULL_ANGLE_SHARE = 0.80
 RAPID_MOVE_AUX_MAX_SAME_SIDE_RETRACEMENT = 0.30
 
 
@@ -343,6 +344,34 @@ def _classify_spikes(
     return tuple(sorted(spikes, key=lambda item: item.point.day))
 
 
+def _rapid_move_allowed_vertical_angle(share: float) -> float:
+    """Scale the rapid-move vertical-axis angle limit by visual height.
+
+    20% visual height -> 20 degrees.
+    80% visual height -> 45 degrees.
+    Above 80% -> fixed at 45 degrees.
+    """
+    if share <= RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE:
+        return RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG
+    if share >= RAPID_MOVE_FULL_ANGLE_SHARE:
+        return RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG
+
+    ratio = (
+        share - RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE
+    ) / (
+        RAPID_MOVE_FULL_ANGLE_SHARE
+        - RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE
+    )
+    return (
+        RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG
+        + ratio
+        * (
+            RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG
+            - RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG
+        )
+    )
+
+
 def _rapid_move_passes(
     *,
     entry: PivotPoint,
@@ -370,16 +399,15 @@ def _rapid_move_passes(
         screen_segment_angle_degrees(entry, peak, geometry)
     )
 
-    if share >= min_visual_y_share:
-        return (
-            vertical_angle <= RAPID_MOVE_MAX_VERTICAL_ANGLE_DEG,
-            share,
-        )
-
     if share < RAPID_MOVE_AUX_MIN_VISUAL_Y_SHARE:
         return False, share
-    if vertical_angle > RAPID_MOVE_AUX_MAX_VERTICAL_ANGLE_DEG:
+
+    allowed_vertical_angle = _rapid_move_allowed_vertical_angle(share)
+    if vertical_angle > allowed_vertical_angle:
         return False, share
+
+    if share >= min_visual_y_share:
+        return True, share
 
     following_same_side = next(
         (
