@@ -1,0 +1,88 @@
+name: Verify wave inspections final temp
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tmp-verify-wave-inspections-final.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check matplotlib
+      - name: Verify
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python -m py_compile backend/historical_pivot_stage4.py backend/historical_pivot_stage5.py
+          python -m unittest tests.test_historical_pivot_six_stage_architecture tests.test_historical_pivot_stage_boundaries
+          mkdir -p out
+          PYTHONPATH=backend python - <<'PY'
+          import matplotlib.pyplot as plt
+          from common import SupabaseRest
+          from historical_pivot_base import load_case_series
+          from historical_pivot_shared import ChartGeometry, normalize_rows
+          from historical_pivot_stage1 import calculate_base_pivots
+          from historical_pivot_stage2 import classify_special_structures
+          from historical_pivot_stage3 import simplify_pivot_lines
+          from historical_pivot_stage4 import finalize_rapid_moves
+          import historical_pivot_stage5 as s5
+
+          db=SupabaseRest()
+          rows,freq,start,end=load_case_series(db,case_code="tightening_2022",index_code="NASDAQ_COMPOSITE",series_code="US2Y")
+          raw=normalize_rows(rows)
+          vals=[p.value for p in raw if start<=p.day<=end]
+          lo,hi=min(vals),max(vals); pad=(hi-lo)*.08 if hi!=lo else 1
+          g=ChartGeometry(start,end,lo-pad,hi+pad,1200,600)
+          s1=calculate_base_pivots(rows,freq)
+          s2=classify_special_structures(s1,g)
+          s3=simplify_pivot_lines(s2,g)
+          s4=finalize_rapid_moves(s3,g)
+
+          line={}
+          for seg in s4.segments:
+              line[(seg.start.day,seg.start.value)] = seg.start
+              line[(seg.end.day,seg.end.value)] = seg.end
+          points=tuple(sorted(line.values(),key=lambda p:p.day))
+          reset={(p.day,p.value) for p in s4.protected_points}
+          cand=s5._process_window(points,g,10.0,reset_keys=reset)
+          print("CANDIDATES",[(a.day.isoformat(),a.value,b.day.isoformat(),b.value) for a,b in cand])
+
+          s5r=s5.prune_same_trend_extremes(s4,g)
+          print("S5",[(p.day.isoformat(),p.value) for p in s5r.markers])
+
+          keys={(p.day.isoformat(),p.value) for p in s5r.markers}
+          assert ("2023-05-04",3.75) in keys, keys
+          assert ("2024-04-30",5.04) in keys, keys
+          assert ("2023-07-06",4.99) not in keys, keys
+          assert ("2024-01-12",4.14) not in keys, keys
+
+          fig,ax=plt.subplots(figsize=(15,7.5))
+          ax.plot([p.day for p in raw],[p.value for p in raw],linewidth=1.0,label="raw")
+          for seg in s5r.segments:
+              ax.plot([seg.start.day,seg.end.day],[seg.start.value,seg.end.value],linewidth=2.8)
+          ax.scatter([p.day for p in s5r.markers],[p.value for p in s5r.markers],s=60)
+          for p in s5r.markers:
+              ax.annotate(f"{p.day:%Y-%m-%d}",(p.day,p.value),xytext=(0,10),textcoords="offset points",fontsize=7,ha="center")
+          ax.set_title("US2Y · Stage 5 · wave inspection only")
+          ax.set_xlim(start,end); ax.set_ylim(g.y_min,g.y_max)
+          ax.grid(True,alpha=.2)
+          fig.tight_layout()
+          fig.savefig("out/US2Y_STAGE5_WAVE_ONLY.png",dpi=180)
+          plt.close(fig)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: us2y-stage5-wave-only
+          path: out/US2Y_STAGE5_WAVE_ONLY.png
+          if-no-files-found: error
