@@ -6,12 +6,15 @@ const test=require('node:test');
 
 const controller=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
 const start=controller.indexOf('  function classifyStoredPivots(');
-const end=controller.indexOf('  function displayItem(',start);
-assert.ok(start>=0&&end>start);
-const merge=vm.runInNewContext(`${controller.slice(start,end)}\nmergeManualPivots`,{
+const end=controller.indexOf('  function rawValueAtDate(',start);
+const badgeStart=controller.indexOf('  const anchorSummary=');
+const badgeEnd=controller.indexOf('  const pivotReasonFor=',badgeStart);
+assert.ok(start>=0&&end>start&&badgeStart>end&&badgeEnd>badgeStart);
+const {mergeManualPivots:merge,indicatorBadgeSummary:badges}=vm.runInNewContext(`${controller.slice(start,end)}\n${controller.slice(badgeStart,badgeEnd)}\n({mergeManualPivots,indicatorBadgeSummary})`,{
+  referenceOrder:['START','PEAK','TROUGH'],
   indicatorAnalysis:{
-    relevanceWindow:()=>({from:'2022-01-01',to:'2022-01-31'}),
-    nearMissWindow:()=>({from:'2021-12-01',to:'2022-02-28'})
+    relevanceWindow:date=>date==='2022-11-19'?{from:'2022-08-19',to:'2022-12-19'}:{from:'2022-01-01',to:'2022-01-31'},
+    nearMissWindow:date=>date==='2022-11-19'?{from:'2022-05-19',to:'2023-01-19'}:date==='2023-06-01'?{from:'2022-12-01',to:'2023-08-01'}:{from:'2021-09-01',to:'2022-02-28'}
   }
 });
 const auto=(date,order)=>({pivotDate:date,pivotOrder:order,pivotValue:order});
@@ -39,7 +42,7 @@ test('manual key stays magenta and the displaced automatic key becomes gray',()=
     sourceDate:'2022-01-20',pivotDate:'2022-01-20',pivotValue:50,relationship:'positive',
     reason:'관리자 선택',comment:'',keyReference:'START',isDeleted:false
   }]},{startDate:'2022-01-05'});
-  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'overridden_key');
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'near_miss');
   assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-20').markerStatus,'confirmed');
 });
 
@@ -48,12 +51,36 @@ test('an automatic key remains unchanged when no manual key claims its reference
   assert.equal(result[0].markerStatus,'confirmed');
 });
 
-test('a non-key manual pivot uses the existing near-miss window for dark or light gray',()=>{
+test('a non-key manual pivot uses the existing date windows for magenta, dark, or light gray',()=>{
   const manual=(date)=>({sourceDate:date,pivotDate:date,pivotValue:42,relationship:'inverse',reason:'관리자 선택',comment:'',keyReference:null,isDeleted:false});
   const result=merge({storedPivots:[],manualPivots:[manual('2022-01-05'),manual('2022-02-15'),manual('2022-03-01')]},{startDate:'2022-01-05'});
-  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'manual_standard');
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'confirmed');
   assert.equal(result.find(pivot=>pivot.pivotDate==='2022-02-15').markerStatus,'manual_standard');
   assert.equal(result.find(pivot=>pivot.pivotDate==='2022-03-01').markerStatus,'reference_only');
+});
+
+test('a non-key manual pivot takes the core-window magenta before an automatic pivot',()=>{
+  const result=merge({storedPivots:[auto('2022-01-05',0)],manualPivots:[{
+    sourceDate:'2022-01-20',pivotDate:'2022-01-20',pivotValue:42,relationship:'inverse',
+    reason:'관리자 선택',comment:'',keyReference:null,isDeleted:false
+  }]},{startDate:'2022-01-05'});
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-20').markerStatus,'confirmed');
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'near_miss');
+});
+
+test('list badges use final pivot colors, including colored PEAK and gray START',()=>{
+  const item={storedPivots:[],manualPivots:[
+    {sourceDate:'2021-10-05',pivotDate:'2021-10-05',pivotValue:1,reason:'관리자 선택',keyReference:null,isDeleted:false},
+    {sourceDate:'2022-11-20',pivotDate:'2022-11-20',pivotValue:2,reason:'관리자 선택',keyReference:'PEAK',isDeleted:false}
+  ],byReference:{START:{pivotDate:'wrong-source'}},nearMissPivots:[{referenceType:'TROUGH',pivotDate:'wrong-source'}]};
+  const summary=badges(item,{mode:'history',cycle:{startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'}});
+  assert.deepEqual(Array.from(summary.anchors),['PEAK']);
+  assert.deepEqual(Array.from(summary.nearMisses),['START']);
+});
+
+test('the auxiliary pivot reason section is removed without deleting saved reasons',()=>{
+  assert.doesNotMatch(controller,/기타 피봇 판정 근거|appendAuxiliaryPivotReasons/);
+  assert.match(controller,/pivotReasonFor\(item,result\)/);
 });
 
 test('only explicit case deletion may physically delete manual rows',()=>{
