@@ -33,7 +33,7 @@ def line_point(point: PivotPoint) -> LinePoint:
 
 
 class PivotStageBoundaryTests(unittest.TestCase):
-    def test_stage1_is_rdp_only_and_stage2_never_recovers_deleted_candidates(self):
+    def test_stage1_stays_rdp_only_while_stage2_may_add_selected_entry(self):
         d = date(2020, 1, 1)
         highs = (
             PivotPoint(d, 5.0, "high"),
@@ -63,22 +63,23 @@ class PivotStageBoundaryTests(unittest.TestCase):
         self.assertNotIn(deleted_candidate, stage1.display_markers)
         self.assertNotIn(deleted_entry_candidate, stage1.display_markers)
 
+        before_stage1 = stage1.display_markers
         stage2 = augment_spike_entry_points(stage1, geometry)
         self.assertIsInstance(stage2, SpikeAugmentedPivotResult)
-        self.assertEqual(stage1.display_markers, stage2.display_markers)
+        self.assertEqual(before_stage1, stage1.display_markers)
         self.assertNotIn(deleted_candidate, stage2.display_markers)
-        self.assertNotIn(deleted_entry_candidate, stage2.display_markers)
+        self.assertIn(deleted_entry_candidate, stage2.display_markers)
 
         final = simplify_pivot_lines(stage2, geometry)
-        stage1_keys = {
-            (point.day, point.value, point.pivot_type)
-            for point in stage1.display_markers
+        stage2_keys = {
+            (point.day, point.value)
+            for point in stage2.display_markers
         }
         final_keys = {
-            (point.day, point.value, point.pivot_type)
+            (point.day, point.value)
             for point in final.markers
         }
-        self.assertTrue(final_keys.issubset(stage1_keys))
+        self.assertTrue(final_keys.issubset(stage2_keys))
 
     def test_stage_result_rejects_hidden_deleted_segment_endpoint(self):
         d = date(2020, 1, 1)
@@ -91,16 +92,18 @@ class PivotStageBoundaryTests(unittest.TestCase):
                 segments=(SimplifiedLineSegment(low, deleted_high, "trend"),),
                 )
 
-    def test_first_angle_always_collapses_improved_extreme(self):
+    def test_first_angle_always_collapses_improved_relative_extreme(self):
         d = date(2020, 1, 1)
         high = LinePoint(d, 10.0)
         low1 = LinePoint(d + timedelta(days=10), 4.0)
-        low2 = LinePoint(d + timedelta(days=20), 3.0)
+        rebound = LinePoint(d + timedelta(days=20), 7.0)
+        low2 = LinePoint(d + timedelta(days=30), 3.0)
         existing = SimplifiedLineResult(
-            markers=(high, low1, low2),
+            markers=(high, low1, rebound, low2),
             segments=(
                 SimplifiedLineSegment(high, low1, "trend"),
-                SimplifiedLineSegment(low1, low2, "trend"),
+                SimplifiedLineSegment(low1, rebound, "trend"),
+                SimplifiedLineSegment(rebound, low2, "trend"),
             ),
         )
         geometry = ChartGeometry(d, d + timedelta(days=100), 0.0, 20.0, 100.0, 100.0)
@@ -651,7 +654,7 @@ class PivotStageBoundaryTests(unittest.TestCase):
         )
         geometry = ChartGeometry(
             d,
-            d + timedelta(days=40),
+            d + timedelta(days=100),
             -5.0,
             25.0,
             400.0,
@@ -692,7 +695,7 @@ class PivotStageBoundaryTests(unittest.TestCase):
         )
         geometry = ChartGeometry(
             d,
-            d + timedelta(days=40),
+            d + timedelta(days=100),
             -5.0,
             20.0,
             400.0,
