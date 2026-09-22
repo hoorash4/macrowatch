@@ -84,7 +84,7 @@ class CensusRetailSalesTests(unittest.TestCase):
         self.assertIn("signals.economic_chart_automatic", automatic)
         self.assertFalse((ROOT / ".github/workflows/economic-chart-backfill-once.yml").exists())
         self.assertIn("code:'US_RETAIL_SALES'", chart)
-        self.assertIn("title:'미국 소매판매 YoY'", chart)
+        self.assertIn("title:'미국 소매판매'", chart)
         self.assertIn("unit:'% YoY'", chart)
         self.assertIn("frequency:'M'", chart)
         self.assertIn("M:[6,24,'6개월','24개월']", chart)
