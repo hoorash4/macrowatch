@@ -163,12 +163,16 @@ def _process_window(
         if _key(point) in reset_keys and index + 1 < len(ordered):
             direction = _sign(ordered[index + 1].value - point.value)
             if direction != 0:
+                next_point = ordered[index + 1]
                 state = _RunState(
                     anchor=point,
                     direction=direction,
-                    extreme=ordered[index + 1],
+                    extreme=next_point,
                 )
-                index += 2
+                # If the seeded next point is itself a finalized rapid
+                # endpoint, do not consume it here. It must immediately become
+                # the next wave anchor in this same wave inspection.
+                index += 1 if _key(next_point) in reset_keys else 2
                 continue
 
         # A true reversal requires crossing the active anchor, not merely
