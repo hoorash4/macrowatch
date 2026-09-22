@@ -19,7 +19,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install --disable-pip-version-check -r backend/requirements.txt
+        run: |
+          pip install --disable-pip-version-check -r backend/requirements.txt
+          pip install --disable-pip-version-check pytest
       - name: Verify
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
