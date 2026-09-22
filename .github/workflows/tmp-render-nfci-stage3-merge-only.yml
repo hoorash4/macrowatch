@@ -21,7 +21,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          python -m pytest -q tests/test_historical_pivot_protection_semantics.py
+          PYTHONPATH=backend python -m pytest -q tests/test_historical_pivot_protection_semantics.py
           mkdir -p out
           PYTHONPATH=backend python - <<'PY'
           from datetime import date,timedelta
