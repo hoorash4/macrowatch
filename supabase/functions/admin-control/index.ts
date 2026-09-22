@@ -240,6 +240,38 @@ export default {
       const body = await request.json();
       const action = String(body?.action || "");
 
+      if (action === "save_historical_indicator_manual_pivot") {
+        const caseCode = String(body?.case_code || "").trim();
+        const seriesCode = String(body?.series_code || "").trim();
+        const indexCode = historicalIndex(body?.index_code);
+        const sourceDate = historicalDate(body?.source_date);
+        const isDeleted = body?.is_deleted === true;
+        if (!caseCode || !seriesCode || !sourceDate) {
+          return json({ error: "피봇의 국면·지표·날짜를 확인해 주세요." }, 400, origin);
+        }
+        const pivotDate = isDeleted ? null : historicalDate(body?.pivot_date);
+        const pivotValue = isDeleted ? null : Number(body?.pivot_value);
+        const relationship = isDeleted ? null : String(body?.relationship || "");
+        const reason = isDeleted ? null : String(body?.reason || "").trim();
+        const comment = isDeleted ? null : String(body?.comment || "").trim();
+        const keyReference = isDeleted || body?.key_reference == null || body.key_reference === ""
+          ? null : String(body.key_reference);
+        if (!isDeleted && (!pivotDate || !Number.isFinite(pivotValue)
+          || !["positive", "inverse"].includes(relationship)
+          || !reason || reason.length > 250 || (comment?.length || 0) > 1000
+          || (keyReference !== null && !["START", "PEAK", "TROUGH"].includes(keyReference)))) {
+          return json({ error: "피봇 입력값을 확인해 주세요." }, 400, origin);
+        }
+        const { error } = await admin.rpc("save_historical_indicator_manual_pivot", {
+          p_case_code: caseCode, p_index_code: indexCode, p_series_code: seriesCode,
+          p_source_date: sourceDate, p_pivot_date: pivotDate, p_pivot_value: pivotValue,
+          p_relationship: relationship, p_reason: reason, p_comment: comment,
+          p_key_reference: keyReference, p_is_deleted: isDeleted, p_user_id: user.id,
+        });
+        if (error) throw error;
+        return json({ saved: true }, 200, origin);
+      }
+
       if (action === "list_members") {
         const { data, error } = await admin.from("user_accounts")
           .select("user_id,username,kakao_user_id,is_admin,created_at,updated_at")
@@ -701,8 +733,10 @@ export default {
       if (action === "delete_historical_case") {
         const code = String(body?.case_code || "").trim();
         if (!code) return json({ error: "삭제할 국면 식별자가 필요합니다." }, 400, origin);
-        const { data, error } = await admin.from("historical_cases").delete()
-          .eq("case_code", code).select("case_code").maybeSingle();
+        const { data, error } = await admin.rpc("delete_historical_case_with_manual_choice", {
+          p_case_code: code, p_delete_manual_pivots: body?.delete_manual_pivots === true,
+          p_user_id: user.id,
+        });
         if (error) throw error;
         if (!data) return json({ error: "삭제할 과거 국면을 찾을 수 없습니다." }, 404, origin);
         await reorderHistoricalCases(admin);

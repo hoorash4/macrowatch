@@ -236,6 +236,19 @@ html[data-theme="dark"] .historical-pivot-reason b { color:#e879f9; }
 .historical-case-delete-card{width:min(420px,calc(100vw - 28px));padding:20px;border:1px solid var(--theme-border);border-radius:14px;background:var(--theme-surface-elevated);box-shadow:0 24px 70px rgba(15,23,42,.28)}
 .historical-case-delete-card>strong{display:block;font-size:16px}
 .historical-case-delete-card>p{margin:8px 0 16px;color:var(--theme-text-secondary);font-size:12px;line-height:1.55}
+.historical-case-delete-manual-choice{display:flex;align-items:flex-start;gap:7px;margin:0 0 16px;color:var(--theme-text-secondary);font-size:11px;line-height:1.5;cursor:pointer}
+.historical-case-delete-manual-choice input{margin:2px 0 0;flex:none}
+.historical-manual-pivot-card{width:min(520px,calc(100vw - 28px))}
+#historical-manual-pivot-form{display:grid;gap:11px;padding:18px}
+#historical-manual-pivot-form>label{display:grid;gap:5px;color:var(--theme-text-secondary);font-size:11px;font-weight:800}
+#historical-manual-pivot-form input[type=date],#historical-manual-pivot-form select,#historical-manual-pivot-form textarea{box-sizing:border-box;width:100%;padding:8px 9px;border:1px solid var(--theme-border);border-radius:7px;background:var(--theme-surface);color:var(--theme-text-primary);font:inherit}
+#historical-manual-pivot-form .historical-manual-pivot-key{display:flex;align-items:center;gap:7px}
+.historical-manual-pivot-actions{display:flex;align-items:center;gap:7px}
+.historical-manual-pivot-actions>span{flex:1}
+.historical-manual-pivot-actions button{padding:8px 12px;border:1px solid var(--theme-border);border-radius:7px;background:var(--theme-surface);color:var(--theme-text-primary);font-size:11px;font-weight:800;cursor:pointer}
+#historical-manual-pivot-save{border-color:#111827;background:#111827;color:#fff}
+#historical-manual-pivot-delete{border-color:#dc2626;color:#dc2626}
+#historical-manual-pivot-status{min-height:16px;color:#dc2626;font-size:11px;font-weight:750}
 .historical-case-delete-card>div{display:flex;justify-content:flex-end;gap:7px}
 #historical-case-delete-confirm{border-color:#dc2626;background:#dc2626;color:#fff}
 html[data-theme="dark"] #historical-case-auto-analyze,html[data-theme="dark"] #historical-case-save{background:#d1a55d;color:#071b42}

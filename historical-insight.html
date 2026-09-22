@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=31">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=32">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -179,19 +179,39 @@
     <div class="historical-case-delete-card" role="dialog" aria-modal="true" aria-labelledby="historical-case-delete-title">
       <strong id="historical-case-delete-title">과거 국면을 삭제할까?</strong>
       <p id="historical-case-delete-message"></p>
+      <label class="historical-case-delete-manual-choice"><input type="checkbox" id="historical-case-delete-manual-pivots">관리자 변곡점 정보도 함께 삭제하시겠습니까? 선택하지 않으면 관리자 기록은 보존됩니다.</label>
       <div><button type="button" id="historical-case-delete-cancel">취소</button><button type="button" id="historical-case-delete-confirm">삭제</button></div>
       <span id="historical-case-delete-status" role="status" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div id="historical-manual-pivot-modal" class="historical-case-modal" hidden>
+    <div class="historical-case-modal-card historical-manual-pivot-card" role="dialog" aria-modal="true" aria-labelledby="historical-manual-pivot-title">
+      <div class="historical-case-modal-head">
+        <div><small>ADMIN PIVOT</small><strong id="historical-manual-pivot-title">지표 변곡점 추가</strong></div>
+        <button type="button" id="historical-manual-pivot-close" aria-label="닫기">×</button>
+      </div>
+      <form id="historical-manual-pivot-form">
+        <label>날짜<input id="historical-manual-pivot-date" type="date" required></label>
+        <label>정·역관계<select id="historical-manual-pivot-relationship" required><option value="">선택</option><option value="positive">정관계</option><option value="inverse">역관계</option></select></label>
+        <label class="historical-manual-pivot-key"><input id="historical-manual-pivot-is-key" type="checkbox">핵심 변곡점</label>
+        <label>지수 기준점<select id="historical-manual-pivot-reference" disabled><option value="">선택</option><option value="START">START</option><option value="PEAK">PEAK</option><option value="TROUGH">TROUGH</option></select></label>
+        <label>선택 근거<select id="historical-manual-pivot-reason" required></select></label>
+        <label>추가 코멘트 (선택)<textarea id="historical-manual-pivot-comment" rows="3" maxlength="1000"></textarea></label>
+        <div class="historical-manual-pivot-actions"><button type="button" id="historical-manual-pivot-delete" hidden>삭제</button><span></span><button type="button" id="historical-manual-pivot-cancel">취소</button><button type="submit" id="historical-manual-pivot-save">저장</button></div>
+        <span id="historical-manual-pivot-status" role="status" aria-live="polite"></span>
+      </form>
     </div>
   </div>
 
   <script src="assets/js/charts/economic-series-catalog.js?v=2"></script>
   <script src="assets/js/historical-insight/historical-index-data.js?v=1"></script>
   <script src="assets/js/historical-insight/historical-cycle-data.js?v=5"></script>
-  <script src="assets/js/historical-insight/historical-indicator-data.js?v=10"></script>
+  <script src="assets/js/historical-insight/historical-indicator-data.js?v=11"></script>
   <script src="assets/js/historical-insight/historical-indicator-analysis.js?v=35"></script>
   <script src="assets/js/historical-insight/historical-indicator-selection.js?v=4"></script>
-  <script src="assets/js/historical-insight/historical-index-chart.js?v=21"></script>
-  <script src="assets/js/historical-insight/historical-insight.js?v=44"></script>
+  <script src="assets/js/historical-insight/historical-index-chart.js?v=22"></script>
+  <script src="assets/js/historical-insight/historical-insight.js?v=45"></script>
   <script src="assets/js/core/account-modal.js?v=5"></script>
   <script src="assets/js/core/account-modal-data.js?v=2"></script>
   <script src="assets/js/core/auth-chart.js?v=2"></script>

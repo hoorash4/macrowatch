@@ -33,13 +33,14 @@
     let crosshairOverlay = null;
     let crosshairValues = null;
     const crosshairMarkers = new Map();
+    let indicatorPointClick = null;
     const indicatorColor='#c026d3';
     const lineColor = () => getComputedStyle(host).getPropertyValue('--historical-chart-line').trim();
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
     const referenceOnlyStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
     const nearMissStyle=()=>({color:document.documentElement.dataset.theme==='dark'?'#475569':'#64748b',textColor:'#fff'});
-    const pivotStyle=(result,color)=>result.markerStatus==='near_miss'?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
+    const pivotStyle=(result,color)=>['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
     const displayValue=value=>window.MacroWatchFrontend.formatDisplayNumber(value);
     function isoDate(time) {
       if (typeof time==='string') return time.slice(0,10);
@@ -135,6 +136,20 @@
         const marker=markerFor(entry.code,entry.color);
         marker.style.left=`${x}px`;
         marker.style.top=`${Math.round(y)}px`;
+        marker.dataset.date=isoDate(param.time);
+      }
+    }
+    function onChartClick(param) {
+      if (!indicatorPointClick || !param?.point || !param.time || !chart) return;
+      const date=isoDate(param.time),x=chart.priceScale('left').width()+param.point.x;
+      for (const [code,item] of indicatorSeries) {
+        const marker=crosshairMarkers.get(code);
+        if (!marker || marker.dataset.date!==date) continue;
+        if (Math.hypot(x-Number.parseFloat(marker.style.left),
+          param.point.y-Number.parseFloat(marker.style.top))>6) continue;
+        const value=pointValueAt(item.rows,param.time,'rawValue',param.point.x);
+        if (Number.isFinite(value)) indicatorPointClick({code,date,value});
+        break;
       }
     }
     function ensure() {
@@ -157,6 +172,7 @@
           formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value) } });
       ensureCrosshairOverlay();
       chart.subscribeCrosshairMove(updateCrosshair);
+      chart.subscribeClick(onChartClick);
       window.addEventListener('macrowatch:themechange', updateLine);
     }
     return Object.freeze({
@@ -193,6 +209,7 @@
         if(visibleRange)chart.timeScale().setVisibleRange(visibleRange);
       },
       indicatorColors(){return new Map([...indicatorSeries].map(([code,item])=>[code,item.color]));},
+      setIndicatorPointClick(handler){indicatorPointClick=typeof handler==='function'?handler:null;},
       focus(from, to, markerInset = .12) {
         if (!chart || !from || !to || !data.length) return;
         const startIndex = data.findIndex(row => row.time >= from);
@@ -209,6 +226,7 @@
       destroy() {
         window.removeEventListener('macrowatch:themechange', updateLine);
         chart?.unsubscribeCrosshairMove(updateCrosshair);
+        chart?.unsubscribeClick(onChartClick);
         chart?.remove();
         chart = null;
         series = null;
@@ -217,6 +235,7 @@
         crosshairOverlay=null;
         crosshairValues=null;
         crosshairMarkers.clear();
+        indicatorPointClick=null;
         data = [];
       },
     });
