@@ -13,6 +13,7 @@ from historical_pivot_base import (  # noqa: E402
     PIVOT_POLICIES,
     BasePivotResult,
     ChartGeometry,
+    LinePoint,
     PivotPoint,
     PivotPolicy,
     SeriesPoint,
@@ -448,9 +449,9 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_collapses_two_record_extremes_without_angle(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        high = LinePoint(d, 10.0)
+        low1 = LinePoint(d + timedelta(days=10), 4.0)
+        low2 = LinePoint(d + timedelta(days=20), 3.0)
         existing = SimplifiedLineResult(
             markers=(high, low1, low2),
             segments=(
@@ -470,9 +471,9 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_two_extremes_keeps_first_when_first_is_sideways_boundary(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
+        high = LinePoint(d, 10.0)
+        low1 = LinePoint(d + timedelta(days=10), 4.0)
+        low2 = LinePoint(d + timedelta(days=20), 3.0)
         sideways = SidewaysSegment(
             start=low1,
             end=low2,
@@ -495,10 +496,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_two_extremes_may_end_on_second_sideways_boundary(self):
         d = date(2020, 1, 1)
-        high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 4.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 3.0, "low")
-        sideways_end = PivotPoint(d + timedelta(days=30), 3.2, "low")
+        high = LinePoint(d, 10.0)
+        low1 = LinePoint(d + timedelta(days=10), 4.0)
+        low2 = LinePoint(d + timedelta(days=20), 3.0)
+        sideways_end = LinePoint(d + timedelta(days=30), 3.2)
         sideways = SidewaysSegment(
             start=low2,
             end=sideways_end,
@@ -530,10 +531,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_first_angle_never_stops_even_when_over_threshold(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        dip1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
-        high2 = PivotPoint(d + timedelta(days=90), 11.0, "high")
+        low = LinePoint(d, 0.0)
+        high1 = LinePoint(d + timedelta(days=10), 10.0)
+        dip1 = LinePoint(d + timedelta(days=15), 3.0)
+        high2 = LinePoint(d + timedelta(days=90), 11.0)
         existing = SimplifiedLineResult(
             markers=(low, high1, dip1, high2),
             segments=(
@@ -554,12 +555,12 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_second_angle_can_stop_before_third_record_extreme(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        dip1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
-        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
-        dip2 = PivotPoint(d + timedelta(days=25), 4.0, "low")
-        high3 = PivotPoint(d + timedelta(days=95), 12.0, "high")
+        low = LinePoint(d, 0.0)
+        high1 = LinePoint(d + timedelta(days=10), 10.0)
+        dip1 = LinePoint(d + timedelta(days=15), 3.0)
+        high2 = LinePoint(d + timedelta(days=20), 11.0)
+        dip2 = LinePoint(d + timedelta(days=25), 4.0)
+        high3 = LinePoint(d + timedelta(days=95), 12.0)
         existing = SimplifiedLineResult(
             markers=(low, high1, dip1, high2, dip2, high3),
             segments=(
@@ -585,12 +586,12 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_skipped_lower_high_still_consumes_first_angle(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        dip1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
-        lower_high = PivotPoint(d + timedelta(days=20), 9.0, "high")
-        dip2 = PivotPoint(d + timedelta(days=25), 4.0, "low")
-        higher_high = PivotPoint(d + timedelta(days=95), 11.0, "high")
+        low = LinePoint(d, 0.0)
+        high1 = LinePoint(d + timedelta(days=10), 10.0)
+        dip1 = LinePoint(d + timedelta(days=15), 3.0)
+        lower_high = LinePoint(d + timedelta(days=20), 9.0)
+        dip2 = LinePoint(d + timedelta(days=25), 4.0)
+        higher_high = LinePoint(d + timedelta(days=95), 11.0)
         existing = SimplifiedLineResult(
             markers=(low, high1, dip1, lower_high, dip2, higher_high),
             segments=(
@@ -616,12 +617,12 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_deletes_every_interior_point_after_two_record_updates(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        inside_low1 = PivotPoint(d + timedelta(days=15), 3.0, "low")
-        high2 = PivotPoint(d + timedelta(days=20), 11.0, "high")
-        inside_low2 = PivotPoint(d + timedelta(days=25), 4.0, "low")
-        high3 = PivotPoint(d + timedelta(days=30), 12.0, "high")
+        low = LinePoint(d, 0.0)
+        high1 = LinePoint(d + timedelta(days=10), 10.0)
+        inside_low1 = LinePoint(d + timedelta(days=15), 3.0)
+        high2 = LinePoint(d + timedelta(days=20), 11.0)
+        inside_low2 = LinePoint(d + timedelta(days=25), 4.0)
+        high3 = LinePoint(d + timedelta(days=30), 12.0)
         existing = SimplifiedLineResult(
             markers=(low, high1, inside_low1, high2, inside_low2, high3),
             segments=(
@@ -645,11 +646,11 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_post_pass_never_crosses_spike_peak(self):
         d = date(2020, 1, 1)
-        low = PivotPoint(d, 0.0, "low")
-        high1 = PivotPoint(d + timedelta(days=10), 10.0, "high")
-        entry = PivotPoint(d + timedelta(days=15), 2.0, "low")
-        peak = PivotPoint(d + timedelta(days=20), 20.0, "high")
-        later_high = PivotPoint(d + timedelta(days=30), 21.0, "high")
+        low = LinePoint(d, 0.0)
+        high1 = LinePoint(d + timedelta(days=10), 10.0)
+        entry = LinePoint(d + timedelta(days=15), 2.0)
+        peak = LinePoint(d + timedelta(days=20), 20.0)
+        later_high = LinePoint(d + timedelta(days=30), 21.0)
         existing = SimplifiedLineResult(
             markers=(low, high1, entry, peak, later_high),
             segments=(
@@ -669,10 +670,10 @@ class HistoricalPivotBaseTests(unittest.TestCase):
 
     def test_angle_post_pass_allows_chart_first_point_as_initial_anchor(self):
         d = date(2020, 1, 1)
-        first_high = PivotPoint(d, 10.0, "high")
-        low1 = PivotPoint(d + timedelta(days=10), 8.0, "low")
-        low2 = PivotPoint(d + timedelta(days=20), 7.0, "low")
-        low3 = PivotPoint(d + timedelta(days=30), 6.0, "low")
+        first_high = LinePoint(d, 10.0)
+        low1 = LinePoint(d + timedelta(days=10), 8.0)
+        low2 = LinePoint(d + timedelta(days=20), 7.0)
+        low3 = LinePoint(d + timedelta(days=30), 6.0)
         existing = SimplifiedLineResult(
             markers=(first_high, low1, low2, low3),
             segments=(
