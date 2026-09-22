@@ -99,7 +99,7 @@ def _timeline_points(result: Stage3LineResult) -> tuple[LinePoint, ...]:
 def _scan_from_entry(
     result: Stage3LineResult,
     *,
-    anchor: PivotPoint,
+    anchor: LinePoint,
     direction: int,
     through: date,
     geometry: ChartGeometry,
