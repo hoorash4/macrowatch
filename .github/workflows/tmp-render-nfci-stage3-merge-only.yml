@@ -15,7 +15,7 @@ jobs:
         with: {python-version: "3.12"}
       - run: |
           pip install --disable-pip-version-check -r backend/requirements.txt
-          pip install --disable-pip-version-check matplotlib
+          pip install --disable-pip-version-check matplotlib pytest
       - name: Test and render
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
