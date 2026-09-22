@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PIVOT_ANALYSIS_SCHEMA, PIVOT_SCHEMA_VERSION, type PivotAnalysisOutput } from "../_shared/pivot/pivot-schema.ts";
 
 const PROMPT_VERSION = Deno.env.get("PIVOT_ANALYSIS_PROMPT_VERSION") || "pivot-v1";
-const MODEL = Deno.env.get("PIVOT_AI_MODEL") || Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna";
+const MODEL = "gpt-6-luna";
 const MAX_SERIES_POINTS = 1200;
 const ANOMALY_VALIDATION_VERSION = "web-search-v1";
 const PIVOT_REASON_INSTRUCTION = `

@@ -110,7 +110,7 @@ async function generateHistoricalSummary(input: {
 }) {
   const key = Deno.env.get("OPENAI_API_KEY");
   if (!key) return input.name + " 전후 시장 상승과 급락, 이후 조정이 이어진 주요 시장 사이클";
-  const model = Deno.env.get("AI_MODEL_STANDARD") || "gpt-5.6-luna";
+  const model = "gpt-6-luna";
   const schema = {
     type: "object", additionalProperties: false,
     properties: { summary: { type: "string", minLength: 20, maxLength: 140 } },

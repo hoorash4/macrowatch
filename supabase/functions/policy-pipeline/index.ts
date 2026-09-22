@@ -56,7 +56,7 @@ const POLICY_PROMPT_VERSION = "v2.0";
 const REASON_CONFIDENCE_THRESHOLD = 0.55;
 const UNCERTAIN_CONFIDENCE_MAX = 0.549;
 // FOMC 브리핑은 뉴스 분석과 독립적으로 더 높은 추론 모델을 사용한다.
-const FOMC_MODEL = Deno.env.get("AI_MODEL_FOMC") || "gpt-5.6-terra";
+const FOMC_MODEL = "gpt-6-sol";
 
 const RESPONSE_SCHEMA = {
   type: "object", additionalProperties: false,
