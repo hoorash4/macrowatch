@@ -30,8 +30,10 @@ def prune_unconfirmed_retracements(
     <= 10 degrees, keep collapsing. If it exceeds 10 degrees, preserve the
     bend point and start a new run there.
 
-    Protected sideways/spike/rapid endpoints and explicit marker-only spikes
-    remain mandatory output points, but they do not stop chronological judgment.
+    Protection never stops chronological judgment. Final rapid endpoints are
+    structural metadata, not unconditional keep points: a valid larger
+    same-direction structure may absorb them. Explicit hard structures
+    (sideways/spike/marker-only) remain output constraints.
 
     geometry=None preserves the previous unconditional monotonic-collapse
     behavior for compatibility callers. The production pipeline supplies
@@ -90,7 +92,6 @@ def prune_unconfirmed_retracements(
         marker_only_keys
         | sideways_keys
         | spike_keys
-        | rapid_move_keys
         | isolated_gap_keys
     )
 
@@ -103,8 +104,9 @@ def prune_unconfirmed_retracements(
             return -1
         return 0
 
-    # Protection constrains OUTPUT, not JUDGMENT.  Judge one continuous line;
-    # protected points remain mandatory vertices when the line is rebuilt.
+    # Judge one continuous line. Rapid protection is not an output veto:
+    # a rapid endpoint may be removed when the same-direction structure is
+    # legitimately consolidated. Hard structure endpoints remain mandatory.
     windows: list[list[LinePoint]] = [line_points]
 
     def angle_difference(
@@ -194,8 +196,9 @@ def prune_unconfirmed_retracements(
 
             run_start = run_end
 
-    # A protected point may participate in the calculation but may never be
-    # deleted from the output.
+    # Only explicit hard-structure/gap constraints veto deletion. Rapid
+    # protection metadata does not: if the larger valid structure absorbs the
+    # point, the point may disappear.
     delete_keys.difference_update(protected_keys)
 
     if not delete_keys:
