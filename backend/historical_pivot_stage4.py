@@ -138,9 +138,9 @@ def _scan_from_entry(
         # Crossing the rapid entry anchor is a real trend reversal. Merely
         # turning back inside the anchor/extreme range is only a retracement.
         crossed_anchor = (
-            point.value < anchor.value
+            point.value <= anchor.value
             if direction > 0
-            else point.value > anchor.value
+            else point.value >= anchor.value
         )
         if crossed_anchor:
             # A move that fully crosses its entry is no longer the same rapid
