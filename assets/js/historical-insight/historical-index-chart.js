@@ -51,20 +51,22 @@
       }
       return '';
     }
-    function pointValueAt(rows, time) {
+    function pointValueAt(rows, time, key='value', chartX=null) {
       const target=isoDate(time);
       if (!target || !rows.length || target<rows[0].time || target>rows.at(-1).time) return null;
       let left=0, right=rows.length-1;
       while (left<=right) {
         const middle=Math.floor((left+right)/2), point=rows[middle];
-        if (point.time===target) return point.value;
+        if (point.time===target) return point[key];
         if (point.time<target) left=middle+1; else right=middle-1;
       }
       const before=rows[right], after=rows[left];
       if (!before || !after) return null;
-      const from=Date.parse(before.time), to=Date.parse(after.time), at=Date.parse(target);
+      const from=chartX===null?Date.parse(before.time):chart.timeScale().timeToCoordinate(before.time);
+      const to=chartX===null?Date.parse(after.time):chart.timeScale().timeToCoordinate(after.time);
+      const at=chartX===null?Date.parse(target):chartX;
       if (!Number.isFinite(from)||!Number.isFinite(to)||!Number.isFinite(at)||to===from) return null;
-      return before.value+(after.value-before.value)*(at-from)/(to-from);
+      return before[key]+(after[key]-before[key])*(at-from)/(to-from);
     }
     function ensureCrosshairOverlay() {
       if (crosshairOverlay) return;
@@ -96,12 +98,16 @@
       if (!param?.point || !param.time || !series || !data.length) return hideCrosshairOverlay();
       const indexValue=pointValueAt(data,param.time);
       if (!Number.isFinite(indexValue)) return hideCrosshairOverlay();
+      const chartX=chart.timeScale().timeToCoordinate(param.time);
+      if (chartX===null) return hideCrosshairOverlay();
       ensureCrosshairOverlay();
-      const x=Math.round(param.point.x), entries=[{code:'index',value:indexValue,color:lineColor(),series}];
+      const x=Math.round(chart.priceScale('left').width()+chartX), indicators=[];
       for (const [code,item] of indicatorSeries) {
-        const value=pointValueAt(item.rows,param.time);
-        if (Number.isFinite(value)) entries.push({code,value,color:item.color,series:item.series});
+        const plotValue=pointValueAt(item.rows,param.time,'value',chartX);
+        const value=pointValueAt(item.rows,param.time,'rawValue',chartX);
+        if (Number.isFinite(plotValue)&&Number.isFinite(value)) indicators.push({code,value,plotValue,color:item.color,series:item.series});
       }
+      const entries=[{code:'index',value:indexValue,color:lineColor(),series},...indicators];
       crosshairValues.replaceChildren(...entries.map(entry=>{
         const value=document.createElement('span');
         value.className='historical-crosshair-value';
@@ -109,21 +115,25 @@
         value.textContent=displayValue(entry.value);
         return value;
       }));
-      crosshairValues.style.left=`${Math.min(x+3,Math.max(2,host.clientWidth-crosshairValues.offsetWidth-2))}px`;
-      const active=new Set(entries.slice(1).map(entry=>entry.code));
+      crosshairOverlay.hidden=false;
+      const badges=crosshairValues.children;
+      badges[0].style.left=`${Math.max(2,x-badges[0].offsetWidth-3)}px`;
+      for (let index=1;index<badges.length;index++) {
+        badges[index].style.left=`${Math.min(x+3,host.clientWidth-badges[index].offsetWidth-2)}px`;
+      }
+      const active=new Set(indicators.map(entry=>entry.code));
       for (const [code,marker] of crosshairMarkers) {
         if (active.has(code)) continue;
         marker.remove();
         crosshairMarkers.delete(code);
       }
-      for (const entry of entries.slice(1)) {
-        const y=entry.series.priceToCoordinate(entry.value);
+      for (const entry of indicators) {
+        const y=entry.series.priceToCoordinate(entry.plotValue);
         if (y===null) continue;
         const marker=markerFor(entry.code,entry.color);
         marker.style.left=`${x}px`;
         marker.style.top=`${Math.round(y)}px`;
       }
-      crosshairOverlay.hidden=false;
     }
     function ensure() {
       if (chart) return;
