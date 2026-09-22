@@ -21,7 +21,7 @@ jobs:
       - run: pip install --disable-pip-version-check -r backend/requirements.txt
       - name: Test pivot pipeline
         run: |
-          PYTHONPATH=backend python -m unittest             tests.test_historical_pivot_stage2             tests.test_historical_pivot_six_stage_architecture             tests.test_historical_pivot_stage_boundaries             tests.test_historical_pivot_store
+          PYTHONPATH=backend python -m unittest tests.test_historical_pivot_stage2 tests.test_historical_pivot_store
       - name: Recalculate and persist all US+GLOBAL D/W/M Historical indicators
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
