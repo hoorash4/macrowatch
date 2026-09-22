@@ -24,18 +24,19 @@ from typing import Sequence
 
 from historical_pivot_shared import (
     ChartGeometry,
-    PivotPoint,
+    LinePoint,
     SimplifiedLineResult,
     SimplifiedLineSegment,
     SAME_TREND_ANGLE_THRESHOLD_DEG,
     PIVOT_X_GAP_PROTECTION_SHARE,
+    line_role_map,
     screen_origin_angle_degrees,
     screen_x_span_share,
 )
 
 
-def _key(point: PivotPoint) -> tuple[date, float, str]:
-    return point.day, point.value, point.pivot_type
+def _key(point: LinePoint) -> tuple[date, float]:
+    return point.day, point.value
 
 
 def _sign(value: float) -> int:
@@ -48,71 +49,38 @@ def _sign(value: float) -> int:
 
 @dataclass
 class _RunState:
-    anchor: PivotPoint
+    anchor: LinePoint
     direction: int  # +1 rising, -1 falling
-    extreme: PivotPoint
+    extreme: LinePoint
     angle_ordinal: int = 0
-    collapse_end: PivotPoint | None = None
+    collapse_end: LinePoint | None = None
 
     # provisional opposite excursion
-    opposite_extreme: PivotPoint | None = None
+    opposite_extreme: LinePoint | None = None
 
 
 def _discover_initial_state(
-    points: Sequence[PivotPoint],
+    points: Sequence[LinePoint],
 ) -> tuple[_RunState, int] | None:
-    """Infer the FIRST trend only after both high and low sides agree.
-
-    The left edge has no known incoming trend, so the first leg alone can never
-    create a reversal.  Scan forward until both sides have at least two points
-    and their latest side-to-side directions agree.  Then start one run from
-    the very first visible point and continue judgment from the confirmation
-    point onward.
-    """
+    """Start from the first actual segment of the merged Stage-3+ line."""
     ordered = list(points)
-    highs: list[PivotPoint] = []
-    lows: list[PivotPoint] = []
-
-    for index, point in enumerate(ordered):
-        (highs if point.pivot_type == "high" else lows).append(point)
-        if len(highs) < 2 or len(lows) < 2:
+    for index in range(len(ordered) - 1):
+        direction = _sign(
+            float(ordered[index + 1].value) - float(ordered[index].value)
+        )
+        if direction == 0:
             continue
-
-        high_direction = _sign(highs[-1].value - highs[-2].value)
-        low_direction = _sign(lows[-1].value - lows[-2].value)
-        if high_direction == 0 or high_direction != low_direction:
-            continue
-
-        direction = high_direction
-        wanted_type = "high" if direction > 0 else "low"
-        same_side = [
-            item for item in ordered[: index + 1]
-            if item.pivot_type == wanted_type
-        ]
-        if not same_side:
-            continue
-
-        extreme = same_side[-1]
-        opposite_after_extreme = [
-            item for item in ordered[: index + 1]
-            if item.day > extreme.day and item.pivot_type != wanted_type
-        ]
-        opposite = opposite_after_extreme[-1] if opposite_after_extreme else None
-
         return (
             _RunState(
-                anchor=ordered[0],
+                anchor=ordered[index],
                 direction=direction,
-                extreme=extreme,
-                opposite_extreme=opposite,
+                extreme=ordered[index + 1],
             ),
-            index + 1,
+            index + 2,
         )
-
     return None
 
-
-def _can_extend(state: _RunState, point: PivotPoint) -> bool:
+def _can_extend(state: _RunState, point: LinePoint) -> bool:
     return (
         point.value > state.extreme.value
         if state.direction > 0
@@ -121,7 +89,7 @@ def _can_extend(state: _RunState, point: PivotPoint) -> bool:
 
 
 def _record_collapse(
-    intervals: list[tuple[PivotPoint, PivotPoint]],
+    intervals: list[tuple[LinePoint, LinePoint]],
     state: _RunState,
 ) -> None:
     if (
@@ -132,10 +100,10 @@ def _record_collapse(
 
 
 def _process_window(
-    points: Sequence[PivotPoint],
+    points: Sequence[LinePoint],
     geometry: ChartGeometry,
     threshold: float,
-) -> list[tuple[PivotPoint, PivotPoint]]:
+) -> list[tuple[LinePoint, LinePoint]]:
     """Return direct-collapse intervals from one chronological Stage-3 pass.
 
     A Stage-3 point is always judged before it can be removed.
@@ -160,19 +128,27 @@ def _process_window(
     extension may be collapsed.
     """
     ordered = list(points)
-    discovered = _discover_initial_state(ordered)
+    roles = line_role_map(ordered)
+    decision_points = [
+        point for point in ordered
+        if roles.get(_key(point)) is not None
+    ]
+    discovered = _discover_initial_state(decision_points)
     if discovered is None:
         return []
 
     state, index = discovered
-    intervals: list[tuple[PivotPoint, PivotPoint]] = []
+    intervals: list[tuple[LinePoint, LinePoint]] = []
 
-    while index < len(ordered):
-        point = ordered[index]
+    while index < len(decision_points):
+        point = decision_points[index]
+
+        wanted_role = "high" if state.direction > 0 else "low"
+        point_role = roles.get(_key(point))
 
         # Wait for one opposite-side pullback after the active extreme.
         if state.opposite_extreme is None:
-            if point.pivot_type != state.extreme.pivot_type:
+            if point_role != wanted_role:
                 state.opposite_extreme = point
                 index += 1
                 continue
@@ -209,7 +185,7 @@ def _process_window(
         # If Stage 3 happens to provide another opposite-side point before a
         # same-side decision point, keep only the farther pullback for the
         # pending judgment. Nothing is deleted yet.
-        if point.pivot_type != state.extreme.pivot_type:
+        if point_role != wanted_role:
             if (
                 (state.direction > 0 and point.value < state.opposite_extreme.value)
                 or (state.direction < 0 and point.value > state.opposite_extreme.value)
@@ -281,13 +257,13 @@ def prune_same_trend_extremes(
     if angle_threshold_deg <= 0 or angle_threshold_deg >= 180:
         raise ValueError("angle_threshold_deg must be between 0 and 180")
 
-    line_map: dict[tuple[date, float, str], PivotPoint] = {}
+    line_map: dict[tuple[date, float], LinePoint] = {}
     for segment in result.segments:
         line_map[_key(segment.start)] = segment.start
         line_map[_key(segment.end)] = segment.end
     points = tuple(sorted(
         line_map.values(),
-        key=lambda item: (item.day, item.pivot_type),
+        key=lambda item: item.day,
     ))
     if len(points) < 3:
         return result
@@ -354,7 +330,7 @@ def prune_same_trend_extremes(
             -item[1].day.toordinal(),
         )
     )
-    filtered: list[tuple[PivotPoint, PivotPoint]] = []
+    filtered: list[tuple[LinePoint, LinePoint]] = []
     for start, end in candidates:
         if not filtered:
             filtered.append((start, end))
@@ -380,7 +356,7 @@ def prune_same_trend_extremes(
     # partially-overlapping old segments.  A point strictly inside a collapse
     # interval disappears unless it is protected.  Final rapid endpoints are
     # connected mandatory vertices; true marker-only points stay standalone.
-    connected_map: dict[tuple[date, float, str], PivotPoint] = {}
+    connected_map: dict[tuple[date, float], LinePoint] = {}
     for segment in result.segments:
         connected_map[_key(segment.start)] = segment.start
         connected_map[_key(segment.end)] = segment.end
@@ -396,7 +372,7 @@ def prune_same_trend_extremes(
 
     connected_points = sorted(
         connected_map.values(),
-        key=lambda item: (item.day, item.pivot_type),
+        key=lambda item: item.day,
     )
     kept_segments: list[SimplifiedLineSegment] = []
     for left, right in zip(connected_points, connected_points[1:]):
@@ -405,7 +381,7 @@ def prune_same_trend_extremes(
             SimplifiedLineSegment(start=left, end=right, kind=kind)
         )
 
-    marker_map: dict[tuple[date, float, str], PivotPoint] = {
+    marker_map: dict[tuple[date, float], LinePoint] = {
         _key(point): point for point in connected_points
     }
     for point in result.marker_only_points:
@@ -417,7 +393,7 @@ def prune_same_trend_extremes(
     return SimplifiedLineResult(
         markers=tuple(sorted(
             marker_map.values(),
-            key=lambda item: (item.day, item.pivot_type),
+            key=lambda item: item.day,
         )),
         segments=tuple(kept_segments),
         marker_only_points=result.marker_only_points,
