@@ -119,15 +119,25 @@ def _scan_from_entry(
     extreme: LinePoint | None = None
     opposite: LinePoint | None = None
 
+    wanted_role = "high" if direction > 0 else "low"
+    opposite_role = "low" if direction > 0 else "high"
+
     for point in points:
+        point_role = roles.get(_key(point))
+        if point_role is None:
+            continue
+
         if extreme is None:
-            if _is_same_side(point, direction, roles):
+            if point_role == wanted_role:
                 extreme = point
             continue
 
-        if not _is_same_side(point, direction, roles):
+        if point_role == opposite_role:
             if opposite is None or _farther_opposite(point, opposite, direction):
                 opposite = point
+            continue
+
+        if point_role != wanted_role:
             continue
 
         # Same-side point after either no pullback or a provisional pullback.
