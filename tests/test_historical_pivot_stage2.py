@@ -79,7 +79,7 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
             ),
         )
 
-    def test_classifies_graph_end_sideways_regardless_of_arrival_direction(self):
+    def test_rejects_high_sideways_after_falling_highs(self):
         d = date(2020, 1, 1)
         highs = (
             PivotPoint(d + timedelta(days=10), 10.0, "high"),
@@ -105,10 +105,7 @@ class HistoricalPivotStage2Tests(unittest.TestCase):
 
         stage2 = finalize_sideways_protection(stage1, geometry)
 
-        self.assertEqual(1, len(stage2.high_sideways_segments))
-        self.assertTrue(stage2.high_sideways_segments[0].protected)
-        self.assertEqual(highs[1], stage2.high_sideways_segments[0].start)
-        self.assertEqual(highs[2], stage2.high_sideways_segments[0].end)
+        self.assertEqual((), stage2.high_sideways_segments)
 
     def test_accepts_low_sideways_after_falling_lows(self):
         d = date(2020, 1, 1)
