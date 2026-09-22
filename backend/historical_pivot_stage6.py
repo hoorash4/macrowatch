@@ -5,13 +5,11 @@ from datetime import date
 
 from historical_pivot_shared import (
     SAME_TREND_ANGLE_THRESHOLD_DEG,
-    PIVOT_X_GAP_PROTECTION_SHARE,
     ChartGeometry,
     LinePoint,
     SimplifiedLineResult,
     SimplifiedLineSegment,
     screen_segment_angle_degrees,
-    screen_x_span_share,
 )
 
 def prune_unconfirmed_retracements(
@@ -80,19 +78,10 @@ def prune_unconfirmed_retracements(
     if len(line_points) < 3:
         return result
 
-    isolated_gap_keys = {
-        key(point)
-        for index, point in enumerate(line_points[1:-1], start=1)
-        if screen_x_span_share(line_points[index - 1], point, geometry)
-        >= PIVOT_X_GAP_PROTECTION_SHARE
-        and screen_x_span_share(point, line_points[index + 1], geometry)
-        >= PIVOT_X_GAP_PROTECTION_SHARE
-    } if geometry is not None else set()
     protected_keys = (
         marker_only_keys
         | sideways_keys
         | spike_keys
-        | isolated_gap_keys
     )
 
     delete_keys: set[tuple[date, float]] = set()
