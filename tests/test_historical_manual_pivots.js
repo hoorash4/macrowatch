@@ -11,7 +11,7 @@ assert.ok(start>=0&&end>start);
 const merge=vm.runInNewContext(`${controller.slice(start,end)}\nmergeManualPivots`,{
   indicatorAnalysis:{
     relevanceWindow:()=>({from:'2022-01-01',to:'2022-01-31'}),
-    nearMissWindow:()=>({from:'2022-01-01',to:'2022-01-31'})
+    nearMissWindow:()=>({from:'2021-12-01',to:'2022-02-28'})
   }
 });
 const auto=(date,order)=>({pivotDate:date,pivotOrder:order,pivotValue:order});
@@ -46,6 +46,14 @@ test('manual key stays magenta and the displaced automatic key becomes gray',()=
 test('an automatic key remains unchanged when no manual key claims its reference',()=>{
   const result=merge({storedPivots:[auto('2022-01-05',0)],manualPivots:[]},{startDate:'2022-01-05'});
   assert.equal(result[0].markerStatus,'confirmed');
+});
+
+test('a non-key manual pivot uses the existing near-miss window for dark or light gray',()=>{
+  const manual=(date)=>({sourceDate:date,pivotDate:date,pivotValue:42,relationship:'inverse',reason:'관리자 선택',comment:'',keyReference:null,isDeleted:false});
+  const result=merge({storedPivots:[],manualPivots:[manual('2022-01-05'),manual('2022-02-15'),manual('2022-03-01')]},{startDate:'2022-01-05'});
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'manual_standard');
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-02-15').markerStatus,'manual_standard');
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-03-01').markerStatus,'reference_only');
 });
 
 test('only explicit case deletion may physically delete manual rows',()=>{
