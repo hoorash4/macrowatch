@@ -7,7 +7,7 @@ from historical_pivot_shared import (
     SAME_TREND_ANGLE_THRESHOLD_DEG,
     PIVOT_X_GAP_PROTECTION_SHARE,
     ChartGeometry,
-    PivotPoint,
+    LinePoint,
     SimplifiedLineResult,
     SimplifiedLineSegment,
     screen_segment_angle_degrees,
@@ -37,8 +37,8 @@ def prune_unconfirmed_retracements(
     behavior for compatibility callers. The production pipeline supplies
     geometry and therefore uses the angle guard.
     """
-    def key(point: PivotPoint) -> tuple[date, float, str]:
-        return point.day, point.value, point.pivot_type
+    def key(point: LinePoint) -> tuple[date, float]:
+        return point.day, point.value
 
     input_map = {key(point): point for point in result.markers}
     if len(result.markers) < 3:
@@ -66,13 +66,13 @@ def prune_unconfirmed_retracements(
     }
     # Use the unique chronological vertices of the connected line.  This keeps
     # Stage 6 stable even if an upstream caller supplies overlapping segments.
-    line_map: dict[tuple[date, float, str], PivotPoint] = {}
+    line_map: dict[tuple[date, float], LinePoint] = {}
     for segment in result.segments:
         line_map[key(segment.start)] = segment.start
         line_map[key(segment.end)] = segment.end
     line_points = sorted(
         line_map.values(),
-        key=lambda item: (item.day, item.pivot_type),
+        key=lambda item: item.day,
     )
 
     if len(line_points) < 3:
@@ -96,7 +96,7 @@ def prune_unconfirmed_retracements(
 
     delete_keys: set[tuple[date, float, str]] = set()
 
-    def direction(left: PivotPoint, right: PivotPoint) -> int:
+    def direction(left: LinePoint, right: LinePoint) -> int:
         if right.value > left.value:
             return 1
         if right.value < left.value:
@@ -105,12 +105,12 @@ def prune_unconfirmed_retracements(
 
     # Protection constrains OUTPUT, not JUDGMENT.  Judge one continuous line;
     # protected points remain mandatory vertices when the line is rebuilt.
-    windows: list[list[PivotPoint]] = [line_points]
+    windows: list[list[LinePoint]] = [line_points]
 
     def angle_difference(
-        line_start: PivotPoint,
-        line_end: PivotPoint,
-        next_end: PivotPoint,
+        line_start: LinePoint,
+        line_end: LinePoint,
+        next_end: LinePoint,
     ) -> float:
         if geometry is None:
             return 0.0
@@ -242,7 +242,7 @@ def prune_unconfirmed_retracements(
     return SimplifiedLineResult(
         markers=tuple(sorted(
             marker_map.values(),
-            key=lambda item: (item.day, item.pivot_type),
+            key=lambda item: item.day,
         )),
         segments=tuple(rebuilt_segments),
         marker_only_points=result.marker_only_points,
