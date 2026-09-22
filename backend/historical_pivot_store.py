@@ -25,7 +25,7 @@ def _line_key(point: PivotPoint | LinePoint) -> tuple[date, float]:
 
 
 def _line_keys(points: Iterable[PivotPoint | LinePoint]) -> set[tuple[date, float]]:
-    return {_line_line_key(point) for point in points}
+    return {_line_key(point) for point in points}
 
 
 def _stage_markers(stage: Any) -> tuple[Any, ...]:
@@ -127,6 +127,7 @@ def _interpretive_reason(
     ordered: Sequence[LinePoint],
     index: int,
     *,
+    roles: dict[tuple[date, float], str | None],
     spike: dict[str, Any] | None,
     sideways_boundaries: Sequence[dict[str, Any]],
     standalone: bool,
@@ -138,8 +139,7 @@ def _interpretive_reason(
     that are already present in the stored result.
     """
     point = ordered[index]
-    roles = line_role_map(ordered)
-    point_role = roles.get(_line_line_key(point))
+    point_role = roles.get(_line_key(point))
     previous = ordered[index - 1] if index > 0 else None
     following = ordered[index + 1] if index + 1 < len(ordered) else None
     previous_same = _previous_same_side(ordered, index, roles)
@@ -317,7 +317,7 @@ def build_storage_rows(
 ) -> list[dict[str, Any]]:
     """Serialize one completed Stage 1~6 result without changing generation state."""
     ordered = sorted(final.markers, key=lambda item: item.day)
-    order_by_key = {_line_line_key(point): index for index, point in enumerate(ordered)}
+    order_by_key = {_line_key(point): index for index, point in enumerate(ordered)}
 
     connected_map: dict[tuple[date, float], LinePoint] = {}
     for segment in final.segments:
@@ -337,7 +337,7 @@ def build_storage_rows(
 
     base_points = (*getattr(base, "high_pivots", ()), *getattr(base, "low_pivots", ()))
     base_rdp_keys = _line_keys(base_points)
-    base_rdp_type_by_key = {_line_line_key(point): point.pivot_type for point in base_points}
+    base_rdp_type_by_key = {_line_key(point): point.pivot_type for point in base_points}
     stage1_keys = _line_keys(_stage_markers(stage1))
     stage2_keys = _line_keys(_stage_markers(stage2))
     stage3_keys = _line_keys(_stage_markers(stage3))
@@ -345,7 +345,7 @@ def build_storage_rows(
     stage5_keys = _line_keys(_stage_markers(stage5))
     marker_only_keys = _line_keys(getattr(final, "marker_only_points", ()) or ())
 
-    spike_meta: dict[tuple[date, float, str], dict[str, Any]] = {}
+    spike_meta: dict[tuple[date, float], dict[str, Any]] = {}
     for spike in tuple(getattr(stage2, "spike_peaks", ()) or ()):
         peak_key = _line_key(spike.point)
         spike_meta.setdefault(peak_key, {}).update({
@@ -364,7 +364,7 @@ def build_storage_rows(
                 "marker_only": False,
             })
 
-    sideways_meta: dict[tuple[date, float, str], list[dict[str, Any]]] = {}
+    sideways_meta: dict[tuple[date, float], list[dict[str, Any]]] = {}
     for group_name in ("high_sideways_segments", "low_sideways_segments"):
         for segment in tuple(getattr(stage2, group_name, ()) or ()):
             if not getattr(segment, "protected", True):
@@ -414,9 +414,23 @@ def build_storage_rows(
         if standalone and point_role is None and spike:
             point_role = "high" if spike.get("direction") == "up" else "low"
 
+        if standalone:
+            interpret_ordered = (point,)
+            interpret_index = 0
+            interpret_roles = {point_key: point_role}
+        else:
+            interpret_ordered = connected_ordered
+            interpret_index = next(
+                index
+                for index, candidate in enumerate(connected_ordered)
+                if _line_key(candidate) == point_key
+            )
+            interpret_roles = final_roles
+
         reason_type, selection_reason = _interpretive_reason(
-            ordered,
-            pivot_order,
+            interpret_ordered,
+            interpret_index,
+            roles=interpret_roles,
             spike=spike,
             sideways_boundaries=sideways,
             standalone=standalone,
