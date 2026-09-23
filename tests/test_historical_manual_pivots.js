@@ -134,3 +134,20 @@ test('reason presets contain matching rise and fall language without the redunda
   assert.doesNotMatch(controller,/장기 하락을 마친 뒤 상승 흐름이 이어지기 시작했습니다/);
 });
 
+test('administrator relationship supports unclear from form through API and database',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../historical-insight.html'),'utf8');
+  const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');
+  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260923090700_manual_pivot_unclear_relationship.sql'),'utf8');
+  assert.match(html,/<option value="unclear">불명확<\/option>/);
+  assert.match(edge,/\["positive", "inverse", "unclear"\]\.includes\(relationship\)/);
+  assert.match(migration,/check \(relationship in \('positive','inverse','unclear'\)\)/);
+  assert.match(migration,/p_relationship not in \('positive','inverse','unclear'\)/);
+});
+
+test('delete action remains hover-visible without mouse-focused rows sticking open',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../assets/css/historical-insight.css'),'utf8');
+  assert.match(css,/\.historical-indicator-row:hover \.historical-indicator-actions/);
+  assert.match(css,/\.historical-indicator-row:has\(:focus-visible\) \.historical-indicator-actions/);
+  assert.doesNotMatch(css,/\.historical-indicator-row:focus-within \.historical-indicator-actions/);
+});
+
