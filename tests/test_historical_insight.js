@@ -268,6 +268,8 @@ test('only a displayed indicator pivot date label opens the existing point modal
     chart:{timeScale:()=>({height:()=>46,timeToCoordinate:()=>60}),priceScale:()=>({width:()=>34})},
     host:{clientHeight:500,getBoundingClientRect:()=>({left:100,top:200})},
     indicatorSeries:new Map([['NFCI_RISK',{rows:[],primitives:[{
+      view:{time:'2022-09-30'},timeAxisPaneView:{bounds:{left:40,right:120,top:20,bottom:38}}
+    },{
       view:{time:'2022-10-07'},timeAxisPaneView:{bounds:{left:40,right:120,top:20,bottom:38}}
     }]}]]),
     pointValueAt:()=>-0.11
