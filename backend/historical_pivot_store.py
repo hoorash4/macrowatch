@@ -549,6 +549,16 @@ def replace_stored_pivots(
         },
         retry_safe=False,
     )
+    case_rows = db.request(
+        "GET", "historical_cases",
+        params={"select": "primary_index_code,pivot_source_index_code", "case_code": f"eq.{case_code}", "limit": "1"},
+    )
+    pivot_source_index = (case_rows[0].get("pivot_source_index_code") or case_rows[0]["primary_index_code"]) if case_rows else index_code
+    score_indexes = ("SP500", "NASDAQ_COMPOSITE", "KOSPI") if index_code == pivot_source_index else (index_code,)
+    for score_index in score_indexes:
+        db.invoke_function("historical-score-rebuild", {
+            "case_code": case_code, "index_code": score_index, "series_codes": [series_code],
+        })
     return int(result or 0)
 
 
@@ -594,3 +604,4 @@ def store_pipeline_result(
         input_sha256=source_input_sha256(source_rows),
         rows=rows,
     )
+
