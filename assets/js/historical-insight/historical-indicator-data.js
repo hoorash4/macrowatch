@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const INDEX_CODES=new Set(['SP500','NASDAQ_COMPOSITE','KOSPI']);
-  const SCORE_VERSION='historical-pivot-4-3-3-v7';
+  const SCORE_VERSION='historical-pivot-4-3-3-v8';
   const INDEX_MARKET_SCOPES=Object.freeze({KOSPI:new Set(['KR','US','GLOBAL']),SP500:new Set(['US','GLOBAL']),NASDAQ_COMPOSITE:new Set(['US','GLOBAL'])});
   function normalize(rows){
     const out=(rows||[]).map(row=>({time:String(row.observation_date||'').slice(0,10),value:Number(row.value)}));
@@ -71,7 +71,8 @@
         .then(rows=>Object.freeze((rows||[]).map(row=>Object.freeze({
           sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
           pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship:row.relationship||null,
-          reason:row.reason||'',comment:row.comment||'',keyReference:row.key_references?.[indexCode]||null,isDeleted:row.is_deleted===true
+          reason:row.reason||'',comment:row.comment||'',keyReference:row.key_references?.[indexCode]||null,
+          keySuppressed:row.key_references?.[indexCode]===false,isDeleted:row.is_deleted===true
         }))));
       manualPivotCache.set(key,promise);promise.catch(()=>manualPivotCache.delete(key));return promise;
     }
