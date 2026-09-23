@@ -150,6 +150,7 @@ test('selected historical case expands its summary and performance above the unc
   assert.doesNotMatch(html,/id="historical-cycle-description"|id="historical-rise"|id="historical-fall"/);
   assert.doesNotMatch(html,/historical-drawdown|is-drawdown|고점 대비 낙폭/);
   assert.match(css,/\.historical-case-expanded\{[^}]*padding:10px/);
+  assert.match(css,/\.historical-case-expanded \.historical-cycle-description\{[^}]*border-bottom:1px solid var\(--theme-border\)[^}]*font-size:12px[^}]*line-height:1\.65/);
   assert.match(css,/\.historical-case-expanded \.historical-cycle-performance\{[^}]*grid-template-columns:1fr/);
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #dc2626/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #2563eb/);
