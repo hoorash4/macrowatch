@@ -90,6 +90,41 @@ test('the modal checks an automatically magenta pivot and unchecks an administra
   assert.equal(fields['historical-manual-pivot-reference'].value,'');
 });
 
+test('a date-only manual pivot sends optional metadata as null while keeping the measured value',async()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../historical-insight.html'),'utf8');
+  const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');
+  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260923100140_manual_pivot_optional_metadata.sql'),'utf8');
+  assert.match(html,/id="historical-manual-pivot-date" type="date" required/);
+  assert.doesNotMatch(html,/id="historical-manual-pivot-(?:relationship|reason)" required/);
+  assert.match(edge,/relationship !== null && !\["positive", "inverse", "unclear"\]\.includes\(relationship\)/);
+  assert.match(edge,/\(reason\?\.length \|\| 0\) > 250/);
+  assert.match(migration,/check \(is_deleted or \(pivot_date is not null and pivot_value is not null\)\)/);
+  assert.match(migration,/p_relationship is not null and p_relationship not in/);
+  assert.match(migration,/next_keys=next_keys\|\|jsonb_build_object\(p_index_code,false\)/);
+  const from=controller.indexOf('  async function persistManualPivot('),to=controller.indexOf('  const referenceOrder=',from);
+  assert.ok(from>=0&&to>from);
+  const fields=Object.fromEntries(['historical-manual-pivot-date','historical-manual-pivot-is-key',
+    'historical-manual-pivot-reference','historical-manual-pivot-relationship','historical-manual-pivot-reason',
+    'historical-manual-pivot-comment','historical-manual-pivot-status','historical-manual-pivot-save',
+    'historical-manual-pivot-delete'].map(id=>[id,{value:'',checked:false,disabled:false,textContent:''}]));
+  fields['historical-manual-pivot-date'].value='2022-01-05';
+  let saved;
+  const scope={isAdmin:true,manualPivotContext:{caseCode:'case',indexCode:'SP500',seriesCode:'TEST',
+    sourceDate:'2022-01-05',item:{rows:[],manualPivots:[]}},functionClient:{invoke:async(_name,payload)=>{saved=payload;}},
+    $:id=>fields[id],rawValueAtDate:()=>42,indicatorRepository:{clearManualPivots(){},clearScoreRows(){}},
+    indexData:{indices:{SP500:'S&P 500'}},analysisCache:new Map(),rebuildHistoricalScores:async()=>{},
+    closeManualPivotModal(){},activeCase:null,activeMode:'history'};
+  const persist=vm.runInNewContext(`${controller.slice(from,to)}\npersistManualPivot`,scope);
+  await persist(false);
+  assert.equal(fields['historical-manual-pivot-status'].textContent,'저장 중');
+  assert.equal(saved.pivot_date,'2022-01-05');
+  assert.equal(saved.pivot_value,42);
+  assert.equal(saved.relationship,null);
+  assert.equal(saved.reason,null);
+  assert.equal(saved.comment,null);
+  assert.equal(saved.key_reference,null);
+});
+
 test('a non-key manual pivot uses the existing date windows for magenta, dark, or light gray',()=>{
   const manual=(date)=>({sourceDate:date,pivotDate:date,pivotValue:42,relationship:'inverse',reason:'관리자 선택',comment:'',keyReference:null,isDeleted:false});
   const result=merge({storedPivots:[],manualPivots:[manual('2022-01-05'),manual('2022-02-15'),manual('2022-03-01')]},{startDate:'2022-01-05'});
