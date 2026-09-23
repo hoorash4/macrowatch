@@ -216,9 +216,8 @@
     const status=$('historical-manual-pivot-status'),date=$('historical-manual-pivot-date').value,
       keyReference=$('historical-manual-pivot-is-key').checked?$('historical-manual-pivot-reference').value:null,
       value=isDeleted?null:rawValueAtDate(context.item.rows,date);
-    if(!isDeleted&&(!Number.isFinite(value)||!date||!$('historical-manual-pivot-relationship').value
-      ||!$('historical-manual-pivot-reason').value||$('historical-manual-pivot-is-key').checked&&!keyReference)){
-      status.textContent='날짜·관계·근거·기준점을 확인해 주세요.';return;
+    if(!isDeleted&&(!date||!Number.isFinite(value)||$('historical-manual-pivot-is-key').checked&&!keyReference)){
+      status.textContent='날짜와 해당 날짜의 지표값을 확인해 주세요. 핵심 변곡점을 선택했다면 지수 기준점도 지정해 주세요.';return;
     }
     if(!isDeleted&&keyReference&&(context.item.manualPivots||[]).some(pivot=>!pivot.isDeleted&&pivot.keyReference===keyReference&&pivot.sourceDate!==context.sourceDate)){
       status.textContent=`이 지표의 ${keyReference} 핵심 변곡점이 이미 있습니다. 기존 지정을 관리자 화면에서 먼저 해제해 주세요.`;return;
@@ -230,9 +229,9 @@
         action:'save_historical_indicator_manual_pivot',case_code:context.caseCode,index_code:context.indexCode,
         series_code:context.seriesCode,source_date:context.sourceDate,is_deleted:isDeleted,
         pivot_date:isDeleted?null:date,pivot_value:value,
-        relationship:isDeleted?null:$('historical-manual-pivot-relationship').value,
-        reason:isDeleted?null:$('historical-manual-pivot-reason').value,
-        comment:isDeleted?null:$('historical-manual-pivot-comment').value,key_reference:isDeleted?null:keyReference
+        relationship:isDeleted?null:$('historical-manual-pivot-relationship').value||null,
+        reason:isDeleted?null:$('historical-manual-pivot-reason').value||null,
+        comment:isDeleted?null:$('historical-manual-pivot-comment').value||null,key_reference:isDeleted?null:keyReference
       });
       indicatorRepository.clearManualPivots(context.caseCode,context.indexCode,context.seriesCode);
       for(const code of Object.keys(indexData.indices))indicatorRepository.clearScoreRows(context.caseCode,code);
