@@ -27,7 +27,8 @@ test('the separate one-line case footer ranks the sum of three stored index scor
   assert.match(html,/class="historical-cycle-points"[\s\S]*?<\/section>\s*<section id="historical-indicator-detail"[^>]*><\/section>\s*<section id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"/);
   assert.match(css,/\.historical-cycle-top-strip \{[^}]*display: flex/);
   assert.match(css,/\.historical-cycle-top-indicators ol \{[^}]*display: flex/);
-  assert.match(css,/\.historical-cycle-top-indicators \{ padding: 22px 24px 28px; background:/);
+  assert.match(css,/\.historical-cycle-top-indicators \{ padding: 22px 24px; background:/);
+  assert.match(css,/\.historical-workspace:has\(> \.historical-cycle-top-indicators:not\(\[hidden\]\)\)::after \{ display: none; \}/);
   assert.match(css,/\.historical-cycle-top-heading \{[^}]*border-left: 3px solid #fbbf24/);
   assert.doesNotMatch(css.match(/\.historical-workspace:has\(> \.historical-cycle-panel:not\(\[hidden\]\)\)::after \{[^}]*\}/)?.[0]||'',/border-top/);
   const from=source.indexOf('  function candidatesFor('),to=source.indexOf('  function classifyStoredPivots(',from);
