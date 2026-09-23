@@ -22,6 +22,23 @@ function database(pages) {
   } };
 }
 const row = (n, close = 100) => ({ market_date: new Date(Date.UTC(1990,0,2+n)).toISOString().slice(0,10), close });
+test('the case footer shows the same top three stored scores as the indicator list', () => {
+  const html=read('historical-insight.html'),css=read('assets/css/historical-insight.css'),source=read('assets/js/historical-insight/historical-insight.js');
+  assert.match(html,/class="historical-cycle-points"[\s\S]*id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"[\s\S]*id="historical-indicator-detail"/);
+  assert.match(css,/\.historical-cycle-top-indicators ol \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  const from=source.indexOf('  function candidatesFor('),to=source.indexOf('  function classifyStoredPivots(',from);
+  const panel={hidden:true},list={children:[],replaceChildren(){this.children=[];},append(child){this.children.push(child);}};
+  const document={createElement:tag=>({tag,textContent:'',children:[],append(...children){this.children.push(...children);}})};
+  const scope={$:id=>id==='historical-cycle-top-indicators'?panel:list,document};
+  const {candidatesFor,renderTopIndicators}=vm.runInNewContext(`${source.slice(from,to)}\n({candidatesFor,renderTopIndicators})`,scope);
+  const items=[['A',79,0],['B',92,0],['C',60,0],['D',79,4]].map(([title,score,extraDarkTieBreak])=>({meta:{title},byReference:{LIST:{score,extraDarkTieBreak}}}));
+  const ranked=candidatesFor({mode:'history',analyses:items}).items;
+  renderTopIndicators(ranked);
+  assert.equal(panel.hidden,false);
+  assert.deepEqual(list.children.map(row=>row.children.map(cell=>cell.textContent)),[['01','B','92점'],['02','D','79점'],['03','A','79점']]);
+  renderTopIndicators([]);
+  assert.equal(panel.hidden,true);
+});
 test('all pages use the canonical index filter and start boundary; cache avoids duplicate reads', async () => {
   const db = database([{ data: Array.from({length:1000},(_,i)=>row(i)) }, {data:[row(1000)]}]);
   const repo = api().createRepository(db);
