@@ -46,7 +46,7 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
   if (analysis.error) throw analysis.error;
   if (!points.length) return {skipped: true, reason: 'no_observations'};
   const aiPivots = analysis.data?.pivots || scoreRow?.ai_pivots || [];
-  const pivots = mergedPivots({automatic, manual, aiPivots, cycle, indexCode});
+  const pivots = mergedPivots({automatic, manual, aiPivots, cycle, indexCode, observations: points});
   const byReference = scoreReferences({pivots, rows: points, cycle});
   const identical = scoreRow?.scoring_version === SCORE_VERSION
     && canonicalJson(scoreRow.by_reference) === canonicalJson(byReference)
@@ -64,4 +64,3 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
   if (error) throw error;
   return {saved: true, byReference};
 }
-
