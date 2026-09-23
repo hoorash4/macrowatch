@@ -124,6 +124,26 @@ test('stored score input keeps manual deletion and the surviving manual pivot se
   assert.equal(merged[0].isManual,true);
   assert.ok(merged[0].selectedReferences.some(ref=>ref.type==='PEAK'));
 });
+
+test('one saved manual pivot remains the same date across three independently scored market cycles',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const manual=[{source_date:'2022-01-01',pivot_date:'2022-01-01',pivot_value:10,
+    relationship:'positive',reason:'관리자 입력',key_references:{SP500:'START'},is_deleted:false}];
+  const rows=[{observation_date:'2021-01-01',value:5},{observation_date:'2022-01-01',value:10},
+    {observation_date:'2022-09-01',value:15},{observation_date:'2023-03-01',value:20},
+    {observation_date:'2025-03-01',value:25}];
+  const cycles=[
+    {startDate:'2022-01-01',peakDate:'2022-09-01',troughDate:'2023-03-01'},
+    {startDate:'2022-02-01',peakDate:'2022-09-01',troughDate:'2023-03-01'},
+    {startDate:'2021-12-01',peakDate:'2022-09-01',troughDate:'2023-03-01'}
+  ];
+  const scores=cycles.map((cycle,index)=>scoreReferences({
+    pivots:mergedPivots({automatic:[],manual,cycle,indexCode:['SP500','NASDAQ_COMPOSITE','KOSPI'][index]}),
+    rows,cycle
+  }).START);
+  assert.deepEqual(scores.map(score=>score.pivotDate),['2022-01-01','2022-01-01','2022-01-01']);
+  assert.equal(new Set(scores.map(score=>score.score)).size,3);
+});
 test('historical detail cards read the saved scores without calculating from pivot records',()=>{
   const controller=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
   const start=controller.indexOf('  function renderHistoricalPivotScores('),end=controller.indexOf('  function clearIndicatorSelection(',start);
