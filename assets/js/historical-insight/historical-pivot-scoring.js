@@ -19,6 +19,7 @@
       return Math.floor(100-50*days(coreStart,date)/days(coreStart,coreEnd));
     }
     if(!['near_miss','overridden_key','manual_standard'].includes(pivot.markerStatus))return 0;
+    if(date>coreStart&&date<coreEnd)return Math.floor((100-50*days(coreStart,date)/days(coreStart,coreEnd))*.5);
     if(date>=darkStart&&date<=coreStart)return Math.floor((50+49*days(darkStart,date)/days(darkStart,coreStart))*.5);
     if(date>=coreEnd&&date<=darkEnd)return Math.floor((49-24*days(coreEnd,date)/days(coreEnd,darkEnd))*.5);
     return 0;
@@ -86,4 +87,3 @@
   const compositeScore=(timeliness,relationship,continuity)=>Math.floor(timeliness*.4+relationship*.3+continuity*.3);
   window.MacroWatchHistoricalPivotScoring=Object.freeze({days,shiftMonths,timelinessScore,referencePivot,firstIntermediate,intermediatePivots,endpointFactor,relationshipScore,continuityScore,compositeScore});
 })();
-
