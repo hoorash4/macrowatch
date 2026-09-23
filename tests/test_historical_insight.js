@@ -166,8 +166,10 @@ test('cycle accent continues to the primary pivot cards in red green blue order'
   assert.match(controller,/primary\.append\(grid\);root\.append\(primary\)/);
   assert.match(controller,/root\.append\(darkHeading,darkGrid\)/);
   assert.match(css,/\.historical-indicator-detail:has\(\.historical-indicator-primary\) \{ border-top: 0; \}/);
-  assert.match(css,/\.historical-indicator-primary:has\(\+ \.historical-pivot-dark-heading\)::before \{ bottom: -14px; \}/);
-  assert.match(css,/\.historical-pivot-dark-heading \{[^}]*margin-top:14px; padding-top:22px; border-top:1px solid var\(--theme-border\)/);
+  assert.match(css,/\.historical-cycle-panel:has\(\+ \.historical-indicator-detail:not\(\[hidden\]\)\) \{ background: linear-gradient\(180deg/);
+  assert.match(css,/\.historical-indicator-primary \{[^}]*margin: -18px -20px 0; padding: 18px 20px 0; background: linear-gradient\(180deg/);
+  assert.match(css,/\.historical-indicator-primary:has\(\+ \.historical-pivot-dark-heading\) \{ margin-bottom: -14px; padding-bottom: 14px; \}/);
+  assert.match(css,/\.historical-pivot-dark-heading \{[^}]*margin:14px -20px 0; padding:22px 20px 0; border-top:1px solid var\(--theme-border\)/);
 });
 test('historical pivot cards place their status stripe on the top edge only', () => {
   const css=read('assets/css/historical-insight.css');
