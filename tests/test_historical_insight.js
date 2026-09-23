@@ -24,7 +24,7 @@ function database(pages) {
 const row = (n, close = 100) => ({ market_date: new Date(Date.UTC(1990,0,2+n)).toISOString().slice(0,10), close });
 test('the separate one-line case footer ranks the sum of three stored index scores', async () => {
   const html=read('historical-insight.html'),css=read('assets/css/historical-insight.css'),source=read('assets/js/historical-insight/historical-insight.js');
-  assert.match(html,/class="historical-cycle-points"[\s\S]*?<\/section>\s*<section id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"[\s\S]*<section id="historical-indicator-detail"/);
+  assert.match(html,/class="historical-cycle-points"[\s\S]*?<\/section>\s*<section id="historical-indicator-detail"[^>]*><\/section>\s*<section id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"/);
   assert.match(css,/\.historical-cycle-top-strip \{[^}]*display: flex/);
   assert.match(css,/\.historical-cycle-top-indicators ol \{[^}]*display: flex/);
   const from=source.indexOf('  function candidatesFor('),to=source.indexOf('  function classifyStoredPivots(',from);
@@ -186,12 +186,12 @@ test('selected historical case expands its summary and performance above the unc
 test('cycle accent continues to the primary pivot cards in red green blue order', () => {
   const css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
   assert.match(css,/\.historical-cycle-panel::before[^\n]*#dc2626 0 34%, #16a34a 34% 67%, #2563eb 67%/);
-  assert.match(css,/\.historical-cycle-panel:has\(~ \.historical-indicator-detail:not\(\[hidden\]\)\)::before/);
+  assert.match(css,/\.historical-cycle-panel:has\(\+ \.historical-indicator-detail:not\(\[hidden\]\)\)::before/);
   assert.match(css,/\.historical-indicator-primary::before[^\n]*#16a34a 0 42%, #2563eb 42%/);
   assert.match(controller,/primary\.append\(grid\);root\.append\(primary\)/);
   assert.match(controller,/root\.append\(darkHeading,darkGrid\)/);
   assert.match(css,/\.historical-indicator-detail:has\(\.historical-indicator-primary\) \{ border-top: 0; \}/);
-  assert.match(css,/\.historical-cycle-panel:has\(~ \.historical-indicator-detail:not\(\[hidden\]\)\) \{ background: linear-gradient\(180deg/);
+  assert.match(css,/\.historical-cycle-panel:has\(\+ \.historical-indicator-detail:not\(\[hidden\]\)\) \{ background: linear-gradient\(180deg/);
   assert.match(css,/\.historical-indicator-primary \{[^}]*margin: -18px -20px 0; padding: 18px 20px 0; background: linear-gradient\(180deg/);
   assert.match(css,/\.historical-indicator-primary:has\(\+ \.historical-pivot-dark-heading\) \{ margin-bottom: -14px; padding-bottom: 14px; \}/);
   assert.match(css,/\.historical-pivot-dark-heading \{[^}]*margin:14px -20px 0; padding:22px 20px 0; border-top:1px solid var\(--theme-border\)/);
