@@ -140,18 +140,19 @@ test('migration stores thirty market-specific cycles with protected access', () 
   assert.doesNotMatch(marketSql,/grant delete[^;]* to authenticated/);
   assert.match(marketSql,/on conflict \(case_code, index_code\) do nothing/);
 });
-test('cycle summary gives market context and performance figures strong visual hierarchy', () => {
-  const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css');
+test('selected historical case expands its summary and performance above the unchanged anchor cards', () => {
+  const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
   assert.match(html,/id="historical-cycle-market"/);
-  assert.match(html,/class="is-rise"[\s\S]*class="is-fall"/);
+  assert.match(controller,/data-historical-case-expanded/);
+  assert.match(controller,/class="is-rise"[\s\S]*class="is-fall"/);
+  assert.match(controller,/expanded\.querySelector\('\[data-cycle-summary\]'\)\.textContent=item\.summary/);
+  assert.match(html,/id="historical-cycle-editor"[\s\S]*class="historical-cycle-points"[\s\S]*id="historical-indicator-detail"/);
+  assert.doesNotMatch(html,/id="historical-cycle-description"|id="historical-rise"|id="historical-fall"/);
   assert.doesNotMatch(html,/historical-drawdown|is-drawdown|고점 대비 낙폭/);
-  assert.match(css,/\.historical-cycle-description \{[^}]*font-size: 13px/);
-  assert.match(css,/\.historical-cycle-performance strong \{[^}]*font-size: 25px/);
-  assert.match(css,/\.historical-cycle-performance \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(css,/\.historical-cycle-performance article \{[^}]*grid-template-columns: auto 1fr[^}]*min-height: 72px/);
+  assert.match(css,/\.historical-case-expanded\{[^}]*padding:10px/);
+  assert.match(css,/\.historical-case-expanded \.historical-cycle-performance\{[^}]*grid-template-columns:1fr/);
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #dc2626/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #2563eb/);
-  assert.match(css,/\.historical-cycle-performance b \{[^}]*font-size: 15px/);
   assert.match(css,/\.historical-cycle-points article \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/);
   assert.match(css,/\.historical-cycle-points strong \{[^}]*font-size: 17px/);
   assert.match(css,/\.historical-cycle-points span \{[^}]*font-size: 15px/);
