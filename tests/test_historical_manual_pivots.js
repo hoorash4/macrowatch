@@ -207,6 +207,8 @@ test('reason presets keep symmetric directions without duration labels',()=>{
   assert.match(presets,/하락이 멈추고 저점권 횡보로 국면이 바뀌었습니다/);
   assert.match(presets,/상승 흐름에서 급등한 뒤 방향을 되돌렸고, 이후 하락 흐름이 이어졌습니다/);
   assert.match(presets,/하락 흐름에서 급락한 뒤 방향을 되돌렸고, 이후 상승 흐름이 이어졌습니다/);
+  assert.match(presets,/급등 후 추세적인 하락세로 전환됐습니다/);
+  assert.match(presets,/급락 후 추세적인 상승세로 전환됐습니다/);
   assert.match(controller,/이전\/이후 추세가 불명확 합니다\./);
   assert.doesNotMatch(presets,/장기|오랫동안|장기간|중장기|막바지/);
 });
