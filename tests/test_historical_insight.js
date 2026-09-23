@@ -217,6 +217,13 @@ test('current indicator list includes every available series without historical 
   assert.match(source,/rawAnalyses=await mapSeries\(usable/);
   assert.doesNotMatch(source,/historicalScore|analysis\.meaningfulReferenceCount>0/);
 });
+test('historical indicator list keeps covered series even when no pivot has been stored',()=>{
+  const source=read('assets/js/historical-insight/historical-insight.js');
+  const candidates=source.match(/function candidatesFor\(context\)\{[^\n]+/)[0];
+  assert.match(candidates,/context\.mode==='history'\)return\{items:\[\.\.\.context\.analyses\]\.sort/);
+  assert.doesNotMatch(candidates,/context\.analyses\.filter/);
+  assert.match(source,/const eligible=catalog\.filter\(item=>\{const c=coverage\.get\(item\.code\);return c&&c\.firstDate<=activeCase\.searchStart&&c\.lastDate>=end;\}\)/);
+});
 
 
 test('comparison indicators are narrow and limited to the Historical chart row', () => {
@@ -262,4 +269,3 @@ test('Historical case edit and delete controls float over the unchanged list ite
   assert.match(css,/visibility:hidden/);
   assert.match(css,/\.historical-case-row:hover \.historical-case-actions/);
 });
-
