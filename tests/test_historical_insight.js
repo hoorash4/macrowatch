@@ -94,6 +94,13 @@ test('in-progress cycles allow unconfirmed peak and trough while malformed defin
   assert.throws(()=>a.cycles.calculate(item,{...progress,peakDate:'2022-01-01'},[{time:'2022-01-01',value:1},{time:'2022-12-28',value:2}]),/START → PEAK/);
   assert.throws(()=>a.cycles.calculate(item,{...progress,peakDate:'2023-01-01'},[{time:'2022-12-28',value:2}]),/기준일/);
 });
+test('a case can share NASDAQ pivot dates while keeping the S&P 500 as its market benchmark', () => {
+  const a=api(),base=caseRow({primary_index_code:'SP500',pivot_source_index_code:'NASDAQ_COMPOSITE'});
+  const market=marketRow({index_code:'SP500'});
+  const item=a.cycles.normalizeCase(base,[a.cycles.normalizeMarket(market)]);
+  assert.equal(item.primaryIndex,'SP500');
+  assert.equal(item.pivotSourceIndex,'NASDAQ_COMPOSITE');
+});
 test('administrator save updates only the selected market cycle and refreshes cache', async () => {
   const a=api(); let payload=null;
   const reads=[[caseRow()],[marketRow()]];
