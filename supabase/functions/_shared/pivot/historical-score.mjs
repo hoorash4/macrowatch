@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v5';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v6';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -41,7 +41,7 @@ function classifyPivots(rows, cycle, manualKeys) {
     const markerStatus = pivot.isManual && !pivot.keyReference
       ? selectedReferences.length ? 'confirmed' : extended ? 'manual_standard' : 'reference_only'
       : overridden ? 'overridden_key' : selectedReferences.length ? 'confirmed' : extended ? 'near_miss' : 'reference_only';
-    return {...pivot, selectedReferences, markerStatus};
+    return {...pivot, selectedReferences, markerStatus, nearReferenceType: extended?.type || null};
   });
 }
 
@@ -76,6 +76,7 @@ function timeliness(referenceDate, pivot) {
     return Math.floor(100 - 50 * days(core.from, date) / days(core.from, core.to));
   }
   if (!['near_miss', 'overridden_key', 'manual_standard'].includes(pivot.markerStatus)) return 0;
+  if (date > core.from && date < core.to) return Math.floor((100 - 50 * days(core.from, date) / days(core.from, core.to)) * .5);
   if (date >= dark.from && date <= core.from) return Math.floor((50 + 49 * days(dark.from, date) / days(dark.from, core.from)) * .5);
   if (date >= core.to && date <= dark.to) return Math.floor((49 - 24 * days(core.to, date) / days(core.to, dark.to)) * .5);
   return 0;
@@ -138,8 +139,8 @@ export function scoreReferences({pivots, rows, cycle}) {
   if (!dates.START || !dates.PEAK || !dates.TROUGH) return {START: null, PEAK: null, TROUGH: null};
   const selected = Object.fromEntries(Object.entries(dates).map(([type, date]) => [type, referencePivot(pivots, type, date)]));
   const bufferEnd = shiftMonths(dates.TROUGH, 24), result = {};
-  for (const type of ['START', 'PEAK', 'TROUGH']) {
-    const from = dates[type], pivot = selected[type], benchmarkEnd = type === 'START' ? dates.PEAK : type === 'PEAK' ? dates.TROUGH : bufferEnd;
+  function scorePivot(type, pivot) {
+    const from = dates[type], benchmarkEnd = type === 'START' ? dates.PEAK : type === 'PEAK' ? dates.TROUGH : bufferEnd;
     const firstAfterTrough = type === 'TROUGH' ? intermediates(pivots, from, bufferEnd)[0] : null;
     const to = firstAfterTrough?.pivotDate || benchmarkEnd;
     const factor = pivot?.markerStatus === 'confirmed' ? 1 : pivot ? .5 : 0;
@@ -153,12 +154,24 @@ export function scoreReferences({pivots, rows, cycle}) {
     const active = pivot ? Math.max(0, days(continuityStart, next?.pivotDate || benchmarkEnd)) : 0;
     const continuity = pivot && total > 0 ? Math.floor(100 * Math.min(1, active / total) * (pivot.markerStatus === 'confirmed' ? 1 : .5)) : 0;
     const timing = timeliness(from, pivot);
-    result[type] = {referenceDate: from, pivotDate: pivot?.pivotDate || null, pivotValue: pivot?.pivotValue ?? null,
+    return {referenceDate: from, pivotDate: pivot?.pivotDate || null, pivotValue: pivot?.pivotValue ?? null,
       markerStatus: pivot?.markerStatus || null, offsetDays: pivot ? days(from, pivot.pivotDate) : null,
       relationship: relation.relationship, timelinessScore: timing, relationshipSuitabilityScore: relation.score,
       continuityScore: continuity, score: Math.floor(timing * .4 + relation.score * .3 + continuity * .3),
       pivotReason: pivot?.pivotReason || ''};
   }
+  for (const type of ['START', 'PEAK', 'TROUGH']) result[type] = scorePivot(type, selected[type]);
+  const weights = {START: 150, PEAK: 200, TROUGH: 150};
+  const darkPivots = pivots.filter(pivot => ['near_miss', 'overridden_key', 'manual_standard'].includes(pivot.markerStatus)
+    && pivot.nearReferenceType && timeliness(dates[pivot.nearReferenceType], pivot) > 0)
+    .map(pivot => ({referenceType: pivot.nearReferenceType, ...scorePivot(pivot.nearReferenceType, pivot)}));
+  const placementScore = Object.keys(weights).reduce((total, type) => total + (result[type].markerStatus === 'confirmed'
+    ? weights[type] : result[type].pivotDate ? weights[type] / 2 : 0), 0);
+  const pivotScore = Object.keys(weights).reduce((total, type) => total + result[type].score, 0);
+  const extraDarkTieBreak = darkPivots.reduce((total, pivot) => total + (selected[pivot.referenceType]?.pivotDate === pivot.pivotDate
+    ? 0 : weights[pivot.referenceType] / 2), 0);
+  const rawScore = placementScore + pivotScore;
+  result.LIST = {score: Math.round(rawScore / 800 * 100), rawScore, placementScore, pivotScore,
+    extraDarkTieBreak, darkPivots};
   return result;
 }
-
