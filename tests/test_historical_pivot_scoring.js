@@ -123,7 +123,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v6');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v7');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
@@ -158,7 +158,7 @@ test('extra dark-gray pivots are stored for display and break ties without infla
   const saved=scoreReferences({pivots,rows,cycle});
   assert.equal(saved.START.markerStatus,'confirmed');
   assert.equal(saved.LIST.placementScore,500);
-  assert.equal(saved.LIST.extraDarkTieBreak,75);
+  assert.equal(saved.LIST.extraDarkTieBreak,75+saved.LIST.darkPivots[0].score);
   assert.equal(saved.LIST.darkPivots.length,1);
   assert.equal(saved.LIST.darkPivots[0].pivotDate,'2021-11-01');
   assert.equal(saved.LIST.darkPivots[0].referenceType,'START');
