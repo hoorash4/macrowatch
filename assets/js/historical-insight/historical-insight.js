@@ -187,7 +187,7 @@
     const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
     const keyReference=manual?.keyReference||classified?.selectedReferences?.[0]?.type||'';
     const existing=Boolean(manual&&!manual.isDeleted||automatic);
-    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing};
+    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.keySuppressed?'manual_off':'auto'};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
     $('historical-manual-pivot-date').value=manual&&!manual.isDeleted?manual.pivotDate:point.date;
     $('historical-manual-pivot-relationship').value=manual&&!manual.isDeleted?manual.relationship||'':'';
@@ -211,6 +211,7 @@
     if(!isAdmin||!context||!functionClient)return;
     const status=$('historical-manual-pivot-status'),date=$('historical-manual-pivot-date').value,
       keyReference=$('historical-manual-pivot-is-key').checked?$('historical-manual-pivot-reference').value:null,
+      keyDecision=context.keyTouched?keyReference?'manual_on':'manual_off':context.keyDecision||'auto',
       value=isDeleted?null:rawValueAtDate(context.item.rows,date);
     if(!isDeleted&&(!date||!Number.isFinite(value)||$('historical-manual-pivot-is-key').checked&&!keyReference)){
       status.textContent='날짜와 해당 날짜의 지표값을 확인해 주세요. 핵심 변곡점을 선택했다면 지수 기준점도 지정해 주세요.';return;
@@ -227,7 +228,8 @@
         pivot_date:isDeleted?null:date,pivot_value:value,
         relationship:isDeleted?null:$('historical-manual-pivot-relationship').value||null,
         reason:isDeleted?null:$('historical-manual-pivot-reason').value||null,
-        comment:isDeleted?null:$('historical-manual-pivot-comment').value||null,key_reference:isDeleted?null:keyReference
+        comment:isDeleted?null:$('historical-manual-pivot-comment').value||null,
+        key_reference:isDeleted?null:keyDecision==='auto'?'AUTO':keyReference
       });
       indicatorRepository.clearManualPivots(context.caseCode,context.indexCode,context.seriesCode);
       for(const code of Object.keys(indexData.indices))indicatorRepository.clearScoreRows(context.caseCode,code);
@@ -427,6 +429,7 @@
   const manualReasonSelect=$('historical-manual-pivot-reason');
   manualReasonSelect.add(new Option('선택 근거를 고르세요',''));
   $('historical-manual-pivot-is-key').addEventListener('change',event=>{
+    if(manualPivotContext)manualPivotContext.keyTouched=true;
     const reference=$('historical-manual-pivot-reference');reference.disabled=!event.target.checked;
     if(!event.target.checked)reference.value='';
   });
