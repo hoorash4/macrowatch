@@ -167,6 +167,10 @@ html[data-theme="dark"] .historical-cycle-signal strong { color: #4ade80; }
 .historical-pivot-detail-grid article { display:flex; flex-direction:column; gap:8px; }
 .historical-pivot-detail-grid article > strong { font-size:13px; line-height:1.4; }
 .historical-pivot-detail-grid article > p { margin:0; color:var(--theme-text-secondary); line-height:1.65; white-space:pre-line; }
+.historical-pivot-dark-heading { display:block; margin-top:18px; color:var(--historical-near-miss-text); font-size:13px; }
+.historical-pivot-detail-grid article.is-dark { border-left-color:var(--historical-near-miss-color); background:var(--theme-surface); }
+.historical-pivot-detail-grid article.is-dark > strong,.historical-pivot-detail-grid article.is-dark .historical-pivot-reason b { color:var(--historical-near-miss-text); }
+.historical-pivot-detail-grid article.is-dark .historical-pivot-reason { border-color:var(--historical-near-miss-color); background:var(--theme-surface-elevated); }
 .historical-pivot-reason { margin-top:3px; padding:10px 12px; border:1px solid rgba(192,38,211,.16); border-radius:8px; background:rgba(192,38,211,.045); }
 .historical-pivot-reason b { display:block; margin-bottom:4px; color:#a21caf; font-size:10px; font-weight:850; letter-spacing:.04em; }
 .historical-pivot-reason p { margin:0; color:var(--theme-text-primary); font-size:12px; line-height:1.6; }
@@ -282,4 +286,3 @@ html[data-theme="dark"] .historical-d-review-grid article>button{background:#111
 .historical-indicator-hidden-menu .historical-indicator-empty{padding:5px 4px}
 
 .historical-indicator-hidden-menu[hidden]{display:none}
-
