@@ -257,7 +257,7 @@ export default {
         const keyReference = isDeleted || body?.key_reference == null || body.key_reference === ""
           ? null : String(body.key_reference);
         if (!isDeleted && (!pivotDate || !Number.isFinite(pivotValue)
-          || !["positive", "inverse"].includes(relationship)
+          || !["positive", "inverse", "unclear"].includes(relationship)
           || !reason || reason.length > 250 || (comment?.length || 0) > 1000
           || (keyReference !== null && !["START", "PEAK", "TROUGH"].includes(keyReference)))) {
           return json({ error: "피봇 입력값을 확인해 주세요." }, 400, origin);
@@ -923,4 +923,5 @@ export default {
     }
   },
 };
+
 
