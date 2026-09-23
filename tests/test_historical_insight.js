@@ -22,20 +22,28 @@ function database(pages) {
   } };
 }
 const row = (n, close = 100) => ({ market_date: new Date(Date.UTC(1990,0,2+n)).toISOString().slice(0,10), close });
-test('the case footer shows the same top three stored scores as the indicator list', () => {
+test('the separate one-line case footer ranks the sum of three stored index scores', async () => {
   const html=read('historical-insight.html'),css=read('assets/css/historical-insight.css'),source=read('assets/js/historical-insight/historical-insight.js');
-  assert.match(html,/class="historical-cycle-points"[\s\S]*id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"[\s\S]*id="historical-indicator-detail"/);
-  assert.match(css,/\.historical-cycle-top-indicators ol \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(html,/class="historical-cycle-points"[\s\S]*?<\/section>\s*<section id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"[\s\S]*<section id="historical-indicator-detail"/);
+  assert.match(css,/\.historical-cycle-top-strip \{[^}]*display: flex/);
+  assert.match(css,/\.historical-cycle-top-indicators ol \{[^}]*display: flex/);
   const from=source.indexOf('  function candidatesFor('),to=source.indexOf('  function classifyStoredPivots(',from);
   const panel={hidden:true},list={children:[],replaceChildren(){this.children=[];},append(child){this.children.push(child);}};
   const document={createElement:tag=>({tag,textContent:'',children:[],append(...children){this.children.push(...children);}})};
-  const scope={$:id=>id==='historical-cycle-top-indicators'?panel:list,document};
-  const {candidatesFor,renderTopIndicators}=vm.runInNewContext(`${source.slice(from,to)}\n({candidatesFor,renderTopIndicators})`,scope);
-  const items=[['A',79,0],['B',92,0],['C',60,0],['D',79,4]].map(([title,score,extraDarkTieBreak])=>({meta:{title},byReference:{LIST:{score,extraDarkTieBreak}}}));
-  const ranked=candidatesFor({mode:'history',analyses:items}).items;
-  renderTopIndicators(ranked);
+  const metas=['A','B','C','D'].map(code=>({code,title:code}));
+  const scores={SP500:{A:79,B:92,C:60,D:79},NASDAQ_COMPOSITE:{A:10,B:50,C:20,D:90},KOSPI:{A:20,B:1,C:10,D:4}};
+  const scope={$:id=>id==='historical-cycle-top-indicators'?panel:list,document,
+    indicatorData:{SCORE_VERSION:'v9'},hiddenIndicatorCodes:new Set(),
+    indicatorRepository:{catalog:()=>metas,loadScoreRows:async(caseCode,indexCode)=>{
+      assert.equal(caseCode,'tightening_2022');
+      return new Map(Object.entries(scores[indexCode]).map(([code,score])=>[code,{scoring_version:'v9',by_reference:{LIST:{score}}}]));
+    }}};
+  const {candidatesFor,topIndicatorTotals,renderTopIndicators}=vm.runInNewContext(`${source.slice(from,to)}\n({candidatesFor,topIndicatorTotals,renderTopIndicators})`,scope);
+  const selected=candidatesFor({mode:'history',analyses:metas.map(meta=>({meta,byReference:{LIST:{score:scores.SP500[meta.code]}}}))}).items;
+  assert.equal(selected[0].meta.code,'B');
+  renderTopIndicators(await topIndicatorTotals('tightening_2022'));
   assert.equal(panel.hidden,false);
-  assert.deepEqual(list.children.map(row=>row.children.map(cell=>cell.textContent)),[['01','B','92점'],['02','D','79점'],['03','A','79점']]);
+  assert.deepEqual(list.children.map(row=>row.children.map(cell=>cell.textContent)),[['01','D','총 173점'],['02','B','총 143점'],['03','A','총 109점']]);
   renderTopIndicators([]);
   assert.equal(panel.hidden,true);
 });
@@ -178,12 +186,12 @@ test('selected historical case expands its summary and performance above the unc
 test('cycle accent continues to the primary pivot cards in red green blue order', () => {
   const css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
   assert.match(css,/\.historical-cycle-panel::before[^\n]*#dc2626 0 34%, #16a34a 34% 67%, #2563eb 67%/);
-  assert.match(css,/\.historical-cycle-panel:has\(\+ \.historical-indicator-detail:not\(\[hidden\]\)\)::before/);
+  assert.match(css,/\.historical-cycle-panel:has\(~ \.historical-indicator-detail:not\(\[hidden\]\)\)::before/);
   assert.match(css,/\.historical-indicator-primary::before[^\n]*#16a34a 0 42%, #2563eb 42%/);
   assert.match(controller,/primary\.append\(grid\);root\.append\(primary\)/);
   assert.match(controller,/root\.append\(darkHeading,darkGrid\)/);
   assert.match(css,/\.historical-indicator-detail:has\(\.historical-indicator-primary\) \{ border-top: 0; \}/);
-  assert.match(css,/\.historical-cycle-panel:has\(\+ \.historical-indicator-detail:not\(\[hidden\]\)\) \{ background: linear-gradient\(180deg/);
+  assert.match(css,/\.historical-cycle-panel:has\(~ \.historical-indicator-detail:not\(\[hidden\]\)\) \{ background: linear-gradient\(180deg/);
   assert.match(css,/\.historical-indicator-primary \{[^}]*margin: -18px -20px 0; padding: 18px 20px 0; background: linear-gradient\(180deg/);
   assert.match(css,/\.historical-indicator-primary:has\(\+ \.historical-pivot-dark-heading\) \{ margin-bottom: -14px; padding-bottom: 14px; \}/);
   assert.match(css,/\.historical-pivot-dark-heading \{[^}]*margin:14px -20px 0; padding:22px 20px 0; border-top:1px solid var\(--theme-border\)/);
